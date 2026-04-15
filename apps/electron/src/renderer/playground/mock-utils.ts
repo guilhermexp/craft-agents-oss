@@ -98,6 +98,16 @@ export const mockElectronAPI = {
     { key: 'google', label: 'Google AI Studio', placeholder: 'AIza...' },
   ],
   getPiProviderBaseUrl: async () => '',
+  detectHermesInstallation: async () => ({
+    found: false,
+    command: 'hermes',
+    hermesHome: '~/.hermes',
+    configPath: '~/.hermes/config.yaml',
+    envPath: '~/.hermes/.env',
+    providers: [],
+    models: [],
+    customProviders: [],
+  }),
   getPiProviderModels: async (provider: string) => {
     const MOCK_MODELS: Record<string, Array<{ id: string; name: string; costInput: number; costOutput: number; contextWindow: number; reasoning: boolean }>> = {
       'openrouter': [

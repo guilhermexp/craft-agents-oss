@@ -24,6 +24,7 @@ import type {
   BackendHostRuntimeContext,
 } from './types.ts';
 import { ClaudeAgent } from '../claude-agent.ts';
+import { HermesAgent } from '../hermes-agent.ts';
 import { PiAgent } from '../pi-agent.ts';
 import {
   getLlmConnection,
@@ -58,10 +59,12 @@ import {
   resolveBackendRuntimePaths,
 } from './internal/runtime-resolver.ts';
 import { anthropicDriver } from './internal/drivers/anthropic.ts';
+import { hermesDriver } from './internal/drivers/hermes.ts';
 import { piDriver } from './internal/drivers/pi.ts';
 
 const DRIVER_REGISTRY: Record<AgentProvider, ProviderDriver> = {
   anthropic: anthropicDriver,
+  hermes: hermesDriver,
   pi: piDriver,
 };
 
@@ -139,6 +142,9 @@ export function createBackend(config: BackendConfig): AgentBackend {
       // PiAgent implements AgentBackend directly
       // Auth is API key based via Pi's AuthStorage
       return new PiAgent(config);
+
+    case 'hermes':
+      return new HermesAgent(config);
 
     default:
       throw new Error(`Unknown provider: ${config.provider}`);
@@ -221,7 +227,7 @@ export function resolveBackendHostTooling(args: {
  * @returns Array of provider identifiers that have working implementations
  */
 export function getAvailableProviders(): AgentProvider[] {
-  return ['anthropic', 'pi'];
+  return ['anthropic', 'pi', 'hermes'];
 }
 
 /**
@@ -258,6 +264,8 @@ export function providerTypeToAgentProvider(providerType: LlmProviderType): Agen
     case 'pi':
     case 'pi_compat':
       return 'pi';
+    case 'hermes':
+      return 'hermes';
 
     default:
       // Exhaustive check
@@ -587,6 +595,7 @@ export const BACKEND_CAPABILITIES: Record<AgentProvider, {
   needsHttpPoolServer: boolean;
 }> = {
   anthropic: { needsHttpPoolServer: false },
+  hermes: { needsHttpPoolServer: false },
   pi: { needsHttpPoolServer: false },
 };
 
@@ -603,6 +612,7 @@ export const BACKEND_CAPABILITIES: Record<AgentProvider, {
 export function getDefaultAuthType(provider: AgentProvider): LlmAuthType | undefined {
   switch (provider) {
     case 'anthropic': return undefined;
+    case 'hermes':    return 'none';
     case 'pi':        return 'api_key';
     default:          return undefined;
   }
@@ -640,6 +650,8 @@ export function resolveModelForProvider(
 
   switch (provider) {
     case 'pi':
+      return managedModel || connection?.defaultModel || '';
+    case 'hermes':
       return managedModel || connection?.defaultModel || '';
     default:
       return managedModel || connection?.defaultModel || DEFAULT_MODEL;
@@ -693,11 +705,11 @@ export async function testBackendConnection(args: {
     const testModel = args.model;
     const providerType = args.connection?.providerType ?? getDefaultProviderType(args.provider);
     const now = Date.now();
-    const authType: LlmAuthType = (
-      providerType === 'pi_compat'
-    )
-      ? 'api_key_with_endpoint'
-      : 'api_key';
+    const authType: LlmAuthType = providerType === 'hermes'
+      ? 'none'
+      : providerType === 'pi_compat'
+        ? 'api_key_with_endpoint'
+        : 'api_key';
 
     const syntheticConnection = {
       slug: tempSlug,
@@ -816,6 +828,8 @@ export async function validateConnection(
 
     case 'pi':
       // Pi validates on connect via its auth storage — no pre-flight check available
+      return { success: true };
+    case 'hermes':
       return { success: true };
 
     default:

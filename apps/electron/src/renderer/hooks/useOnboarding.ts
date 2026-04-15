@@ -97,6 +97,7 @@ export const BASE_SLUG_FOR_METHOD: Record<ApiSetupMethod, string> = {
   pi_chatgpt_oauth: 'chatgpt-plus',
   pi_copilot_oauth: 'github-copilot',
   pi_api_key: 'pi-api-key',
+  hermes_local: 'hermes-local',
 }
 
 /**
@@ -187,6 +188,12 @@ export function apiSetupMethodToConnectionSetup(
         iamCredentials: options.iamCredentials,
         awsRegion: options.awsRegion,
         bedrockAuthMethod: options.bedrockAuthMethod,
+      }
+    case 'hermes_local':
+      return {
+        slug,
+        defaultModel: options.connectionDefaultModel,
+        models: options.models,
       }
   }
 }
@@ -630,8 +637,8 @@ export function useOnboarding({
   }, [state.apiSetupMethod, saveAndValidateConnection, editingSlug, existingSlugs])
 
   // Map ProviderChoice → ApiSetupMethod and navigate to the right step
-  const handleSelectProvider = useCallback((choice: ProviderChoice) => {
-    const CHOICE_TO_METHOD: Record<Exclude<ProviderChoice, 'local'>, ApiSetupMethod> = {
+  const handleSelectProvider = useCallback(async (choice: ProviderChoice) => {
+    const CHOICE_TO_METHOD: Record<Exclude<ProviderChoice, 'local' | 'hermes'>, ApiSetupMethod> = {
       claude: 'claude_oauth',
       chatgpt: 'pi_chatgpt_oauth',
       copilot: 'pi_copilot_oauth',
@@ -641,6 +648,48 @@ export function useOnboarding({
     if (choice === 'local') {
       // Local uses anthropic_api_key with custom endpoint (Ollama doesn't need an API key)
       setState(s => ({ ...s, step: 'local-model', apiSetupMethod: 'anthropic_api_key', credentialStatus: 'idle', errorMessage: undefined }))
+      return
+    }
+
+    if (choice === 'hermes') {
+      setState(s => ({
+        ...s,
+        apiSetupMethod: 'hermes_local',
+        credentialStatus: 'validating',
+        errorMessage: undefined,
+      }))
+
+      const detection = await window.electronAPI.detectHermesInstallation()
+      if (!detection.found) {
+        setState(s => ({
+          ...s,
+          credentialStatus: 'error',
+          errorMessage: detection.error || 'Hermes nao foi encontrado no seu computador.',
+        }))
+        return
+      }
+
+      const saved = await handleSaveConfig(undefined, {
+        connectionDefaultModel: detection.defaultModel,
+        models: detection.models,
+      }, 'hermes_local')
+
+      if (!saved) {
+        setState(s => ({ ...s, credentialStatus: 'error' }))
+        return
+      }
+
+      const testResult = await window.electronAPI.testLlmConnection('hermes-local')
+      if (!testResult.success) {
+        setState(s => ({
+          ...s,
+          credentialStatus: 'error',
+          errorMessage: testResult.error || 'Nao foi possivel validar o runtime Hermes.',
+        }))
+        return
+      }
+
+      setState(s => ({ ...s, credentialStatus: 'success', step: 'complete' }))
       return
     }
 

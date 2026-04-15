@@ -56,6 +56,7 @@ const providerDisplayNames: Record<string, string> = {
   openrouter: 'OpenRouter',
   pi: 'Craft Agents Backend',
   pi_compat: 'Craft Agents Backend',
+  hermes: 'Hermes',
   vercel: 'Vercel',
 }
 
@@ -190,6 +191,8 @@ export function getProviderIcon(
       }
       return null  // Unknown/custom Pi provider — caller shows brain icon
     }
+    case 'hermes':
+      return null
     default:
       // Try URL detection as fallback
       if (baseUrl) {

@@ -146,6 +146,7 @@ export function OnboardingWizard({
           <ProviderSelectStep
             onSelect={onSelectProvider!}
             onSkip={onSkipSetup}
+            errorMessage={state.errorMessage}
           />
         )
 
@@ -192,7 +193,7 @@ export function OnboardingWizard({
   return (
     <div
       className={cn(
-        "flex flex-col bg-foreground-2",
+        "flex flex-col bg-background",
         !className?.includes('h-full') && "min-h-screen",
         className
       )}

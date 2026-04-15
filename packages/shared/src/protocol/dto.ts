@@ -374,6 +374,28 @@ export interface TestLlmConnectionResult {
   error?: string
 }
 
+export interface HermesCustomProviderInfo {
+  name: string
+  baseUrl?: string
+  model?: string
+}
+
+export interface HermesDetectionResult {
+  found: boolean
+  command: string
+  resolvedCommand?: string
+  version?: string
+  hermesHome: string
+  configPath: string
+  envPath: string
+  defaultModel?: string
+  fallbackModel?: string
+  providers: string[]
+  models: string[]
+  customProviders: HermesCustomProviderInfo[]
+  error?: string
+}
+
 // ---------------------------------------------------------------------------
 // Source / skill types
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ export * from './conversation-summary.ts';
 
 // Export PiAgent for direct use
 export { PiAgent, PiBackend } from './pi-agent.ts';
+export { HermesAgent } from './hermes-agent.ts';
 export * from './errors.ts';
 export * from './options.ts';
 

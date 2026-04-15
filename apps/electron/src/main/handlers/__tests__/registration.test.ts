@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -90,6 +91,7 @@ async function getExpectedChannels(): Promise<Set<string>> {
     auth,
     automations,
     files,
+    hermes,
     labels,
     llm,
     oauth,
@@ -106,6 +108,7 @@ async function getExpectedChannels(): Promise<Set<string>> {
     import('@craft-agent/server-core/handlers/rpc/auth'),
     import('@craft-agent/server-core/handlers/rpc/automations'),
     import('@craft-agent/server-core/handlers/rpc/files'),
+    import('@craft-agent/server-core/handlers/rpc/hermes'),
     import('@craft-agent/server-core/handlers/rpc/labels'),
     import('@craft-agent/server-core/handlers/rpc/llm-connections'),
     import('@craft-agent/server-core/handlers/rpc/oauth'),
@@ -132,6 +135,7 @@ async function getExpectedChannels(): Promise<Set<string>> {
     ...auth.HANDLED_CHANNELS,
     ...automations.HANDLED_CHANNELS,
     ...files.HANDLED_CHANNELS,
+    ...hermes.HANDLED_CHANNELS,
     ...labels.HANDLED_CHANNELS,
     ...llm.HANDLED_CHANNELS,
     ...oauth.HANDLED_CHANNELS,
@@ -144,6 +148,10 @@ async function getExpectedChannels(): Promise<Set<string>> {
     ...coreWorkspace.CORE_HANDLED_CHANNELS,
     ...onboarding.HANDLED_CHANNELS,
     ...resources.HANDLED_CHANNELS,
+    RPC_CHANNELS.transfer.START,
+    RPC_CHANNELS.transfer.CHUNK,
+    RPC_CHANNELS.transfer.COMMIT,
+    RPC_CHANNELS.transfer.ABORT,
     ...browser.HANDLED_CHANNELS,
     ...guiSystem.GUI_HANDLED_CHANNELS,
     ...guiWorkspace.GUI_HANDLED_CHANNELS,

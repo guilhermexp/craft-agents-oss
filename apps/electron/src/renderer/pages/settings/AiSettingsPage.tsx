@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { routes } from '@/lib/navigate'
 import { X, MoreHorizontal, Pencil, Trash2, Star, ChevronDown, ChevronRight, CheckCircle2, AlertTriangle, RefreshCcw, Settings2 } from 'lucide-react'
-import type { CredentialHealthStatus, CredentialHealthIssue } from '../../../shared/types'
+import type { CredentialHealthStatus, CredentialHealthIssue, HermesDetectionResult } from '../../../shared/types'
 import { Spinner, FullscreenOverlayBase } from '@craft-agent/ui'
 import { useSetAtom } from 'jotai'
 import { fullscreenOverlayOpenAtom } from '@/atoms/overlay'
@@ -186,6 +186,7 @@ function ConnectionRow({ connection, isLastConnection, onRenameClick, onDelete, 
   const { t } = useTranslation()
   const [menuOpen, setMenuOpen] = useState(false)
   const [piBaseUrl, setPiBaseUrl] = useState<string | undefined>(undefined)
+  const isHermesConnection = connection.providerType === 'hermes'
 
   // Opening dialog/overlay flows directly from a dropdown item can race with
   // menu teardown and leave a transient interaction lock behind on some systems.
@@ -229,6 +230,7 @@ function ConnectionRow({ connection, isLastConnection, onRenameClick, onDelete, 
         break
       }
       case 'pi_compat': parts.push('Craft Agents Backend Compatible'); break
+      case 'hermes': parts.push('Hermes Local'); break
       default: parts.push(provider || 'Unknown')
     }
 
@@ -299,12 +301,12 @@ function ConnectionRow({ connection, isLastConnection, onRenameClick, onDelete, 
               <RefreshCcw className="h-3.5 w-3.5" />
               <span>{t("settings.ai.reAuthenticate")}</span>
             </StyledDropdownMenuItem>
-          ) : (
+          ) : !isHermesConnection ? (
             <StyledDropdownMenuItem onClick={() => runAfterMenuClose(onEdit)}>
               <Settings2 className="h-3.5 w-3.5" />
               <span>{t("common.edit")}</span>
             </StyledDropdownMenuItem>
-          )}
+          ) : null}
           <StyledDropdownMenuItem
             onClick={onValidate}
             disabled={validationState === 'validating'}
@@ -503,6 +505,7 @@ function WorkspaceOverrideCard({ workspace, llmConnections, onSettingsChange }: 
                     label: conn.name,
                     description: conn.providerType === 'anthropic' ? 'Anthropic' :
                                  conn.providerType === 'pi' ? 'Craft Agents Backend' :
+                                 conn.providerType === 'hermes' ? 'Hermes Local' :
                                  conn.providerType || 'Unknown',
                   })),
                 ]}
@@ -579,6 +582,7 @@ export default function AiSettingsPage() {
 
   // Default settings state (app-level)
   const [defaultThinking, setDefaultThinking] = useState<ThinkingLevel>(DEFAULT_THINKING_LEVEL)
+  const [hermesRuntime, setHermesRuntime] = useState<HermesDetectionResult | null>(null)
   const [extendedPromptCache, setExtendedPromptCache] = useState(false)
   const [enable1MContext, setEnable1MContext] = useState(true)
 
@@ -891,6 +895,18 @@ export default function AiSettingsPage() {
     refreshLlmConnections?.()
   }, [refreshLlmConnections])
 
+  useEffect(() => {
+    if (!window.electronAPI) return
+    if (!llmConnections.some(connection => connection.providerType === 'hermes')) {
+      setHermesRuntime(null)
+      return
+    }
+
+    void window.electronAPI.detectHermesInstallation()
+      .then(setHermesRuntime)
+      .catch(() => setHermesRuntime(null))
+  }, [llmConnections])
+
   return (
     <div className="h-full flex flex-col">
       <PanelHeader title={t("settings.ai.title")} actions={<HeaderMenu route={routes.view.settings('ai')} />} />
@@ -904,6 +920,27 @@ export default function AiSettingsPage() {
             />
 
             <div className="space-y-8">
+              {hermesRuntime ? (
+                <SettingsSection title="Hermes Runtime" description="Estado do Hermes local detectado neste computador.">
+                  <SettingsCard>
+                    <SettingsRow
+                      label="Instalacao"
+                      description={hermesRuntime.found
+                        ? `CLI encontrado${hermesRuntime.version ? ` (${hermesRuntime.version})` : ''}`
+                        : (hermesRuntime.error || 'Hermes nao encontrado')}
+                    />
+                    <SettingsRow
+                      label="Providers"
+                      description={hermesRuntime.providers.length > 0 ? hermesRuntime.providers.join(', ') : 'Nenhum provider encontrado no config do Hermes.'}
+                    />
+                    <SettingsRow
+                      label="Modelos"
+                      description={hermesRuntime.models.length > 0 ? hermesRuntime.models.join(', ') : 'Nenhum modelo descoberto no config do Hermes.'}
+                    />
+                  </SettingsCard>
+                </SettingsSection>
+              ) : null}
+
               {/* Default Settings - only show if connections exist */}
               {llmConnections.length > 0 && (
               <SettingsSection title={t("settings.ai.defaultSection")} description={t("settings.ai.defaultSectionDesc")}>
@@ -919,6 +956,7 @@ export default function AiSettingsPage() {
                       description: conn.providerType === 'anthropic' ? 'Anthropic API' :
                                    conn.providerType === 'pi' ? 'Craft Agents Backend' :
                                    conn.providerType === 'pi_compat' ? 'Craft Agents Backend Compatible' :
+                                   conn.providerType === 'hermes' ? 'Hermes Local' :
                                    conn.providerType || 'Unknown',
                     }))}
                   />

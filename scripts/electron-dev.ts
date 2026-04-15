@@ -25,6 +25,7 @@ const IS_WINDOWS = process.platform === "win32";
 const BIN_EXT = IS_WINDOWS ? ".exe" : "";
 const VITE_BIN = join(ROOT_DIR, `node_modules/.bin/vite${BIN_EXT}`);
 const ELECTRON_BIN = join(ROOT_DIR, `node_modules/.bin/electron${BIN_EXT}`);
+const MAIN_PROCESS_EXTERNALS = ["electron", "@mcpc-tech/acp-ai-provider"];
 
 function resolveBuildPlatform(): Platform {
   if (process.platform === "darwin") return "darwin";
@@ -276,7 +277,7 @@ async function runEsbuild(
       platform: "node",
       format: "cjs",
       outfile: join(ROOT_DIR, outfile),
-      external: ["electron"],
+      external: MAIN_PROCESS_EXTERNALS,
       ...(options.packagesExternal ? { packages: "external" as const } : {}),
       define: defines,
       logLevel: "warning",
@@ -470,7 +471,7 @@ async function main(): Promise<void> {
   console.log("✅ Initial build complete and verified\n");
 
   // =========================================================
-  // PHASE 2: Start dev servers with watch mode
+  // PHASE 2: Start dev servers
   // =========================================================
   console.log("📡 Starting dev servers...\n");
 
@@ -488,14 +489,29 @@ async function main(): Promise<void> {
   });
   processes.push(viteProc);
 
-  // 2. Main process watcher (using esbuild watch API)
+  // 2. Start Electron from the verified one-shot build before enabling watch mode.
+  // esbuild watch triggers an immediate rebuild; if Electron starts while that
+  // write is in progress it can observe a truncated main.cjs on startup.
+  console.log("🚀 Starting Electron...\n");
+
+  const electronProc = spawn({
+    cmd: [ELECTRON_BIN, "apps/electron"],
+    cwd: ROOT_DIR,
+    stdin: "ignore",
+    stdout: "inherit",
+    stderr: "inherit",
+    env: getElectronEnv(),
+  });
+  processes.push(electronProc);
+
+  // 3. Main process watcher (using esbuild watch API)
   const mainContext = await esbuild.context({
     entryPoints: [join(ROOT_DIR, "apps/electron/src/main/index.ts")],
     bundle: true,
     platform: "node",
     format: "cjs",
     outfile: join(ROOT_DIR, "apps/electron/dist/main.cjs"),
-    external: ["electron"],
+    external: MAIN_PROCESS_EXTERNALS,
     define: oauthDefines,
     logLevel: "info",
   });
@@ -503,7 +519,7 @@ async function main(): Promise<void> {
   esbuildContexts.push(mainContext);
   console.log("👀 Watching main process...");
 
-  // 3. Preload watcher (using esbuild watch API)
+  // 4. Preload watcher (using esbuild watch API)
   const preloadContext = await esbuild.context({
     entryPoints: [join(ROOT_DIR, "apps/electron/src/preload/bootstrap.ts")],
     bundle: true,
@@ -517,7 +533,7 @@ async function main(): Promise<void> {
   esbuildContexts.push(preloadContext);
   console.log("👀 Watching preload...");
 
-  // 4. Browser toolbar preload watcher (dedicated browser window bridge)
+  // 5. Browser toolbar preload watcher (dedicated browser window bridge)
   const toolbarPreloadContext = await esbuild.context({
     entryPoints: [join(ROOT_DIR, "apps/electron/src/preload/browser-toolbar.ts")],
     bundle: true,
@@ -530,19 +546,6 @@ async function main(): Promise<void> {
   await toolbarPreloadContext.watch();
   esbuildContexts.push(toolbarPreloadContext);
   console.log("👀 Watching browser toolbar preload...");
-
-  // 5. Start Electron (build already verified)
-  console.log("🚀 Starting Electron...\n");
-
-  const electronProc = spawn({
-    cmd: [ELECTRON_BIN, "apps/electron"],
-    cwd: ROOT_DIR,
-    stdin: "ignore",
-    stdout: "inherit",
-    stderr: "inherit",
-    env: getElectronEnv(),
-  });
-  processes.push(electronProc);
 
   // Handle cleanup on exit
   const cleanup = async () => {

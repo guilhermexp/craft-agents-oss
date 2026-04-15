@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -89,6 +90,7 @@ async function getExpectedCoreChannels(): Promise<Set<string>> {
     auth,
     automations,
     files,
+    hermes,
     labels,
     llm,
     oauth,
@@ -98,12 +100,14 @@ async function getExpectedCoreChannels(): Promise<Set<string>> {
     sources,
     statuses,
     system,
+    resources,
     workspace,
     onboarding,
   ] = await Promise.all([
     import('@craft-agent/server-core/handlers/rpc/auth'),
     import('@craft-agent/server-core/handlers/rpc/automations'),
     import('@craft-agent/server-core/handlers/rpc/files'),
+    import('@craft-agent/server-core/handlers/rpc/hermes'),
     import('@craft-agent/server-core/handlers/rpc/labels'),
     import('@craft-agent/server-core/handlers/rpc/llm-connections'),
     import('@craft-agent/server-core/handlers/rpc/oauth'),
@@ -113,6 +117,7 @@ async function getExpectedCoreChannels(): Promise<Set<string>> {
     import('@craft-agent/server-core/handlers/rpc/sources'),
     import('@craft-agent/server-core/handlers/rpc/statuses'),
     import('@craft-agent/server-core/handlers/rpc/system'),
+    import('@craft-agent/server-core/handlers/rpc/resources'),
     import('@craft-agent/server-core/handlers/rpc/workspace'),
     import('@craft-agent/server-core/handlers/rpc/onboarding'),
   ])
@@ -121,6 +126,7 @@ async function getExpectedCoreChannels(): Promise<Set<string>> {
     ...auth.HANDLED_CHANNELS,
     ...automations.HANDLED_CHANNELS,
     ...files.HANDLED_CHANNELS,
+    ...hermes.HANDLED_CHANNELS,
     ...labels.HANDLED_CHANNELS,
     ...llm.HANDLED_CHANNELS,
     ...oauth.HANDLED_CHANNELS,
@@ -130,8 +136,13 @@ async function getExpectedCoreChannels(): Promise<Set<string>> {
     ...sources.HANDLED_CHANNELS,
     ...statuses.HANDLED_CHANNELS,
     ...system.CORE_HANDLED_CHANNELS,
+    ...resources.HANDLED_CHANNELS,
     ...workspace.CORE_HANDLED_CHANNELS,
     ...onboarding.HANDLED_CHANNELS,
+    RPC_CHANNELS.transfer.START,
+    RPC_CHANNELS.transfer.CHUNK,
+    RPC_CHANNELS.transfer.COMMIT,
+    RPC_CHANNELS.transfer.ABORT,
   ])
 }
 

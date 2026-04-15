@@ -17,6 +17,7 @@ const SESSION_SERVER_DIR = join(ROOT_DIR, "packages/session-mcp-server");
 const SESSION_SERVER_OUTPUT = join(SESSION_SERVER_DIR, "dist/index.js");
 const PI_AGENT_SERVER_DIR = join(ROOT_DIR, "packages/pi-agent-server");
 const PI_AGENT_SERVER_OUTPUT = join(PI_AGENT_SERVER_DIR, "dist/index.js");
+const MAIN_PROCESS_EXTERNALS = ["electron", "@mcpc-tech/acp-ai-provider"];
 
 // Load .env file if it exists
 function loadEnvFile(): void {
@@ -287,7 +288,7 @@ async function main(): Promise<void> {
       "--platform=node",
       "--format=cjs",
       "--outfile=apps/electron/dist/main.cjs",
-      "--external:electron",
+      ...MAIN_PROCESS_EXTERNALS.map((pkg) => `--external:${pkg}`),
       ...buildDefines,
     ],
     cwd: ROOT_DIR,

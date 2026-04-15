@@ -51,7 +51,8 @@ export function registerPiModelResolver(resolver: PiModelResolver): void {
 export type LlmProviderType =
   | 'anthropic'
   | 'pi'
-  | 'pi_compat';
+  | 'pi_compat'
+  | 'hermes';
 
 /**
  * @deprecated Use LlmProviderType instead. Kept for migration compatibility.
@@ -252,6 +253,8 @@ function findSmallModel(connection: Pick<LlmConnection, 'models' | 'providerType
     keywords.push('haiku');
   } else if (isPiProvider(connection.providerType)) {
     keywords.push('mini', 'flash');
+  } else if (connection.providerType === 'hermes') {
+    keywords.push('mini', 'flash', 'haiku');
   } else {
     // Aggregator providers (copilot, etc.) — try all common small-model keywords
     keywords.push('mini', 'haiku', 'flash');
@@ -392,6 +395,10 @@ export function isPiProvider(providerType: LlmProviderType): boolean {
   return providerType === 'pi' || providerType === 'pi_compat';
 }
 
+export function isHermesProvider(providerType: LlmProviderType): boolean {
+  return providerType === 'hermes';
+}
+
 /**
  * Get the default model list for a provider type from the registry.
  * For *_compat providers, returns empty array - those should use connection.models instead.
@@ -409,6 +416,10 @@ export function getModelsForProviderType(providerType: LlmProviderType, piAuthPr
   // Pi: fetch models via registered resolver (avoids Pi SDK import in renderer)
   if (providerType === 'pi') {
     return _piModelResolver(piAuthProvider);
+  }
+
+  if (providerType === 'hermes') {
+    return [];
   }
 
   // Anthropic uses Claude models with bare Anthropic IDs.
@@ -473,6 +484,7 @@ export function getDefaultModelsForConnection(providerType: LlmProviderType, piA
     return models;
   }
   if (providerType === 'pi_compat') return [];  // Dynamic — user specifies
+  if (providerType === 'hermes') return [];
   // anthropic
   return ANTHROPIC_MODELS;
 }
@@ -560,6 +572,7 @@ export function isValidProviderAuthCombination(
     anthropic: ['api_key', 'oauth'],
     pi: ['api_key', 'oauth', 'iam_credentials', 'environment', 'none'],
     pi_compat: ['api_key_with_endpoint', 'none'],
+    hermes: ['none'],
   };
 
   return validCombinations[providerType]?.includes(authType) ?? false;

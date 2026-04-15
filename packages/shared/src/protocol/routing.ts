@@ -198,6 +198,9 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   RPC_CHANNELS.settings.GET_SERVER_CONFIG,
   RPC_CHANNELS.settings.SET_SERVER_CONFIG,
   RPC_CHANNELS.settings.GET_SERVER_STATUS,
+
+  // hermes — local runtime detection
+  RPC_CHANNELS.hermes.DETECT_INSTALLATION,
 ])
 
 // ---------------------------------------------------------------------------

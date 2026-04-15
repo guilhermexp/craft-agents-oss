@@ -216,6 +216,9 @@ export const RPC_CHANNELS = {
     GET_PROVIDER_BASE_URL: 'pi:getProviderBaseUrl',
     GET_PROVIDER_MODELS: 'pi:getProviderModels',
   },
+  hermes: {
+    DETECT_INSTALLATION: 'hermes:detectInstallation',
+  },
   dialog: {
     OPEN_FOLDER: 'dialog:openFolder',
   },

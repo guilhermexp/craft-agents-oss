@@ -30,6 +30,7 @@ import type { Workspace, LlmConnection } from '../../../config/storage.ts';
 import type { SessionConfig as Session } from '../../../sessions/storage.ts';
 import { ClaudeAgent } from '../../claude-agent.ts';
 import { PiAgent } from '../../pi-agent.ts';
+import { HermesAgent } from '../../hermes-agent.ts';
 import { isValidProviderAuthCombination } from '../../../config/llm-connections.ts';
 
 // Test helpers
@@ -102,6 +103,15 @@ describe('createBackend / createAgent', () => {
     });
   });
 
+  describe('Hermes provider', () => {
+    it('should create HermesAgent for hermes provider', () => {
+      const config = createTestConfig({ provider: 'hermes' as any });
+      const agent = createBackend(config);
+
+      expect(agent).toBeInstanceOf(HermesAgent);
+    });
+  });
+
   describe('Unknown provider', () => {
     it('should throw for unknown provider', () => {
       const config = createTestConfig({ provider: 'unknown' as any });
@@ -118,12 +128,13 @@ describe('createBackend / createAgent', () => {
 });
 
 describe('getAvailableProviders', () => {
-  it('should return anthropic and pi', () => {
+  it('should return anthropic, pi, and hermes', () => {
     const providers = getAvailableProviders();
 
     expect(providers).toContain('anthropic');
     expect(providers).toContain('pi');
-    expect(providers).toHaveLength(2);
+    expect(providers).toContain('hermes');
+    expect(providers).toHaveLength(3);
   });
 });
 
@@ -134,6 +145,10 @@ describe('isProviderAvailable', () => {
 
   it('should return true for pi', () => {
     expect(isProviderAvailable('pi')).toBe(true);
+  });
+
+  it('should return true for hermes', () => {
+    expect(isProviderAvailable('hermes' as any)).toBe(true);
   });
 
   it('should return false for unknown provider', () => {
@@ -187,6 +202,12 @@ describe('providerTypeToAgentProvider', () => {
 
     it('should map pi_compat to pi', () => {
       expect(providerTypeToAgentProvider('pi_compat')).toBe('pi');
+    });
+  });
+
+  describe('Hermes local provider', () => {
+    it('should map hermes to hermes', () => {
+      expect(providerTypeToAgentProvider('hermes' as any)).toBe('hermes');
     });
   });
 });
