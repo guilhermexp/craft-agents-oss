@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import * as storage from '@/lib/local-storage'
 import {
   resolveTheme,
+  mergeThemeOverrides,
   themeToCSS,
   DEFAULT_THEME,
   DEFAULT_SHIKI_THEME,
@@ -52,6 +53,10 @@ interface ThemeContextType {
   // Theme resolution (singleton - loaded once)
   /** Loaded preset theme file, null if default or loading */
   presetTheme: ThemeFile | null
+  /** App-level theme override loaded from ~/.craft-agent/theme.json */
+  appTheme: ThemeOverrides | null
+  /** Replace app-level theme override */
+  setAppTheme: (theme: ThemeOverrides | null) => Promise<void>
   /** Fully resolved theme (preset merged with any overrides) */
   resolvedTheme: ThemeOverrides
   /** Whether dark mode is active (scenic themes force dark) */
@@ -157,6 +162,7 @@ export function ThemeProvider({
 
   // === Preset theme state (singleton) ===
   const [presetTheme, setPresetTheme] = useState<ThemeFile | null>(null)
+  const [appTheme, setAppThemeState] = useState<ThemeOverrides | null>(null)
   const [themeResolvedFrom, setThemeResolvedFrom] = useState<'none' | 'ipc' | 'fallback'>('none')
   const [themeLoadError, setThemeLoadError] = useState<string | null>(null)
 
@@ -246,9 +252,23 @@ export function ThemeProvider({
   }, [effectiveColorTheme])
 
   // Resolve theme (preset → final)
+  useEffect(() => {
+    window.electronAPI?.getAppTheme?.().then(setAppThemeState).catch(() => {
+      setAppThemeState(null)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!window.electronAPI?.onAppThemeChange) return
+
+    return window.electronAPI.onAppThemeChange((theme) => {
+      setAppThemeState(theme)
+    })
+  }, [])
+
   const resolvedTheme = useMemo(() => {
-    return resolveTheme(presetTheme ?? undefined)
-  }, [presetTheme])
+    return resolveTheme(mergeThemeOverrides(presetTheme ?? undefined, appTheme ?? undefined))
+  }, [presetTheme, appTheme])
 
   // Determine scenic mode (background image with glass panels)
   const isScenic = useMemo(() => {
@@ -453,6 +473,16 @@ export function ThemeProvider({
     }
   }, [mode, font])
 
+  const setAppTheme = useCallback(async (newTheme: ThemeOverrides | null) => {
+    await window.electronAPI?.setAppTheme?.(newTheme)
+    if (newTheme === null) {
+      setAppThemeState(null)
+      return
+    }
+    const resolvedTheme = await window.electronAPI?.getAppTheme?.()
+    setAppThemeState(resolvedTheme ?? null)
+  }, [])
+
   const setFont = useCallback((newFont: FontFamily) => {
     setFontState(newFont)
     // Preserve existing isUserOverride flag
@@ -514,6 +544,8 @@ export function ThemeProvider({
 
         // Theme resolution (singleton)
         presetTheme,
+        appTheme,
+        setAppTheme,
         resolvedTheme,
         isDark,
         isScenic,

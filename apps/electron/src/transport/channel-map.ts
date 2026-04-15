@@ -259,6 +259,7 @@ export const CHANNEL_MAP = {
 
   // Theme
   getAppTheme: invoke(RPC_CHANNELS.theme.GET_APP),
+  setAppTheme: invoke(RPC_CHANNELS.theme.SET_APP),
   loadPresetThemes: invoke(RPC_CHANNELS.theme.GET_PRESETS),
   loadPresetTheme: invoke(RPC_CHANNELS.theme.LOAD_PRESET),
   getColorTheme: invoke(RPC_CHANNELS.theme.GET_COLOR_THEME),

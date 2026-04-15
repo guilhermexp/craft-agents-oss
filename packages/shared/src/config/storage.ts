@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync } from 'fs';
-import { join, dirname, basename } from 'path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync, unlinkSync } from 'fs';
+import { join, dirname, basename, isAbsolute } from 'path';
 import { getCredentialManager } from '../credentials/index.ts';
 import { getOrCreateLatestSession, type SessionConfig } from '../sessions/index.ts';
 import {
@@ -1076,7 +1076,8 @@ export function loadAppTheme(): ThemeOverrides | null {
     if (!existsSync(APP_THEME_FILE)) {
       return null;
     }
-    return readJsonFileSync<ThemeOverrides>(APP_THEME_FILE);
+    const theme = readJsonFileSync<ThemeOverrides>(APP_THEME_FILE);
+    return resolveThemeBackgroundImage(theme, APP_THEME_FILE);
   } catch {
     return null;
   }
@@ -1085,8 +1086,14 @@ export function loadAppTheme(): ThemeOverrides | null {
 /**
  * Save app-level theme overrides
  */
-export function saveAppTheme(theme: ThemeOverrides): void {
+export function saveAppTheme(theme: ThemeOverrides | null): void {
   ensureConfigDir();
+  if (!theme) {
+    if (existsSync(APP_THEME_FILE)) {
+      unlinkSync(APP_THEME_FILE);
+    }
+    return;
+  }
   writeFileSync(APP_THEME_FILE, JSON.stringify(theme, null, 2), 'utf-8');
 }
 
@@ -1226,7 +1233,9 @@ function resolveThemeBackgroundImage(theme: ThemeFile, themePath: string): Theme
 
   // It's a relative path - resolve it relative to the theme's directory
   const themeDir = dirname(themePath);
-  const absoluteImagePath = join(themeDir, theme.backgroundImage);
+  const absoluteImagePath = isAbsolute(theme.backgroundImage)
+    ? theme.backgroundImage
+    : join(themeDir, theme.backgroundImage);
 
   // Read the file and convert to data URL so renderer can use it
   // (file:// URLs are blocked in renderer when running on localhost)

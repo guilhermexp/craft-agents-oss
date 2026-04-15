@@ -19,6 +19,7 @@ export const CORE_HANDLED_CHANNELS = [
   RPC_CHANNELS.workspace.READ_IMAGE,
   RPC_CHANNELS.workspace.WRITE_IMAGE,
   RPC_CHANNELS.theme.GET_APP,
+  RPC_CHANNELS.theme.SET_APP,
   RPC_CHANNELS.theme.GET_PRESETS,
   RPC_CHANNELS.theme.LOAD_PRESET,
   RPC_CHANNELS.theme.GET_COLOR_THEME,
@@ -280,6 +281,11 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
   server.handle(RPC_CHANNELS.theme.GET_APP, async () => {
     const { loadAppTheme } = await import('@craft-agent/shared/config/storage')
     return loadAppTheme()
+  })
+
+  server.handle(RPC_CHANNELS.theme.SET_APP, async (_ctx, theme: import('@craft-agent/shared/config').ThemeOverrides | null) => {
+    const { saveAppTheme } = await import('@craft-agent/shared/config/storage')
+    saveAppTheme(theme)
   })
 
   // Preset themes (app-level)

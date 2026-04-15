@@ -69,6 +69,12 @@ export interface ThemeOverrides extends ThemeColors, SurfaceColors {
    * Required when mode='scenic', ignored otherwise
    */
   backgroundImage?: string;
+
+  /**
+   * Opacity of the scenic background layer, from 0 to 1.
+   * Defaults to 1 when omitted.
+   */
+  scenicBackgroundOpacity?: number;
 }
 
 /**
@@ -114,6 +120,8 @@ function mergeThemes(
   if (override.mode !== undefined) result.mode = override.mode;
   if (override.backgroundImage !== undefined)
     result.backgroundImage = override.backgroundImage;
+  if (override.scenicBackgroundOpacity !== undefined)
+    result.scenicBackgroundOpacity = override.scenicBackgroundOpacity;
 
   // Deep merge dark overrides
   if (override.dark) {
@@ -129,13 +137,24 @@ function mergeThemes(
 }
 
 /**
+ * Merge two theme layers preserving nested dark-mode overrides.
+ * Useful for combining a preset theme with app-level theme.json overrides.
+ */
+export function mergeThemeOverrides(
+  base: ThemeOverrides | undefined,
+  override: ThemeOverrides | undefined
+): ThemeOverrides {
+  return mergeThemes(base, override);
+}
+
+/**
  * Resolve theme from app-level source
  * (Workspace cascading has been removed for simplicity)
  */
 export function resolveTheme(
   app?: ThemeOverrides
 ): ThemeOverrides {
-  return mergeThemes(undefined, app) || {};
+  return mergeThemeOverrides(undefined, app) || {};
 }
 
 /**
@@ -220,6 +239,7 @@ export function themeToCSS(theme: ThemeOverrides, isDark: boolean = false): stri
   // to avoid style sheet size limits with large data URLs)
   const mode = theme.mode || 'solid';
   vars.push(`--theme-mode: ${mode};`);
+  vars.push(`--scenic-background-opacity: ${theme.scenicBackgroundOpacity ?? 1};`);
 
   return vars.join('\n  ');
 }

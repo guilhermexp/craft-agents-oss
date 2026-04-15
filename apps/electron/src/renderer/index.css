@@ -339,6 +339,7 @@ html[data-scenic]::before {
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
+  opacity: var(--scenic-background-opacity, 1);
   z-index: -2;
   pointer-events: none;
 }
@@ -362,6 +363,7 @@ html[data-scenic][data-theme-override]::before {
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
+  opacity: var(--scenic-background-opacity, 1);
 }
 
 /* Scenic mode: Make background color semi-transparent for glass effect

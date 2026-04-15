@@ -504,6 +504,7 @@ export interface ElectronAPI {
 
   // Theme (app-level default)
   getAppTheme(): Promise<import('@config/theme').ThemeOverrides | null>
+  setAppTheme(theme: import('@config/theme').ThemeOverrides | null): Promise<void>
   loadPresetThemes(): Promise<import('@config/theme').PresetTheme[]>
   loadPresetTheme(themeId: string): Promise<import('@config/theme').PresetTheme | null>
   getColorTheme(): Promise<string>

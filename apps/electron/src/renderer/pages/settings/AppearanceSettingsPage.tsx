@@ -5,24 +5,27 @@
  * workspace-specific theme overrides, and CLI tool icon mappings.
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, type ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { LANGUAGES, type LanguageCode } from '@craft-agent/shared/i18n'
 import type { ColumnDef } from '@tanstack/react-table'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
+import { Button } from '@/components/ui/button'
 import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopover'
 import { useTheme } from '@/context/ThemeContext'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { routes } from '@/lib/navigate'
-import { Monitor, Sun, Moon } from 'lucide-react'
+import { Image as ImageIcon, Monitor, Sun, Moon } from 'lucide-react'
 import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import type { ToolIconMapping } from '../../../shared/types'
 
 import {
   SettingsSection,
   SettingsCard,
+  SettingsCardContent,
   SettingsRow,
   SettingsSegmentedControl,
   SettingsMenuSelect,
@@ -90,6 +93,48 @@ const getToolIconColumns = (t: (key: string) => string): ColumnDef<ToolIconMappi
   },
 ]
 
+const SOLID_SCENIC_BACKGROUNDS = {
+  black: createSolidBackgroundDataUrl('#0b0b0c'),
+  gray: createSolidBackgroundDataUrl('#565b63'),
+} as const
+
+type ScenicBackgroundType = 'image' | keyof typeof SOLID_SCENIC_BACKGROUNDS
+const DEFAULT_SCENIC_BACKGROUND_OPACITY = 1
+
+function createSolidBackgroundDataUrl(color: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="${color}"/></svg>`
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+
+function getScenicBackgroundType(backgroundImage: string | null | undefined): ScenicBackgroundType {
+  if (!backgroundImage) return 'image'
+  if (backgroundImage === SOLID_SCENIC_BACKGROUNDS.black) return 'black'
+  if (backgroundImage === SOLID_SCENIC_BACKGROUNDS.gray) return 'gray'
+  return 'image'
+}
+
+function buildNextAppTheme(
+  currentTheme: import('@config/theme').ThemeOverrides | null,
+  updates: Partial<import('@config/theme').ThemeOverrides>
+): import('@config/theme').ThemeOverrides | null {
+  const nextTheme: import('@config/theme').ThemeOverrides = {
+    ...(currentTheme ?? {}),
+    ...updates,
+  }
+
+  if (nextTheme.dark && Object.keys(nextTheme.dark).length === 0) {
+    delete nextTheme.dark
+  }
+
+  for (const key of Object.keys(nextTheme) as Array<keyof typeof nextTheme>) {
+    if (nextTheme[key] === undefined) {
+      delete nextTheme[key]
+    }
+  }
+
+  return Object.keys(nextTheme).length > 0 ? nextTheme : null
+}
+
 // ============================================
 // Main Component
 // ============================================
@@ -105,8 +150,11 @@ export default function AppearanceSettingsPage() {
     setColorTheme,
     font,
     setFont,
+    appTheme,
+    setAppTheme,
     activeWorkspaceId,
     setWorkspaceColorTheme,
+    resolvedTheme,
     themeLoadError,
     themeResolvedFrom,
   } = useTheme()
@@ -238,6 +286,94 @@ export default function AppearanceSettingsPage() {
     return preset?.theme.name || colorTheme
   }, [colorTheme, presetThemes])
 
+  const scenicBackgroundType = getScenicBackgroundType(appTheme?.backgroundImage)
+  const scenicBackgroundOpacity = appTheme?.scenicBackgroundOpacity ?? DEFAULT_SCENIC_BACKGROUND_OPACITY
+  const scenicBackgroundOpacityPercent = Math.round(scenicBackgroundOpacity * 100)
+  const scenicBackgroundPreview = scenicBackgroundType === 'image'
+    ? (appTheme?.backgroundImage ?? resolvedTheme.backgroundImage ?? null)
+    : SOLID_SCENIC_BACKGROUNDS[scenicBackgroundType]
+  const hasCustomScenicBackground = Boolean(appTheme?.backgroundImage) && scenicBackgroundType === 'image'
+  const showScenicBackgroundControls = resolvedTheme.mode === 'scenic'
+
+  const scenicBackgroundHelpText = scenicBackgroundType === 'image'
+    ? hasCustomScenicBackground
+      ? t('settings.appearance.customScenicBackgroundDesc', { defaultValue: 'Using a custom background image for this scenic theme.' })
+      : t('settings.appearance.defaultScenicBackgroundDesc', { defaultValue: 'Using the default background that ships with this scenic theme.' })
+    : scenicBackgroundType === 'black'
+      ? t('settings.appearance.solidBlackBackgroundDesc', { defaultValue: 'Using a solid black background instead of the theme image.' })
+      : t('settings.appearance.solidGrayBackgroundDesc', { defaultValue: 'Using a solid gray background instead of the theme image.' })
+
+  const handleScenicBackgroundTypeChange = useCallback(async (value: string) => {
+    const nextType = value as ScenicBackgroundType
+
+    try {
+      if (nextType === 'image') {
+        await setAppTheme(buildNextAppTheme(appTheme, { backgroundImage: undefined }))
+        return
+      }
+
+      await setAppTheme(buildNextAppTheme(appTheme, {
+        backgroundImage: SOLID_SCENIC_BACKGROUNDS[nextType],
+      }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(t('settings.appearance.failedToSetBackgroundImage', { defaultValue: 'Failed to update background image.' }), {
+        description: message,
+      })
+    }
+  }, [appTheme, setAppTheme, t])
+
+  const handleChooseScenicBackground = useCallback(async () => {
+    try {
+      const paths = await window.electronAPI.openFileDialog()
+      const selectedPath = paths[0]
+      if (!selectedPath) return
+
+      const lowerPath = selectedPath.toLowerCase()
+      const isImage = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico', '.avif'].some(ext => lowerPath.endsWith(ext))
+      if (!isImage) {
+        toast.error(t('settings.appearance.invalidBackgroundImage', { defaultValue: 'Select an image file to use as background.' }))
+        return
+      }
+
+      await setAppTheme(buildNextAppTheme(appTheme, { backgroundImage: selectedPath }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(t('settings.appearance.failedToSetBackgroundImage', { defaultValue: 'Failed to update background image.' }), {
+        description: message,
+      })
+    }
+  }, [appTheme, setAppTheme, t])
+
+  const handleResetScenicBackground = useCallback(async () => {
+    try {
+      const nextTheme = buildNextAppTheme(appTheme, { backgroundImage: undefined })
+      await setAppTheme(nextTheme)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(t('settings.appearance.failedToResetBackgroundImage', { defaultValue: 'Failed to restore the default background image.' }), {
+        description: message,
+      })
+    }
+  }, [appTheme, setAppTheme, t])
+
+  const handleScenicOpacityChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const nextOpacity = Number(event.target.value) / 100
+
+    try {
+      await setAppTheme(buildNextAppTheme(appTheme, {
+        scenicBackgroundOpacity: Math.abs(nextOpacity - DEFAULT_SCENIC_BACKGROUND_OPACITY) < 0.001
+          ? undefined
+          : Number(nextOpacity.toFixed(2)),
+      }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(t('settings.appearance.failedToSetBackgroundOpacity', { defaultValue: 'Failed to update background opacity.' }), {
+        description: message,
+      })
+    }
+  }, [appTheme, setAppTheme, t])
+
   return (
     <div className="h-full flex flex-col">
       <PanelHeader
@@ -300,6 +436,86 @@ export default function AppearanceSettingsPage() {
                   </p>
                 )}
               </SettingsSection>
+
+              {showScenicBackgroundControls && (
+                <SettingsSection
+                  title={t('settings.appearance.scenicBackground', { defaultValue: 'Scenic Background' })}
+                  description={t('settings.appearance.scenicBackgroundSectionDesc', { defaultValue: 'Choose a custom image for scenic themes like Haze.' })}
+                >
+                  <SettingsCard divided={false}>
+                    <SettingsCardContent className="space-y-4">
+                      <div className="flex items-start gap-4">
+                        <div className="w-28 h-20 rounded-lg overflow-hidden bg-muted/40 border border-border/50 shrink-0">
+                          {scenicBackgroundPreview ? (
+                            <img
+                              src={scenicBackgroundPreview}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                              <ImageIcon className="w-5 h-5" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-3">
+                          <div>
+                            <div className="text-sm font-medium text-foreground">
+                              {t('settings.appearance.scenicBackgroundLabel', { defaultValue: 'Background image' })}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {scenicBackgroundHelpText}
+                            </p>
+                          </div>
+                          <SettingsSegmentedControl
+                            value={scenicBackgroundType}
+                            onValueChange={handleScenicBackgroundTypeChange}
+                            options={[
+                              { value: 'image', label: t('settings.appearance.scenicBackgroundImageOption', { defaultValue: 'Image' }) },
+                              { value: 'black', label: t('settings.appearance.scenicBackgroundBlackOption', { defaultValue: 'Black' }) },
+                              { value: 'gray', label: t('settings.appearance.scenicBackgroundGrayOption', { defaultValue: 'Gray' }) },
+                            ]}
+                          />
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-3 text-xs">
+                              <span className="text-muted-foreground">
+                                {t('settings.appearance.scenicBackgroundOpacity', { defaultValue: 'Opacity' })}
+                              </span>
+                              <span className="font-medium text-foreground">
+                                {scenicBackgroundOpacityPercent}%
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              step={1}
+                              value={scenicBackgroundOpacityPercent}
+                              onChange={handleScenicOpacityChange}
+                              className="w-full accent-[var(--accent)]"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleChooseScenicBackground}
+                              disabled={scenicBackgroundType !== 'image'}
+                            >
+                              {t('settings.appearance.chooseBackgroundImage', { defaultValue: 'Choose image' })}
+                            </Button>
+                            {hasCustomScenicBackground && scenicBackgroundType === 'image' && (
+                              <Button variant="ghost" size="sm" onClick={handleResetScenicBackground}>
+                                {t('settings.appearance.resetBackgroundImage', { defaultValue: 'Use theme default' })}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </SettingsCardContent>
+                  </SettingsCard>
+                </SettingsSection>
+              )}
 
               {/* Workspace Themes */}
               {workspaces.length > 0 && (

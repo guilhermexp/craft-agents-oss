@@ -115,6 +115,11 @@ describe("getDateLocale", () => {
     expect(locale.code).toBe("pl");
   });
 
+  it("pt-BR resolves to Brazilian Portuguese", () => {
+    const locale = getDateLocale("pt-BR");
+    expect(locale.code).toBe("pt-BR");
+  });
+
   it("unknown locale falls back to English", () => {
     const locale = getDateLocale("xx-FAKE");
     expect(locale.code).toBe("en-US");

@@ -1563,6 +1563,7 @@ export const ThemeOverrideSchema = z.object({
   // Scenic mode
   mode: z.enum(['solid', 'scenic']).optional(),
   backgroundImage: z.string().optional(),
+  scenicBackgroundOpacity: z.number().min(0).max(1).optional(),
   // Dark mode overrides
   dark: ThemeDarkOverrideSchema.optional(),
 }).strict()
@@ -1605,6 +1606,7 @@ export const PresetThemeSchema = z.object({
   // Scenic mode
   mode: z.enum(['solid', 'scenic']).optional(),
   backgroundImage: z.string().optional(),
+  scenicBackgroundOpacity: z.number().min(0).max(1).optional(),
   // Dark mode overrides
   dark: z.object({}).passthrough().optional(),
   // Shiki theme for syntax highlighting

@@ -99,6 +99,7 @@ export const RPC_CHANNELS = {
     SYSTEM_CHANGED: 'theme:systemChanged',
     APP_CHANGED: 'theme:appChanged',
     GET_APP: 'theme:getApp',
+    SET_APP: 'theme:setApp',
     GET_PRESETS: 'theme:getPresets',
     LOAD_PRESET: 'theme:loadPreset',
     GET_COLOR_THEME: 'theme:getColorTheme',
