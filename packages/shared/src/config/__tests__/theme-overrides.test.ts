@@ -49,4 +49,42 @@ describe('mergeThemeOverrides', () => {
     expect(merged.scenicBackgroundOpacity).toBe(0.45)
     expect(merged.accent).toBe('#a78bfa')
   })
+
+  it('overrides scenic background contrast without dropping preset fields', () => {
+    const merged = mergeThemeOverrides(
+      {
+        mode: 'scenic',
+        backgroundImage: 'https://example.com/original.jpg',
+        scenicBackgroundContrast: 1,
+        accent: '#a78bfa',
+      },
+      {
+        scenicBackgroundContrast: 1.3,
+      },
+    )
+
+    expect(merged.mode).toBe('scenic')
+    expect(merged.backgroundImage).toBe('https://example.com/original.jpg')
+    expect(merged.scenicBackgroundContrast).toBe(1.3)
+    expect(merged.accent).toBe('#a78bfa')
+  })
+
+  it('overrides scenic background blur without dropping preset fields', () => {
+    const merged = mergeThemeOverrides(
+      {
+        mode: 'scenic',
+        backgroundImage: 'https://example.com/original.jpg',
+        scenicBackgroundBlur: 0,
+        accent: '#a78bfa',
+      },
+      {
+        scenicBackgroundBlur: 12,
+      },
+    )
+
+    expect(merged.mode).toBe('scenic')
+    expect(merged.backgroundImage).toBe('https://example.com/original.jpg')
+    expect(merged.scenicBackgroundBlur).toBe(12)
+    expect(merged.accent).toBe('#a78bfa')
+  })
 })

@@ -14,6 +14,7 @@ import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopover'
 import { useTheme } from '@/context/ThemeContext'
 import { useAppShellContext } from '@/context/AppShellContext'
@@ -100,10 +101,23 @@ const SOLID_SCENIC_BACKGROUNDS = {
 
 type ScenicBackgroundType = 'image' | keyof typeof SOLID_SCENIC_BACKGROUNDS
 const DEFAULT_SCENIC_BACKGROUND_OPACITY = 1
+const DEFAULT_SCENIC_BACKGROUND_CONTRAST = 1
+const DEFAULT_SCENIC_BACKGROUND_BLUR = 0
+const TRANSLUCENT_SIDEBAR_VALUE = 'color-mix(in srgb, var(--background) 65%, transparent)'
 
 function createSolidBackgroundDataUrl(color: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="${color}"/></svg>`
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+
+function toHexColorOrFallback(color: string | undefined, fallback: string): string {
+  if (!color) return fallback
+  const normalized = color.trim()
+  if (/^#[0-9a-fA-F]{6}$/.test(normalized)) return normalized
+  if (/^#[0-9a-fA-F]{3}$/.test(normalized)) {
+    return `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`
+  }
+  return fallback
 }
 
 function getScenicBackgroundType(backgroundImage: string | null | undefined): ScenicBackgroundType {
@@ -289,6 +303,13 @@ export default function AppearanceSettingsPage() {
   const scenicBackgroundType = getScenicBackgroundType(appTheme?.backgroundImage)
   const scenicBackgroundOpacity = appTheme?.scenicBackgroundOpacity ?? DEFAULT_SCENIC_BACKGROUND_OPACITY
   const scenicBackgroundOpacityPercent = Math.round(scenicBackgroundOpacity * 100)
+  const scenicBackgroundContrast = appTheme?.scenicBackgroundContrast ?? DEFAULT_SCENIC_BACKGROUND_CONTRAST
+  const scenicBackgroundContrastPercent = Math.round(scenicBackgroundContrast * 100)
+  const scenicBackgroundBlur = appTheme?.scenicBackgroundBlur ?? DEFAULT_SCENIC_BACKGROUND_BLUR
+  const accentColor = toHexColorOrFallback(appTheme?.accent ?? resolvedTheme.accent, '#a78bfa')
+  const backgroundColor = toHexColorOrFallback(appTheme?.background ?? resolvedTheme.background, '#2d2d2b')
+  const foregroundColor = toHexColorOrFallback(appTheme?.foreground ?? resolvedTheme.foreground, '#f9f9f7')
+  const hasTranslucentSidebar = appTheme?.navigator === TRANSLUCENT_SIDEBAR_VALUE
   const scenicBackgroundPreview = scenicBackgroundType === 'image'
     ? (appTheme?.backgroundImage ?? resolvedTheme.backgroundImage ?? null)
     : SOLID_SCENIC_BACKGROUNDS[scenicBackgroundType]
@@ -369,6 +390,65 @@ export default function AppearanceSettingsPage() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       toast.error(t('settings.appearance.failedToSetBackgroundOpacity', { defaultValue: 'Failed to update background opacity.' }), {
+        description: message,
+      })
+    }
+  }, [appTheme, setAppTheme, t])
+
+  const handleScenicContrastChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const nextContrast = Number(event.target.value) / 100
+
+    try {
+      await setAppTheme(buildNextAppTheme(appTheme, {
+        scenicBackgroundContrast: Math.abs(nextContrast - DEFAULT_SCENIC_BACKGROUND_CONTRAST) < 0.001
+          ? undefined
+          : Number(nextContrast.toFixed(2)),
+      }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(t('settings.appearance.failedToSetBackgroundContrast', { defaultValue: 'Failed to update background contrast.' }), {
+        description: message,
+      })
+    }
+  }, [appTheme, setAppTheme, t])
+
+  const handleScenicBlurChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const nextBlur = Number(event.target.value)
+
+    try {
+      await setAppTheme(buildNextAppTheme(appTheme, {
+        scenicBackgroundBlur: nextBlur === DEFAULT_SCENIC_BACKGROUND_BLUR ? undefined : nextBlur,
+      }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(t('settings.appearance.failedToSetBackgroundBlur', { defaultValue: 'Failed to update background blur.' }), {
+        description: message,
+      })
+    }
+  }, [appTheme, setAppTheme, t])
+
+  const handleThemeColorChange = useCallback(async (
+    key: 'accent' | 'background' | 'foreground',
+    value: string
+  ) => {
+    try {
+      await setAppTheme(buildNextAppTheme(appTheme, { [key]: value }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(t('settings.appearance.failedToSaveThemeColor', { defaultValue: 'Failed to update theme color.' }), {
+        description: message,
+      })
+    }
+  }, [appTheme, setAppTheme, t])
+
+  const handleTranslucentSidebarChange = useCallback(async (checked: boolean) => {
+    try {
+      await setAppTheme(buildNextAppTheme(appTheme, {
+        navigator: checked ? TRANSLUCENT_SIDEBAR_VALUE : undefined,
+      }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(t('settings.appearance.failedToSetSidebarStyle', { defaultValue: 'Failed to update sidebar style.' }), {
         description: message,
       })
     }
@@ -459,6 +539,50 @@ export default function AppearanceSettingsPage() {
                           )}
                         </div>
                         <div className="min-w-0 flex-1 space-y-3">
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                            <label className="space-y-1.5">
+                              <span className="text-xs text-muted-foreground">
+                                {t('settings.appearance.accentColor', { defaultValue: 'Accent' })}
+                              </span>
+                              <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-2 border border-border/50">
+                                <input
+                                  type="color"
+                                  value={accentColor}
+                                  onChange={(event) => void handleThemeColorChange('accent', event.target.value)}
+                                  className="h-7 w-7 rounded-full border-0 bg-transparent p-0"
+                                />
+                                <span className="text-xs font-mono text-foreground">{accentColor}</span>
+                              </div>
+                            </label>
+                            <label className="space-y-1.5">
+                              <span className="text-xs text-muted-foreground">
+                                {t('settings.appearance.backgroundColor', { defaultValue: 'Background' })}
+                              </span>
+                              <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-2 border border-border/50">
+                                <input
+                                  type="color"
+                                  value={backgroundColor}
+                                  onChange={(event) => void handleThemeColorChange('background', event.target.value)}
+                                  className="h-7 w-7 rounded-full border-0 bg-transparent p-0"
+                                />
+                                <span className="text-xs font-mono text-foreground">{backgroundColor}</span>
+                              </div>
+                            </label>
+                            <label className="space-y-1.5">
+                              <span className="text-xs text-muted-foreground">
+                                {t('settings.appearance.foregroundColor', { defaultValue: 'Foreground' })}
+                              </span>
+                              <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-2 border border-border/50">
+                                <input
+                                  type="color"
+                                  value={foregroundColor}
+                                  onChange={(event) => void handleThemeColorChange('foreground', event.target.value)}
+                                  className="h-7 w-7 rounded-full border-0 bg-transparent p-0"
+                                />
+                                <span className="text-xs font-mono text-foreground">{foregroundColor}</span>
+                              </div>
+                            </label>
+                          </div>
                           <div>
                             <div className="text-sm font-medium text-foreground">
                               {t('settings.appearance.scenicBackgroundLabel', { defaultValue: 'Background image' })}
@@ -493,6 +617,58 @@ export default function AppearanceSettingsPage() {
                               value={scenicBackgroundOpacityPercent}
                               onChange={handleScenicOpacityChange}
                               className="w-full accent-[var(--accent)]"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-3 text-xs">
+                              <span className="text-muted-foreground">
+                                {t('settings.appearance.scenicBackgroundContrast', { defaultValue: 'Contrast' })}
+                              </span>
+                              <span className="font-medium text-foreground">
+                                {scenicBackgroundContrastPercent}%
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={50}
+                              max={150}
+                              step={1}
+                              value={scenicBackgroundContrastPercent}
+                              onChange={handleScenicContrastChange}
+                              className="w-full accent-[var(--accent)]"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-3 text-xs">
+                              <span className="text-muted-foreground">
+                                {t('settings.appearance.scenicBackgroundBlur', { defaultValue: 'Blur' })}
+                              </span>
+                              <span className="font-medium text-foreground">
+                                {scenicBackgroundBlur}px
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={24}
+                              step={1}
+                              value={scenicBackgroundBlur}
+                              onChange={handleScenicBlurChange}
+                              className="w-full accent-[var(--accent)]"
+                            />
+                          </div>
+                          <div className="flex items-center justify-between rounded-md border border-border/50 bg-muted/30 px-3 py-2.5">
+                            <div>
+                              <div className="text-sm font-medium text-foreground">
+                                {t('settings.appearance.translucentSidebar', { defaultValue: 'Translucent sidebar' })}
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                {t('settings.appearance.translucentSidebarDesc', { defaultValue: 'Make the left sidebar more transparent over the scenic background.' })}
+                              </div>
+                            </div>
+                            <Switch
+                              checked={hasTranslucentSidebar}
+                              onCheckedChange={handleTranslucentSidebarChange}
                             />
                           </div>
                           <div className="flex items-center gap-2">

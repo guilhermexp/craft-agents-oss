@@ -340,6 +340,7 @@ html[data-scenic]::before {
   background-position: center;
   background-repeat: no-repeat;
   opacity: var(--scenic-background-opacity, 1);
+  filter: blur(var(--scenic-background-blur, 0px)) contrast(var(--scenic-background-contrast, 1));
   z-index: -2;
   pointer-events: none;
 }
@@ -364,6 +365,7 @@ html[data-scenic][data-theme-override]::before {
   background-position: center;
   background-repeat: no-repeat;
   opacity: var(--scenic-background-opacity, 1);
+  filter: blur(var(--scenic-background-blur, 0px)) contrast(var(--scenic-background-contrast, 1));
 }
 
 /* Scenic mode: Make background color semi-transparent for glass effect

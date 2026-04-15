@@ -75,6 +75,18 @@ export interface ThemeOverrides extends ThemeColors, SurfaceColors {
    * Defaults to 1 when omitted.
    */
   scenicBackgroundOpacity?: number;
+
+  /**
+   * Contrast multiplier for the scenic background layer.
+   * Defaults to 1 when omitted.
+   */
+  scenicBackgroundContrast?: number;
+
+  /**
+   * Blur radius for the scenic background layer, in pixels.
+   * Defaults to 0 when omitted.
+   */
+  scenicBackgroundBlur?: number;
 }
 
 /**
@@ -122,6 +134,10 @@ function mergeThemes(
     result.backgroundImage = override.backgroundImage;
   if (override.scenicBackgroundOpacity !== undefined)
     result.scenicBackgroundOpacity = override.scenicBackgroundOpacity;
+  if (override.scenicBackgroundContrast !== undefined)
+    result.scenicBackgroundContrast = override.scenicBackgroundContrast;
+  if (override.scenicBackgroundBlur !== undefined)
+    result.scenicBackgroundBlur = override.scenicBackgroundBlur;
 
   // Deep merge dark overrides
   if (override.dark) {
@@ -240,6 +256,8 @@ export function themeToCSS(theme: ThemeOverrides, isDark: boolean = false): stri
   const mode = theme.mode || 'solid';
   vars.push(`--theme-mode: ${mode};`);
   vars.push(`--scenic-background-opacity: ${theme.scenicBackgroundOpacity ?? 1};`);
+  vars.push(`--scenic-background-contrast: ${theme.scenicBackgroundContrast ?? 1};`);
+  vars.push(`--scenic-background-blur: ${theme.scenicBackgroundBlur ?? 0}px;`);
 
   return vars.join('\n  ');
 }
