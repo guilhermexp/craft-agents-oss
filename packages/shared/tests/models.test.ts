@@ -68,7 +68,7 @@ describe('getModelShortName', () => {
 
   it('preserves version numbers for custom endpoint models', () => {
     expect(getModelShortName('gpt-5.4')).toBe('Gpt 5.4');
-    expect(getModelShortName('gpt-5.2')).toBe('Gpt 5.2');
+    expect(getModelShortName('gpt-5.4')).toBe('Gpt 5.4');
     expect(getModelShortName('glm-4.7')).toBe('Glm 4.7');
   });
 

@@ -36,36 +36,36 @@ describe('getMiniModel()', () => {
 
   it('finds mini for pi provider', () => {
     const conn = makeConnection('pi', [
-      'pi/gpt-5.2-codex',
-      'pi/gpt-5.1-codex-mini',
+      'pi/gpt-5.3-codex',
+      'pi/gpt-5.4-mini',
     ]);
-    expect(getMiniModel(conn)).toBe('pi/gpt-5.1-codex-mini');
+    expect(getMiniModel(conn)).toBe('pi/gpt-5.4-mini');
   });
 
   it('skips denied codex-mini-latest alias for pi provider', () => {
     const conn = makeConnection('pi', [
       'pi/codex-mini-latest',
-      'pi/gpt-5.1-codex-mini',
-      'pi/gpt-5.2-codex',
+      'pi/gpt-5.4-mini',
+      'pi/gpt-5.3-codex',
     ]);
-    expect(getMiniModel(conn)).toBe('pi/gpt-5.1-codex-mini');
+    expect(getMiniModel(conn)).toBe('pi/gpt-5.4-mini');
   });
 
   it('skips denied pi/codex-mini-latest alias for pi provider', () => {
     const conn = makeConnection('pi', [
       'pi/codex-mini-latest',
-      'pi/gpt-5.1-codex-mini',
+      'pi/gpt-5.4-mini',
       'pi/gpt-5.3-codex',
     ]);
-    expect(getMiniModel(conn)).toBe('pi/gpt-5.1-codex-mini');
+    expect(getMiniModel(conn)).toBe('pi/gpt-5.4-mini');
   });
 
   it('finds mini for pi_compat provider', () => {
     const conn = makeConnection('pi_compat', [
-      'openai/gpt-5.2-codex',
-      'openai/gpt-5.1-codex-mini',
+      'openai/gpt-5.3-codex',
+      'openai/gpt-5.4-mini',
     ]);
-    expect(getMiniModel(conn)).toBe('openai/gpt-5.1-codex-mini');
+    expect(getMiniModel(conn)).toBe('openai/gpt-5.4-mini');
   });
 
   // --- Pi fallback behavior ---

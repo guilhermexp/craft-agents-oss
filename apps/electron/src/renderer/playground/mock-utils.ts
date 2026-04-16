@@ -115,7 +115,7 @@ export const mockElectronAPI = {
         { id: 'anthropic/claude-opus-4.6', name: 'Claude Opus 4.6', costInput: 5, costOutput: 25, contextWindow: 200000, reasoning: true },
         { id: 'xai/grok-4', name: 'Grok 4', costInput: 6, costOutput: 18, contextWindow: 256000, reasoning: true },
         { id: 'anthropic/claude-sonnet-4.6', name: 'Claude Sonnet 4.6', costInput: 3, costOutput: 15, contextWindow: 200000, reasoning: true },
-        { id: 'openai/gpt-5.2-codex', name: 'GPT-5.2 Codex', costInput: 1.75, costOutput: 14, contextWindow: 400000, reasoning: false },
+        { id: 'openai/gpt-5.3-codex', name: 'GPT-5.3 Codex', costInput: 1.75, costOutput: 14, contextWindow: 400000, reasoning: false },
         { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro', costInput: 1.25, costOutput: 10, contextWindow: 1048576, reasoning: true },
         { id: 'openai/o3', name: 'OpenAI o3', costInput: 2, costOutput: 8, contextWindow: 200000, reasoning: true },
         { id: 'mistralai/mistral-large', name: 'Mistral Large', costInput: 2, costOutput: 6, contextWindow: 131072, reasoning: false },
@@ -156,7 +156,7 @@ export const mockElectronAPI = {
         { id: 'meta-llama/Llama-3.3-70B-Instruct', name: 'Llama 3.3 70B', costInput: 0.5, costOutput: 0.7, contextWindow: 131072, reasoning: false },
       ],
       'azure-openai-responses': [
-        { id: 'gpt-5.2', name: 'GPT-5.2', costInput: 1.75, costOutput: 14, contextWindow: 400000, reasoning: false },
+        { id: 'gpt-5.4', name: 'GPT-5.4', costInput: 1.75, costOutput: 14, contextWindow: 400000, reasoning: false },
         { id: 'gpt-4o', name: 'GPT-4o', costInput: 2.5, costOutput: 10, contextWindow: 128000, reasoning: false },
         { id: 'gpt-4o-mini', name: 'GPT-4o Mini', costInput: 0.15, costOutput: 0.6, contextWindow: 128000, reasoning: false },
       ],
@@ -173,7 +173,7 @@ export const mockElectronAPI = {
       'vercel-ai-gateway': [
         { id: 'anthropic/claude-opus-4.6', name: 'Claude Opus 4.6', costInput: 5, costOutput: 25, contextWindow: 200000, reasoning: true },
         { id: 'anthropic/claude-sonnet-4.6', name: 'Claude Sonnet 4.6', costInput: 3, costOutput: 15, contextWindow: 200000, reasoning: true },
-        { id: 'openai/gpt-5.2-codex', name: 'GPT-5.2 Codex', costInput: 1.75, costOutput: 14, contextWindow: 400000, reasoning: false },
+        { id: 'openai/gpt-5.3-codex', name: 'GPT-5.3 Codex', costInput: 1.75, costOutput: 14, contextWindow: 400000, reasoning: false },
       ],
     }
     const models = MOCK_MODELS[provider] ?? []

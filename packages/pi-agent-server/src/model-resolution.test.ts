@@ -63,11 +63,11 @@ describe('resolvePiModel', () => {
   describe('exact provider lookup', () => {
     it('returns exact match for piAuthProvider', () => {
       const registry = createMockRegistry({
-        openai: [{ id: 'gpt-5.2', name: 'GPT 5.2', provider: 'openai' }],
-        'azure-openai-responses': [{ id: 'gpt-5.2', name: 'GPT 5.2', provider: 'azure-openai-responses' }],
+        openai: [{ id: 'gpt-5.4', name: 'GPT 5.4', provider: 'openai' }],
+        'azure-openai-responses': [{ id: 'gpt-5.4', name: 'GPT 5.4', provider: 'azure-openai-responses' }],
       });
 
-      const result = resolvePiModel(registry, 'gpt-5.2', 'openai');
+      const result = resolvePiModel(registry, 'gpt-5.4', 'openai');
       expect(result).toBeDefined();
       expect(result!.provider).toBe('openai');
     });

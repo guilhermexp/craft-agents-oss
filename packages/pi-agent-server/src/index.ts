@@ -983,8 +983,6 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
   };
 
   const fallbackCandidates = [
-    'pi/gpt-5.1-codex-mini',
-    'pi/gpt-5-mini',
     initConfig.miniModel,
     getDefaultSummarizationModel(),
   ].filter((candidate): candidate is string => !!candidate && !isDeniedMiniModelId(candidate));
