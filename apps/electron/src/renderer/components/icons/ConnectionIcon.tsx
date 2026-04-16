@@ -12,7 +12,7 @@
  */
 
 import { Brain } from 'lucide-react'
-import { getProviderIcon } from '@/lib/provider-icons'
+import { getProviderIcon, getProviderIconThemeClassName } from '@/lib/provider-icons'
 import { getModelDisplayName } from '@config/models'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@craft-agent/ui'
 import type { LlmConnectionWithStatus } from '../../../shared/types'
@@ -34,6 +34,11 @@ export function ConnectionIcon({ connection, size = 16, className = '', showTool
     connection.baseUrl,
     connection.piAuthProvider
   )
+  const providerIconThemeClassName = getProviderIconThemeClassName(
+    connection.providerType || connection.type || '',
+    connection.baseUrl,
+    connection.piAuthProvider
+  )
 
   const iconElement = providerIcon ? (
     <img
@@ -41,7 +46,7 @@ export function ConnectionIcon({ connection, size = 16, className = '', showTool
       alt=""
       width={size}
       height={size}
-      className={`rounded-[3px] flex-shrink-0 ${className}`}
+      className={`rounded-[3px] flex-shrink-0 ${providerIconThemeClassName} ${className}`}
       style={{ width: size, height: size }}
     />
   ) : (

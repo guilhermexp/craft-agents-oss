@@ -11,6 +11,7 @@ import {
   type ThemeFile,
   type ShikiThemeConfig,
 } from '@config/theme'
+import { isScenicTheme } from './theme-mode'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 export type FontFamily = 'inter' | 'system'
@@ -272,7 +273,7 @@ export function ThemeProvider({
 
   // Determine scenic mode (background image with glass panels)
   const isScenic = useMemo(() => {
-    return resolvedTheme.mode === 'scenic' && !!resolvedTheme.backgroundImage
+    return isScenicTheme(resolvedTheme)
   }, [resolvedTheme])
 
   // Dark-only themes (e.g. Dracula) force dark mode regardless of system mode

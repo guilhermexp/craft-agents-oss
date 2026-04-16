@@ -18,6 +18,9 @@ import type { ExternalOpenAnnotationRequest } from '../annotations/use-annotatio
 import { FullscreenOverlayBase } from './FullscreenOverlayBase'
 import type { OverlayTypeBadge } from './FullscreenOverlayBaseHeader'
 import { AnnotatableMarkdownDocument } from './AnnotatableMarkdownDocument'
+import { getDocumentOverlayCardClassName } from './document-overlay-styles'
+
+export { getDocumentOverlayCardClassName } from './document-overlay-styles'
 
 export interface DocumentFormattedMarkdownOverlayProps {
   /** The content to display (markdown) */
@@ -91,7 +94,7 @@ export function DocumentFormattedMarkdownOverlay({
           Scrolling and gradient fade mask are handled by FullscreenOverlayBase. */}
       <div className="min-h-full flex flex-col justify-center px-6 py-16">
         {/* Content card - my-auto centers vertically when content is small, flows naturally when large */}
-        <div className="bg-background rounded-[16px] shadow-strong w-full max-w-[960px] h-fit mx-auto my-auto">
+        <div className={getDocumentOverlayCardClassName()}>
           {/* Plan header (variant="plan" only) */}
           {variant === 'plan' && (
             <div className="px-4 py-2 border-b border-border/30 flex items-center gap-2 bg-success/5 rounded-t-[16px]">

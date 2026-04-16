@@ -808,6 +808,14 @@ html.dark[data-scenic] .fullscreen-overlay-background {
   background: color-mix(in srgb, var(--foreground-3) 60%, transparent);
 }
 
+/* Scenic mode: Expanded document/markdown cards must stay fully readable.
+   Opt these overlays out of the translucent glass background used by normal panels. */
+html[data-scenic] .overlay-solid-surface {
+  background: var(--foreground-3);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 /* =============================================================================
    DISABLE ANIMATIONS FOR DIALOGS, DROPDOWNS, AND POPOVERS
 

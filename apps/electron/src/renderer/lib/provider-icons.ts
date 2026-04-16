@@ -204,3 +204,17 @@ export function getProviderIcon(
       return null
   }
 }
+
+export function getProviderIconThemeClassName(
+  providerType: LlmProviderType | string,
+  baseUrl?: string | null,
+  piAuthProvider?: string | null
+): string {
+  const resolvedIcon = getProviderIcon(providerType, baseUrl, piAuthProvider)
+
+  if (resolvedIcon === providerIcons.openai) {
+    return 'dark:invert'
+  }
+
+  return ''
+}
