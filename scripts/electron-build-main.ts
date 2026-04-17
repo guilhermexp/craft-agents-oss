@@ -288,6 +288,10 @@ async function main(): Promise<void> {
       "--platform=node",
       "--format=cjs",
       "--outfile=apps/electron/dist/main.cjs",
+      // Polyfill import.meta.url for ESM deps bundled into CJS (e.g. @mcpc-tech/acp-ai-provider).
+      // The banner declares a shared URL; define rewrites import.meta.url references to it.
+      '--banner:js=var __import_meta_url = require("url").pathToFileURL(__filename).href;',
+      "--define:import.meta.url=__import_meta_url",
       ...MAIN_PROCESS_EXTERNALS.map((pkg) => `--external:${pkg}`),
       ...buildDefines,
     ],
