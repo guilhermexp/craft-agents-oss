@@ -531,7 +531,6 @@ export default function AppearanceSettingsPage() {
                 )}
               </SettingsSection>
 
-              {showScenicBackgroundControls && (
               <SettingsSection
                 title={t('settings.appearance.scenicBackground', { defaultValue: 'Scenic Background' })}
                 description={t('settings.appearance.scenicBackgroundSectionDesc', { defaultValue: 'Customize background image, colors, and glass effects for the current theme.' })}
@@ -620,25 +619,27 @@ export default function AppearanceSettingsPage() {
                             />
                           </>
                         )}
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between gap-3 text-xs">
-                            <span className="text-muted-foreground">
-                              {t('settings.appearance.scenicBackgroundOpacity', { defaultValue: 'Opacity' })}
-                            </span>
-                            <span className="font-medium text-foreground">
-                              {scenicBackgroundOpacityPercent}%
-                            </span>
+                        {showScenicBackgroundControls && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-3 text-xs">
+                              <span className="text-muted-foreground">
+                                {t('settings.appearance.scenicBackgroundOpacity', { defaultValue: 'Opacity' })}
+                              </span>
+                              <span className="font-medium text-foreground">
+                                {scenicBackgroundOpacityPercent}%
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              step={1}
+                              value={scenicBackgroundOpacityPercent}
+                              onChange={handleScenicOpacityChange}
+                              className="w-full accent-[var(--accent)]"
+                            />
                           </div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={100}
-                            step={1}
-                            value={scenicBackgroundOpacityPercent}
-                            onChange={handleScenicOpacityChange}
-                            className="w-full accent-[var(--accent)]"
-                          />
-                        </div>
+                        )}
                         <div className="space-y-2">
                           <div className="flex items-center justify-between gap-3 text-xs">
                             <span className="text-muted-foreground">
@@ -658,39 +659,43 @@ export default function AppearanceSettingsPage() {
                             className="w-full accent-[var(--accent)]"
                           />
                         </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between gap-3 text-xs">
-                            <span className="text-muted-foreground">
-                              {t('settings.appearance.scenicBackgroundBlur', { defaultValue: 'Blur' })}
-                            </span>
-                            <span className="font-medium text-foreground">
-                              {scenicBackgroundBlur}px
-                            </span>
-                          </div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={24}
-                            step={1}
-                            value={scenicBackgroundBlur}
-                            onChange={handleScenicBlurChange}
-                            className="w-full accent-[var(--accent)]"
-                          />
-                        </div>
-                        <div className="flex items-center justify-between rounded-md border border-border/50 bg-muted/30 px-3 py-2.5">
-                          <div>
-                            <div className="text-sm font-medium text-foreground">
-                              {t('settings.appearance.translucentSidebar', { defaultValue: 'Translucent sidebar' })}
+                        {showScenicBackgroundControls && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-3 text-xs">
+                              <span className="text-muted-foreground">
+                                {t('settings.appearance.scenicBackgroundBlur', { defaultValue: 'Blur' })}
+                              </span>
+                              <span className="font-medium text-foreground">
+                                {scenicBackgroundBlur}px
+                              </span>
                             </div>
-                            <div className="text-xs text-muted-foreground mt-0.5">
-                              {t('settings.appearance.translucentSidebarDesc', { defaultValue: 'Make the left sidebar more transparent over the scenic background.' })}
-                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={24}
+                              step={1}
+                              value={scenicBackgroundBlur}
+                              onChange={handleScenicBlurChange}
+                              className="w-full accent-[var(--accent)]"
+                            />
                           </div>
-                          <Switch
-                            checked={hasTranslucentSidebar}
-                            onCheckedChange={handleTranslucentSidebarChange}
-                          />
-                        </div>
+                        )}
+                        {showScenicBackgroundControls && (
+                          <div className="flex items-center justify-between rounded-md border border-border/50 bg-muted/30 px-3 py-2.5">
+                            <div>
+                              <div className="text-sm font-medium text-foreground">
+                                {t('settings.appearance.translucentSidebar', { defaultValue: 'Translucent sidebar' })}
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                {t('settings.appearance.translucentSidebarDesc', { defaultValue: 'Make the left sidebar more transparent over the scenic background.' })}
+                              </div>
+                            </div>
+                            <Switch
+                              checked={hasTranslucentSidebar}
+                              onCheckedChange={handleTranslucentSidebarChange}
+                            />
+                          </div>
+                        )}
                         {showScenicBackgroundControls && (
                           <div className="flex items-center gap-2">
                             <Button
@@ -713,7 +718,6 @@ export default function AppearanceSettingsPage() {
                   </SettingsCardContent>
                 </SettingsCard>
               </SettingsSection>
-              )}
 
               {/* Workspace Themes */}
               {workspaces.length > 0 && (

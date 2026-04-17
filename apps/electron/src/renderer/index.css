@@ -330,6 +330,14 @@ html[data-theme-mismatch]::before {
    Sets data-scenic="true" on <html> element.
 ============================================================================= */
 
+/* Global contrast: applies the same --scenic-background-contrast variable to the
+   whole app for non-scenic themes, so the Appearance contrast slider works for
+   any theme. Scenic themes still apply contrast to the bg image only via the
+   ::before rule below to avoid double-filtering the entire UI. */
+html:not([data-scenic]) #root {
+  filter: contrast(var(--scenic-background-contrast, 1));
+}
+
 /* Scenic mode: Background image layer */
 html[data-scenic]::before {
   content: '';
