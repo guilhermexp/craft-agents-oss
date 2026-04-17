@@ -150,8 +150,11 @@ const WEB_PREVIEWABLE_EXTENSIONS = new Set([
   'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico',
 ])
 
-/** True when running in web UI (browser) rather than Electron. */
-const isWebMode = window.electronAPI.getRuntimeEnvironment() === 'web'
+/** True when running in web UI (browser) rather than Electron.
+ *  Guarded because this evaluates at module load — in pure web bundles or
+ *  during HMR before the preload bridge is ready, `electronAPI` may be
+ *  undefined and dereferencing it would crash the entire renderer. */
+const isWebMode = window.electronAPI?.getRuntimeEnvironment?.() !== 'electron'
 
 /**
  * Constructs a thumbnail:// protocol URL for a given file path.
