@@ -32,14 +32,23 @@ else
     bun run dist:mac
 fi
 
-DMG="$ROOT_DIR/apps/electron/release/Craft-Agents-${ARCH}.dmg"
-if [ -f "$DMG" ]; then
-    echo ""
-    echo "=== DMG ready ==="
-    echo "Path: $DMG"
-    echo "Size: $(du -h "$DMG" | cut -f1)"
-    echo "SHA:  $(shasum -a 256 "$DMG" | cut -d' ' -f1)"
-else
+RELEASE_DIR="$ROOT_DIR/apps/electron/release"
+DMG="$RELEASE_DIR/Craft-Agents-${ARCH}.dmg"
+
+if [ ! -f "$DMG" ]; then
     echo "ERROR: DMG not found at $DMG"
     exit 1
 fi
+
+# Keep only the requested-arch DMG. electron-builder emits zips, blockmaps,
+# unpackaged app dirs (mac/, mac-arm64/), builder-debug.yml and latest-mac.yml
+# on every build — all noise for a local release artifact.
+echo ""
+echo "Cleaning build artifacts..."
+find "$RELEASE_DIR" -mindepth 1 -maxdepth 1 ! -name "Craft-Agents-${ARCH}.dmg" -exec rm -rf {} +
+
+echo ""
+echo "=== DMG ready ==="
+echo "Path: $DMG"
+echo "Size: $(du -h "$DMG" | cut -f1)"
+echo "SHA:  $(shasum -a 256 "$DMG" | cut -d' ' -f1)"
