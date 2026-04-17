@@ -531,6 +531,7 @@ export default function AppearanceSettingsPage() {
                 )}
               </SettingsSection>
 
+              {showScenicBackgroundControls && (
               <SettingsSection
                 title={t('settings.appearance.scenicBackground', { defaultValue: 'Scenic Background' })}
                 description={t('settings.appearance.scenicBackgroundSectionDesc', { defaultValue: 'Customize background image, colors, and glass effects for the current theme.' })}
@@ -712,6 +713,7 @@ export default function AppearanceSettingsPage() {
                   </SettingsCardContent>
                 </SettingsCard>
               </SettingsSection>
+              )}
 
               {/* Workspace Themes */}
               {workspaces.length > 0 && (
