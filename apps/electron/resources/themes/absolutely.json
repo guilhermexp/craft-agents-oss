@@ -1,0 +1,24 @@
+{
+  "name": "Absolutely",
+  "description": "Warm terracotta accent on a moody charcoal canvas",
+  "author": "Codex",
+  "license": "MIT",
+  "supportedModes": ["dark"],
+  "shikiTheme": {
+    "dark": "vitesse-dark"
+  },
+  "background": "#2d2d2b",
+  "foreground": "#f9f9f7",
+  "accent": "#cc7d5e",
+  "info": "#cc7d5e",
+  "success": "#00c853",
+  "destructive": "#ff5f38",
+  "dark": {
+    "background": "#2d2d2b",
+    "foreground": "#f9f9f7",
+    "accent": "#cc7d5e",
+    "info": "#cc7d5e",
+    "success": "#00c853",
+    "destructive": "#ff5f38"
+  }
+}
