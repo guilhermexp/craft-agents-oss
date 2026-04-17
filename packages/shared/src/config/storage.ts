@@ -1795,6 +1795,79 @@ function migrateWorkspaceOpus45ToOpus46(config: StoredConfig): void {
 }
 
 /**
+ * Migrate Opus 4.6 to Opus 4.7 for direct Anthropic connections (API key or OAuth).
+ * Only applies to anthropic provider type (not compat), as third-party providers
+ * may not support the new model ID yet.
+ */
+function migrateOpus46ToOpus47(config: StoredConfig): boolean {
+  if (!config.llmConnections) return false;
+
+  const OPUS_46_ID = 'claude-opus-4-6';
+  const OPUS_47_ID = 'claude-opus-4-7';
+
+  let changed = false;
+
+  for (const connection of config.llmConnections) {
+    if (connection.providerType !== 'anthropic') continue;
+
+    if (connection.defaultModel === OPUS_46_ID) {
+      connection.defaultModel = OPUS_47_ID;
+      changed = true;
+    }
+
+    if (connection.models && Array.isArray(connection.models)) {
+      const hasNew = connection.models.some(m =>
+        (typeof m === 'string' ? m : m.id) === OPUS_47_ID
+      );
+
+      if (hasNew) {
+        const before = connection.models.length;
+        connection.models = connection.models.filter(m =>
+          (typeof m === 'string' ? m : m.id) !== OPUS_46_ID
+        );
+        if (connection.models.length !== before) changed = true;
+      } else {
+        for (let i = 0; i < connection.models.length; i++) {
+          const model = connection.models[i];
+          if (typeof model === 'string' && model === OPUS_46_ID) {
+            connection.models[i] = OPUS_47_ID;
+            changed = true;
+          } else if (typeof model === 'object' && model.id === OPUS_46_ID) {
+            model.id = OPUS_47_ID;
+            if (model.name?.includes('4.6')) {
+              model.name = model.name.replace('4.6', '4.7');
+            }
+            changed = true;
+          }
+        }
+      }
+    }
+  }
+
+  return changed;
+}
+
+/**
+ * Migrate Opus 4.6 to Opus 4.7 in workspace default models.
+ */
+function migrateWorkspaceOpus46ToOpus47(config: StoredConfig): void {
+  if (!config.workspaces) return;
+
+  const OPUS_46_ID = 'claude-opus-4-6';
+  const OPUS_47_ID = 'claude-opus-4-7';
+
+  for (const workspace of config.workspaces) {
+    const wsConfig = loadWorkspaceConfig(workspace.rootPath);
+    if (!wsConfig?.defaults?.model) continue;
+
+    if (wsConfig.defaults.model === OPUS_46_ID) {
+      wsConfig.defaults.model = OPUS_47_ID;
+      saveWorkspaceConfig(workspace.rootPath, wsConfig);
+    }
+  }
+}
+
+/**
  * Migrate legacy provider types to the active set (anthropic, pi, pi_compat).
  *
  * 1. providerType==='bedrock' → 'pi' with piAuthProvider='amazon-bedrock'.
@@ -2062,7 +2135,13 @@ export function migrateLegacyLlmConnectionsConfig(): void {
     }
     // Phase 1g: Migrate Sonnet 4.5 → Sonnet 4.6 in workspace default models
     migrateWorkspaceSonnet45ToSonnet46(config);
-    // Phase 1h: Migrate legacy provider types (bedrock/vertex/anthropic_compat → pi/pi_compat)
+    // Phase 1h: Migrate Opus 4.6 → Opus 4.7 for direct Anthropic connections
+    if (migrateOpus46ToOpus47(config)) {
+      needsSave = true;
+    }
+    // Phase 1i: Migrate Opus 4.6 → Opus 4.7 in workspace default models
+    migrateWorkspaceOpus46ToOpus47(config);
+    // Phase 1j: Migrate legacy provider types (bedrock/vertex/anthropic_compat → pi/pi_compat)
     if (migrateLegacyProviderTypes(config)) {
       needsSave = true;
     }
