@@ -202,9 +202,35 @@ Enable console logging by checking the terminal where you ran `electron:start`. 
 
 DevTools opens automatically (configured in `index.ts`). Remove `mainWindow.webContents.openDevTools()` for production.
 
-## Current Limitations
+## Distribution Build
 
-1. **In development only** - No electron-builder config for distribution
+The app is packaged with [electron-builder](https://www.electron.build). The
+full flow for a macOS DMG lives in `scripts/build-dmg.sh` and is wrapped by
+`bun run release:mac` / `bun run release:mac:x64` at the repo root.
+
+```bash
+# Apple Silicon (default)
+bun run release:mac
+
+# Intel
+bun run release:mac:x64
+```
+
+Output: `apps/electron/release/Craft-Agents-${arch}.dmg`.
+
+**Gotchas to remember:**
+
+- `electron-builder.yml` excludes any `.venv/**` directory — packaging would
+  otherwise choke on the relative Python symlinks inside
+  `resources/vendor/hermes-agent/.venv/bin/`.
+- The main-process esbuild bundle injects an `__import_meta_url` banner
+  (`scripts/electron-build-main.ts`) because esbuild 0.28 leaves
+  `import.meta.url` undefined when bundling ESM → CJS, which breaks
+  `createRequire` calls in transitive deps like `@mcpc-tech/acp-ai-provider`.
+- `MAIN_PROCESS_EXTERNALS` is intentionally minimal (just `electron`). Adding
+  a package there means it must also be listed in the platform `extraResources`
+  of `electron-builder.yml`; otherwise it ends up `MODULE_NOT_FOUND` at
+  runtime because `!node_modules/**/*` prunes it from the app bundle.
 
 ## Implemented Features
 

@@ -67,6 +67,18 @@ Before submitting a PR, ensure all type checks pass:
 bun run typecheck:all
 ```
 
+### Dependency Updates
+
+Dependabot watches the repo and opens grouped PRs on the `deps` label (see
+`.github/dependabot.yml`). Patch-level bumps auto-merge via
+`.github/workflows/dependabot-automerge.yml` once the `validate` and
+`validate-server` checks pass; minor/major bumps wait for a human review. The
+`@anthropic-ai/claude-agent-sdk` package also auto-merges on minor bumps
+because the SDK is still on `0.2.x` and treats minor as effectively patch.
+
+To manually trigger a refresh (e.g. when a new Claude SDK drops before the
+daily cron): **Insights → Dependency graph → Dependabot → Check for updates**.
+
 ## Pull Request Process
 
 1. **Title**: Use a clear, descriptive title

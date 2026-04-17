@@ -81,6 +81,24 @@ bun install
 bun run electron:start
 ```
 
+### Build a Distributable DMG (macOS)
+
+```bash
+# Apple Silicon (default)
+bun run release:mac
+
+# Intel
+bun run release:mac:x64
+```
+
+The script wraps `apps/electron/scripts/build-dmg.sh`, auto-provisions a
+`python → python3` shim when needed, and prunes the release folder so only
+`apps/electron/release/Craft-Agents-${arch}.dmg` remains. Set
+`APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_TEAM_ID`, and
+`APPLE_APP_SPECIFIC_PASSWORD` in `.env` to produce a signed + notarized build;
+without them you still get a locally-signed DMG that opens via right-click →
+**Open** on first launch.
+
 ## Features
 
 - **Multi-Session Inbox**: Desktop app with session management, status workflow, and flagging
@@ -471,7 +489,7 @@ Additional providers are supported through the **Claude / Anthropic API Key** co
 
 | Provider | Endpoint | Notes |
 |----------|----------|-------|
-| **OpenRouter** | `https://openrouter.ai/api` | Access Claude, GPT, Llama, Gemini, and hundreds of other models through a single API key. Use `provider/model-name` format (e.g. `anthropic/claude-opus-4.6`). |
+| **OpenRouter** | `https://openrouter.ai/api` | Access Claude, GPT, Llama, Gemini, and hundreds of other models through a single API key. Use `provider/model-name` format (e.g. `anthropic/claude-opus-4.7`). |
 | **Vercel AI Gateway** | `https://ai-gateway.vercel.sh` | Route requests through Vercel's AI Gateway with built-in observability and caching. |
 | **Ollama** | `http://localhost:11434` | Run open-source models locally. No API key required. |
 | **Custom** | Any URL | Any OpenAI-compatible or Anthropic-compatible endpoint. |
