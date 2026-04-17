@@ -42,15 +42,15 @@ function ModeIcon({ mode, className }: { mode: PermissionMode; className?: strin
 
 const MODE_STYLES: Record<PermissionMode, { className: string; shadowVar: string }> = {
   safe: {
-    className: 'bg-foreground/5 text-foreground/60',
+    className: 'bg-foreground/5 text-foreground/70',
     shadowVar: 'var(--foreground-rgb)',
   },
   ask: {
-    className: 'bg-info/10 text-info',
+    className: 'bg-foreground/5 text-foreground/80',
     shadowVar: 'var(--info-rgb)',
   },
   'allow-all': {
-    className: 'bg-accent/5 text-accent',
+    className: 'bg-foreground/5 text-foreground/80',
     shadowVar: 'var(--accent-rgb)',
   },
 }

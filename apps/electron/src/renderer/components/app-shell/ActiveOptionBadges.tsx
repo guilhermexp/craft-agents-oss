@@ -452,21 +452,20 @@ function PermissionModeDropdown({ permissionMode, onPermissionModeChange, sessio
   // Get config for current mode (use optimistic state for instant UI update)
   const config = PERMISSION_MODE_CONFIG[optimisticMode]
 
-  // Mode-specific styling using CSS variables (theme-aware)
-  // - safe (Explore): foreground at 60% opacity - subtle, read-only feel
-  // - ask (Ask to Edit): info color - amber, prompts for edits
-  // - allow-all (Auto): accent color - purple, full autonomy
+  // Mode-specific styling. Icons already encode the mode, so the chip body
+  // stays neutral to avoid a "neon" look on themes with loud accents. The
+  // tinted outline still carries a subtle hint of the mode color.
   const modeStyles: Record<PermissionMode, { className: string; shadowVar: string }> = {
     'safe': {
-      className: 'bg-foreground/5 text-foreground/60',
+      className: 'bg-foreground/5 text-foreground/70',
       shadowVar: 'var(--foreground-rgb)',
     },
     'ask': {
-      className: 'bg-info/10 text-info',
+      className: 'bg-foreground/5 text-foreground/80',
       shadowVar: 'var(--info-rgb)',
     },
     'allow-all': {
-      className: 'bg-accent/5 text-accent',
+      className: 'bg-foreground/5 text-foreground/80',
       shadowVar: 'var(--accent-rgb)',
     },
   }
