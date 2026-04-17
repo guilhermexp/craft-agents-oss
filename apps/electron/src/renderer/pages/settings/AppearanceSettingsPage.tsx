@@ -173,6 +173,7 @@ export default function AppearanceSettingsPage() {
     effectiveColorTheme,
     themeLoadError,
     themeResolvedFrom,
+    isDark,
   } = useTheme()
   const { workspaces } = useAppShellContext()
 
@@ -315,15 +316,35 @@ export default function AppearanceSettingsPage() {
     return preset?.theme.name || colorTheme
   }, [colorTheme, presetThemes])
 
+  // Active preset's raw color values, used to display the active theme's
+  // intrinsic palette in the color editors (so switching themes shows each
+  // theme's own colors, not the persisted user override).
+  const activePresetTheme = useMemo(() => {
+    return presetThemes.find(t => t.id === effectiveColorTheme)?.theme
+  }, [presetThemes, effectiveColorTheme])
+  const presetMode = isDark ? activePresetTheme?.dark : undefined
+  const presetAccent = presetMode?.accent ?? activePresetTheme?.accent
+  const presetBackground = presetMode?.background ?? activePresetTheme?.background
+  const presetForeground = presetMode?.foreground ?? activePresetTheme?.foreground
+
+  const hasColorOverrides = Boolean(
+    appTheme?.accent || appTheme?.background || appTheme?.foreground
+      || appTheme?.dark?.accent || appTheme?.dark?.background || appTheme?.dark?.foreground
+  )
+
   const scenicBackgroundType = getScenicBackgroundType(appTheme?.backgroundImage)
   const scenicBackgroundOpacity = appTheme?.scenicBackgroundOpacity ?? DEFAULT_SCENIC_BACKGROUND_OPACITY
   const scenicBackgroundOpacityPercent = Math.round(scenicBackgroundOpacity * 100)
   const scenicBackgroundContrast = appTheme?.scenicBackgroundContrast ?? DEFAULT_SCENIC_BACKGROUND_CONTRAST
   const scenicBackgroundContrastPercent = Math.round(scenicBackgroundContrast * 100)
   const scenicBackgroundBlur = appTheme?.scenicBackgroundBlur ?? DEFAULT_SCENIC_BACKGROUND_BLUR
-  const accentColor = toHexColorOrFallback(appTheme?.accent ?? resolvedTheme.accent, '#a78bfa')
-  const backgroundColor = toHexColorOrFallback(appTheme?.background ?? resolvedTheme.background, '#2d2d2b')
-  const foregroundColor = toHexColorOrFallback(appTheme?.foreground ?? resolvedTheme.foreground, '#f9f9f7')
+  // Display priority: user override → active preset's color → resolved fallback.
+  // Falling back to the preset (instead of always showing the override) lets the
+  // editors reflect the active theme's intrinsic palette when no override is set,
+  // so switching themes actually changes the swatches.
+  const accentColor = toHexColorOrFallback(appTheme?.accent ?? presetAccent ?? resolvedTheme.accent, '#a78bfa')
+  const backgroundColor = toHexColorOrFallback(appTheme?.background ?? presetBackground ?? resolvedTheme.background, '#2d2d2b')
+  const foregroundColor = toHexColorOrFallback(appTheme?.foreground ?? presetForeground ?? resolvedTheme.foreground, '#f9f9f7')
   const hasTranslucentSidebar = appTheme?.navigator === TRANSLUCENT_SIDEBAR_VALUE
   const scenicBackgroundPreview = scenicBackgroundType === 'image'
     ? (appTheme?.backgroundImage ?? resolvedTheme.backgroundImage ?? null)
@@ -447,6 +468,27 @@ export default function AppearanceSettingsPage() {
   ) => {
     try {
       await setAppTheme(buildNextAppTheme(appTheme, { [key]: value }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(t('settings.appearance.failedToSaveThemeColor', { defaultValue: 'Failed to update theme color.' }), {
+        description: message,
+      })
+    }
+  }, [appTheme, setAppTheme, t])
+
+  // Clears every per-color override stored in appTheme so each preset shows
+  // its own accent/background/foreground without lingering customizations.
+  const handleResetThemeColors = useCallback(async () => {
+    try {
+      const next = buildNextAppTheme(appTheme, {
+        accent: undefined,
+        background: undefined,
+        foreground: undefined,
+      })
+      if (next?.dark) {
+        next.dark = { ...next.dark, accent: undefined, background: undefined, foreground: undefined }
+      }
+      await setAppTheme(next)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       toast.error(t('settings.appearance.failedToSaveThemeColor', { defaultValue: 'Failed to update theme color.' }), {
@@ -598,6 +640,13 @@ export default function AppearanceSettingsPage() {
                             </div>
                           </label>
                         </div>
+                        {hasColorOverrides && (
+                          <div className="flex justify-end">
+                            <Button variant="ghost" size="sm" onClick={handleResetThemeColors}>
+                              {t('settings.appearance.resetThemeColors', { defaultValue: 'Reset to theme defaults' })}
+                            </Button>
+                          </div>
+                        )}
                         {showScenicBackgroundControls && (
                           <>
                             <div>
