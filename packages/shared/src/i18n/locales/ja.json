@@ -606,6 +606,8 @@
   "settings.ai.workspaceThinkingOverride": "Workspace思考の上書き",
   "settings.app.description": "通知とアップデート",
   "settings.app.title": "アプリ",
+  "settings.appearance.autoExpandActivities": "アクティビティを自動展開",
+  "settings.appearance.autoExpandActivitiesDesc": "すべてのターンカードとツールアクティビティグループをデフォルトで展開して表示します。各項目は個別に折りたたむことができます。",
   "settings.appearance.colorTheme": "カラーテーマ",
   "settings.appearance.commandsHeader": "コマンド",
   "settings.appearance.connectionIcons": "接続アイコン",

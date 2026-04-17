@@ -545,6 +545,8 @@ export interface ElectronAPI {
   // Appearance settings
   getRichToolDescriptions(): Promise<boolean>
   setRichToolDescriptions(enabled: boolean): Promise<void>
+  getAutoExpandActivities(): Promise<boolean>
+  setAutoExpandActivities(enabled: boolean): Promise<void>
 
   // Prompt caching & context
   getExtendedPromptCache(): Promise<boolean>

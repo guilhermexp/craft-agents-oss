@@ -295,6 +295,8 @@ export const CHANNEL_MAP = {
   // Appearance settings
   getRichToolDescriptions: invoke(RPC_CHANNELS.appearance.GET_RICH_TOOL_DESCRIPTIONS),
   setRichToolDescriptions: invoke(RPC_CHANNELS.appearance.SET_RICH_TOOL_DESCRIPTIONS),
+  getAutoExpandActivities: invoke(RPC_CHANNELS.appearance.GET_AUTO_EXPAND_ACTIVITIES),
+  setAutoExpandActivities: invoke(RPC_CHANNELS.appearance.SET_AUTO_EXPAND_ACTIVITIES),
 
   // Tools settings
   getBrowserToolEnabled: invoke(RPC_CHANNELS.tools.GET_BROWSER_TOOL_ENABLED),

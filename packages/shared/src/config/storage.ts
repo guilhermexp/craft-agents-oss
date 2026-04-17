@@ -71,6 +71,8 @@ export interface StoredConfig {
   keepAwakeWhileRunning?: boolean;  // Prevent screen sleep while sessions are running (default: false)
   // Tool metadata
   richToolDescriptions?: boolean;  // Add intent/action metadata to all tool calls (default: true)
+  // Chat appearance
+  autoExpandActivities?: boolean;  // Auto-expand TurnCards and activity groups in the chat (default: false)
   // Tools
   browserToolEnabled?: boolean;  // Enable built-in browser tool (default: true). Disable for Playwright/Puppeteer.
   // Prompt caching & context
@@ -488,6 +490,25 @@ export function setEnable1MContext(enabled: boolean): void {
   const config = loadStoredConfig();
   if (!config) return;
   config.enable1MContext = enabled;
+  saveConfig(config);
+}
+
+/**
+ * Get whether TurnCards and their activity groups should auto-expand by default in chat.
+ * Defaults to false (collapsed) to preserve historical behavior.
+ */
+export function getAutoExpandActivities(): boolean {
+  const config = loadStoredConfig();
+  return config?.autoExpandActivities === true;
+}
+
+/**
+ * Set whether TurnCards and their activity groups should auto-expand by default in chat.
+ */
+export function setAutoExpandActivities(enabled: boolean): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  config.autoExpandActivities = enabled;
   saveConfig(config);
 }
 

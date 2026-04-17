@@ -309,6 +309,8 @@ export const RPC_CHANNELS = {
   appearance: {
     GET_RICH_TOOL_DESCRIPTIONS: 'appearance:getRichToolDescriptions',
     SET_RICH_TOOL_DESCRIPTIONS: 'appearance:setRichToolDescriptions',
+    GET_AUTO_EXPAND_ACTIVITIES: 'appearance:getAutoExpandActivities',
+    SET_AUTO_EXPAND_ACTIVITIES: 'appearance:setAutoExpandActivities',
   },
   tools: {
     GET_BROWSER_TOOL_ENABLED: 'tools:getBrowserToolEnabled',

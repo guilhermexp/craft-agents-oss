@@ -210,6 +210,19 @@ export default function AppearanceSettingsPage() {
     await window.electronAPI?.setRichToolDescriptions?.(checked)
   }, [])
 
+  // Auto-expand chat activities toggle (persisted in config.json, consumed by ChatDisplay)
+  const [autoExpandActivities, setAutoExpandActivities] = useState(false)
+  useEffect(() => {
+    window.electronAPI?.getAutoExpandActivities?.().then(setAutoExpandActivities)
+  }, [])
+  const handleAutoExpandActivitiesChange = useCallback(async (checked: boolean) => {
+    setAutoExpandActivities(checked)
+    await window.electronAPI?.setAutoExpandActivities?.(checked)
+    // Notify in-window listeners (ChatDisplay) so the change reflects without
+    // navigating away and back. AUTO_EXPAND_ACTIVITIES_EVENT is the agreed key.
+    window.dispatchEvent(new CustomEvent('autoExpandActivitiesChanged', { detail: checked }))
+  }, [])
+
   // Load preset themes on mount
   useEffect(() => {
     const loadThemes = async () => {
@@ -762,6 +775,12 @@ export default function AppearanceSettingsPage() {
                     description={t("settings.appearance.richToolDescriptionsDesc")}
                     checked={richToolDescriptions}
                     onCheckedChange={handleRichToolDescriptionsChange}
+                  />
+                  <SettingsToggle
+                    label={t("settings.appearance.autoExpandActivities")}
+                    description={t("settings.appearance.autoExpandActivitiesDesc")}
+                    checked={autoExpandActivities}
+                    onCheckedChange={handleAutoExpandActivitiesChange}
                   />
                 </SettingsCard>
               </SettingsSection>

@@ -311,6 +311,11 @@ export interface TurnCardProps {
   expandedActivityGroups?: Set<string>
   /** Callback when activity group expansion changes */
   onExpandedActivityGroupsChange?: (groups: Set<string>) => void
+  /**
+   * When true, activity groups default to expanded; the `expandedActivityGroups`
+   * Set then represents the IDs the user has explicitly collapsed.
+   */
+  autoExpand?: boolean
   /** Callback when file path is clicked */
   onOpenFile?: (path: string) => void
   /** Callback when URL is clicked */
@@ -1214,20 +1219,27 @@ interface ActivityGroupRowProps {
   sessionFolderPath?: string
   /** Display mode: 'detailed' shows all info, 'informative' hides MCP/API names and params */
   displayMode?: 'informative' | 'detailed'
+  /**
+   * When true, the default state is expanded and `expandedGroups` represents
+   * the IDs the user has explicitly collapsed (semantics inversion). The Set
+   * shape is unchanged; only the meaning flips.
+   */
+  autoExpand?: boolean
 }
 
 /**
  * Renders a Task subagent with its child activities grouped together.
  * Provides visual containment and collapsible children.
  */
-function ActivityGroupRow({ group, expandedGroups: externalExpandedGroups, onExpandedGroupsChange, onOpenActivityDetails, animationIndex = 0, sessionFolderPath, displayMode = 'detailed' }: ActivityGroupRowProps) {
+function ActivityGroupRow({ group, expandedGroups: externalExpandedGroups, onExpandedGroupsChange, onOpenActivityDetails, animationIndex = 0, sessionFolderPath, displayMode = 'detailed', autoExpand = false }: ActivityGroupRowProps) {
   // Use local state if no controlled state provided
   const [localExpandedGroups, setLocalExpandedGroups] = useState<Set<string>>(new Set())
   const expandedGroups = externalExpandedGroups ?? localExpandedGroups
   const setExpandedGroups = onExpandedGroupsChange ?? setLocalExpandedGroups
 
   const groupId = group.parent.id
-  const isExpanded = expandedGroups.has(groupId)
+  // Set membership has inverted meaning under autoExpand: presence = collapsed.
+  const isExpanded = autoExpand ? !expandedGroups.has(groupId) : expandedGroups.has(groupId)
 
   const toggleExpanded = useCallback(() => {
     const next = new Set(expandedGroups)
@@ -2718,6 +2730,7 @@ export const TurnCard = React.memo(function TurnCard({
   onExpandedChange,
   expandedActivityGroups: externalExpandedActivityGroups,
   onExpandedActivityGroupsChange,
+  autoExpand = false,
   onOpenFile,
   onOpenUrl,
   onPopOut,
@@ -2997,6 +3010,7 @@ export const TurnCard = React.memo(function TurnCard({
                           animationIndex={index}
                           sessionFolderPath={sessionFolderPath}
                           displayMode={displayMode}
+                          autoExpand={autoExpand}
                         />
                       ) : (
                         <motion.div
@@ -3194,6 +3208,10 @@ export const TurnCard = React.memo(function TurnCard({
   // Re-render if expansion state changed
   if (prev.isExpanded !== next.isExpanded) return false
   if (prev.expandedActivityGroups !== next.expandedActivityGroups) return false
+
+  // Re-render when the autoExpand pref flips — it inverts the meaning of
+  // expandedActivityGroups and changes the default of newly-rendered groups.
+  if (prev.autoExpand !== next.autoExpand) return false
 
   // Re-render if isLastResponse changed (for Accept Plan button visibility)
   if (prev.isLastResponse !== next.isLastResponse) return false

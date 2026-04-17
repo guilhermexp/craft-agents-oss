@@ -606,6 +606,8 @@
   "settings.ai.workspaceThinkingOverride": "Workspace 思考覆盖",
   "settings.app.description": "通知和更新",
   "settings.app.title": "应用",
+  "settings.appearance.autoExpandActivities": "自动展开活动",
+  "settings.appearance.autoExpandActivitiesDesc": "默认展开每个轮次卡片和工具活动分组。仍可单独折叠特定项目。",
   "settings.appearance.colorTheme": "颜色主题",
   "settings.appearance.commandsHeader": "命令",
   "settings.appearance.connectionIcons": "连接图标",

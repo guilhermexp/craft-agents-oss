@@ -310,6 +310,18 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
     setEnable1MContext(enabled)
   })
 
+  // Get auto-expand chat activities setting
+  server.handle(RPC_CHANNELS.appearance.GET_AUTO_EXPAND_ACTIVITIES, async () => {
+    const { getAutoExpandActivities } = await import('@craft-agent/shared/config/storage')
+    return getAutoExpandActivities()
+  })
+
+  // Set auto-expand chat activities setting
+  server.handle(RPC_CHANNELS.appearance.SET_AUTO_EXPAND_ACTIVITIES, async (_ctx, enabled: boolean) => {
+    const { setAutoExpandActivities } = await import('@craft-agent/shared/config/storage')
+    setAutoExpandActivities(enabled)
+  })
+
   // ============================================================
   // Tools Settings
   // ============================================================

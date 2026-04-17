@@ -606,6 +606,8 @@
   "settings.ai.workspaceThinkingOverride": "anulación de razonamiento del Workspace",
   "settings.app.description": "Notificaciones y actualizaciones",
   "settings.app.title": "App",
+  "settings.appearance.autoExpandActivities": "Expandir actividades automáticamente",
+  "settings.appearance.autoExpandActivitiesDesc": "Muestra cada turno y grupo de actividades expandido por defecto. Aún puedes contraer elementos individualmente.",
   "settings.appearance.colorTheme": "Tema de color",
   "settings.appearance.commandsHeader": "Comandos",
   "settings.appearance.connectionIcons": "Iconos de conexión",

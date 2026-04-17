@@ -626,6 +626,8 @@
   "settings.ai.workspaceThinkingOverride": "nadpisanie myślenia Workspace",
   "settings.app.description": "Powiadomienia i aktualizacje",
   "settings.app.title": "Aplikacja",
+  "settings.appearance.autoExpandActivities": "Automatycznie rozwijaj aktywności",
+  "settings.appearance.autoExpandActivitiesDesc": "Domyślnie pokazuje rozwiniętą każdą kartę tury i grupę aktywności narzędzi. Pojedyncze elementy nadal można zwinąć.",
   "settings.appearance.colorTheme": "Motyw kolorystyczny",
   "settings.appearance.commandsHeader": "Polecenia",
   "settings.appearance.connectionIcons": "Ikony połączeń",

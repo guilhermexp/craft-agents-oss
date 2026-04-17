@@ -606,6 +606,8 @@
   "settings.ai.workspaceThinkingOverride": "workspace thinking override",
   "settings.app.description": "Notifications and updates",
   "settings.app.title": "App",
+  "settings.appearance.autoExpandActivities": "Auto-expand activities",
+  "settings.appearance.autoExpandActivitiesDesc": "Show every turn card and tool activity group expanded by default. You can still collapse individual items.",
   "settings.appearance.colorTheme": "Color theme",
   "settings.appearance.commandsHeader": "Commands",
   "settings.appearance.connectionIcons": "Connection icons",

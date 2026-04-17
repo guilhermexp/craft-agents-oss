@@ -606,6 +606,8 @@
   "settings.ai.workspaceThinkingOverride": "Workspace-Denküberschreibung",
   "settings.app.description": "Benachrichtigungen und Updates",
   "settings.app.title": "App",
+  "settings.appearance.autoExpandActivities": "Aktivitäten automatisch ausklappen",
+  "settings.appearance.autoExpandActivitiesDesc": "Jede Turn-Karte und Aktivitätsgruppe standardmäßig ausgeklappt anzeigen. Einzelne Elemente lassen sich weiterhin einklappen.",
   "settings.appearance.colorTheme": "Farbschema",
   "settings.appearance.commandsHeader": "Befehle",
   "settings.appearance.connectionIcons": "Verbindungssymbole",

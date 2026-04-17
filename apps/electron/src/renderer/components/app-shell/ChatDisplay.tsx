@@ -67,6 +67,7 @@ import { ChatInputZone, type StructuredInputState, type StructuredResponse, type
 import type { RichTextInputHandle } from "@/components/ui/rich-text-input"
 import { useBackgroundTasks } from "@/hooks/useBackgroundTasks"
 import { useTurnCardExpansion } from "@/hooks/useTurnCardExpansion"
+import { useAutoExpandActivities } from "@/hooks/useAutoExpandActivities"
 import { useNavigation } from "@/contexts/NavigationContext"
 import { useAppShellContext } from "@/context/AppShellContext"
 import { navigate, routes } from "@/lib/navigate"
@@ -607,13 +608,15 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     sessionId: session?.id ?? ''
   })
 
-  // TurnCard expansion state — persisted to localStorage across session switches
+  // TurnCard expansion state — persisted to localStorage across session switches.
+  // `autoExpand` flips the default for new turns/groups (collapsed → expanded).
+  const autoExpand = useAutoExpandActivities()
   const {
-    expandedTurns,
+    isTurnExpanded,
     toggleTurn,
     expandedActivityGroups,
     setExpandedActivityGroups,
-  } = useTurnCardExpansion(session?.id)
+  } = useTurnCardExpansion(session?.id, autoExpand)
 
 
   // ============================================================================
@@ -1697,7 +1700,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         intent={turn.intent}
                         isStreaming={turn.isStreaming}
                         isComplete={turn.isComplete}
-                        isExpanded={expandedTurns.has(assistantUiKey)}
+                        isExpanded={isTurnExpanded(assistantUiKey)}
+                        autoExpand={autoExpand}
                         onExpandedChange={(expanded) => toggleTurn(assistantUiKey, expanded)}
                         expandedActivityGroups={expandedActivityGroups}
                         onExpandedActivityGroupsChange={setExpandedActivityGroups}

@@ -606,6 +606,8 @@
   "settings.ai.workspaceThinkingOverride": "munkaterület gondolkodás-felülírás",
   "settings.app.description": "Értesítések és frissítések",
   "settings.app.title": "Alkalmazás",
+  "settings.appearance.autoExpandActivities": "Tevékenységek automatikus kibontása",
+  "settings.appearance.autoExpandActivitiesDesc": "Minden turn kártyát és eszköztevékenység-csoportot alapból kibontva mutat. Az egyes elemeket továbbra is összecsukhatod.",
   "settings.appearance.colorTheme": "Színtéma",
   "settings.appearance.commandsHeader": "Parancsok",
   "settings.appearance.connectionIcons": "Kapcsolat ikonok",
