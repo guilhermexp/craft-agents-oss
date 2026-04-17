@@ -1,0 +1,26 @@
+{
+  "name": "Vercel",
+  "description": "Monochrome Vercel/Codex palette with electric blue accent",
+  "author": "Vercel",
+  "license": "MIT",
+  "source": "https://vercel.com",
+  "supportedModes": ["light", "dark"],
+  "shikiTheme": {
+    "light": "github-light",
+    "dark": "github-dark"
+  },
+  "background": "#ffffff",
+  "foreground": "#171717",
+  "accent": "#006aff",
+  "info": "#A100F8",
+  "success": "#28A948",
+  "destructive": "#EB001D",
+  "dark": {
+    "background": "#000000",
+    "foreground": "#ededed",
+    "accent": "#006efe",
+    "info": "#9540D5",
+    "success": "#00AD3A",
+    "destructive": "#F13342"
+  }
+}
