@@ -365,7 +365,18 @@ export function ThemeProvider({
       root.style.removeProperty('--background-image')
     }
 
-  }, [presetTheme, resolvedMode, systemPreference, isScenic, resolvedTheme, isDarkFromMode])
+    // Visual brightness flag — `dark` Tailwind class follows the user-selected
+    // mode, but the rendered background can be dark even in light mode (e.g.
+    // dark-only presets, scenic backgrounds, or custom dark color overrides).
+    // Components that only need to know "is the background dark right now"
+    // (e.g. monochrome provider icons that need to invert) read this attribute.
+    if (isDark) {
+      root.dataset.themeBrightness = 'dark'
+    } else {
+      root.dataset.themeBrightness = 'light'
+    }
+
+  }, [presetTheme, resolvedMode, systemPreference, isScenic, resolvedTheme, isDarkFromMode, isDark])
 
   // Inject CSS variables
   useEffect(() => {

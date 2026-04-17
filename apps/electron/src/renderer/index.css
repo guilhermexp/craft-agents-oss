@@ -338,6 +338,15 @@ html:not([data-scenic]) #root {
   filter: contrast(var(--scenic-background-contrast, 1));
 }
 
+/* Provider/brand icons that ship as monochrome black SVGs (e.g. OpenAI). The
+   Tailwind `dark:invert` variant only fires when the html.dark class is set,
+   which doesn't cover dark-only presets in light mode or custom dark
+   overrides. Drive the inversion off the runtime visual brightness flag set
+   by ThemeContext so the icon stays readable on any dark background. */
+html[data-theme-brightness="dark"] .theme-aware-invert {
+  filter: invert(1);
+}
+
 /* Scenic mode: Background image layer */
 html[data-scenic]::before {
   content: '';

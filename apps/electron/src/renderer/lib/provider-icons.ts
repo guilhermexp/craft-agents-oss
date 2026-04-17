@@ -212,8 +212,18 @@ export function getProviderIconThemeClassName(
 ): string {
   const resolvedIcon = getProviderIcon(providerType, baseUrl, piAuthProvider)
 
-  if (resolvedIcon === providerIcons.openai) {
-    return 'dark:invert'
+  // Black-on-transparent monochrome marks that need to flip on dark
+  // backgrounds. `theme-aware-invert` is a custom class wired in
+  // index.css that uses the runtime `data-theme-brightness` attribute
+  // instead of Tailwind's `dark:` variant, so it also fires for
+  // dark-only presets and custom dark color overrides.
+  if (
+    resolvedIcon === providerIcons.openai
+    || resolvedIcon === providerIcons.openrouter
+    || resolvedIcon === providerIcons.vercel
+    || resolvedIcon === providerIcons.huggingface
+  ) {
+    return 'theme-aware-invert'
   }
 
   return ''
