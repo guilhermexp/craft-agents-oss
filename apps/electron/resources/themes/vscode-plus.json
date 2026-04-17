@@ -1,0 +1,25 @@
+{
+  "name": "VS Code Plus",
+  "description": "Classic VS Code Dark+ palette with the iconic blue accent",
+  "author": "Microsoft",
+  "license": "MIT",
+  "source": "https://github.com/microsoft/vscode",
+  "supportedModes": ["dark"],
+  "shikiTheme": {
+    "dark": "dark-plus"
+  },
+  "background": "#1e1e1e",
+  "foreground": "#d4d4d4",
+  "accent": "#007acc",
+  "info": "#000080",
+  "success": "#369432",
+  "destructive": "#f44747",
+  "dark": {
+    "background": "#1e1e1e",
+    "foreground": "#d4d4d4",
+    "accent": "#007acc",
+    "info": "#000080",
+    "success": "#369432",
+    "destructive": "#f44747"
+  }
+}
