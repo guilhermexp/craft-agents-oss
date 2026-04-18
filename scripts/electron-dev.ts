@@ -25,7 +25,7 @@ const IS_WINDOWS = process.platform === "win32";
 const BIN_EXT = IS_WINDOWS ? ".exe" : "";
 const VITE_BIN = join(ROOT_DIR, `node_modules/.bin/vite${BIN_EXT}`);
 const ELECTRON_BIN = join(ROOT_DIR, `node_modules/.bin/electron${BIN_EXT}`);
-const MAIN_PROCESS_EXTERNALS = ["electron", "@mcpc-tech/acp-ai-provider"];
+const MAIN_PROCESS_EXTERNALS = ["electron", "@mcpc-tech/acp-ai-provider", "bun:sqlite"];
 
 function resolveBuildPlatform(): Platform {
   if (process.platform === "darwin") return "darwin";

@@ -17,7 +17,7 @@ const SESSION_SERVER_DIR = join(ROOT_DIR, "packages/session-mcp-server");
 const SESSION_SERVER_OUTPUT = join(SESSION_SERVER_DIR, "dist/index.js");
 const PI_AGENT_SERVER_DIR = join(ROOT_DIR, "packages/pi-agent-server");
 const PI_AGENT_SERVER_OUTPUT = join(PI_AGENT_SERVER_DIR, "dist/index.js");
-const MAIN_PROCESS_EXTERNALS = ["electron"];
+const MAIN_PROCESS_EXTERNALS = ["electron", "bun:sqlite"];
 
 // Load .env file if it exists
 function loadEnvFile(): void {
