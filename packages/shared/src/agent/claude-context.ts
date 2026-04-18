@@ -324,5 +324,58 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
     // attachSessionSelfManagementBindings() — not part of the factory.
   };
 
+  // Memory callbacks (injected when feature flag is on)
+  // These are wired by the caller (ClaudeAgent) after context creation,
+  // since they depend on the MemoryStore instance from BaseAgent.
+
   return context;
+}
+
+/**
+ * Inject memory callbacks into an existing SessionToolContext.
+ * Called by BaseAgent/ClaudeAgent when CRAFT_FEATURE_MEMORY is enabled.
+ */
+export function injectMemoryCallbacks(
+  context: SessionToolContext,
+  memoryStore: import('../memory/memory-store.ts').MemoryStore,
+): void {
+  context.memoryStore = async (params) => {
+    if (params.action === 'upsert') {
+      return memoryStore.upsert({
+        target: params.target as 'agent' | 'user',
+        category: (params.category ?? 'knowledge') as any,
+        content: params.content ?? '',
+        tags: params.tags,
+      });
+    }
+    if (params.action === 'replace' && params.old_text && params.content) {
+      const all = memoryStore.getByTarget(params.target as 'agent' | 'user');
+      const match = all.find(m => m.content.includes(params.old_text!));
+      if (!match) throw new Error(`No memory matched '${params.old_text}'`);
+      memoryStore.delete(match.id);
+      return memoryStore.upsert({
+        target: params.target as 'agent' | 'user',
+        category: (params.category ?? match.category) as any,
+        content: params.content,
+        tags: params.tags,
+      });
+    }
+    if (params.action === 'remove' && params.old_text) {
+      const all = memoryStore.getByTarget(params.target as 'agent' | 'user');
+      const match = all.find(m => m.content.includes(params.old_text!));
+      if (!match) throw new Error(`No memory matched '${params.old_text}'`);
+      memoryStore.delete(match.id);
+      return { memory: match as any, wasReinforced: false };
+    }
+    throw new Error(`Invalid memory action: ${params.action}`);
+  };
+
+  context.memoryRecall = async (params) => {
+    return memoryStore.searchHybrid({
+      query: params.query,
+      target: params.target as any,
+      category: params.category as any,
+      limit: params.limit,
+    });
+  };
 }

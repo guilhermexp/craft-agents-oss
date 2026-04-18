@@ -329,6 +329,28 @@ export interface SessionToolContext {
   resolveStatus?(status: string): ResolvedStatusResult;
 
   // ============================================================
+  // Memory (for memory_store / memory_recall)
+  // ============================================================
+
+  /** Store a memory. Injected by backend when CRAFT_FEATURE_MEMORY is on. */
+  memoryStore?(params: {
+    action: 'upsert' | 'replace' | 'remove';
+    target: string;
+    category?: string;
+    content?: string;
+    old_text?: string;
+    tags?: string[];
+  }): Promise<{ memory: { id: string; reinforcementCount: number; content: string }; wasReinforced: boolean }>;
+
+  /** Recall memories by query. Injected by backend when CRAFT_FEATURE_MEMORY is on. */
+  memoryRecall?(params: {
+    query: string;
+    target?: string;
+    category?: string;
+    limit?: number;
+  }): Promise<Array<{ memory: { content: string; target: string; category: string; tags: string[] }; salienceScore: number }>>;
+
+  // ============================================================
   // Session Paths (for transform_data / render_template)
   // ============================================================
 

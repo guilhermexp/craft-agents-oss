@@ -8,6 +8,7 @@ Core business logic package for Craft Agent:
 
 ## Key folders
 - `src/agent/` — `claude-agent.ts`, `pi-agent.ts`, `base-agent.ts`, tools, permissions
+- `src/memory/` — persistent cross-session memory service (SQLite + FTS5, feature-flagged via `CRAFT_FEATURE_MEMORY`)
 - `src/sources/` — source storage/types/services
 - `src/sessions/` — session persistence/index
 - `src/config/` — config/preferences/theme/watcher
@@ -23,6 +24,8 @@ cd packages/shared && bun run tsc --noEmit
 - Permission modes are fixed: `safe`, `ask`, `allow-all`.
 - Source types are fixed: `mcp`, `api`, `local`.
 - Keep credential handling in `src/credentials/` pathways (no ad-hoc secret storage).
+- Memory database lives at `~/.craft-agent/memory.db` — not in credentials, as it stores user facts (not secrets).
+- Memory content is sanitized before storage AND stripped of fence tags before prompt injection — both layers are required.
 - Keep user-facing tool contracts backward-compatible where possible.
 
 ## Notes

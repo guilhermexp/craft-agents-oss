@@ -14,6 +14,7 @@
  */
 
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import type { AgentEvent } from '@craft-agent/core/types';
@@ -54,6 +55,12 @@ import { PathProcessor } from './core/path-processor.ts';
 import { ConfigWatcherManager, type ConfigWatcherManagerCallbacks } from './core/config-watcher-manager.ts';
 import { UsageTracker, type UsageUpdate } from './core/usage-tracker.ts';
 import { PrerequisiteManager } from './core/prerequisite-manager.ts';
+
+// Memory system
+import { isMemoryEnabled } from '../feature-flags.ts';
+import { MemoryStore } from '../memory/memory-store.ts';
+import { MemoryContextBuilder } from '../memory/memory-context-builder.ts';
+import { ObservationPipeline } from '../memory/observation-pipeline.ts';
 
 // Automation system for agent events
 import type { AutomationSystem } from '../automations/automation-system.ts';
@@ -192,6 +199,11 @@ export abstract class BaseAgent implements AgentBackend {
   protected prerequisiteManager: PrerequisiteManager;
   protected automationSystem?: AutomationSystem;
 
+  // Memory system (feature-flagged)
+  protected memoryStore: MemoryStore | null = null;
+  protected memoryContextBuilder: MemoryContextBuilder | null = null;
+  protected observationPipeline: ObservationPipeline | null = null;
+
   // ============================================================
   // Additional State (protected for subclass access)
   // ============================================================
@@ -241,12 +253,14 @@ export abstract class BaseAgent implements AgentBackend {
     });
 
     // PromptBuilder: builds context blocks for user messages
+    // memoryContextBuilder is injected below if memory feature flag is on
     this.promptBuilder = new PromptBuilder({
       workspace: config.workspace,
       session: config.session,
       debugMode: config.debugMode,
       systemPromptPreset: config.systemPromptPreset,
       isHeadless: config.isHeadless,
+      contextWindow: contextWindow,
     });
 
     // PathProcessor: expands ~ and normalizes paths
@@ -267,6 +281,25 @@ export abstract class BaseAgent implements AgentBackend {
 
     // AutomationSystem: workspace-level automations from automations.json
     this.automationSystem = config.automationSystem;
+
+    // Memory system: persistent cross-session memory (feature-flagged)
+    if (isMemoryEnabled()) {
+      try {
+        const { mkdirSync } = require('node:fs');
+        const dbDir = join(homedir(), '.craft-agent');
+        mkdirSync(dbDir, { recursive: true });
+        const dbPath = join(dbDir, 'memory.db');
+        this.memoryStore = new MemoryStore(dbPath);
+        this.memoryStore.initialize();
+        this.memoryContextBuilder = new MemoryContextBuilder(this.memoryStore);
+        this.observationPipeline = new ObservationPipeline(this.memoryStore);
+
+        // Inject into existing PromptBuilder (avoid recreating)
+        (this.promptBuilder as any).config.memoryContextBuilder = this.memoryContextBuilder;
+      } catch (err) {
+        this.debug?.(`[memory] Failed to initialize: ${err}`);
+      }
+    }
   }
 
   // ============================================================
@@ -847,6 +880,12 @@ ${formattedMessages}
     this.permissionManager.clearWhitelists();
     this.sourceManager.resetSeenSources();
     this.usageTracker.reset();
+
+    // Close memory store
+    if (this.memoryStore) {
+      try { this.memoryStore.close(); } catch { /* ignore */ }
+      this.memoryStore = null;
+    }
 
     // Disconnect MCP pool to avoid connection leaks
     if (this.config.mcpPool) {

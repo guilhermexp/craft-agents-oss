@@ -38,6 +38,8 @@ import { handleSetSessionLabels } from './handlers/set-session-labels.ts';
 import { handleSetSessionStatus } from './handlers/set-session-status.ts';
 import { handleGetSessionInfo } from './handlers/get-session-info.ts';
 import { handleListSessions } from './handlers/list-sessions.ts';
+import { handleMemoryStore } from './handlers/memory-store.ts';
+import { handleMemoryRecall } from './handlers/memory-recall.ts';
 
 // ============================================================
 // Canonical Zod Schemas
@@ -191,6 +193,23 @@ export const ListSessionsSchema = z.object({
   sortBy: z.enum(['recent', 'name', 'status']).optional().describe('Sort order (default: recent)'),
   limit: z.number().optional().describe('Max sessions to return (default 20, max 100)'),
   offset: z.number().optional().describe('Skip first N results (for pagination)'),
+});
+
+// Memory tools
+export const MemoryStoreSchema = z.object({
+  action: z.enum(['add', 'replace', 'remove']).describe('Action: add new, replace existing, or remove entry'),
+  target: z.enum(['agent', 'user']).describe("'user' for user profile, 'agent' for agent notes"),
+  category: z.enum(['profile', 'event', 'knowledge', 'behavior', 'skill']).describe('Memory category'),
+  content: z.string().optional().describe('Entry content (required for add/replace)'),
+  old_text: z.string().optional().describe('Unique substring to identify entry (required for replace/remove)'),
+  tags: z.array(z.string()).optional().describe('Tags for organization'),
+});
+
+export const MemoryRecallSchema = z.object({
+  query: z.string().describe('Search query to find relevant memories'),
+  target: z.enum(['agent', 'user']).optional().describe('Filter by target'),
+  category: z.enum(['profile', 'event', 'knowledge', 'behavior', 'skill']).optional().describe('Filter by category'),
+  limit: z.number().optional().describe('Max results (default 10)'),
 });
 
 // ============================================================
@@ -435,6 +454,26 @@ Call with no arguments to introspect your own session state.`,
 
 Use filters (status, label, search) to narrow results instead of fetching everything. Default limit is 20 sessions.
 Use get_session_info for full details on a specific session (list-then-detail pattern).`,
+
+  memory_store: `Save durable information to persistent memory that survives across sessions.
+
+WHEN TO SAVE (proactively, don't wait to be asked):
+- User corrects you or says "remember this"
+- User shares a preference, habit, or personal detail
+- You discover something about the environment (tools, project structure)
+- You learn a convention or workflow specific to this user's setup
+
+TWO TARGETS:
+- 'user': who the user is — name, role, preferences, communication style
+- 'agent': your notes — environment facts, project conventions, lessons learned
+
+ACTIONS: add (new entry), replace (update existing via old_text), remove (delete via old_text).
+Skip trivial info, task progress, or temporary state.`,
+
+  memory_recall: `Search persistent memory for relevant information from past sessions.
+
+Returns memories ranked by salience (relevance × reinforcement × recency).
+Use when you need context from previous conversations or to check what you know about the user/project.`,
 } as const;
 
 // ============================================================
@@ -505,12 +544,19 @@ export const SESSION_TOOL_DEFS: SessionToolDef[] = [
   { name: 'set_session_status', description: TOOL_DESCRIPTIONS.set_session_status, inputSchema: SetSessionStatusSchema, executionMode: 'registry', safeMode: 'block', handler: handleSetSessionStatus },
   { name: 'get_session_info', description: TOOL_DESCRIPTIONS.get_session_info, inputSchema: GetSessionInfoSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleGetSessionInfo },
   { name: 'list_sessions', description: TOOL_DESCRIPTIONS.list_sessions, inputSchema: ListSessionsSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleListSessions },
+  // Memory tools (feature-flagged — handlers gracefully degrade when memory is disabled)
+  { name: 'memory_store', description: TOOL_DESCRIPTIONS.memory_store, inputSchema: MemoryStoreSchema, executionMode: 'registry', safeMode: 'block', handler: handleMemoryStore },
+  { name: 'memory_recall', description: TOOL_DESCRIPTIONS.memory_recall, inputSchema: MemoryRecallSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleMemoryRecall },
 ];
 
 export interface SessionToolFilterOptions {
   /** Include the experimental send_developer_feedback tool. */
   includeDeveloperFeedback?: boolean;
+  /** Include memory tools (memory_store, memory_recall). */
+  includeMemory?: boolean;
 }
+
+const MEMORY_TOOL_NAMES = new Set(['memory_store', 'memory_recall']);
 
 /**
  * Return session tools with optional feature filtering.
@@ -520,9 +566,13 @@ export interface SessionToolFilterOptions {
  */
 export function getSessionToolDefs(options?: SessionToolFilterOptions): SessionToolDef[] {
   const includeDeveloperFeedback = options?.includeDeveloperFeedback ?? true;
+  const includeMemory = options?.includeMemory ?? false;
 
   return SESSION_TOOL_DEFS.filter(def => {
     if (!includeDeveloperFeedback && def.name === 'send_developer_feedback') {
+      return false;
+    }
+    if (!includeMemory && MEMORY_TOOL_NAMES.has(def.name)) {
       return false;
     }
     return true;

@@ -94,6 +94,10 @@ export interface PromptBuilderConfig {
   systemPromptPreset?: 'default' | 'mini' | string;
   /** Whether running in headless mode */
   isHeadless?: boolean;
+  /** Context window size for memory budget calculation */
+  contextWindow?: number;
+  /** Memory context builder (provided when memory feature flag is on) */
+  memoryContextBuilder?: import('../../memory/memory-context-builder.ts').MemoryContextBuilder;
 }
 
 /**

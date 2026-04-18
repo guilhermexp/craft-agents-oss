@@ -98,6 +98,16 @@ export class PromptBuilder {
       parts.push(workingDirContext);
     }
 
+    // Memory context (when feature flag is on)
+    if (this.config.memoryContextBuilder) {
+      const memCtx = this.config.memoryContextBuilder.buildContext({
+        availableTokens: this.config.contextWindow ?? 200_000,
+      });
+      if (memCtx.content) {
+        parts.push(`<memory-context>\n${memCtx.content}\n</memory-context>`);
+      }
+    }
+
     return parts;
   }
 

@@ -59,6 +59,12 @@ export function isEmbeddedServerEnabled(): boolean {
   return false;
 }
 
+export function isMemoryEnabled(): boolean {
+  const override = parseBooleanEnv(getEnv('CRAFT_FEATURE_MEMORY'));
+  if (override !== undefined) return override;
+  return false;
+}
+
 export const FEATURE_FLAGS = {
   /** Enable Opus 4.7 fast mode (speed:"fast" + beta header). 6x pricing. */
   fastMode: false,
@@ -86,5 +92,8 @@ export const FEATURE_FLAGS = {
    */
   get embeddedServer(): boolean {
     return isEmbeddedServerEnabled();
+  },
+  get memory(): boolean {
+    return isMemoryEnabled();
   },
 } as const;

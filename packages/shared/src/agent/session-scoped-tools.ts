@@ -18,7 +18,7 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { getSessionPlansPath, getSessionPath } from '../sessions/storage.ts';
 import { DOC_REFS } from '../docs/index.ts';
-import { createClaudeContext } from './claude-context.ts';
+import { createClaudeContext, injectMemoryCallbacks } from './claude-context.ts';
 import { basename } from 'node:path';
 
 // Import from session-tools-core: registry + schemas + base descriptions
@@ -217,7 +217,8 @@ const TOOL_DESCRIPTIONS: Record<string, string> = {
 export function getSessionScopedTools(
   sessionId: string,
   workspaceRootPath: string,
-  workspaceId?: string
+  workspaceId?: string,
+  options?: { memoryStore?: import('../memory/memory-store.ts').MemoryStore },
 ): ReturnType<typeof createSdkMcpServer> {
   const cacheKey = `${sessionId}::${workspaceRootPath}`;
 
@@ -244,6 +245,12 @@ export function getSessionScopedTools(
     // Attach session self-management bindings (lazy getters from callback registry)
     attachSessionSelfManagementBindings(ctx, sessionId);
 
+    // Inject memory callbacks if feature flag is on.
+    // The MemoryStore instance is passed via the options bag from ClaudeAgent.
+    if (FEATURE_FLAGS.memory && (options as any)?.memoryStore) {
+      injectMemoryCallbacks(ctx, (options as any).memoryStore);
+    }
+
     // Helper to create a tool from the canonical registry.
     // The `as any` on schema bridges a Zod generic-variance issue when .shape
     // types (ZodType<string>) flow into Record<string, ZodType<unknown>>.
@@ -261,7 +268,7 @@ export function getSessionScopedTools(
 
     // Create tools from the canonical registry — all tools with handlers.
     // Tool visibility is centrally filtered in session-tools-core to avoid backend drift.
-    tools = getSessionToolDefs({ includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback })
+    tools = getSessionToolDefs({ includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback, includeMemory: FEATURE_FLAGS.memory })
       .filter(def => def.handler !== null) // Skip backend-specific tools (call_llm)
       .map(def => registryTool(def.name, def.inputSchema.shape));
 
