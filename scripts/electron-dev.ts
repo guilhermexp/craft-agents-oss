@@ -4,7 +4,7 @@
  */
 
 import { spawn, type Subprocess } from "bun";
-import { existsSync, rmSync, cpSync, readFileSync, statSync, mkdirSync } from "fs";
+import { existsSync, rmSync, cpSync, readFileSync, writeFileSync, statSync, mkdirSync } from "fs";
 import { join, basename } from "path";
 import * as esbuild from "esbuild";
 import { downloadUv, type Platform, type Arch } from "./build/common";
@@ -25,7 +25,7 @@ const IS_WINDOWS = process.platform === "win32";
 const BIN_EXT = IS_WINDOWS ? ".exe" : "";
 const VITE_BIN = join(ROOT_DIR, `node_modules/.bin/vite${BIN_EXT}`);
 const ELECTRON_BIN = join(ROOT_DIR, `node_modules/.bin/electron${BIN_EXT}`);
-const MAIN_PROCESS_EXTERNALS = ["electron", "@mcpc-tech/acp-ai-provider", "bun:sqlite"];
+const MAIN_PROCESS_EXTERNALS = ["electron", "better-sqlite3", "bun:sqlite"];
 
 function resolveBuildPlatform(): Platform {
   if (process.platform === "darwin") return "darwin";
@@ -38,6 +38,39 @@ function resolveBuildArch(): Arch {
   if (process.arch === "arm64") return "arm64";
   if (process.arch === "x64") return "x64";
   throw new Error(`Unsupported architecture for uv bootstrap: ${process.arch}`);
+}
+
+// Rebuilds native modules (better-sqlite3) against Electron's Node ABI.
+// Bun's install writes the Node prebuild; Electron uses a different ABI (modules=136 for v41)
+// so we run electron-rebuild once per Electron version and cache via a marker file.
+async function ensureNativeModulesForElectron(): Promise<void> {
+  const electronPkgPath = join(ROOT_DIR, "node_modules/electron/package.json");
+  if (!existsSync(electronPkgPath)) return;
+  const electronVersion = JSON.parse(readFileSync(electronPkgPath, "utf-8")).version;
+
+  const markerDir = join(ROOT_DIR, "node_modules/.cache/craft-native-abi");
+  const markerPath = join(markerDir, "better-sqlite3");
+  const expected = `electron-${electronVersion}`;
+
+  if (existsSync(markerPath) && readFileSync(markerPath, "utf-8").trim() === expected) {
+    return;
+  }
+
+  console.log(`🔧 Rebuilding native modules for Electron ${electronVersion}...`);
+  const proc = spawn({
+    cmd: ["bun", "x", "electron-rebuild", "-f", "-w", "better-sqlite3", "--force-abi", "136"],
+    cwd: ROOT_DIR,
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    console.error("❌ Failed to rebuild native modules for Electron");
+    process.exit(exitCode);
+  }
+  mkdirSync(markerDir, { recursive: true });
+  writeFileSync(markerPath, expected);
+  console.log("✅ Native modules rebuilt for Electron");
 }
 
 async function ensureBundledUvForCurrentPlatform(): Promise<void> {
@@ -268,9 +301,18 @@ async function runEsbuild(
   entryPoint: string,
   outfile: string,
   defines: Record<string, string> = {},
-  options: { packagesExternal?: boolean } = {}
+  options: { packagesExternal?: boolean; polyfillImportMetaUrl?: boolean } = {}
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    // Polyfill import.meta.url for ESM deps bundled into CJS (e.g. @mcpc-tech/acp-ai-provider).
+    // Matches the banner+define pair used in scripts/electron-build-main.ts.
+    const banner = options.polyfillImportMetaUrl
+      ? { js: 'var __import_meta_url = require("url").pathToFileURL(__filename).href;' }
+      : undefined;
+    const mergedDefines = options.polyfillImportMetaUrl
+      ? { ...defines, "import.meta.url": "__import_meta_url" }
+      : defines;
+
     await esbuild.build({
       entryPoints: [join(ROOT_DIR, entryPoint)],
       bundle: true,
@@ -279,7 +321,8 @@ async function runEsbuild(
       outfile: join(ROOT_DIR, outfile),
       external: MAIN_PROCESS_EXTERNALS,
       ...(options.packagesExternal ? { packages: "external" as const } : {}),
-      define: defines,
+      ...(banner ? { banner } : {}),
+      define: mergedDefines,
       logLevel: "warning",
     });
     return { success: true };
@@ -374,6 +417,7 @@ async function main(): Promise<void> {
   }
 
   await ensureBundledUvForCurrentPlatform();
+  await ensureNativeModulesForElectron();
 
   copyResources();
 
@@ -405,7 +449,8 @@ async function main(): Promise<void> {
     runEsbuild(
       "apps/electron/src/main/index.ts",
       "apps/electron/dist/main.cjs",
-      oauthDefines
+      oauthDefines,
+      { polyfillImportMetaUrl: true }
     ),
     runEsbuild(
       "apps/electron/src/preload/bootstrap.ts",
@@ -512,7 +557,8 @@ async function main(): Promise<void> {
     format: "cjs",
     outfile: join(ROOT_DIR, "apps/electron/dist/main.cjs"),
     external: MAIN_PROCESS_EXTERNALS,
-    define: oauthDefines,
+    banner: { js: 'var __import_meta_url = require("url").pathToFileURL(__filename).href;' },
+    define: { ...oauthDefines, "import.meta.url": "__import_meta_url" },
     logLevel: "info",
   });
   await mainContext.watch();

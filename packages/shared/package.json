@@ -75,6 +75,7 @@
     "@mariozechner/pi-coding-agent": "0.66.1",
     "@mcpc-tech/acp-ai-provider": "^0.3.2",
     "ai": "^6.0.161",
+    "better-sqlite3": "^12.2.0",
     "bash-parser": "^0.5.0",
     "croner": "^10.0.1",
     "date-fns": "^4.1.0",
@@ -91,6 +92,7 @@
     "zod": ">=3.0.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
     "@types/shell-quote": "^1.7.5",
     "@types/uuid": "^11.0.0"
   }
