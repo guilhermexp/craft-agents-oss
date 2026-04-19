@@ -237,4 +237,70 @@ describe('BaseAgent', () => {
       expect(mode).toBe('allow-all');
     });
   });
+
+  describe('Memory observation', () => {
+    class ObservationTestAgent extends TestAgent {
+      setTurnUserMessage(message: string | null): void {
+        this.currentTurnUserMessage = message;
+      }
+
+      setObservationPipelineStub(
+        fn: (params: {
+          sessionId: string;
+          turnId: string;
+          userMessage: string;
+          assistantResponse: string;
+        }) => Promise<unknown[]>,
+      ): void {
+        this.observationPipeline = { processAssistantTurn: fn } as any;
+      }
+
+      async observeTurn(turnId: string, assistantResponse: string): Promise<void> {
+        await this.observeAssistantTurn(turnId, assistantResponse);
+      }
+    }
+
+    it('passes the raw user message into the observation pipeline', async () => {
+      const observationAgent = new ObservationTestAgent(createMockBackendConfig());
+      let captured:
+        | {
+          sessionId: string;
+          turnId: string;
+          userMessage: string;
+          assistantResponse: string;
+        }
+        | null = null;
+
+      observationAgent.setTurnUserMessage('raw user prompt');
+      observationAgent.setObservationPipelineStub(async (params) => {
+        captured = params;
+        return [];
+      });
+
+      await observationAgent.observeTurn('turn-123', 'final assistant response');
+
+      expect(captured).not.toBeNull();
+      expect(captured).toMatchObject({
+        sessionId: 'test-session-id',
+        turnId: 'turn-123',
+        userMessage: 'raw user prompt',
+        assistantResponse: 'final assistant response',
+      });
+    });
+
+    it('skips observation when the assistant response is blank', async () => {
+      const observationAgent = new ObservationTestAgent(createMockBackendConfig());
+      let called = false;
+
+      observationAgent.setTurnUserMessage('raw user prompt');
+      observationAgent.setObservationPipelineStub(async () => {
+        called = true;
+        return [];
+      });
+
+      await observationAgent.observeTurn('turn-123', '   ');
+
+      expect(called).toBe(false);
+    });
+  });
 });

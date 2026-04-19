@@ -686,9 +686,13 @@ export interface JsonSchemaToolDef {
 export function getToolDefsAsJsonSchema(opts?: {
   prefix?: string;
   includeDeveloperFeedback?: boolean;
+  includeMemory?: boolean;
 }): JsonSchemaToolDef[] {
   const prefix = opts?.prefix || '';
-  const defs = getSessionToolDefs({ includeDeveloperFeedback: opts?.includeDeveloperFeedback });
+  const defs = getSessionToolDefs({
+    includeDeveloperFeedback: opts?.includeDeveloperFeedback,
+    includeMemory: opts?.includeMemory,
+  });
 
   return defs.map(def => {
     // Explicit `as any` avoids TS2589 ("type instantiation is excessively deep")

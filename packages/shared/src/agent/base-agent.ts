@@ -58,7 +58,7 @@ import { PrerequisiteManager } from './core/prerequisite-manager.ts';
 
 // Memory system
 import { isMemoryEnabled } from '../feature-flags.ts';
-import { MemoryStore } from '../memory/memory-store.ts';
+import type { MemoryStore } from '../memory/memory-store.ts';
 import { MemoryContextBuilder } from '../memory/memory-context-builder.ts';
 import { ObservationPipeline } from '../memory/observation-pipeline.ts';
 
@@ -208,6 +208,7 @@ export abstract class BaseAgent implements AgentBackend {
   // Additional State (protected for subclass access)
   // ============================================================
   protected temporaryClarifications: string | null = null;
+  protected currentTurnUserMessage: string | null = null;
 
   // ============================================================
   // Callbacks (public for facade wiring)
@@ -286,13 +287,17 @@ export abstract class BaseAgent implements AgentBackend {
     if (isMemoryEnabled()) {
       try {
         const { mkdirSync } = require('node:fs');
+        const { MemoryStore } = require('../memory/memory-store.ts') as typeof import('../memory/memory-store.ts');
         const dbDir = join(homedir(), '.craft-agent');
         mkdirSync(dbDir, { recursive: true });
         const dbPath = join(dbDir, 'memory.db');
         this.memoryStore = new MemoryStore(dbPath);
         this.memoryStore.initialize();
         this.memoryContextBuilder = new MemoryContextBuilder(this.memoryStore);
-        this.observationPipeline = new ObservationPipeline(this.memoryStore);
+        this.observationPipeline = new ObservationPipeline(
+          this.memoryStore,
+          this.runMiniCompletion.bind(this),
+        );
 
         // Inject into existing PromptBuilder (avoid recreating)
         (this.promptBuilder as any).config.memoryContextBuilder = this.memoryContextBuilder;
@@ -1028,7 +1033,13 @@ ${formattedMessages}
     const messageParts = [branchSeedContext, transferredSessionContext, directive, cleanMessage].filter(Boolean);
     const effectiveMessage = messageParts.join('\n\n');
 
-    yield* this.chatImpl(effectiveMessage, attachments, options);
+    const previousTurnUserMessage = this.currentTurnUserMessage;
+    this.currentTurnUserMessage = cleanMessage;
+    try {
+      yield* this.chatImpl(effectiveMessage, attachments, options);
+    } finally {
+      this.currentTurnUserMessage = previousTurnUserMessage;
+    }
   }
 
   // ============================================================
@@ -1253,6 +1264,29 @@ ${formattedMessages}
    */
   getSummarizeCallback(): (prompt: string) => Promise<string | null> {
     return this.runMiniCompletion.bind(this);
+  }
+
+  protected async observeAssistantTurn(turnId: string, assistantResponse: string): Promise<void> {
+    if (!this.observationPipeline) return;
+
+    const trimmedResponse = assistantResponse.trim();
+    const userMessage = this.currentTurnUserMessage?.trim();
+    if (!trimmedResponse || !userMessage) return;
+
+    try {
+      const memories = await this.observationPipeline.processAssistantTurn({
+        sessionId: this.config.session?.id || this._sessionId,
+        turnId,
+        userMessage,
+        assistantResponse: trimmedResponse,
+      });
+
+      if (memories.length > 0) {
+        this.debug(`[memory] Auto-saved ${memories.length} memory item(s) from assistant turn`);
+      }
+    } catch (error) {
+      this.debug(`[memory] Observation pipeline failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 }
 

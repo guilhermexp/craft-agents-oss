@@ -63,6 +63,7 @@ function AttachmentBubble({ attachment, onRemove, disabled }: AttachmentBubblePr
   const isImage = attachment.type === 'image'
   const hasThumbnail = !!attachment.thumbnailBase64
   const hasImageBase64 = isImage && attachment.base64
+  const hasDistinctPath = attachment.path.trim().length > 0 && attachment.path !== attachment.name
 
   // For images, use full base64; for docs, use Quick Look thumbnail
   const imageSrc = hasImageBase64
@@ -90,21 +91,18 @@ function AttachmentBubble({ attachment, onRemove, disabled }: AttachmentBubblePr
         </button>
       )}
 
-      {isImage ? (
-        /* IMAGE: Square thumbnail only */
-        <div className="h-16 w-16 rounded-[8px] overflow-hidden bg-background shadow-minimal">
-          {imageSrc ? (
-            <img src={imageSrc} alt={attachment.name} className="h-full w-full object-cover" />
-          ) : (
-            <div className="h-full w-full flex items-center justify-center">
-              <ImageIcon className="h-5 w-5 text-muted-foreground" />
-            </div>
-          )}
-        </div>
-      ) : (
-        /* DOCUMENT: Bubble with thumbnail/icon + 2-line text */
-        <div className="h-16 flex items-center gap-2.5 rounded-[8px] bg-foreground/5 pl-1.5 pr-3">
-          {/* A4-like preview */}
+      <div className="h-16 flex items-center gap-2.5 rounded-[8px] bg-foreground/5 pl-1.5 pr-3 min-w-0 max-w-[420px]">
+        {isImage ? (
+          <div className="h-12 w-12 rounded-[6px] overflow-hidden bg-background shadow-minimal flex items-center justify-center shrink-0">
+            {imageSrc ? (
+              <img src={imageSrc} alt={attachment.name} className="h-full w-full object-cover" />
+            ) : (
+              <div className="h-full w-full flex items-center justify-center">
+                <ImageIcon className="h-5 w-5 text-muted-foreground" />
+              </div>
+            )}
+          </div>
+        ) : (
           <div className="h-12 w-9 rounded-[6px] overflow-hidden bg-background shadow-minimal flex items-center justify-center shrink-0">
             {hasThumbnail ? (
               <img
@@ -116,17 +114,22 @@ function AttachmentBubble({ attachment, onRemove, disabled }: AttachmentBubblePr
               <FileTypeIcon type={attachment.type} mimeType={attachment.mimeType} className="h-5 w-5" />
             )}
           </div>
-          {/* 2-line filename + type */}
-          <div className="flex flex-col min-w-0 max-w-[120px]">
-            <span className="text-xs font-medium line-clamp-2 break-all" title={attachment.name}>
-              {attachment.name}
+        )}
+
+        <div className="flex flex-col min-w-0">
+          <span className="text-xs font-medium line-clamp-1 break-all" title={attachment.name}>
+            {attachment.name}
+          </span>
+          <span className="text-[10px] text-muted-foreground line-clamp-1">
+            {getFileTypeLabel(attachment.type, attachment.mimeType, attachment.name)}
+          </span>
+          {hasDistinctPath && (
+            <span className="text-[10px] text-muted-foreground/80 line-clamp-1 break-all" title={attachment.path}>
+              {attachment.path}
             </span>
-            <span className="text-[10px] text-muted-foreground">
-              {getFileTypeLabel(attachment.type, attachment.mimeType, attachment.name)}
-            </span>
-          </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }

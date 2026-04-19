@@ -32,7 +32,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { isDeveloperFeedbackEnabled } from '@craft-agent/shared/feature-flags';
+import { isDeveloperFeedbackEnabled, isMemoryEnabled } from '@craft-agent/shared/feature-flags';
 // Import from session-tools-core
 import {
   type SessionToolContext,
@@ -261,6 +261,7 @@ function createCodexContext(config: SessionConfig): SessionToolContext {
 function createSessionTools(includeDeveloperFeedback: boolean): Tool[] {
   return getToolDefsAsJsonSchema({
     includeDeveloperFeedback,
+    includeMemory: isMemoryEnabled(),
   }).map(def => ({
     name: def.name,
     description: def.description,

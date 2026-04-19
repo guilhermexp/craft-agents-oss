@@ -43,6 +43,30 @@ describe('session tool filtering helpers', () => {
     expect(names.includes('send_developer_feedback')).toBe(false);
   });
 
+  it('excludes memory tools when includeMemory is false', () => {
+    const defs = getSessionToolDefs({ includeMemory: false });
+    const names = defs.map(d => d.name);
+
+    expect(names.includes('memory_store')).toBe(false);
+    expect(names.includes('memory_recall')).toBe(false);
+  });
+
+  it('includes memory tools when includeMemory is true', () => {
+    const defs = getSessionToolDefs({ includeMemory: true });
+    const names = defs.map(d => d.name);
+
+    expect(names.includes('memory_store')).toBe(true);
+    expect(names.includes('memory_recall')).toBe(true);
+  });
+
+  it('json schema conversion respects includeMemory filter', () => {
+    const defs = getToolDefsAsJsonSchema({ includeMemory: true });
+    const names = defs.map(d => d.name);
+
+    expect(names.includes('memory_store')).toBe(true);
+    expect(names.includes('memory_recall')).toBe(true);
+  });
+
   it('all canonical session tools declare safeMode metadata', () => {
     for (const def of SESSION_TOOL_DEFS) {
       expect(def.safeMode === 'allow' || def.safeMode === 'block').toBe(true);

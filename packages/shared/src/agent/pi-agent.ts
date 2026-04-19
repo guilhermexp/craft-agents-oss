@@ -202,6 +202,8 @@ export class PiAgent extends BaseAgent {
 
   // Current user message (for context in summarization)
   private currentUserMessage: string = '';
+  private lastFinalAssistantResponse: string | null = null;
+  private lastFinalAssistantTurnId: string | null = null;
 
   // Pool reference for convenience (from this.config.mcpPool)
   private get mcpPool(): McpClientPool | undefined { return this.config.mcpPool; }
@@ -992,11 +994,19 @@ export class PiAgent extends BaseAgent {
         });
       }
 
+      if (agentEvent.type === 'text_complete' && !agentEvent.isIntermediate) {
+        this.lastFinalAssistantResponse = agentEvent.text;
+        this.lastFinalAssistantTurnId = agentEvent.turnId ?? null;
+      }
+
       this.eventQueue.enqueue(agentEvent);
     }
 
     // Check for agent end (turn complete)
     if (eventType === 'agent_end') {
+      if (this.lastFinalAssistantTurnId && this.lastFinalAssistantResponse) {
+        void this.observeAssistantTurn(this.lastFinalAssistantTurnId, this.lastFinalAssistantResponse);
+      }
       this.eventQueue.complete();
     }
   }
@@ -1697,6 +1707,8 @@ export class PiAgent extends BaseAgent {
     this.abortReason = undefined;
     this.eventQueue.reset();
     this.currentUserMessage = message;
+    this.lastFinalAssistantResponse = null;
+    this.lastFinalAssistantTurnId = null;
     this.adapter.startTurn();
 
     // Fire UserPromptSubmit hook event (fire-and-forget)

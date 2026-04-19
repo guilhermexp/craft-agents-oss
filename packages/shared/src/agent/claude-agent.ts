@@ -488,6 +488,19 @@ export class ClaudeAgent extends BaseAgent {
     return this.config.workspace.rootPath;
   }
 
+  protected getSessionToolOptionsForCurrentAgent(): Parameters<typeof getSessionScopedTools>[3] {
+    return this.memoryStore ? { memoryStore: this.memoryStore } : undefined;
+  }
+
+  protected createSessionToolServer(sessionId: string): ReturnType<typeof getSessionScopedTools> {
+    return getSessionScopedTools(
+      sessionId,
+      this.workspaceRootPath,
+      undefined,
+      this.getSessionToolOptionsForCurrentAgent(),
+    );
+  }
+
   // Callback for permission requests - set by application to receive permission prompts
   public onPermissionRequest: ((request: {
     requestId: string;
@@ -840,7 +853,7 @@ export class ClaudeAgent extends BaseAgent {
       // Build full MCP servers set first, then filter for mini agents
       const fullMcpServers: Options['mcpServers'] = {
         // Session-scoped tools (SubmitPlan, source_test, update_user_preferences, transform_data, etc.)
-        session: getSessionScopedTools(sessionId, this.workspaceRootPath),
+        session: this.createSessionToolServer(sessionId),
         // Craft Agents documentation - always available for searching setup guides
         // This is a public Mintlify MCP server, no auth needed
         'craft-agents-docs': {
@@ -1377,6 +1390,8 @@ This is a branched conversation. All prior messages in this conversation are par
       // Process SDK messages and convert to AgentEvents
       const summarizeCallback = this.getSummarizeCallback();
       let receivedComplete = false;
+      let finalAssistantResponse: string | null = null;
+      let finalAssistantTurnId: string | null = null;
       // Track whether we received any assistant content (for empty response detection)
       // When SDK returns empty response (e.g., failed resume), we need to detect and recover
       let receivedAssistantContent = false;
@@ -1537,6 +1552,10 @@ This is a branched conversation. All prior messages in this conversation are par
             if (event.type === 'complete') {
               receivedComplete = true;
             }
+            if (event.type === 'text_complete' && !event.isIntermediate) {
+              finalAssistantResponse = event.text;
+              finalAssistantTurnId = event.turnId ?? null;
+            }
             yield event;
           }
         }
@@ -1599,7 +1618,15 @@ This is a branched conversation. All prior messages in this conversation are par
         // message_delta event that normally triggers text_complete (rare edge scenarios)
         const flushedEvent = this.eventAdapter.flushPending();
         if (flushedEvent) {
+          if (flushedEvent.type === 'text_complete' && !flushedEvent.isIntermediate) {
+            finalAssistantResponse = flushedEvent.text;
+            finalAssistantTurnId = flushedEvent.turnId ?? null;
+          }
           yield flushedEvent;
+        }
+
+        if (finalAssistantTurnId && finalAssistantResponse) {
+          void this.observeAssistantTurn(finalAssistantTurnId, finalAssistantResponse);
         }
 
         // Defensive: emit complete if SDK didn't send result message

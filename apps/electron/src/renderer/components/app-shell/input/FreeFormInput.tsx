@@ -1080,6 +1080,10 @@ export function FreeFormInput({
 
         let type: FileAttachment['type'] = 'unknown'
         const fileName = overrideName || file.name
+        const electronFilePath = (file as File & { path?: string }).path
+        const displayPath = electronFilePath && electronFilePath.trim().length > 0
+          ? electronFilePath
+          : fileName
         if (file.type.startsWith('image/')) type = 'image'
         else if (file.type === 'application/pdf') type = 'pdf'
         else if (file.type.includes('text') || fileName.match(/\.(txt|md|json|js|ts|tsx|py|css|html)$/i)) type = 'text'
@@ -1105,7 +1109,7 @@ export function FreeFormInput({
 
         resolve({
           type,
-          path: fileName,
+          path: displayPath,
           name: fileName,
           mimeType,
           base64,
