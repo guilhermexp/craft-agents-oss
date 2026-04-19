@@ -47,11 +47,11 @@ const MODE_STYLES: Record<PermissionMode, { className: string; shadowVar: string
   },
   ask: {
     className: 'bg-foreground/5 text-foreground/80',
-    shadowVar: 'var(--info-rgb)',
+    shadowVar: 'var(--foreground-rgb)',
   },
   'allow-all': {
     className: 'bg-foreground/5 text-foreground/80',
-    shadowVar: 'var(--accent-rgb)',
+    shadowVar: 'var(--foreground-rgb)',
   },
 }
 

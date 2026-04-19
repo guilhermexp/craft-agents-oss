@@ -462,11 +462,11 @@ function PermissionModeDropdown({ permissionMode, onPermissionModeChange, sessio
     },
     'ask': {
       className: 'bg-foreground/5 text-foreground/80',
-      shadowVar: 'var(--info-rgb)',
+      shadowVar: 'var(--foreground-rgb)',
     },
     'allow-all': {
       className: 'bg-foreground/5 text-foreground/80',
-      shadowVar: 'var(--accent-rgb)',
+      shadowVar: 'var(--foreground-rgb)',
     },
   }
   const currentStyle = modeStyles[optimisticMode]
