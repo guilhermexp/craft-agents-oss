@@ -29,6 +29,10 @@ export interface BuildConfig {
   electronDir: string;
 }
 
+function resolvePackagedResourcesDir(config: BuildConfig, resourcesDir?: string): string {
+  return resourcesDir ?? join(config.electronDir, 'resources');
+}
+
 /**
  * Bun version to bundle with the app.
  * Update this when upgrading Bun. Check latest at: https://github.com/oven-sh/bun/releases
@@ -417,11 +421,11 @@ export function copyInterceptorBundle(config: BuildConfig): void {
  * Copy Session MCP Server to packaged app resources.
  * The session server provides session-scoped tools (SubmitPlan, config_validate, etc.) for agent sessions.
  */
-export function copySessionServer(config: BuildConfig): void {
-  const { rootDir, electronDir } = config;
+export function copySessionServer(config: BuildConfig, resourcesDir?: string): void {
+  const { rootDir } = config;
 
   const sessionSource = join(rootDir, 'packages', 'session-mcp-server', 'dist', 'index.js');
-  const sessionDest = join(electronDir, 'resources', 'session-mcp-server', 'index.js');
+  const sessionDest = join(resolvePackagedResourcesDir(config, resourcesDir), 'session-mcp-server', 'index.js');
 
   if (!existsSync(sessionSource)) {
     console.warn(`Warning: Session server not found at ${sessionSource}. Session-scoped tools will not work.`);
@@ -448,11 +452,11 @@ function koffiPlatformDir(platform: Platform, arch: Arch): string {
  * node_modules at runtime. We copy the koffi npm package next to index.js
  * with only the target platform's native binary (~4MB instead of ~80MB).
  */
-export function copyPiAgentServer(config: BuildConfig): void {
-  const { rootDir, electronDir, platform, arch } = config;
+export function copyPiAgentServer(config: BuildConfig, resourcesDir?: string): void {
+  const { rootDir, platform, arch } = config;
 
   const piSourceDir = join(rootDir, 'packages', 'pi-agent-server', 'dist');
-  const piDestDir = join(electronDir, 'resources', 'pi-agent-server');
+  const piDestDir = join(resolvePackagedResourcesDir(config, resourcesDir), 'pi-agent-server');
 
   if (!existsSync(join(piSourceDir, 'index.js'))) {
     console.warn(`Warning: Pi agent server not found at ${piSourceDir}/index.js. Pi SDK sessions will not work.`);
@@ -499,6 +503,11 @@ export function copyPiAgentServer(config: BuildConfig): void {
     cpSync(join(koffiSource, 'build'), join(koffiDest, 'build'), { recursive: true });
     console.log('  Copied index.js + koffi (all platforms as fallback)');
   }
+}
+
+export function copyBundledSubprocessResources(config: BuildConfig, resourcesDir?: string): void {
+  copySessionServer(config, resourcesDir);
+  copyPiAgentServer(config, resourcesDir);
 }
 
 /**

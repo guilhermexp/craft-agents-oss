@@ -20,4 +20,10 @@ describe('interceptor packaging contract', () => {
     expect(linuxScript).toContain('interceptor-request-utils.ts');
     expect(winScript).toContain('interceptor-request-utils.ts');
   });
+
+  it('syncs packaged session/pi subprocesses into dist resources during asset copy', () => {
+    const copyAssetsScript = readRepoFile('apps/electron/scripts/copy-assets.ts');
+
+    expect(copyAssetsScript).toContain('copyBundledSubprocessResources');
+  });
 });
