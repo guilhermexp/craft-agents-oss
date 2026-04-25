@@ -16,13 +16,15 @@
 
 import http from 'node:http';
 import { createInterface } from 'node:readline';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { mkdirSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 // Pi SDK
 import {
   createAgentSession,
+  DefaultResourceLoader,
   SessionManager as PiSessionManager,
   AuthStorage as PiAuthStorage,
   ModelRegistry as PiModelRegistry,
@@ -105,6 +107,7 @@ interface InitMessage {
   customEndpoint?: { api: CustomEndpointApi; supportsImages?: boolean };
   customModels?: Array<string | { id: string; contextWindow?: number; supportsImages?: boolean }>;
   piAuth?: { provider: string; credential: PiCredential };
+  enableComputerUse?: boolean;
 }
 
 /** Messages from main process (stdin) */
@@ -200,6 +203,9 @@ let unsubscribeEvents: (() => void) | null = null;
 
 // Init config (set on 'init' message)
 let initConfig: Extract<InboundMessage, { type: 'init' }> | null = null;
+
+const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
+const COMPUTER_USE_PACKAGE_DIR = join(SERVER_DIR, 'pi-computer-use');
 
 // Mutable state
 let currentUserMessage = '';
@@ -524,6 +530,21 @@ async function ensureSession(): Promise<AgentSession> {
     const agentDir = initConfig.agentDir || join(initConfig.sessionPath, '.pi-agent');
     mkdirSync(agentDir, { recursive: true });
     sessionOptions.agentDir = agentDir;
+
+    if (initConfig.enableComputerUse && process.platform === 'darwin') {
+      if (existsSync(COMPUTER_USE_PACKAGE_DIR)) {
+        const resourceLoader = new DefaultResourceLoader({
+          cwd,
+          agentDir,
+          additionalExtensionPaths: [COMPUTER_USE_PACKAGE_DIR],
+        });
+        await resourceLoader.reload();
+        sessionOptions.resourceLoader = resourceLoader;
+        debugLog(`Enabled pi-computer-use package: ${COMPUTER_USE_PACKAGE_DIR}`);
+      } else {
+        debugLog(`pi-computer-use package not found at ${COMPUTER_USE_PACKAGE_DIR}; continuing without desktop computer-use`);
+      }
+    }
 
     // Session resume: use a per-Craft-session directory so the Pi SDK can
     // persist and resume its own session across subprocess restarts.

@@ -9,7 +9,7 @@
     "pi-agent-server": "./dist/index.js"
   },
   "scripts": {
-    "build": "bun build src/index.ts --outdir=dist --target=bun --format=esm --external koffi",
+    "build": "bun build src/index.ts --outdir=dist --target=bun --format=esm --external koffi && rm -rf dist/pi-computer-use && cp -R src/pi-computer-use dist/pi-computer-use",
     "validate": "bun run build",
     "typecheck": "bun run build"
   },
