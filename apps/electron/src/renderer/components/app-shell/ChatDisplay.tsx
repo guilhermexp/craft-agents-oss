@@ -74,6 +74,7 @@ import { navigate, routes } from "@/lib/navigate"
 import { CHAT_LAYOUT } from "@/config/layout"
 import { collectFileChangesFromActivities, getFirstFileChangeIdForActivity } from "@/lib/file-changes"
 import { resolveBranchNewPanelOption } from "./branching"
+import { handleErrorMessageAction } from "./error-message-actions"
 
 // ============================================================================
 // CSS Custom Highlight API helper
@@ -173,6 +174,10 @@ interface ChatDisplayProps {
   inputValue?: string
   /** Callback when input value changes */
   onInputChange?: (value: string) => void
+  /** Persisted attachment draft for this session (hydrated from disk in ChatPage) */
+  attachmentsValue?: FileAttachment[]
+  /** Callback when attachment draft changes (add, remove, clear on send) */
+  onAttachmentsChange?: (attachments: FileAttachment[]) => void
   // Source selection
   /** Available sources (enabled only) */
   sources?: LoadedSource[]
@@ -224,83 +229,12 @@ interface ChatDisplayProps {
   connectionUnavailable?: boolean
 }
 
-type PendingFollowUpAnnotation = {
-  messageId: string
-  annotationId: string
-  note: string
-  selectedText: string
-  createdAt: number
-  color?: string
-  meta?: Record<string, unknown>
-}
-
-function normalizeExcerptForMessage(text: string, maxLength = 280): string {
-  const normalized = normalizeFollowUpText(text)
-  if (normalized.length <= maxLength) return normalized
-  return `${normalized.slice(0, maxLength - 1).trimEnd()}…`
-}
-
-function formatFollowUpSection(
-  followUps: PendingFollowUpAnnotation[],
-  options?: { includeTopSeparator?: boolean }
-): string {
-  if (followUps.length === 0) return ''
-
-  const includeTopSeparator = options?.includeTopSeparator ?? true
-
-  const items = followUps.map((followUp, idx) => {
-    const quoteText = normalizeExcerptForMessage(followUp.selectedText)
-    return [
-      `> [#${idx + 1}] ${quoteText}`,
-      `→ ${followUp.note}`,
-    ].join('\n')
-  })
-
-  const body = ['**Follow-ups**', items.join('\n\n---\n\n')].join('\n\n')
-  return includeTopSeparator ? `---\n\n${body}` : body
-}
-
-function normalizeFollowUpsMarkdown(message: string): string {
-  const normalizedInput = message.replace(/\r\n/g, '\n')
-  const headingMatch = /(?:\*\*Follow-ups\*\*|Follow-up annotations:)/i.exec(normalizedInput)
-  if (!headingMatch || headingMatch.index == null) return message
-
-  const headingIndex = headingMatch.index
-  const beforeHeading = normalizedInput.slice(0, headingIndex).trimEnd()
-  const hasTrailingSeparator = /(?:^|\n)\s*---\s*$/.test(beforeHeading)
-  const sectionText = normalizedInput.slice(headingIndex)
-
-  // Remove heading and optional leading separator so we can parse items robustly.
-  const body = sectionText
-    .replace(/^\s*(?:---\s*)?(?:\*\*Follow-ups\*\*|Follow-up annotations:)\s*/i, '')
-
-  const itemRegex = />?\s*\[#(\d+)\]\s*([\s\S]*?)\s*→\s*([\s\S]*?)(?=(?:\s*---\s*>?\s*\[#\d+\])|$)/g
-  const parsedItems: Array<{ quote: string; note: string }> = []
-
-  for (const match of body.matchAll(itemRegex)) {
-    const quote = match[2]?.replace(/\s+/g, ' ').trim()
-    const note = match[3]?.replace(/\s+/g, ' ').trim()
-    if (!quote || !note) continue
-    parsedItems.push({ quote, note })
-  }
-
-  if (parsedItems.length === 0) {
-    return message
-  }
-
-  const rebuiltItems = parsedItems.map((item, idx) => [
-    `> [#${idx + 1}] ${item.quote}`,
-    `→ ${item.note}`,
-  ].join('\n'))
-
-  const includeTopSeparator = beforeHeading.length > 0 && !hasTrailingSeparator
-  const rebuiltBody = ['**Follow-ups**', rebuiltItems.join('\n\n---\n\n')].join('\n\n')
-  const rebuiltSection = includeTopSeparator
-    ? `---\n\n${rebuiltBody}`
-    : rebuiltBody
-
-  return beforeHeading.length > 0 ? `${beforeHeading}\n\n${rebuiltSection}` : rebuiltSection
-}
+import {
+  formatFollowUpSection,
+  normalizeFollowUpsMarkdown,
+  truncateForChipTooltip,
+  type PendingFollowUpAnnotation,
+} from './ChatDisplay.follow-ups'
 
 /**
  * Imperative handle exposed via forwardRef for navigation between matches
@@ -513,6 +447,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // Input value preservation
   inputValue,
   onInputChange,
+  attachmentsValue,
+  onAttachmentsChange,
   // Sources
   sources,
   onSourcesChange,
@@ -1137,8 +1073,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       messageId: followUp.messageId,
       annotationId: followUp.annotationId,
       index: idx + 1,
-      noteLabel: normalizeExcerptForMessage(followUp.note, 140),
-      selectedText: normalizeExcerptForMessage(followUp.selectedText, 260),
+      noteLabel: normalizeFollowUpText(followUp.note),
+      selectedText: truncateForChipTooltip(followUp.selectedText, 260),
       color: followUp.color,
     }))
   }, [pendingFollowUpAnnotations])
@@ -1622,6 +1558,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                             message={turn.message}
                             onOpenFile={onOpenFile}
                             onOpenUrl={onOpenUrl}
+                            sessionId={session?.id}
                             compactMode={compactMode}
                           />
                         </div>
@@ -1644,6 +1581,16 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                             message={turn.message}
                             onOpenFile={onOpenFile}
                             onOpenUrl={onOpenUrl}
+                            sessionId={session?.id}
+                            onRetry={turn.message.role === 'error' ? () => {
+                              const msgs = session?.messages
+                              if (!msgs) return
+                              const errorIdx = msgs.findIndex(m => m.id === turn.message.id)
+                              const lastUserMsg = msgs.slice(0, errorIdx).findLast(m => m.role === 'user')
+                              if (lastUserMsg) {
+                                onSendMessage(lastUserMsg.content)
+                              }
+                            } : undefined}
                           />
                         </div>
                       )
@@ -1929,6 +1876,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
               onStructuredResponse: handleStructuredResponse,
               inputValue,
               onInputChange,
+              attachmentsValue,
+              onAttachmentsChange,
               sources,
               enabledSourceSlugs: session.enabledSourceSlugs,
               onSourcesChange,
@@ -2107,6 +2056,7 @@ interface MessageBubbleProps {
   message: Message
   onOpenFile: (path: string) => void
   onOpenUrl: (url: string) => void
+  sessionId?: string
   /**
    * Markdown render mode for assistant messages
    * @default 'minimal'
@@ -2118,12 +2068,14 @@ interface MessageBubbleProps {
   onPopOut?: (message: Message) => void
   /** Compact mode - reduces padding for popover embedding */
   compactMode?: boolean
+  /** Callback to resend the user message that preceded an error */
+  onRetry?: () => void
 }
 
 /**
  * ErrorMessage - Separate component for error messages to allow useState hook
  */
-function ErrorMessage({ message, onOpenUrl }: { message: Message; onOpenUrl?: (url: string) => void }) {
+function ErrorMessage({ message, onOpenUrl, sessionId, onRetry }: { message: Message; onOpenUrl?: (url: string) => void; sessionId?: string; onRetry?: () => void }) {
   const { t } = useTranslation()
   const hasDetails = (message.errorDetails && message.errorDetails.length > 0) || message.errorOriginal
   const [detailsOpen, setDetailsOpen] = React.useState(false)
@@ -2154,14 +2106,11 @@ function ErrorMessage({ message, onOpenUrl }: { message: Message; onOpenUrl?: (u
               <button
                 key={action.key}
                 onClick={() => {
-                  if (action.action === 'open_url' && action.url && onOpenUrl) {
-                    onOpenUrl(action.url)
-                  } else if (action.action === 'settings') {
-                    navigate(routes.view.settings())
-                  } else if (action.action === 'retry') {
-                    // Focus the chat input so user can re-send
-                    document.querySelector<HTMLTextAreaElement>('[data-chat-input]')?.focus()
-                  }
+                  handleErrorMessageAction(action, {
+                    sessionId,
+                    onOpenUrl,
+                    onRetry,
+                  })
                 }}
                 className="text-xs px-2 py-0.5 rounded border border-destructive/20 text-destructive/70 hover:text-destructive hover:border-destructive/40 transition-colors"
               >
@@ -2203,9 +2152,11 @@ function MessageBubble({
   message,
   onOpenFile,
   onOpenUrl,
+  sessionId,
   renderMode = 'minimal',
   onPopOut,
   compactMode,
+  onRetry,
 }: MessageBubbleProps) {
   const { t } = useTranslation()
 
@@ -2270,7 +2221,7 @@ function MessageBubble({
 
   // === ERROR MESSAGE: Red bordered bubble with warning icon and collapsible details ===
   if (message.role === 'error') {
-    return <ErrorMessage message={message} onOpenUrl={onOpenUrl} />
+    return <ErrorMessage message={message} onOpenUrl={onOpenUrl} sessionId={sessionId} onRetry={onRetry} />
   }
 
   // === STATUS MESSAGE: Matches ProcessingIndicator layout for visual consistency ===
@@ -2355,6 +2306,7 @@ const MemoizedMessageBubble = React.memo(MessageBubble, (prev, next) => {
     prev.message.id === next.message.id &&
     prev.message.content === next.message.content &&
     prev.message.role === next.message.role &&
+    prev.sessionId === next.sessionId &&
     prev.compactMode === next.compactMode
   )
 })

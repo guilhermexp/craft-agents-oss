@@ -241,7 +241,7 @@ describe('BaseAgent', () => {
   describe('Memory observation', () => {
     class ObservationTestAgent extends TestAgent {
       setTurnUserMessage(message: string | null): void {
-        this.currentTurnUserMessage = message;
+        this.setCurrentTurnUserMessage(message);
       }
 
       setObservationPipelineStub(
@@ -301,6 +301,28 @@ describe('BaseAgent', () => {
       await observationAgent.observeTurn('turn-123', '   ');
 
       expect(called).toBe(false);
+    });
+  });
+
+  describe('Config Watcher', () => {
+    it('should not start config watcher when skipConfigWatcher is true', () => {
+      // Simulates the SessionManager scenario: isHeadless=false but server owns the watcher
+      const managedAgent = new TestAgent(createMockBackendConfig({
+        isHeadless: false,
+        skipConfigWatcher: true,
+      }));
+      // configWatcherManager should remain null — the guard in startConfigWatcher() returns early
+      expect(managedAgent.getConfigWatcherManager()).toBeNull();
+      managedAgent.destroy();
+    });
+
+    it('should not start config watcher when isHeadless is true (existing behavior)', () => {
+      // Simulates temp/headless agents — existing isHeadless guard still works
+      const headlessAgent = new TestAgent(createMockBackendConfig({
+        isHeadless: true,
+      }));
+      expect(headlessAgent.getConfigWatcherManager()).toBeNull();
+      headlessAgent.destroy();
     });
   });
 });

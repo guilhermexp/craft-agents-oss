@@ -74,7 +74,7 @@ function isExcludedPiModel(modelId: string): boolean {
 
 /**
  * Check if a Bedrock model ID is a bare Claude model without a region prefix.
- * Bare IDs like `anthropic.claude-opus-4-6-v1` are rejected by Bedrock which
+ * Bare IDs like `anthropic.claude-opus-4-7-v1` are rejected by Bedrock which
  * requires inference profile IDs with a region prefix (`us.`, `eu.`, `global.`).
  * The Pi SDK catalog includes proper regional variants, so filtering bare models
  * doesn't remove any usable entries.
@@ -137,6 +137,7 @@ const PI_PROVIDER_DISPLAY: Partial<Record<KnownProvider, { label: string; placeh
   'openrouter':             { label: 'OpenRouter',         placeholder: 'sk-or-...' },
   'groq':                   { label: 'Groq',               placeholder: 'gsk_...' },
   'mistral':                { label: 'Mistral',            placeholder: 'Paste your key here...' },
+  'deepseek':               { label: 'DeepSeek',           placeholder: 'sk-...' },
   'xai':                    { label: 'xAI (Grok)',         placeholder: 'xai-...' },
   'cerebras':               { label: 'Cerebras',           placeholder: 'csk-...' },
   'amazon-bedrock':         { label: 'Amazon Bedrock',     placeholder: 'AKIA...' },

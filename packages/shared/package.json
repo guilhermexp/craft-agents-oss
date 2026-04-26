@@ -1,6 +1,6 @@
 {
   "name": "@craft-agent/shared",
-  "version": "0.8.7",
+  "version": "0.8.12",
   "license": "Apache-2.0",
   "description": "Shared business logic for Craft Agents - agent, auth, config, credentials, MCP integration",
   "type": "module",
@@ -40,6 +40,7 @@
     "./icons": "./src/icons/index.ts",
     "./colors": "./src/colors/index.ts",
     "./utils/icon-constants": "./src/utils/icon-constants.ts",
+    "./utils/url-safety": "./src/utils/url-safety.ts",
     "./utils/workspace": "./src/utils/workspace.ts",
     "./utils/workspace-slug": "./src/utils/workspace-slug.ts",
     "./labels": "./src/labels/index.ts",
@@ -70,9 +71,9 @@
     "@craft-agent/session-tools-core": "workspace:*",
     "@isaacs/ttlcache": "^2.1.4",
     "@leeoniya/ufuzzy": "^1.0.19",
-    "@mariozechner/pi-agent-core": "0.66.1",
-    "@mariozechner/pi-ai": "0.66.1",
-    "@mariozechner/pi-coding-agent": "0.66.1",
+    "@mariozechner/pi-agent-core": "0.70.2",
+    "@mariozechner/pi-ai": "0.70.2",
+    "@mariozechner/pi-coding-agent": "0.70.2",
     "@mcpc-tech/acp-ai-provider": "^0.3.2",
     "ai": "^6.0.161",
     "better-sqlite3": "^12.2.0",
@@ -87,7 +88,7 @@
     "yaml": "^2.8.3"
   },
   "peerDependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.19",
+    "@anthropic-ai/claude-agent-sdk": "0.2.111",
     "@modelcontextprotocol/sdk": ">=1.0.0",
     "zod": ">=3.0.0"
   },

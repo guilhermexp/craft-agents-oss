@@ -15,28 +15,28 @@
 const BEDROCK_TO_BARE: Record<string, string> = {
   // US inference profile IDs (primary)
   'us.anthropic.claude-opus-4-7-v1': 'claude-opus-4-7',
-  'us.anthropic.claude-opus-4-6-v1': 'claude-opus-4-6',
   'us.anthropic.claude-sonnet-4-6': 'claude-sonnet-4-6',
   'us.anthropic.claude-haiku-4-5-20251001-v1:0': 'claude-haiku-4-5-20251001',
+  'us.anthropic.claude-opus-4-6-v1': 'claude-opus-4-6',
   'us.anthropic.claude-opus-4-5-20251101-v1:0': 'claude-opus-4-5-20251101',
   'us.anthropic.claude-sonnet-4-5-20250929-v1:0': 'claude-sonnet-4-5-20250929',
   // EU inference profile IDs
   'eu.anthropic.claude-opus-4-7-v1': 'claude-opus-4-7',
-  'eu.anthropic.claude-opus-4-6-v1': 'claude-opus-4-6',
   'eu.anthropic.claude-sonnet-4-6': 'claude-sonnet-4-6',
   'eu.anthropic.claude-haiku-4-5-20251001-v1:0': 'claude-haiku-4-5-20251001',
+  'eu.anthropic.claude-opus-4-6-v1': 'claude-opus-4-6',
   'eu.anthropic.claude-opus-4-5-20251101-v1:0': 'claude-opus-4-5-20251101',
   'eu.anthropic.claude-sonnet-4-5-20250929-v1:0': 'claude-sonnet-4-5-20250929',
   // Global inference profile IDs
   'global.anthropic.claude-opus-4-7-v1': 'claude-opus-4-7',
-  'global.anthropic.claude-opus-4-6-v1': 'claude-opus-4-6',
   'global.anthropic.claude-sonnet-4-6': 'claude-sonnet-4-6',
   'global.anthropic.claude-haiku-4-5-20251001-v1:0': 'claude-haiku-4-5-20251001',
+  'global.anthropic.claude-opus-4-6-v1': 'claude-opus-4-6',
   // Base IDs (no region prefix)
   'anthropic.claude-opus-4-7-v1': 'claude-opus-4-7',
-  'anthropic.claude-opus-4-6-v1': 'claude-opus-4-6',
   'anthropic.claude-sonnet-4-6': 'claude-sonnet-4-6',
   'anthropic.claude-haiku-4-5-20251001-v1:0': 'claude-haiku-4-5-20251001',
+  'anthropic.claude-opus-4-6-v1': 'claude-opus-4-6',
   'anthropic.claude-opus-4-5-20251101-v1:0': 'claude-opus-4-5-20251101',
   'anthropic.claude-sonnet-4-5-20250929-v1:0': 'claude-sonnet-4-5-20250929',
 };
@@ -97,6 +97,22 @@ export const MODEL_REGISTRY: ModelDefinition[] = [
     descriptionKey: 'model.opusDesc',
     provider: 'anthropic',
     contextWindow: 1_000_000,
+  },
+  // TODO(opus-4.6-sunset): remove this entry when Opus 4.6 is deprecated by
+  // Anthropic or we stop offering it. Also drop the related 4.6 pieces in
+  // llm-connections.ts PI_PREFERRED_DEFAULTS and the restoreOpus46ToAnthropicConnections
+  // migration in storage.ts (grep for TODO(opus-4.6-sunset) to find them all).
+  {
+    id: 'claude-opus-4-6',
+    name: 'Opus 4.6',
+    // shortName intentionally collides with 4.7. 4.7 is listed first, so
+    // findModelIdByShortName('Opus') keeps returning 4.7 — zero behavior
+    // change for callers that reference "Opus" abstractly.
+    shortName: 'Opus',
+    description: 'Previous Opus release',
+    descriptionKey: 'model.opusDesc',
+    provider: 'anthropic',
+    contextWindow: 200_000,
   },
   {
     id: 'claude-sonnet-4-6',

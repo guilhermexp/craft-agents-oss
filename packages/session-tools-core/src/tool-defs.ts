@@ -40,6 +40,8 @@ import { handleGetSessionInfo } from './handlers/get-session-info.ts';
 import { handleListSessions } from './handlers/list-sessions.ts';
 import { handleMemoryStore } from './handlers/memory-store.ts';
 import { handleMemoryRecall } from './handlers/memory-recall.ts';
+import { handleSendAgentMessage } from './handlers/send-agent-message.ts';
+import { handleListMessagingChannels, handleUnbindMessagingChannel } from './handlers/messaging.ts';
 
 // ============================================================
 // Canonical Zod Schemas
@@ -66,6 +68,12 @@ export const MermaidValidateSchema = z.object({
 
 export const SourceTestSchema = z.object({
   sourceSlug: z.string().describe('The slug of the source to test'),
+  autoEnable: z
+    .boolean()
+    .optional()
+    .describe(
+      'Automatically enable and activate the source in the current session on successful validation. Defaults to true. Pass false to keep pure validation behavior.'
+    ),
 });
 
 export const SourceOAuthTriggerSchema = z.object({
@@ -163,6 +171,8 @@ export const SpawnSessionSchema = z.object({
   model: z.string().optional().describe('Model ID override'),
   enabledSourceSlugs: z.array(z.string()).optional().describe('Source slugs to enable in the new session'),
   permissionMode: z.enum(['safe', 'ask', 'allow-all']).optional().describe('Permission mode for the new session'),
+  thinkingLevel: z.enum(['off', 'low', 'medium', 'high', 'xhigh', 'max']).optional()
+    .describe('Reasoning level for the new session. Silently ignored on non-reasoning models (e.g. gpt-4o, gemini-2.5-flash). Omit to inherit the workspace default.'),
   labels: z.array(z.string()).optional().describe('Labels for the new session'),
   workingDirectory: z.string().optional().describe('Working directory for the new session'),
   attachments: z.array(z.object({
@@ -210,6 +220,24 @@ export const MemoryRecallSchema = z.object({
   target: z.enum(['agent', 'user']).optional().describe('Filter by target'),
   category: z.enum(['profile', 'event', 'knowledge', 'behavior', 'skill']).optional().describe('Filter by category'),
   limit: z.number().optional().describe('Max results (default 10)'),
+});
+
+// Inter-session messaging
+export const SendAgentMessageSchema = z.object({
+  sessionId: z.string().describe('Target session ID to send the message to'),
+  message: z.string().describe('The message to send to the target session'),
+  attachments: z.array(z.object({
+    path: z.string().describe('Absolute file path on disk'),
+    name: z.string().optional().describe('Display name (defaults to file basename)'),
+  })).optional().describe('Files to include with the message'),
+});
+
+export const ListMessagingChannelsSchema = z.object({
+  sessionId: z.string().optional().describe('Session ID to list bindings for. Defaults to current session.'),
+});
+
+export const UnbindMessagingChannelSchema = z.object({
+  platform: z.enum(['telegram', 'whatsapp']).optional().describe('Platform to unbind. If omitted, unbinds all.'),
 });
 
 // ============================================================
@@ -261,14 +289,17 @@ Use this when:
 
 Returns validation result with specific error messages if invalid.`,
 
-  source_test: `Validate and test a source configuration.
+  source_test: `Validate, test, and (by default) activate a source configuration.
 
 **This tool performs:**
 1. **Schema validation**: Validates config.json structure
 2. **Icon handling**: Checks/downloads icon if configured
 3. **Completeness check**: Warns about missing guide.md/icon/tagline
 4. **Connection test**: Tests if the source is reachable
-5. **Auth status**: Checks if source is authenticated`,
+5. **Auth status**: Checks if source is authenticated
+6. **Auto-enable** (default): If validation passes, flip \`enabled: true\` in config (if needed) and activate the source in the running session so its tools become available without a restart.
+
+Pass \`autoEnable: false\` to keep pure validation behavior (no config or session mutations).`,
 
   source_oauth_trigger: `Start OAuth authentication for an MCP source.
 
@@ -428,6 +459,10 @@ Use this to delegate tasks to parallel sessions — research, analysis, drafts, 
 Call with help=true first to discover available connections, models, and sources.
 When spawning, the 'prompt' parameter is required.
 
+Optional overrides: \`model\`, \`llmConnection\`, \`permissionMode\`, \`thinkingLevel\`, \`enabledSourceSlugs\`, \`labels\`, \`workingDirectory\`. Omitted fields inherit from the spawning session or the workspace default.
+
+\`thinkingLevel\` is silently ignored on non-reasoning models (e.g. gpt-4o, gemini-2.5-flash) — the SDK drops the reasoning param rather than erroring. Use it when you want to force deeper reasoning on a supported model, or set it to \`off\` when spawning a session that doesn't need to think.
+
 The spawned session appears in the session list and runs fire-and-forget.
 Only use 'attachments' for existing file paths on disk — the tool reads them automatically.`,
 
@@ -474,6 +509,19 @@ Skip trivial info, task progress, or temporary state.`,
 
 Returns memories ranked by salience (relevance × reinforcement × recency).
 Use when you need context from previous conversations or to check what you know about the user/project.`,
+
+  send_agent_message: `Send a message to another session. The message is delivered with your session ID so the target can reply back.
+
+Use this to coordinate with spawned sessions, send follow-up instructions, or relay information between sessions.
+Use list_sessions to find session IDs, or use the sessionId returned by spawn_session.
+
+The target session receives your message with a sender envelope containing your session ID, so it can use send_agent_message to reply.`,
+
+  list_messaging_channels: `List messaging channels (Telegram, WhatsApp) bound to a session.
+Shows which external chat apps are connected and can send/receive messages.`,
+
+  unbind_messaging_channel: `Disconnect a messaging channel from the current session.
+Messages will no longer be forwarded between the chat app and this session.`,
 } as const;
 
 // ============================================================
@@ -547,6 +595,11 @@ export const SESSION_TOOL_DEFS: SessionToolDef[] = [
   // Memory tools (feature-flagged — handlers gracefully degrade when memory is disabled)
   { name: 'memory_store', description: TOOL_DESCRIPTIONS.memory_store, inputSchema: MemoryStoreSchema, executionMode: 'registry', safeMode: 'block', handler: handleMemoryStore },
   { name: 'memory_recall', description: TOOL_DESCRIPTIONS.memory_recall, inputSchema: MemoryRecallSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleMemoryRecall },
+  // Inter-session messaging
+  { name: 'send_agent_message', description: TOOL_DESCRIPTIONS.send_agent_message, inputSchema: SendAgentMessageSchema, executionMode: 'registry', safeMode: 'block', handler: handleSendAgentMessage },
+  // Messaging gateway tools
+  { name: 'list_messaging_channels', description: TOOL_DESCRIPTIONS.list_messaging_channels, inputSchema: ListMessagingChannelsSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleListMessagingChannels },
+  { name: 'unbind_messaging_channel', description: TOOL_DESCRIPTIONS.unbind_messaging_channel, inputSchema: UnbindMessagingChannelSchema, executionMode: 'registry', safeMode: 'block', handler: handleUnbindMessagingChannel },
 ];
 
 export interface SessionToolFilterOptions {
