@@ -82,7 +82,10 @@ function BrowserToolbarApp() {
   })
   const [themeColor, setThemeColor] = useState<string | null>(null)
   const [windowMenuOpen, setWindowMenuOpen] = useState(false)
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const menuContentRef = useRef<HTMLDivElement | null>(null)
+  const profileMenuContentRef = useRef<HTMLDivElement | null>(null)
+  const anyMenuOpen = windowMenuOpen || profileMenuOpen
 
   const api = window.browserToolbar
 
@@ -106,13 +109,14 @@ function BrowserToolbarApp() {
     if (!api) return
     return api.onForceCloseMenu(() => {
       setWindowMenuOpen(false)
+      setProfileMenuOpen(false)
     })
   }, [api])
 
   useEffect(() => {
     if (!api) return
 
-    if (!windowMenuOpen) {
+    if (!anyMenuOpen) {
       void api.setMenuGeometry(false, 0)
       return
     }
@@ -120,8 +124,9 @@ function BrowserToolbarApp() {
     // Prime expansion immediately to avoid a constrained first measurement.
     void api.setMenuGeometry(true, 120)
 
+    const activeRef = windowMenuOpen ? menuContentRef : profileMenuContentRef
     const sendGeometry = () => {
-      const height = Math.ceil(menuContentRef.current?.getBoundingClientRect().height ?? 0)
+      const height = Math.ceil(activeRef.current?.getBoundingClientRect().height ?? 0)
       void api.setMenuGeometry(true, height)
     }
 
@@ -130,8 +135,8 @@ function BrowserToolbarApp() {
       sendGeometry()
     })
 
-    if (menuContentRef.current) {
-      observer.observe(menuContentRef.current)
+    if (activeRef.current) {
+      observer.observe(activeRef.current)
     }
 
     return () => {
@@ -139,7 +144,7 @@ function BrowserToolbarApp() {
       observer.disconnect()
       void api.setMenuGeometry(false, 0)
     }
-  }, [api, windowMenuOpen])
+  }, [api, anyMenuOpen, windowMenuOpen])
 
   const handleNavigate = useCallback((url: string) => {
     void api?.navigate(url)
@@ -174,16 +179,17 @@ function BrowserToolbarApp() {
   return (
     <>
       {/*
-        Full-window outside-tap catcher while menu is open.
+        Full-window outside-tap catcher while any menu is open.
         Critical for draggable titlebar windows (Windows) where outside-click
         dismissal can be unreliable if events fall into app-region: drag zones.
       */}
-      {windowMenuOpen && (
+      {anyMenuOpen && (
         <div
           className="fixed inset-0 z-[90] titlebar-no-drag bg-black/[0.0039215686]"
           onPointerDown={(event) => {
             event.preventDefault()
             setWindowMenuOpen(false)
+            setProfileMenuOpen(false)
           }}
         />
       )}
@@ -204,8 +210,17 @@ function BrowserToolbarApp() {
               <ProfileMenu
                 current={state.profile}
                 profiles={state.availableProfiles ?? [state.profile]}
-                onSwitch={(id) => { void api?.switchProfile(id) }}
-                onManage={() => { void api?.requestProfileManagement() }}
+                open={profileMenuOpen}
+                onOpenChange={setProfileMenuOpen}
+                contentRef={profileMenuContentRef}
+                onSwitch={(id) => {
+                  setProfileMenuOpen(false)
+                  void api?.switchProfile(id)
+                }}
+                onManage={() => {
+                  setProfileMenuOpen(false)
+                  void api?.requestProfileManagement()
+                }}
               />
             )}
             <DropdownMenu open={windowMenuOpen} onOpenChange={setWindowMenuOpen}>
@@ -249,14 +264,24 @@ function BrowserToolbarApp() {
 interface ProfileMenuProps {
   current: ToolbarProfile
   profiles: ToolbarProfile[]
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  contentRef: React.MutableRefObject<HTMLDivElement | null>
   onSwitch: (id: string) => void
   onManage: () => void
 }
 
-function ProfileMenu({ current, profiles, onSwitch, onManage }: ProfileMenuProps) {
-  const [open, setOpen] = useState(false)
+function ProfileMenu({
+  current,
+  profiles,
+  open,
+  onOpenChange,
+  contentRef,
+  onSwitch,
+  onManage,
+}: ProfileMenuProps) {
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -269,11 +294,12 @@ function ProfileMenu({ current, profiles, onSwitch, onManage }: ProfileMenuProps
         </button>
       </DropdownMenuTrigger>
       <StyledDropdownMenuContent
+        ref={contentRef}
         align="end"
         side="bottom"
         sideOffset={6}
         minWidth="min-w-44"
-        className="titlebar-no-drag z-[110]"
+        className="titlebar-no-drag z-[110] max-h-none overflow-visible"
       >
         {profiles.map((p) => (
           <StyledDropdownMenuItem

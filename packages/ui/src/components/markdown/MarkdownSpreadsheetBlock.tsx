@@ -31,6 +31,7 @@ import { useScrollFade } from './useScrollFade'
 import { TableExportDropdown } from './TableExportDropdown'
 import { usePlatform } from '../../context/PlatformContext'
 import { useTranslation } from 'react-i18next'
+import { parseDelimitedTabularData, parseXlsxTabularData } from './tabular-preview'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -119,7 +120,7 @@ export interface MarkdownSpreadsheetBlockProps {
 
 export function MarkdownSpreadsheetBlock({ code, className }: MarkdownSpreadsheetBlockProps) {
   const { t } = useTranslation()
-  const { onReadFile } = usePlatform()
+  const { onReadFile, onReadFileBinary } = usePlatform()
 
   // Parse the inline JSON spec (may have src field for file-backed data)
   const spec = React.useMemo<SpreadsheetSpec | null>(() => {
@@ -140,10 +141,31 @@ export function MarkdownSpreadsheetBlock({ code, className }: MarkdownSpreadshee
   const [fileLoading, setFileLoading] = React.useState(false)
 
   React.useEffect(() => {
-    if (!spec?.src || !onReadFile) return
+    if (!spec?.src) return
+    const isXlsx = /\.xlsx$/i.test(spec.src)
+    if (isXlsx && !onReadFileBinary) return
+    if (!isXlsx && !onReadFile) return
+
     setFileLoading(true)
     setFileError(null)
-    onReadFile(spec.src)
+
+    if (isXlsx) {
+      const readBinary = onReadFileBinary
+      if (!readBinary) return
+      readBinary(spec.src)
+        .then((data) => {
+          setFileData(parseXlsxTabularData(data, spec.src))
+        })
+        .catch((err) => {
+          setFileError(err instanceof Error ? err.message : 'Failed to read spreadsheet file')
+        })
+        .finally(() => setFileLoading(false))
+      return
+    }
+
+    const readText = onReadFile
+    if (!readText) return
+    readText(spec.src)
       .then((content) => {
         try {
           const raw = JSON.parse(content)
@@ -160,14 +182,18 @@ export function MarkdownSpreadsheetBlock({ code, className }: MarkdownSpreadshee
             setFileError('File does not contain valid spreadsheet data')
           }
         } catch {
-          setFileError('Failed to parse data file as JSON')
+          if (/\.(csv|tsv)$/i.test(spec.src)) {
+            setFileData(parseDelimitedTabularData(content, spec.src))
+          } else {
+            setFileError('Failed to parse data file as JSON')
+          }
         }
       })
       .catch((err) => {
         setFileError(err instanceof Error ? err.message : 'Failed to read data file')
       })
       .finally(() => setFileLoading(false))
-  }, [spec?.src, onReadFile])
+  }, [spec?.src, onReadFile, onReadFileBinary])
 
   // Merge: inline spec takes precedence, file provides rows
   const parsed = React.useMemo<SpreadsheetData | null>(() => {

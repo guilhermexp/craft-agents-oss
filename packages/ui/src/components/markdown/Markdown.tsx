@@ -23,6 +23,8 @@ import { CollapsibleSection } from './CollapsibleSection'
 import { useCollapsibleMarkdown } from './CollapsibleMarkdownContext'
 import { wrapWithSafeProxy } from './safe-components'
 import { MARKDOWN_MATH_OPTIONS } from './math-options'
+import { buildPdfPreviewCodeFromPlainPath } from './pdf-path-preview'
+import { buildTabularPreviewCodeFromPlainPath } from './tabular-preview'
 
 /**
  * Render modes for markdown content:
@@ -246,6 +248,13 @@ function createComponents(
           if (match?.[1] === 'spreadsheet') {
             return wrapBlock('spreadsheet', code, <MarkdownSpreadsheetBlock code={code} className="my-2" />, props.node?.position)
           }
+          const inferredTabularPreview = buildTabularPreviewCodeFromPlainPath(code, match?.[1])
+          if (inferredTabularPreview) {
+            const child = inferredTabularPreview.blockType === 'datatable'
+              ? <MarkdownDatatableBlock code={inferredTabularPreview.previewCode} className="my-2" />
+              : <MarkdownSpreadsheetBlock code={inferredTabularPreview.previewCode} className="my-2" />
+            return wrapBlock(inferredTabularPreview.blockType, code, child, props.node?.position)
+          }
           // HTML preview blocks → sandboxed iframe
           if (match?.[1] === 'html-preview') {
             return wrapBlock('html-preview', code, <MarkdownHtmlBlock code={code} className="my-2" />, props.node?.position)
@@ -253,6 +262,10 @@ function createComponents(
           // PDF preview blocks → inline first page with expand to full viewer
           if (match?.[1] === 'pdf-preview') {
             return wrapBlock('pdf-preview', code, <MarkdownPdfBlock code={code} className="my-2" />, props.node?.position)
+          }
+          const inferredPdfPreviewCode = buildPdfPreviewCodeFromPlainPath(code, match?.[1])
+          if (inferredPdfPreviewCode) {
+            return wrapBlock('pdf-preview', code, <MarkdownPdfBlock code={inferredPdfPreviewCode} className="my-2" />, props.node?.position)
           }
           // Image preview blocks → inline image with expand to full viewer
           if (match?.[1] === 'image-preview') {
@@ -375,6 +388,13 @@ function createComponents(
         if (match?.[1] === 'spreadsheet') {
           return wrapBlock('spreadsheet', code, <MarkdownSpreadsheetBlock code={code} className="my-2" />, props.node?.position)
         }
+        const inferredTabularPreview = buildTabularPreviewCodeFromPlainPath(code, match?.[1])
+        if (inferredTabularPreview) {
+          const child = inferredTabularPreview.blockType === 'datatable'
+            ? <MarkdownDatatableBlock code={inferredTabularPreview.previewCode} className="my-2" />
+            : <MarkdownSpreadsheetBlock code={inferredTabularPreview.previewCode} className="my-2" />
+          return wrapBlock(inferredTabularPreview.blockType, code, child, props.node?.position)
+        }
         // HTML preview blocks → sandboxed iframe
         if (match?.[1] === 'html-preview') {
           return wrapBlock('html-preview', code, <MarkdownHtmlBlock code={code} className="my-2" />, props.node?.position)
@@ -382,6 +402,10 @@ function createComponents(
         // PDF preview blocks → inline first page with expand to full viewer
         if (match?.[1] === 'pdf-preview') {
           return wrapBlock('pdf-preview', code, <MarkdownPdfBlock code={code} className="my-2" />, props.node?.position)
+        }
+        const inferredPdfPreviewCode = buildPdfPreviewCodeFromPlainPath(code, match?.[1])
+        if (inferredPdfPreviewCode) {
+          return wrapBlock('pdf-preview', code, <MarkdownPdfBlock code={inferredPdfPreviewCode} className="my-2" />, props.node?.position)
         }
         // Image preview blocks → inline image with expand to full viewer
         if (match?.[1] === 'image-preview') {

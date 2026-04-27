@@ -35,6 +35,7 @@ import { DataTableOverlay } from '../overlay/DataTableOverlay'
 import { useScrollFade } from './useScrollFade'
 import { TableExportDropdown } from './TableExportDropdown'
 import { usePlatform } from '../../context/PlatformContext'
+import { parseDelimitedTabularData } from './tabular-preview'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -337,7 +338,11 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
             setFileError('File does not contain valid datatable data')
           }
         } catch {
-          setFileError('Failed to parse data file as JSON')
+          if (/\.(csv|tsv)$/i.test(spec.src)) {
+            setFileData(parseDelimitedTabularData(content, spec.src))
+          } else {
+            setFileError('Failed to parse data file as JSON')
+          }
         }
       })
       .catch((err) => {

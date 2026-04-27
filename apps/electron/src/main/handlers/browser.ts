@@ -30,7 +30,7 @@ export const HANDLED_CHANNELS = [
 ] as const
 
 export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): void {
-  const { browserPaneManager, platform } = deps
+  const { browserPaneManager, windowManager, platform } = deps
   if (!browserPaneManager) return
 
   server.handle(RPC_CHANNELS.browserPane.CREATE, (_ctx, input?: string | BrowserPaneCreateOptions) => {
@@ -250,8 +250,20 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
   })
 
   // Forward "manage profiles" requests from inside a browser window so the
-  // main app can open the picker UI.
+  // main app can open the picker UI. Also focus the main app window so the
+  // modal lands on top of any open BrowserWindow previews.
   browserPaneManager.onProfileManagementRequested((instanceId) => {
+    try {
+      const managedWindows = windowManager?.getAllWindows() ?? []
+      const main = managedWindows[0]?.window
+      if (main && !main.isDestroyed()) {
+        if (main.isMinimized()) main.restore()
+        main.show()
+        main.focus()
+      }
+    } catch (err) {
+      platform.logger.warn('[browser-pane] failed to focus main window for picker:', err)
+    }
     pushTyped(server, RPC_CHANNELS.browserPane.PICKER_REQUESTED, { to: 'all' }, { instanceId })
   })
 }
