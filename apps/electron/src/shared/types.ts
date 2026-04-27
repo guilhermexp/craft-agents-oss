@@ -48,7 +48,7 @@ export type {
 
 // Auth types for onboarding
 import type { AuthState, SetupNeeds } from '@craft-agent/shared/auth/types';
-import type { AuthType } from '@craft-agent/shared/config/types';
+import type { AuthType, BrowserProfile, BrowserProfileSettings } from '@craft-agent/shared/config/types';
 export type { AuthState, SetupNeeds, AuthType };
 
 // Credential health types
@@ -108,6 +108,8 @@ export interface BrowserPaneCreateOptions {
   id?: string
   show?: boolean
   bindToSessionId?: string
+  /** Browser profile id — controls session partition isolation (cookies/storage). */
+  profileId?: string
 }
 
 /**
@@ -618,6 +620,15 @@ export interface ElectronAPI {
     onStateChanged(callback: (info: BrowserInstanceInfo) => void): () => void
     onRemoved(callback: (id: string) => void): () => void
     onInteracted(callback: (id: string) => void): () => void
+    // Profiles
+    listProfiles(): Promise<BrowserProfile[]>
+    getProfileSettings(): Promise<BrowserProfileSettings>
+    setProfileSettings(partial: { alwaysAsk?: boolean; lastUsedProfileId?: string }): Promise<BrowserProfileSettings>
+    createProfile(input: { name: string; color: string; avatar?: string }): Promise<BrowserProfile>
+    renameProfile(payload: { id: string; name: string }): Promise<BrowserProfile>
+    deleteProfile(id: string): Promise<void>
+    onProfilesChanged(callback: (settings: BrowserProfileSettings) => void): () => void
+    onPickerRequested(callback: (data: { instanceId: string }) => void): () => void
   }
 
   // LLM Connections (provider configurations)

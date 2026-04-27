@@ -11,6 +11,7 @@ import {
 function makeInstance(id: string): BrowserInstanceInfo {
   return {
     id,
+    profileId: 'default',
     url: 'https://example.com',
     title: 'Example',
     favicon: null,

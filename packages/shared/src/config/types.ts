@@ -20,3 +20,31 @@ export interface NetworkProxySettings {
   httpsProxy?: string;
   noProxy?: string;
 }
+
+/**
+ * Browser profile — isolates cookies, localStorage, IndexedDB, and cache
+ * by mapping each profile to a distinct Electron session partition.
+ *
+ * The default profile uses the legacy partition string ('persist:browser-pane')
+ * so existing cookies survive without migration.
+ */
+export interface BrowserProfile {
+  id: string;
+  name: string;
+  /** Hex color used for the avatar circle when no custom image is set. */
+  color: string;
+  /** Optional custom avatar (data URL or absolute file path). */
+  avatar?: string;
+  createdAt: number;
+  lastUsedAt?: number;
+}
+
+export interface BrowserProfileSettings {
+  profiles: BrowserProfile[];
+  lastUsedProfileId: string;
+  /** When true, picker is shown every time a preview window opens. */
+  alwaysAsk: boolean;
+}
+
+/** Stable id for the legacy/default profile. Maps to `persist:browser-pane`. */
+export const DEFAULT_BROWSER_PROFILE_ID = 'default';

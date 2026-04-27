@@ -9,9 +9,9 @@
 import { app, session } from 'electron';
 import { Agent, Dispatcher, ProxyAgent, setGlobalDispatcher } from 'undici';
 import { parseNoProxyRules, shouldBypassProxy, splitCommaSeparated, type NoProxyRule } from './network-proxy-utils';
-import { getNetworkProxySettings, setNetworkProxySettings } from '@craft-agent/shared/config/storage';
+import { getNetworkProxySettings, setNetworkProxySettings, getBrowserProfiles } from '@craft-agent/shared/config/storage';
 import type { NetworkProxySettings } from '@craft-agent/shared/config/types';
-import { BROWSER_PANE_SESSION_PARTITION } from './browser-pane-manager';
+import { getProfilePartition } from './browser-profile-resolver';
 import log from './logger';
 
 // Track the current dispatcher so we can close it when reconfiguring
@@ -103,9 +103,30 @@ function configureNodeProxy(settings: NetworkProxySettings | undefined): void {
   currentProxyDispatcher = dispatcher;
 }
 
+function getCurrentProxyConfig(): Electron.ProxyConfig {
+  const settings = getNetworkProxySettings();
+  return settings?.enabled
+    ? buildElectronProxyConfig(settings)
+    : { mode: 'direct' as const };
+}
+
+function getAllBrowserPanePartitions(): string[] {
+  try {
+    const ids = getBrowserProfiles().map(p => p.id);
+    const partitions = new Set<string>();
+    for (const id of ids) partitions.add(getProfilePartition(id));
+    // Always include the legacy/default partition even if storage is empty
+    // so a fresh install still gets the proxy applied.
+    partitions.add(getProfilePartition(undefined));
+    return Array.from(partitions);
+  } catch {
+    return [getProfilePartition(undefined)];
+  }
+}
+
 /**
- * Configure Electron session proxies (default session + browser-pane partition).
- * Requires app to be ready.
+ * Configure Electron session proxies (default session + every browser-pane
+ * profile partition). Requires app to be ready.
  */
 async function configureElectronProxy(settings: NetworkProxySettings | undefined): Promise<void> {
   if (!app.isReady()) return;
@@ -114,12 +135,24 @@ async function configureElectronProxy(settings: NetworkProxySettings | undefined
     ? buildElectronProxyConfig(settings)
     : { mode: 'direct' as const };
 
+  const partitions = getAllBrowserPanePartitions();
   const sessions = [
     session.defaultSession,
-    session.fromPartition(BROWSER_PANE_SESSION_PARTITION),
+    ...partitions.map(p => session.fromPartition(p)),
   ];
 
   await Promise.all(sessions.map(ses => ses.setProxy(proxyConfig)));
+}
+
+/**
+ * Apply the currently configured proxy to a single profile partition.
+ * Used after a new browser profile is created so it picks up app-wide settings
+ * without requiring a full reapply pass.
+ */
+export async function applyProxyToProfilePartition(partition: string): Promise<void> {
+  if (!app.isReady()) return;
+  const ses = session.fromPartition(partition);
+  await ses.setProxy(getCurrentProxyConfig());
 }
 
 function buildElectronProxyConfig(settings: NetworkProxySettings): Electron.ProxyConfig {

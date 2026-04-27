@@ -14,6 +14,7 @@ import type {
   BrowserInstanceInfo,
   DeepLinkNavigation,
 } from './dto'
+import type { BrowserProfileSettings } from '../config/types'
 
 export interface BroadcastEventMap {
   // Session events (workspace-scoped via broadcastToWorkspace)
@@ -52,6 +53,8 @@ export interface BroadcastEventMap {
   [RPC_CHANNELS.browserPane.STATE_CHANGED]: [info: BrowserInstanceInfo]
   [RPC_CHANNELS.browserPane.REMOVED]: [id: string]
   [RPC_CHANNELS.browserPane.INTERACTED]: [id: string]
+  [RPC_CHANNELS.browserPane.PROFILES_CHANGED]: [settings: BrowserProfileSettings]
+  [RPC_CHANNELS.browserPane.PICKER_REQUESTED]: [data: { instanceId: string }]
 
   // Navigation events (per-window)
   [RPC_CHANNELS.notification.NAVIGATE]: [data: { workspaceId: string; sessionId: string }]

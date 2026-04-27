@@ -8,8 +8,11 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import ReactDOM from 'react-dom/client'
+import { initReactI18next } from 'react-i18next'
+import LanguageDetector from 'i18next-browser-languagedetector'
 import { EyeOff, X, XCircle } from 'lucide-react'
 import { BrowserControls } from '@craft-agent/ui'
+import { setupI18n } from '@craft-agent/shared/i18n'
 import { HeaderIconButton } from '@/components/ui/HeaderIconButton'
 import {
   DropdownMenu,
@@ -19,9 +22,19 @@ import {
 } from '@/components/ui/styled-dropdown'
 import './index.css'
 
+// Initialize i18n before any React rendering — this entry runs in its own
+// renderer (BrowserView) and does not share state with the main app shell.
+setupI18n([LanguageDetector, initReactI18next])
+
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
+
+interface ToolbarProfile {
+  id: string
+  name: string
+  color: string
+}
 
 interface ToolbarState {
   url: string
@@ -30,6 +43,8 @@ interface ToolbarState {
   canGoBack: boolean
   canGoForward: boolean
   themeColor?: string | null
+  profile?: ToolbarProfile | null
+  availableProfiles?: ToolbarProfile[]
 }
 
 declare global {
@@ -44,6 +59,8 @@ declare global {
       setMenuGeometry: (open: boolean, height?: number) => Promise<void>
       hideWindow: () => Promise<void>
       closeWindowEntirely: () => Promise<void>
+      requestProfileManagement: () => Promise<void>
+      switchProfile: (profileId: string) => Promise<string | null>
       onStateUpdate: (callback: (state: ToolbarState) => void) => () => void
       onThemeColor: (callback: (color: string | null) => void) => () => void
       onForceCloseMenu: (callback: (payload: { reason?: string }) => void) => () => void
@@ -183,6 +200,14 @@ function BrowserToolbarApp() {
         onStop={handleStop}
         trailingContent={(
           <div className="ml-2 flex items-center gap-1.5 titlebar-no-drag">
+            {state.profile && (
+              <ProfileMenu
+                current={state.profile}
+                profiles={state.availableProfiles ?? [state.profile]}
+                onSwitch={(id) => { void api?.switchProfile(id) }}
+                onManage={() => { void api?.requestProfileManagement() }}
+              />
+            )}
             <DropdownMenu open={windowMenuOpen} onOpenChange={setWindowMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <HeaderIconButton
@@ -218,6 +243,62 @@ function BrowserToolbarApp() {
         className="titlebar-drag-region bg-background"
       />
     </>
+  )
+}
+
+interface ProfileMenuProps {
+  current: ToolbarProfile
+  profiles: ToolbarProfile[]
+  onSwitch: (id: string) => void
+  onManage: () => void
+}
+
+function ProfileMenu({ current, profiles, onSwitch, onManage }: ProfileMenuProps) {
+  const [open, setOpen] = useState(false)
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Perfil: ${current.name}`}
+          title={`Perfil: ${current.name}`}
+          className="size-6 rounded-full flex items-center justify-center text-white text-[10px] font-semibold transition hover:ring-2 hover:ring-foreground/30"
+          style={{ backgroundColor: current.color }}
+        >
+          {(current.name?.trim().charAt(0) || '?').toUpperCase()}
+        </button>
+      </DropdownMenuTrigger>
+      <StyledDropdownMenuContent
+        align="end"
+        side="bottom"
+        sideOffset={6}
+        minWidth="min-w-44"
+        className="titlebar-no-drag z-[110]"
+      >
+        {profiles.map((p) => (
+          <StyledDropdownMenuItem
+            key={p.id}
+            onSelect={() => {
+              if (p.id !== current.id) onSwitch(p.id)
+            }}
+          >
+            <div
+              className="size-4 rounded-full flex items-center justify-center text-white text-[8px] font-semibold"
+              style={{ backgroundColor: p.color }}
+            >
+              {(p.name?.trim().charAt(0) || '?').toUpperCase()}
+            </div>
+            <span className={p.id === current.id ? 'font-semibold' : undefined}>
+              {p.name}
+              {p.id === current.id ? ' ✓' : ''}
+            </span>
+          </StyledDropdownMenuItem>
+        ))}
+        <StyledDropdownMenuItem onSelect={onManage}>
+          Gerenciar perfis…
+        </StyledDropdownMenuItem>
+      </StyledDropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

@@ -81,6 +81,8 @@ export interface StoredConfig {
   enable1MContext?: boolean;  // Enable 1M context window for supported models (default: false — opt-in; requires Anthropic Tier 4+)
   // Network proxy
   networkProxy?: import('./types.ts').NetworkProxySettings;
+  // Browser profiles — isolation per profile (cookies/storage/cache)
+  browserProfileSettings?: import('./types.ts').BrowserProfileSettings;
   // Windows: path to Git Bash (bash.exe) for the SDK subprocess
   gitBashPath?: string;
   // User chose "Setup later" during onboarding — skip showing onboarding on next launch
@@ -2917,6 +2919,109 @@ export function setNetworkProxySettings(settings: NetworkProxySettings): void {
     config.networkProxy = normalized;
   }
 
+  saveConfig(config);
+}
+
+// ============================================
+// Browser Profiles (per-profile session isolation)
+// ============================================
+
+import {
+  type BrowserProfile,
+  type BrowserProfileSettings,
+  DEFAULT_BROWSER_PROFILE_ID,
+} from './types.ts';
+
+const DEFAULT_PROFILE: BrowserProfile = {
+  id: DEFAULT_BROWSER_PROFILE_ID,
+  name: 'Default',
+  color: '#22c55e',
+  createdAt: 0, // sentinel: assigned on first read
+};
+
+function makeDefaultBrowserProfileSettings(): BrowserProfileSettings {
+  return {
+    profiles: [{ ...DEFAULT_PROFILE, createdAt: Date.now() }],
+    lastUsedProfileId: DEFAULT_BROWSER_PROFILE_ID,
+    alwaysAsk: false,
+  };
+}
+
+function ensureDefaultProfile(settings: BrowserProfileSettings): BrowserProfileSettings {
+  const hasDefault = settings.profiles.some(p => p.id === DEFAULT_BROWSER_PROFILE_ID);
+  if (hasDefault) return settings;
+  return {
+    ...settings,
+    profiles: [{ ...DEFAULT_PROFILE, createdAt: Date.now() }, ...settings.profiles],
+  };
+}
+
+/**
+ * Read browser profile settings. Auto-seeds with a default profile
+ * (mapped to the legacy `persist:browser-pane` partition) on first call.
+ */
+export function getBrowserProfileSettings(): BrowserProfileSettings {
+  const config = loadStoredConfig();
+  if (!config) return makeDefaultBrowserProfileSettings();
+
+  if (!config.browserProfileSettings) {
+    const seeded = makeDefaultBrowserProfileSettings();
+    config.browserProfileSettings = seeded;
+    saveConfig(config);
+    return seeded;
+  }
+
+  const ensured = ensureDefaultProfile(config.browserProfileSettings);
+  if (ensured !== config.browserProfileSettings) {
+    config.browserProfileSettings = ensured;
+    saveConfig(config);
+  }
+  return ensured;
+}
+
+export function getBrowserProfiles(): BrowserProfile[] {
+  return getBrowserProfileSettings().profiles;
+}
+
+export function setBrowserProfiles(profiles: BrowserProfile[]): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  const current = config.browserProfileSettings ?? makeDefaultBrowserProfileSettings();
+  config.browserProfileSettings = ensureDefaultProfile({
+    ...current,
+    profiles,
+  });
+  saveConfig(config);
+}
+
+export function getLastUsedBrowserProfileId(): string {
+  return getBrowserProfileSettings().lastUsedProfileId;
+}
+
+export function setLastUsedBrowserProfileId(id: string): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  const current = config.browserProfileSettings ?? makeDefaultBrowserProfileSettings();
+  const exists = current.profiles.some(p => p.id === id);
+  config.browserProfileSettings = ensureDefaultProfile({
+    ...current,
+    lastUsedProfileId: exists ? id : DEFAULT_BROWSER_PROFILE_ID,
+  });
+  saveConfig(config);
+}
+
+export function getBrowserPickerAlwaysAsk(): boolean {
+  return getBrowserProfileSettings().alwaysAsk;
+}
+
+export function setBrowserPickerAlwaysAsk(alwaysAsk: boolean): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  const current = config.browserProfileSettings ?? makeDefaultBrowserProfileSettings();
+  config.browserProfileSettings = ensureDefaultProfile({
+    ...current,
+    alwaysAsk,
+  });
   saveConfig(config);
 }
 

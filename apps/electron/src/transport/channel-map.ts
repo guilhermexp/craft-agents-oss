@@ -356,6 +356,14 @@ export const CHANNEL_MAP = {
   'browserPane.onStateChanged': listener(RPC_CHANNELS.browserPane.STATE_CHANGED),
   'browserPane.onRemoved': listener(RPC_CHANNELS.browserPane.REMOVED),
   'browserPane.onInteracted': listener(RPC_CHANNELS.browserPane.INTERACTED),
+  'browserPane.listProfiles': invoke(RPC_CHANNELS.browserPane.LIST_PROFILES),
+  'browserPane.getProfileSettings': invoke(RPC_CHANNELS.browserPane.GET_PROFILE_SETTINGS),
+  'browserPane.setProfileSettings': invoke(RPC_CHANNELS.browserPane.SET_PROFILE_SETTINGS),
+  'browserPane.createProfile': invoke(RPC_CHANNELS.browserPane.CREATE_PROFILE),
+  'browserPane.renameProfile': invoke(RPC_CHANNELS.browserPane.RENAME_PROFILE),
+  'browserPane.deleteProfile': invoke(RPC_CHANNELS.browserPane.DELETE_PROFILE),
+  'browserPane.onProfilesChanged': listener(RPC_CHANNELS.browserPane.PROFILES_CHANGED),
+  'browserPane.onPickerRequested': listener(RPC_CHANNELS.browserPane.PICKER_REQUESTED),
 
   // LLM Connections
   listLlmConnections: invoke(RPC_CHANNELS.llmConnections.LIST),

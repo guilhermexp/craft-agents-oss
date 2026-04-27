@@ -20,6 +20,8 @@ const CHANNELS = {
   DESTROY: 'browser-toolbar:destroy',
   STATE_UPDATE: 'browser-toolbar:state-update',
   THEME_COLOR: 'browser-toolbar:theme-color',
+  REQUEST_PROFILE_MANAGEMENT: 'browser-toolbar:request-profile-management',
+  SWITCH_PROFILE: 'browser-toolbar:switch-profile',
 } as const
 
 // Instance ID is passed via query parameter by BrowserPaneManager
@@ -35,6 +37,8 @@ contextBridge.exposeInMainWorld('browserToolbar', {
   setMenuGeometry: (open: boolean, height = 0) => ipcRenderer.invoke(CHANNELS.MENU_GEOMETRY, instanceId, open, height),
   hideWindow: () => ipcRenderer.invoke(CHANNELS.HIDE, instanceId),
   closeWindowEntirely: () => ipcRenderer.invoke(CHANNELS.DESTROY, instanceId),
+  requestProfileManagement: () => ipcRenderer.invoke(CHANNELS.REQUEST_PROFILE_MANAGEMENT, instanceId),
+  switchProfile: (profileId: string) => ipcRenderer.invoke(CHANNELS.SWITCH_PROFILE, instanceId, profileId),
   onStateUpdate: (callback: (state: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state)
     ipcRenderer.on(CHANNELS.STATE_UPDATE, handler)

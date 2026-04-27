@@ -113,9 +113,34 @@ const TOOLBAR_CHANNELS = {
   DESTROY: 'browser-toolbar:destroy',
   STATE_UPDATE: 'browser-toolbar:state-update',
   THEME_COLOR: 'browser-toolbar:theme-color',
+  REQUEST_PROFILE_MANAGEMENT: 'browser-toolbar:request-profile-management',
+  SWITCH_PROFILE: 'browser-toolbar:switch-profile',
 } as const
-export const BROWSER_PANE_SESSION_PARTITION = 'persist:browser-pane'
-const SESSION_PARTITION = BROWSER_PANE_SESSION_PARTITION
+import {
+  getProfilePartition,
+  DEFAULT_BROWSER_PROFILE_PARTITION,
+} from './browser-profile-resolver'
+import {
+  DEFAULT_BROWSER_PROFILE_ID,
+  type BrowserProfile,
+  type BrowserProfileSettings,
+} from '@craft-agent/shared/config/types'
+import {
+  getBrowserProfiles,
+  setBrowserProfiles,
+  getBrowserProfileSettings,
+  setLastUsedBrowserProfileId,
+  setBrowserPickerAlwaysAsk,
+} from '@craft-agent/shared/config'
+import { applyProxyToProfilePartition } from './network-proxy'
+import { randomUUID } from 'crypto'
+
+/**
+ * Legacy export — preserved for callers that still depend on a single
+ * partition string (e.g. network-proxy bootstrap before profiles are loaded).
+ * Equivalent to `getProfilePartition(DEFAULT_BROWSER_PROFILE_ID)`.
+ */
+export const BROWSER_PANE_SESSION_PARTITION = DEFAULT_BROWSER_PROFILE_PARTITION
 
 interface AgentControlState {
   active: boolean
@@ -131,6 +156,7 @@ interface AgentControlLockState {
 
 interface BrowserInstance {
   id: string
+  profileId: string
   window: BrowserWindow
   toolbarView: BrowserView
   pageView: BrowserView
@@ -171,6 +197,11 @@ interface CreateBrowserInstanceOptions {
   show?: boolean
   ownerType?: 'session' | 'manual'
   ownerSessionId?: string
+  /**
+   * Browser profile id (controls session partition isolation). When omitted,
+   * resolves to the default profile, which uses the legacy partition string.
+   */
+  profileId?: string
 }
 
 export interface BrowserScreenshotOptions {
@@ -314,6 +345,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private stateChangeCallback: ((info: BrowserInstanceInfo) => void) | null = null
   private removedCallback: ((id: string) => void) | null = null
   private interactedCallback: ((id: string) => void) | null = null
+  private profilesChangeCallback: ((settings: BrowserProfileSettings) => void) | null = null
+  private profileManagementRequestCallback: ((instanceId: string) => void) | null = null
   private partitionPermissionsInitialized = false
   private partitionObserversInitialized = false
   private inFlightRequestsByWebContentsId = new Map<number, number>()
@@ -343,18 +376,50 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     this.interactedCallback = callback
   }
 
+  /**
+   * Resolve a requested profile id to one that actually exists in storage.
+   * Falls back to the default profile when the requested id is missing or
+   * was deleted, so callers never end up with an orphan partition.
+   */
+  private resolveProfileId(requested?: string): string {
+    if (!requested || requested === DEFAULT_BROWSER_PROFILE_ID) {
+      return DEFAULT_BROWSER_PROFILE_ID
+    }
+    try {
+      const exists = getBrowserProfiles().some(p => p.id === requested)
+      if (!exists) {
+        mainLog.warn(`[browser-pane] Unknown profileId=${requested}; falling back to default`)
+        return DEFAULT_BROWSER_PROFILE_ID
+      }
+      return requested
+    } catch (err) {
+      mainLog.warn(`[browser-pane] resolveProfileId failed: ${err instanceof Error ? err.message : String(err)}`)
+      return DEFAULT_BROWSER_PROFILE_ID
+    }
+  }
+
+  private touchProfileLastUsed(profileId: string): void {
+    try {
+      setLastUsedBrowserProfileId(profileId)
+    } catch (err) {
+      mainLog.warn(`[browser-pane] failed to update lastUsedProfileId: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
   createInstance(id?: string, options?: CreateBrowserInstanceOptions): string {
     const instanceId = id || `browser-${++instanceCounter}`
     const shouldShow = options?.show ?? false
     const ownerType = options?.ownerType ?? 'manual'
     const ownerSessionId = ownerType === 'session' ? (options?.ownerSessionId ?? null) : null
+    const profileId = this.resolveProfileId(options?.profileId)
+    const partition = getProfilePartition(profileId)
 
     if (this.instances.has(instanceId)) {
       mainLog.warn(`[browser-pane] Instance already exists, reusing: ${instanceId}`)
       return instanceId
     }
 
-    const ses = session.fromPartition(SESSION_PARTITION)
+    const ses = session.fromPartition(partition)
     this.setupSessionPermissions(ses)
     this.setupSessionObservers(ses)
 
@@ -371,7 +436,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       // Fully chromeless — toolbar is rendered in a dedicated BrowserView
       frame: false,
       webPreferences: {
-        partition: SESSION_PARTITION,
+        partition,
         session: ses,
         contextIsolation: true,
         nodeIntegration: false,
@@ -382,7 +447,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const toolbarView = new BrowserView({
       webPreferences: {
         preload: join(__dirname, 'browser-toolbar-preload.cjs'),
-        partition: SESSION_PARTITION,
+        partition,
         session: ses,
         contextIsolation: true,
         nodeIntegration: false,
@@ -392,7 +457,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
     const pageView = new BrowserView({
       webPreferences: {
-        partition: SESSION_PARTITION,
+        partition,
         session: ses,
         contextIsolation: true,
         nodeIntegration: false,
@@ -407,7 +472,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
     const nativeOverlayView = new BrowserView({
       webPreferences: {
-        partition: SESSION_PARTITION,
+        partition,
         session: ses,
         contextIsolation: true,
         nodeIntegration: false,
@@ -427,6 +492,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
     const instance: BrowserInstance = {
       id: instanceId,
+      profileId,
       window,
       toolbarView,
       pageView,
@@ -483,8 +549,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     this.setupWindowListeners(instance)
     this.instances.set(instanceId, instance)
     this.emitStateChange(instance)
+    this.touchProfileLastUsed(profileId)
     mainLog.info(`[browser-pane] toolbar version: v4-react-chromeless`)
-    mainLog.info(`[browser-pane] Created instance: ${instanceId} (show=${shouldShow}, ownerType=${ownerType}, ownerSessionId=${ownerSessionId ?? 'none'})`)
+    mainLog.info(`[browser-pane] Created instance: ${instanceId} (show=${shouldShow}, ownerType=${ownerType}, ownerSessionId=${ownerSessionId ?? 'none'}, profileId=${profileId})`)
 
     void this.loadToolbarPage(instance)
       .finally(() => {
@@ -553,6 +620,150 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
   getInstance(id: string): BrowserInstance | undefined {
     return this.instances.get(id)
+  }
+
+  // ============================================================
+  // Browser profile management
+  // ============================================================
+
+  onProfilesChanged(callback: (settings: BrowserProfileSettings) => void): void {
+    this.profilesChangeCallback = callback
+  }
+
+  onProfileManagementRequested(callback: (instanceId: string) => void): void {
+    this.profileManagementRequestCallback = callback
+  }
+
+  listProfiles(): BrowserProfile[] {
+    return getBrowserProfiles()
+  }
+
+  getProfileSettings(): BrowserProfileSettings {
+    return getBrowserProfileSettings()
+  }
+
+  setProfileSettings(partial: { alwaysAsk?: boolean; lastUsedProfileId?: string }): BrowserProfileSettings {
+    if (typeof partial.alwaysAsk === 'boolean') {
+      setBrowserPickerAlwaysAsk(partial.alwaysAsk)
+    }
+    if (partial.lastUsedProfileId) {
+      setLastUsedBrowserProfileId(partial.lastUsedProfileId)
+    }
+    const settings = getBrowserProfileSettings()
+    this.profilesChangeCallback?.(settings)
+    return settings
+  }
+
+  createProfile(input: { name: string; color: string; avatar?: string }): BrowserProfile {
+    const name = input.name?.trim()
+    if (!name) {
+      throw new Error('Profile name is required')
+    }
+    const profiles = getBrowserProfiles()
+    const id = randomUUID().slice(0, 8)
+    const profile: BrowserProfile = {
+      id,
+      name,
+      color: input.color || '#22c55e',
+      avatar: input.avatar,
+      createdAt: Date.now(),
+    }
+    setBrowserProfiles([...profiles, profile])
+    void applyProxyToProfilePartition(getProfilePartition(id)).catch(error => {
+      mainLog.warn(`[browser-pane] proxy apply failed for new profile ${id}: ${error instanceof Error ? error.message : String(error)}`)
+    })
+    mainLog.info(`[browser-pane] Created profile id=${id} name="${name}"`)
+    this.profilesChangeCallback?.(getBrowserProfileSettings())
+    return profile
+  }
+
+  renameProfile(id: string, name: string): BrowserProfile {
+    const trimmed = name?.trim()
+    if (!trimmed) {
+      throw new Error('Profile name is required')
+    }
+    const profiles = getBrowserProfiles()
+    const target = profiles.find(p => p.id === id)
+    if (!target) {
+      throw new Error(`Unknown profile id: ${id}`)
+    }
+    const updated: BrowserProfile = { ...target, name: trimmed }
+    setBrowserProfiles(profiles.map(p => (p.id === id ? updated : p)))
+    this.profilesChangeCallback?.(getBrowserProfileSettings())
+    return updated
+  }
+
+  /**
+   * Switch a browser instance to a different profile.
+   *
+   * Partition is bound at creation time, so switching requires a brand new
+   * window. Current URL and binding (session ownership) are preserved.
+   * Returns the new instance id.
+   */
+  switchProfile(instanceId: string, targetProfileId: string): string | null {
+    const instance = this.instances.get(instanceId)
+    if (!instance) {
+      mainLog.warn(`[browser-pane] switchProfile noop — unknown instance ${instanceId}`)
+      return null
+    }
+
+    const resolvedTarget = this.resolveProfileId(targetProfileId)
+    if (resolvedTarget === instance.profileId) {
+      mainLog.info(`[browser-pane] switchProfile noop — already on profile ${resolvedTarget}`)
+      return instance.id
+    }
+
+    const url = instance.currentUrl
+    const ownerType = instance.ownerType
+    const ownerSessionId = instance.ownerSessionId
+
+    this.destroyInstance(instance.id)
+
+    const newId = this.createInstance(undefined, {
+      show: true,
+      profileId: resolvedTarget,
+      ownerType,
+      ownerSessionId: ownerSessionId ?? undefined,
+    })
+    if (url && url !== 'about:blank') {
+      void this.navigate(newId, url).catch(() => {})
+    }
+    return newId
+  }
+
+  async deleteProfile(id: string): Promise<void> {
+    if (id === DEFAULT_BROWSER_PROFILE_ID) {
+      throw new Error('Default profile cannot be deleted')
+    }
+    const profiles = getBrowserProfiles()
+    if (!profiles.some(p => p.id === id)) {
+      mainLog.info(`[browser-pane] deleteProfile noop — unknown id=${id}`)
+      return
+    }
+
+    // Destroy any open instances bound to this profile so the partition can
+    // be cleared without "session in use" errors.
+    const boundInstanceIds: string[] = []
+    for (const instance of this.instances.values()) {
+      if (instance.profileId === id) boundInstanceIds.push(instance.id)
+    }
+    for (const instanceId of boundInstanceIds) {
+      this.destroyInstance(instanceId)
+    }
+
+    setBrowserProfiles(profiles.filter(p => p.id !== id))
+
+    const partition = getProfilePartition(id)
+    try {
+      const ses = session.fromPartition(partition)
+      await ses.clearStorageData()
+      await ses.clearCache()
+      mainLog.info(`[browser-pane] Deleted profile id=${id} (cleared partition=${partition})`)
+    } catch (error) {
+      mainLog.warn(`[browser-pane] failed to clear storage for deleted profile ${id}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+
+    this.profilesChangeCallback?.(getBrowserProfileSettings())
   }
 
   private cleanupDestroyedInstance(instance: BrowserInstance, reason: string): void {
@@ -1706,7 +1917,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return unbound.find(i => i.isVisible) ?? unbound[0]
   }
 
-  createForSession(sessionId: string, options?: { show?: boolean }): string {
+  createForSession(sessionId: string, options?: { show?: boolean; profileId?: string }): string {
     const existing = this.getBoundForSession(sessionId)
     if (existing) {
       if (options?.show) {
@@ -1715,10 +1926,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       return existing
     }
 
-    // Reuse an unbound/manual window before creating a new one.
-    // This helps agents avoid unnecessary browser window sprawl.
+    // Reuse an unbound/manual window before creating a new one — but only when
+    // no specific profile was requested or the reusable instance already
+    // matches the requested profile (mismatched partitions can't be reused).
     const reusable = this.findReusableUnboundInstance()
-    if (reusable) {
+    const requestedProfile = options?.profileId
+    const reuseMatchesProfile =
+      reusable && (!requestedProfile || reusable.profileId === this.resolveProfileId(requestedProfile))
+    if (reusable && reuseMatchesProfile) {
       this.bindSession(reusable.id, sessionId)
       if (options?.show) {
         this.focus(reusable.id)
@@ -1731,6 +1946,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       show: options?.show ?? false,
       ownerType: 'session',
       ownerSessionId: sessionId,
+      profileId: options?.profileId,
     })
   }
 
@@ -2186,6 +2402,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
   private pushToolbarState(instance: BrowserInstance): void {
     if (instance.window.isDestroyed() || instance.toolbarView.webContents.isDestroyed()) return
+    const allProfiles = this.listProfiles()
+    const profile = allProfiles.find(p => p.id === instance.profileId) ?? null
     const state = {
       url: instance.currentUrl,
       title: instance.title,
@@ -2193,6 +2411,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       canGoBack: instance.canGoBack,
       canGoForward: instance.canGoForward,
       themeColor: instance.themeColor,
+      profile: profile ? { id: profile.id, name: profile.name, color: profile.color } : null,
+      availableProfiles: allProfiles.map(p => ({ id: p.id, name: p.name, color: p.color })),
     }
     instance.toolbarView.webContents.send(TOOLBAR_CHANNELS.STATE_UPDATE, state)
   }
@@ -2262,6 +2482,18 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       const inst = findInstance(instanceId)
       mainLog.info(`[browser-pane] toolbar ipc destroy requested instanceId=${instanceId} resolved=${inst?.id ?? 'none'}`)
       if (inst) this.destroyInstance(inst.id)
+    })
+
+    ipcMain.handle(TOOLBAR_CHANNELS.REQUEST_PROFILE_MANAGEMENT, async (_event, instanceId: string) => {
+      const inst = findInstance(instanceId)
+      mainLog.info(`[browser-pane] toolbar ipc requestProfileManagement instanceId=${instanceId} resolved=${inst?.id ?? 'none'}`)
+      this.profileManagementRequestCallback?.(inst?.id ?? instanceId)
+    })
+
+    ipcMain.handle(TOOLBAR_CHANNELS.SWITCH_PROFILE, async (_event, instanceId: string, profileId: string) => {
+      const inst = findInstance(instanceId)
+      if (!inst) return null
+      return this.switchProfile(inst.id, profileId)
     })
 
     mainLog.info('[browser-pane] Toolbar IPC handlers registered')
@@ -3057,7 +3289,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
           parent: instance.window,
           modal: false,
           webPreferences: {
-            partition: SESSION_PARTITION,
+            partition: getProfilePartition(instance.profileId),
             session: pageWc.session,
             contextIsolation: true,
             nodeIntegration: false,
@@ -3100,6 +3332,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private toInfo(instance: BrowserInstance): BrowserInstanceInfo {
     return {
       id: instance.id,
+      profileId: instance.profileId,
       url: instance.currentUrl,
       title: instance.title,
       favicon: instance.favicon,

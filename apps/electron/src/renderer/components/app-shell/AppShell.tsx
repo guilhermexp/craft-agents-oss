@@ -136,6 +136,7 @@ import {
   RADIUS_INNER,
 } from "./panel-constants"
 import { hasOpenOverlay } from "@/lib/overlay-detection"
+import { BrowserProfilePicker } from "@/components/browser/BrowserProfilePicker"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
 
@@ -1875,19 +1876,54 @@ function AppShellContent({
     setTimeout(() => focusZone('chat', { intent: 'programmatic' }), 50)
   }, [activeWorkspace, focusZone, navigate])
 
-  // Create a brand new dedicated browser window and focus it.
-  // Intentionally unbound: this action should always create a NEW window.
-  const handleNewBrowserWindow = useCallback(async () => {
+  // Browser profile picker state — opens before creating a new window when
+  // the user has multiple profiles or has the "always ask" preference set.
+  const [browserPickerOpen, setBrowserPickerOpen] = useState(false)
+  // When the picker was opened from inside an existing browser window, this
+  // holds the source instance id so we can switch its profile in place.
+  const [browserPickerSwitchInstanceId, setBrowserPickerSwitchInstanceId] = useState<string | null>(null)
+
+  // Listen for "manage profiles" requests from inside any browser window.
+  useEffect(() => {
+    const unsub = window.electronAPI.browserPane.onPickerRequested((data) => {
+      setBrowserPickerSwitchInstanceId(data.instanceId ?? null)
+      setBrowserPickerOpen(true)
+    })
+    return () => unsub()
+  }, [])
+
+  const openBrowserWindowForProfile = useCallback(async (profileId: string) => {
     try {
       const instanceId = await window.electronAPI.browserPane.create({
         show: true,
+        profileId,
       })
       await window.electronAPI.browserPane.focus(instanceId)
     } catch (error) {
       console.error('[Chat] Failed to create browser window:', error)
       toast.error(t('toast.failedToCreateBrowser'))
     }
-  }, [])
+  }, [t])
+
+  // Create a brand new dedicated browser window and focus it.
+  // Intentionally unbound: this action should always create a NEW window.
+  // Shows the profile picker when the user has more than one profile or has
+  // explicitly opted in via "always ask"; otherwise reuses the last profile.
+  const handleNewBrowserWindow = useCallback(async () => {
+    try {
+      const settings = await window.electronAPI.browserPane.getProfileSettings()
+      const multipleProfiles = settings.profiles.length > 1
+      if (settings.alwaysAsk || multipleProfiles) {
+        setBrowserPickerOpen(true)
+        return
+      }
+      await openBrowserWindowForProfile(settings.lastUsedProfileId)
+    } catch (error) {
+      console.error('[Chat] Failed to read profile settings:', error)
+      // Fall back to default behavior if profile read fails
+      await openBrowserWindowForProfile('default')
+    }
+  }, [openBrowserWindowForProfile])
 
   // Delete Source - simplified since agents system is removed
   const handleDeleteSource = useCallback(async (sourceSlug: string) => {
@@ -3521,6 +3557,35 @@ function AppShellContent({
       {/* Messaging dialogs (pairing-code + WA connect) — driven by messagingDialogAtom.
           Mounted here so they survive context-menu / dropdown close. */}
       <MessagingDialogHost />
+
+      {/* Browser profile picker — opens before creating a new browser window
+          when the user has multiple profiles or "always ask" is enabled. */}
+      <BrowserProfilePicker
+        open={browserPickerOpen}
+        onOpenChange={(open) => {
+          setBrowserPickerOpen(open)
+          if (!open) setBrowserPickerSwitchInstanceId(null)
+        }}
+        onSelect={async (profileId) => {
+          const instanceId = browserPickerSwitchInstanceId
+          setBrowserPickerSwitchInstanceId(null)
+          if (instanceId) {
+            // Picker was opened from an existing browser window — keep the
+            // user inside that window by switching its profile in place.
+            try {
+              await window.electronAPI.browserPane.create({
+                profileId,
+                show: true,
+              })
+              await window.electronAPI.browserPane.destroy(instanceId)
+            } catch (err) {
+              console.error('[Chat] Failed to switch profile:', err)
+            }
+            return
+          }
+          await openBrowserWindowForProfile(profileId)
+        }}
+      />
 
     </AppShellProvider>
   )

@@ -583,6 +583,8 @@ export interface WindowCloseRequest {
 
 export interface BrowserInstanceInfo {
   id: string
+  /** Profile id this instance is bound to (controls session partition). */
+  profileId: string
   url: string
   title: string
   favicon: string | null

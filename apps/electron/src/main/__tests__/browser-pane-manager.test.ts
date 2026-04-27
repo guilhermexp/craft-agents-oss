@@ -135,6 +135,10 @@ function createMockWindow(opts?: { width?: number; height?: number; minWidth?: n
 }
 
 mock.module('electron', () => ({
+  app: {
+    isReady: () => false,
+    whenReady: async () => {},
+  },
   BrowserWindow: class MockBrowserWindow {
     webContents: any
     constructor(opts?: any) {
@@ -166,9 +170,15 @@ mock.module('electron', () => ({
     openExternal: mockShellOpenExternal,
   },
   session: {
+    defaultSession: {
+      setProxy: mock(async () => {}),
+    },
     fromPartition: mock(() => ({
       setPermissionCheckHandler: mock(() => {}),
       setPermissionRequestHandler: mock(() => {}),
+      setProxy: mock(async () => {}),
+      clearStorageData: mock(async () => {}),
+      clearCache: mock(async () => {}),
       webRequest: {
         onBeforeRequest: mock((_cb: any) => {}),
         onCompleted: mock((_cb: any) => {}),
@@ -182,6 +192,7 @@ mock.module('electron', () => ({
 mock.module('../logger', () => {
   const stubLog = { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} }
   return {
+    default: stubLog,
     mainLog: stubLog,
     sessionLog: stubLog,
     handlerLog: stubLog,

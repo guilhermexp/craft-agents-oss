@@ -21,6 +21,12 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.browserPane.SCREENSHOT,
   RPC_CHANNELS.browserPane.EVALUATE,
   RPC_CHANNELS.browserPane.SCROLL,
+  RPC_CHANNELS.browserPane.LIST_PROFILES,
+  RPC_CHANNELS.browserPane.CREATE_PROFILE,
+  RPC_CHANNELS.browserPane.DELETE_PROFILE,
+  RPC_CHANNELS.browserPane.RENAME_PROFILE,
+  RPC_CHANNELS.browserPane.GET_PROFILE_SETTINGS,
+  RPC_CHANNELS.browserPane.SET_PROFILE_SETTINGS,
 ] as const
 
 export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): void {
@@ -33,10 +39,16 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     }
 
     if (input?.bindToSessionId) {
-      return browserPaneManager.createForSession(input.bindToSessionId, { show: input.show ?? false })
+      return browserPaneManager.createForSession(input.bindToSessionId, {
+        show: input.show ?? false,
+        profileId: input.profileId,
+      })
     }
 
-    return browserPaneManager.createInstance(input?.id, { show: input?.show })
+    return browserPaneManager.createInstance(input?.id, {
+      show: input?.show,
+      profileId: input?.profileId,
+    })
   })
 
   server.handle(RPC_CHANNELS.browserPane.DESTROY, (_ctx, id: string) => {
@@ -167,6 +179,56 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
+  // -- Profiles ------------------------------------------------------------
+
+  server.handle(RPC_CHANNELS.browserPane.LIST_PROFILES, () => {
+    return browserPaneManager.listProfiles()
+  })
+
+  server.handle(RPC_CHANNELS.browserPane.GET_PROFILE_SETTINGS, () => {
+    return browserPaneManager.getProfileSettings()
+  })
+
+  server.handle(
+    RPC_CHANNELS.browserPane.SET_PROFILE_SETTINGS,
+    (_ctx, partial: { alwaysAsk?: boolean; lastUsedProfileId?: string }) => {
+      return browserPaneManager.setProfileSettings(partial ?? {})
+    },
+  )
+
+  server.handle(
+    RPC_CHANNELS.browserPane.CREATE_PROFILE,
+    (_ctx, input: { name: string; color: string; avatar?: string }) => {
+      try {
+        return browserPaneManager.createProfile(input)
+      } catch (err) {
+        platform.logger.error('[browser-pane] createProfile failed:', err)
+        throw err
+      }
+    },
+  )
+
+  server.handle(
+    RPC_CHANNELS.browserPane.RENAME_PROFILE,
+    (_ctx, payload: { id: string; name: string }) => {
+      try {
+        return browserPaneManager.renameProfile(payload.id, payload.name)
+      } catch (err) {
+        platform.logger.error('[browser-pane] renameProfile failed:', err)
+        throw err
+      }
+    },
+  )
+
+  server.handle(RPC_CHANNELS.browserPane.DELETE_PROFILE, async (_ctx, id: string) => {
+    try {
+      await browserPaneManager.deleteProfile(id)
+    } catch (err) {
+      platform.logger.error(`[browser-pane] deleteProfile failed for ${id}:`, err)
+      throw err
+    }
+  })
+
   // Forward browser state changes to all windows
   browserPaneManager.onStateChange((info) => {
     pushTyped(server, RPC_CHANNELS.browserPane.STATE_CHANGED, { to: 'all' }, info)
@@ -180,5 +242,16 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
   // Forward browser interaction/focus events so renderer can align panel focus.
   browserPaneManager.onInteracted((id) => {
     pushTyped(server, RPC_CHANNELS.browserPane.INTERACTED, { to: 'all' }, id)
+  })
+
+  // Forward browser profile list/settings changes
+  browserPaneManager.onProfilesChanged((settings) => {
+    pushTyped(server, RPC_CHANNELS.browserPane.PROFILES_CHANGED, { to: 'all' }, settings)
+  })
+
+  // Forward "manage profiles" requests from inside a browser window so the
+  // main app can open the picker UI.
+  browserPaneManager.onProfileManagementRequested((instanceId) => {
+    pushTyped(server, RPC_CHANNELS.browserPane.PICKER_REQUESTED, { to: 'all' }, { instanceId })
   })
 }
