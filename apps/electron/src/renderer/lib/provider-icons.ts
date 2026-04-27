@@ -10,6 +10,7 @@ import azureIcon from '@/assets/provider-icons/azure.svg'
 import claudeIcon from '@/assets/provider-icons/claude.svg'
 import copilotIcon from '@/assets/provider-icons/copilot.svg'
 import googleIcon from '@/assets/provider-icons/google.svg'
+import hermesIcon from '@/assets/provider-icons/hermes.svg'
 import huggingfaceIcon from '@/assets/provider-icons/huggingface.svg'
 import kimiIcon from '@/assets/provider-icons/kimi.svg'
 import minimaxIcon from '@/assets/provider-icons/minimax.svg'
@@ -31,6 +32,7 @@ export const providerIcons = {
   azure: azureIcon,
   copilot: copilotIcon,
   google: googleIcon,
+  hermes: hermesIcon,
   huggingface: huggingfaceIcon,
   kimi: kimiIcon,
   minimax: minimaxIcon,
@@ -194,7 +196,7 @@ export function getProviderIcon(
       return null  // Unknown/custom Pi provider — caller shows brain icon
     }
     case 'hermes':
-      return null
+      return providerIcons.hermes
     default:
       // Try URL detection as fallback
       if (baseUrl) {
@@ -224,6 +226,7 @@ export function getProviderIconThemeClassName(
     || resolvedIcon === providerIcons.openrouter
     || resolvedIcon === providerIcons.vercel
     || resolvedIcon === providerIcons.huggingface
+    || resolvedIcon === providerIcons.hermes
   ) {
     return 'theme-aware-invert'
   }

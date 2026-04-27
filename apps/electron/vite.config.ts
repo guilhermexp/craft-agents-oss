@@ -68,7 +68,7 @@ export default defineConfig({
     }
   },
   server: {
-    port: 5173,
+    port: Number(process.env.CRAFT_VITE_PORT) || 5273,
     open: false
   }
 })

@@ -1212,7 +1212,7 @@ function choosePreferredWindow(windows: HelperWindow[], appName: string): Helper
 	}
 
 	const scored = [...windows].sort((a, b) => scoreWindow(b) - scoreWindow(a));
-	return scored[0];
+	return scored[0]!;
 }
 
 function scoreWindow(window: HelperWindow): number {
@@ -1249,18 +1249,18 @@ function summarizeWindowCandidates(windows: HelperWindow[], limit = 6): string {
 function chooseRankedWindowOrUndefined(windows: HelperWindow[]): HelperWindow | undefined {
 	if (windows.length === 0) return undefined;
 	const ranked = [...windows].sort((a, b) => scoreWindow(b) - scoreWindow(a));
-	if (ranked.length === 1) return ranked[0];
-	const topScore = scoreWindow(ranked[0]);
-	const nextScore = scoreWindow(ranked[1]);
+	if (ranked.length === 1) return ranked[0]!;
+	const topScore = scoreWindow(ranked[0]!);
+	const nextScore = scoreWindow(ranked[1]!);
 	return topScore >= nextScore + 25 ? ranked[0] : undefined;
 }
 
 function chooseAppByQuery(apps: HelperApp[], appQuery: string): HelperApp {
 	const query = normalizeText(appQuery);
 	const exactMatches = apps.filter((app) => normalizeText(app.appName) === query);
-	if (exactMatches.length === 1) return exactMatches[0];
+	if (exactMatches.length === 1) return exactMatches[0]!;
 	if (exactMatches.length > 1) {
-		return exactMatches.find((app) => app.isFrontmost) ?? exactMatches[0];
+		return exactMatches.find((app) => app.isFrontmost) ?? exactMatches[0]!;
 	}
 
 	const partialMatches = apps.filter((app) => normalizeText(app.appName).includes(query));
@@ -1269,7 +1269,7 @@ function chooseAppByQuery(apps: HelperApp[], appQuery: string): HelperApp {
 		throw new Error(`App '${appQuery}' is not running. Running apps: ${running || "none"}.`);
 	}
 	if (partialMatches.length === 1) {
-		return partialMatches[0];
+		return partialMatches[0]!;
 	}
 
 	const candidates = partialMatches.map((app) => app.appName).join(", ");
@@ -1279,7 +1279,7 @@ function chooseAppByQuery(apps: HelperApp[], appQuery: string): HelperApp {
 function chooseWindowByTitle(windows: HelperWindow[], windowTitle: string, appName: string): HelperWindow {
 	const query = normalizeText(windowTitle);
 	const exactMatches = windows.filter((window) => normalizeText(window.title) === query);
-	if (exactMatches.length === 1) return exactMatches[0];
+	if (exactMatches.length === 1) return exactMatches[0]!;
 	if (exactMatches.length > 1) {
 		const clearWinner = chooseRankedWindowOrUndefined(exactMatches);
 		if (clearWinner) return clearWinner;
@@ -1294,7 +1294,7 @@ function chooseWindowByTitle(windows: HelperWindow[], windowTitle: string, appNa
 			`Window '${windowTitle}' was not found in app '${appName}'. Available windows: ${summarizeWindowCandidates(windows)}.`,
 		);
 	}
-	if (partialMatches.length === 1) return partialMatches[0];
+	if (partialMatches.length === 1) return partialMatches[0]!;
 	const clearWinner = chooseRankedWindowOrUndefined(partialMatches);
 	if (clearWinner) return clearWinner;
 
@@ -1488,8 +1488,8 @@ async function resolveTargetForScreenshot(selection: ScreenshotParams, signal?: 
 	}
 	if (matches.length > 1) {
 		const ranked = [...matches].sort((a, b) => scoreWindow(b.window) - scoreWindow(a.window));
-		if (ranked.length > 1 && scoreWindow(ranked[0].window) >= scoreWindow(ranked[1].window) + 25) {
-			const resolved = toResolvedTarget(ranked[0].app, ranked[0].window);
+		if (ranked.length > 1 && scoreWindow(ranked[0]!.window) >= scoreWindow(ranked[1]!.window) + 25) {
+			const resolved = toResolvedTarget(ranked[0]!.app, ranked[0]!.window);
 			setCurrentTarget(resolved);
 			return resolved;
 		}
@@ -1500,7 +1500,7 @@ async function resolveTargetForScreenshot(selection: ScreenshotParams, signal?: 
 		throw new Error(`Window title '${query}' is ambiguous (${options}). Specify app as well.`);
 	}
 
-	const resolved = toResolvedTarget(matches[0].app, matches[0].window);
+	const resolved = toResolvedTarget(matches[0]!.app, matches[0]!.window);
 	setCurrentTarget(resolved);
 	return resolved;
 }

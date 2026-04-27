@@ -70,6 +70,7 @@ import type { LLMQueryRequest, LLMQueryResult } from '../../shared/src/agent/llm
 import { PI_TOOL_NAME_MAP, THINKING_TO_PI } from '../../shared/src/agent/backend/pi/constants.ts';
 import { getDefaultSummarizationModel } from '../../shared/src/config/models.ts';
 import { createWebFetchTool } from './tools/web-fetch.ts';
+import { buildPiToolAllowlist } from './computer-use-tools.ts';
 import { resolveSearchProvider } from './tools/search/resolve-provider.ts';
 import { createSearchTool } from './tools/search/create-search-tool.ts';
 
@@ -557,7 +558,7 @@ async function ensureSession(): Promise<AgentSession> {
   ];
   const proxyTools = buildProxyTools();
   const wrappedAll = wrapToolsWithHooks([...builtinDefs, ...webTools, ...proxyTools]);
-  const toolAllowlist = wrappedAll.map(t => t.name);
+  let toolAllowlist = buildPiToolAllowlist(wrappedAll.map(t => t.name), false);
   debugLog(`Session tools: ${builtinDefs.length} builtin + ${webTools.length} web + ${proxyTools.length} proxy = ${wrappedAll.length} total`);
 
   // Build session options
@@ -585,7 +586,9 @@ async function ensureSession(): Promise<AgentSession> {
         });
         await resourceLoader.reload();
         sessionOptions.resourceLoader = resourceLoader;
-        debugLog(`Enabled pi-computer-use package: ${COMPUTER_USE_PACKAGE_DIR}`);
+        toolAllowlist = buildPiToolAllowlist(toolAllowlist, true);
+        sessionOptions.tools = toolAllowlist;
+        debugLog(`Enabled pi-computer-use package: ${COMPUTER_USE_PACKAGE_DIR}; added desktop tools to allowlist`);
       } else {
         debugLog(`pi-computer-use package not found at ${COMPUTER_USE_PACKAGE_DIR}; continuing without desktop computer-use`);
       }
@@ -1139,7 +1142,7 @@ function handleSessionEvent(event: AgentSessionEvent): void {
           (c) => c.type === 'toolCall' && c.name && isPrefetchableTool(c.name),
         );
         if (prefetchableToolCalls.length >= 2) {
-          debugLog(`Prefetching ${prefetchableToolCalls.length} parallel ${prefetchableToolCalls[0].name} calls`);
+          debugLog(`Prefetching ${prefetchableToolCalls.length} parallel ${prefetchableToolCalls[0]?.name ?? 'tool'} calls`);
           for (const tc of prefetchableToolCalls) {
             const requestId = `prefetch-${tc.id}`;
             const promise = new Promise<{ content: string; isError: boolean }>((resolve) => {

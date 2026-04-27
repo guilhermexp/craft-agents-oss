@@ -78,7 +78,7 @@
     "electron:dist:dev:linux": "CRAFT_DEV_RUNTIME=1 bun run electron:build && cd apps/electron && electron-builder --config electron-builder.yml --linux",
     "release:mac": "bash scripts/release-mac.sh arm64",
     "release:mac:x64": "bash scripts/release-mac.sh x64",
-    "playground:dev": "lsof -ti:5173 | xargs kill -9 2>/dev/null; vite dev --config apps/electron/vite.config.ts --open /playground.html",
+    "playground:dev": "lsof -ti:5273 | xargs kill -9 2>/dev/null; vite dev --config apps/electron/vite.config.ts --open /playground.html",
     "viewer:dev": "lsof -ti:5174 | xargs kill -9 2>/dev/null; vite dev --config apps/viewer/vite.config.ts --open /s/tz5-13I84pwK_he",
     "viewer:typecheck": "cd apps/viewer && bun run typecheck",
     "viewer:build": "vite build --config apps/viewer/vite.config.ts",

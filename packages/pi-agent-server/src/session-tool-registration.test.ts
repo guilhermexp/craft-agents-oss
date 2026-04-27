@@ -12,6 +12,7 @@ import {
 } from '@mariozechner/pi-coding-agent';
 import { createSearchTool } from './tools/search/create-search-tool.ts';
 import { createWebFetchTool } from './tools/web-fetch.ts';
+import { buildPiToolAllowlist, COMPUTER_USE_TOOL_NAMES } from './computer-use-tools.ts';
 import type { WebSearchProvider } from './tools/search/types.ts';
 
 /**
@@ -130,5 +131,20 @@ describe('Pi SDK 0.70.0 CreateAgentSessionOptions contract', () => {
     for (const tool of customTools) {
       expect(allowlistSet.has(tool.name)).toBe(true);
     }
+  });
+
+  it('adds pi-computer-use extension tools to the explicit allowlist when enabled', () => {
+    const baseAllowlist = ['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls', 'web_search', 'web_fetch'];
+    const tools = buildPiToolAllowlist(baseAllowlist, true);
+
+    for (const toolName of COMPUTER_USE_TOOL_NAMES) {
+      expect(tools).toContain(toolName);
+    }
+    expect(new Set(tools).size).toBe(tools.length);
+  });
+
+  it('leaves the Pi tool allowlist unchanged when computer-use is disabled', () => {
+    const baseAllowlist = ['read', 'bash', 'web_search'];
+    expect(buildPiToolAllowlist(baseAllowlist, false)).toEqual(baseAllowlist);
   });
 });
