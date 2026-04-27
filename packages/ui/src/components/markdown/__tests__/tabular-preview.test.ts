@@ -57,6 +57,30 @@ describe('parseDelimitedTabularData', () => {
 
     expect(result.rows).toEqual([{ name: 'Alpha', total: 1 }])
   })
+
+  it('detects semicolon-separated CSV files', () => {
+    const result = parseDelimitedTabularData(
+      'Ordem;Filial;CNPJ;Parceiro;Valor unitario\n1;1101;16.404.287/0047-38;SUZANO PAPEL E CELULOSE;R$ 210',
+      '/tmp/relatorio-lote-suzano-15360.csv',
+    )
+
+    expect(result.columns.map((column) => column.label)).toEqual([
+      'Ordem',
+      'Filial',
+      'CNPJ',
+      'Parceiro',
+      'Valor unitario',
+    ])
+    expect(result.rows).toEqual([
+      {
+        ordem: 1,
+        filial: 1101,
+        cnpj: '16.404.287/0047-38',
+        parceiro: 'SUZANO PAPEL E CELULOSE',
+        valor_unitario: 'R$ 210',
+      },
+    ])
+  })
 })
 
 describe('parseXlsxTabularData', () => {
