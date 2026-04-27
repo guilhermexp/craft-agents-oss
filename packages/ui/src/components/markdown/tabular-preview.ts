@@ -94,13 +94,18 @@ function countDelimiter(line: string, delimiter: string): number {
   return count
 }
 
-function detectDelimiter(content: string, sourcePath?: string): ',' | '\t' {
+type Delimiter = ',' | ';' | '\t'
+
+function detectDelimiter(content: string, sourcePath?: string): Delimiter {
   if (sourcePath?.toLowerCase().endsWith('.tsv')) return '\t'
   const firstLine = content.split(/\r?\n/, 1)[0] || ''
-  return countDelimiter(firstLine, '\t') > countDelimiter(firstLine, ',') ? '\t' : ','
+  const candidates: Delimiter[] = [',', ';', '\t']
+  return candidates.reduce((best, delimiter) => (
+    countDelimiter(firstLine, delimiter) > countDelimiter(firstLine, best) ? delimiter : best
+  ), ',')
 }
 
-function parseDelimitedRows(content: string, delimiter: ',' | '\t'): string[][] {
+function parseDelimitedRows(content: string, delimiter: Delimiter): string[][] {
   const rows: string[][] = []
   let row: string[] = []
   let cell = ''
