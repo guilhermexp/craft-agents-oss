@@ -221,12 +221,13 @@ export class WindowManager {
     if (restoreUrl) {
       // Restore from saved URL - need to adapt for dev vs prod
       if (VITE_DEV_SERVER_URL) {
-        // In dev mode, replace the base URL but keep the path and query
+        // In dev mode, replace the base URL but keep only the query.
+        // Pathname is never useful here — Vite serves from root, and saved URLs
+        // from a production install would carry an absolute install path
+        // (e.g. /Applications/Craft Agents.app/.../index.html) that 404s on Vite.
         try {
           const savedUrl = new URL(restoreUrl)
           const devUrl = new URL(VITE_DEV_SERVER_URL)
-          // Preserve pathname and search from saved URL, use dev server host
-          devUrl.pathname = savedUrl.pathname
           devUrl.search = savedUrl.search
           window.loadURL(devUrl.toString())
         } catch {
