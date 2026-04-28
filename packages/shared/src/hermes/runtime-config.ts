@@ -1,5 +1,6 @@
-import { join } from 'node:path'
 import { parseDocument } from 'yaml'
+
+export { resolveDefaultHermesPaths } from './acp-config.ts'
 
 export interface HermesCustomProviderSnapshot {
   name: string
@@ -12,19 +13,6 @@ export interface HermesConfigSnapshot {
   fallbackModel?: string
   providers: string[]
   customProviders: HermesCustomProviderSnapshot[]
-}
-
-export function resolveDefaultHermesPaths(homeDir: string): {
-  hermesHome: string
-  configPath: string
-  envPath: string
-} {
-  const hermesHome = join(homeDir, '.hermes')
-  return {
-    hermesHome,
-    configPath: join(hermesHome, 'config.yaml'),
-    envPath: join(hermesHome, '.env'),
-  }
 }
 
 function trimString(value: unknown): string | undefined {

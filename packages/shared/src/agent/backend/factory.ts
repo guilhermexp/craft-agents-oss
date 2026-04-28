@@ -595,7 +595,7 @@ export const BACKEND_CAPABILITIES: Record<AgentProvider, {
   needsHttpPoolServer: boolean;
 }> = {
   anthropic: { needsHttpPoolServer: false },
-  hermes: { needsHttpPoolServer: false },
+  hermes: { needsHttpPoolServer: true },
   pi: { needsHttpPoolServer: false },
 };
 

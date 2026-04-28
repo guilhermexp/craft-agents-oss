@@ -62,6 +62,9 @@ files:
   - "!node_modules/**/*"
   # Exclude any Python virtualenv (dev-only, contains machine-specific symlinks that break packaging)
   - "!**/.venv/**"
+  # Hermes Python runtime ships via per-platform extraResources (below) to avoid
+  # the node_modules collector and to keep symlink/codesign handling under control.
+  - "!**/vendor/hermes/**"
 
 # SDK is included as per-platform extraResources (below) to bypass node_modules auto-exclusion
 # and to apply platform-specific ripgrep binary filtering.
@@ -111,6 +114,13 @@ mac:
     # WhatsApp worker subprocess (self-contained; Baileys bundled in).
     - from: ../../packages/messaging-whatsapp-worker/dist/worker.cjs
       to: messaging-whatsapp-worker/worker.cjs
+    # Bundled Hermes Python runtime (built by scripts/bundle-hermes.sh).
+    - from: resources/vendor/hermes
+      to: app/vendor/hermes
+      filter:
+        - "**/*"
+        - "!**/__pycache__/**"
+        - "!**/*.pyc"
   # Exclude binaries for other platforms
   files:
     - "!**/vendor/codex/linux-*/**"
@@ -192,6 +202,13 @@ win:
     # WhatsApp worker subprocess (self-contained; Baileys bundled in).
     - from: ../../packages/messaging-whatsapp-worker/dist/worker.cjs
       to: messaging-whatsapp-worker/worker.cjs
+    # Bundled Hermes Python runtime (built by scripts/bundle-hermes.ps1).
+    - from: resources/vendor/hermes
+      to: app/vendor/hermes
+      filter:
+        - "**/*"
+        - "!**/__pycache__/**"
+        - "!**/*.pyc"
 
 nsis:
   oneClick: true
@@ -220,6 +237,13 @@ linux:
     # WhatsApp worker subprocess (self-contained; Baileys bundled in).
     - from: ../../packages/messaging-whatsapp-worker/dist/worker.cjs
       to: messaging-whatsapp-worker/worker.cjs
+    # Bundled Hermes Python runtime (built by scripts/bundle-hermes.sh).
+    - from: resources/vendor/hermes
+      to: app/vendor/hermes
+      filter:
+        - "**/*"
+        - "!**/__pycache__/**"
+        - "!**/*.pyc"
   # Exclude binaries for other platforms
   files:
     - "!**/vendor/codex/darwin-*/**"

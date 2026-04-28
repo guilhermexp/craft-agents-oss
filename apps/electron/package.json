@@ -33,7 +33,9 @@
     "dist:mac:x64": "bash scripts/build-dmg.sh x64",
     "dist:win": "powershell -ExecutionPolicy Bypass -File scripts/build-win.ps1",
     "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix"
+    "lint:fix": "eslint src/ --fix",
+    "bundle:hermes": "bash scripts/bundle-hermes.sh",
+    "bundle:hermes:win": "powershell -ExecutionPolicy Bypass -File scripts/bundle-hermes.ps1"
   },
   "dependencies": {
     "@craft-agent/core": "workspace:*",

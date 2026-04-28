@@ -7,19 +7,14 @@ import { generateText, streamText } from 'ai'
 import type { AgentEvent } from '@craft-agent/core/types'
 
 import { BaseAgent } from './base-agent.ts'
-import type { BackendConfig, ChatOptions } from './backend/types.ts'
+import type { BackendConfig, ChatOptions, PostInitResult, SdkMcpServerConfig } from './backend/types.ts'
 import { AbortReason } from './backend/types.ts'
 import { getBackendRuntime } from './backend/internal/driver-types.ts'
 import type { FileAttachment } from '../utils/files.ts'
 import type { PermissionMode } from './mode-manager.ts'
 import type { LLMQueryRequest, LLMQueryResult } from './llm-tool.ts'
 import type { Workspace } from '../config/storage.ts'
-
-type HermesRuntimeConfig = {
-  command?: string
-  args?: string[]
-  hermesHome?: string
-}
+import { buildHermesAcpMcpServers, normalizeHermesRuntimeConfig, type HermesRuntimeConfig } from '../hermes/acp-config.ts'
 
 type StreamToolPart = {
   type: 'tool-call' | 'tool-result'
@@ -45,11 +40,14 @@ export class HermesAgent extends BaseAgent {
   private hermesSessionId: string | null = null
   private isStreaming = false
   private abortController: AbortController | null = null
+  private activeMcpServers: Record<string, SdkMcpServerConfig> = {}
+  private pendingProviderRestart = false
 
   constructor(config: BackendConfig) {
     super(config, config.model || '', 200_000)
     this._supportsBranching = false
     this.hermesSessionId = config.session?.sdkSessionId || null
+    this.activeMcpServers = { ...(config.initialSources?.mcpServers ?? {}) }
 
     if (!config.isHeadless) {
       this.startConfigWatcher()
@@ -67,6 +65,8 @@ export class HermesAgent extends BaseAgent {
   override setWorkspace(workspace: Workspace): void {
     super.setWorkspace(workspace)
     this.hermesSessionId = null
+    this.activeMcpServers = {}
+    this.pendingProviderRestart = false
     this.provider?.cleanup()
     this.provider = null
   }
@@ -74,17 +74,13 @@ export class HermesAgent extends BaseAgent {
   override clearHistory(): void {
     super.clearHistory()
     this.hermesSessionId = null
+    this.pendingProviderRestart = false
     this.provider?.cleanup()
     this.provider = null
   }
 
-  private getRuntimeConfig(): Required<HermesRuntimeConfig> {
-    const runtime = getBackendRuntime(this.config) as HermesRuntimeConfig
-    return {
-      command: runtime.command || 'hermes',
-      args: runtime.args && runtime.args.length > 0 ? runtime.args : ['acp'],
-      hermesHome: runtime.hermesHome || process.env.HERMES_HOME || join(homedir(), '.hermes'),
-    }
+  private getRuntimeConfig() {
+    return normalizeHermesRuntimeConfig(getBackendRuntime(this.config) as HermesRuntimeConfig)
   }
 
   private resolvedCwd(): string {
@@ -106,7 +102,10 @@ export class HermesAgent extends BaseAgent {
       },
       session: {
         cwd: this.resolvedCwd(),
-        mcpServers: [],
+        mcpServers: buildHermesAcpMcpServers({
+          mcpServers: this.activeMcpServers,
+          poolServerUrl: this.config.poolServerUrl,
+        }),
       },
       ...(this.hermesSessionId ? { existingSessionId: this.hermesSessionId } : {}),
       persistSession: true,
@@ -115,8 +114,56 @@ export class HermesAgent extends BaseAgent {
     return this.provider
   }
 
-  async postInit() {
+  override async postInit(): Promise<PostInitResult> {
+    const initial = this.config.initialSources
+    if (initial) {
+      this.setAllSources(initial.enabledSources)
+      // When poolServerUrl is set, SessionManager has already synced the MCP pool
+      // before constructing the agent. Skip the redundant sync here; just track
+      // intended state via SourceManager so getActiveSourceSlugs() stays correct.
+      if (this.config.poolServerUrl) {
+        this.sourceManager.updateActiveState(
+          Object.keys(initial.mcpServers),
+          Object.keys(initial.apiServers),
+          initial.enabledSlugs,
+        )
+        this.activeMcpServers = { ...initial.mcpServers }
+      } else {
+        await this.setSourceServers(initial.mcpServers, initial.apiServers, initial.enabledSlugs)
+      }
+    }
+
     return { authInjected: true }
+  }
+
+  override async setSourceServers(
+    mcpServers: Record<string, SdkMcpServerConfig>,
+    apiServers: Record<string, unknown>,
+    intendedSlugs?: string[],
+  ): Promise<void> {
+    await super.setSourceServers(mcpServers, apiServers, intendedSlugs)
+
+    const previousKeys = Object.keys(this.activeMcpServers).sort()
+    const nextKeys = Object.keys(mcpServers).sort()
+    const descriptorsChanged =
+      previousKeys.length !== nextKeys.length ||
+      previousKeys.some((key, idx) => key !== nextKeys[idx])
+
+    this.activeMcpServers = { ...mcpServers }
+
+    if (!descriptorsChanged) return
+
+    // ACP sends MCP server descriptors only during session creation/load/resume.
+    // Restart provider so the next turn recreates the Hermes session with the new
+    // descriptor set. Defer when a stream is active to avoid killing the subprocess
+    // mid-response; chatImpl applies the pending restart in finally.
+    if (this.isStreaming) {
+      this.pendingProviderRestart = true
+      return
+    }
+
+    this.provider?.cleanup()
+    this.provider = null
   }
 
   protected async *chatImpl(
@@ -213,6 +260,12 @@ export class HermesAgent extends BaseAgent {
       }
       this.isStreaming = false
       this.abortController = null
+
+      if (this.pendingProviderRestart) {
+        this.pendingProviderRestart = false
+        this.provider?.cleanup()
+        this.provider = null
+      }
     }
   }
 
@@ -271,6 +324,7 @@ export class HermesAgent extends BaseAgent {
     this.abortController?.abort()
     this.abortController = null
     this.isStreaming = false
+    this.pendingProviderRestart = false
   }
 
   override dispose(): void {

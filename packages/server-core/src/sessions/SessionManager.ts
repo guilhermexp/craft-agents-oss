@@ -2627,7 +2627,7 @@ export class SessionManager implements ISessionManager {
         managed.poolServer = new McpPoolServer(managed.mcpPool, { debug: (msg) => sessionLog.debug(msg) })
         managed.mcpPool.onToolsChanged = () => managed.poolServer?.notifyToolsChanged()
         poolServerUrl = await managed.poolServer.start()
-        await managed.mcpPool.sync(mcpServers) // Ensure pool has tools before SDK connects
+        await managed.mcpPool.sync(mcpServers, apiServers) // Ensure pool has tools before external SDK/ACP subprocesses connect
       }
 
       // Per-session env overrides

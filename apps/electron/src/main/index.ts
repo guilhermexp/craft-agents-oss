@@ -72,6 +72,7 @@ import { existsSync, readFileSync } from 'fs'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@craft-agent/server-core/sessions'
 import { registerAllRpcHandlers } from './handlers/index'
+import { publishHermesRuntimeEnv } from './handlers/hermes-runtime'
 import { registerCoreRpcHandlers, cleanupSessionFileWatchForClient } from '@craft-agent/server-core/handlers/rpc'
 import type { PlatformServices } from '../runtime/platform'
 import { createElectronPlatform } from './platform'
@@ -175,6 +176,11 @@ if (isDebugMode) {
     mainLog.info('CLI tools configured:', { uvBinary: process.env.CRAFT_UV, binDir, scriptsDir, bundledUvExists })
   }
 }
+
+// Resolve the bundled Hermes Python runtime (when present) and publish the
+// path/env settings so HermesAgent can spawn the embedded ACP subprocess
+// instead of a system-wide `hermes` install.
+publishHermesRuntimeEnv()
 
 // Register Pi model resolver so llm-connections.ts can resolve Pi models
 // without importing @mariozechner/pi-ai (which breaks the Vite renderer build)

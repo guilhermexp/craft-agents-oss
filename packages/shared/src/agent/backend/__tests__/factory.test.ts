@@ -24,6 +24,7 @@ import {
   createBackendFromConnection,
   testBackendConnection,
   validateStoredBackendConnection,
+  BACKEND_CAPABILITIES,
 } from '../factory.ts';
 import type { BackendConfig } from '../types.ts';
 import type { Workspace, LlmConnection } from '../../../config/storage.ts';
@@ -109,6 +110,12 @@ describe('createBackend / createAgent', () => {
       const agent = createBackend(config);
 
       expect(agent).toBeInstanceOf(HermesAgent);
+    });
+
+    it('should request an HTTP pool server for the external Hermes ACP process', () => {
+      expect(BACKEND_CAPABILITIES.hermes.needsHttpPoolServer).toBe(true);
+      expect(BACKEND_CAPABILITIES.anthropic.needsHttpPoolServer).toBe(false);
+      expect(BACKEND_CAPABILITIES.pi.needsHttpPoolServer).toBe(false);
     });
   });
 
