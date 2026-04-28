@@ -9,6 +9,7 @@ import { EntityRow } from "@/components/ui/entity-row"
 import { EntityListBadge } from "@/components/ui/entity-list-badge"
 import { SessionMenu } from "./SessionMenu"
 import { BatchSessionMenu } from "./BatchSessionMenu"
+import { ConnectionIcon } from "@/components/icons/ConnectionIcon"
 import { SessionStatusIcon } from "./SessionStatusIcon"
 import { SessionBadges } from "./SessionBadges"
 import { getSessionTitle, getSessionPreviewText, highlightMatch, hasUnreadMeta, shortTimeLocale } from "@/utils/session"
@@ -19,6 +20,7 @@ import type { SessionMeta } from "@/atoms/sessions"
 import { messagingBindingsBySessionAtom } from "@/atoms/messaging"
 import { useAtomValue } from "jotai"
 import { extractLabelId } from "@craft-agent/shared/labels"
+import type { LlmConnectionWithStatus } from "../../../shared/types"
 
 const PLATFORM_PILL: Record<'telegram' | 'whatsapp', { label: string; colorClass: string }> = {
   telegram: {
@@ -29,6 +31,38 @@ const PLATFORM_PILL: Record<'telegram' | 'whatsapp', { label: string; colorClass
     label: 'WhatsApp',
     colorClass: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300',
   },
+}
+
+function resolveSessionConnection(
+  item: SessionMeta,
+  llmConnections: LlmConnectionWithStatus[],
+  workspaceDefaultLlmConnection?: string,
+): LlmConnectionWithStatus | null {
+  if (llmConnections.length === 0) return null
+
+  if (item.llmConnection) {
+    const lockedConnection = llmConnections.find(connection => connection.slug === item.llmConnection)
+    if (lockedConnection) return lockedConnection
+  }
+
+  if (workspaceDefaultLlmConnection) {
+    const workspaceDefaultConnection = llmConnections.find(connection => connection.slug === workspaceDefaultLlmConnection)
+    if (workspaceDefaultConnection) return workspaceDefaultConnection
+  }
+
+  return llmConnections.find(connection => connection.isDefault) ?? llmConnections[0] ?? null
+}
+
+function SessionConnectionIcon({ connection }: { connection: LlmConnectionWithStatus }) {
+  return (
+    <span
+      className="flex !h-3.5 !w-3.5 shrink-0 items-center justify-center opacity-80"
+      title={connection.name}
+      aria-label={connection.name}
+    >
+      <ConnectionIcon connection={connection} size={14} />
+    </span>
+  )
 }
 
 export interface SessionItemProps {
@@ -54,7 +88,7 @@ export function SessionItem({
   onRangeSelect,
 }: SessionItemProps) {
   const ctx = useSessionListContext()
-  const { workspaces, isCompactMode } = useAppShellContext()
+  const { workspaces, isCompactMode, llmConnections, workspaceDefaultLlmConnection } = useAppShellContext()
   const hasRemoteWorkspaces = workspaces?.some(w => w.remoteServer) ?? false
   const { hotkey: nextHotkey } = useActionLabel('chat.nextSearchMatch')
   const { hotkey: prevHotkey } = useActionLabel('chat.prevSearchMatch')
@@ -74,6 +108,7 @@ export function SessionItem({
   const messagingBindingsBySession = useAtomValue(messagingBindingsBySessionAtom)
   const sessionBindings = messagingBindingsBySession.get(item.id) ?? []
   const hasMessagingBinding = sessionBindings.length > 0
+  const sessionConnection = resolveSessionConnection(item, llmConnections, workspaceDefaultLlmConnection)
 
   const handleClick = (e: React.MouseEvent) => {
     ctx.onFocusZone()
@@ -141,6 +176,7 @@ export function SessionItem({
       icon={
         <>
           <SessionStatusIcon item={item} />
+          {sessionConnection ? <SessionConnectionIcon connection={sessionConnection} /> : null}
           <div className={cn(
             "flex items-center justify-center overflow-hidden gap-1",
             "transition-all duration-200 ease-out",
