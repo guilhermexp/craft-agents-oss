@@ -12,6 +12,7 @@ import {
 import { ContextMenuProvider } from '@/components/ui/menu-context'
 import { SidebarMenu, type SidebarMenuType } from './SidebarMenu'
 import { SortableList, type SortableItemData } from '@/components/ui/sortable-list'
+import { SESSION_DRAG_MIME } from './session-dnd'
 
 /** Context menu configuration for sidebar items */
 export interface SidebarContextMenuConfig {
@@ -79,6 +80,8 @@ export interface LinkItem {
   contextMenu?: SidebarContextMenuConfig
   // Drag-and-drop: flat list reorder (e.g., statuses)
   sortable?: SortableConfig
+  /** Accepts a dragged session and applies this item's action to it. */
+  onSessionDrop?: (sessionId: string) => void
   // Optional element rendered after the title (e.g., label type icon), revealed on hover
   afterTitle?: React.ReactNode
 }
@@ -468,6 +471,41 @@ interface SidebarButtonProps {
 // and pass props like data-state="open" directly onto this button element.
 const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & React.ButtonHTMLAttributes<HTMLButtonElement>>(
   ({ link, itemProps, isOverlay, className: extraClassName, ...radixProps }, forwardedRef) => {
+    const [isSessionDragOver, setIsSessionDragOver] = React.useState(false)
+    const acceptsSessionDrop = !isOverlay && !!link.onSessionDrop
+
+    const handleDragEnter = React.useCallback((event: React.DragEvent<HTMLButtonElement>) => {
+      radixProps.onDragEnter?.(event)
+      if (!acceptsSessionDrop || !Array.from(event.dataTransfer.types).includes(SESSION_DRAG_MIME)) return
+      setIsSessionDragOver(true)
+    }, [acceptsSessionDrop, radixProps])
+
+    const handleDragLeave = React.useCallback((event: React.DragEvent<HTMLButtonElement>) => {
+      radixProps.onDragLeave?.(event)
+      if (!acceptsSessionDrop) return
+      setIsSessionDragOver(false)
+    }, [acceptsSessionDrop, radixProps])
+
+    const handleDragOver = React.useCallback((event: React.DragEvent<HTMLButtonElement>) => {
+      radixProps.onDragOver?.(event)
+      if (!acceptsSessionDrop || !Array.from(event.dataTransfer.types).includes(SESSION_DRAG_MIME)) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'move'
+    }, [acceptsSessionDrop, radixProps])
+
+    const handleDrop = React.useCallback((event: React.DragEvent<HTMLButtonElement>) => {
+      radixProps.onDrop?.(event)
+      if (!acceptsSessionDrop) return
+
+      const sessionId = event.dataTransfer.getData(SESSION_DRAG_MIME)
+      if (!sessionId) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      setIsSessionDragOver(false)
+      link.onSessionDrop?.(sessionId)
+    }, [acceptsSessionDrop, link, radixProps])
+
     return (
       <button
         {...(isOverlay ? {} : (() => {
@@ -484,6 +522,10 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
           if (!isOverlay && itemProps?.ref) itemProps.ref(el)
         }}
         onClick={isOverlay ? undefined : link.onClick}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
         data-tutorial={link.dataTutorial}
         className={cn(
           "group flex w-full items-center gap-2 rounded-[6px] text-[13px] select-none outline-none",
@@ -495,6 +537,7 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
             ? "bg-foreground/[0.07]"
             // Highlight on hover, context menu open (data-state), or EditPopover active (data-edit-active)
             : "hover:bg-sidebar-hover data-[state=open]:bg-sidebar-hover data-[edit-active=true]:bg-sidebar-hover",
+          isSessionDragOver && "bg-sidebar-hover ring-1 ring-inset ring-accent/60",
           extraClassName,
         )}
       >

@@ -2331,6 +2331,7 @@ function AppShellContent({
                           iconColorable: state.iconColorable,
                           variant: (sessionFilter?.kind === 'state' && sessionFilter.stateId === state.id ? "default" : "ghost") as "default" | "ghost",
                           onClick: () => handleSessionStatusClick(state.id),
+                          onSessionDrop: (sessionId: string) => onSessionStatusChange(sessionId, state.id),
                           contextMenu: {
                             type: 'status' as const,
                             statusId: state.id,

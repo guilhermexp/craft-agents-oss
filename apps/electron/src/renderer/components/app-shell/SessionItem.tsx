@@ -12,6 +12,7 @@ import { BatchSessionMenu } from "./BatchSessionMenu"
 import { ConnectionIcon } from "@/components/icons/ConnectionIcon"
 import { SessionStatusIcon } from "./SessionStatusIcon"
 import { SessionBadges } from "./SessionBadges"
+import { SESSION_DRAG_MIME } from "./session-dnd"
 import { getSessionTitle, getSessionPreviewText, highlightMatch, hasUnreadMeta, shortTimeLocale } from "@/utils/session"
 import { useSessionListContext } from "@/context/SessionListContext"
 import { useAppShellContext } from "@/context/AppShellContext"
@@ -110,6 +111,12 @@ export function SessionItem({
   const hasMessagingBinding = sessionBindings.length > 0
   const sessionConnection = resolveSessionConnection(item, llmConnections, workspaceDefaultLlmConnection)
 
+  const handleDragStart = (event: React.DragEvent<HTMLButtonElement>) => {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData(SESSION_DRAG_MIME, item.id)
+    event.dataTransfer.setData('text/plain', item.id)
+  }
+
   const handleClick = (e: React.MouseEvent) => {
     ctx.onFocusZone()
     if (e.button === 2) {
@@ -148,6 +155,8 @@ export function SessionItem({
       onMouseDown={handleClick}
       buttonProps={{
         ...itemProps,
+        draggable: true,
+        onDragStart: handleDragStart,
         onKeyDown: (e: React.KeyboardEvent) => {
           ;(itemProps as { onKeyDown: (event: React.KeyboardEvent) => void }).onKeyDown(e)
           ctx.onKeyDown(e, item)
