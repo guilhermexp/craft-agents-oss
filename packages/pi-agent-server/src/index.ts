@@ -226,6 +226,10 @@ const COMPUTER_USE_PACKAGE_DIR = join(SERVER_DIR, 'pi-computer-use');
 
 // Mutable state
 let currentUserMessage = '';
+let currentPromptImages: Array<{ type: 'image'; data: string; mimeType: string }> | undefined;
+let pendingContextOverflowRecoveryError: string | null = null;
+let overflowRecoveryInProgress = false;
+let overflowRecoveryAttemptedForCurrentPrompt = false;
 
 // Pending promises for async handshakes
 const pendingPreToolUse = new Map<string, { resolve: (response: { action: string; input?: Record<string, unknown>; reason?: string }) => void }>();
@@ -1114,11 +1118,30 @@ function extractToolExecutionMetadata(args: Record<string, unknown> | undefined)
 function handleSessionEvent(event: AgentSessionEvent): void {
   let forwardedEvent: OutboundAgentEvent = event;
 
+  if (event.type === 'agent_end' && pendingContextOverflowRecoveryError) {
+    const errorMsg = pendingContextOverflowRecoveryError;
+    pendingContextOverflowRecoveryError = null;
+    debugLog('Suppressing agent_end from overflowed turn; starting compact+retry');
+    void recoverFromContextOverflow('message_end', errorMsg);
+    return;
+  }
+
   // Log API errors for debugging and attach provider-native turn anchor for branch cutoffs.
   if (event.type === 'message_end') {
     const msg = event.message as { role?: string; stopReason?: string; errorMessage?: string } | undefined;
     if (msg?.stopReason === 'error') {
       debugLog(`API error in message_end: ${msg.errorMessage || 'unknown'}`);
+      if (
+        msg.role === 'assistant' &&
+        msg.errorMessage &&
+        isContextOverflowErrorMessage(msg.errorMessage) &&
+        !overflowRecoveryInProgress &&
+        !overflowRecoveryAttemptedForCurrentPrompt
+      ) {
+        pendingContextOverflowRecoveryError = msg.errorMessage;
+        debugLog('Context overflow in message_end; suppressing error event until compact+retry runs after agent_end');
+        return;
+      }
     }
 
     if (msg?.role === 'assistant' && piSession) {
@@ -1266,8 +1289,47 @@ async function waitForCompaction(session: { isCompacting: boolean }, timeoutMs =
   }
 }
 
+async function recoverFromContextOverflow(source: string, errorMsg: string): Promise<void> {
+  if (overflowRecoveryInProgress || overflowRecoveryAttemptedForCurrentPrompt) {
+    debugLog(
+      `${source} overflow recovery skipped (inProgress=${overflowRecoveryInProgress}, attempted=${overflowRecoveryAttemptedForCurrentPrompt})`,
+    );
+    return;
+  }
+
+  overflowRecoveryInProgress = true;
+  overflowRecoveryAttemptedForCurrentPrompt = true;
+  debugLog(`${source} overflow detected, attempting compact+retry: ${errorMsg}`);
+
+  try {
+    const session = await ensureSession();
+    await session.compact();
+    await waitForCompaction(session);
+    await session.prompt(currentUserMessage, {
+      images: currentPromptImages && currentPromptImages.length > 0 ? currentPromptImages : undefined,
+      streamingBehavior: 'followUp',
+    });
+    debugLog(`${source} compact+retry queued after overflow`);
+  } catch (retryError) {
+    const retryMsg = retryError instanceof Error ? retryError.message : String(retryError);
+    debugLog(`${source} compact+retry failed: ${retryMsg}`);
+    send({
+      type: 'error',
+      message: `Prompt overflow recovery failed: ${retryMsg}`,
+      code: 'prompt_overflow_recovery_failed',
+    });
+    send({ type: 'event', event: { type: 'agent_end', messages: [] } });
+  } finally {
+    overflowRecoveryInProgress = false;
+  }
+}
+
 async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): Promise<void> {
   currentUserMessage = msg.message;
+  currentPromptImages = msg.images && msg.images.length > 0 ? msg.images : undefined;
+  pendingContextOverflowRecoveryError = null;
+  overflowRecoveryInProgress = false;
+  overflowRecoveryAttemptedForCurrentPrompt = false;
 
   try {
     // If proxy tools changed since last session creation, dispose and recreate.
@@ -1302,7 +1364,7 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
     // Fire prompt — use followUp when session is already streaming so the
     // message is queued instead of throwing "Agent is already processing".
     await session.prompt(msg.message, {
-      images: msg.images && msg.images.length > 0 ? msg.images : undefined,
+      images: currentPromptImages,
       streamingBehavior: 'followUp',
     });
   } catch (error) {
@@ -1311,28 +1373,8 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
     // Fallback hardening: if the provider surfaced a context-overflow error,
     // force a manual compact and retry this prompt once.
     if (isContextOverflowErrorMessage(errorMsg)) {
-      debugLog(`Prompt overflow detected, attempting compact+retry: ${errorMsg}`);
-      try {
-        const session = await ensureSession();
-        await session.compact();
-        await waitForCompaction(session);
-        await session.prompt(msg.message, {
-          images: msg.images && msg.images.length > 0 ? msg.images : undefined,
-          streamingBehavior: 'followUp',
-        });
-        debugLog('Compact+retry succeeded after overflow');
-        return;
-      } catch (retryError) {
-        const retryMsg = retryError instanceof Error ? retryError.message : String(retryError);
-        debugLog(`Compact+retry failed: ${retryMsg}`);
-        send({
-          type: 'error',
-          message: `Prompt overflow recovery failed: ${retryMsg}`,
-          code: 'prompt_overflow_recovery_failed',
-        });
-        send({ type: 'event', event: { type: 'agent_end', messages: [] } });
-        return;
-      }
+      await recoverFromContextOverflow('prompt', errorMsg);
+      return;
     }
 
     debugLog(`Prompt failed: ${errorMsg}`);
