@@ -243,6 +243,8 @@ mock.module('../browser-cdp', () => ({
   },
 }))
 
+process.env.CRAFT_BROWSER_SCREENSHOT_CAPTURE_TIMEOUT_MS = '50'
+
 const { BrowserPaneManager } = await import('../browser-pane-manager')
 
 describe('BrowserPaneManager', () => {
@@ -786,6 +788,14 @@ describe('BrowserPaneManager', () => {
     }))
 
     await expect(manager.screenshot('screenshot-empty-png')).rejects.toThrow('Failed to capture screenshot: empty image buffer')
+  })
+
+  it('times out instead of hanging when screenshot capture never resolves', async () => {
+    manager.createInstance('screenshot-timeout')
+    const instance = (manager as any).instances.get('screenshot-timeout')
+    instance.pageView.webContents.capturePage = mock(() => new Promise(() => {}))
+
+    await expect(manager.screenshot('screenshot-timeout')).rejects.toThrow('Timed out capturing screenshot after 50ms')
   })
 
   it('recovers screenshot via non-disruptive inactive reveal and restores hidden state', async () => {

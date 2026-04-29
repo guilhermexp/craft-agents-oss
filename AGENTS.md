@@ -77,10 +77,13 @@ When syncing Craft upstream, preserve these Craft-side integration points:
   delegation/session, LLM, auth/config, metadata, and automation tools
   session-scoped.
 - `packages/server-core/src/handlers/rpc/hermes.ts` keeps runtime detection,
-  dashboard launch, logs/files/skills browsing, and dev-only update path-safe
-  under app-scoped `HERMES_HOME`.
+  dashboard launch, logs/files/skills browsing, dashboard-delegated dev
+  update, and update-completion notification path-safe under app-scoped
+  `HERMES_HOME`.
 - `apps/electron/src/renderer/pages/settings/HermesSettingsPage.tsx` keeps the
-  Hermes operational UI compact and avoids raw giant session/skill dumps.
+  Hermes operational UI compact, launches the Hermes dashboard, and avoids raw
+  giant session/skill dumps. Settings must not duplicate the dashboard's native
+  update action.
 
 ## Validation
 

@@ -92,8 +92,8 @@ When syncing Craft upstream, preserve these Craft-side integration points:
 | `packages/shared/src/agent/hermes-agent.ts` | Hermes gets both `craft-sources` and `craft-session` MCP endpoints through ACP; source changes do not kill an active stream; model/session changes do not silently drop MCP config. |
 | `packages/shared/src/hermes/acp-config.ts` | Bundled runtime env (`CRAFT_HERMES_PYTHON`, `CRAFT_HERMES_ARGS`, `CRAFT_HERMES_HOME`) is treated as one coherent ACP command/config unit. |
 | `packages/shared/src/mcp/session-tools-server.ts` | Craft-native tools exposed to Hermes include browser, delegation/session, LLM, auth/config helpers, metadata, and automation; callbacks stay session-scoped. |
-| `packages/server-core/src/handlers/rpc/hermes.ts` | Runtime detection, dashboard launch, file/log/skill browsing, and dev-only update controls stay local-only and path-safe under app-scoped `HERMES_HOME`. |
-| `apps/electron/src/renderer/pages/settings/HermesSettingsPage.tsx` | Settings remains an operational Hermes page with compact files/skills views, version line, dashboard launch inside Craft browser, and no giant raw session dump. |
+| `packages/server-core/src/handlers/rpc/hermes.ts` | Runtime detection, dashboard launch, file/log/skill browsing, dashboard-delegated dev update env, update marker watching, and restart notification stay local-only and path-safe under app-scoped `HERMES_HOME`. |
+| `apps/electron/src/renderer/pages/settings/HermesSettingsPage.tsx` | Settings remains an operational Hermes page with compact files/skills views, version line, dashboard launch inside Craft browser, and no giant raw session dump. It must not duplicate the dashboard's native update action. |
 | `apps/electron/scripts/bundle-hermes.*` and `update-hermes-runtime.*` | Bundling installs Hermes with `[web,acp]`, mirrors required source files, validates ACP, and updates only in dev from a clean Hermes checkout. |
 
 The intended runtime model is:
@@ -634,6 +634,9 @@ updates `SourceManager` state.
   - `updateRuntime` returns `unsupported` in packaged apps.
   - `getRuntimeDetails` returns fork/upstream release metadata used by the
     Hermes Settings version row.
+- `../hermes-agent/tests/hermes_cli/test_web_server.py`
+  - Covers Craft-embedded dashboard update delegation and completion-marker
+    writing for the Electron restart notification.
 
 Run with:
 
@@ -677,7 +680,7 @@ whenever TypeScript runtime wiring changes.
 | `packages/shared/src/hermes/acp-config.ts`                                                          | `normalizeHermesRuntimeConfig`, ACP MCP shape mapper |
 | `packages/shared/src/mcp/session-tools-server.ts`                                                   | Local MCP bridge for Craft-native session tools      |
 | `packages/shared/src/agent/hermes-agent.ts`                                                         | Streaming-safe lifecycle + Hermes MCP wiring         |
-| `packages/server-core/src/handlers/rpc/hermes.ts`                                                    | Runtime detection, dashboard, update, logs, files    |
+| `packages/server-core/src/handlers/rpc/hermes.ts`                                                    | Runtime detection, dashboard launch, dashboard update env, marker watcher, logs, files |
 | `apps/electron/src/renderer/pages/settings/HermesSettingsPage.tsx`                                  | Hermes Settings operational UI                       |
 | `packages/shared/src/hermes/__tests__/acp-config.test.ts`                                           | Resolver/MCP config tests                            |
 | `packages/shared/src/mcp/session-tools-server.test.ts`                                              | Craft session tools MCP tests                        |

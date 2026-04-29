@@ -38,6 +38,7 @@ const SCREENSHOT_RETRY_DELAY_MS = 120
 const SCREENSHOT_RESCUE_PAINT_DELAY_MS = 180
 const SCREENSHOT_NETWORK_IDLE_TIMEOUT_MS = 1_000
 const SCREENSHOT_NETWORK_IDLE_MS = 300
+const SCREENSHOT_CAPTURE_TIMEOUT_MS = Number(process.env.CRAFT_BROWSER_SCREENSHOT_CAPTURE_TIMEOUT_MS ?? 8_000)
 const THEME_COLOR_SIGNAL_PREFIX = '__craft_theme_color__:'
 const THEME_COLOR_NULL_SENTINEL = '__NULL__'
 const THEME_OBSERVER_MIN_INTERVAL_MS = 120
@@ -1568,9 +1569,13 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       ? { stayHidden: true, stayAwake: true }
       : undefined
 
-    let image = options.rect
-      ? await instance.pageView.webContents.capturePage(options.rect, captureOpts)
-      : await instance.pageView.webContents.capturePage(undefined, captureOpts)
+    let image = await this.withTimeout(
+      options.rect
+        ? instance.pageView.webContents.capturePage(options.rect, captureOpts)
+        : instance.pageView.webContents.capturePage(undefined, captureOpts),
+      SCREENSHOT_CAPTURE_TIMEOUT_MS,
+      `Timed out capturing screenshot after ${SCREENSHOT_CAPTURE_TIMEOUT_MS}ms`,
+    )
 
     if (image.isEmpty()) {
       return null
@@ -1598,6 +1603,20 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
 
     return { buffer: encoded, format: fmt }
+  }
+
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+    let timeout: ReturnType<typeof setTimeout> | null = null
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => reject(new Error(message)), timeoutMs)
+        }),
+      ])
+    } finally {
+      if (timeout) clearTimeout(timeout)
+    }
   }
 
   private async waitForScreenshotReadiness(instanceId: string): Promise<void> {
