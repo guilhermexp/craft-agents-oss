@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { promisify } from 'node:util'
+import { execFile as execFileCb } from 'node:child_process'
 import { mkdtemp, mkdir, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -9,6 +11,7 @@ import type { HandlerDeps } from '../handler-deps'
 import { registerHermesHandlers } from './hermes'
 
 const originalEnv = { ...process.env }
+const execFile = promisify(execFileCb)
 
 function createHarness(overrides?: Partial<HandlerDeps['platform']>) {
   const handlers = new Map<string, HandlerFn>()
@@ -70,22 +73,40 @@ afterEach(() => {
 })
 
 describe('registerHermesHandlers local file controls', () => {
-  it('lists Hermes home files without exposing .env', async () => {
+  it('lists Hermes home files without exposing secrets or expanding operational directories', async () => {
     const home = await mkdtemp(join(tmpdir(), 'craft-hermes-test-'))
     process.env.CRAFT_HERMES_HOME = home
     await writeFile(join(home, '.env'), 'SECRET=do-not-leak')
+    await writeFile(join(home, 'auth.json'), '{"token":"do-not-leak"}')
+    await writeFile(join(home, 'auth.lock'), '')
+    await writeFile(join(home, '.DS_Store'), '')
     await writeFile(join(home, 'config.yaml'), 'models: {}')
     await mkdir(join(home, 'skills'))
+    await mkdir(join(home, 'sessions'))
+    await mkdir(join(home, 'logs'))
+    await writeFile(join(home, 'sessions', 'session_abc.json'), '{}')
+    await writeFile(join(home, 'sessions', 'request_dump_abc_1.json'), '{}')
+    await writeFile(join(home, 'logs', 'hermes.log'), 'log')
 
     const { handlers, ctx } = createHarness()
     const listHomeFiles = handlers.get(RPC_CHANNELS.hermes.LIST_HOME_FILES)
     expect(listHomeFiles).toBeDefined()
 
     const result = await listHomeFiles!(ctx)
+    const names = result.files.map((file: { name: string }) => file.name)
+    const sessions = result.files.find((file: { name: string }) => file.name === 'sessions')
+    const logs = result.files.find((file: { name: string }) => file.name === 'logs')
 
     expect(result.success).toBe(true)
-    expect(result.files.map((file: { name: string }) => file.name)).toContain('config.yaml')
-    expect(result.files.map((file: { name: string }) => file.name)).not.toContain('.env')
+    expect(names).toContain('config.yaml')
+    expect(names).toContain('sessions')
+    expect(names).toContain('logs')
+    expect(names).not.toContain('.env')
+    expect(names).not.toContain('auth.json')
+    expect(names).not.toContain('auth.lock')
+    expect(names).not.toContain('.DS_Store')
+    expect(sessions?.children ?? []).toHaveLength(0)
+    expect(logs?.children ?? []).toHaveLength(0)
   })
 
   it('blocks Hermes path opening outside HERMES_HOME', async () => {
@@ -132,5 +153,42 @@ describe('registerHermesHandlers local file controls', () => {
 
     expect(result.success).toBe(false)
     expect(result.status).toBe('unsupported')
+  })
+
+  it('returns Hermes fork/upstream release metadata for the settings page', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'craft-hermes-home-'))
+    const repo = await mkdtemp(join(tmpdir(), 'craft-hermes-repo-'))
+    process.env.CRAFT_HERMES_HOME = home
+    process.env.CRAFT_HERMES_COMMAND = process.execPath
+    process.env.HERMES_SRC = repo
+
+    await writeFile(join(repo, 'pyproject.toml'), '[project]\nname = "hermes-agent"\nversion = "0.11.0"\n')
+    await execFile('git', ['-C', repo, 'init'])
+    await execFile('git', ['-C', repo, 'config', 'user.email', 'test@example.com'])
+    await execFile('git', ['-C', repo, 'config', 'user.name', 'Test User'])
+    await execFile('git', ['-C', repo, 'add', 'pyproject.toml'])
+    await execFile('git', ['-C', repo, 'commit', '-m', 'test hermes release'], {
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: '2026-04-23T12:00:00Z',
+        GIT_COMMITTER_DATE: '2026-04-23T12:00:00Z',
+      },
+    })
+    await execFile('git', ['-C', repo, 'tag', 'v2026.4.23'])
+    await execFile('git', ['-C', repo, 'remote', 'add', 'origin', 'https://github.com/guilhermexp/hermes-agent.git'])
+    await execFile('git', ['-C', repo, 'remote', 'add', 'upstream', 'https://github.com/NousResearch/hermes-agent.git'])
+
+    const { handlers, ctx } = createHarness()
+    const getRuntimeDetails = handlers.get(RPC_CHANNELS.hermes.GET_RUNTIME_DETAILS)
+    expect(getRuntimeDetails).toBeDefined()
+
+    const result = await getRuntimeDetails!(ctx)
+
+    expect(result.sourceRepoRemote).toBe('https://github.com/guilhermexp/hermes-agent.git')
+    expect(result.sourceRepoUpstreamRemote).toBe('https://github.com/NousResearch/hermes-agent.git')
+    expect(result.sourceRepoReleaseTag).toBe('v2026.4.23')
+    expect(result.sourceRepoCommitDate).toBe('2026-04-23')
+    expect(result.sourceRepoCommit).toMatch(/^[0-9a-f]{7}$/)
+    expect(result.sourceRepoDirty).toBe(false)
   })
 })

@@ -121,8 +121,12 @@ echo -e "${CYAN}→${NC} Installing Hermes (non-editable) into venv..."
 VENV_PYTHON="$VENDOR_DIR/hermes-venv/bin/python3"
 
 UV_PROJECT_ENVIRONMENT="$VENDOR_DIR/hermes-venv" \
-    uv pip install --python "$VENV_PYTHON" "$HERMES_SRC" 2>&1 | tail -15
-echo -e "${GREEN}✓${NC} Hermes installed"
+    uv pip install --python "$VENV_PYTHON" "$HERMES_SRC[web,acp]" 2>&1 | tail -15
+if git -C "$HERMES_SRC" rev-parse --is-inside-work-tree >/dev/null 2>&1 &&
+    git -C "$HERMES_SRC" status --porcelain -- build | grep -q '^?? build/'; then
+    rm -rf "$HERMES_SRC/build"
+fi
+echo -e "${GREEN}✓${NC} Hermes installed with web dashboard and ACP dependencies"
 
 # --------------------------------------------------------------------------
 # 5. Copy Hermes source (subset needed for ACP runtime)
@@ -161,17 +165,11 @@ import sys
 path = Path(sys.argv[1])
 text = path.read_text()
 
-old_callbacks = """        agent = state.agent
-        agent.tool_progress_callback = tool_progress_cb
-        agent.thinking_callback = thinking_cb
+callback_target = """        agent.thinking_callback = thinking_cb
         agent.step_callback = step_cb
         agent.message_callback = message_cb
-
-        if approval_cb:
 """
-new_callbacks = """        agent = state.agent
-        agent.tool_progress_callback = tool_progress_cb
-        # Hermes' AIAgent streams visible assistant text through
+callback_replacement = """        # Hermes' AIAgent streams visible assistant text through
         # run_conversation(stream_callback=...).  The older `message_callback`
         # attribute is not read by run_agent.py, so setting only that makes ACP
         # turns finish with no assistant message.
@@ -189,38 +187,34 @@ new_callbacks = """        agent = state.agent
                 raw_message_cb(text)
 
             message_cb = tracked_message_cb
-
-        if approval_cb:
 """
-old_run = """                result = agent.run_conversation(
-                    user_message=user_text,
-                    conversation_history=state.history,
-                    task_id=session_id,
+run_target = """                    task_id=session_id,
                 )
 """
-new_run = """                result = agent.run_conversation(
-                    user_message=user_text,
-                    conversation_history=state.history,
-                    task_id=session_id,
+run_replacement = """                    task_id=session_id,
                     stream_callback=message_cb,
                 )
 """
-old_final = """        final_response = result.get("final_response", "")
-        if final_response and conn:
+final_target = """        if final_response and conn:
             update = acp.update_agent_message_text(final_response)
             await conn.session_update(session_id, update)
 """
-new_final = """        final_response = result.get("final_response", "")
-        if final_response and conn and not streamed_text_parts:
+final_replacement = """        if final_response and conn and not streamed_text_parts:
             update = acp.update_agent_message_text(final_response)
             await conn.session_update(session_id, update)
 """
 
-for old, new in ((old_callbacks, new_callbacks), (old_run, new_run), (old_final, new_final)):
-    if old in text:
-        text = text.replace(old, new, 1)
-    elif new not in text:
-        raise SystemExit(f"Expected ACP adapter patch target not found in {path}")
+patches = (
+    (callback_target, callback_replacement, "callback wiring"),
+    (run_target, run_replacement, "run_conversation streaming"),
+    (final_target, final_replacement, "final response streaming guard"),
+)
+for old, new, label in patches:
+    if new in text:
+        continue
+    if old not in text:
+        raise SystemExit(f"Expected ACP adapter patch target not found in {path}: {label}")
+    text = text.replace(old, new, 1)
 
 path.write_text(text)
 PY
@@ -243,7 +237,11 @@ if [ -d "$WEB_DIST_SRC" ] && [ -f "$WEB_DIST_SRC/index.html" ]; then
     echo -e "${GREEN}✓${NC} Web dashboard assets copied"
 elif [ -f "$WEB_DIR/package.json" ] && command -v npm &>/dev/null; then
     echo -e "${CYAN}→${NC} Building Hermes web dashboard assets..."
-    (cd "$WEB_DIR" && npm install --silent && npm run build)
+    if [ -f "$WEB_DIR/package-lock.json" ]; then
+        (cd "$WEB_DIR" && npm ci --silent && npm run build)
+    else
+        (cd "$WEB_DIR" && npm install --silent && npm run build)
+    fi
     if [ -d "$WEB_DIST_SRC" ] && [ -f "$WEB_DIST_SRC/index.html" ]; then
         rm -rf "$WEB_DIST_DEST"
         mkdir -p "$(dirname "$WEB_DIST_DEST")"

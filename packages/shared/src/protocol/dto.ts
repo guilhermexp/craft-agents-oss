@@ -424,7 +424,11 @@ export interface HermesRuntimeDetailsResult extends HermesDetectionResult {
   vendorBinPath?: string
   sourceRepoPath?: string
   sourceRepoRemote?: string
+  sourceRepoUpstreamRemote?: string
+  sourceRepoBranch?: string
   sourceRepoCommit?: string
+  sourceRepoCommitDate?: string
+  sourceRepoReleaseTag?: string
   sourceRepoDirty?: boolean
   availableProviders?: string[]
   pluginNames?: string[]

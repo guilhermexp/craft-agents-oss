@@ -143,12 +143,17 @@ for dep in interceptor-common.ts feature-flags.ts interceptor-request-utils.ts; 
   fi
 done
 
-# 6. Build Electron app
+# 6. Bundle Hermes runtime
+echo "Bundling Hermes runtime..."
+cd "$ELECTRON_DIR"
+bun run bundle:hermes
+
+# 7. Build Electron app
 echo "Building Electron app..."
 cd "$ROOT_DIR"
 bun run electron:build
 
-# 7. Package with electron-builder
+# 8. Package with electron-builder
 echo "Packaging app with electron-builder..."
 cd "$ELECTRON_DIR"
 

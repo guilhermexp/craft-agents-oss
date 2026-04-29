@@ -40,7 +40,20 @@ if git -C "$HERMES_SRC" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   before="$(git -C "$HERMES_SRC" rev-parse --short HEAD)"
   echo "Hermes commit before: $before"
   if [ "${HERMES_SKIP_PULL:-0}" != "1" ]; then
-    git -C "$HERMES_SRC" pull --ff-only
+    if [ -n "$(git -C "$HERMES_SRC" status --porcelain)" ]; then
+      echo "Hermes source has uncommitted changes. Commit/stash them or set HERMES_SKIP_PULL=1." >&2
+      exit 1
+    fi
+
+    HERMES_UPDATE_REMOTE="${HERMES_UPDATE_REMOTE:-${HERMES_UPSTREAM_REMOTE:-upstream}}"
+    HERMES_UPDATE_BRANCH="${HERMES_UPDATE_BRANCH:-${HERMES_UPSTREAM_BRANCH:-main}}"
+    if ! git -C "$HERMES_SRC" remote get-url "$HERMES_UPDATE_REMOTE" >/dev/null 2>&1; then
+      HERMES_UPDATE_REMOTE="origin"
+    fi
+
+    echo "Fetching Hermes updates from $HERMES_UPDATE_REMOTE/$HERMES_UPDATE_BRANCH"
+    git -C "$HERMES_SRC" fetch "$HERMES_UPDATE_REMOTE" "$HERMES_UPDATE_BRANCH"
+    git -C "$HERMES_SRC" merge --ff-only FETCH_HEAD
   else
     echo "Skipping git pull because HERMES_SKIP_PULL=1"
   fi

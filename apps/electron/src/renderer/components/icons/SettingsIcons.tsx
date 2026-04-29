@@ -10,6 +10,7 @@
  */
 
 import type { SettingsSubpage } from '../../../shared/types'
+import hermesIcon from '@/assets/provider-icons/hermes.svg'
 
 type IconProps = { className?: string }
 
@@ -32,22 +33,21 @@ export const AiSettingsIcon = ({ className }: IconProps) => (
 
 /** Hermes runtime icon */
 export const HermesSettingsIcon = ({ className }: IconProps) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
+  <span
+    aria-hidden="true"
     className={className}
-  >
-    <path
-      d="M12 2L4 6.5V17.5L12 22L20 17.5V6.5L12 2ZM12 4.3L17.5 7.4L12 10.5L6.5 7.4L12 4.3ZM6 9.15L11 11.95V18.95L6 16.15V9.15ZM13 18.95V11.95L18 9.15V16.15L13 18.95Z"
-      fill="currentColor"
-    />
-    <path
-      d="M12 7.25C12.9665 7.25 13.75 8.0335 13.75 9C13.75 9.9665 12.9665 10.75 12 10.75C11.0335 10.75 10.25 9.9665 10.25 9C10.25 8.0335 11.0335 7.25 12 7.25Z"
-      fill="currentColor"
-      opacity="0.65"
-    />
-  </svg>
+    style={{
+      backgroundColor: 'currentColor',
+      WebkitMaskImage: `url(${hermesIcon})`,
+      WebkitMaskPosition: 'center',
+      WebkitMaskRepeat: 'no-repeat',
+      WebkitMaskSize: 'contain',
+      maskImage: `url(${hermesIcon})`,
+      maskPosition: 'center',
+      maskRepeat: 'no-repeat',
+      maskSize: 'contain',
+    }}
+  />
 )
 
 /** Custom app settings icon (toggle switches) */

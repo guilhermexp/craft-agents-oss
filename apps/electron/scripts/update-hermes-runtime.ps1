@@ -28,16 +28,42 @@ if (!(Test-Path (Join-Path $HermesSrc "pyproject.toml"))) {
 Write-Host "Hermes source: $HermesSrc"
 try {
   git -C $HermesSrc rev-parse --is-inside-work-tree | Out-Null
+  $IsGitCheckout = $true
+} catch {
+  $IsGitCheckout = $false
+}
+
+if ($IsGitCheckout) {
   $before = git -C $HermesSrc rev-parse --short HEAD
   Write-Host "Hermes commit before: $before"
   if ($env:HERMES_SKIP_PULL -ne "1") {
-    git -C $HermesSrc pull --ff-only
+    $dirty = git -C $HermesSrc status --porcelain
+    if ($dirty) {
+      throw "Hermes source has uncommitted changes. Commit/stash them or set HERMES_SKIP_PULL=1."
+    }
+
+    $HermesUpdateRemote = if ($env:HERMES_UPDATE_REMOTE) { $env:HERMES_UPDATE_REMOTE } elseif ($env:HERMES_UPSTREAM_REMOTE) { $env:HERMES_UPSTREAM_REMOTE } else { "upstream" }
+    $HermesUpdateBranch = if ($env:HERMES_UPDATE_BRANCH) { $env:HERMES_UPDATE_BRANCH } elseif ($env:HERMES_UPSTREAM_BRANCH) { $env:HERMES_UPSTREAM_BRANCH } else { "main" }
+    git -C $HermesSrc remote get-url $HermesUpdateRemote 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+      $HermesUpdateRemote = "origin"
+    }
+
+    Write-Host "Fetching Hermes updates from $HermesUpdateRemote/$HermesUpdateBranch"
+    git -C $HermesSrc fetch $HermesUpdateRemote $HermesUpdateBranch
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed to fetch Hermes updates from $HermesUpdateRemote/$HermesUpdateBranch"
+    }
+    git -C $HermesSrc merge --ff-only FETCH_HEAD
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed to fast-forward Hermes source to $HermesUpdateRemote/$HermesUpdateBranch"
+    }
   } else {
     Write-Host "Skipping git pull because HERMES_SKIP_PULL=1"
   }
   $after = git -C $HermesSrc rev-parse --short HEAD
   Write-Host "Hermes commit after: $after"
-} catch {
+} else {
   Write-Host "Hermes source is not a git checkout; bundling current files."
 }
 

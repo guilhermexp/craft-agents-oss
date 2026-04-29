@@ -38,16 +38,44 @@ function formatDate(ms?: number): string {
   return new Date(ms).toLocaleString()
 }
 
+function formatHermesReleaseDate(runtime?: HermesRuntimeDetailsResult | null): string | undefined {
+  const tag = runtime?.sourceRepoReleaseTag?.trim()
+  const versionDate = tag?.match(/^v?(\d{4})\.(\d{1,2})\.(\d{1,2})$/)
+  if (versionDate) return `${versionDate[1]}.${versionDate[2]}.${versionDate[3]}`
+
+  const commitDate = runtime?.sourceRepoCommitDate?.trim()
+  if (!commitDate) return undefined
+  const parsed = commitDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!parsed) return commitDate
+  return `${parsed[1]}.${Number(parsed[2])}.${Number(parsed[3])}`
+}
+
+function formatHermesVersionLine(runtime?: HermesRuntimeDetailsResult | null): string {
+  const version = runtime?.version?.trim()
+  const releaseDate = formatHermesReleaseDate(runtime)
+  const origin = runtime?.sourceRepoRemote?.includes('guilhermexp/hermes-agent')
+    ? 'fork'
+    : runtime?.sourceRepoRemote?.includes('NousResearch/hermes-agent')
+      ? 'upstream'
+      : runtime?.runtimeSource === 'bundled'
+        ? 'bundled'
+        : 'system'
+  const upstream = runtime?.sourceRepoUpstreamRemote ? 'upstream synced' : origin
+  const commit = runtime?.sourceRepoCommit ? ` · ${runtime.sourceRepoCommit}${runtime.sourceRepoDirty ? '+dirty' : ''}` : ''
+  const label = version ? `Hermes Agent v${version}` : 'Hermes Agent'
+  return `${label}${releaseDate ? ` (${releaseDate})` : ''} · ${upstream}${commit}`
+}
+
 function renderFileTree(files: HermesHomeFileInfo[], openPath: (path?: string) => void, level = 0) {
   return files.map((file) => (
     <div key={file.relativePath}>
       <button
         type="button"
-        className="w-full flex items-center justify-between gap-3 px-2 py-1.5 rounded-md hover:bg-muted/60 text-left"
+        className="w-full grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2 py-1 rounded-md hover:bg-muted/60 text-left"
         style={{ paddingLeft: 8 + level * 14 }}
         onClick={() => openPath(file.relativePath)}
       >
-        <span className="min-w-0 flex items-center gap-2 text-xs">
+        <span className="min-w-0 flex items-center gap-2 text-xs leading-5">
           {file.type === 'directory' ? <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" /> : <FileText className="h-3.5 w-3.5 text-muted-foreground" />}
           <span className="truncate">{file.name}</span>
         </span>
@@ -209,6 +237,11 @@ export default function HermesSettingsPage() {
                   {runtime?.found ? 'Ativo' : 'Indisponível'}
                 </span>
               </SettingsRow>
+              <SettingsRow label="Versão" description={formatHermesVersionLine(runtime)}>
+                <span className="text-[11px] text-muted-foreground">
+                  {runtime?.sourceRepoReleaseTag ?? runtime?.sourceRepoCommitDate ?? 'sem tag'}
+                </span>
+              </SettingsRow>
               <SettingsRow label="Origem" description={runtime?.runtimeSource === 'bundled' ? 'Runtime embutido do Craft' : 'CLI do sistema'}>
                 <code className="text-[11px] text-muted-foreground max-w-[260px] truncate">{runtime?.resolvedCommand ?? runtime?.command}</code>
               </SettingsRow>
@@ -224,7 +257,7 @@ export default function HermesSettingsPage() {
               </SettingsRow>
               <SettingsRow label="HERMES_HOME" description="Config, memória, logs, skills e sessões isolados do app.">
                 <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openHermesPath()}>
-                  <FolderOpen className="h-3.5 w-3.5 mr-1.5" /> Files
+                  <FolderOpen className="h-3.5 w-3.5 mr-1.5" /> Abrir
                 </Button>
               </SettingsRow>
               <SettingsRow label="Config" description={runtime?.configExists ? runtime.configPath : 'config.yaml ainda não existe no home isolado'}>
@@ -305,12 +338,19 @@ export default function HermesSettingsPage() {
                 </div>
                 {skills.length === 0 ? (
                   <p className="text-xs text-muted-foreground">Nenhuma skill encontrada no HERMES_HOME nem no agent root.</p>
-                ) : skills.map((skill) => (
-                  <button key={skill.path} type="button" className="w-full text-left px-2 py-1.5 rounded-md hover:bg-muted/60" onClick={() => openSkillPath(skill)}>
-                    <div className="text-xs font-medium">{skill.name} <span className="text-[10px] text-muted-foreground">{skill.source ?? 'home'}</span></div>
-                    {skill.description && <div className="text-[11px] text-muted-foreground truncate">{skill.description}</div>}
-                  </button>
-                ))}
+                ) : (
+                  <div className="max-h-56 overflow-auto rounded-lg border border-border/60 p-1">
+                    {skills.map((skill) => (
+                      <button key={skill.path} type="button" className="w-full text-left px-2 py-1 rounded-md hover:bg-muted/60" onClick={() => openSkillPath(skill)}>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-xs font-medium leading-5">{skill.name}</span>
+                          <span className="shrink-0 text-[10px] text-muted-foreground">{skill.source ?? 'home'}</span>
+                        </div>
+                        {skill.description && <div className="text-[11px] leading-4 text-muted-foreground truncate">{skill.description}</div>}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </SettingsCardContent>
             </SettingsCard>
           </SettingsSection>
@@ -339,14 +379,16 @@ export default function HermesSettingsPage() {
             </SettingsCard>
           </SettingsSection>
 
-          <SettingsSection title="Files">
+          <SettingsSection title="HERMES_HOME">
             <SettingsCard>
               <SettingsCardContent className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs text-muted-foreground">Arquivos do HERMES_HOME. O arquivo .env é omitido para não expor secrets.</p>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="min-w-0 text-xs leading-5 text-muted-foreground">
+                    Listagem compacta do home isolado. Sessões, logs e skills ficam em userData e não entram no release/git; secrets são omitidos.
+                  </p>
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openHermesPath()}>Abrir home</Button>
                 </div>
-                <div className="rounded-lg border border-border/60 p-1">
+                <div className="max-h-56 overflow-auto rounded-lg border border-border/60 p-1">
                   {files.length === 0 ? <p className="px-2 py-2 text-xs text-muted-foreground">Sem arquivos listados.</p> : renderFileTree(files, openHermesPath)}
                 </div>
               </SettingsCardContent>

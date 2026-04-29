@@ -32,6 +32,9 @@ let dashboardProcess: ChildProcess | null = null
 let dashboardUrl: string | null = null
 let dashboardPort: number | null = null
 
+const HERMES_HOME_HIDDEN_NAMES = new Set(['.env', 'auth.json', 'auth.lock', '.DS_Store'])
+const HERMES_HOME_COLLAPSED_DIRS = new Set(['cron', 'logs', 'memories', 'memory', 'sessions', 'skills', 'skins'])
+
 function isBundledRuntime(runtime: NormalizedHermesRuntimeConfig): boolean {
   const bundledPython = process.env.CRAFT_HERMES_PYTHON?.trim()
   return Boolean(bundledPython && runtime.command === bundledPython)
@@ -259,13 +262,13 @@ async function listHermesLogs(runtime: NormalizedHermesRuntimeConfig): Promise<H
   return { success: true, logsPath, files }
 }
 
-async function listHomeFiles(rootPath: string, target = '.', depth = 2): Promise<HermesHomeFileInfo[]> {
+async function listHomeFiles(rootPath: string, target = '.', depth = 1): Promise<HermesHomeFileInfo[]> {
   if (!existsSync(resolveInside(rootPath, target))) return []
   const dirPath = await resolveExistingInside(rootPath, target)
 
   const entries = await readdir(dirPath, { withFileTypes: true })
   const visible = entries
-    .filter(entry => entry.name !== '.env')
+    .filter(entry => !HERMES_HOME_HIDDEN_NAMES.has(entry.name))
     .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))
     .slice(0, 80)
 
@@ -282,7 +285,8 @@ async function listHomeFiles(rootPath: string, target = '.', depth = 2): Promise
       size: entry.isFile() ? info.size : undefined,
       modifiedAt: info.mtimeMs,
     }
-    if (entry.isDirectory() && depth > 1) {
+    const shouldExpand = entry.isDirectory() && depth > 1 && !HERMES_HOME_COLLAPSED_DIRS.has(entry.name)
+    if (shouldExpand) {
       item.children = await listHomeFiles(rootPath, relativePath, depth - 1)
     }
     result.push(item)
@@ -349,7 +353,17 @@ async function listHermesSkills(runtime: NormalizedHermesRuntimeConfig): Promise
   }
 }
 
-async function getGitInfo(repoPath: string): Promise<{ remote?: string; commit?: string; dirty?: boolean }> {
+interface HermesGitInfo {
+  remote?: string
+  upstreamRemote?: string
+  branch?: string
+  commit?: string
+  commitDate?: string
+  releaseTag?: string
+  dirty?: boolean
+}
+
+async function getGitInfo(repoPath: string): Promise<HermesGitInfo> {
   if (!existsSync(join(repoPath, '.git'))) return {}
   const git = async (...args: string[]) => {
     try {
@@ -359,12 +373,24 @@ async function getGitInfo(repoPath: string): Promise<{ remote?: string; commit?:
       return undefined
     }
   }
-  const [remote, commit, status] = await Promise.all([
+  const [remote, upstreamRemote, branch, commit, commitDate, releaseTag, status] = await Promise.all([
     git('remote', 'get-url', 'origin'),
+    git('remote', 'get-url', 'upstream'),
+    git('branch', '--show-current'),
     git('rev-parse', '--short', 'HEAD'),
+    git('log', '-1', '--format=%cs'),
+    git('describe', '--tags', '--exact-match', 'HEAD'),
     git('status', '--porcelain'),
   ])
-  return { remote, commit, dirty: Boolean(status) }
+  return {
+    remote,
+    upstreamRemote,
+    branch,
+    commit,
+    commitDate,
+    releaseTag,
+    dirty: Boolean(status),
+  }
 }
 
 function resolveHermesSourceRepo(deps: HandlerDeps, agentRoot?: string): string | undefined {
@@ -493,7 +519,11 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
       vendorBinPath: process.env.CRAFT_HERMES_VENDOR_BIN?.trim() || undefined,
       sourceRepoPath,
       sourceRepoRemote: sourceInfo.remote,
+      sourceRepoUpstreamRemote: sourceInfo.upstreamRemote,
+      sourceRepoBranch: sourceInfo.branch,
       sourceRepoCommit: sourceInfo.commit,
+      sourceRepoCommitDate: sourceInfo.commitDate,
+      sourceRepoReleaseTag: sourceInfo.releaseTag,
       sourceRepoDirty: sourceInfo.dirty,
       availableProviders: await listAvailableProviders(agentRoot),
       pluginNames: await listPluginNames(agentRoot),
@@ -523,14 +553,14 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
-    let stderr = ''
-    child.stderr?.on('data', chunk => {
-      stderr += String(chunk)
+    let output = ''
+    const appendOutput = (chunk: unknown) => {
+      output += String(chunk)
+      if (output.length > 20_000) output = output.slice(-20_000)
       deps.platform.logger.debug(`[Hermes dashboard] ${String(chunk).trim()}`)
-    })
-    child.stdout?.on('data', chunk => {
-      deps.platform.logger.debug(`[Hermes dashboard] ${String(chunk).trim()}`)
-    })
+    }
+    child.stderr?.on('data', appendOutput)
+    child.stdout?.on('data', appendOutput)
     child.once('exit', (code, signal) => {
       deps.platform.logger?.info?.('[Hermes] Dashboard exited', { code, signal })
       if (dashboardProcess === child) {
@@ -545,7 +575,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
         waitForPort(port),
         new Promise<never>((_resolve, reject) => {
           child.once('error', reject)
-          child.once('exit', (code) => reject(new Error(stderr.trim() || `Hermes dashboard exited with code ${code}`)))
+          child.once('exit', (code) => reject(new Error(output.trim() || `Hermes dashboard exited with code ${code}`)))
         }),
       ])
     } catch (err) {
@@ -559,7 +589,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     if (child.exitCode !== null) {
       return {
         success: false,
-        error: stderr.trim() || `Hermes dashboard exited with code ${child.exitCode}`,
+        error: output.trim() || `Hermes dashboard exited with code ${child.exitCode}`,
       }
     }
 

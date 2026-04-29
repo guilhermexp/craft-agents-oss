@@ -182,7 +182,17 @@ foreach ($dep in @("interceptor-common.ts", "feature-flags.ts", "interceptor-req
     }
 }
 
-# 6. Build Electron app
+# 6. Bundle Hermes runtime
+Write-Host "Bundling Hermes runtime..." -ForegroundColor Cyan
+Push-Location $ElectronDir
+try {
+    bun run bundle:hermes:win
+    if ($LASTEXITCODE -ne 0) { throw "Hermes bundle failed" }
+} finally {
+    Pop-Location
+}
+
+# 7. Build Electron app
 Write-Host "Building Electron app..."
 
 # Build main process with OAuth credentials

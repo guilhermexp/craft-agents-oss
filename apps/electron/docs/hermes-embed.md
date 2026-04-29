@@ -7,6 +7,35 @@ not require the user to install `hermes` separately.
 Reference implementation: [`atomic-hermes/desktop`](https://github.com/AtomicBot-ai/atomic-hermes).
 Hermes upstream: [`NousResearch/hermes-agent`](https://github.com/NousResearch/hermes-agent).
 
+## Current contract
+
+Hermes inside Craft is maintained as a forked upstream dependency, not as a
+hand-copied Python folder:
+
+- The source checkout lives next to this repo: `../hermes-agent` from the
+  `craft-agents-oss` root.
+- `origin` must point at the Craft-maintained fork:
+  `https://github.com/guilhermexp/hermes-agent.git`.
+- `upstream` must point at the NousResearch repo:
+  `https://github.com/NousResearch/hermes-agent.git`.
+- Updates come from `upstream/main` by fast-forward only, then are pushed to
+  `origin/main` after validation.
+- The embedded runtime under `apps/electron/resources/vendor/hermes/` is a
+  generated bundle. It is rebuilt from the source checkout.
+
+This keeps the Hermes codebase isolated from other Craft agents while still
+letting Hermes inherit Craft-native capabilities through MCP.
+
+The intended runtime model is:
+
+- Hermes config/state is isolated in app-scoped `HERMES_HOME`.
+- Hermes Python is isolated in the vendored venv.
+- Hermes receives Craft source tools and session tools only through local MCP.
+- Hermes must not reuse generic Craft mini-model fallbacks as its own native
+  provider/model configuration.
+- Packaged apps must not mutate the signed runtime. Dev mode may update and
+  rebuild the local bundle.
+
 ## Why embedded
 
 Previously `HermesAgent` spawned `hermes acp` from the user's PATH. If the user
@@ -15,6 +44,7 @@ did not have Hermes installed, sessions failed. Embedding gives:
 - Single-install UX (DMG / NSIS / AppImage). No external dependency.
 - App-scoped state under `userData/hermes` (isolated from `~/.hermes`).
 - Versioning tied to Craft releases — `electron-updater` handles updates.
+- A stable ACP runtime that can be inspected in Settings.
 
 ## Architecture
 
@@ -107,24 +137,119 @@ on macOS and the equivalent on Windows / Linux.
 
 1. `uv python install 3.13` → copies the standalone Python into `vendor/hermes/python/`.
 2. `python3 -m venv` creates `hermes-venv/` from the bundled Python.
-3. `uv pip install <HERMES_SRC>` (non-editable) → site-packages owns the
-   Hermes source. Relocatable: no egg-link with absolute paths.
-4. Mirrors a curated subset of Hermes source (`agent/`, `tools/`,
+3. `uv pip install <HERMES_SRC>[web,acp]` (non-editable) installs Hermes,
+   the web dashboard dependencies, and `agent-client-protocol` into the venv.
+   Relocatable: no egg-link with absolute paths.
+4. Removes transient `HERMES_SRC/build/` output if the Python install created it.
+5. Mirrors a curated subset of Hermes source (`agent/`, `tools/`,
    `acp_adapter/`, `hermes_cli/`, `gateway/`, `plugins/`, `skills/`, etc.)
    into `vendor/hermes/hermes-agent/` for runtime config / skill loading.
-5. Builds/copies `hermes_cli/web_dist` into the mirrored source so the dashboard can run from the packaged app.
-6. Downloads platform-specific ripgrep into `vendor/hermes/bin/rg`.
-7. Strips `__pycache__`, `*.pyc`, `*.a`, broken symlinks, fake `.app` dirs.
-8. Patches `pyvenv.cfg` to `home = ../python/bin` and rewrites venv `bin/`
+6. Applies the Craft ACP streaming compatibility patch to the mirrored
+   `acp_adapter/server.py`.
+7. Builds/copies `hermes_cli/web_dist` into the mirrored source so the dashboard can run from the packaged app.
+8. Downloads platform-specific ripgrep into `vendor/hermes/bin/rg`.
+9. Strips `__pycache__`, `*.pyc`, `*.a`, broken symlinks, fake `.app` dirs.
+10. Patches `pyvenv.cfg` to `home = ../python/bin` and rewrites venv `bin/`
    symlinks to relative form (codesign rejects absolute or out-of-bundle
    targets).
 
-`HERMES_SRC` defaults to `../../hermes-agent` relative to the repo root —
-clone the upstream repo there, or override via env var.
+`HERMES_SRC` defaults to `../../hermes-agent` relative to the repo root.
+That checkout should be the fork/upstream checkout described in
+`Current contract`, not a detached copy.
 
 ### `scripts/bundle-hermes.ps1` (Windows)
 
 Same flow, ScriptBlock-based, uses `Scripts/python.exe` venv layout.
+
+## Source checkout setup
+
+Expected state:
+
+```bash
+cd ~/Documents/Projetos/SelfHosting/hermes-agent
+git remote -v
+# origin   https://github.com/guilhermexp/hermes-agent.git (fetch)
+# origin   https://github.com/guilhermexp/hermes-agent.git (push)
+# upstream https://github.com/NousResearch/hermes-agent.git (fetch)
+# upstream https://github.com/NousResearch/hermes-agent.git (push)
+```
+
+If the checkout was cloned directly from NousResearch as `origin`, repoint it:
+
+```bash
+cd ~/Documents/Projetos/SelfHosting/hermes-agent
+git remote rename origin upstream
+git remote add origin https://github.com/guilhermexp/hermes-agent.git
+git fetch origin --prune
+git fetch upstream --prune
+git branch --set-upstream-to=origin/main main
+```
+
+To update Hermes safely:
+
+```bash
+cd ~/Documents/Projetos/SelfHosting/hermes-agent
+git status --short
+git fetch upstream main
+git merge --ff-only FETCH_HEAD
+git push origin main
+```
+
+Do not merge with local uncommitted changes in the Hermes checkout. The Craft
+update script enforces this because generated files in the Hermes source tree
+make upstream sync ambiguous.
+
+## Dev update flow
+
+The Settings button **Atualizar Hermes** calls:
+
+```bash
+apps/electron/scripts/update-hermes-runtime.sh
+apps/electron/scripts/update-hermes-runtime.ps1
+```
+
+The update script:
+
+1. Resolves `HERMES_SRC` / `HERMES_SOURCE_DIR`, defaulting to `../hermes-agent`.
+2. Verifies the source has `pyproject.toml`.
+3. Refuses to continue if the Hermes checkout has uncommitted changes.
+4. Fetches from `HERMES_UPDATE_REMOTE` / `HERMES_UPDATE_BRANCH`, defaulting to
+   `upstream/main`.
+5. Falls back to `origin/main` only if no `upstream` remote exists.
+6. Fast-forwards with `git merge --ff-only FETCH_HEAD`.
+7. Rebuilds `apps/electron/resources/vendor/hermes/`.
+8. Validates the bundled ACP adapter with `py_compile`.
+
+Packaged apps return `unsupported` for this RPC. Signed app bundles are updated
+only through Craft app releases.
+
+## Release/package flow
+
+The Electron distribution commands now rebuild Hermes before packaging:
+
+```bash
+bun run electron:dist
+bun run electron:dist:mac
+bun run electron:dist:linux
+bun run electron:dist:dev:mac
+bun run electron:dist:dev:linux
+```
+
+Windows uses the PowerShell bundle:
+
+```bash
+bun run electron:dist:win
+bun run electron:dist:dev:win
+```
+
+The lower-level release scripts also bundle Hermes before `electron-builder`:
+
+- `apps/electron/scripts/build-dmg.sh`
+- `apps/electron/scripts/build-win.ps1`
+
+This is required because `apps/electron/resources/vendor/hermes/` is generated.
+If packaging skips the bundle step, the app may resolve a stale or missing
+runtime.
 
 ### `scripts/afterPack-hermes.cjs`
 
@@ -172,6 +297,19 @@ the env vars. `acp-config.ts` then falls back to the legacy PATH-based
 running an external `hermes` binary with `-m acp_adapter` would crash, so the
 runtime config is treated as a single coherent unit.
 
+Runtime smoke checks:
+
+```bash
+apps/electron/resources/vendor/hermes/hermes-venv/bin/python3 \
+  -c "import acp, acp_adapter.server; print('acp ok')"
+
+apps/electron/resources/vendor/hermes/hermes-venv/bin/python3 \
+  -m py_compile apps/electron/resources/vendor/hermes/hermes-agent/acp_adapter/server.py
+```
+
+Both must pass. `import acp_adapter` alone is not enough because it does not
+prove that the ACP protocol package is installed.
+
 ### `pyvenv.cfg` relocation
 
 `pyvenv.cfg` ships with `home = ../python/bin`. CPython accepts relative paths
@@ -184,17 +322,49 @@ restart of the user's session.
 
 `packages/server-core/src/handlers/rpc/hermes.ts` exposes local-only Hermes runtime controls:
 
-- `hermes:detectInstallation` — reports bundled/system runtime, app-scoped `HERMES_HOME`, discovered providers/models, and config paths.
-- `hermes:getRuntimeDetails` — extends detection with config/env existence and app-scoped logs/skills/sessions paths.
+- `hermes:detectInstallation` — reports bundled/system runtime, app-scoped `HERMES_HOME`, discovered providers/models, version, and config paths.
+- `hermes:getRuntimeDetails` — extends detection with config/env existence,
+  app-scoped logs/skills/sessions paths, source repo path, origin/upstream
+  remotes, branch, commit, commit date, release tag, dirty state, available
+  providers, and plugin names.
 - `hermes:startDashboard` — starts `python -m hermes_cli.main dashboard --no-open` for bundled Hermes (or `hermes dashboard --no-open` for system Hermes), waits for a free localhost port, then returns the URL.
 - `hermes:updateRuntime` — dev-only helper that runs `apps/electron/scripts/update-hermes-runtime.*`; packaged apps return `unsupported` because signed bundles must be updated via Craft releases.
 - `hermes:listLogs` / `hermes:readLog` — enumerate and tail app-scoped Hermes logs.
-- `hermes:listHomeFiles` / `hermes:openPath` — browse/reveal files under `HERMES_HOME` only; `.env` is omitted from listings and path traversal is blocked.
+- `hermes:listHomeFiles` / `hermes:openPath` — browse/reveal files under `HERMES_HOME` only. Secrets (`.env`, `auth.json`, locks) are omitted, path traversal is blocked, and operational directories such as `sessions/`, `logs/`, `skills/`, `memories/`, and `cron/` are shown as collapsed top-level folders so Settings does not render raw session dumps.
 - `hermes:listSkills` — lists installed Hermes skills from app-scoped `HERMES_HOME/skills`.
 
 `Settings / AI` remains generic: connections, model defaults, thinking level, workspace overrides.
 `Settings / Hermes` is the Hermes-specific operational page: **Atualizar Hermes**, **Abrir Dashboard Hermes**, **Ver logs**, **Files**, **Skills do Hermes**, and **Conectores do Hermes**.
 Clicking **Abrir Dashboard Hermes** launches the dashboard and opens the returned localhost URL in the existing Craft embedded browser with `browserPane.create({ url, show: true })`, not in the OS default browser.
+
+### Version display
+
+The Hermes Settings card must show the runtime version directly, for example:
+
+```text
+Hermes Agent v0.11.0 (2026.4.23) · upstream synced · 1d4218be
+```
+
+Source of each field:
+
+| UI field | Source |
+| -------- | ------ |
+| `0.11.0` | `from hermes_cli import __version__` in the bundled venv, or `hermes --version` for system Hermes |
+| `2026.4.23` | exact Git tag on the Hermes source checkout, e.g. `v2026.4.23`; fallback is `git log -1 --format=%cs` |
+| `upstream synced` | `sourceRepoUpstreamRemote` exists, meaning `upstream` is configured |
+| `1d4218be` | `git rev-parse --short HEAD` in `HERMES_SRC` |
+| `+dirty` | `git status --porcelain` is non-empty |
+
+The repo row still shows the fork remote and commit separately. The version
+row is the human-readable health line.
+
+### Config count caveat
+
+`providerCount: 0` and `modelCount: 0` in logs do not mean the runtime is
+missing. They mean the app-scoped `HERMES_HOME/config.yaml` does not define
+providers/models yet. Hermes can still be installed and active. Configure
+providers through the Hermes dashboard or by creating config in the isolated
+`HERMES_HOME`.
 
 ## Craft-native tools for Hermes
 
@@ -211,6 +381,14 @@ their existing adapters. The bridge reuses the same session callback registry
 that powers native agents, so Electron-provided browser functions and
 self-management callbacks stay late-bound and session-scoped.
 
+ACP model switching is part of the contract. Craft sets the selected model
+through ACP after session creation, and Hermes also supports `/model`. Both
+paths recreate the underlying Python `AIAgent`, so Hermes must keep the
+ACP-provided `mcpServers` on `SessionState` and reapply the `mcp-<server>`
+toolsets after the agent is rebuilt. Without that, logs can show MCP
+registration succeeded and still leave the prompt without `craft-session`
+tools after the model switch.
+
 Important separation rules:
 
 - No Craft internals are injected into Hermes Python. Hermes only sees MCP.
@@ -220,20 +398,34 @@ Important separation rules:
 
 ## Session and configuration isolation
 
-- `HERMES_HOME` resolves to `<userData>/hermes`, NOT `~/.hermes`. A user with
+- `HERMES_HOME` resolves to `<userData>/hermes`, NOT the Craft repo and NOT
+  `~/.hermes`. A user with
   a standalone Hermes install is fully isolated.
+- This matches the `atomic-hermes` desktop reference, which resolves
+  `getHermesHome()` as `path.join(app.getPath("userData"), "hermes")` and
+  creates `memory/`, `sessions/`, `skills/`, and `skins/` there.
+- ACP sessions persist to `<userData>/hermes/state.db` through Hermes'
+  `SessionDB`. The upstream ACP session manager calls
+  `SessionDB(db_path=get_hermes_home() / "state.db")`, creates/updates the
+  `sessions` row, and replaces the stored messages after prompts complete.
+- Files under `<userData>/hermes/sessions/` are Hermes sidecar/debug/legacy
+  transcript files such as `session_*.json`, `.jsonl`, or
+  `request_dump_*.json`. They are user data, not generated release assets, and
+  must not be committed or copied into `apps/electron/resources/vendor/hermes/`.
 - Migration from `~/.hermes` is intentionally not automatic. If we want it
   later, do a one-time opt-in dialog on first launch.
-- `<userData>` on macOS: `~/Library/Application Support/craft-agent/hermes`.
+- `<userData>` on macOS dev builds can be:
+  `~/Library/Application Support/@craft-agent/electron/hermes`.
 
 ## Updates
 
-- The whole bundle ships inside the app; `electron-updater` handles
-  versioning. No `git pull` or `uv sync` at runtime.
-- To bump the bundled Hermes commit, update the `hermes-agent` clone next
-  to the repo (`HERMES_SRC`) to the desired ref, then re-run
-  `bun run bundle:hermes`. Commit the resulting `vendor/hermes/` snapshot
-  (or wire it as a CI step).
+- The whole bundle ships inside the app; `electron-updater` handles packaged
+  app versioning. No `git pull` or `uv sync` inside signed packaged apps.
+- To bump the bundled Hermes commit, update the `hermes-agent` clone next to
+  the repo (`HERMES_SRC`) to the desired upstream ref, push the fork, then
+  re-run `bun run bundle:hermes`.
+- Local dev may run `update-hermes-runtime.*`; packaged apps must be rebuilt
+  and released.
 
 ## HermesAgent lifecycle hardening
 
@@ -279,10 +471,15 @@ updates `SourceManager` state.
   - Defer restart while streaming, apply on stream completion.
   - `postInit` skips redundant pool sync when `poolServerUrl` is set.
   - `postInit` falls back to `setSourceServers` (with sync) when no pool URL.
+- `../hermes-agent/tests/acp/test_server.py`
+  - Covers ACP MCP registration and verifies `craft-session`-style MCP
+    toolsets survive both ACP `session/set_model` and Hermes `/model`.
 - `packages/server-core/src/handlers/rpc/hermes.test.ts`
   - `listHomeFiles` omits `.env`.
   - `openPath` blocks traversal outside `HERMES_HOME`.
   - `updateRuntime` returns `unsupported` in packaged apps.
+  - `getRuntimeDetails` returns fork/upstream release metadata used by the
+    Hermes Settings version row.
 
 Run with:
 
@@ -293,6 +490,16 @@ bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
   packages/shared/src/agent/backend/__tests__/factory.test.ts \
   packages/server-core/src/handlers/rpc/hermes.test.ts \
   apps/electron/src/transport/__tests__/channel-map-parity.test.ts
+
+bun run typecheck:shared
+```
+
+Current focused validation target after the fork/upstream and version work:
+
+```text
+34 pass across the Hermes/Craft focused test set
+typecheck:shared passes
+Hermes source checkout clean
 ```
 
 ## File map
@@ -301,6 +508,8 @@ bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
 | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
 | `apps/electron/scripts/bundle-hermes.sh`                                                            | Build vendor/hermes (mac/linux)                      |
 | `apps/electron/scripts/bundle-hermes.ps1`                                                           | Build vendor/hermes (windows)                        |
+| `apps/electron/scripts/update-hermes-runtime.sh`                                                     | Dev-only upstream fetch + bundle (mac/linux)         |
+| `apps/electron/scripts/update-hermes-runtime.ps1`                                                    | Dev-only upstream fetch + bundle (windows)           |
 | `apps/electron/scripts/afterPack-hermes.cjs`                                                        | Symlink cleanup + Mach-O signing                     |
 | `apps/electron/scripts/afterPack.cjs`                                                               | Chains Liquid Glass icon + afterPack-hermes          |
 | `apps/electron/src/main/handlers/hermes-runtime.ts`                                                 | Path resolver + env publisher                        |
@@ -309,24 +518,35 @@ bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
 | `packages/shared/src/hermes/acp-config.ts`                                                          | `normalizeHermesRuntimeConfig`, ACP MCP shape mapper |
 | `packages/shared/src/mcp/session-tools-server.ts`                                                   | Local MCP bridge for Craft-native session tools      |
 | `packages/shared/src/agent/hermes-agent.ts`                                                         | Streaming-safe lifecycle + Hermes MCP wiring         |
+| `packages/server-core/src/handlers/rpc/hermes.ts`                                                    | Runtime detection, dashboard, update, logs, files    |
+| `apps/electron/src/renderer/pages/settings/HermesSettingsPage.tsx`                                  | Hermes Settings operational UI                       |
 | `packages/shared/src/hermes/__tests__/acp-config.test.ts`                                           | Resolver/MCP config tests                            |
 | `packages/shared/src/mcp/session-tools-server.test.ts`                                              | Craft session tools MCP tests                        |
 | `packages/shared/src/agent/__tests__/hermes-agent.test.ts`                                          | Lifecycle tests                                      |
+| `packages/server-core/src/handlers/rpc/hermes.test.ts`                                               | Runtime details, path safety, packaged update tests  |
 
 ## Quickstart
 
 ```bash
-# Once: clone Hermes upstream next to craft-agents-oss
-git clone https://github.com/NousResearch/hermes-agent.git \
+# Once: clone your Hermes fork next to craft-agents-oss
+git clone https://github.com/guilhermexp/hermes-agent.git \
   ~/Documents/Projetos/SelfHosting/hermes-agent
+cd ~/Documents/Projetos/SelfHosting/hermes-agent
+git remote add upstream https://github.com/NousResearch/hermes-agent.git
+git fetch upstream --prune
 
 # Build the embedded runtime
-cd apps/electron
+cd ~/Documents/Projetos/SelfHosting/craft-agents-oss/apps/electron
 bun run bundle:hermes              # macOS / Linux
 # or
 bun run bundle:hermes:win          # Windows (pwsh)
 
-# Dev mode (uses vendor/hermes from this checkout)
+# Dev mode from repo root (uses vendor/hermes from this checkout)
+cd ~/Documents/Projetos/SelfHosting/craft-agents-oss
+bun dev:desktop
+
+# Lower-level Electron dev command
+cd apps/electron
 bun run dev
 
 # Distribution build (signs Mach-O, requires CSC_NAME or auto-discovery)
