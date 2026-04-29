@@ -26,6 +26,76 @@ hand-copied Python folder:
 This keeps the Hermes codebase isolated from other Craft agents while still
 letting Hermes inherit Craft-native capabilities through MCP.
 
+## Fork sync guardrails
+
+There are two independent forks involved:
+
+| Repo | Local path | Fork remote | Upstream remote |
+| ---- | ---------- | ----------- | --------------- |
+| Craft | `craft-agents-oss` | `origin` → `guilhermexp/craft-agents-oss` | `upstream` → `lukilabs/craft-agents-oss` |
+| Hermes | `../hermes-agent` | `origin` → `guilhermexp/hermes-agent` | `upstream` → `NousResearch/hermes-agent` |
+
+Always fetch both before changing the integration:
+
+```bash
+git fetch upstream --prune
+
+cd ../hermes-agent
+git fetch upstream --prune
+```
+
+Fetching is safe with a dirty worktree. Merging or fast-forwarding is not.
+If either repo has local changes, stop after fetch and record the divergence:
+
+```bash
+git rev-list --left-right --count HEAD...upstream/main
+git log --oneline HEAD..upstream/main -n 20
+git log --oneline upstream/main..HEAD -n 20
+```
+
+Interpretation:
+
+- `A B` means local `HEAD` has `A` commits not in upstream and upstream has
+  `B` commits not in local `HEAD`.
+- If `B > 0`, upstream has new work. Sync in a clean branch/worktree, then
+  rebuild and validate the Hermes bundle.
+- If `A > 0`, local fork work exists. Push/PR/track it separately before
+  assuming the fork can be replaced by upstream.
+
+Current check on 2026-04-29:
+
+- Craft: `46 0` against `upstream/main`; no upstream commits waiting, local
+  fork is ahead.
+- Hermes: `0 39` against `upstream/main`; upstream has 39 commits waiting.
+  The checkout also has local Craft-integration changes, so do not merge until
+  those changes are committed, stashed intentionally, or replayed in a clean
+  worktree.
+
+For Hermes upstream updates, prefer a temporary worktree when there are local
+integration edits:
+
+```bash
+cd ../hermes-agent
+git worktree add ../hermes-agent-upstream-sync main
+cd ../hermes-agent-upstream-sync
+git fetch upstream --prune
+git merge --ff-only upstream/main
+```
+
+Then reapply or confirm the Craft-specific contract below, run the Python and
+Craft test sets, push `origin/main`, and rebuild `apps/electron/resources/vendor/hermes/`.
+
+When syncing Craft upstream, preserve these Craft-side integration points:
+
+| Craft file | Craft-required behavior |
+| ---------- | ----------------------- |
+| `packages/shared/src/agent/hermes-agent.ts` | Hermes gets both `craft-sources` and `craft-session` MCP endpoints through ACP; source changes do not kill an active stream; model/session changes do not silently drop MCP config. |
+| `packages/shared/src/hermes/acp-config.ts` | Bundled runtime env (`CRAFT_HERMES_PYTHON`, `CRAFT_HERMES_ARGS`, `CRAFT_HERMES_HOME`) is treated as one coherent ACP command/config unit. |
+| `packages/shared/src/mcp/session-tools-server.ts` | Craft-native tools exposed to Hermes include browser, delegation/session, LLM, auth/config helpers, metadata, and automation; callbacks stay session-scoped. |
+| `packages/server-core/src/handlers/rpc/hermes.ts` | Runtime detection, dashboard launch, file/log/skill browsing, and dev-only update controls stay local-only and path-safe under app-scoped `HERMES_HOME`. |
+| `apps/electron/src/renderer/pages/settings/HermesSettingsPage.tsx` | Settings remains an operational Hermes page with compact files/skills views, version line, dashboard launch inside Craft browser, and no giant raw session dump. |
+| `apps/electron/scripts/bundle-hermes.*` and `update-hermes-runtime.*` | Bundling installs Hermes with `[web,acp]`, mirrors required source files, validates ACP, and updates only in dev from a clean Hermes checkout. |
+
 The intended runtime model is:
 
 - Hermes config/state is isolated in app-scoped `HERMES_HOME`.
@@ -198,6 +268,62 @@ git push origin main
 Do not merge with local uncommitted changes in the Hermes checkout. The Craft
 update script enforces this because generated files in the Hermes source tree
 make upstream sync ambiguous.
+
+## Hermes upstream conflict contract
+
+The Craft fork of Hermes intentionally keeps the delta small, but upstream
+updates commonly touch the same areas. When syncing `../hermes-agent`, preserve
+behavior, not exact line placement:
+
+| Hermes file | Craft-required behavior |
+| ----------- | ----------------------- |
+| `acp_adapter/session.py` | `SessionState` keeps the ACP-provided `mcp_servers` list so model switches can rebuild the Python agent without losing Craft MCP endpoints. |
+| `acp_adapter/server.py` | ACP `session/set_model` and Hermes `/model` both re-register MCP toolsets after the underlying `AIAgent` is recreated. |
+| `tools/mcp_tool.py` | `craft-session` tools keep Craft canonical names such as `mcp__session__browser_tool`; `craft-sources` source tools keep names such as `mcp__github__search_issues`; unrelated external MCP servers keep Hermes' normal `mcp_<server>_<tool>` names. |
+| `tests/acp/test_server.py` | Covers MCP tool preservation across ACP and slash-command model switches. |
+| `tests/tools/test_mcp_tool.py` | Covers Craft canonical MCP tool naming and normal external MCP naming. |
+
+Do not move Craft tools into a static Hermes `mcp.json` as the primary
+integration. Craft session tools are session-scoped and local to the active
+Electron app instance, so they must be passed through ACP `session.mcpServers`.
+The visible/native behavior comes from the canonical tool names and shared
+Craft callback registry, not from a global Hermes config file.
+
+After every Hermes upstream sync, run at minimum:
+
+```bash
+cd ../hermes-agent
+uv run --extra dev --extra acp python -m pytest \
+  tests/acp/test_server.py -k "mcp" \
+  tests/tools/test_mcp_tool.py -k "craft or converts_mcp_tool_to_hermes_schema"
+
+cd ../craft-agents-oss
+bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
+  packages/shared/src/mcp/session-tools-server.test.ts \
+  packages/shared/src/agent/__tests__/hermes-agent.test.ts \
+  packages/server-core/src/handlers/rpc/hermes.test.ts \
+  apps/electron/src/transport/__tests__/channel-map-parity.test.ts
+```
+
+Then verify the bundled runtime exposes the same names:
+
+```bash
+apps/electron/resources/vendor/hermes/hermes-venv/bin/python3 - <<'PY'
+from tools.mcp_tool import _mcp_tool_to_hermes_tool
+
+print(_mcp_tool_to_hermes_tool("craft-session", {"name": "browser_tool", "description": "", "inputSchema": {"type": "object"}})["function"]["name"])
+print(_mcp_tool_to_hermes_tool("craft-sources", {"name": "github__search_issues", "description": "", "inputSchema": {"type": "object"}})["function"]["name"])
+print(_mcp_tool_to_hermes_tool("filesystem", {"name": "read_file", "description": "", "inputSchema": {"type": "object"}})["function"]["name"])
+PY
+```
+
+Expected output:
+
+```text
+mcp__session__browser_tool
+mcp__github__search_issues
+mcp_filesystem_read_file
+```
 
 ## Dev update flow
 
@@ -389,6 +515,14 @@ toolsets after the agent is rebuilt. Without that, logs can show MCP
 registration succeeded and still leave the prompt without `craft-session`
 tools after the model switch.
 
+Craft session/source tools must also keep Craft's canonical tool names inside
+Hermes: `mcp__session__browser_tool`, `mcp__session__spawn_session`,
+`mcp__session__call_llm`, and source tools such as `mcp__github__search_issues`.
+Hermes normally prefixes MCP tools as `mcp_<server>_<tool>`; the embedded fork
+special-cases `craft-session` and `craft-sources` so these tools pass through
+the same permission, prerequisite, logging, and UI paths as Pi/Claude tools
+instead of looking like unrelated external MCP tools.
+
 Important separation rules:
 
 - No Craft internals are injected into Hermes Python. Hermes only sees MCP.
@@ -494,13 +628,18 @@ bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
 bun run typecheck:shared
 ```
 
-Current focused validation target after the fork/upstream and version work:
+Last recorded focused validation for this integration work before the
+docs-only update:
 
 ```text
 34 pass across the Hermes/Craft focused test set
-typecheck:shared passes
-Hermes source checkout clean
+Hermes Python ACP/MCP tests pass for the Craft-specific fork changes
 ```
+
+This is not a substitute for the upstream-sync checklist above. If
+`../hermes-agent` has new upstream commits or local changes, re-run the Python
+and Craft test sets after the sync/replay. Run `bun run typecheck:shared`
+whenever TypeScript runtime wiring changes.
 
 ## File map
 

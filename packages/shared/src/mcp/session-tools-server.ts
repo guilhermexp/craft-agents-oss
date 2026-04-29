@@ -8,13 +8,15 @@
  * Python code or changing Claude/Pi execution paths.
  */
 
-import { createServer, type Server as HttpServer } from 'node:http';
+import { randomUUID } from 'node:crypto';
+import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from 'node:http';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
   CallToolRequestSchema,
+  isInitializeRequest,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import {
@@ -109,8 +111,8 @@ function jsonResult(value: unknown): { content: McpContent[] } {
 
 export class CraftSessionToolsMcpServer {
   private httpServer: HttpServer | null = null;
-  private mcpServer: Server | null = null;
-  private transport: StreamableHTTPServerTransport | null = null;
+  private transports = new Map<string, StreamableHTTPServerTransport>();
+  private mcpServers = new Set<Server>();
   private readonly options: CraftSessionToolsMcpServerOptions;
   private _port = 0;
 
@@ -129,12 +131,6 @@ export class CraftSessionToolsMcpServer {
   async start(): Promise<string> {
     if (this.httpServer) return this.url;
 
-    this.transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-    });
-    this.mcpServer = this.createMcpServer();
-    await this.mcpServer.connect(this.transport);
-
     this.httpServer = createServer(async (req, res) => {
       const url = new URL(req.url || '/', 'http://127.0.0.1');
       if (url.pathname !== '/mcp') {
@@ -143,7 +139,7 @@ export class CraftSessionToolsMcpServer {
         return;
       }
 
-      await this.transport!.handleRequest(req, res);
+      await this.handleMcpRequest(req, res);
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -194,15 +190,15 @@ export class CraftSessionToolsMcpServer {
   }
 
   async stop(): Promise<void> {
-    if (this.transport) {
-      await this.transport.close().catch(() => {});
-      this.transport = null;
+    for (const transport of this.transports.values()) {
+      await transport.close().catch(() => {});
     }
+    this.transports.clear();
 
-    if (this.mcpServer) {
-      await this.mcpServer.close().catch(() => {});
-      this.mcpServer = null;
+    for (const server of this.mcpServers.values()) {
+      await server.close().catch(() => {});
     }
+    this.mcpServers.clear();
 
     if (this.httpServer) {
       await new Promise<void>((resolve) => {
@@ -212,6 +208,80 @@ export class CraftSessionToolsMcpServer {
       this._port = 0;
       this.debug('Stopped');
     }
+  }
+
+  private async handleMcpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let parsedBody: unknown;
+
+    try {
+      parsedBody = await this.readJsonBody(req);
+      const sessionId = this.firstHeader(req.headers['mcp-session-id']);
+      let transport = sessionId ? this.transports.get(sessionId) : undefined;
+
+      if (!transport) {
+        if (req.method === 'POST' && !sessionId && isInitializeRequest(parsedBody)) {
+          let createdTransport: StreamableHTTPServerTransport | null = null;
+          transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            onsessioninitialized: (newSessionId) => {
+              if (createdTransport) {
+                this.transports.set(newSessionId, createdTransport);
+                this.debug(`MCP session initialized: ${newSessionId}`);
+              }
+            },
+          });
+          createdTransport = transport;
+
+          const server = this.createMcpServer();
+          this.mcpServers.add(server);
+          transport.onclose = () => {
+            const sid = createdTransport?.sessionId;
+            if (sid) this.transports.delete(sid);
+            this.mcpServers.delete(server);
+            void server.close().catch(() => {});
+          };
+
+          await server.connect(transport);
+        } else {
+          this.writeJsonRpcError(res, 400, -32000, 'Bad Request: No valid MCP session ID provided');
+          return;
+        }
+      }
+
+      await transport.handleRequest(req, res, parsedBody);
+    } catch (error) {
+      this.debug(`MCP request failed: ${error instanceof Error ? error.stack || error.message : String(error)}`);
+      if (!res.headersSent) {
+        this.writeJsonRpcError(res, 500, -32603, 'Internal server error');
+      } else if (!res.writableEnded) {
+        res.end();
+      }
+    }
+  }
+
+  private async readJsonBody(req: IncomingMessage): Promise<unknown> {
+    if (req.method !== 'POST') return undefined;
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+
+    if (chunks.length === 0) return undefined;
+    return JSON.parse(Buffer.concat(chunks).toString('utf-8'));
+  }
+
+  private firstHeader(value: string | string[] | undefined): string | undefined {
+    return Array.isArray(value) ? value[0] : value;
+  }
+
+  private writeJsonRpcError(res: ServerResponse, httpStatus: number, code: number, message: string): void {
+    res.writeHead(httpStatus, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({
+      jsonrpc: '2.0',
+      error: { code, message },
+      id: null,
+    }));
   }
 
   private createMcpServer(): Server {

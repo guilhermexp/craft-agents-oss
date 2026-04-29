@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 import { CraftSessionToolsMcpServer } from './session-tools-server.ts';
 import {
@@ -33,6 +35,25 @@ describe('CraftSessionToolsMcpServer', () => {
     expect(toolNames).toContain('call_llm');
     expect(toolNames).toContain('spawn_session');
     expect(toolNames).toContain('get_session_info');
+  });
+
+  it('serves session tools through the Streamable HTTP MCP bridge', async () => {
+    const server = new CraftSessionToolsMcpServer({ sessionId, workspaceRootPath, workspaceId: 'ws-test' });
+    const url = await server.start();
+    const client = new Client({ name: 'craft-session-tools-test', version: '0.0.1' });
+
+    try {
+      await client.connect(new StreamableHTTPClientTransport(new URL(url)));
+      const listed = await client.listTools();
+      const toolNames = listed.tools.map((tool) => tool.name);
+
+      expect(toolNames).toContain('browser_tool');
+      expect(toolNames).toContain('call_llm');
+      expect(toolNames).toContain('spawn_session');
+    } finally {
+      await client.close().catch(() => {});
+      await server.stop();
+    }
   });
 
   it('executes call_llm through the session callback registry', async () => {
