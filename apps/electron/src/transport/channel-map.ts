@@ -166,7 +166,14 @@ export const CHANNEL_MAP = {
   getPiProviderBaseUrl: invoke(RPC_CHANNELS.pi.GET_PROVIDER_BASE_URL),
   getPiProviderModels: invoke(RPC_CHANNELS.pi.GET_PROVIDER_MODELS),
   detectHermesInstallation: invoke(RPC_CHANNELS.hermes.DETECT_INSTALLATION),
+  getHermesRuntimeDetails: invoke(RPC_CHANNELS.hermes.GET_RUNTIME_DETAILS),
   startHermesDashboard: invoke(RPC_CHANNELS.hermes.START_DASHBOARD),
+  updateHermesRuntime: invoke(RPC_CHANNELS.hermes.UPDATE_RUNTIME),
+  listHermesLogs: invoke(RPC_CHANNELS.hermes.LIST_LOGS),
+  readHermesLog: invoke(RPC_CHANNELS.hermes.READ_LOG),
+  listHermesHomeFiles: invoke(RPC_CHANNELS.hermes.LIST_HOME_FILES),
+  listHermesSkills: invoke(RPC_CHANNELS.hermes.LIST_SKILLS),
+  openHermesPath: invoke(RPC_CHANNELS.hermes.OPEN_PATH),
 
   // Session-specific model
   getSessionModel: invoke(RPC_CHANNELS.sessions.GET_MODEL),

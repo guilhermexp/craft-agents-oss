@@ -707,6 +707,8 @@
   "settings.ai.defaultSection": "Domyślne",
   "settings.ai.defaultSectionDesc": "Ustawienia dla nowych czatów, gdy nie ustawiono nadpisania Workspace.",
   "settings.ai.description": "Model, myślenie, połączenia",
+   "settings.hermes.title": "Hermes",
+   "settings.hermes.description": "Runtime, panel, logi, pliki",
   "settings.ai.enterConnectionName": "Wprowadź nazwę połączenia...",
   "settings.ai.extendedContext": "Rozszerzony kontekst (1M)",
   "settings.ai.extendedContextDesc": "Używaj okna kontekstu 1M tokenów dla Opus 4.7. Wyłącz, aby używać 200K i oszczędzać limity użycia.",

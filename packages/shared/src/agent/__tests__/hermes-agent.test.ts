@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, beforeEach } from 'bun:test'
 
-import { HermesAgent, resolveHermesModelId } from '../hermes-agent.ts'
+import { HermesAgent, extractHermesTextDelta, resolveHermesModelId } from '../hermes-agent.ts'
 import { createMockBackendConfig } from './test-utils.ts'
 import type { BackendConfig, SdkMcpServerConfig } from '../backend/types.ts'
 
@@ -55,6 +55,20 @@ class TestableHermesAgent extends HermesAgent {
     }
   }
 }
+
+describe('extractHermesTextDelta', () => {
+  it('reads AI SDK text-delta parts with text field', () => {
+    expect(extractHermesTextDelta({ text: 'oi' })).toBe('oi')
+  })
+
+  it('reads ACP provider text-delta parts with delta field', () => {
+    expect(extractHermesTextDelta({ delta: 'baum?' })).toBe('baum?')
+  })
+
+  it('returns empty string for malformed delta parts', () => {
+    expect(extractHermesTextDelta({ text: undefined, delta: 123 })).toBe('')
+  })
+})
 
 describe('resolveHermesModelId', () => {
   const models = {

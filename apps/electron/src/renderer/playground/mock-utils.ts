@@ -243,10 +243,35 @@ export const mockElectronAPI = {
     models: [],
     customProviders: [],
   }),
+  getHermesRuntimeDetails: async () => ({
+    found: false,
+    command: 'hermes',
+    hermesHome: '~/.hermes',
+    configPath: '~/.hermes/config.yaml',
+    envPath: '~/.hermes/.env',
+    providers: [],
+    models: [],
+    customProviders: [],
+    envExists: false,
+    configExists: false,
+    logsPath: '~/.hermes/logs',
+    skillsPath: '~/.hermes/skills',
+    sessionsPath: '~/.hermes/sessions',
+  }),
   startHermesDashboard: async () => ({
     success: false,
     error: 'Hermes dashboard is not available in playground mode.',
   }),
+  updateHermesRuntime: async () => ({
+    success: false,
+    status: 'unsupported' as const,
+    error: 'Hermes update is not available in playground mode.',
+  }),
+  listHermesLogs: async () => ({ success: true, logsPath: '~/.hermes/logs', files: [] }),
+  readHermesLog: async () => ({ success: false, error: 'Hermes logs are not available in playground mode.' }),
+  listHermesHomeFiles: async () => ({ success: true, rootPath: '~/.hermes', files: [] }),
+  listHermesSkills: async () => ({ success: true, skillsPath: '~/.hermes/skills', skills: [] }),
+  openHermesPath: async () => ({ success: false, error: 'Hermes files are not available in playground mode.' }),
   getPiProviderModels: async (provider: string) => {
     const MOCK_MODELS: Record<string, Array<{ id: string; name: string; costInput: number; costOutput: number; contextWindow: number; reasoning: boolean }>> = {
       'openrouter': [

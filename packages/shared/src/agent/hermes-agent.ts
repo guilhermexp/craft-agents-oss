@@ -23,6 +23,21 @@ type StreamToolPart = {
   output?: unknown
 }
 
+type StreamTextDeltaPart = {
+  text?: unknown
+  delta?: unknown
+}
+
+export function extractHermesTextDelta(part: StreamTextDeltaPart): string {
+  if (typeof part.text === 'string') return part.text
+  // @mcpc-tech/acp-ai-provider currently emits LanguageModelV3-style
+  // text deltas as `{ type: 'text-delta', delta }`. The installed AI SDK
+  // fullStream type exposes `{ text }`, so keep both shapes to avoid Hermes
+  // completing a turn after tool calls without rendering the final answer.
+  if (typeof part.delta === 'string') return part.delta
+  return ''
+}
+
 function serializeToolResult(result: unknown): string {
   if (typeof result === 'string') return result
   if (result instanceof Error) return result.message
@@ -270,10 +285,13 @@ export class HermesAgent extends BaseAgent {
     try {
       for await (const part of result.fullStream) {
         switch (part.type) {
-          case 'text-delta':
-            finalText += part.text
-            yield { type: 'text_delta', text: part.text }
+          case 'text-delta': {
+            const delta = extractHermesTextDelta(part)
+            if (!delta) break
+            finalText += delta
+            yield { type: 'text_delta', text: delta }
             break
+          }
           case 'tool-call': {
             const toolPart = part as StreamToolPart
             if (toolPart.toolName !== ACP_PROVIDER_AGENT_DYNAMIC_TOOL_NAME) break

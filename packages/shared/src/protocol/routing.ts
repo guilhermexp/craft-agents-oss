@@ -214,7 +214,14 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
 
   // hermes — local runtime/dashboard control
   RPC_CHANNELS.hermes.DETECT_INSTALLATION,
+  RPC_CHANNELS.hermes.GET_RUNTIME_DETAILS,
   RPC_CHANNELS.hermes.START_DASHBOARD,
+  RPC_CHANNELS.hermes.UPDATE_RUNTIME,
+  RPC_CHANNELS.hermes.LIST_LOGS,
+  RPC_CHANNELS.hermes.READ_LOG,
+  RPC_CHANNELS.hermes.LIST_HOME_FILES,
+  RPC_CHANNELS.hermes.LIST_SKILLS,
+  RPC_CHANNELS.hermes.OPEN_PATH,
 ])
 
 // ---------------------------------------------------------------------------

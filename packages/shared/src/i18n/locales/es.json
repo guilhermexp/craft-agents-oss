@@ -707,6 +707,8 @@
   "settings.ai.defaultSection": "Por defecto",
   "settings.ai.defaultSectionDesc": "Configuración para nuevos chats cuando no hay ninguna anulación de Workspace activa.",
   "settings.ai.description": "Modelo, razonamiento, conexiones",
+   "settings.hermes.title": "Hermes",
+   "settings.hermes.description": "Runtime, dashboard, logs, archivos",
   "settings.ai.enterConnectionName": "Introduce el nombre de la conexión...",
   "settings.ai.extendedContext": "Contexto extendido (1M)",
   "settings.ai.extendedContextDesc": "Usa la ventana de contexto de 1M tokens para Opus 4.7. Desactívalo para usar 200K y conservar los límites de uso.",

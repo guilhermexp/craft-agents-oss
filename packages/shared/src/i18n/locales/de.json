@@ -707,6 +707,8 @@
   "settings.ai.defaultSection": "Standard",
   "settings.ai.defaultSectionDesc": "Einstellungen für neue Chats, wenn keine Workspace-Überschreibung gesetzt ist.",
   "settings.ai.description": "Modell, Denken, Verbindungen",
+   "settings.hermes.title": "Hermes",
+   "settings.hermes.description": "Runtime, Dashboard, Logs, Dateien",
   "settings.ai.enterConnectionName": "Verbindungsname eingeben...",
   "settings.ai.extendedContext": "Erweiterter Kontext (1M)",
   "settings.ai.extendedContextDesc": "1M-Token-Kontextfenster für Opus 4.7 verwenden. Deaktivieren, um 200K zu nutzen und Nutzungslimits zu schonen.",

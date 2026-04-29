@@ -413,6 +413,93 @@ export interface HermesDashboardResult {
   error?: string
 }
 
+export interface HermesRuntimeDetailsResult extends HermesDetectionResult {
+  envExists: boolean
+  configExists: boolean
+  logsPath: string
+  skillsPath: string
+  sessionsPath: string
+  agentRoot?: string
+  virtualEnv?: string
+  vendorBinPath?: string
+  sourceRepoPath?: string
+  sourceRepoRemote?: string
+  sourceRepoCommit?: string
+  sourceRepoDirty?: boolean
+  availableProviders?: string[]
+  pluginNames?: string[]
+}
+
+export interface HermesUpdateResult {
+  success: boolean
+  status: 'updated' | 'unsupported' | 'failed'
+  command?: string
+  output?: string
+  error?: string
+  needsRestart?: boolean
+}
+
+export interface HermesLogFileInfo {
+  name: string
+  path: string
+  size: number
+  modifiedAt: number
+}
+
+export interface HermesListLogsResult {
+  success: boolean
+  logsPath: string
+  files: HermesLogFileInfo[]
+  error?: string
+}
+
+export interface HermesReadLogResult {
+  success: boolean
+  file?: HermesLogFileInfo
+  content?: string
+  truncated?: boolean
+  error?: string
+}
+
+export interface HermesHomeFileInfo {
+  name: string
+  path: string
+  relativePath: string
+  type: 'file' | 'directory'
+  size?: number
+  modifiedAt?: number
+  children?: HermesHomeFileInfo[]
+}
+
+export interface HermesListHomeFilesResult {
+  success: boolean
+  rootPath: string
+  files: HermesHomeFileInfo[]
+  error?: string
+}
+
+export interface HermesSkillInfo {
+  name: string
+  path: string
+  description?: string
+  installed: boolean
+  source?: 'home' | 'bundled' | 'optional'
+  relativePath?: string
+}
+
+export interface HermesListSkillsResult {
+  success: boolean
+  skillsPath: string
+  skills: HermesSkillInfo[]
+  error?: string
+}
+
+export interface HermesOpenPathResult {
+  success: boolean
+  path?: string
+  error?: string
+}
+
 // ---------------------------------------------------------------------------
 // Source / skill types
 // ---------------------------------------------------------------------------

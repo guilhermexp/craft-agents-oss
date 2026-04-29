@@ -707,6 +707,8 @@
   "settings.ai.defaultSection": "デフォルト",
   "settings.ai.defaultSectionDesc": "Workspaceの上書きが設定されていない場合の新規チャットの設定です。",
   "settings.ai.description": "モデル、思考、接続",
+   "settings.hermes.title": "Hermes",
+   "settings.hermes.description": "ランタイム、ダッシュボード、ログ、ファイル",
   "settings.ai.enterConnectionName": "接続名を入力...",
   "settings.ai.extendedContext": "拡張コンテキスト (1M)",
   "settings.ai.extendedContextDesc": "Opus 4.7に1Mトークンのコンテキストウィンドウを使用します。無効にすると200Kを使用し、使用制限を節約できます。",

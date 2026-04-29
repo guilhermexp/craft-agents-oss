@@ -707,6 +707,8 @@
   "settings.ai.defaultSection": "Alapértelmezett",
   "settings.ai.defaultSectionDesc": "Beállítások az új csevegésekhez, ha nincs munkaterület-felülírás megadva.",
   "settings.ai.description": "Modell, gondolkodás, kapcsolatok",
+   "settings.hermes.title": "Hermes",
+   "settings.hermes.description": "Futtatókörnyezet, irányítópult, naplók, fájlok",
   "settings.ai.enterConnectionName": "Add meg a kapcsolat nevét...",
   "settings.ai.extendedContext": "Kiterjesztett kontextus (1M)",
   "settings.ai.extendedContextDesc": "1M tokenes kontextusablak használata az Opus 4.7-hez. Letiltással 200K-ra vált, és megőrzi a használati korlátokat.",

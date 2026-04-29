@@ -217,6 +217,13 @@ import type {
   ImportRemoteSessionTransferResult,
   HermesDetectionResult,
   HermesDashboardResult,
+  HermesRuntimeDetailsResult,
+  HermesUpdateResult,
+  HermesListLogsResult,
+  HermesReadLogResult,
+  HermesListHomeFilesResult,
+  HermesListSkillsResult,
+  HermesOpenPathResult,
 } from '@craft-agent/shared/protocol'
 
 export interface ElectronAPI {
@@ -425,7 +432,14 @@ export interface ElectronAPI {
   getPiProviderBaseUrl(provider: string): Promise<string | undefined>
   getPiProviderModels(provider: string): Promise<{ models: Array<{ id: string; name: string; costInput: number; costOutput: number; contextWindow: number; reasoning: boolean }>; totalCount: number }>
   detectHermesInstallation(): Promise<HermesDetectionResult>
+  getHermesRuntimeDetails(): Promise<HermesRuntimeDetailsResult>
   startHermesDashboard(): Promise<HermesDashboardResult>
+  updateHermesRuntime(): Promise<HermesUpdateResult>
+  listHermesLogs(): Promise<HermesListLogsResult>
+  readHermesLog(name: string): Promise<HermesReadLogResult>
+  listHermesHomeFiles(target?: string): Promise<HermesListHomeFilesResult>
+  listHermesSkills(): Promise<HermesListSkillsResult>
+  openHermesPath(target?: string): Promise<HermesOpenPathResult>
 
   // Session-specific model (overrides global)
   getSessionModel(sessionId: string, workspaceId: string): Promise<string | null>

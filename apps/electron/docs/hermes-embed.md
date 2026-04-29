@@ -181,15 +181,19 @@ restart of the user's session.
 
 ## Dashboard/model configuration UX
 
-`packages/server-core/src/handlers/rpc/hermes.ts` exposes:
+`packages/server-core/src/handlers/rpc/hermes.ts` exposes local-only Hermes runtime controls:
 
 - `hermes:detectInstallation` — reports bundled/system runtime, app-scoped `HERMES_HOME`, discovered providers/models, and config paths.
+- `hermes:getRuntimeDetails` — extends detection with config/env existence and app-scoped logs/skills/sessions paths.
 - `hermes:startDashboard` — starts `python -m hermes_cli.main dashboard --no-open` for bundled Hermes (or `hermes dashboard --no-open` for system Hermes), waits for a free localhost port, then returns the URL.
+- `hermes:updateRuntime` — dev-only helper that runs `apps/electron/scripts/update-hermes-runtime.*`; packaged apps return `unsupported` because signed bundles must be updated via Craft releases.
+- `hermes:listLogs` / `hermes:readLog` — enumerate and tail app-scoped Hermes logs.
+- `hermes:listHomeFiles` / `hermes:openPath` — browse/reveal files under `HERMES_HOME` only; `.env` is omitted from listings and path traversal is blocked.
+- `hermes:listSkills` — lists installed Hermes skills from app-scoped `HERMES_HOME/skills`.
 
-`AiSettingsPage` renders an **Abrir dashboard** button for Hermes connections.
-Clicking it launches the dashboard and opens the returned localhost URL in the
-existing Craft embedded browser (`browserPane.create → navigate → focus`), not
-in the OS default browser.
+`Settings / AI` remains generic: connections, model defaults, thinking level, workspace overrides.
+`Settings / Hermes` is the Hermes-specific operational page: **Atualizar Hermes**, **Abrir Dashboard Hermes**, **Ver logs**, **Files**, **Skills do Hermes**, and **Conectores do Hermes**.
+Clicking **Abrir Dashboard Hermes** launches the dashboard and opens the returned localhost URL in the existing Craft embedded browser with `browserPane.create({ url, show: true })`, not in the OS default browser.
 
 ## Session and configuration isolation
 
@@ -247,13 +251,19 @@ updates `SourceManager` state.
   - Defer restart while streaming, apply on stream completion.
   - `postInit` skips redundant pool sync when `poolServerUrl` is set.
   - `postInit` falls back to `setSourceServers` (with sync) when no pool URL.
+- `packages/server-core/src/handlers/rpc/hermes.test.ts`
+  - `listHomeFiles` omits `.env`.
+  - `openPath` blocks traversal outside `HERMES_HOME`.
+  - `updateRuntime` returns `unsupported` in packaged apps.
 
 Run with:
 
 ```bash
-cd packages/shared && bun test src/hermes/__tests__/acp-config.test.ts \
-  src/agent/__tests__/hermes-agent.test.ts \
-  src/agent/backend/__tests__/factory.test.ts
+bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
+  packages/shared/src/agent/__tests__/hermes-agent.test.ts \
+  packages/shared/src/agent/backend/__tests__/factory.test.ts \
+  packages/server-core/src/handlers/rpc/hermes.test.ts \
+  apps/electron/src/transport/__tests__/channel-map-parity.test.ts
 ```
 
 ## File map
@@ -296,10 +306,6 @@ bun run dist:win
 
 ## Out of scope (next iterations)
 
-- Hermes web dashboard. atomic-hermes serves Vue from the Python gateway;
-  Craft has its own renderer, so this is intentionally deferred. If we want
-  it later, expose `HERMES_DASHBOARD_PORT` from a sidecar gateway and embed a
-  `BrowserView`.
 - Auto-import of an existing `~/.hermes/config.yaml`. Right now configs are
   fully isolated.
 - ARM Linux ripgrep target — the bundle script silently skips ripgrep on

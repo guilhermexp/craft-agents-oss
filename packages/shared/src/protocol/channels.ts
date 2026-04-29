@@ -219,7 +219,14 @@ export const RPC_CHANNELS = {
   },
   hermes: {
     DETECT_INSTALLATION: 'hermes:detectInstallation',
+    GET_RUNTIME_DETAILS: 'hermes:getRuntimeDetails',
     START_DASHBOARD: 'hermes:startDashboard',
+    UPDATE_RUNTIME: 'hermes:updateRuntime',
+    LIST_LOGS: 'hermes:listLogs',
+    READ_LOG: 'hermes:readLog',
+    LIST_HOME_FILES: 'hermes:listHomeFiles',
+    LIST_SKILLS: 'hermes:listSkills',
+    OPEN_PATH: 'hermes:openPath',
   },
   dialog: {
     OPEN_FOLDER: 'dialog:openFolder',
