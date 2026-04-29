@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ExternalLink, FileText, FolderOpen, PlugZap, RefreshCw, RotateCw, ScrollText, Wrench } from 'lucide-react'
+import { ExternalLink, FileText, FolderOpen, PlugZap, RefreshCw, ScrollText, Wrench } from 'lucide-react'
 import { toast } from 'sonner'
 import { Spinner } from '@craft-agent/ui'
 
@@ -95,7 +95,6 @@ export default function HermesSettingsPage() {
   const [selectedLogName, setSelectedLogName] = useState<string | null>(null)
   const [selectedLogContent, setSelectedLogContent] = useState<string>('')
   const [isLoading, setIsLoading] = useState(true)
-  const [isUpdating, setIsUpdating] = useState(false)
   const [isOpeningDashboard, setIsOpeningDashboard] = useState(false)
 
   const connectors = useMemo(() => {
@@ -187,25 +186,6 @@ export default function HermesSettingsPage() {
     }
   }, [loadHermes])
 
-  const updateHermes = useCallback(async () => {
-    setIsUpdating(true)
-    try {
-      const result = await window.electronAPI.updateHermesRuntime()
-      if (!result.success) {
-        toast.error(result.status === 'unsupported' ? 'Atualização Hermes indisponível' : 'Falha ao atualizar Hermes', {
-          description: result.error,
-        })
-        return
-      }
-      toast.success('Hermes atualizado', {
-        description: result.needsRestart ? 'Reinicie o Craft para usar o runtime atualizado.' : undefined,
-      })
-      await loadHermes()
-    } finally {
-      setIsUpdating(false)
-    }
-  }, [loadHermes])
-
   const readLog = useCallback(async (name: string) => {
     setSelectedLogName(name)
     const result = await window.electronAPI.readHermesLog(name)
@@ -250,7 +230,7 @@ export default function HermesSettingsPage() {
                   {runtime?.agentRoot ?? 'não publicado'}
                 </button>
               </SettingsRow>
-              <SettingsRow label="Repo Hermes" description={runtime?.sourceRepoRemote ?? 'Repo source usado pelo botão Atualizar Hermes'}>
+              <SettingsRow label="Repo Hermes" description={runtime?.sourceRepoRemote ?? 'Repo source usado pelo dashboard em modo dev'}>
                 <button type="button" className="text-[11px] text-muted-foreground max-w-[260px] truncate hover:text-foreground" onClick={() => revealAbsolutePath(runtime?.sourceRepoPath)}>
                   {runtime?.sourceRepoCommit ? `${runtime.sourceRepoCommit}${runtime.sourceRepoDirty ? ' + dirty' : ''}` : (runtime?.sourceRepoPath ?? 'não encontrado')}
                 </button>
@@ -267,10 +247,6 @@ export default function HermesSettingsPage() {
             <div className="flex flex-wrap gap-2 pt-2">
               <Button size="sm" onClick={openDashboard} disabled={isOpeningDashboard}>
                 <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> Abrir Dashboard Hermes
-              </Button>
-              <Button size="sm" variant="outline" onClick={updateHermes} disabled={isUpdating}>
-                {isUpdating ? <RotateCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
-                Atualizar Hermes
               </Button>
               <Button size="sm" variant="ghost" onClick={loadHermes}>
                 <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Recarregar

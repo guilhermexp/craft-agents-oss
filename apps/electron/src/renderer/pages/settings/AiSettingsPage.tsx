@@ -231,7 +231,7 @@ function ConnectionRow({ connection, isLastConnection, onRenameClick, onDelete, 
         break
       }
       case 'pi_compat': parts.push('Craft Agents Backend Compatible'); break
-      case 'hermes': parts.push('Hermes Local'); break
+      case 'hermes': parts.push('Hermes'); break
       default: parts.push(provider || 'Unknown')
     }
 
@@ -506,7 +506,7 @@ function WorkspaceOverrideCard({ workspace, llmConnections, onSettingsChange }: 
                     label: conn.name,
                     description: conn.providerType === 'anthropic' ? 'Anthropic' :
                                  conn.providerType === 'pi' ? 'Craft Agents Backend' :
-                                 conn.providerType === 'hermes' ? 'Hermes Local' :
+                                 conn.providerType === 'hermes' ? 'Hermes' :
                                  conn.providerType || 'Unknown',
                   })),
                 ]}
@@ -923,7 +923,7 @@ export default function AiSettingsPage() {
                       description: conn.providerType === 'anthropic' ? 'Anthropic API' :
                                    conn.providerType === 'pi' ? 'Craft Agents Backend' :
                                    conn.providerType === 'pi_compat' ? 'Craft Agents Backend Compatible' :
-                                   conn.providerType === 'hermes' ? 'Hermes Local' :
+                                   conn.providerType === 'hermes' ? 'Hermes' :
                                    conn.providerType || 'Unknown',
                     }))}
                   />

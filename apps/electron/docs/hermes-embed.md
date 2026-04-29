@@ -327,7 +327,20 @@ mcp_filesystem_read_file
 
 ## Dev update flow
 
-The Settings button **Atualizar Hermes** calls:
+Hermes updates are initiated from the native Hermes dashboard. Craft Settings
+only launches the dashboard and displays runtime state; it does not expose a
+separate update button.
+
+When the dashboard is running from Craft's bundled Hermes runtime,
+`packages/server-core/src/handlers/rpc/hermes.ts` marks the process with
+`CRAFT_HERMES_EMBEDDED=1` and passes the host update command through
+`CRAFT_HERMES_UPDATE_COMMAND_JSON`. The dashboard's `/api/hermes/update`
+endpoint delegates to that command instead of running `hermes update` inside
+the generated source mirror, because the mirror under
+`apps/electron/resources/vendor/hermes/hermes-agent/` intentionally has no
+`.git` directory.
+
+In development, the delegated command calls:
 
 ```bash
 apps/electron/scripts/update-hermes-runtime.sh
@@ -346,8 +359,15 @@ The update script:
 7. Rebuilds `apps/electron/resources/vendor/hermes/`.
 8. Validates the bundled ACP adapter with `py_compile`.
 
-Packaged apps return `unsupported` for this RPC. Signed app bundles are updated
-only through Craft app releases.
+After the dashboard-triggered update exits, Hermes writes
+`$HERMES_HOME/craft-hermes-update-result.json`. Craft watches that marker and
+shows an Electron notification asking the user to restart Craft when the update
+succeeds, because the running Python runtime was already launched from the old
+bundle.
+
+Packaged apps do not receive `CRAFT_HERMES_UPDATE_COMMAND_JSON`. In that mode,
+the dashboard update endpoint returns a managed-runtime error and the signed app
+bundle must be updated through Craft releases.
 
 ## Release/package flow
 
@@ -453,14 +473,14 @@ restart of the user's session.
   app-scoped logs/skills/sessions paths, source repo path, origin/upstream
   remotes, branch, commit, commit date, release tag, dirty state, available
   providers, and plugin names.
-- `hermes:startDashboard` — starts `python -m hermes_cli.main dashboard --no-open` for bundled Hermes (or `hermes dashboard --no-open` for system Hermes), waits for a free localhost port, then returns the URL.
-- `hermes:updateRuntime` — dev-only helper that runs `apps/electron/scripts/update-hermes-runtime.*`; packaged apps return `unsupported` because signed bundles must be updated via Craft releases.
+- `hermes:startDashboard` — starts `python -m hermes_cli.main dashboard --no-open` for bundled Hermes (or `hermes dashboard --no-open` for system Hermes), passes Craft embedded update env when applicable, watches the update marker, waits for a free localhost port, then returns the URL.
+- `hermes:updateRuntime` — legacy/dev-only helper that runs `apps/electron/scripts/update-hermes-runtime.*`; packaged apps return `unsupported` because signed bundles must be updated via Craft releases. The visible update entry point is the Hermes dashboard.
 - `hermes:listLogs` / `hermes:readLog` — enumerate and tail app-scoped Hermes logs.
 - `hermes:listHomeFiles` / `hermes:openPath` — browse/reveal files under `HERMES_HOME` only. Secrets (`.env`, `auth.json`, locks) are omitted, path traversal is blocked, and operational directories such as `sessions/`, `logs/`, `skills/`, `memories/`, and `cron/` are shown as collapsed top-level folders so Settings does not render raw session dumps.
 - `hermes:listSkills` — lists installed Hermes skills from app-scoped `HERMES_HOME/skills`.
 
 `Settings / AI` remains generic: connections, model defaults, thinking level, workspace overrides.
-`Settings / Hermes` is the Hermes-specific operational page: **Atualizar Hermes**, **Abrir Dashboard Hermes**, **Ver logs**, **Files**, **Skills do Hermes**, and **Conectores do Hermes**.
+`Settings / Hermes` is the Hermes-specific operational page: **Abrir Dashboard Hermes**, **Ver logs**, **Files**, **Skills do Hermes**, and **Conectores do Hermes**.
 Clicking **Abrir Dashboard Hermes** launches the dashboard and opens the returned localhost URL in the existing Craft embedded browser with `browserPane.create({ url, show: true })`, not in the OS default browser.
 
 ### Version display

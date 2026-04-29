@@ -72,3 +72,6 @@ credentials.enc
 # act (local GitHub Actions runner)
 .secrets
 .actrc
+
+# Aperant data directory
+.auto-claude/

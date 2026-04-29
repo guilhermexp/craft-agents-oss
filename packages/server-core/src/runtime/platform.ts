@@ -52,6 +52,7 @@ export interface PlatformServices {
   openPath?(path: string): Promise<void>
   openExternal?(url: string): Promise<void>
   showItemInFolder?(path: string): void
+  showNotification?(title: string, body: string): void | Promise<void>
 
   // -- App lifecycle (no-ops on headless) --
   quit?(): void

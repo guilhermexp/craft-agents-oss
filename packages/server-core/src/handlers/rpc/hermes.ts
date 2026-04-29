@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { lstat, readdir, readFile, realpath } from 'node:fs/promises'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -31,9 +31,22 @@ const execFile = promisify(execFileCb)
 let dashboardProcess: ChildProcess | null = null
 let dashboardUrl: string | null = null
 let dashboardPort: number | null = null
+let updateMarkerMonitor: ReturnType<typeof setInterval> | null = null
+let updateMarkerMonitorPath: string | null = null
+let updateMarkerLastMtime = 0
 
 const HERMES_HOME_HIDDEN_NAMES = new Set(['.env', 'auth.json', 'auth.lock', '.DS_Store'])
 const HERMES_HOME_COLLAPSED_DIRS = new Set(['cron', 'logs', 'memories', 'memory', 'sessions', 'skills', 'skins'])
+const CRAFT_HERMES_UPDATE_MARKER_NAME = 'craft-hermes-update-result.json'
+
+interface HermesUpdateMarker {
+  name?: string
+  exit_code?: number
+  success?: boolean
+  needs_restart?: boolean
+  log_path?: string
+  timestamp?: number
+}
 
 function isBundledRuntime(runtime: NormalizedHermesRuntimeConfig): boolean {
   const bundledPython = process.env.CRAFT_HERMES_PYTHON?.trim()
@@ -83,6 +96,85 @@ function buildHermesEnv(runtime: NormalizedHermesRuntimeConfig): NodeJS.ProcessE
   }
 
   return env
+}
+
+function buildHermesUpdateCommand(deps: HandlerDeps): string[] {
+  const scriptPath = resolveUpdateScript(deps)
+  return process.platform === 'win32'
+    ? ['powershell', '-ExecutionPolicy', 'Bypass', '-File', scriptPath]
+    : ['bash', scriptPath]
+}
+
+function getHermesUpdateMarkerPath(runtime: NormalizedHermesRuntimeConfig): string {
+  return join(runtime.hermesHome, CRAFT_HERMES_UPDATE_MARKER_NAME)
+}
+
+function buildHermesDashboardEnv(deps: HandlerDeps, runtime: NormalizedHermesRuntimeConfig): NodeJS.ProcessEnv {
+  const env = buildHermesEnv(runtime)
+  if (!isBundledRuntime(runtime)) return env
+
+  env.CRAFT_HERMES_EMBEDDED = '1'
+  env.CRAFT_HERMES_UPDATE_MARKER = getHermesUpdateMarkerPath(runtime)
+  env.CRAFT_HERMES_UPDATE_CWD = process.cwd()
+
+  if (!deps.platform.isPackaged) {
+    env.CRAFT_HERMES_UPDATE_COMMAND_JSON = JSON.stringify(buildHermesUpdateCommand(deps))
+  }
+
+  return env
+}
+
+function parseHermesUpdateMarker(raw: string): HermesUpdateMarker | null {
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed as HermesUpdateMarker
+  } catch {
+    return null
+  }
+}
+
+function startHermesUpdateMarkerMonitor(deps: HandlerDeps, runtime: NormalizedHermesRuntimeConfig): void {
+  if (!isBundledRuntime(runtime)) return
+
+  const markerPath = getHermesUpdateMarkerPath(runtime)
+  if (updateMarkerMonitor && updateMarkerMonitorPath === markerPath) return
+  if (updateMarkerMonitor) clearInterval(updateMarkerMonitor)
+
+  updateMarkerMonitorPath = markerPath
+  try {
+    updateMarkerLastMtime = existsSync(markerPath) ? statSync(markerPath).mtimeMs : 0
+  } catch {
+    updateMarkerLastMtime = 0
+  }
+
+  updateMarkerMonitor = setInterval(async () => {
+    try {
+      if (!existsSync(markerPath)) return
+      const info = await lstat(markerPath)
+      if (info.mtimeMs <= updateMarkerLastMtime) return
+      updateMarkerLastMtime = info.mtimeMs
+
+      const marker = parseHermesUpdateMarker(await readFile(markerPath, 'utf-8'))
+      if (!marker) return
+
+      deps.platform.logger.info('[Hermes] Dashboard update finished', {
+        success: marker.success,
+        exitCode: marker.exit_code,
+        logPath: marker.log_path,
+      })
+
+      if (marker.success && marker.needs_restart) {
+        await deps.platform.showNotification?.(
+          'Hermes atualizado',
+          'Reinicie o Craft para usar o runtime Hermes atualizado.',
+        )
+      }
+    } catch (error) {
+      deps.platform.logger.warn('[Hermes] Failed to read dashboard update marker', error)
+    }
+  }, 1_500)
+  updateMarkerMonitor.unref?.()
 }
 
 async function resolveHermesVersion(runtime: NormalizedHermesRuntimeConfig): Promise<string | undefined> {
@@ -538,6 +630,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
 
     if (dashboardProcess && dashboardProcess.exitCode === null && !dashboardProcess.killed && dashboardUrl && dashboardPort) {
+      startHermesUpdateMarkerMonitor(deps, runtime)
       return {
         success: true,
         url: dashboardUrl,
@@ -548,8 +641,9 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
 
     const port = await findFreePort()
     const { command, args } = buildDashboardCommand(runtime, port)
+    startHermesUpdateMarkerMonitor(deps, runtime)
     const child = spawn(command, args, {
-      env: buildHermesEnv(runtime),
+      env: buildHermesDashboardEnv(deps, runtime),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 

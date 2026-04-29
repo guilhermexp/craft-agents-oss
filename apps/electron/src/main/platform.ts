@@ -12,6 +12,7 @@ export interface ElectronPlatformOptions {
   nativeImage: typeof import('electron').nativeImage
   shell: typeof import('electron').shell
   nativeTheme: typeof import('electron').nativeTheme
+  notification?: typeof import('electron').Notification
   logger: PlatformServices['logger']
   isDebugMode: boolean
   getLogFilePath?: () => string | undefined
@@ -29,6 +30,10 @@ export function createElectronPlatform(opts: ElectronPlatformOptions): PlatformS
     openExternal: (url) => shell.openExternal(url),
     openPath: (p) => shell.openPath(p).then(() => {}),
     showItemInFolder: (p) => shell.showItemInFolder(p),
+    showNotification: (title, body) => {
+      if (!opts.notification?.isSupported()) return
+      new opts.notification({ title, body }).show()
+    },
     quit: () => app.quit(),
     systemDarkMode: () => nativeTheme.shouldUseDarkColors,
     imageProcessor: {

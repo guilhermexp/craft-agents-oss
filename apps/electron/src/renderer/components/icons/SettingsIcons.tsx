@@ -35,7 +35,7 @@ export const AiSettingsIcon = ({ className }: IconProps) => (
 export const HermesSettingsIcon = ({ className }: IconProps) => (
   <span
     aria-hidden="true"
-    className={className}
+    className={`inline-block ${className ?? ''}`}
     style={{
       backgroundColor: 'currentColor',
       WebkitMaskImage: `url(${hermesIcon})`,
