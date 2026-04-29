@@ -1,0 +1,453 @@
+/**
+ * Craft Session Tools MCP Server
+ *
+ * Local-only Streamable HTTP MCP bridge used by external agent runtimes that
+ * cannot consume the in-process Claude SDK tool adapter. Hermes uses this to
+ * access Craft-native session tools (plan/auth/config/session helpers,
+ * call_llm, spawn_session, and the built-in browser) without patching Hermes
+ * Python code or changing Claude/Pi execution paths.
+ */
+
+import { createServer, type Server as HttpServer } from 'node:http';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
+import {
+  SESSION_TOOL_REGISTRY,
+  getToolDefsAsJsonSchema,
+  type ToolResult as SessionToolResult,
+} from '@craft-agent/session-tools-core';
+import { createClaudeContext } from '../agent/claude-context.ts';
+import { attachSessionSelfManagementBindings } from '../agent/session-self-management-bindings.ts';
+import {
+  getSessionScopedToolCallbacks,
+  setLastPlanFilePath,
+  type AuthRequest,
+} from '../agent/session-scoped-tools.ts';
+import { buildCallLlmRequest } from '../agent/llm-tool.ts';
+import { executeBrowserToolCommand } from '../agent/browser-tool-runtime.ts';
+import { getSessionPath } from '../sessions/storage.ts';
+import { FEATURE_FLAGS } from '../feature-flags.ts';
+import { getBrowserToolEnabled } from '../config/storage.ts';
+import { AUTOMATIONS_HISTORY_FILE } from '../automations/constants.ts';
+import { generateShortId, resolveAutomationsConfigPath } from '../automations/resolve-config-path.ts';
+import { validateAutomationsConfig } from '../automations/validation.ts';
+import type { AutomationEvent, AutomationMatcher, AutomationsConfig, AutomationSystem } from '../automations/index.ts';
+import type { PermissionMode } from '../agent/mode-types.ts';
+
+export interface CraftSessionToolsMcpServerOptions {
+  sessionId: string;
+  workspaceRootPath: string;
+  workspaceId?: string;
+  debug?: (msg: string) => void;
+  defaultLlmConnection?: string;
+  defaultModel?: string;
+  automationSystem?: Pick<AutomationSystem, 'reloadConfig'>;
+}
+
+type McpContent =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType: string };
+
+const BROWSER_RELEASE_HINT = '\n\nWhen you are done using the browser, call browser_tool with command \"close\" to close the window entirely, or \"release\" to dismiss the overlay and let the user continue browsing.';
+
+const AUTOMATION_TOOL_NAME = 'automation_tool';
+const AUTOMATION_TOOL_DESCRIPTION = `Manage Craft-native automations for this workspace.
+
+Use this instead of Hermes native cron while running inside Craft. Scheduled prompt jobs are written to the workspace automations.json and appear in Craft Automations / Scheduled.
+
+Commands:
+- list: list configured automations
+- create_scheduled: create a SchedulerTick automation that starts a Craft session with a prompt
+- toggle: enable or disable an automation by id
+- delete: remove an automation by id
+- history: read recent automations-history.jsonl entries`;
+
+const AUTOMATION_TOOL_SCHEMA = {
+  type: 'object',
+  properties: {
+    command: { type: 'string', enum: ['list', 'create_scheduled', 'toggle', 'delete', 'history'] },
+    id: { type: 'string', description: 'Automation matcher id for toggle/delete/history filtering' },
+    name: { type: 'string', description: 'Human-readable automation name' },
+    cron: { type: 'string', description: '5-field cron expression for SchedulerTick, e.g. */30 * * * *' },
+    timezone: { type: 'string', description: 'IANA timezone, e.g. America/Sao_Paulo' },
+    prompt: { type: 'string', description: 'Prompt action text for create_scheduled' },
+    llmConnection: { type: 'string', description: 'Optional LLM connection slug for the spawned automation session' },
+    model: { type: 'string', description: 'Optional model id for the spawned automation session' },
+    labels: { type: 'array', items: { type: 'string' }, description: 'Labels applied to sessions created by the automation' },
+    permissionMode: { type: 'string', enum: ['safe', 'ask', 'allow-all'], description: 'Permission mode for created sessions' },
+    enabled: { type: 'boolean', description: 'Enable/disable value for create_scheduled or toggle' },
+    limit: { type: 'number', description: 'History entry limit, default 20' },
+  },
+  required: ['command'],
+} as const;
+
+function toMcpResult(result: SessionToolResult): { content: McpContent[]; isError?: boolean } {
+  return {
+    content: result.content.map((entry) => ({ type: 'text' as const, text: entry.text })),
+    ...(result.isError ? { isError: true } : {}),
+  };
+}
+
+function errorResult(message: string): { content: McpContent[]; isError: true } {
+  return {
+    content: [{ type: 'text', text: `[ERROR] ${message}` }],
+    isError: true,
+  };
+}
+
+function jsonResult(value: unknown): { content: McpContent[] } {
+  return {
+    content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
+  };
+}
+
+export class CraftSessionToolsMcpServer {
+  private httpServer: HttpServer | null = null;
+  private mcpServer: Server | null = null;
+  private transport: StreamableHTTPServerTransport | null = null;
+  private readonly options: CraftSessionToolsMcpServerOptions;
+  private _port = 0;
+
+  constructor(options: CraftSessionToolsMcpServerOptions) {
+    this.options = options;
+  }
+
+  get port(): number {
+    return this._port;
+  }
+
+  get url(): string {
+    return `http://127.0.0.1:${this._port}/mcp`;
+  }
+
+  async start(): Promise<string> {
+    if (this.httpServer) return this.url;
+
+    this.transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+    });
+    this.mcpServer = this.createMcpServer();
+    await this.mcpServer.connect(this.transport);
+
+    this.httpServer = createServer(async (req, res) => {
+      const url = new URL(req.url || '/', 'http://127.0.0.1');
+      if (url.pathname !== '/mcp') {
+        res.writeHead(404);
+        res.end('Not Found');
+        return;
+      }
+
+      await this.transport!.handleRequest(req, res);
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      this.httpServer!.listen(0, '127.0.0.1', () => {
+        const addr = this.httpServer!.address();
+        this._port = typeof addr === 'object' && addr ? addr.port : 0;
+        this.debug(`Listening on 127.0.0.1:${this._port}`);
+        resolve();
+      });
+      this.httpServer!.on('error', reject);
+    });
+
+    return this.url;
+  }
+
+  getToolDefinitions(): Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> {
+    const browserEnabled = getBrowserToolEnabled();
+    const tools = getToolDefsAsJsonSchema({
+      includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback,
+      includeMemory: FEATURE_FLAGS.memory,
+    }).filter((def) => browserEnabled || def.name !== 'browser_tool');
+
+    tools.push({
+      name: AUTOMATION_TOOL_NAME,
+      description: AUTOMATION_TOOL_DESCRIPTION,
+      inputSchema: AUTOMATION_TOOL_SCHEMA as unknown as Record<string, unknown>,
+    });
+
+    return tools;
+  }
+
+  async callTool(name: string, args: Record<string, unknown> = {}): Promise<{ content: McpContent[]; isError?: boolean }> {
+    if (name === AUTOMATION_TOOL_NAME) return this.automationTool(args);
+
+    const def = SESSION_TOOL_REGISTRY.get(name);
+    if (!def) return errorResult(`Unknown Craft session tool: ${name}`);
+
+    if (def.handler) {
+      const result = await def.handler(this.createContext(), args);
+      return toMcpResult(result);
+    }
+
+    if (name === 'call_llm') return this.callLlm(args);
+    if (name === 'spawn_session') return this.spawnSession(args);
+    if (name === 'browser_tool') return this.browserTool(args);
+
+    return errorResult(`Craft session tool is not executable in this context: ${name}`);
+  }
+
+  async stop(): Promise<void> {
+    if (this.transport) {
+      await this.transport.close().catch(() => {});
+      this.transport = null;
+    }
+
+    if (this.mcpServer) {
+      await this.mcpServer.close().catch(() => {});
+      this.mcpServer = null;
+    }
+
+    if (this.httpServer) {
+      await new Promise<void>((resolve) => {
+        this.httpServer!.close(() => resolve());
+      });
+      this.httpServer = null;
+      this._port = 0;
+      this.debug('Stopped');
+    }
+  }
+
+  private createMcpServer(): Server {
+    const server = new Server(
+      { name: 'craft-session-tools', version: '1.0.0' },
+      { capabilities: { tools: {} } },
+    );
+
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: this.getToolDefinitions().map((def) => ({
+        name: def.name,
+        description: def.description,
+        inputSchema: def.inputSchema as { type: 'object'; properties?: Record<string, unknown> },
+      })),
+    }));
+
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: rawArgs } = request.params;
+      this.debug(`Tool call: ${name}`);
+      return this.callTool(name, (rawArgs ?? {}) as Record<string, unknown>) as any;
+    });
+
+    return server;
+  }
+
+  private createContext() {
+    const { sessionId, workspaceRootPath, workspaceId } = this.options;
+    const ctx = createClaudeContext({
+      sessionId,
+      workspacePath: workspaceRootPath,
+      workspaceId: workspaceId || '',
+      onPlanSubmitted: (planPath: string) => {
+        setLastPlanFilePath(sessionId, planPath);
+        getSessionScopedToolCallbacks(sessionId)?.onPlanSubmitted?.(planPath);
+      },
+      onAuthRequest: (request: unknown) => {
+        getSessionScopedToolCallbacks(sessionId)?.onAuthRequest?.(request as AuthRequest);
+      },
+    });
+    attachSessionSelfManagementBindings(ctx, sessionId);
+    return ctx;
+  }
+
+  private async callLlm(args: Record<string, unknown>) {
+    const callbacks = getSessionScopedToolCallbacks(this.options.sessionId);
+    const queryFn = callbacks?.queryFn;
+    if (!queryFn) {
+      return errorResult('No authentication configured for call_llm. Sign in with your AI provider to use this tool.');
+    }
+
+    try {
+      const request = await buildCallLlmRequest(args, {
+        backendName: 'Hermes',
+        sessionPath: getSessionPath(this.options.workspaceRootPath, this.options.sessionId),
+      });
+      const result = await queryFn(request);
+      if (!result.text && !result.warning) {
+        return { content: [{ type: 'text' as const, text: '(Model returned empty response)' }] };
+      }
+      const body = result.warning
+        ? `[Partial result — ${result.warning}]\n\n${result.text || '(no text produced before stop)'}`
+        : result.text;
+      return { content: [{ type: 'text' as const, text: body }] };
+    } catch (error) {
+      return errorResult(`call_llm failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async spawnSession(args: Record<string, unknown>) {
+    const spawnFn = getSessionScopedToolCallbacks(this.options.sessionId)?.spawnSessionFn;
+    if (!spawnFn) return errorResult('spawn_session is not available in this context.');
+
+    try {
+      return jsonResult(await spawnFn(args));
+    } catch (error) {
+      return errorResult(`spawn_session failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async browserTool(args: Record<string, unknown>) {
+    if (!getBrowserToolEnabled()) return errorResult('browser_tool is disabled in Settings.');
+
+    const browserFns = getSessionScopedToolCallbacks(this.options.sessionId)?.browserPaneFns;
+    if (!browserFns) return errorResult('Browser window controls are not available. This tool requires the desktop app.');
+
+    try {
+      const result = await executeBrowserToolCommand({
+        command: args.command as string | string[],
+        fns: browserFns,
+        sessionId: this.options.sessionId,
+      });
+      const text = result.appendReleaseHint ? `${result.output}${BROWSER_RELEASE_HINT}` : result.output;
+      const content: McpContent[] = [{ type: 'text', text }];
+      if (result.image) {
+        content.push({ type: 'image', data: result.image.data, mimeType: result.image.mimeType });
+      }
+      return { content };
+    } catch (error) {
+      return errorResult(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private readAutomationsConfig(): AutomationsConfig {
+    const configPath = resolveAutomationsConfigPath(this.options.workspaceRootPath);
+    if (!existsSync(configPath)) return { automations: {} };
+    const parsed = JSON.parse(readFileSync(configPath, 'utf-8')) as unknown;
+    const validation = validateAutomationsConfig(parsed);
+    if (!validation.valid || !validation.config) {
+      throw new Error(`Invalid automations.json: ${validation.errors.join('; ')}`);
+    }
+    return validation.config;
+  }
+
+  private writeAutomationsConfig(config: AutomationsConfig): void {
+    const validation = validateAutomationsConfig(config);
+    if (!validation.valid) {
+      throw new Error(`Refusing to write invalid automations.json: ${validation.errors.join('; ')}`);
+    }
+    writeFileSync(resolveAutomationsConfigPath(this.options.workspaceRootPath), JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  }
+
+  private findAutomation(config: AutomationsConfig, id: string): { event: AutomationEvent; matcher: AutomationMatcher; index: number } | null {
+    for (const [event, matchers] of Object.entries(config.automations) as Array<[AutomationEvent, AutomationMatcher[] | undefined]>) {
+      const index = (matchers ?? []).findIndex((matcher) => matcher.id === id);
+      if (index >= 0) return { event, matcher: matchers![index]!, index };
+    }
+    return null;
+  }
+
+  private flattenAutomations(config: AutomationsConfig) {
+    return Object.entries(config.automations).flatMap(([event, matchers]) =>
+      (matchers ?? []).map((matcher) => ({
+        event,
+        id: matcher.id,
+        name: matcher.name,
+        cron: matcher.cron,
+        timezone: matcher.timezone,
+        enabled: matcher.enabled !== false,
+        labels: matcher.labels ?? [],
+        permissionMode: matcher.permissionMode,
+        actions: matcher.actions.map((action) => action.type),
+      })),
+    );
+  }
+
+  private async automationTool(args: Record<string, unknown>) {
+    const command = String(args.command ?? '');
+    try {
+      if (command === 'list') {
+        return jsonResult({ automations: this.flattenAutomations(this.readAutomationsConfig()) });
+      }
+
+      if (command === 'create_scheduled') {
+        const cron = typeof args.cron === 'string' ? args.cron.trim() : '';
+        const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : '';
+        if (!cron) return errorResult('automation_tool create_scheduled requires cron.');
+        if (!prompt) return errorResult('automation_tool create_scheduled requires prompt.');
+
+        const config = this.readAutomationsConfig();
+        const matcher: AutomationMatcher = {
+          id: generateShortId(),
+          name: typeof args.name === 'string' && args.name.trim() ? args.name.trim() : `Hermes scheduled task ${new Date().toISOString()}`,
+          cron,
+          timezone: typeof args.timezone === 'string' && args.timezone.trim() ? args.timezone.trim() : undefined,
+          enabled: typeof args.enabled === 'boolean' ? args.enabled : true,
+          labels: Array.from(new Set(['hermes', 'scheduled', ...(Array.isArray(args.labels) ? args.labels.filter((label): label is string => typeof label === 'string') : [])])),
+          permissionMode: args.permissionMode as PermissionMode | undefined,
+          actions: [{
+            type: 'prompt',
+            prompt,
+            llmConnection: typeof args.llmConnection === 'string' && args.llmConnection.trim() ? args.llmConnection.trim() : this.configConnectionSlug(),
+            model: typeof args.model === 'string' && args.model.trim() ? args.model.trim() : this.options.defaultModel,
+          }],
+        };
+        config.automations.SchedulerTick = [...(config.automations.SchedulerTick ?? []), matcher];
+        this.writeAutomationsConfig(config);
+        this.configAutomationSystemReload();
+        return jsonResult({ ok: true, automation: matcher });
+      }
+
+      if (command === 'toggle') {
+        const id = typeof args.id === 'string' ? args.id.trim() : '';
+        if (!id) return errorResult('automation_tool toggle requires id.');
+        const config = this.readAutomationsConfig();
+        const found = this.findAutomation(config, id);
+        if (!found) return errorResult(`Automation not found: ${id}`);
+        found.matcher.enabled = typeof args.enabled === 'boolean' ? args.enabled : found.matcher.enabled === false;
+        this.writeAutomationsConfig(config);
+        this.configAutomationSystemReload();
+        return jsonResult({ ok: true, id, enabled: found.matcher.enabled !== false });
+      }
+
+      if (command === 'delete') {
+        const id = typeof args.id === 'string' ? args.id.trim() : '';
+        if (!id) return errorResult('automation_tool delete requires id.');
+        const config = this.readAutomationsConfig();
+        const found = this.findAutomation(config, id);
+        if (!found) return errorResult(`Automation not found: ${id}`);
+        config.automations[found.event] = (config.automations[found.event] ?? []).filter((matcher) => matcher.id !== id);
+        this.writeAutomationsConfig(config);
+        this.configAutomationSystemReload();
+        return jsonResult({ ok: true, deleted: id });
+      }
+
+      if (command === 'history') {
+        const limit = Math.max(1, Math.min(100, Number(args.limit ?? 20) || 20));
+        const id = typeof args.id === 'string' && args.id.trim() ? args.id.trim() : undefined;
+        const historyPath = join(this.options.workspaceRootPath, AUTOMATIONS_HISTORY_FILE);
+        if (!existsSync(historyPath)) return jsonResult({ entries: [] });
+        const entries = readFileSync(historyPath, 'utf-8')
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => {
+            try { return JSON.parse(line) as Record<string, unknown>; } catch { return null; }
+          })
+          .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+          .filter((entry) => !id || entry.matcherId === id)
+          .slice(-limit);
+        return jsonResult({ entries });
+      }
+
+      return errorResult(`Unknown automation_tool command: ${command}`);
+    } catch (error) {
+      return errorResult(`automation_tool failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private configConnectionSlug(): string | undefined {
+    return this.options.defaultLlmConnection;
+  }
+
+  private configAutomationSystemReload(): void {
+    this.options.automationSystem?.reloadConfig();
+  }
+
+  private debug(message: string): void {
+    this.options.debug?.(`[CraftSessionToolsMcpServer] ${message}`);
+  }
+}

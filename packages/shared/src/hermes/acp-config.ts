@@ -120,12 +120,24 @@ export function sdkMcpServerToHermesAcp(name: string, config: SdkMcpServerConfig
 export function buildHermesAcpMcpServers(args: {
   mcpServers?: Record<string, SdkMcpServerConfig>
   poolServerUrl?: string
+  sessionToolsServerUrl?: string
 }): HermesAcpMcpServer[] {
+  const sessionToolsServerUrl = args.sessionToolsServerUrl?.trim()
+  const sessionToolsServer = sessionToolsServerUrl
+    ? [{ type: 'http' as const, name: 'craft-session', url: sessionToolsServerUrl, headers: [] }]
+    : []
+
   const poolServerUrl = args.poolServerUrl?.trim()
   if (poolServerUrl) {
-    return [{ type: 'http', name: 'craft-sources', url: poolServerUrl, headers: [] }]
+    return [
+      { type: 'http', name: 'craft-sources', url: poolServerUrl, headers: [] },
+      ...sessionToolsServer,
+    ]
   }
 
-  return Object.entries(args.mcpServers ?? {})
-    .map(([name, config]) => sdkMcpServerToHermesAcp(name, config))
+  return [
+    ...Object.entries(args.mcpServers ?? {})
+      .map(([name, config]) => sdkMcpServerToHermesAcp(name, config)),
+    ...sessionToolsServer,
+  ]
 }

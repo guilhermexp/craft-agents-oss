@@ -28,7 +28,7 @@ function makeFakeProvider(): FakeProvider {
 }
 
 function createHermesConfig(overrides: Partial<BackendConfig> = {}): BackendConfig {
-  return createMockBackendConfig({ provider: 'hermes', ...overrides })
+  return createMockBackendConfig({ provider: 'hermes', isHeadless: true, ...overrides })
 }
 
 class TestableHermesAgent extends HermesAgent {

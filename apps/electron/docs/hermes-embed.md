@@ -44,16 +44,17 @@ did not have Hermes installed, sessions failed. Embedding gives:
 |     vendor/hermes/hermes-venv/bin/python3 -m acp_adapter    |
 |       • imports site-packages copy of hermes_agent          |
 |       • talks ACP over stdin/stdout                         |
-|       • routes MCP tool calls back to Craft pool over HTTP  |
+|       • routes MCP tool calls back to Craft over HTTP        |
 +-------------------------------------------------------------+
 ```
 
 Transport stays ACP stdio for agent sessions (Craft already speaks ACP via
 `@mcpc-tech/acp-ai-provider`). atomic-hermes uses HTTP/WebSocket for chat
 because its renderer talks Python directly; here the Node main process is the
-agent bridge. The only HTTP subprocess Craft starts is the optional Hermes web
-dashboard, launched on demand from Settings and opened inside Craft's embedded
-browser window.
+agent bridge. Source tools and Craft-native session tools are exposed to Hermes
+through local-only MCP Streamable HTTP bridges owned by Craft. The optional
+Hermes web dashboard is also HTTP, but it is launched on demand from Settings
+and opened inside Craft's embedded browser window.
 
 ## Bundle layout
 
@@ -195,6 +196,28 @@ restart of the user's session.
 `Settings / Hermes` is the Hermes-specific operational page: **Atualizar Hermes**, **Abrir Dashboard Hermes**, **Ver logs**, **Files**, **Skills do Hermes**, and **Conectores do Hermes**.
 Clicking **Abrir Dashboard Hermes** launches the dashboard and opens the returned localhost URL in the existing Craft embedded browser with `browserPane.create({ url, show: true })`, not in the OS default browser.
 
+## Craft-native tools for Hermes
+
+Hermes sessions now receive two separate local MCP endpoints in their ACP
+`session.mcpServers` array:
+
+| MCP name | Owner | Purpose |
+| -------- | ----- | ------- |
+| `craft-sources` | existing `McpPoolServer` | Workspace source tools (GitHub, Linear, Notion, etc.) through the shared source pool. |
+| `craft-session` | `CraftSessionToolsMcpServer` | Craft-native session tools: plan/auth/config helpers, `call_llm`, `spawn_session`, session metadata tools, `browser_tool`, and `automation_tool`. |
+
+This is intentionally Hermes-only wiring in `HermesAgent`; Claude and Pi keep
+their existing adapters. The bridge reuses the same session callback registry
+that powers native agents, so Electron-provided browser functions and
+self-management callbacks stay late-bound and session-scoped.
+
+Important separation rules:
+
+- No Craft internals are injected into Hermes Python. Hermes only sees MCP.
+- `craft-sources` and `craft-session` are local-only `127.0.0.1` endpoints.
+- `browser_tool` uses Craft's built-in browser abstraction, not an external OS browser.
+- Scheduled-task creation goes through `automation_tool`, which writes Craft `automations.json` and reloads the active `AutomationSystem`; Hermes' native `HERMES_HOME/cron/jobs.json` should remain disabled/hidden in Craft context.
+
 ## Session and configuration isolation
 
 - `HERMES_HOME` resolves to `<userData>/hermes`, NOT `~/.hermes`. A user with
@@ -244,7 +267,12 @@ updates `SourceManager` state.
 - `packages/shared/src/hermes/__tests__/acp-config.test.ts`
   - Covers default external-`hermes` path, bundled `CRAFT_HERMES_PYTHON +
     CRAFT_HERMES_ARGS` pickup, args pairing safety, explicit overrides,
-    `CRAFT_HERMES_HOME` precedence over `HERMES_HOME`.
+    `CRAFT_HERMES_HOME` precedence over `HERMES_HOME`, and combined
+    `craft-sources` + `craft-session` MCP config.
+- `packages/shared/src/mcp/session-tools-server.test.ts`
+  - Covers canonical tool listing plus `call_llm`, `spawn_session`,
+    late-bound session-management callbacks, and `automation_tool`
+    create/list/toggle/delete behavior through the MCP bridge.
 - `packages/shared/src/agent/__tests__/hermes-agent.test.ts`
   - No-op when descriptors unchanged.
   - Restart provider on descriptor change.
@@ -260,6 +288,7 @@ Run with:
 
 ```bash
 bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
+  packages/shared/src/mcp/session-tools-server.test.ts \
   packages/shared/src/agent/__tests__/hermes-agent.test.ts \
   packages/shared/src/agent/backend/__tests__/factory.test.ts \
   packages/server-core/src/handlers/rpc/hermes.test.ts \
@@ -278,8 +307,10 @@ bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
 | `apps/electron/src/main/index.ts`                                                                   | Calls `publishHermesRuntimeEnv()` on boot            |
 | `apps/electron/electron-builder.yml`                                                                | extraResources entry per platform                    |
 | `packages/shared/src/hermes/acp-config.ts`                                                          | `normalizeHermesRuntimeConfig`, ACP MCP shape mapper |
-| `packages/shared/src/agent/hermes-agent.ts`                                                         | Streaming-safe lifecycle                             |
-| `packages/shared/src/hermes/__tests__/acp-config.test.ts`                                           | Resolver tests                                       |
+| `packages/shared/src/mcp/session-tools-server.ts`                                                   | Local MCP bridge for Craft-native session tools      |
+| `packages/shared/src/agent/hermes-agent.ts`                                                         | Streaming-safe lifecycle + Hermes MCP wiring         |
+| `packages/shared/src/hermes/__tests__/acp-config.test.ts`                                           | Resolver/MCP config tests                            |
+| `packages/shared/src/mcp/session-tools-server.test.ts`                                              | Craft session tools MCP tests                        |
 | `packages/shared/src/agent/__tests__/hermes-agent.test.ts`                                          | Lifecycle tests                                      |
 
 ## Quickstart

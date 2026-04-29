@@ -118,7 +118,7 @@ describe('Hermes ACP config', () => {
     })
   })
 
-  it('prefers the Craft pool HTTP endpoint for external Hermes ACP sessions', () => {
+  it('prefers the Craft pool HTTP endpoint for external Hermes ACP source tools', () => {
     const servers = buildHermesAcpMcpServers({
       poolServerUrl: 'http://127.0.0.1:45123/mcp',
       mcpServers: {
@@ -128,6 +128,35 @@ describe('Hermes ACP config', () => {
 
     expect(servers).toEqual([
       { type: 'http', name: 'craft-sources', url: 'http://127.0.0.1:45123/mcp', headers: [] },
+    ])
+  })
+
+  it('adds the Craft session tools MCP server alongside pooled source tools', () => {
+    const servers = buildHermesAcpMcpServers({
+      poolServerUrl: 'http://127.0.0.1:45123/mcp',
+      sessionToolsServerUrl: 'http://127.0.0.1:45124/mcp',
+      mcpServers: {
+        direct: { type: 'http', url: 'http://example.test/mcp' },
+      },
+    })
+
+    expect(servers).toEqual([
+      { type: 'http', name: 'craft-sources', url: 'http://127.0.0.1:45123/mcp', headers: [] },
+      { type: 'http', name: 'craft-session', url: 'http://127.0.0.1:45124/mcp', headers: [] },
+    ])
+  })
+
+  it('adds Craft session tools without dropping direct MCP configs when no pool endpoint exists', () => {
+    const servers = buildHermesAcpMcpServers({
+      sessionToolsServerUrl: 'http://127.0.0.1:45124/mcp',
+      mcpServers: {
+        direct: { type: 'http', url: 'http://example.test/mcp' },
+      },
+    })
+
+    expect(servers).toEqual([
+      { type: 'http', name: 'direct', url: 'http://example.test/mcp', headers: [] },
+      { type: 'http', name: 'craft-session', url: 'http://127.0.0.1:45124/mcp', headers: [] },
     ])
   })
 })

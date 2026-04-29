@@ -15,6 +15,8 @@ import type { PermissionMode } from './mode-manager.ts'
 import type { LLMQueryRequest, LLMQueryResult } from './llm-tool.ts'
 import type { Workspace } from '../config/storage.ts'
 import { buildHermesAcpMcpServers, normalizeHermesRuntimeConfig, type HermesRuntimeConfig } from '../hermes/acp-config.ts'
+import { CraftSessionToolsMcpServer } from '../mcp/session-tools-server.ts'
+import { clearPlanFileState, mergeSessionScopedToolCallbacks, unregisterSessionScopedToolCallbacks } from './session-scoped-tools.ts'
 
 type StreamToolPart = {
   type: 'tool-call' | 'tool-result'
@@ -119,12 +121,15 @@ export class HermesAgent extends BaseAgent {
   private abortController: AbortController | null = null
   private activeMcpServers: Record<string, SdkMcpServerConfig> = {}
   private pendingProviderRestart = false
+  private sessionToolsServer: CraftSessionToolsMcpServer | null = null
+  private sessionToolsServerUrl: string | undefined
 
   constructor(config: BackendConfig) {
     super(config, config.model || '', 200_000)
     this._supportsBranching = false
     this.hermesSessionId = config.session?.sdkSessionId || null
     this.activeMcpServers = { ...(config.initialSources?.mcpServers ?? {}) }
+    this.refreshSessionToolCallbacks()
 
     if (!config.isHeadless) {
       this.startConfigWatcher()
@@ -146,6 +151,7 @@ export class HermesAgent extends BaseAgent {
     this.pendingProviderRestart = false
     this.provider?.cleanup()
     this.provider = null
+    void this.stopSessionToolsServer()
   }
 
   override clearHistory(): void {
@@ -166,9 +172,53 @@ export class HermesAgent extends BaseAgent {
     return this.workingDirectory
   }
 
-  private getOrCreateProvider(): ACPProvider {
+  private getCraftSessionId(): string | undefined {
+    return this.config.session?.id
+  }
+
+  private refreshSessionToolCallbacks(): void {
+    const sessionId = this.getCraftSessionId()
+    if (!sessionId) return
+
+    // Merge instead of replace so Electron-provided browserPaneFns survive.
+    mergeSessionScopedToolCallbacks(sessionId, {
+      onPlanSubmitted: (planPath) => this.onPlanSubmitted?.(planPath),
+      onAuthRequest: (request) => this.onAuthRequest?.(request),
+      queryFn: (request) => this.queryLlm(request),
+      spawnSessionFn: (input) => this.preExecuteSpawnSession(input),
+    })
+  }
+
+  private async ensureSessionToolsServer(): Promise<string | undefined> {
+    const sessionId = this.getCraftSessionId()
+    if (!sessionId || this.config.isHeadless) return undefined
+    if (this.sessionToolsServerUrl) return this.sessionToolsServerUrl
+
+    this.refreshSessionToolCallbacks()
+    this.sessionToolsServer = new CraftSessionToolsMcpServer({
+      sessionId,
+      workspaceRootPath: this.config.workspace.rootPath,
+      workspaceId: this.config.workspace.id,
+      debug: (message) => this.onDebug?.(message),
+      defaultLlmConnection: this.config.connectionSlug,
+      defaultModel: this._model || this.config.model,
+      automationSystem: this.config.automationSystem,
+    })
+    this.sessionToolsServerUrl = await this.sessionToolsServer.start()
+    return this.sessionToolsServerUrl
+  }
+
+  private async stopSessionToolsServer(): Promise<void> {
+    const server = this.sessionToolsServer
+    this.sessionToolsServer = null
+    this.sessionToolsServerUrl = undefined
+    await server?.stop().catch(() => {})
+  }
+
+  private async getOrCreateProvider(): Promise<ACPProvider> {
     if (this.provider) return this.provider
 
+    const sessionToolsServerUrl = await this.ensureSessionToolsServer()
     const runtime = this.getRuntimeConfig()
     this.provider = createACPProvider({
       command: runtime.command,
@@ -179,6 +229,7 @@ export class HermesAgent extends BaseAgent {
         mcpServers: buildHermesAcpMcpServers({
           mcpServers: this.activeMcpServers,
           poolServerUrl: this.config.poolServerUrl,
+          sessionToolsServerUrl,
         }),
       },
       ...(this.hermesSessionId ? { existingSessionId: this.hermesSessionId } : {}),
@@ -189,6 +240,9 @@ export class HermesAgent extends BaseAgent {
   }
 
   override async postInit(): Promise<PostInitResult> {
+    this.refreshSessionToolCallbacks()
+    await this.ensureSessionToolsServer()
+
     const initial = this.config.initialSources
     if (initial) {
       this.setAllSources(initial.enabledSources)
@@ -248,7 +302,7 @@ export class HermesAgent extends BaseAgent {
     this.isStreaming = true
     this.abortController = new AbortController()
 
-    const provider = this.getOrCreateProvider()
+    const provider = await this.getOrCreateProvider()
     const sessionInfo = await provider.initSession()
 
     this.hermesSessionId = provider.getSessionId() || sessionInfo.sessionId || null
@@ -371,7 +425,7 @@ export class HermesAgent extends BaseAgent {
   }
 
   async runMiniCompletion(prompt: string): Promise<string | null> {
-    const provider = this.getOrCreateProvider()
+    const provider = await this.getOrCreateProvider()
     const sessionInfo = await provider.initSession()
     this.hermesSessionId = provider.getSessionId() || sessionInfo.sessionId || this.hermesSessionId
 
@@ -404,6 +458,13 @@ export class HermesAgent extends BaseAgent {
     this.abortController = null
     this.isStreaming = false
     this.pendingProviderRestart = false
+    void this.stopSessionToolsServer()
+
+    const sessionId = this.getCraftSessionId()
+    if (sessionId) {
+      clearPlanFileState(sessionId)
+      unregisterSessionScopedToolCallbacks(sessionId)
+    }
   }
 
   override dispose(): void {
