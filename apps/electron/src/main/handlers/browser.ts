@@ -47,6 +47,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
 
     return browserPaneManager.createInstance(input?.id, {
       show: input?.show,
+      url: input?.url,
       profileId: input?.profileId,
     })
   })

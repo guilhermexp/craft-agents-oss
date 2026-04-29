@@ -54,6 +54,8 @@ describe('Hermes ACP config', () => {
     expect(runtime.command).toBe('/Applications/Craft Agents.app/Contents/Resources/app/vendor/hermes/hermes-venv/bin/python3')
     expect(runtime.args).toEqual(['-m', 'acp_adapter'])
     expect(runtime.hermesHome).toBe('/Users/test/Library/Application Support/craft-agent/hermes')
+    expect(runtime.configPath).toBe('/Users/test/Library/Application Support/craft-agent/hermes/config.yaml')
+    expect(runtime.envPath).toBe('/Users/test/Library/Application Support/craft-agent/hermes/.env')
   })
 
   it('keeps acp args for an external hermes binary even when CRAFT_HERMES_ARGS is bundled', () => {

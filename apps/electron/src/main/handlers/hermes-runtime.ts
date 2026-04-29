@@ -22,12 +22,37 @@ export type HermesRuntimePaths = {
 const VENV_BIN = process.platform === 'win32' ? 'Scripts' : 'bin'
 const PY_NAME = process.platform === 'win32' ? 'python.exe' : 'python3'
 
-function resolveVendorRoot(): string {
-  if (app.isPackaged) {
-    return join(process.resourcesPath, 'app', 'vendor', 'hermes')
-  }
-  // Dev: run from repo root, vendor lives under apps/electron/resources/vendor/hermes
-  return join(__dirname, '..', '..', 'resources', 'vendor', 'hermes')
+function resolvePackagedVendorRoot(): string {
+  return join(process.resourcesPath, 'app', 'vendor', 'hermes')
+}
+
+function firstExistingPath(candidates: string[]): string {
+  return candidates.find(candidate => existsSync(candidate)) ?? candidates[0]
+}
+
+function devResourceCandidates(...segments: string[]): string[] {
+  return [
+    // Electron dev from the app package root.
+    join(app.getAppPath(), 'resources', ...segments),
+    // Monorepo dev launched from repository root.
+    join(process.cwd(), 'apps', 'electron', 'resources', ...segments),
+    // Dev command launched from apps/electron.
+    join(process.cwd(), 'resources', ...segments),
+    // Fallback for unusual compiled __dirname layouts.
+    join(__dirname, '..', '..', 'resources', ...segments),
+  ]
+}
+
+function resolveDevBundleRoot(): string {
+  // Dev bundle produced by scripts/bundle-hermes.*
+  return firstExistingPath(devResourceCandidates('vendor', 'hermes'))
+}
+
+function resolveDevSourceRoot(): string {
+  // Current dev checkout layout: direct Hermes source clone with .venv.
+  // This keeps development using the embedded Hermes runtime instead of silently
+  // falling back to a user's standalone ~/.local/bin/hermes.
+  return firstExistingPath(devResourceCandidates('vendor', 'hermes-agent'))
 }
 
 /**
@@ -64,20 +89,40 @@ let cachedPaths: HermesRuntimePaths | null = null
 export function getHermesRuntimePaths(): HermesRuntimePaths | null {
   if (cachedPaths) return cachedPaths
 
-  const vendorRoot = resolveVendorRoot()
-  const virtualEnv = join(vendorRoot, 'hermes-venv')
-  const pythonDir = join(vendorRoot, 'python')
-  const python = join(virtualEnv, VENV_BIN, PY_NAME)
+  const vendorRoot = app.isPackaged ? resolvePackagedVendorRoot() : resolveDevBundleRoot()
+  let virtualEnv = join(vendorRoot, 'hermes-venv')
+  let pythonDir = join(vendorRoot, 'python')
+  let python = join(virtualEnv, VENV_BIN, PY_NAME)
+  let hermesAgentRoot = join(vendorRoot, 'hermes-agent')
+  let vendorBinDir = join(vendorRoot, 'bin')
+  let shouldPatchPyvenvHome = true
+
+  if (!existsSync(python) && !app.isPackaged) {
+    const sourceRoot = resolveDevSourceRoot()
+    const sourceVirtualEnv = join(sourceRoot, '.venv')
+    const sourcePython = join(sourceVirtualEnv, VENV_BIN, PY_NAME)
+    if (existsSync(sourcePython) && existsSync(join(sourceRoot, 'acp_adapter'))) {
+      virtualEnv = sourceVirtualEnv
+      pythonDir = sourceVirtualEnv
+      python = sourcePython
+      hermesAgentRoot = sourceRoot
+      vendorBinDir = join(sourceVirtualEnv, VENV_BIN)
+      shouldPatchPyvenvHome = false
+    }
+  }
 
   if (!existsSync(python)) {
     mainLog.warn('Bundled Hermes Python missing; HermesAgent will fall back to PATH', {
       expected: python,
       vendorRoot,
+      devSourceRoot: app.isPackaged ? undefined : resolveDevSourceRoot(),
     })
     return null
   }
 
-  ensurePyvenvHome(virtualEnv, pythonDir)
+  if (shouldPatchPyvenvHome) {
+    ensurePyvenvHome(virtualEnv, pythonDir)
+  }
 
   const hermesHome = join(app.getPath('userData'), 'hermes')
   if (!existsSync(hermesHome)) mkdirSync(hermesHome, { recursive: true })
@@ -86,9 +131,9 @@ export function getHermesRuntimePaths(): HermesRuntimePaths | null {
     python,
     args: ['-m', 'acp_adapter'],
     hermesHome,
-    hermesAgentRoot: join(vendorRoot, 'hermes-agent'),
+    hermesAgentRoot,
     virtualEnv,
-    vendorBinDir: join(vendorRoot, 'bin'),
+    vendorBinDir,
   }
 
   cachedPaths = paths
@@ -109,6 +154,7 @@ export function publishHermesRuntimeEnv(): void {
   process.env.CRAFT_HERMES_HOME = paths.hermesHome
   process.env.CRAFT_HERMES_AGENT_ROOT = paths.hermesAgentRoot
   process.env.CRAFT_HERMES_VIRTUAL_ENV = paths.virtualEnv
+  process.env.CRAFT_HERMES_VENDOR_BIN = paths.vendorBinDir
 
   if (existsSync(paths.vendorBinDir)) {
     const sep = process.platform === 'win32' ? ';' : ':'

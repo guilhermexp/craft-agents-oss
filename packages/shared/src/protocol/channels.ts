@@ -219,6 +219,7 @@ export const RPC_CHANNELS = {
   },
   hermes: {
     DETECT_INSTALLATION: 'hermes:detectInstallation',
+    START_DASHBOARD: 'hermes:startDashboard',
   },
   dialog: {
     OPEN_FOLDER: 'dialog:openFolder',

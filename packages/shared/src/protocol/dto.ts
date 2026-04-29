@@ -392,6 +392,7 @@ export interface HermesDetectionResult {
   command: string
   resolvedCommand?: string
   version?: string
+  runtimeSource?: 'bundled' | 'system'
   hermesHome: string
   configPath: string
   envPath: string
@@ -400,6 +401,15 @@ export interface HermesDetectionResult {
   providers: string[]
   models: string[]
   customProviders: HermesCustomProviderInfo[]
+  dashboardUrl?: string
+  error?: string
+}
+
+export interface HermesDashboardResult {
+  success: boolean
+  url?: string
+  port?: number
+  pid?: number
   error?: string
 }
 

@@ -2,6 +2,10 @@
 
 The primary desktop interface for Craft Agents, built with Electron + React. Provides a multi-session inbox with chat interface for interacting with Claude via Craft workspaces.
 
+## Subsystem docs
+
+- [Embedded Hermes runtime](./docs/hermes-embed.md) — bundled Python venv, ACP stdio, signing, lifecycle hardening.
+
 ## Quick Start
 
 ```bash

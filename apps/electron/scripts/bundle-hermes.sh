@@ -148,7 +148,116 @@ done
 echo -e "${GREEN}✓${NC} Source copied"
 
 # --------------------------------------------------------------------------
-# 6. ripgrep binary
+# 5b. Patch ACP adapter for Craft streaming
+# --------------------------------------------------------------------------
+
+ACP_SERVER="$VENDOR_DIR/hermes-agent/acp_adapter/server.py"
+if [ -f "$ACP_SERVER" ]; then
+    echo -e "${CYAN}→${NC} Patching Hermes ACP adapter streaming..."
+    python3 - "$ACP_SERVER" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+
+old_callbacks = """        agent = state.agent
+        agent.tool_progress_callback = tool_progress_cb
+        agent.thinking_callback = thinking_cb
+        agent.step_callback = step_cb
+        agent.message_callback = message_cb
+
+        if approval_cb:
+"""
+new_callbacks = """        agent = state.agent
+        agent.tool_progress_callback = tool_progress_cb
+        # Hermes' AIAgent streams visible assistant text through
+        # run_conversation(stream_callback=...).  The older `message_callback`
+        # attribute is not read by run_agent.py, so setting only that makes ACP
+        # turns finish with no assistant message.
+        agent.reasoning_callback = thinking_cb
+        agent.thinking_callback = thinking_cb
+        agent.step_callback = step_cb
+
+        streamed_text_parts: list[str] = []
+        if message_cb:
+            raw_message_cb = message_cb
+
+            def tracked_message_cb(text: str) -> None:
+                if isinstance(text, str) and text:
+                    streamed_text_parts.append(text)
+                raw_message_cb(text)
+
+            message_cb = tracked_message_cb
+
+        if approval_cb:
+"""
+old_run = """                result = agent.run_conversation(
+                    user_message=user_text,
+                    conversation_history=state.history,
+                    task_id=session_id,
+                )
+"""
+new_run = """                result = agent.run_conversation(
+                    user_message=user_text,
+                    conversation_history=state.history,
+                    task_id=session_id,
+                    stream_callback=message_cb,
+                )
+"""
+old_final = """        final_response = result.get("final_response", "")
+        if final_response and conn:
+            update = acp.update_agent_message_text(final_response)
+            await conn.session_update(session_id, update)
+"""
+new_final = """        final_response = result.get("final_response", "")
+        if final_response and conn and not streamed_text_parts:
+            update = acp.update_agent_message_text(final_response)
+            await conn.session_update(session_id, update)
+"""
+
+for old, new in ((old_callbacks, new_callbacks), (old_run, new_run), (old_final, new_final)):
+    if old in text:
+        text = text.replace(old, new, 1)
+    elif new not in text:
+        raise SystemExit(f"Expected ACP adapter patch target not found in {path}")
+
+path.write_text(text)
+PY
+    echo -e "${GREEN}✓${NC} ACP adapter patched"
+fi
+
+# --------------------------------------------------------------------------
+# 6. Build/copy Hermes Web Dashboard assets
+# --------------------------------------------------------------------------
+
+WEB_DIST_SRC="$HERMES_SRC/hermes_cli/web_dist"
+WEB_DIR="$HERMES_SRC/web"
+WEB_DIST_DEST="$VENDOR_DIR/hermes-agent/hermes_cli/web_dist"
+
+if [ -d "$WEB_DIST_SRC" ] && [ -f "$WEB_DIST_SRC/index.html" ]; then
+    echo -e "${CYAN}→${NC} Copying existing Hermes web dashboard assets..."
+    rm -rf "$WEB_DIST_DEST"
+    mkdir -p "$(dirname "$WEB_DIST_DEST")"
+    cp -a "$WEB_DIST_SRC" "$WEB_DIST_DEST"
+    echo -e "${GREEN}✓${NC} Web dashboard assets copied"
+elif [ -f "$WEB_DIR/package.json" ] && command -v npm &>/dev/null; then
+    echo -e "${CYAN}→${NC} Building Hermes web dashboard assets..."
+    (cd "$WEB_DIR" && npm install --silent && npm run build)
+    if [ -d "$WEB_DIST_SRC" ] && [ -f "$WEB_DIST_SRC/index.html" ]; then
+        rm -rf "$WEB_DIST_DEST"
+        mkdir -p "$(dirname "$WEB_DIST_DEST")"
+        cp -a "$WEB_DIST_SRC" "$WEB_DIST_DEST"
+        echo -e "${GREEN}✓${NC} Web dashboard assets built and copied"
+    else
+        echo -e "${YELLOW}⚠${NC} Hermes web build finished but web_dist was not found"
+    fi
+else
+    echo -e "${YELLOW}⚠${NC} Hermes web dashboard assets unavailable (no hermes_cli/web_dist and npm/web source missing)"
+fi
+
+# --------------------------------------------------------------------------
+# 7. ripgrep binary
 # --------------------------------------------------------------------------
 
 echo -e "${CYAN}→${NC} Downloading ripgrep ${RG_VERSION}..."
@@ -174,7 +283,7 @@ if [ -n "$RG_TARGET" ]; then
 fi
 
 # --------------------------------------------------------------------------
-# 7. Strip unused files (smaller bundle, faster codesign)
+# 8. Strip unused files (smaller bundle, faster codesign)
 # --------------------------------------------------------------------------
 
 echo -e "${CYAN}→${NC} Stripping unused files..."
@@ -201,7 +310,7 @@ done < <(find "$VENDOR_DIR" -type l ! -exec test -e {} \; -print0 2>/dev/null)
 [ "$BROKEN" -gt 0 ] && echo -e "${YELLOW}⚠${NC} Removed $BROKEN broken symlinks"
 
 # --------------------------------------------------------------------------
-# 8. Patch venv for relocatability
+# 9. Patch venv for relocatability
 # --------------------------------------------------------------------------
 
 echo -e "${CYAN}→${NC} Patching venv for relocatable paths..."
@@ -246,7 +355,7 @@ done < <(find "$VENDOR_DIR" -type l ! -exec test -e {} \; -print0 2>/dev/null)
 echo -e "${GREEN}✓${NC} Venv patched"
 
 # --------------------------------------------------------------------------
-# 9. Smoke test
+# 10. Smoke test
 # --------------------------------------------------------------------------
 
 echo -e "${CYAN}→${NC} Smoke test..."
@@ -256,7 +365,7 @@ echo -e "${CYAN}→${NC} Smoke test..."
 }
 
 # --------------------------------------------------------------------------
-# 10. Summary
+# 11. Summary
 # --------------------------------------------------------------------------
 
 echo ""

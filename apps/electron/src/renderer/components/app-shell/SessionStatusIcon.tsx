@@ -24,8 +24,9 @@ export function SessionStatusIcon({ item }: SessionStatusIconProps) {
   return (
     <Popover modal={true} open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button
-          type="button"
+        <span
+          role="button"
+          tabIndex={0}
           className={cn(
             "!h-5 !w-5 flex items-center justify-center rounded-full transition-colors cursor-pointer",
             "hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
@@ -35,13 +36,28 @@ export function SessionStatusIcon({ item }: SessionStatusIconProps) {
           aria-haspopup="menu"
           aria-expanded={open}
           aria-label="Change todo state"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              e.stopPropagation()
+              setOpen((prev) => !prev)
+            }
+          }}
+          onMouseDown={(e) => {
+            // Block parent EntityRow's onMouseDown (session select) so clicking
+            // the status icon only toggles the popover.
+            e.stopPropagation()
+          }}
+          onClick={(e) => {
+            e.stopPropagation()
+          }}
           onContextMenu={(e) => {
             e.preventDefault()
             e.stopPropagation()
           }}
         >
           {getStateIcon(status, ctx.sessionStatuses)}
-        </button>
+        </span>
       </PopoverTrigger>
       <PopoverContent
         className="w-auto p-0 border-0 shadow-none bg-transparent"

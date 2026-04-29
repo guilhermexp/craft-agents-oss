@@ -108,6 +108,8 @@ export interface BrowserPaneCreateOptions {
   id?: string
   show?: boolean
   bindToSessionId?: string
+  /** Initial URL to load before the window is shown. Avoids create+navigate races. */
+  url?: string
   /** Browser profile id — controls session partition isolation (cookies/storage). */
   profileId?: string
 }
@@ -214,6 +216,7 @@ import type {
   RemoteSessionTransferPayload,
   ImportRemoteSessionTransferResult,
   HermesDetectionResult,
+  HermesDashboardResult,
 } from '@craft-agent/shared/protocol'
 
 export interface ElectronAPI {
@@ -422,6 +425,7 @@ export interface ElectronAPI {
   getPiProviderBaseUrl(provider: string): Promise<string | undefined>
   getPiProviderModels(provider: string): Promise<{ models: Array<{ id: string; name: string; costInput: number; costOutput: number; contextWindow: number; reasoning: boolean }>; totalCount: number }>
   detectHermesInstallation(): Promise<HermesDetectionResult>
+  startHermesDashboard(): Promise<HermesDashboardResult>
 
   // Session-specific model (overrides global)
   getSessionModel(sessionId: string, workspaceId: string): Promise<string | null>

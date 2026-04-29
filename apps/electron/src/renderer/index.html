@@ -11,10 +11,14 @@
 </head>
 <body>
   <script>
-    // React DevTools - only in development (when running via Vite dev server)
-    if (location.protocol === 'file:' || location.hostname === 'localhost') {
+    // React DevTools standalone (port 8097). Opt-in: run `localStorage.setItem('react-devtools','1')`
+    // in DevTools console then reload. Otherwise we skip to avoid ERR_CONNECTION_REFUSED noise
+    // when the standalone agent is not running.
+    if ((location.protocol === 'file:' || location.hostname === 'localhost')
+        && localStorage.getItem('react-devtools') === '1') {
       const s = document.createElement('script');
       s.src = 'http://localhost:8097';
+      s.onerror = () => {};
       document.head.appendChild(s);
     }
   </script>

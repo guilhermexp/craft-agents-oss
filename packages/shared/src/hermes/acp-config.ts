@@ -18,6 +18,8 @@ export type HermesRuntimeConfig = {
   envPath?: string
 }
 
+export type NormalizedHermesRuntimeConfig = Required<HermesRuntimeConfig>
+
 export function resolveDefaultHermesPaths(homeDir: string): {
   hermesHome: string
   configPath: string
@@ -45,7 +47,7 @@ function parseEnvArgs(value: string | undefined): string[] | null {
   return parts.length > 0 ? parts : null
 }
 
-export function normalizeHermesRuntimeConfig(runtime: HermesRuntimeConfig = {}): Required<Pick<HermesRuntimeConfig, 'command' | 'args' | 'hermesHome'>> {
+export function normalizeHermesRuntimeConfig(runtime: HermesRuntimeConfig = {}): NormalizedHermesRuntimeConfig {
   const defaults = resolveDefaultHermesPaths(homedir())
 
   // Bundled runtime (resolved in apps/electron/src/main/handlers/hermes-runtime.ts).
@@ -75,7 +77,11 @@ export function normalizeHermesRuntimeConfig(runtime: HermesRuntimeConfig = {}):
     process.env.HERMES_HOME?.trim() ||
     defaults.hermesHome
 
-  return { command, args, hermesHome }
+  const normalizedHome = hermesHome.replace(/[\\/]$/, '')
+  const configPath = runtime.configPath?.trim() || join(normalizedHome, 'config.yaml')
+  const envPath = runtime.envPath?.trim() || join(normalizedHome, '.env')
+
+  return { command, args, hermesHome, configPath, envPath }
 }
 
 function headersToAcp(headers?: Record<string, string>): AcpHeader[] {

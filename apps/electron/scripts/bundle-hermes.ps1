@@ -92,7 +92,115 @@ foreach ($d in $CoreDirs) {
     if (Test-Path $src) { Copy-Item -Recurse -Force $src (Join-Path $VendorDir "hermes-agent") }
 }
 
-# 6. ripgrep
+# 5b. Patch ACP adapter for Craft streaming
+$AcpServer = Join-Path $VendorDir "hermes-agent/acp_adapter/server.py"
+if (Test-Path $AcpServer) {
+    Write-Host "Patching Hermes ACP adapter streaming..." -ForegroundColor Cyan
+    $PatchScript = @'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+text = path.read_text()
+old_callbacks = """        agent = state.agent
+        agent.tool_progress_callback = tool_progress_cb
+        agent.thinking_callback = thinking_cb
+        agent.step_callback = step_cb
+        agent.message_callback = message_cb
+
+        if approval_cb:
+"""
+new_callbacks = """        agent = state.agent
+        agent.tool_progress_callback = tool_progress_cb
+        # Hermes' AIAgent streams visible assistant text through
+        # run_conversation(stream_callback=...).  The older `message_callback`
+        # attribute is not read by run_agent.py, so setting only that makes ACP
+        # turns finish with no assistant message.
+        agent.reasoning_callback = thinking_cb
+        agent.thinking_callback = thinking_cb
+        agent.step_callback = step_cb
+
+        streamed_text_parts: list[str] = []
+        if message_cb:
+            raw_message_cb = message_cb
+
+            def tracked_message_cb(text: str) -> None:
+                if isinstance(text, str) and text:
+                    streamed_text_parts.append(text)
+                raw_message_cb(text)
+
+            message_cb = tracked_message_cb
+
+        if approval_cb:
+"""
+old_run = """                result = agent.run_conversation(
+                    user_message=user_text,
+                    conversation_history=state.history,
+                    task_id=session_id,
+                )
+"""
+new_run = """                result = agent.run_conversation(
+                    user_message=user_text,
+                    conversation_history=state.history,
+                    task_id=session_id,
+                    stream_callback=message_cb,
+                )
+"""
+old_final = """        final_response = result.get(\"final_response\", \"\")
+        if final_response and conn:
+            update = acp.update_agent_message_text(final_response)
+            await conn.session_update(session_id, update)
+"""
+new_final = """        final_response = result.get(\"final_response\", \"\")
+        if final_response and conn and not streamed_text_parts:
+            update = acp.update_agent_message_text(final_response)
+            await conn.session_update(session_id, update)
+"""
+for old, new in ((old_callbacks, new_callbacks), (old_run, new_run), (old_final, new_final)):
+    if old in text:
+        text = text.replace(old, new, 1)
+    elif new not in text:
+        raise SystemExit(f"Expected ACP adapter patch target not found in {path}")
+path.write_text(text)
+'@
+    $TmpPatch = Join-Path $env:TEMP "craft-hermes-acp-patch.py"
+    Set-Content -Path $TmpPatch -Value $PatchScript
+    & $VenvPython $TmpPatch $AcpServer
+    Remove-Item -Force $TmpPatch
+    Write-Host "ACP adapter patched" -ForegroundColor Green
+}
+
+# 6. Build/copy Hermes Web Dashboard assets
+$WebDistSrc = Join-Path $HermesSrc "hermes_cli/web_dist"
+$WebDir = Join-Path $HermesSrc "web"
+$WebDistDest = Join-Path $VendorDir "hermes-agent/hermes_cli/web_dist"
+if ((Test-Path (Join-Path $WebDistSrc "index.html"))) {
+    Write-Host "Copying existing Hermes web dashboard assets..." -ForegroundColor Cyan
+    if (Test-Path $WebDistDest) { Remove-Item -Recurse -Force $WebDistDest }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $WebDistDest) | Out-Null
+    Copy-Item -Recurse -Force $WebDistSrc $WebDistDest
+    Write-Host "Web dashboard assets copied" -ForegroundColor Green
+} elseif ((Test-Path (Join-Path $WebDir "package.json")) -and (Get-Command npm -ErrorAction SilentlyContinue)) {
+    Write-Host "Building Hermes web dashboard assets..." -ForegroundColor Cyan
+    Push-Location $WebDir
+    try {
+        & npm install --silent
+        & npm run build
+    } finally {
+        Pop-Location
+    }
+    if (Test-Path (Join-Path $WebDistSrc "index.html")) {
+        if (Test-Path $WebDistDest) { Remove-Item -Recurse -Force $WebDistDest }
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $WebDistDest) | Out-Null
+        Copy-Item -Recurse -Force $WebDistSrc $WebDistDest
+        Write-Host "Web dashboard assets built and copied" -ForegroundColor Green
+    } else {
+        Write-Host "Hermes web build finished but web_dist was not found" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "Hermes web dashboard assets unavailable (no hermes_cli/web_dist and npm/web source missing)" -ForegroundColor Yellow
+}
+
+# 7. ripgrep
 Write-Host "Downloading ripgrep $RgVersion..." -ForegroundColor Cyan
 $RgUrl  = "https://github.com/BurntSushi/ripgrep/releases/download/$RgVersion/ripgrep-$RgVersion-x86_64-pc-windows-msvc.zip"
 $TmpZip = Join-Path $env:TEMP "rg.zip"
@@ -102,18 +210,18 @@ Expand-Archive -Force -Path $TmpZip -DestinationPath $TmpDir
 Copy-Item -Force (Join-Path $TmpDir "ripgrep-$RgVersion-x86_64-pc-windows-msvc/rg.exe") (Join-Path $VendorDir "bin/rg.exe")
 Remove-Item -Recurse -Force $TmpZip, $TmpDir
 
-# 7. Strip
+# 8. Strip
 Write-Host "Stripping caches..." -ForegroundColor Cyan
 Get-ChildItem -Recurse -Force -Directory -Filter "__pycache__" $VendorDir | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 Get-ChildItem -Recurse -Force -File -Filter "*.pyc" $VendorDir | Remove-Item -Force -ErrorAction SilentlyContinue
 
-# 8. Patch pyvenv.cfg for relocatability
+# 9. Patch pyvenv.cfg for relocatability
 $PyvenvCfg = Join-Path $VendorDir "hermes-venv/pyvenv.cfg"
 if (Test-Path $PyvenvCfg) {
     (Get-Content $PyvenvCfg) -replace "^home = .*", "home = ..\python" | Set-Content $PyvenvCfg
 }
 
-# 9. Smoke test
+# 10. Smoke test
 Write-Host "Smoke test..." -ForegroundColor Cyan
 & $VenvPython -c "import sys; print('  Python', sys.version.split()[0], 'OK')"
 & $VenvPython -c "import acp_adapter; print('  acp_adapter import OK')"

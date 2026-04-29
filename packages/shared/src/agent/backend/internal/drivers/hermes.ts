@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { isAbsolute } from 'node:path'
 import { promisify } from 'node:util'
 import { execFile as execFileCb } from 'node:child_process'
 
@@ -11,7 +11,8 @@ import type {
   ProviderDriver,
   StoredConnectionValidationResult,
 } from '../driver-types.ts'
-import { parseHermesConfigSnapshot, resolveDefaultHermesPaths } from '../../../../hermes/runtime-config.ts'
+import { normalizeHermesRuntimeConfig } from '../../../../hermes/acp-config.ts'
+import { parseHermesConfigSnapshot } from '../../../../hermes/runtime-config.ts'
 
 const execFile = promisify(execFileCb)
 
@@ -31,26 +32,17 @@ async function resolveHermesCommand(command: string): Promise<string | undefined
 }
 
 function buildHermesRuntimeConfig() {
-  const defaults = resolveDefaultHermesPaths(homedir())
-  return {
-    command: process.env.CRAFT_HERMES_COMMAND?.trim() || 'hermes',
-    args: ['acp'],
-    hermesHome: process.env.HERMES_HOME?.trim() || defaults.hermesHome,
-    configPath: defaults.configPath,
-    envPath: defaults.envPath,
-  }
+  return normalizeHermesRuntimeConfig()
 }
 
 async function validateHermesRuntime(): Promise<StoredConnectionValidationResult> {
   const runtime = buildHermesRuntimeConfig()
-  const resolvedCommand = await resolveHermesCommand(runtime.command)
+  const commandExists = isAbsolute(runtime.command)
+    ? existsSync(runtime.command)
+    : Boolean(await resolveHermesCommand(runtime.command))
 
-  if (!resolvedCommand) {
-    return { success: false, error: 'Hermes CLI not found on PATH' }
-  }
-
-  if (!existsSync(runtime.configPath)) {
-    return { success: true }
+  if (!commandExists) {
+    return { success: false, error: `Hermes runtime not found: ${runtime.command}` }
   }
 
   return { success: true }

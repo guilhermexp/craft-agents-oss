@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, beforeEach } from 'bun:test'
 
-import { HermesAgent } from '../hermes-agent.ts'
+import { HermesAgent, resolveHermesModelId } from '../hermes-agent.ts'
 import { createMockBackendConfig } from './test-utils.ts'
 import type { BackendConfig, SdkMcpServerConfig } from '../backend/types.ts'
 
@@ -55,6 +55,33 @@ class TestableHermesAgent extends HermesAgent {
     }
   }
 }
+
+describe('resolveHermesModelId', () => {
+  const models = {
+    currentModelId: 'openrouter:gpt-5.5',
+    availableModels: [
+      { modelId: 'openrouter:gpt-5.5' },
+      { modelId: 'openrouter:openai/gpt-5.5' },
+      { modelId: 'openrouter:anthropic/claude-sonnet-4.6' },
+    ],
+  }
+
+  it('maps bare model ids to Hermes ACP model ids', () => {
+    expect(resolveHermesModelId('gpt-5.5', models)).toBe('openrouter:gpt-5.5')
+  })
+
+  it('maps provider/model ids to the matching Hermes ACP id', () => {
+    expect(resolveHermesModelId('openai/gpt-5.5', models)).toBe('openrouter:openai/gpt-5.5')
+  })
+
+  it('keeps exact Hermes ids unchanged', () => {
+    expect(resolveHermesModelId('openrouter:anthropic/claude-sonnet-4.6', models)).toBe('openrouter:anthropic/claude-sonnet-4.6')
+  })
+
+  it('falls back to Hermes current model when a stale Craft model cannot be mapped', () => {
+    expect(resolveHermesModelId('claude-opus-4-7', models)).toBe('openrouter:gpt-5.5')
+  })
+})
 
 describe('HermesAgent.setSourceServers', () => {
   let agent: TestableHermesAgent

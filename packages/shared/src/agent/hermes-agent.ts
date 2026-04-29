@@ -33,6 +33,68 @@ function serializeToolResult(result: unknown): string {
   }
 }
 
+function modelIdAliases(modelId: string): string[] {
+  const trimmed = modelId.trim()
+  if (!trimmed) return []
+
+  const aliases = new Set<string>([trimmed])
+  const afterProvider = trimmed.includes(':') ? trimmed.split(':').pop() : undefined
+  if (afterProvider) aliases.add(afterProvider)
+  const afterSlash = trimmed.includes('/') ? trimmed.split('/').pop() : undefined
+  if (afterSlash) aliases.add(afterSlash)
+  return Array.from(aliases)
+}
+
+export function resolveHermesModelId(
+  requestedModel: string | undefined,
+  models?: { currentModelId?: string | null; availableModels?: Array<{ modelId: string }> | null } | null,
+): string | undefined {
+  const available = models?.availableModels
+    ?.map(model => model.modelId)
+    .filter((modelId): modelId is string => typeof modelId === 'string' && modelId.trim().length > 0) ?? []
+
+  const requested = requestedModel?.trim()
+  if (!requested) return models?.currentModelId || available[0]
+  if (available.length === 0 || available.includes(requested)) return requested
+
+  const directAliasMatch = available.find(candidate => modelIdAliases(candidate).includes(requested))
+  if (directAliasMatch) return directAliasMatch
+
+  const requestedAliases = modelIdAliases(requested)
+  const match = available.find(candidate => {
+    const candidateAliases = modelIdAliases(candidate)
+    return requestedAliases.some(alias => candidateAliases.includes(alias))
+  })
+
+  return match ?? models?.currentModelId ?? requested
+}
+
+function buildHermesProcessEnv(runtime: ReturnType<typeof normalizeHermesRuntimeConfig>): Record<string, string> {
+  const env: Record<string, string> = Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  )
+  env.HERMES_HOME = runtime.hermesHome
+  const sep = process.platform === 'win32' ? ';' : ':'
+  const agentRoot = process.env.CRAFT_HERMES_AGENT_ROOT?.trim()
+  if (agentRoot) {
+    env.PYTHONPATH = env.PYTHONPATH ? `${agentRoot}${sep}${env.PYTHONPATH}` : agentRoot
+  }
+
+  const pathEntries: string[] = []
+  const virtualEnv = process.env.CRAFT_HERMES_VIRTUAL_ENV?.trim()
+  if (virtualEnv) {
+    env.VIRTUAL_ENV = virtualEnv
+    pathEntries.push(join(virtualEnv, process.platform === 'win32' ? 'Scripts' : 'bin'))
+  }
+  const vendorBin = process.env.CRAFT_HERMES_VENDOR_BIN?.trim()
+  if (vendorBin) pathEntries.push(vendorBin)
+  if (pathEntries.length > 0) {
+    env.PATH = `${pathEntries.join(sep)}${sep}${env.PATH ?? ''}`
+  }
+
+  return env
+}
+
 export class HermesAgent extends BaseAgent {
   protected backendName = 'Hermes'
 
@@ -96,10 +158,7 @@ export class HermesAgent extends BaseAgent {
     this.provider = createACPProvider({
       command: runtime.command,
       args: runtime.args,
-      env: {
-        ...process.env,
-        HERMES_HOME: runtime.hermesHome,
-      },
+      env: buildHermesProcessEnv(runtime),
       session: {
         cwd: this.resolvedCwd(),
         mcpServers: buildHermesAcpMcpServers({
@@ -182,8 +241,10 @@ export class HermesAgent extends BaseAgent {
       this.config.onSdkSessionIdUpdate?.(this.hermesSessionId)
     }
 
-    if (this._model) {
-      await provider.setModel(this._model).catch(() => {})
+    const selectedModel = resolveHermesModelId(this._model || undefined, sessionInfo.models)
+    if (selectedModel) {
+      this._model = selectedModel
+      await provider.setModel(selectedModel).catch(() => {})
     } else if (sessionInfo.models?.currentModelId) {
       this._model = sessionInfo.models.currentModelId
     }
@@ -193,8 +254,8 @@ export class HermesAgent extends BaseAgent {
       : ''
 
     const result = streamText({
-      model: provider.languageModel(this._model || undefined),
-      tools: provider.tools,
+      model: provider.languageModel(resolveHermesModelId(this._model || undefined, sessionInfo.models)),
+      tools: provider.tools as Parameters<typeof streamText>[0]['tools'],
       abortSignal: this.abortController.signal,
       messages: [
         {
@@ -297,7 +358,7 @@ export class HermesAgent extends BaseAgent {
     this.hermesSessionId = provider.getSessionId() || sessionInfo.sessionId || this.hermesSessionId
 
     const result = await generateText({
-      model: provider.languageModel(this.config.miniModel || this._model || undefined),
+      model: provider.languageModel(resolveHermesModelId(this.config.miniModel || this._model || undefined, sessionInfo.models)),
       prompt,
     })
 

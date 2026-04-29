@@ -16,7 +16,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { routes } from '@/lib/navigate'
-import { X, MoreHorizontal, Pencil, Trash2, Star, ChevronDown, ChevronRight, CheckCircle2, AlertTriangle, RefreshCcw, Settings2 } from 'lucide-react'
+import { X, MoreHorizontal, Pencil, Trash2, Star, ChevronDown, ChevronRight, CheckCircle2, AlertTriangle, RefreshCcw, Settings2, ExternalLink } from 'lucide-react'
 import type { CredentialHealthStatus, CredentialHealthIssue, HermesDetectionResult } from '../../../shared/types'
 import { Spinner, FullscreenOverlayBase } from '@craft-agent/ui'
 import { useSetAtom } from 'jotai'
@@ -584,6 +584,7 @@ export default function AiSettingsPage() {
   // Default settings state (app-level)
   const [defaultThinking, setDefaultThinking] = useState<ThinkingLevel>(DEFAULT_THINKING_LEVEL)
   const [hermesRuntime, setHermesRuntime] = useState<HermesDetectionResult | null>(null)
+  const [hermesDashboardOpening, setHermesDashboardOpening] = useState(false)
   const [extendedPromptCache, setExtendedPromptCache] = useState(false)
   const [enable1MContext, setEnable1MContext] = useState(false)
 
@@ -896,6 +897,28 @@ export default function AiSettingsPage() {
     refreshLlmConnections?.()
   }, [refreshLlmConnections])
 
+  const handleOpenHermesDashboard = useCallback(async () => {
+    const api = window.electronAPI
+    if (!api) return
+
+    setHermesDashboardOpening(true)
+    try {
+      const dashboard = await api.startHermesDashboard()
+      if (!dashboard.success || !dashboard.url) {
+        toast.error(dashboard.error || 'Nao foi possivel iniciar o dashboard do Hermes.')
+        return
+      }
+
+      const instanceId = await api.browserPane.create({ show: true, url: dashboard.url })
+      await api.browserPane.focus(instanceId)
+      setHermesRuntime(current => current ? { ...current, dashboardUrl: dashboard.url } : current)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Nao foi possivel abrir o dashboard do Hermes.')
+    } finally {
+      setHermesDashboardOpening(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (!window.electronAPI) return
     if (!llmConnections.some(connection => connection.providerType === 'hermes')) {
@@ -927,8 +950,20 @@ export default function AiSettingsPage() {
                     <SettingsRow
                       label="Instalacao"
                       description={hermesRuntime.found
-                        ? `CLI encontrado${hermesRuntime.version ? ` (${hermesRuntime.version})` : ''}`
+                        ? `${hermesRuntime.runtimeSource === 'bundled' ? 'Runtime embutido' : 'CLI do sistema'}${hermesRuntime.version ? ` (${hermesRuntime.version})` : ''}`
                         : (hermesRuntime.error || 'Hermes nao encontrado')}
+                      action={hermesRuntime.found ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleOpenHermesDashboard}
+                          disabled={hermesDashboardOpening}
+                        >
+                          {hermesDashboardOpening ? <Spinner className="mr-2 h-3.5 w-3.5" /> : <ExternalLink className="mr-2 h-3.5 w-3.5" />}
+                          Abrir dashboard
+                        </Button>
+                      ) : undefined}
                     />
                     <SettingsRow
                       label="Providers"

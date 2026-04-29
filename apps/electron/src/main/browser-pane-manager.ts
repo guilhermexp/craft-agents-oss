@@ -197,6 +197,8 @@ interface CreateBrowserInstanceOptions {
   show?: boolean
   ownerType?: 'session' | 'manual'
   ownerSessionId?: string
+  /** Initial URL to load instead of the browser empty-state page. */
+  url?: string
   /**
    * Browser profile id (controls session partition isolation). When omitted,
    * resolves to the default profile, which uses the legacy partition string.
@@ -560,10 +562,19 @@ export class BrowserPaneManager implements IBrowserPaneManager {
           this.markToolbarReady(instance, 'toolbar-load-finalized')
         }
       })
-    void this.loadEmptyStatePage(instance).catch((error) => {
-      mainLog.warn(`[browser-pane] empty-state load failed id=${instance.id}: ${error instanceof Error ? error.message : String(error)}`)
-      void pageView.webContents.loadURL('about:blank')
-    })
+
+    const initialUrl = options?.url?.trim()
+    if (initialUrl) {
+      void this.navigate(instance.id, initialUrl).catch((error) => {
+        mainLog.warn(`[browser-pane] initial URL load failed id=${instance.id}: ${error instanceof Error ? error.message : String(error)}`)
+        void pageView.webContents.loadURL('about:blank')
+      })
+    } else {
+      void this.loadEmptyStatePage(instance).catch((error) => {
+        mainLog.warn(`[browser-pane] empty-state load failed id=${instance.id}: ${error instanceof Error ? error.message : String(error)}`)
+        void pageView.webContents.loadURL('about:blank')
+      })
+    }
 
     return instanceId
   }

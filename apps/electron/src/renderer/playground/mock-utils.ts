@@ -243,6 +243,10 @@ export const mockElectronAPI = {
     models: [],
     customProviders: [],
   }),
+  startHermesDashboard: async () => ({
+    success: false,
+    error: 'Hermes dashboard is not available in playground mode.',
+  }),
   getPiProviderModels: async (provider: string) => {
     const MOCK_MODELS: Record<string, Array<{ id: string; name: string; costInput: number; costOutput: number; contextWindow: number; reasoning: boolean }>> = {
       'openrouter': [
