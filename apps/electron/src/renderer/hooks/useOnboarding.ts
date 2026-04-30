@@ -97,7 +97,7 @@ export const BASE_SLUG_FOR_METHOD: Record<ApiSetupMethod, string> = {
   pi_chatgpt_oauth: 'chatgpt-plus',
   pi_copilot_oauth: 'github-copilot',
   pi_api_key: 'pi-api-key',
-  hermes_local: 'hermes-local',
+  hermes_local: 'hermes',
 }
 
 /**
@@ -679,7 +679,7 @@ export function useOnboarding({
         return
       }
 
-      const testResult = await window.electronAPI.testLlmConnection('hermes-local')
+      const testResult = await window.electronAPI.testLlmConnection('hermes')
       if (!testResult.success) {
         setState(s => ({
           ...s,

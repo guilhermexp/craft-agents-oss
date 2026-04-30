@@ -133,7 +133,7 @@ export const BUILT_IN_CONNECTION_TEMPLATES: Record<string, {
     authType: 'api_key',
     // piAuthProvider set dynamically from setup.piAuthProvider
   },
-  'hermes-local': {
+  'hermes': {
     name: 'Hermes',
     providerType: 'hermes',
     authType: 'none',

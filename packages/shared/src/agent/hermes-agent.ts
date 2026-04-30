@@ -227,6 +227,7 @@ export class HermesAgent extends BaseAgent {
       const seed = await seedHermesAuthFromCraft({
         hermesHome: runtime.hermesHome,
         connectionSlug: this.config.connectionSlug,
+        model: this._model || this.config.model,
       })
       bridgedEnv = seed.env
       if (seed.seededProviders.length > 0) {

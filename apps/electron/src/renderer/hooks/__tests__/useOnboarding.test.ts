@@ -112,7 +112,7 @@ describe('apiSetupMethodToConnectionSetup', () => {
       new Set(),
     )
 
-    expect(setup.slug).toBe('hermes-local')
+    expect(setup.slug).toBe('hermes')
     expect(setup.defaultModel).toBe('openai/gpt-5')
     expect(setup.models).toEqual(['openai/gpt-5', 'anthropic/claude-sonnet-4-6'])
     expect(setup.credential).toBeUndefined()

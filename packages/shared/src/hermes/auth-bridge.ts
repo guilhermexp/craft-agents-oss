@@ -44,13 +44,35 @@ export interface SeedHermesAuthResult {
   activeProvider: HermesActiveProvider
 }
 
-/** Map a Craft connection slug to its Hermes active_provider key. */
+/**
+ * Map a Craft connection slug to its Hermes `active_provider` key.
+ *
+ * The Hermes connection itself (`slug === 'hermes'`) is intentionally **not**
+ * mapped to a single provider — Hermes is multi-provider and the user picks
+ * the model at session time. Instead, callers should fall back to inferring
+ * the active provider from the session's current model.
+ */
 export function craftConnectionToHermesProvider(
   connectionSlug: string | undefined,
 ): HermesActiveProvider {
   if (!connectionSlug) return null
   if (connectionSlug === 'claude-max') return 'anthropic'
   if (connectionSlug === 'chatgpt-plus') return 'openai-codex'
+  return null
+}
+
+/**
+ * Infer the active Hermes provider from the model id. Used when the session
+ * runs through the multi-provider `hermes` connection so we can still seed
+ * `active_provider` correctly in `auth.json`.
+ */
+export function modelIdToHermesProvider(modelId: string | undefined): HermesActiveProvider {
+  if (!modelId) return null
+  const trimmed = modelId.trim().toLowerCase()
+  if (!trimmed) return null
+  const bare = trimmed.includes('/') ? trimmed.split('/').pop()! : trimmed
+  if (bare.startsWith('claude') || bare.includes('anthropic')) return 'anthropic'
+  if (bare.startsWith('gpt-') || bare.startsWith('o1') || bare.includes('codex')) return 'openai-codex'
   return null
 }
 
@@ -100,11 +122,14 @@ function writeAuthStore(authPath: string, store: AuthStoreShape): void {
 export async function seedHermesAuthFromCraft(args: {
   hermesHome: string
   connectionSlug: string | undefined
+  /** Optional model id used to infer active_provider when connectionSlug === 'hermes'. */
+  model?: string
   credentialManager?: AuthBridgeCredentialReader
 }): Promise<SeedHermesAuthResult> {
   const env: Record<string, string> = {}
   const seededProviders: ('anthropic' | 'openai-codex')[] = []
-  const activeProvider = craftConnectionToHermesProvider(args.connectionSlug)
+  const activeProvider =
+    craftConnectionToHermesProvider(args.connectionSlug) ?? modelIdToHermesProvider(args.model)
 
   let credentialManager: AuthBridgeCredentialReader
   try {

@@ -118,7 +118,7 @@ describe('CraftSessionToolsMcpServer', () => {
       sessionId,
       workspaceRootPath,
       workspaceId: 'ws-test',
-      defaultLlmConnection: 'hermes-local',
+      defaultLlmConnection: 'hermes',
       defaultModel: 'openrouter:gpt-5.5',
       automationSystem: { reloadConfig: () => { reloadCount += 1; return { success: true, automationCount: 1, errors: [] }; } },
     });
@@ -134,7 +134,7 @@ describe('CraftSessionToolsMcpServer', () => {
     expect(created.isError).toBeUndefined();
     const createdPayload = JSON.parse((created.content[0] as { text: string }).text);
     const id = createdPayload.automation.id as string;
-    expect(createdPayload.automation.actions[0].llmConnection).toBe('hermes-local');
+    expect(createdPayload.automation.actions[0].llmConnection).toBe('hermes');
     expect(createdPayload.automation.actions[0].model).toBe('openrouter:gpt-5.5');
     expect(createdPayload.automation.labels).toEqual(['hermes', 'scheduled', 'daily']);
 

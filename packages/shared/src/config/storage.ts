@@ -2162,6 +2162,49 @@ function normalizePiBedrockId(id: string): string {
 }
 
 /**
+ * Rename legacy `hermes-local` connection slug to `hermes`. There is only one
+ * Hermes (the embedded runtime) — the `-local` suffix was redundant and caused
+ * confusion alongside `claude-max` / `chatgpt-plus`, which never carried an
+ * external/local distinction either.
+ */
+function migrateHermesLocalSlug(config: StoredConfig): boolean {
+  if (!config.llmConnections) return false;
+
+  let changed = false;
+
+  for (const connection of config.llmConnections) {
+    if (connection.slug === 'hermes-local') {
+      // Drop a duplicate if migration already created the new entry.
+      if (config.llmConnections.some(c => c.slug === 'hermes')) {
+        continue;
+      }
+      connection.slug = 'hermes';
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    config.llmConnections = config.llmConnections.filter(
+      (c, i, arr) => arr.findIndex(x => x.slug === c.slug) === i,
+    );
+  }
+
+  // Workspace-scoped defaults may reference the old slug.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const configAny = config as any;
+  if (configAny.workspaces && typeof configAny.workspaces === 'object') {
+    for (const ws of Object.values(configAny.workspaces) as Array<Record<string, unknown>>) {
+      if (ws && typeof ws === 'object' && ws.defaultLlmConnection === 'hermes-local') {
+        ws.defaultLlmConnection = 'hermes';
+        changed = true;
+      }
+    }
+  }
+
+  return changed;
+}
+
+/**
  * Migrate modelDefaults onto connection.defaultModel, then delete modelDefaults.
  * If user had set modelDefaults.anthropic, apply it to the default anthropic connection.
  * Same for openai. Then remove modelDefaults from config.
@@ -2339,6 +2382,10 @@ export function migrateLegacyLlmConnectionsConfig(): void {
     migrateWorkspaceOpus46ToOpus47(config);
     // Phase 1j: Migrate legacy provider types (bedrock/vertex/anthropic_compat → pi/pi_compat)
     if (migrateLegacyProviderTypes(config)) {
+      needsSave = true;
+    }
+    // Phase 1k: Rename legacy `hermes-local` connection slug to `hermes`
+    if (migrateHermesLocalSlug(config)) {
       needsSave = true;
     }
 

@@ -42,6 +42,9 @@ describe('Hermes auth bridge', () => {
     it('maps chatgpt-plus to openai-codex', () => {
       expect(craftConnectionToHermesProvider('chatgpt-plus')).toBe('openai-codex')
     })
+    it('returns null for the multi-provider hermes connection (model decides)', () => {
+      expect(craftConnectionToHermesProvider('hermes')).toBeNull()
+    })
     it('returns null for unknown slugs', () => {
       expect(craftConnectionToHermesProvider('hermes-local')).toBeNull()
       expect(craftConnectionToHermesProvider(undefined)).toBeNull()
@@ -130,7 +133,7 @@ describe('Hermes auth bridge', () => {
       const reader = makeReader({})
       const result = await seedHermesAuthFromCraft({
         hermesHome,
-        connectionSlug: 'hermes-local',
+        connectionSlug: 'hermes',
         credentialManager: reader,
       })
 
@@ -138,6 +141,25 @@ describe('Hermes auth bridge', () => {
       expect(result.seededProviders).toEqual([])
       expect(result.activeProvider).toBeNull()
       expect(existsSync(join(hermesHome, 'auth.json'))).toBe(false)
+    })
+
+    it('infers active_provider from model id when slug is the multi-provider hermes connection', async () => {
+      const reader = makeReader({
+        codex: { accessToken: 'codex-access', refreshToken: 'codex-refresh' },
+        claudeAccess: 'claude-tok',
+      })
+      const result = await seedHermesAuthFromCraft({
+        hermesHome,
+        connectionSlug: 'hermes',
+        model: 'gpt-5.5',
+        credentialManager: reader,
+      })
+
+      expect(result.activeProvider).toBe('openai-codex')
+      expect(result.seededProviders).toEqual(expect.arrayContaining(['openai-codex', 'anthropic']))
+
+      const store = JSON.parse(readFileSync(join(hermesHome, 'auth.json'), 'utf-8'))
+      expect(store.active_provider).toBe('openai-codex')
     })
   })
 
