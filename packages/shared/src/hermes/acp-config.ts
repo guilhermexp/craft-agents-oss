@@ -47,6 +47,12 @@ function parseEnvArgs(value: string | undefined): string[] | null {
   return parts.length > 0 ? parts : null
 }
 
+const BUNDLED_REQUIRED_ENV_VALUES = new Set(['1', 'true', 'yes', 'on'])
+
+function isBundledHermesRequired(): boolean {
+  return BUNDLED_REQUIRED_ENV_VALUES.has((process.env.CRAFT_HERMES_REQUIRE_BUNDLED ?? '').trim().toLowerCase())
+}
+
 export function normalizeHermesRuntimeConfig(runtime: HermesRuntimeConfig = {}): NormalizedHermesRuntimeConfig {
   const defaults = resolveDefaultHermesPaths(homedir())
 
@@ -56,20 +62,23 @@ export function normalizeHermesRuntimeConfig(runtime: HermesRuntimeConfig = {}):
   // shared code does not import `electron`.
   const bundledPython = process.env.CRAFT_HERMES_PYTHON?.trim()
   const bundledArgs = parseEnvArgs(process.env.CRAFT_HERMES_ARGS)
+  const bundledRequired = isBundledHermesRequired()
+  const missingBundledCommand = process.env.CRAFT_HERMES_MISSING_COMMAND?.trim() || 'craft-hermes-bundled-runtime-missing'
 
-  const command =
-    runtime.command?.trim() ||
-    bundledPython ||
-    process.env.CRAFT_HERMES_COMMAND?.trim() ||
-    'hermes'
+  // In packaged Craft builds Hermes is a managed, app-scoped runtime. If the
+  // vendored Python is missing, fail closed instead of silently using a user's
+  // standalone `hermes` from PATH (which would mix auth/config/memory state).
+  const command = bundledRequired
+    ? (bundledPython || missingBundledCommand)
+    : (runtime.command?.trim() || bundledPython || process.env.CRAFT_HERMES_COMMAND?.trim() || 'hermes')
 
-  const explicitArgs = runtime.args && runtime.args.length > 0 ? runtime.args : null
+  const explicitArgs = !bundledRequired && runtime.args && runtime.args.length > 0 ? runtime.args : null
   const args =
     explicitArgs ||
     // Use bundled argv only when we are also using the bundled Python; pairing
     // ['-m', 'acp_adapter'] with an external `hermes` binary would crash.
     (command === bundledPython ? bundledArgs : null) ||
-    ['acp']
+    (bundledRequired ? [] : ['acp'])
 
   const hermesHome =
     runtime.hermesHome?.trim() ||

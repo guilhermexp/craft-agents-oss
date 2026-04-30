@@ -7,6 +7,8 @@ const HERMES_ENV_KEYS = [
   'CRAFT_HERMES_ARGS',
   'CRAFT_HERMES_HOME',
   'CRAFT_HERMES_COMMAND',
+  'CRAFT_HERMES_REQUIRE_BUNDLED',
+  'CRAFT_HERMES_MISSING_COMMAND',
   'HERMES_HOME',
 ] as const
 
@@ -76,6 +78,29 @@ describe('Hermes ACP config', () => {
 
     expect(runtime.command).toBe('/bundled/python3')
     expect(runtime.args).toEqual(['acp', '--debug'])
+  })
+
+  it('fails closed instead of using external Hermes when packaged runtime requires a missing bundle', () => {
+    process.env.CRAFT_HERMES_REQUIRE_BUNDLED = '1'
+    process.env.CRAFT_HERMES_MISSING_COMMAND = '/Applications/Craft Agents.app/Contents/Resources/app/vendor/hermes/hermes-venv/bin/python3'
+    process.env.CRAFT_HERMES_COMMAND = 'hermes'
+
+    const runtime = normalizeHermesRuntimeConfig({ command: 'hermes', args: ['acp'], hermesHome: '/tmp/app-hermes' })
+
+    expect(runtime.command).toBe('/Applications/Craft Agents.app/Contents/Resources/app/vendor/hermes/hermes-venv/bin/python3')
+    expect(runtime.args).toEqual([])
+    expect(runtime.hermesHome).toBe('/tmp/app-hermes')
+  })
+
+  it('requires the bundled Python even if an explicit external command is provided', () => {
+    process.env.CRAFT_HERMES_REQUIRE_BUNDLED = 'true'
+    process.env.CRAFT_HERMES_PYTHON = '/bundled/python3'
+    process.env.CRAFT_HERMES_ARGS = JSON.stringify(['-m', 'acp_adapter'])
+
+    const runtime = normalizeHermesRuntimeConfig({ command: 'hermes', args: ['acp'] })
+
+    expect(runtime.command).toBe('/bundled/python3')
+    expect(runtime.args).toEqual(['-m', 'acp_adapter'])
   })
 
   it('CRAFT_HERMES_HOME beats HERMES_HOME', () => {

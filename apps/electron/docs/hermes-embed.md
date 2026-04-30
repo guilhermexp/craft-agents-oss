@@ -90,7 +90,7 @@ When syncing Craft upstream, preserve these Craft-side integration points:
 | Craft file | Craft-required behavior |
 | ---------- | ----------------------- |
 | `packages/shared/src/agent/hermes-agent.ts` | Hermes gets both `craft-sources` and `craft-session` MCP endpoints through ACP; source changes do not kill an active stream; model/session changes do not silently drop MCP config. |
-| `packages/shared/src/hermes/acp-config.ts` | Bundled runtime env (`CRAFT_HERMES_PYTHON`, `CRAFT_HERMES_ARGS`, `CRAFT_HERMES_HOME`) is treated as one coherent ACP command/config unit. |
+| `packages/shared/src/hermes/acp-config.ts` | Bundled runtime env (`CRAFT_HERMES_PYTHON`, `CRAFT_HERMES_ARGS`, `CRAFT_HERMES_HOME`) is treated as one coherent ACP command/config unit. In packaged builds, `CRAFT_HERMES_REQUIRE_BUNDLED=1` must fail closed instead of falling back to a system `hermes`. |
 | `packages/shared/src/mcp/session-tools-server.ts` | Craft-native tools exposed to Hermes include browser, delegation/session, LLM, auth/config helpers, metadata, and automation; callbacks stay session-scoped. |
 | `packages/server-core/src/handlers/rpc/hermes.ts` | Runtime detection, dashboard launch, file/log/skill browsing, dashboard-delegated dev update env, update marker watching, and restart notification stay local-only and path-safe under app-scoped `HERMES_HOME`. |
 | `apps/electron/src/renderer/pages/settings/HermesSettingsPage.tsx` | Settings remains an operational Hermes page with compact files/skills views, version line, dashboard launch inside Craft browser, and no giant raw session dump. It must not duplicate the dashboard's native update action. |
@@ -105,6 +105,10 @@ The intended runtime model is:
   provider/model configuration.
 - Packaged apps must not mutate the signed runtime. Dev mode may update and
   rebuild the local bundle.
+- Packaged apps must not fall back to a standalone/system Hermes. If the
+  bundled Python runtime is missing or broken, Craft reports that failure
+  instead of spawning `hermes` from `PATH`; this preserves the app-scoped
+  authentication, config, memory, provider, and session boundary.
 
 ## Why embedded
 
@@ -468,7 +472,7 @@ restart of the user's session.
 
 `packages/server-core/src/handlers/rpc/hermes.ts` exposes local-only Hermes runtime controls:
 
-- `hermes:detectInstallation` — reports bundled/system runtime, app-scoped `HERMES_HOME`, discovered providers/models, version, and config paths.
+- `hermes:detectInstallation` — reports bundled/system runtime, app-scoped `HERMES_HOME`, discovered providers/models, version, and config paths. In packaged builds, a missing bundled runtime is reported as unavailable; it must not silently resolve to a user-installed `hermes` binary.
 - `hermes:getRuntimeDetails` — extends detection with config/env existence,
   app-scoped logs/skills/sessions paths, source repo path, origin/upstream
   remotes, branch, commit, commit date, release tag, dirty state, available

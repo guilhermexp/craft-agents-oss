@@ -73,6 +73,22 @@ function isExcludedPiModel(modelId: string): boolean {
 }
 
 /**
+ * Per-provider model allowlist. When a provider has an entry here, ONLY the listed
+ * model IDs are exposed for that provider — everything else from the SDK catalog is
+ * dropped. Used to keep the ChatGPT Plus (Codex OAuth) surface restricted to the
+ * models the ChatGPT backend actually accepts.
+ */
+const PI_PROVIDER_MODEL_ALLOWLIST: Partial<Record<string, ReadonlySet<string>>> = {
+  'openai-codex': new Set(['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini']),
+};
+
+function isAllowedForProvider(piAuthProvider: string, modelId: string): boolean {
+  const allowlist = PI_PROVIDER_MODEL_ALLOWLIST[piAuthProvider];
+  if (!allowlist) return true;
+  return allowlist.has(modelId);
+}
+
+/**
  * Check if a Bedrock model ID is a bare Claude model without a region prefix.
  * Bare IDs like `anthropic.claude-opus-4-7-v1` are rejected by Bedrock which
  * requires inference profile IDs with a region prefix (`us.`, `eu.`, `global.`).
@@ -92,6 +108,7 @@ export function getPiModelsForAuthProvider(piAuthProvider: string): ModelDefinit
     if (models.length > 0) {
       return models
         .filter(m => !isExcludedPiModel(m.id))
+        .filter(m => isAllowedForProvider(piAuthProvider, m.id))
         // Bedrock: exclude bare Claude models without region prefix — they're
         // always rejected by Bedrock which requires inference profiles (us.*/eu.*/global.*).
         // Regional variants from the same catalog are kept.
@@ -114,6 +131,7 @@ export function getAllPiModels(): ModelDefinition[] {
       const models = getModels(provider);
       allModels.push(...models
         .filter(m => !isExcludedPiModel(m.id))
+        .filter(m => isAllowedForProvider(provider, m.id))
         .map(piModelToDefinition)
       );
     } catch {

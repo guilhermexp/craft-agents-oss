@@ -112,17 +112,28 @@ export function getHermesRuntimePaths(): HermesRuntimePaths | null {
   }
 
   if (!existsSync(python)) {
-    mainLog.warn('Bundled Hermes Python missing; HermesAgent will fall back to PATH', {
+    const details = {
       expected: python,
       vendorRoot,
       devSourceRoot: app.isPackaged ? undefined : resolveDevSourceRoot(),
-    })
+    }
+
+    if (app.isPackaged) {
+      process.env.CRAFT_HERMES_REQUIRE_BUNDLED = '1'
+      process.env.CRAFT_HERMES_MISSING_COMMAND = python
+      mainLog.error('Bundled Hermes Python missing; packaged app will not fall back to external Hermes', details)
+    } else {
+      mainLog.warn('Bundled Hermes Python missing; dev HermesAgent may fall back to PATH', details)
+    }
     return null
   }
 
   if (shouldPatchPyvenvHome) {
     ensurePyvenvHome(virtualEnv, pythonDir)
   }
+
+  delete process.env.CRAFT_HERMES_REQUIRE_BUNDLED
+  delete process.env.CRAFT_HERMES_MISSING_COMMAND
 
   const hermesHome = join(app.getPath('userData'), 'hermes')
   if (!existsSync(hermesHome)) mkdirSync(hermesHome, { recursive: true })
