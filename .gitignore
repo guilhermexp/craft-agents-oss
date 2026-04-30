@@ -75,3 +75,4 @@ credentials.enc
 
 # Aperant data directory
 .auto-claude/
+apps/electron/scripts/.hermes-cache/

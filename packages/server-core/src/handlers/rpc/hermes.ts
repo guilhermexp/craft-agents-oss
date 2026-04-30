@@ -1,4 +1,4 @@
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, statSync, watch as fsWatch, type FSWatcher } from 'node:fs'
 import { lstat, readdir, readFile, realpath } from 'node:fs/promises'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -22,6 +22,8 @@ import {
   type HermesUpdateResult,
 } from '@craft-agent/shared/protocol'
 import { normalizeHermesRuntimeConfig, type NormalizedHermesRuntimeConfig } from '@craft-agent/shared/hermes/acp-config'
+import { readHermesCodexTokens } from '@craft-agent/shared/hermes/auth-bridge'
+import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { parseHermesConfigSnapshot } from '@craft-agent/shared/hermes/runtime-config'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
@@ -34,6 +36,11 @@ let dashboardPort: number | null = null
 let updateMarkerMonitor: ReturnType<typeof setInterval> | null = null
 let updateMarkerMonitorPath: string | null = null
 let updateMarkerLastMtime = 0
+let authJsonWatcher: FSWatcher | null = null
+let authJsonWatcherPath: string | null = null
+let authJsonSyncInFlight = false
+let authJsonLastSyncedAccessToken: string | null = null
+let authJsonDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 const HERMES_HOME_HIDDEN_NAMES = new Set(['.env', 'auth.json', 'auth.lock', '.DS_Store'])
 const HERMES_HOME_COLLAPSED_DIRS = new Set(['cron', 'logs', 'memories', 'memory', 'sessions', 'skills', 'skins'])
@@ -588,7 +595,72 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.hermes.OPEN_PATH,
 ] as const
 
+/**
+ * Sync Codex tokens from <HERMES_HOME>/auth.json back into Craft's credential
+ * store. Called when the watcher fires after a Hermes-side refresh, so the
+ * next Craft session uses the rotated tokens instead of stale ones.
+ */
+async function syncCodexTokensFromHermes(deps: HandlerDeps, hermesHome: string): Promise<void> {
+  if (authJsonSyncInFlight) return
+  authJsonSyncInFlight = true
+  try {
+    const tokens = readHermesCodexTokens(hermesHome)
+    if (!tokens) return
+    if (tokens.accessToken === authJsonLastSyncedAccessToken) return
+
+    const manager = getCredentialManager()
+    await manager.setLlmOAuth('chatgpt-plus', {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      idToken: tokens.idToken,
+    })
+    authJsonLastSyncedAccessToken = tokens.accessToken
+    deps.platform.logger?.info?.('[Hermes] Synced refreshed Codex tokens back to Craft credential store')
+  } catch (error) {
+    deps.platform.logger?.warn?.(
+      `[Hermes] auth.json sync failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  } finally {
+    authJsonSyncInFlight = false
+  }
+}
+
+function startHermesAuthJsonWatcher(deps: HandlerDeps): void {
+  const runtime = normalizeHermesRuntimeConfig()
+  const authPath = join(runtime.hermesHome, 'auth.json')
+
+  if (authJsonWatcher && authJsonWatcherPath === authPath) return
+
+  authJsonWatcher?.close()
+  authJsonWatcher = null
+
+  if (!existsSync(runtime.hermesHome)) return
+
+  try {
+    // Watch the directory (file may not exist yet) and filter on the basename.
+    authJsonWatcher = fsWatch(runtime.hermesHome, (_event, filename) => {
+      if (!filename || basename(String(filename)) !== 'auth.json') return
+      if (authJsonDebounceTimer) clearTimeout(authJsonDebounceTimer)
+      authJsonDebounceTimer = setTimeout(() => {
+        void syncCodexTokensFromHermes(deps, runtime.hermesHome)
+      }, 250)
+    })
+    authJsonWatcherPath = authPath
+
+    // Prime the cache so the first watcher hit only fires when tokens actually
+    // change (avoids a redundant write right after seeding).
+    const initial = readHermesCodexTokens(runtime.hermesHome)
+    if (initial) authJsonLastSyncedAccessToken = initial.accessToken
+  } catch (error) {
+    deps.platform.logger?.warn?.(
+      `[Hermes] Failed to watch auth.json: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+}
+
 export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): void {
+  startHermesAuthJsonWatcher(deps)
+
   server.handle(RPC_CHANNELS.hermes.DETECT_INSTALLATION, async (): Promise<HermesDetectionResult> => {
     return buildDetectionResult(deps)
   })

@@ -1,0 +1,49 @@
+diff --git a/tools/mcp_tool.py b/tools/mcp_tool.py
+index 8905c223..ca53d649 100644
+--- a/tools/mcp_tool.py
++++ b/tools/mcp_tool.py
+@@ -987,8 +987,7 @@ class MCPServerTask:
+             # notifications. Tools absent from the fresh list are no longer
+             # callable, so remove only those stale registry entries first.
+             stale_tool_names = old_tool_names - {
+-                f"mcp_{sanitize_mcp_name_component(self.name)}_"
+-                f"{sanitize_mcp_name_component(tool.name)}"
++                _mcp_tool_registry_name(self.name, tool.name)
+                 for tool in new_mcp_tools
+             }
+             for tool_name in stale_tool_names:
+@@ -2478,6 +2477,23 @@ def sanitize_mcp_name_component(value: str) -> str:
+     return re.sub(r"[^A-Za-z0-9_]", "_", str(value or ""))
+ 
+ 
++def _mcp_tool_registry_name(server_name: str, tool_name: str) -> str:
++    """Return the Hermes registry name for an MCP tool.
++
++    Craft's session tools are already canonicalized across Craft/Pi as
++    ``mcp__session__<tool>``. Preserve that namespace when Hermes is embedded
++    in Craft so the same permission, prerequisite, and UI paths recognize the
++    tool as a native Craft session tool.
++    """
++    safe_tool_name = sanitize_mcp_name_component(tool_name)
++    if server_name in {"craft-session", "session"}:
++        return f"mcp__session__{safe_tool_name}"
++    if server_name in {"craft-sources", "sources"} and "__" in safe_tool_name:
++        return f"mcp__{safe_tool_name}"
++    safe_server_name = sanitize_mcp_name_component(server_name)
++    return f"mcp_{safe_server_name}_{safe_tool_name}"
++
++
+ def _convert_mcp_schema(server_name: str, mcp_tool) -> dict:
+     """Convert an MCP tool listing to the Hermes registry schema format.
+ 
+@@ -2489,9 +2505,7 @@ def _convert_mcp_schema(server_name: str, mcp_tool) -> dict:
+     Returns:
+         A dict suitable for ``registry.register(schema=...)``.
+     """
+-    safe_tool_name = sanitize_mcp_name_component(mcp_tool.name)
+-    safe_server_name = sanitize_mcp_name_component(server_name)
+-    prefixed_name = f"mcp_{safe_server_name}_{safe_tool_name}"
++    prefixed_name = _mcp_tool_registry_name(server_name, mcp_tool.name)
+     return {
+         "name": prefixed_name,
+         "description": mcp_tool.description or f"MCP tool {mcp_tool.name} from {server_name}",

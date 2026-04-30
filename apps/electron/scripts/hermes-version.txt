@@ -1,0 +1,3 @@
+# Hermes upstream pin. One line, no quotes. Can be a tag, branch, or commit SHA.
+# Bundle/update scripts read this. Click-Update bumps it via HERMES_VERSION env.
+upstream/main

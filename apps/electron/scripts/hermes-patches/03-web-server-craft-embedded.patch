@@ -1,0 +1,117 @@
+diff --git a/hermes_cli/web_server.py b/hermes_cli/web_server.py
+index b91edc16..95e762a6 100644
+--- a/hermes_cli/web_server.py
++++ b/hermes_cli/web_server.py
+@@ -610,6 +610,79 @@ _ACTION_LOG_FILES: Dict[str, str] = {
+ _ACTION_PROCS: Dict[str, subprocess.Popen] = {}
+ 
+ 
++def _craft_embedded_update_command() -> Optional[List[str]]:
++    """Return Craft's update command when Hermes is embedded in Craft.
++
++    The bundled dashboard runs from a generated source mirror that intentionally
++    has no ``.git`` directory. In that mode ``hermes update`` cannot update the
++    runtime directly, so Craft provides the host-side updater command via env.
++    """
++    if os.environ.get("CRAFT_HERMES_EMBEDDED") != "1":
++        return None
++
++    raw = os.environ.get("CRAFT_HERMES_UPDATE_COMMAND_JSON")
++    if not raw:
++        raise RuntimeError(
++            "Hermes is embedded in Craft. Update Craft to update the packaged "
++            "Hermes runtime, or run Craft in development with the Hermes update "
++            "command configured."
++        )
++
++    try:
++        parsed = json.loads(raw)
++    except json.JSONDecodeError as exc:
++        raise RuntimeError("Invalid CRAFT_HERMES_UPDATE_COMMAND_JSON") from exc
++
++    if (
++        not isinstance(parsed, list)
++        or not parsed
++        or not all(isinstance(part, str) and part for part in parsed)
++    ):
++        raise RuntimeError("Invalid CRAFT_HERMES_UPDATE_COMMAND_JSON")
++
++    return parsed
++
++
++def _write_craft_update_marker(name: str, proc: subprocess.Popen, log_path: Path) -> None:
++    if name != "hermes-update":
++        return
++
++    marker = os.environ.get("CRAFT_HERMES_UPDATE_MARKER")
++    if not marker:
++        return
++
++    exit_code = proc.returncode if proc.returncode is not None else proc.wait()
++    payload = {
++        "name": name,
++        "exit_code": exit_code,
++        "success": exit_code == 0,
++        "needs_restart": exit_code == 0,
++        "log_path": str(log_path),
++        "timestamp": time.time(),
++    }
++    marker_path = Path(marker)
++    marker_path.parent.mkdir(parents=True, exist_ok=True)
++    tmp_path = marker_path.with_suffix(f"{marker_path.suffix}.tmp")
++    tmp_path.write_text(json.dumps(payload), encoding="utf-8")
++    tmp_path.replace(marker_path)
++
++
++def _watch_action_completion(
++    name: str,
++    proc: subprocess.Popen,
++    log_path: Path,
++    log_file: Any,
++) -> None:
++    proc.wait()
++    try:
++        _write_craft_update_marker(name, proc, log_path)
++    finally:
++        try:
++            log_file.close()
++        except OSError:
++            pass
++
++
+ def _spawn_hermes_action(subcommand: List[str], name: str) -> subprocess.Popen:
+     """Spawn ``hermes <subcommand>`` detached and record the Popen handle.
+ 
+@@ -625,9 +698,19 @@ def _spawn_hermes_action(subcommand: List[str], name: str) -> subprocess.Popen:
+     )
+ 
+     cmd = [sys.executable, "-m", "hermes_cli.main", *subcommand]
++    cwd = str(PROJECT_ROOT)
++
++    if name == "hermes-update":
++        craft_cmd = _craft_embedded_update_command()
++        if craft_cmd is not None:
++            cmd = craft_cmd
++            cwd = os.environ.get("CRAFT_HERMES_UPDATE_CWD") or cwd
++            log_file.write(
++                f"Craft embedded update command: {json.dumps(cmd)}\n".encode()
++            )
+ 
+     popen_kwargs: Dict[str, Any] = {
+-        "cwd": str(PROJECT_ROOT),
++        "cwd": cwd,
+         "stdin": subprocess.DEVNULL,
+         "stdout": log_file,
+         "stderr": subprocess.STDOUT,
+@@ -643,6 +726,11 @@ def _spawn_hermes_action(subcommand: List[str], name: str) -> subprocess.Popen:
+ 
+     proc = subprocess.Popen(cmd, **popen_kwargs)
+     _ACTION_PROCS[name] = proc
++    threading.Thread(
++        target=_watch_action_completion,
++        args=(name, proc, log_path, log_file),
++        daemon=True,
++    ).start()
+     return proc
+ 
+ 

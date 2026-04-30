@@ -15,6 +15,7 @@ import type { PermissionMode } from './mode-manager.ts'
 import type { LLMQueryRequest, LLMQueryResult } from './llm-tool.ts'
 import type { Workspace } from '../config/storage.ts'
 import { buildHermesAcpMcpServers, normalizeHermesRuntimeConfig, type HermesRuntimeConfig } from '../hermes/acp-config.ts'
+import { seedHermesAuthFromCraft } from '../hermes/auth-bridge.ts'
 import { CraftSessionToolsMcpServer } from '../mcp/session-tools-server.ts'
 import { clearPlanFileState, mergeSessionScopedToolCallbacks, unregisterSessionScopedToolCallbacks } from './session-scoped-tools.ts'
 
@@ -220,10 +221,26 @@ export class HermesAgent extends BaseAgent {
 
     const sessionToolsServerUrl = await this.ensureSessionToolsServer()
     const runtime = this.getRuntimeConfig()
+    const baseEnv = buildHermesProcessEnv(runtime)
+    let bridgedEnv: Record<string, string> = {}
+    try {
+      const seed = await seedHermesAuthFromCraft({
+        hermesHome: runtime.hermesHome,
+        connectionSlug: this.config.connectionSlug,
+      })
+      bridgedEnv = seed.env
+      if (seed.seededProviders.length > 0) {
+        this.onDebug?.(
+          `[hermes-auth-bridge] seeded ${seed.seededProviders.join(', ')} from Craft (active=${seed.activeProvider ?? 'unset'})`,
+        )
+      }
+    } catch (err) {
+      this.onDebug?.(`[hermes-auth-bridge] seed failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+    }
     this.provider = createACPProvider({
       command: runtime.command,
       args: runtime.args,
-      env: buildHermesProcessEnv(runtime),
+      env: { ...baseEnv, ...bridgedEnv },
       session: {
         cwd: this.resolvedCwd(),
         mcpServers: buildHermesAcpMcpServers({

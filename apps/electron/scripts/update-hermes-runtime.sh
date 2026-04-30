@@ -1,74 +1,74 @@
 #!/usr/bin/env bash
 # Update the dev/local bundled Hermes runtime for Craft.
-# This is intentionally disabled for packaged apps by the RPC handler.
+#
+# SDK-style update: Hermes upstream is treated as a pinned dependency. Click
+# "Update Hermes" in the dashboard runs this script, which:
+#
+#   1. Resolves the new pin (HERMES_VERSION env, or default = "upstream/main").
+#   2. Optionally writes that pin into apps/electron/scripts/hermes-version.txt
+#      so subsequent rebuilds reproduce the same version.
+#   3. Delegates to bundle-hermes.sh, which clones/fetches upstream into a
+#      cache directory, applies Craft overlay patches, and rebuilds the vendor
+#      runtime.
+#
+# The user's local fork (if any) is never touched.
+#
+# Env vars:
+#   HERMES_VERSION              Override pin for this run (tag, branch or SHA).
+#                               Default: contents of hermes-version.txt.
+#   HERMES_PERSIST_PIN=1        Write the resolved pin back into
+#                               hermes-version.txt so future rebuilds use it.
+#   HERMES_REMOTE_URL           Override upstream git URL.
+#
+# Packaged apps never reach this script — the RPC handler short-circuits
+# updates on app.isPackaged === true.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ELECTRON_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-REPO_ROOT="$(cd "$ELECTRON_DIR/../.." && pwd)"
-
-DEFAULT_HERMES_SRC="$REPO_ROOT/../hermes-agent"
-if [ ! -d "$DEFAULT_HERMES_SRC" ] && [ -d "$ELECTRON_DIR/../../../hermes-agent" ]; then
-  DEFAULT_HERMES_SRC="$(cd "$ELECTRON_DIR/../../../hermes-agent" && pwd)"
-fi
-HERMES_SRC="${HERMES_SRC:-${HERMES_SOURCE_DIR:-$DEFAULT_HERMES_SRC}}"
 BUNDLE_SCRIPT="$SCRIPT_DIR/bundle-hermes.sh"
+PIN_FILE="$SCRIPT_DIR/hermes-version.txt"
 
 if [ ! -x "$BUNDLE_SCRIPT" ]; then
   chmod +x "$BUNDLE_SCRIPT" 2>/dev/null || true
 fi
-
 if [ ! -f "$BUNDLE_SCRIPT" ]; then
   echo "bundle-hermes.sh not found at $BUNDLE_SCRIPT" >&2
   exit 1
 fi
 
-if [ ! -d "$HERMES_SRC" ]; then
-  echo "Hermes source not found at $HERMES_SRC" >&2
-  echo "Set HERMES_SRC=/path/to/hermes-agent and retry." >&2
-  exit 1
-fi
-
-if [ ! -f "$HERMES_SRC/pyproject.toml" ]; then
-  echo "pyproject.toml missing in Hermes source: $HERMES_SRC" >&2
-  exit 1
-fi
-
-echo "Hermes source: $HERMES_SRC"
-if git -C "$HERMES_SRC" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  before="$(git -C "$HERMES_SRC" rev-parse --short HEAD)"
-  echo "Hermes commit before: $before"
-  if [ "${HERMES_SKIP_PULL:-0}" != "1" ]; then
-    if [ -n "$(git -C "$HERMES_SRC" status --porcelain)" ]; then
-      echo "Hermes source has uncommitted changes. Commit/stash them or set HERMES_SKIP_PULL=1." >&2
-      exit 1
-    fi
-
-    HERMES_UPDATE_REMOTE="${HERMES_UPDATE_REMOTE:-${HERMES_UPSTREAM_REMOTE:-upstream}}"
-    HERMES_UPDATE_BRANCH="${HERMES_UPDATE_BRANCH:-${HERMES_UPSTREAM_BRANCH:-main}}"
-    if ! git -C "$HERMES_SRC" remote get-url "$HERMES_UPDATE_REMOTE" >/dev/null 2>&1; then
-      HERMES_UPDATE_REMOTE="origin"
-    fi
-
-    echo "Fetching Hermes updates from $HERMES_UPDATE_REMOTE/$HERMES_UPDATE_BRANCH"
-    git -C "$HERMES_SRC" fetch "$HERMES_UPDATE_REMOTE" "$HERMES_UPDATE_BRANCH"
-    git -C "$HERMES_SRC" merge --ff-only FETCH_HEAD
-  else
-    echo "Skipping git pull because HERMES_SKIP_PULL=1"
-  fi
-  after="$(git -C "$HERMES_SRC" rev-parse --short HEAD)"
-  echo "Hermes commit after: $after"
+# Resolve effective pin for this run. Bundle script reads the same chain, but
+# we resolve here so we can log it and (optionally) persist it.
+if [ -n "${HERMES_VERSION:-}" ]; then
+  RUN_PIN="$HERMES_VERSION"
+elif [ -f "$PIN_FILE" ]; then
+  RUN_PIN="$(awk 'NF && $1 !~ /^#/ {print; exit}' "$PIN_FILE")"
 else
-  echo "Hermes source is not a git checkout; bundling current files."
+  RUN_PIN="upstream/main"
 fi
 
-HERMES_SRC="$HERMES_SRC" bash "$BUNDLE_SCRIPT"
+echo "Hermes update — pin: $RUN_PIN"
+
+if [ "${HERMES_PERSIST_PIN:-0}" = "1" ] && [ -n "${HERMES_VERSION:-}" ]; then
+  cat > "$PIN_FILE" <<EOF
+# Hermes upstream pin. One line, no quotes. Can be a tag, branch, or commit SHA.
+# Bundle/update scripts read this. Click-Update bumps it via HERMES_VERSION env.
+$HERMES_VERSION
+EOF
+  echo "Persisted pin to $PIN_FILE"
+fi
+
+# Hand off to bundle. It clones/fetches upstream into the cache and applies
+# Craft overlay patches; the user's local fork (if any) is not used.
+HERMES_VERSION="$RUN_PIN" bash "$BUNDLE_SCRIPT"
 
 ADAPTER="$ELECTRON_DIR/resources/vendor/hermes/hermes-agent/acp_adapter/server.py"
 if [ -f "$ADAPTER" ]; then
-  "$ELECTRON_DIR/resources/vendor/hermes/hermes-venv/bin/python3" -m py_compile "$ADAPTER"
-  echo "ACP adapter validated: $ADAPTER"
+  PYTHONPATH="$ELECTRON_DIR/resources/vendor/hermes/hermes-agent" \
+    "$ELECTRON_DIR/resources/vendor/hermes/hermes-venv/bin/python3" \
+    -c "import acp_adapter.server" \
+    && echo "ACP adapter validated: $ADAPTER"
 fi
 
 echo "Hermes runtime updated. Restart Craft to use the new bundled runtime."

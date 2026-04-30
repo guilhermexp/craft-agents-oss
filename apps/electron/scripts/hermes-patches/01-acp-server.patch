@@ -1,0 +1,108 @@
+diff --git a/acp_adapter/server.py b/acp_adapter/server.py
+index 862e9c58..4b66bf3b 100644
+--- a/acp_adapter/server.py
++++ b/acp_adapter/server.py
+@@ -312,6 +312,8 @@ class HermesACPAgent(acp.Agent):
+         if not mcp_servers:
+             return
+ 
++        state.mcp_servers = list(mcp_servers)
++
+         try:
+             from tools.mcp_tool import register_mcp_servers
+ 
+@@ -340,12 +342,20 @@ class HermesACPAgent(acp.Agent):
+             )
+             return
+ 
++        self._refresh_session_mcp_tool_surface(state, [server.name for server in mcp_servers])
++
++    def _refresh_session_mcp_tool_surface(
++        self,
++        state: SessionState,
++        mcp_server_names: list[str] | None = None,
++    ) -> None:
++        """Reapply ACP MCP toolsets after the underlying AIAgent is recreated."""
+         try:
+             from model_tools import get_tool_definitions
+ 
+             enabled_toolsets = _expand_acp_enabled_toolsets(
+                 getattr(state.agent, "enabled_toolsets", None) or ["hermes-acp"],
+-                mcp_server_names=[server.name for server in mcp_servers],
++                mcp_server_names=mcp_server_names,
+             )
+             state.agent.enabled_toolsets = enabled_toolsets
+             disabled_toolsets = getattr(state.agent, "disabled_toolsets", None)
+@@ -693,9 +703,20 @@ class HermesACPAgent(acp.Agent):
+ 
+         agent = state.agent
+         agent.tool_progress_callback = tool_progress_cb
++        agent.reasoning_callback = thinking_cb
+         agent.thinking_callback = thinking_cb
+         agent.step_callback = step_cb
+-        agent.message_callback = message_cb
++
++        streamed_text_parts: list[str] = []
++        if message_cb:
++            raw_message_cb = message_cb
++
++            def tracked_message_cb(text: str) -> None:
++                if isinstance(text, str) and text:
++                    streamed_text_parts.append(text)
++                raw_message_cb(text)
++
++            message_cb = tracked_message_cb
+ 
+         # Approval callback is per-thread (thread-local, GHSA-qg5c-hvr5-hjgr).
+         # Set it INSIDE _run_agent so the TLS write happens in the executor
+@@ -745,6 +766,7 @@ class HermesACPAgent(acp.Agent):
+                     conversation_history=state.history,
+                     task_id=session_id,
+                     persist_user_message=user_text or "[Image attachment]",
++                    stream_callback=message_cb,
+                 )
+                 return result
+             except Exception as e:
+@@ -798,7 +820,7 @@ class HermesACPAgent(acp.Agent):
+                 )
+             except Exception:
+                 logger.debug("Failed to auto-title ACP session %s", session_id, exc_info=True)
+-        if final_response and conn:
++        if final_response and conn and not streamed_text_parts:
+             update = acp.update_agent_message_text(final_response)
+             await conn.session_update(session_id, update)
+ 
+@@ -915,6 +937,10 @@ class HermesACPAgent(acp.Agent):
+             model=new_model,
+             requested_provider=target_provider,
+         )
++        self._refresh_session_mcp_tool_surface(
++            state,
++            [server.name for server in getattr(state, "mcp_servers", [])],
++        )
+         self.session_manager.save_session(state.session_id)
+         provider_label = getattr(state.agent, "provider", None) or target_provider or current_provider
+         logger.info("Session %s: model switched to %s", state.session_id, new_model)
+@@ -1034,6 +1060,10 @@ class HermesACPAgent(acp.Agent):
+                 base_url=current_base_url,
+                 api_mode=current_api_mode,
+             )
++            await self._register_session_mcp_servers(
++                state,
++                getattr(state, "mcp_servers", []),
++            )
+             self.session_manager.save_session(session_id)
+             logger.info(
+                 "Session %s: model switched to %s via provider %s",
+diff --git a/acp_adapter/session.py b/acp_adapter/session.py
+index 72457300..22c400df 100644
+--- a/acp_adapter/session.py
++++ b/acp_adapter/session.py
+@@ -145,6 +145,7 @@ class SessionState:
+     model: str = ""
+     history: List[Dict[str, Any]] = field(default_factory=list)
+     cancel_event: Any = None  # threading.Event
++    mcp_servers: List[Any] = field(default_factory=list)
+ 
+ 
+ class SessionManager:
