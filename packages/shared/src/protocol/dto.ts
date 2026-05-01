@@ -397,7 +397,11 @@ export interface HermesDetectionResult {
   configPath: string
   envPath: string
   defaultModel?: string
+  /** Hermes default provider for the main model (e.g. 'anthropic'). */
+  defaultProvider?: string
   fallbackModel?: string
+  /** Ordered fallback provider chain Hermes auto-switches to on failure. */
+  fallbackProviders?: string[]
   providers: string[]
   models: string[]
   customProviders: HermesCustomProviderInfo[]

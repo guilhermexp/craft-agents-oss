@@ -102,6 +102,38 @@ function stableHash(input: string): string {
   return (hash >>> 0).toString(36)
 }
 
+function getPlainText(children: React.ReactNode): string {
+  return React.Children.toArray(children)
+    .map((child) => (typeof child === 'string' || typeof child === 'number' ? String(child) : ''))
+    .join('')
+}
+
+function InlineCodeWithFileClick({
+  children,
+  onFileClick,
+}: {
+  children: React.ReactNode
+  onFileClick?: (path: string) => void
+}) {
+  const text = getPlainText(children).trim()
+  const resolvedTarget = text ? resolveMarkdownLinkTarget(text) : null
+
+  if (!onFileClick || resolvedTarget?.kind !== 'file') {
+    return <InlineCode>{children}</InlineCode>
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onFileClick(resolvedTarget.path)}
+      className="inline cursor-pointer border-0 bg-transparent p-0 text-left text-accent align-baseline hover:underline"
+      title={resolvedTarget.path}
+    >
+      <InlineCode className="text-accent">{children}</InlineCode>
+    </button>
+  )
+}
+
 function createComponents(
   mode: RenderMode,
   onUrlClick?: (url: string) => void,
@@ -296,7 +328,7 @@ function createComponents(
         }
 
         // Inline code
-        return <InlineCode>{children}</InlineCode>
+        return <InlineCodeWithFileClick onFileClick={onFileClick}>{children}</InlineCodeWithFileClick>
       },
       pre: ({ children }) => <>{children}</>,
       // Comfortable paragraph spacing
@@ -431,7 +463,7 @@ function createComponents(
         return wrapBlock('code', code, <CodeBlock code={code} language={match?.[1]} mode="full" className="my-2" />, props.node?.position)
       }
 
-      return <InlineCode>{children}</InlineCode>
+      return <InlineCodeWithFileClick onFileClick={onFileClick}>{children}</InlineCodeWithFileClick>
     },
     pre: ({ children }) => <>{children}</>,
     // Rich paragraph spacing

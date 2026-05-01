@@ -200,7 +200,8 @@ export function parseDelimitedTabularData(
   }
 
   const used = new Set<string>()
-  const columns = rawRows[0].map((header, index) => normalizeHeader(header, index, used))
+  const headerRow = rawRows[0] ?? []
+  const columns = headerRow.map((header, index) => normalizeHeader(header, index, used))
   const rows = rawRows.slice(1).map((rawRow) => {
     const row: Record<string, unknown> = {}
     columns.forEach((column, index) => {
@@ -251,8 +252,9 @@ function parseSharedStrings(xml: string | null): string[] {
 
   const strings: string[] = []
   for (const match of xml.matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g)) {
-    const text = [...match[1].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)]
-      .map((part) => decodeXml(part[1]))
+    const itemXml = match[1] ?? ''
+    const text = [...itemXml.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)]
+      .map((part) => decodeXml(part[1] ?? ''))
       .join('')
     strings.push(text)
   }
@@ -283,9 +285,10 @@ function parseWorksheetRows(xml: string, sharedStrings: string[]): string[][] {
 
   for (const rowMatch of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
     const row: string[] = []
-    for (const cellMatch of rowMatch[1].matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
-      const attrs = cellMatch[1]
-      const body = cellMatch[2]
+    const rowXml = rowMatch[1] ?? ''
+    for (const cellMatch of rowXml.matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
+      const attrs = cellMatch[1] ?? ''
+      const body = cellMatch[2] ?? ''
       const ref = getAttr(attrs, 'r') ?? ''
       const index = ref ? columnIndexFromRef(ref) : row.length
       const type = getAttr(attrs, 't')

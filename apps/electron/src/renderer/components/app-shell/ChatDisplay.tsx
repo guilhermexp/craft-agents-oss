@@ -2072,10 +2072,48 @@ interface MessageBubbleProps {
   onRetry?: () => void
 }
 
+function InlineMessageMarkdown({
+  content,
+  onOpenUrl,
+  onOpenFile,
+  className,
+}: {
+  content: string
+  onOpenUrl?: (url: string) => void
+  onOpenFile?: (path: string) => void
+  className?: string
+}) {
+  return (
+    <Markdown
+      mode="minimal"
+      onUrlClick={onOpenUrl}
+      onFileClick={onOpenFile}
+      className={cn(
+        "text-sm [&_p]:m-0 [&_p]:whitespace-pre-wrap [&_a]:underline",
+        className
+      )}
+    >
+      {content}
+    </Markdown>
+  )
+}
+
 /**
  * ErrorMessage - Separate component for error messages to allow useState hook
  */
-function ErrorMessage({ message, onOpenUrl, sessionId, onRetry }: { message: Message; onOpenUrl?: (url: string) => void; sessionId?: string; onRetry?: () => void }) {
+function ErrorMessage({
+  message,
+  onOpenUrl,
+  onOpenFile,
+  sessionId,
+  onRetry,
+}: {
+  message: Message
+  onOpenUrl?: (url: string) => void
+  onOpenFile?: (path: string) => void
+  sessionId?: string
+  onRetry?: () => void
+}) {
   const { t } = useTranslation()
   const hasDetails = (message.errorDetails && message.errorDetails.length > 0) || message.errorOriginal
   const [detailsOpen, setDetailsOpen] = React.useState(false)
@@ -2097,7 +2135,12 @@ function ErrorMessage({ message, onOpenUrl, sessionId, onRetry }: { message: Mes
         <div className="text-xs text-destructive/50 mb-0.5 font-semibold">
           {message.errorTitle || t('common.error')}
         </div>
-        <p className="text-sm text-destructive">{message.content}</p>
+        <InlineMessageMarkdown
+          content={message.content}
+          onOpenUrl={onOpenUrl}
+          onOpenFile={onOpenFile}
+          className="text-destructive [&_a]:text-destructive"
+        />
 
         {/* Action buttons */}
         {actions && actions.length > 0 && (
@@ -2221,7 +2264,7 @@ function MessageBubble({
 
   // === ERROR MESSAGE: Red bordered bubble with warning icon and collapsible details ===
   if (message.role === 'error') {
-    return <ErrorMessage message={message} onOpenUrl={onOpenUrl} sessionId={sessionId} onRetry={onRetry} />
+    return <ErrorMessage message={message} onOpenUrl={onOpenUrl} onOpenFile={onOpenFile} sessionId={sessionId} onRetry={onRetry} />
   }
 
   // === STATUS MESSAGE: Matches ProcessingIndicator layout for visual consistency ===
@@ -2232,7 +2275,12 @@ function MessageBubble({
         <div className="w-3 h-3 flex items-center justify-center shrink-0">
           <Spinner className="text-[10px]" />
         </div>
-        <span>{message.content}</span>
+        <InlineMessageMarkdown
+          content={message.content}
+          onOpenUrl={onOpenUrl}
+          onOpenFile={onOpenFile}
+          className="text-[13px]"
+        />
       </div>
     )
   }
@@ -2267,7 +2315,12 @@ function MessageBubble({
         <div className="w-3 h-3 flex items-center justify-center shrink-0">
           <Icon className="w-3 h-3" />
         </div>
-        <span>{message.content}</span>
+        <InlineMessageMarkdown
+          content={message.content}
+          onOpenUrl={onOpenUrl}
+          onOpenFile={onOpenFile}
+          className="text-[13px]"
+        />
       </div>
     )
   }
@@ -2280,7 +2333,12 @@ function MessageBubble({
           <div className="text-xs text-info/50 mb-0.5 font-semibold">
             Warning
           </div>
-          <p className="text-sm text-info">{message.content}</p>
+          <InlineMessageMarkdown
+            content={message.content}
+            onOpenUrl={onOpenUrl}
+            onOpenFile={onOpenFile}
+            className="text-info [&_a]:text-info"
+          />
         </div>
       </div>
     )

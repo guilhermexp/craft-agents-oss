@@ -29,6 +29,45 @@ function resolveFileUrlPath(target: string): string | null {
   }
 }
 
+function stripTargetDelimiters(target: string): string {
+  const trimmed = target.trim()
+  if (trimmed.length < 2) return trimmed
+
+  const first = trimmed[0]
+  const last = trimmed[trimmed.length - 1]
+  if (
+    (first === '"' && last === '"') ||
+    (first === "'" && last === "'") ||
+    (first === '<' && last === '>')
+  ) {
+    return trimmed.slice(1, -1).trim()
+  }
+
+  return trimmed
+}
+
+function decodeEscapedUnicodeSequences(target: string): string {
+  return target
+    .replace(/\\u\{([0-9a-fA-F]+)\}/g, (match, codePoint: string) => {
+      const value = Number.parseInt(codePoint, 16)
+      if (!Number.isFinite(value)) return match
+      try {
+        return String.fromCodePoint(value)
+      } catch {
+        return match
+      }
+    })
+    .replace(/\\u([0-9a-fA-F]{4})/g, (match, codePoint: string) => {
+      const value = Number.parseInt(codePoint, 16)
+      if (!Number.isFinite(value)) return match
+      try {
+        return String.fromCharCode(value)
+      } catch {
+        return match
+      }
+    })
+}
+
 /**
  * Resolve markdown link targets for click dispatch.
  *
@@ -37,7 +76,7 @@ function resolveFileUrlPath(target: string): string | null {
  * - Everything else is treated as a URL and routed through onUrlClick
  */
 export function resolveMarkdownLinkTarget(target: string): ResolvedMarkdownLinkTarget {
-  const trimmed = target.trim()
+  const trimmed = decodeEscapedUnicodeSequences(stripTargetDelimiters(target))
 
   const fileUrlPath = resolveFileUrlPath(trimmed)
   if (fileUrlPath) {

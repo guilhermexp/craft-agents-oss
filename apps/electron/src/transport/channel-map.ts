@@ -174,6 +174,9 @@ export const CHANNEL_MAP = {
   listHermesHomeFiles: invoke(RPC_CHANNELS.hermes.LIST_HOME_FILES),
   listHermesSkills: invoke(RPC_CHANNELS.hermes.LIST_SKILLS),
   openHermesPath: invoke(RPC_CHANNELS.hermes.OPEN_PATH),
+  getHermesApiConfig: invoke(RPC_CHANNELS.hermes.GET_API_CONFIG),
+  patchHermesApiConfig: invoke(RPC_CHANNELS.hermes.PATCH_API_CONFIG),
+  getHermesProviderModels: invoke(RPC_CHANNELS.hermes.GET_PROVIDER_MODELS),
 
   // Session-specific model
   getSessionModel: invoke(RPC_CHANNELS.sessions.GET_MODEL),

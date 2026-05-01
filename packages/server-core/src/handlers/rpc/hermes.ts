@@ -313,7 +313,9 @@ async function buildDetectionResult(deps?: HandlerDeps): Promise<HermesDetection
     resolvedCommand,
     version: await resolveHermesVersion(runtime),
     defaultModel: configSnapshot.defaultModel,
+    defaultProvider: configSnapshot.defaultProvider,
     fallbackModel: configSnapshot.fallbackModel,
+    fallbackProviders: configSnapshot.fallbackProviders,
     dashboardUrl: dashboardUrl ?? undefined,
   }
 }
@@ -593,6 +595,9 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.hermes.LIST_HOME_FILES,
   RPC_CHANNELS.hermes.LIST_SKILLS,
   RPC_CHANNELS.hermes.OPEN_PATH,
+  RPC_CHANNELS.hermes.GET_API_CONFIG,
+  RPC_CHANNELS.hermes.PATCH_API_CONFIG,
+  RPC_CHANNELS.hermes.GET_PROVIDER_MODELS,
 ] as const
 
 /**
@@ -694,7 +699,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.START_DASHBOARD, async (): Promise<HermesDashboardResult> => {
+  async function ensureDashboardRunning(): Promise<HermesDashboardResult> {
     const runtime = normalizeHermesRuntimeConfig()
     const resolvedCommand = await resolveHermesBinary(runtime.command)
     if (!resolvedCommand) {
@@ -768,6 +773,61 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
       url: dashboardUrl,
       port,
       pid: child.pid,
+    }
+  }
+
+  async function fetchDashboardJson(path: string, init?: RequestInit): Promise<unknown> {
+    const ready = await ensureDashboardRunning()
+    if (!ready.success || !ready.url) {
+      throw new Error(ready.error || 'Hermes dashboard unavailable')
+    }
+    const response = await fetch(`${ready.url}${path}`, init)
+    const text = await response.text()
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${text || response.statusText}`)
+    }
+    if (!text) return null
+    try {
+      return JSON.parse(text)
+    } catch {
+      return text
+    }
+  }
+
+  server.handle(RPC_CHANNELS.hermes.START_DASHBOARD, async (): Promise<HermesDashboardResult> => {
+    return ensureDashboardRunning()
+  })
+
+  server.handle(RPC_CHANNELS.hermes.GET_API_CONFIG, async () => {
+    try {
+      return { success: true as const, data: await fetchDashboardJson('/api/config') }
+    } catch (error) {
+      return { success: false as const, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.hermes.PATCH_API_CONFIG, async (
+    _ctx,
+    body: { config?: Record<string, unknown>; env?: Record<string, string> },
+  ) => {
+    try {
+      const data = await fetchDashboardJson('/api/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      return { success: true as const, data }
+    } catch (error) {
+      return { success: false as const, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.hermes.GET_PROVIDER_MODELS, async (_ctx, provider: string) => {
+    try {
+      const data = await fetchDashboardJson(`/api/provider-models?provider=${encodeURIComponent(provider)}`)
+      return { success: true as const, data }
+    } catch (error) {
+      return { success: false as const, error: error instanceof Error ? error.message : String(error) }
     }
   })
 

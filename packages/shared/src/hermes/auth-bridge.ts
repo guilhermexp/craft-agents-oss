@@ -200,7 +200,95 @@ export async function seedHermesAuthFromCraft(args: {
     }
   }
 
+  // Sync config.yaml when the Craft-picked model belongs to a provider Hermes
+  // is not currently configured for. Hermes only resolves model ids whose
+  // provider is active in `model.provider` — without this, picking gpt-5.5
+  // while Hermes runs anthropic raises "Model … is not available (Current:
+  // anthropic:claude-…)".
+  //
+  // We write provider+model atomically so both stay aligned. The dashboard
+  // remains free to change them; Craft just owns the active selection at
+  // spawn time.
+  try {
+    syncHermesMainModel(args.hermesHome, args.model, activeProvider)
+  } catch {
+    // ignore — Hermes will fall back to existing config.yaml state
+  }
+
   return { env, seededProviders, activeProvider }
+}
+
+/**
+ * Update `<HERMES_HOME>/config.yaml` so the Hermes dashboard's "Main model"
+ * line and the runtime fallback default match the model Craft is actually
+ * running with for this session.
+ *
+ * Lightweight YAML rewrite — only the `model.provider` / `model.default`
+ * keys are touched. Other config sections are preserved verbatim. If the
+ * file does not exist it is created with a minimal `model:` block.
+ */
+export function syncHermesMainModel(
+  hermesHome: string,
+  model: string | undefined,
+  provider: HermesActiveProvider,
+): void {
+  if (!model || !provider) return
+  const bare = model.startsWith('pi/') ? model.slice(3) : model
+  const configPath = join(hermesHome, 'config.yaml')
+
+  let lines: string[]
+  try {
+    if (existsSync(configPath)) {
+      lines = readFileSync(configPath, 'utf-8').split('\n')
+    } else {
+      lines = ['model:', `  provider: ${provider}`, `  default: ${bare}`, '']
+      const dir = dirname(configPath)
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+      writeFileSync(configPath, lines.join('\n'), { mode: 0o600 })
+      return
+    }
+  } catch {
+    return
+  }
+
+  const modelStartIdx = lines.findIndex(l => /^model:\s*$/.test(l))
+  if (modelStartIdx < 0) {
+    // File exists but no `model:` block — append one.
+    if (lines[lines.length - 1] !== '') lines.push('')
+    lines.push('model:', `  provider: ${provider}`, `  default: ${bare}`, '')
+    try { writeFileSync(configPath, lines.join('\n'), { mode: 0o600 }) } catch { /* swallow */ }
+    return
+  }
+
+  let providerIdx = -1
+  let defaultIdx = -1
+  for (let i = modelStartIdx + 1; i < lines.length; i++) {
+    const line = lines[i]
+    if (/^\S/.test(line ?? '') && line !== '') break // exited the block
+    if (/^\s+provider:\s*/.test(line ?? '')) providerIdx = i
+    if (/^\s+default:\s*/.test(line ?? '')) defaultIdx = i
+  }
+
+  let mutated = false
+  if (providerIdx >= 0) {
+    const next = `  provider: ${provider}`
+    if (lines[providerIdx] !== next) { lines[providerIdx] = next; mutated = true }
+  } else {
+    lines.splice(modelStartIdx + 1, 0, `  provider: ${provider}`)
+    mutated = true
+  }
+  if (defaultIdx >= 0) {
+    const next = `  default: ${bare}`
+    const adj = providerIdx < 0 ? defaultIdx + 1 : defaultIdx
+    if (lines[adj] !== next) { lines[adj] = next; mutated = true }
+  } else {
+    lines.splice(modelStartIdx + 2, 0, `  default: ${bare}`)
+    mutated = true
+  }
+
+  if (mutated) {
+    try { writeFileSync(configPath, lines.join('\n'), { mode: 0o600 }) } catch { /* swallow */ }
+  }
 }
 
 /**

@@ -9,6 +9,34 @@ describe('resolveMarkdownLinkTarget', () => {
     })
   })
 
+  it('resolves absolute unix file paths with spaces as file targets', () => {
+    expect(resolveMarkdownLinkTarget('/var/folders/tmp/Captura de Tela 2026-04-30 as 21.28.24.png')).toEqual({
+      kind: 'file',
+      path: '/var/folders/tmp/Captura de Tela 2026-04-30 as 21.28.24.png',
+    })
+  })
+
+  it('resolves quoted absolute unix file paths with spaces as file targets', () => {
+    expect(resolveMarkdownLinkTarget('"/var/folders/tmp/Captura de Tela 2026-05-01 às 01.13.54.png"')).toEqual({
+      kind: 'file',
+      path: '/var/folders/tmp/Captura de Tela 2026-05-01 às 01.13.54.png',
+    })
+  })
+
+  it('decodes escaped unicode sequences in quoted file paths', () => {
+    expect(resolveMarkdownLinkTarget('"/var/folders/tmp/Captura de Tela 2026-05-01 a\\u{300}s 02.20.15.png"')).toEqual({
+      kind: 'file',
+      path: '/var/folders/tmp/Captura de Tela 2026-05-01 às 02.20.15.png',
+    })
+  })
+
+  it('resolves quoted file URLs as file targets', () => {
+    expect(resolveMarkdownLinkTarget('"file:///Users/tester/report%20final.pdf"')).toEqual({
+      kind: 'file',
+      path: '/Users/tester/report final.pdf',
+    })
+  })
+
   it('resolves parent-relative file paths as file targets', () => {
     expect(resolveMarkdownLinkTarget('../downloads/assets/screenshot.png')).toEqual({
       kind: 'file',
@@ -62,6 +90,10 @@ describe('resolveMarkdownLinkTarget', () => {
 describe('classifyMarkdownLinkTarget', () => {
   it('classifies absolute unix file paths as file', () => {
     expect(classifyMarkdownLinkTarget('/Users/balintorosz/.craft-agent/sessions/abc/image.jpg')).toBe('file')
+  })
+
+  it('classifies absolute unix file paths with spaces as file', () => {
+    expect(classifyMarkdownLinkTarget('/var/folders/tmp/Captura de Tela 2026-04-30 as 21.28.24.png')).toBe('file')
   })
 
   it('classifies file URLs as file', () => {

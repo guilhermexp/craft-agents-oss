@@ -440,6 +440,9 @@ export interface ElectronAPI {
   listHermesHomeFiles(target?: string): Promise<HermesListHomeFilesResult>
   listHermesSkills(): Promise<HermesListSkillsResult>
   openHermesPath(target?: string): Promise<HermesOpenPathResult>
+  getHermesApiConfig(): Promise<{ success: true; data: unknown } | { success: false; error: string }>
+  patchHermesApiConfig(body: { config?: Record<string, unknown>; env?: Record<string, string> }): Promise<{ success: true; data: unknown } | { success: false; error: string }>
+  getHermesProviderModels(provider: string): Promise<{ success: true; data: unknown } | { success: false; error: string }>
 
   // Session-specific model (overrides global)
   getSessionModel(sessionId: string, workspaceId: string): Promise<string | null>

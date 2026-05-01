@@ -52,9 +52,19 @@ describe('preprocessLinks', () => {
       expect(preprocessLinks(input)).toBe('Visit [https://example.com](https://example.com) for more info')
     })
 
+    it('wraps a bare http URL', () => {
+      const input = 'Open http://localhost:3000/test to inspect it'
+      expect(preprocessLinks(input)).toBe('Open [http://localhost:3000/test](http://localhost:3000/test) to inspect it')
+    })
+
     it('wraps a bare repo-relative file path', () => {
       const input = 'See apps/electron/resources/docs/browser-tools.md for details'
       expect(preprocessLinks(input)).toBe('See [apps/electron/resources/docs/browser-tools.md](apps/electron/resources/docs/browser-tools.md) for details')
+    })
+
+    it('wraps a quoted absolute file path with spaces', () => {
+      const input = 'Open "/var/folders/tmp/Captura de Tela 2026-04-30 as 21.28.24.png"'
+      expect(preprocessLinks(input)).toBe('Open "[/var/folders/tmp/Captura de Tela 2026-04-30 as 21.28.24.png](</var/folders/tmp/Captura de Tela 2026-04-30 as 21.28.24.png>)"')
     })
 
     it('wraps a bare domain', () => {
@@ -230,6 +240,14 @@ describe('detectLinks', () => {
     expect(links[0]).toBeDefined()
     expect(links[0]!.type).toBe('file')
     expect(links[0]!.url).toBe('/Users/foo/bar.ts')
+  })
+
+  it('detects quoted file paths with spaces', () => {
+    const links = detectLinks('Open "/var/folders/tmp/Captura de Tela 2026-04-30 as 21.28.24.png"')
+    expect(links).toHaveLength(1)
+    expect(links[0]).toBeDefined()
+    expect(links[0]!.type).toBe('file')
+    expect(links[0]!.url).toBe('/var/folders/tmp/Captura de Tela 2026-04-30 as 21.28.24.png')
   })
 
   it('detects bare repo-relative file paths', () => {

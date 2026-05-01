@@ -92,8 +92,11 @@ describe('resolveHermesModelId', () => {
     expect(resolveHermesModelId('openrouter:anthropic/claude-sonnet-4.6', models)).toBe('openrouter:anthropic/claude-sonnet-4.6')
   })
 
-  it('falls back to Hermes current model when a stale Craft model cannot be mapped', () => {
-    expect(resolveHermesModelId('claude-opus-4-7', models)).toBe('openrouter:gpt-5.5')
+  it('preserves the user-requested model when no alias maps into Hermes available list', () => {
+    // Previously the code silently fell back to Hermes currentModelId here,
+    // which routed e.g. a Codex pick into Anthropic and burned the wrong
+    // provider's quota. The user pick wins.
+    expect(resolveHermesModelId('claude-opus-4-7', models)).toBe('claude-opus-4-7')
   })
 })
 

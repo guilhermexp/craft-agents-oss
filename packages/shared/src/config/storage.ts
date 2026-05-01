@@ -2181,6 +2181,18 @@ function migrateHermesLocalSlug(config: StoredConfig): boolean {
       connection.slug = 'hermes';
       changed = true;
     }
+    // Strip the legacy "(Local)" suffix from any existing Hermes connection,
+    // including the one whose slug was already migrated above. There is only
+    // one Hermes (the embedded runtime) — the suffix is misleading.
+    if (
+      connection.providerType === 'hermes' &&
+      typeof connection.name === 'string' &&
+      /\bhermes\b/i.test(connection.name) &&
+      /\blocal\b/i.test(connection.name)
+    ) {
+      connection.name = 'Hermes';
+      changed = true;
+    }
   }
 
   if (changed) {

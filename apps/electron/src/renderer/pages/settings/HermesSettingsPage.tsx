@@ -13,6 +13,7 @@ import {
   SettingsRow,
   SettingsSection,
 } from '@/components/settings'
+import { HermesAiModelsConfig } from './HermesAiModelsConfig'
 import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import type {
   HermesHomeFileInfo,
@@ -252,6 +253,65 @@ export default function HermesSettingsPage() {
                 <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Recarregar
               </Button>
             </div>
+          </SettingsSection>
+
+          <HermesAiModelsConfig />
+
+          <SettingsSection title="Modelo & fallback do Hermes">
+            <SettingsCard>
+              <SettingsCardContent className="space-y-3">
+                <div className="text-xs text-muted-foreground leading-relaxed">
+                  Lido em tempo real de <code className="px-1 rounded bg-muted/60">{runtime?.configPath ?? '~/.hermes/config.yaml'}</code>.
+                  Edite no Dashboard Hermes — Craft envia overrides por sessão via ACP <code className="px-1 rounded bg-muted/60">set_model</code>,
+                  mas estes são os defaults que o runtime usa quando não há override e a chain que ele tenta em fallback automático.
+                </div>
+                <SettingsRow label="Modelo principal" description="config.yaml › model.default + model.provider">
+                  <div className="text-xs">
+                    {runtime?.defaultModel ? (
+                      <>
+                        <span className="font-medium">{runtime.defaultModel}</span>
+                        {runtime.defaultProvider && (
+                          <span className="text-muted-foreground"> · {runtime.defaultProvider}</span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">não definido</span>
+                    )}
+                  </div>
+                </SettingsRow>
+                <SettingsRow label="Modelo de fallback" description="config.yaml › fallback_model">
+                  <div className="text-xs">
+                    {runtime?.fallbackModel ? (
+                      <span className="font-medium">{runtime.fallbackModel}</span>
+                    ) : (
+                      <span className="text-muted-foreground">não definido</span>
+                    )}
+                  </div>
+                </SettingsRow>
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
+                    Cadeia de fallback de providers
+                  </div>
+                  <div className="text-xs text-muted-foreground mb-2">
+                    Ordem que o Hermes tenta automaticamente quando o provider primário falha (config.yaml › fallback_providers).
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {(runtime?.fallbackProviders ?? []).length === 0 ? (
+                      <span className="text-xs text-muted-foreground">vazio — sem fallback configurado</span>
+                    ) : (
+                      runtime!.fallbackProviders!.map((provider, idx) => (
+                        <span key={`${provider}-${idx}`} className="flex items-center gap-1">
+                          <span className="px-2 py-1 rounded-md bg-muted text-xs">{provider}</span>
+                          {idx < runtime!.fallbackProviders!.length - 1 && (
+                            <span className="text-muted-foreground text-xs">→</span>
+                          )}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </SettingsCardContent>
+            </SettingsCard>
           </SettingsSection>
 
           <SettingsSection title="Conectores do Hermes">

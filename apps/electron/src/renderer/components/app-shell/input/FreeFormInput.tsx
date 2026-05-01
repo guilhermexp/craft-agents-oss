@@ -362,22 +362,25 @@ export function FreeFormInput({
   }, [availableModels, currentModel, connectionDefaultModel])
 
   // Group connections by provider type for hierarchical dropdown
-  // Each provider (Anthropic, Pi) can have multiple connections (API Key, OAuth, etc.)
+  // Each provider (Anthropic, Pi, Hermes) can have multiple connections (API Key, OAuth, etc.)
   const connectionsByProvider = React.useMemo(() => {
     const groups: Record<string, typeof llmConnections> = {
       'Anthropic': [],
       'Local': [],
       'Craft Agents Backend': [],
+      'Hermes': [],
     }
     for (const conn of llmConnections) {
       const provider = conn.providerType || 'anthropic'
-      // Group by SDK: only 'anthropic' uses Claude Agent SDK
+      // Group by SDK/runtime
       if (provider === 'anthropic') {
         groups['Anthropic'].push(conn)
       } else if (provider === 'pi_compat' && isLocalConnection(conn)) {
         groups['Local'].push(conn)
       } else if (provider === 'pi' || provider === 'pi_compat') {
         groups['Craft Agents Backend'].push(conn)
+      } else if (provider === 'hermes') {
+        groups['Hermes'].push(conn)
       }
     }
     // Return only non-empty groups
@@ -2037,7 +2040,6 @@ export function FreeFormInput({
                           </StyledDropdownMenuSubTrigger>
                           {isAuthenticated && (
                             <StyledDropdownMenuSubContent className="min-w-[220px]">
-                              {/* Show models for this connection - use provider-specific models as fallback */}
                               {(conn.models || ANTHROPIC_MODELS).map((model) => {
                                 const modelId = typeof model === 'string' ? model : model.id
                                 const modelName = typeof model === 'string' ? stripPiPrefixForDisplay(getModelShortName(model)) : model.name
@@ -2046,11 +2048,9 @@ export function FreeFormInput({
                                   <StyledDropdownMenuItem
                                     key={modelId}
                                     onSelect={() => {
-                                      // If selecting a different connection, update both connection and model
                                       if (!isCurrentConnection && onConnectionChange) {
                                         onConnectionChange(conn.slug)
                                       }
-                                      // Always pass connection with model for proper persistence
                                       onModelChange(modelId, conn.slug)
                                     }}
                                     className="flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer"

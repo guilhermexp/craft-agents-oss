@@ -17,11 +17,18 @@ const linkify = new LinkifyIt()
 const FILE_PATH_REGEX_SOURCE = `(?:^|[\\s([\\{<])((?:/|~/|\\./|\\.\\./|[A-Za-z0-9_][\\w\\-./@]*)[\\w\\-./@]*\\.(?:${FILE_EXTENSIONS_PATTERN}))(?=[\\s)\\]}\\.,:;!?>]|$)`
 const FILE_PATH_REGEX = new RegExp(FILE_PATH_REGEX_SOURCE, 'gi')
 const FILE_PATH_PRETEST_REGEX = new RegExp(FILE_PATH_REGEX_SOURCE, 'i')
+const QUOTED_FILE_PATH_REGEX_SOURCE = `(["'])((?:/|~/|\\./|\\.\\./)[^"'\\n]*\\.(?:${FILE_EXTENSIONS_PATTERN}))\\1`
+const QUOTED_FILE_PATH_REGEX = new RegExp(QUOTED_FILE_PATH_REGEX_SOURCE, 'gi')
+const QUOTED_FILE_PATH_PRETEST_REGEX = new RegExp(QUOTED_FILE_PATH_REGEX_SOURCE, 'i')
 
 // File-path regex for markdown anchor targets (entire href/text value)
 // Used by Markdown.tsx click handler to route file links to onFileClick.
 const FILE_PATH_TARGET_REGEX = new RegExp(
   `^(?!https?://|mailto:|ftp://|data:)(?:/|~/|\./|\.\./|[A-Za-z0-9_][\\w\\-./@]*)[\\w\\-./@]*\\.(?:${FILE_EXTENSIONS_PATTERN})$`,
+  'i'
+)
+const FILE_PATH_WITH_SPACES_TARGET_REGEX = new RegExp(
+  `^(?!https?://|mailto:|ftp://|data:)(?:/|~/|\\./|\\.\\./)[^\\n]*\\.(?:${FILE_EXTENSIONS_PATTERN})$`,
   'i'
 )
 
@@ -151,7 +158,30 @@ export function detectLinks(text: string): DetectedLink[] {
     })
   }
 
-  // 2. Detect file paths with custom regex
+  // 2. Detect quoted file paths with spaces, e.g. "/var/.../Captura de Tela.png"
+  QUOTED_FILE_PATH_REGEX.lastIndex = 0
+  let quotedFileMatch
+  while ((quotedFileMatch = QUOTED_FILE_PATH_REGEX.exec(text)) !== null) {
+    const path = quotedFileMatch[2]
+    if (!path) continue
+
+    const fullMatch = quotedFileMatch[0]
+    const pathOffset = fullMatch.indexOf(path)
+    const start = quotedFileMatch.index + pathOffset
+    const pathRange = { start, end: start + path.length }
+    const overlapsExisting = links.some(link => rangesOverlap(pathRange, link))
+    if (overlapsExisting) continue
+
+    links.push({
+      type: 'file',
+      text: path,
+      url: path,
+      start,
+      end: start + path.length
+    })
+  }
+
+  // 3. Detect file paths with custom regex
   // Reset regex state
   FILE_PATH_REGEX.lastIndex = 0
   let fileMatch
@@ -164,10 +194,10 @@ export function detectLinks(text: string): DetectedLink[] {
     const pathOffset = fullMatch.indexOf(path)
     const start = fileMatch.index + pathOffset
 
-    // Check for overlaps with URL matches (URLs take precedence)
+    // Check for overlaps with URL/quoted-path matches (earlier matches take precedence)
     const pathRange = { start, end: start + path.length }
-    const overlapsUrl = links.some(link => rangesOverlap(pathRange, link))
-    if (overlapsUrl) continue
+    const overlapsExisting = links.some(link => rangesOverlap(pathRange, link))
+    if (overlapsExisting) continue
 
     links.push({
       type: 'file',
@@ -231,7 +261,7 @@ export function preprocessLinks(text: string): string {
   text = stripPlaceholderLinks(text)
 
   // Quick check - if no potential links, return early
-  if (!linkify.pretest(text) && !FILE_PATH_PRETEST_REGEX.test(text)) {
+  if (!linkify.pretest(text) && !FILE_PATH_PRETEST_REGEX.test(text) && !QUOTED_FILE_PATH_PRETEST_REGEX.test(text)) {
     return text
   }
 
@@ -255,8 +285,10 @@ export function preprocessLinks(text: string): string {
     // Add text before this link
     result += text.slice(lastIndex, link.start)
 
-    // Convert to markdown link
-    result += `[${link.text}](${link.url})`
+    // Convert to markdown link. Angle-bracket destinations preserve local paths
+    // containing spaces while keeping normal URLs unchanged.
+    const destination = /\s/.test(link.url) ? `<${link.url}>` : link.url
+    result += `[${link.text}](${destination})`
 
     lastIndex = link.end
   }
@@ -272,7 +304,7 @@ export function preprocessLinks(text: string): string {
  * Useful for optimization - skip preprocessing if no links present
  */
 export function hasLinks(text: string): boolean {
-  return linkify.pretest(text) || FILE_PATH_PRETEST_REGEX.test(text)
+  return linkify.pretest(text) || FILE_PATH_PRETEST_REGEX.test(text) || QUOTED_FILE_PATH_PRETEST_REGEX.test(text)
 }
 
 /**
@@ -280,5 +312,6 @@ export function hasLinks(text: string): boolean {
  * Used by click handlers to route local paths to onFileClick instead of onUrlClick.
  */
 export function isFilePathTarget(target: string): boolean {
-  return FILE_PATH_TARGET_REGEX.test(target.trim())
+  const trimmed = target.trim()
+  return FILE_PATH_TARGET_REGEX.test(trimmed) || FILE_PATH_WITH_SPACES_TARGET_REGEX.test(trimmed)
 }

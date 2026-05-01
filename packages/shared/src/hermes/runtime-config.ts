@@ -10,7 +10,15 @@ export interface HermesCustomProviderSnapshot {
 
 export interface HermesConfigSnapshot {
   defaultModel?: string
+  /** Hermes default provider for the main model (e.g. 'anthropic', 'openai-codex'). */
+  defaultProvider?: string
   fallbackModel?: string
+  /**
+   * Ordered list of provider names Hermes will try when the main provider
+   * fails (mirrors `fallback_providers:` in config.yaml). Drives auto-fallback;
+   * Craft surfaces this so users can see what runtime might switch to.
+   */
+  fallbackProviders: string[]
   providers: string[]
   customProviders: HermesCustomProviderSnapshot[]
 }
@@ -41,13 +49,21 @@ function readModelValue(value: unknown): string | undefined {
   return trimString(record.default) ?? trimString(record.id) ?? trimString(record.model)
 }
 
+function readModelProvider(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const record = value as Record<string, unknown>
+  return trimString(record.provider)
+}
+
 export function parseHermesConfigSnapshot(rawConfig: string): HermesConfigSnapshot {
   try {
     const parsed = parseDocument(rawConfig).toJSON() as Record<string, unknown> | null
     if (!parsed || typeof parsed !== 'object') {
       return {
         defaultModel: undefined,
+        defaultProvider: undefined,
         fallbackModel: undefined,
+        fallbackProviders: [],
         providers: [],
         customProviders: [],
       }
@@ -80,14 +96,18 @@ export function parseHermesConfigSnapshot(rawConfig: string): HermesConfigSnapsh
 
     return {
       defaultModel: readModelValue(parsed.model),
+      defaultProvider: readModelProvider(parsed.model),
       fallbackModel: readModelValue(parsed.fallback_model),
+      fallbackProviders: normalizeProviderValue(parsed.fallback_providers),
       providers,
       customProviders,
     }
   } catch {
     return {
       defaultModel: undefined,
+      defaultProvider: undefined,
       fallbackModel: undefined,
+      fallbackProviders: [],
       providers: [],
       customProviders: [],
     }

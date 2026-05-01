@@ -54,6 +54,17 @@ function normalizePermissionMode(value: unknown): PermissionMode | undefined {
   return parsePermissionMode(value) ?? undefined;
 }
 
+function normalizeLegacyConnectionSlug<T extends SessionHeader>(header: T): T {
+  // The Hermes connection used to be slugged `hermes-local`; the connection
+  // catalog migration renames it to `hermes` on app boot. Sessions persisted
+  // before that migration still reference the old slug and would otherwise
+  // render as "Connection Unavailable" in the UI.
+  if (header.llmConnection === 'hermes-local') {
+    header.llmConnection = 'hermes';
+  }
+  return header;
+}
+
 function normalizeHeaderPermissionModes<T extends SessionHeader>(header: T): T {
   const permissionMode = normalizePermissionMode(header.permissionMode);
   const previousPermissionMode = normalizePermissionMode(header.previousPermissionMode);
@@ -70,7 +81,7 @@ function normalizeHeaderPermissionModes<T extends SessionHeader>(header: T): T {
     delete (header as Partial<SessionHeader>).previousPermissionMode;
   }
 
-  return header;
+  return normalizeLegacyConnectionSlug(header);
 }
 
 /**

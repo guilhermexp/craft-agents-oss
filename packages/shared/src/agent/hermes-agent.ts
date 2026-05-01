@@ -84,7 +84,10 @@ export function resolveHermesModelId(
     return requestedAliases.some(alias => candidateAliases.includes(alias))
   })
 
-  return match ?? models?.currentModelId ?? requested
+  // Prefer the explicit user request over Hermes' currentModelId. Falling back
+  // to currentModelId silently routed Codex picks (gpt-5.5) into the dashboard's
+  // main_model (claude-opus-*) and burned the wrong provider's quota.
+  return match ?? requested
 }
 
 function buildHermesProcessEnv(runtime: ReturnType<typeof normalizeHermesRuntimeConfig>): Record<string, string> {

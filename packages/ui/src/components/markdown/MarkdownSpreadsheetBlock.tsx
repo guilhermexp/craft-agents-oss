@@ -142,7 +142,8 @@ export function MarkdownSpreadsheetBlock({ code, className }: MarkdownSpreadshee
 
   React.useEffect(() => {
     if (!spec?.src) return
-    const isXlsx = /\.xlsx$/i.test(spec.src)
+    const src = spec.src
+    const isXlsx = /\.xlsx$/i.test(src)
     if (isXlsx && !onReadFileBinary) return
     if (!isXlsx && !onReadFile) return
 
@@ -152,9 +153,9 @@ export function MarkdownSpreadsheetBlock({ code, className }: MarkdownSpreadshee
     if (isXlsx) {
       const readBinary = onReadFileBinary
       if (!readBinary) return
-      readBinary(spec.src)
+      readBinary(src)
         .then((data) => {
-          setFileData(parseXlsxTabularData(data, spec.src))
+          setFileData(parseXlsxTabularData(data, src))
         })
         .catch((err) => {
           setFileError(err instanceof Error ? err.message : 'Failed to read spreadsheet file')
@@ -165,7 +166,7 @@ export function MarkdownSpreadsheetBlock({ code, className }: MarkdownSpreadshee
 
     const readText = onReadFile
     if (!readText) return
-    readText(spec.src)
+    readText(src)
       .then((content) => {
         try {
           const raw = JSON.parse(content)
@@ -182,8 +183,8 @@ export function MarkdownSpreadsheetBlock({ code, className }: MarkdownSpreadshee
             setFileError('File does not contain valid spreadsheet data')
           }
         } catch {
-          if (/\.(csv|tsv)$/i.test(spec.src)) {
-            setFileData(parseDelimitedTabularData(content, spec.src))
+          if (/\.(csv|tsv)$/i.test(src)) {
+            setFileData(parseDelimitedTabularData(content, src))
           } else {
             setFileError('Failed to parse data file as JSON')
           }

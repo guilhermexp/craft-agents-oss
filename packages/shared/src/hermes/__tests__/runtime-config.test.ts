@@ -65,9 +65,28 @@ custom_providers:
   it('returns an empty snapshot for invalid yaml', () => {
     expect(parseHermesConfigSnapshot('model: [broken')).toEqual({
       defaultModel: undefined,
+      defaultProvider: undefined,
       fallbackModel: undefined,
+      fallbackProviders: [],
       providers: [],
       customProviders: [],
     })
+  })
+
+  it('parses fallback_providers and model.provider', () => {
+    const snapshot = parseHermesConfigSnapshot([
+      'model:',
+      '  provider: anthropic',
+      '  default: claude-opus-4-7',
+      'providers:',
+      '  - anthropic',
+      'fallback_providers:',
+      '  - openai-codex',
+      '  - google',
+    ].join('\n'))
+
+    expect(snapshot.defaultProvider).toBe('anthropic')
+    expect(snapshot.defaultModel).toBe('claude-opus-4-7')
+    expect(snapshot.fallbackProviders).toEqual(['openai-codex', 'google'])
   })
 })

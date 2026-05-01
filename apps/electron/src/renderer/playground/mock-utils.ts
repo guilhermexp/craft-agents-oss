@@ -272,6 +272,9 @@ export const mockElectronAPI = {
   listHermesHomeFiles: async () => ({ success: true, rootPath: '~/.hermes', files: [] }),
   listHermesSkills: async () => ({ success: true, skillsPath: '~/.hermes/skills', skills: [] }),
   openHermesPath: async () => ({ success: false, error: 'Hermes files are not available in playground mode.' }),
+  getHermesApiConfig: async () => ({ success: false as const, error: 'Hermes API config not available in playground mode.' }),
+  patchHermesApiConfig: async () => ({ success: false as const, error: 'Hermes API config not available in playground mode.' }),
+  getHermesProviderModels: async () => ({ success: false as const, error: 'Hermes API not available in playground mode.' }),
   getPiProviderModels: async (provider: string) => {
     const MOCK_MODELS: Record<string, Array<{ id: string; name: string; costInput: number; costOutput: number; contextWindow: number; reasoning: boolean }>> = {
       'openrouter': [

@@ -505,7 +505,14 @@ export function getDefaultModelsForConnection(providerType: LlmProviderType, piA
     return models;
   }
   if (providerType === 'pi_compat') return [];  // Dynamic — user specifies
-  if (providerType === 'hermes') return [];
+  if (providerType === 'hermes') {
+    // Hermes manages its own provider+model surface. Craft only bridges OAuth
+    // credentials (claude_oauth, llm_oauth::chatgpt-plus) into Hermes; the
+    // active model comes from <HERMES_HOME>/config.yaml or a per-session ACP
+    // override. Returning an empty list keeps the connection registered
+    // without polluting Hermes with the Craft registry's catalog.
+    return [];
+  }
   // anthropic
   return ANTHROPIC_MODELS;
 }

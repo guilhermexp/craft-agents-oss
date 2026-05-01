@@ -534,6 +534,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
   default: [
     {
       id: 'mock-1',
+      profileId: 'default',
       url: 'https://localhost:5173/playground.html',
       title: 'localhost',
       favicon: null,
@@ -549,6 +550,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
     },
     {
       id: 'mock-2',
+      profileId: 'default',
       url: 'https://linear.app/craft-docs/settings/teams',
       title: 'Linear',
       favicon: null,
@@ -564,6 +566,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
     },
     {
       id: 'mock-3',
+      profileId: 'default',
       url: 'https://craftdocs.bamboohr.com/employees/pto/?id=132',
       title: 'BambooHR',
       favicon: null,
@@ -579,6 +582,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
     },
     {
       id: 'mock-4',
+      profileId: 'default',
       url: 'https://github.com/lukilabs/craft-agents-oss',
       title: 'GitHub',
       favicon: null,
@@ -594,6 +598,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
     },
     {
       id: 'mock-5',
+      profileId: 'default',
       url: 'https://telex.hu/',
       title: 'Telex',
       favicon: null,
@@ -611,6 +616,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
   'long-names': [
     {
       id: 'long-1',
+      profileId: 'default',
       url: 'https://www.notion.so/Craft-Agents-Multi-Session-Browser-Registry-Design-Review-Thread-2026-Q1',
       title: 'Craft Agents Multi-Session Browser Registry Design Review Thread (Q1 2026)',
       favicon: null,
@@ -626,6 +632,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
     },
     {
       id: 'long-2',
+      profileId: 'default',
       url: 'https://linear.app/craft-docs/issue/CHA-999/very-long-title-to-test-truncation-behavior-in-top-bar-badges',
       title: 'CHA-999 — Extremely Long Issue Title to Validate Ellipsis and Badge Width Constraints',
       favicon: null,
@@ -641,6 +648,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
     },
     {
       id: 'long-3',
+      profileId: 'default',
       url: 'https://docs.google.com/document/d/this-is-a-super-long-doc-id-used-for-playground-visual-tests/edit',
       title: 'Quarterly Platform Reliability Retrospective — Working Draft — Internal Only',
       favicon: null,
@@ -658,6 +666,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
   'many-running': [
     {
       id: 'run-1',
+      profileId: 'default',
       url: 'https://app.datadoghq.eu/dashboard/abc',
       title: 'Datadog',
       favicon: null,
@@ -673,6 +682,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
     },
     {
       id: 'run-2',
+      profileId: 'default',
       url: 'https://linear.app/craft-docs/team/CHA/active',
       title: 'Linear Active Issues',
       favicon: null,
@@ -688,6 +698,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
     },
     {
       id: 'run-3',
+      profileId: 'default',
       url: 'https://github.com/lukilabs/craft-agents-oss/pulls',
       title: 'GitHub PRs',
       favicon: null,
@@ -703,6 +714,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
     },
     {
       id: 'run-4',
+      profileId: 'default',
       url: 'https://craftdocs.bamboohr.com/reports',
       title: 'BambooHR Reports',
       favicon: null,
@@ -718,6 +730,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
     },
     {
       id: 'run-5',
+      profileId: 'default',
       url: 'https://www.notion.so/',
       title: 'Notion',
       favicon: null,
@@ -735,6 +748,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
   'stress-mix': [
     {
       id: 'mix-1',
+      profileId: 'default',
       url: 'https://localhost:5173/playground.html',
       title: 'localhost',
       favicon: null,
@@ -750,6 +764,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
     },
     {
       id: 'mix-2',
+      profileId: 'default',
       url: 'https://linear.app/craft-docs/settings/new-team',
       title: 'Add team',
       favicon: null,
@@ -765,6 +780,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
     },
     {
       id: 'mix-3',
+      profileId: 'default',
       url: 'https://craftdocs.bamboohr.com/employees/pto/?id=132',
       title: 'Péter Bobula - Time Off',
       favicon: null,
@@ -780,6 +796,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
     },
     {
       id: 'mix-4',
+      profileId: 'default',
       url: 'https://github.com/lukilabs/craft-agents-oss',
       title: 'Craft Agents OSS Repo with a Surprisingly Long Branch and Compare View Name',
       favicon: null,
@@ -795,6 +812,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
     },
     {
       id: 'mix-5',
+      profileId: 'default',
       url: 'https://www.figma.com/file/abc/Design-System',
       title: 'Figma Design System',
       favicon: null,
@@ -810,6 +828,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
     },
     {
       id: 'mix-6',
+      profileId: 'default',
       url: 'https://calendar.google.com',
       title: 'Google Calendar',
       favicon: null,
@@ -825,6 +844,7 @@ const MOCK_BROWSER_PRESETS: Record<BrowserTabStripMockPreset, BrowserInstanceInf
     },
     {
       id: 'mix-7',
+      profileId: 'default',
       url: 'https://telex.hu/',
       title: 'Telex - friss hírek, hiteles információk',
       favicon: null,

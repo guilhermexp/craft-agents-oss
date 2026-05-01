@@ -7,6 +7,7 @@ import {
   craftConnectionToHermesProvider,
   readHermesCodexTokens,
   seedHermesAuthFromCraft,
+  syncHermesMainModel,
   type AuthBridgeCredentialReader,
 } from '../auth-bridge.ts'
 
@@ -160,6 +161,53 @@ describe('Hermes auth bridge', () => {
 
       const store = JSON.parse(readFileSync(join(hermesHome, 'auth.json'), 'utf-8'))
       expect(store.active_provider).toBe('openai-codex')
+    })
+  })
+
+  describe('syncHermesMainModel', () => {
+    it('creates config.yaml with model block when missing', () => {
+      syncHermesMainModel(hermesHome, 'gpt-5.5', 'openai-codex')
+      const text = readFileSync(join(hermesHome, 'config.yaml'), 'utf-8')
+      expect(text).toContain('model:')
+      expect(text).toContain('  provider: openai-codex')
+      expect(text).toContain('  default: gpt-5.5')
+    })
+
+    it('strips pi/ prefix from model id', () => {
+      syncHermesMainModel(hermesHome, 'pi/gpt-5.4-mini', 'openai-codex')
+      const text = readFileSync(join(hermesHome, 'config.yaml'), 'utf-8')
+      expect(text).toContain('  default: gpt-5.4-mini')
+      expect(text).not.toContain('default: pi/')
+    })
+
+    it('rewrites only the model block, preserving the rest of config.yaml', () => {
+      const original = [
+        'model:',
+        '  provider: anthropic',
+        '  default: claude-opus-4-6',
+        'providers: {}',
+        'toolsets:',
+        '- hermes-cli',
+        'agent:',
+        '  max_turns: 90',
+        '',
+      ].join('\n')
+      writeFileSync(join(hermesHome, 'config.yaml'), original)
+
+      syncHermesMainModel(hermesHome, 'gpt-5.5', 'openai-codex')
+
+      const text = readFileSync(join(hermesHome, 'config.yaml'), 'utf-8')
+      expect(text).toContain('  provider: openai-codex')
+      expect(text).toContain('  default: gpt-5.5')
+      expect(text).toContain('toolsets:')
+      expect(text).toContain('  max_turns: 90')
+      expect(text).not.toContain('claude-opus-4-6')
+    })
+
+    it('is a no-op when model or provider is missing', () => {
+      syncHermesMainModel(hermesHome, undefined, 'openai-codex')
+      syncHermesMainModel(hermesHome, 'gpt-5.5', null)
+      expect(existsSync(join(hermesHome, 'config.yaml'))).toBe(false)
     })
   })
 

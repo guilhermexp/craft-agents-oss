@@ -227,6 +227,12 @@ export const RPC_CHANNELS = {
     LIST_HOME_FILES: 'hermes:listHomeFiles',
     LIST_SKILLS: 'hermes:listSkills',
     OPEN_PATH: 'hermes:openPath',
+    /** GET dashboard /api/config (current provider, model, env). */
+    GET_API_CONFIG: 'hermes:getApiConfig',
+    /** PATCH dashboard /api/config (set provider/model/env). */
+    PATCH_API_CONFIG: 'hermes:patchApiConfig',
+    /** GET dashboard /api/provider-models?provider=X. */
+    GET_PROVIDER_MODELS: 'hermes:getProviderModels',
   },
   dialog: {
     OPEN_FOLDER: 'dialog:openFolder',

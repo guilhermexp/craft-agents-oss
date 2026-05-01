@@ -319,9 +319,10 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
 
   React.useEffect(() => {
     if (!spec?.src || !onReadFile) return
+    const src = spec.src
     setFileLoading(true)
     setFileError(null)
-    onReadFile(spec.src)
+    onReadFile(src)
       .then((content) => {
         try {
           const raw = JSON.parse(content)
@@ -338,8 +339,8 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
             setFileError('File does not contain valid datatable data')
           }
         } catch {
-          if (/\.(csv|tsv)$/i.test(spec.src)) {
-            setFileData(parseDelimitedTabularData(content, spec.src))
+          if (/\.(csv|tsv)$/i.test(src)) {
+            setFileData(parseDelimitedTabularData(content, src))
           } else {
             setFileError('Failed to parse data file as JSON')
           }
