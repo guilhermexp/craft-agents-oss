@@ -8,7 +8,6 @@ import LZString from 'lz-string'
 import { PreviewOverlay } from './PreviewOverlay'
 import { CopyButton } from './CopyButton'
 import { ZoomControls } from './ZoomControls'
-import { RICH_BLOCK_DEFAULTS } from './rich-block-interaction-spec'
 import { useRichBlockInteractions } from './useRichBlockInteractions'
 
 interface ExcalidrawScene {
@@ -71,6 +70,9 @@ export interface ExcalidrawPreviewOverlayProps {
 const PADDING = 80
 const FALLBACK_WIDTH = 1200
 const FALLBACK_HEIGHT = 800
+const EXCALIDRAW_MIN_SCALE = 0.05
+const EXCALIDRAW_MAX_SCALE = 8
+const EXCALIDRAW_ZOOM_PRESETS = [5, 10, 25, 50, 75, 100, 150, 200, 400, 800]
 
 export function ExcalidrawPreviewOverlay({
   isOpen,
@@ -82,7 +84,8 @@ export function ExcalidrawPreviewOverlay({
 }: ExcalidrawPreviewOverlayProps) {
   const containerRef = React.useRef<HTMLDivElement>(null)
   const parsed = React.useMemo(() => parseExcalidrawContent(content, filePath), [content, filePath])
-  const svg = React.useMemo(() => parsed.scene ? renderSceneSvg(parsed.scene, theme) : null, [parsed.scene, theme])
+  const svg = React.useMemo(() => parsed.scene ? renderSceneSvg(parsed.scene) : null, [parsed.scene])
+  const canvasBackground = parsed.scene?.appState?.viewBackgroundColor || (theme === 'dark' ? '#0f172a' : '#ffffff')
 
   const {
     scale,
@@ -96,19 +99,30 @@ export function ExcalidrawPreviewOverlay({
     reset,
     onMouseDown,
     onDoubleClick,
-  } = useRichBlockInteractions({ isOpen, containerRef })
+  } = useRichBlockInteractions({
+    isOpen,
+    containerRef,
+    minScale: EXCALIDRAW_MIN_SCALE,
+    maxScale: EXCALIDRAW_MAX_SCALE,
+  })
 
   const isDefaultView = scale === 1 && translate.x === 0 && translate.y === 0
   const dimensions = svg ? parseSvgDimensions(svg) : null
   const parseError = error || parsed.error
 
+  React.useEffect(() => {
+    if (!isOpen || !dimensions || parseError) return
+    const id = window.requestAnimationFrame(() => zoomToFit(dimensions))
+    return () => window.cancelAnimationFrame(id)
+  }, [isOpen, dimensions?.width, dimensions?.height, parseError, zoomToFit])
+
   const headerActions = (
     <div className="flex items-center gap-1.5">
       <ZoomControls
         scale={scale}
-        minScale={RICH_BLOCK_DEFAULTS.minScale}
-        maxScale={RICH_BLOCK_DEFAULTS.maxScale}
-        zoomPresets={RICH_BLOCK_DEFAULTS.zoomPresets}
+        minScale={EXCALIDRAW_MIN_SCALE}
+        maxScale={EXCALIDRAW_MAX_SCALE}
+        zoomPresets={EXCALIDRAW_ZOOM_PRESETS}
         onZoomIn={() => zoomByStep('in')}
         onZoomOut={() => zoomByStep('out')}
         onZoomToPreset={zoomToPreset}
@@ -132,15 +146,23 @@ export function ExcalidrawPreviewOverlay({
     >
       <div
         ref={containerRef}
-        className="flex items-center justify-center select-none"
+        className="relative flex items-center justify-center select-none"
         onMouseDown={onMouseDown}
         onDoubleClick={onDoubleClick}
         style={{
-          marginTop: -72,
+          marginTop: -24,
           marginBottom: -24,
-          height: '100vh',
+          width: '100%',
+          height: 'calc(100vh - 96px)',
+          minHeight: 520,
           cursor: isDragging ? 'grabbing' : 'grab',
           overflow: 'hidden',
+          backgroundColor: canvasBackground,
+          backgroundImage: theme === 'dark'
+            ? 'linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)'
+            : 'linear-gradient(rgba(15,23,42,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,0.08) 1px, transparent 1px)',
+          backgroundSize: `${24 * scale}px ${24 * scale}px`,
+          backgroundPosition: `${translate.x}px ${translate.y}px`,
         }}
       >
         {svg ? (
@@ -151,9 +173,8 @@ export function ExcalidrawPreviewOverlay({
               transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
               transformOrigin: 'center center',
               transition: isAnimating ? 'transform 150ms ease-out' : 'none',
-              boxShadow: '0 18px 60px rgba(15, 23, 42, 0.16)',
-              borderRadius: 16,
-              overflow: 'hidden',
+              filter: 'drop-shadow(0 18px 34px rgba(15, 23, 42, 0.10))',
+              overflow: 'visible',
             }}
           />
         ) : (
@@ -191,14 +212,13 @@ function extractCompressedJson(markdown: string): string {
   return decompressed
 }
 
-function renderSceneSvg(scene: ExcalidrawScene, theme: 'light' | 'dark'): string {
+function renderSceneSvg(scene: ExcalidrawScene): string {
   const elements = (scene.elements ?? []).filter((element) => !element.isDeleted)
   const bounds = getSceneBounds(elements)
   const viewBox = `${bounds.minX - PADDING} ${bounds.minY - PADDING} ${bounds.width + PADDING * 2} ${bounds.height + PADDING * 2}`
-  const bg = scene.appState?.viewBackgroundColor || (theme === 'dark' ? '#0f172a' : '#ffffff')
   const body = elements.map(renderElement).join('\n')
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${bounds.width + PADDING * 2}" height="${bounds.height + PADDING * 2}" viewBox="${viewBox}" style="background:${escapeAttr(bg)};max-width:min(90vw,1400px);max-height:calc(100vh - 160px);">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${bounds.width + PADDING * 2}" height="${bounds.height + PADDING * 2}" viewBox="${viewBox}" style="background:transparent;display:block;overflow:visible;">
   <defs>
     <marker id="excalidraw-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
