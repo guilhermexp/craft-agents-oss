@@ -63,6 +63,7 @@ import {
   CodePreviewOverlay,
   DocumentFormattedMarkdownOverlay,
   JSONPreviewOverlay,
+  ExcalidrawPreviewOverlay,
 } from '@craft-agent/ui'
 import { useLinkInterceptor, type FilePreviewState } from '@/hooks/useLinkInterceptor'
 import { useTransportConnectionState } from '@/hooks/useTransportConnectionState'
@@ -2059,6 +2060,18 @@ function FilePreviewRenderer({
         />
       )
     }
+
+    case 'excalidraw':
+      return (
+        <ExcalidrawPreviewOverlay
+          isOpen
+          onClose={onClose}
+          filePath={state.filePath}
+          content={state.content ?? ''}
+          theme={theme}
+          error={state.error}
+        />
+      )
 
     case 'json': {
       // JSONPreviewOverlay expects parsed data, not a raw string.

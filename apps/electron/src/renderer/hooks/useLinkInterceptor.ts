@@ -48,6 +48,13 @@ interface MarkdownPreview {
   error?: string
 }
 
+interface ExcalidrawPreview {
+  type: 'excalidraw'
+  filePath: string
+  content: string | null
+  error?: string
+}
+
 interface JSONPreview {
   type: 'json'
   filePath: string
@@ -69,6 +76,7 @@ export type FilePreviewState =
   | MarkdownPreview
   | JSONPreview
   | TextPreview
+  | ExcalidrawPreview
 
 // ── Hook options ───────────────────────────────────────────────────────────────
 // Callbacks injected by App.tsx so the hook doesn't depend on window.electronAPI directly.
@@ -233,6 +241,8 @@ function buildInitialTextState(type: FilePreviewType, path: string): FilePreview
       return { type: 'code', filePath: path, content: null, language: getLanguageFromPath(path) }
     case 'markdown':
       return { type: 'markdown', filePath: path, content: null }
+    case 'excalidraw':
+      return { type: 'excalidraw', filePath: path, content: null }
     case 'json':
       return { type: 'json', filePath: path, content: null }
     case 'text':

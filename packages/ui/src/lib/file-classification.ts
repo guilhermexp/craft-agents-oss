@@ -7,7 +7,7 @@
  */
 
 /** Preview types that map to specific overlay components */
-export type FilePreviewType = 'image' | 'code' | 'markdown' | 'json' | 'text' | 'pdf'
+export type FilePreviewType = 'image' | 'code' | 'markdown' | 'json' | 'text' | 'pdf' | 'excalidraw'
 
 export interface FileClassification {
   /** The preview type, or null if no in-app preview is available */
@@ -64,6 +64,9 @@ const TEXT_EXTENSIONS = new Set([
 /** PDF files — rendered in PDFPreviewOverlay via embedded viewer */
 const PDF_EXTENSIONS = new Set(['pdf'])
 
+/** Excalidraw files — rendered in ExcalidrawPreviewOverlay. */
+const EXCALIDRAW_EXTENSIONS = new Set(['excalidraw'])
+
 /**
  * External-only file extensions — recognized as file links but opened externally.
  * These are included in FILE_EXTENSIONS_PATTERN so linkify.ts detects them as file paths,
@@ -98,10 +101,15 @@ function getExtension(filePath: string): string {
  * image > code > markdown > json > text > pdf
  */
 export function classifyFile(filePath: string): FileClassification {
+  if (filePath.toLowerCase().endsWith('.excalidraw.md')) {
+    return { type: 'excalidraw', canPreview: true }
+  }
+
   const ext = getExtension(filePath)
   if (!ext) return { type: null, canPreview: false }
 
   if (IMAGE_EXTENSIONS.has(ext))    return { type: 'image', canPreview: true }
+  if (EXCALIDRAW_EXTENSIONS.has(ext)) return { type: 'excalidraw', canPreview: true }
   if (MARKDOWN_EXTENSIONS.has(ext)) return { type: 'markdown', canPreview: true }
   if (JSON_EXTENSIONS.has(ext))     return { type: 'json', canPreview: true }
   if (CODE_EXTENSIONS.has(ext))     return { type: 'code', canPreview: true }
@@ -123,5 +131,6 @@ export const FILE_EXTENSIONS_PATTERN = [
   ...JSON_EXTENSIONS,
   ...TEXT_EXTENSIONS,
   ...PDF_EXTENSIONS,
+  ...EXCALIDRAW_EXTENSIONS,
   ...EXTERNAL_EXTENSIONS,
 ].join('|')
