@@ -426,6 +426,8 @@ export interface HermesRuntimeDetailsResult extends HermesDetectionResult {
   agentRoot?: string
   virtualEnv?: string
   vendorBinPath?: string
+  hermesPin?: string
+  hermesPinPath?: string
   sourceRepoPath?: string
   sourceRepoRemote?: string
   sourceRepoUpstreamRemote?: string

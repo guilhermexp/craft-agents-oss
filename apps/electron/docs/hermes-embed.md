@@ -12,15 +12,15 @@ Hermes upstream: [`NousResearch/hermes-agent`](https://github.com/NousResearch/h
 Hermes inside Craft is treated as a **pinned upstream dependency** (SDK model),
 not as a hand-maintained fork:
 
-- Pin source of truth: `apps/electron/scripts/hermes-version.txt` — one line,
-  any git ref upstream understands (tag, branch, SHA). Defaults to
-  `upstream/main`.
-- Upstream URL: `https://github.com/NousResearch/hermes-agent.git`. Override
-  for fork testing via `HERMES_REMOTE_URL` env.
+- Pin source of truth: `apps/electron/scripts/hermes-version.txt` — first
+  non-comment, non-blank line is any git ref upstream understands (tag,
+  branch, SHA). Defaults to `upstream/main`.
+- Upstream URL: `https://github.com/NousResearch/hermes-agent.git`. Do not
+  point the normal flow at `guilhermexp/hermes-agent` or any user fork.
 - Source clone lives in a Craft-owned cache:
   `apps/electron/scripts/.hermes-cache/source` (gitignored). The bundle script
   clones/fetches/checks out the pin there. **Any user fork at
-  `../hermes-agent` is not used by the build path.**
+  `../hermes-agent` is ignored by the build path.**
 - Craft-side modifications live as overlay patches under
   `apps/electron/scripts/hermes-patches/*.patch`, applied to the pristine
   cache clone before bundling.
@@ -70,21 +70,26 @@ git -C "$HERMES_PIN_DIR" diff -- <files…> > apps/electron/scripts/hermes-patch
 Commit the refreshed patch to Craft. The pin file does not need to change for
 patch refreshes — it only changes when bumping Hermes versions.
 
-### Optional fork checkout
+### Explicit source override
 
-A user-facing `../hermes-agent` checkout is **optional**. If the env var
-`HERMES_SRC` is set and points at an existing directory, the bundle script
-uses it as-is and skips the cache + patch step. Use that only for active
-Hermes development against the fork; production updates run through the pin
-+ overlay path.
+The normal Craft flow does not use a user fork. Treat
+`guilhermexp/hermes-agent` and sibling `../hermes-agent` checkouts as
+out-of-band: they are not consulted by dashboard Update, `bundle-hermes.*`, or
+release packaging.
+
+`HERMES_SRC=/path/to/hermes-agent` remains an explicit, short-lived development
+override for active Hermes source work only. When set, the bundle script uses
+that checkout as-is and skips the cache + patch step. Unset it before validating
+Craft's embedded update path. Production and daily local updates run through
+`NousResearch/hermes-agent` + `hermes-version.txt` + Craft overlay patches.
 
 When syncing Craft upstream, preserve these Craft-side integration points:
 
 | Craft file | Craft-required behavior |
 | ---------- | ----------------------- |
-| `packages/shared/src/agent/hermes-agent.ts` | Hermes gets both `craft-sources` and `craft-session` MCP endpoints through ACP; source changes do not kill an active stream; model/session changes do not silently drop MCP config. Before each subprocess spawn, calls `seedHermesAuthFromCraft` so embedded Hermes inherits the user's already-authenticated Claude Max / ChatGPT Plus OAuth from Craft. |
+| `packages/shared/src/agent/hermes-agent.ts` | Hermes gets both `craft-sources` and `craft-session` MCP endpoints through ACP; source changes do not kill an active stream; model/session changes do not silently drop MCP config. Before each subprocess spawn, calls `seedHermesAuthFromCraft` so embedded Hermes inherits the user's already-authenticated Craft OAuth/API-key credentials. |
 | `packages/shared/src/hermes/acp-config.ts` | Bundled runtime env (`CRAFT_HERMES_PYTHON`, `CRAFT_HERMES_ARGS`, `CRAFT_HERMES_HOME`) is treated as one coherent ACP command/config unit. In packaged builds, `CRAFT_HERMES_REQUIRE_BUNDLED=1` must fail closed instead of falling back to a system `hermes`. |
-| `packages/shared/src/hermes/auth-bridge.ts` | One-way seed (Craft → Hermes) at spawn: `claude_oauth` → `CLAUDE_CODE_OAUTH_TOKEN` env; `llm_oauth::chatgpt-plus` → `<HERMES_HOME>/auth.json` `providers["openai-codex"].tokens`. `active_provider` mirrors the session's connection slug. API keys are intentionally not bridged. |
+| `packages/shared/src/hermes/auth-bridge.ts` | One-way seed (Craft → Hermes) at spawn: Craft Credential Manager / LLM connections are the source of truth. Claude OAuth → `CLAUDE_CODE_OAUTH_TOKEN`; ChatGPT Plus/Codex OAuth → `<HERMES_HOME>/auth.json` `providers["openai-codex"].tokens`; API-key connections → provider env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GOOGLE_API_KEY`/`GEMINI_API_KEY`, `XAI_API_KEY`, etc.) for the Hermes subprocess/dashboard. No separate Hermes `.env` secret store is required for the embedded app. |
 | `packages/shared/src/mcp/session-tools-server.ts` | Craft-native tools exposed to Hermes include browser, delegation/session, LLM, auth/config helpers, metadata, and automation; callbacks stay session-scoped. |
 | `packages/server-core/src/handlers/rpc/hermes.ts` | Runtime detection, dashboard launch, file/log/skill browsing, dashboard-delegated dev update env, update marker watching, and restart notification stay local-only and path-safe under app-scoped `HERMES_HOME`. Also watches `<HERMES_HOME>/auth.json` so that when Hermes refreshes a Codex (`openai-codex`) OAuth token the new tokens are written back into Craft's credential store via `setLlmOAuth('chatgpt-plus', …)`. |
 | `apps/electron/src/renderer/pages/settings/HermesSettingsPage.tsx` | Settings remains an operational Hermes page with compact files/skills views, version line, dashboard launch inside Craft browser, and no giant raw session dump. It must not duplicate the dashboard's native update action. |
@@ -115,8 +120,9 @@ The intended runtime model is:
   bumps + automatic overlay reapply, executed by clicking "Update Hermes"
   (or `update-hermes-runtime.sh`). The Hermes source the bundle uses comes
   from `apps/electron/scripts/.hermes-cache/source` (Craft-owned, gitignored);
-  any sibling `../hermes-agent` checkout is optional dev convenience and is
-  bypassed unless `HERMES_SRC` is explicitly set.
+  `guilhermexp/hermes-agent` and sibling `../hermes-agent` checkouts are not
+  part of this flow. Only an explicitly set `HERMES_SRC` can override it, and
+  that override is for temporary Hermes source development only.
 
 ## Why embedded
 
@@ -226,18 +232,17 @@ on macOS and the equivalent on Windows / Linux.
 5. Mirrors a curated subset of Hermes source (`agent/`, `tools/`,
    `acp_adapter/`, `hermes_cli/`, `gateway/`, `plugins/`, `skills/`, etc.)
    into `vendor/hermes/hermes-agent/` for runtime config / skill loading.
-6. Applies the Craft ACP streaming compatibility patch to the mirrored
-   `acp_adapter/server.py`.
-7. Builds/copies `hermes_cli/web_dist` into the mirrored source so the dashboard can run from the packaged app.
-8. Downloads platform-specific ripgrep into `vendor/hermes/bin/rg`.
-9. Strips `__pycache__`, `*.pyc`, `*.a`, broken symlinks, fake `.app` dirs.
-10. Patches `pyvenv.cfg` to `home = ../python/bin` and rewrites venv `bin/`
+6. Builds/copies `hermes_cli/web_dist` into the mirrored source so the dashboard can run from the packaged app.
+7. Downloads platform-specific ripgrep into `vendor/hermes/bin/rg`.
+8. Strips `__pycache__`, `*.pyc`, `*.a`, broken symlinks, fake `.app` dirs.
+9. Patches `pyvenv.cfg` to `home = ../python/bin` and rewrites venv `bin/`
    symlinks to relative form (codesign rejects absolute or out-of-bundle
    targets).
 
-`HERMES_SRC` defaults to `../../hermes-agent` relative to the repo root.
-That checkout should be the fork/upstream checkout described in
-`Current contract`, not a detached copy.
+Before these bundling steps, the script resolves the pin into the cache clone
+and applies every `apps/electron/scripts/hermes-patches/*.patch` file in
+numeric order. `HERMES_SRC` has no default; when explicitly set to an existing
+checkout it bypasses the cache and patch overlay for active Hermes development.
 
 ### `scripts/bundle-hermes.ps1` (Windows)
 
@@ -249,12 +254,13 @@ The bundle path does **not** require a sibling `hermes-agent` checkout. The
 update script clones upstream into `apps/electron/scripts/.hermes-cache/source`
 on first run and reuses it on subsequent updates. No manual git setup needed.
 
-Optional dev mode (`HERMES_SRC` override) — useful when iterating on Hermes
-itself before turning the change into an overlay patch:
+Explicit dev mode (`HERMES_SRC` override) — useful only when iterating on
+Hermes itself before turning the change into an overlay patch. This is not the
+dashboard Update path:
 
 ```bash
 # Point the bundle at any local Hermes checkout, skipping cache + patches.
-HERMES_SRC=~/Documents/Projetos/SelfHosting/hermes-agent \
+HERMES_SRC=/tmp/hermes-agent-dev \
   bash apps/electron/scripts/update-hermes-runtime.sh
 ```
 
@@ -278,9 +284,12 @@ That:
    numeric order, with `git apply --check` first to catch upstream drift.
 5. Calls `bundle-hermes.sh` to rebuild
    `apps/electron/resources/vendor/hermes/`.
-6. Smoke-tests `acp_adapter` import.
+6. Smoke-tests `acp_adapter` and `acp_adapter.server` import.
 
-A user fork at `../hermes-agent` is not consulted unless `HERMES_SRC` is set.
+A user fork at `../hermes-agent` is not consulted. The only exception is an
+explicit `HERMES_SRC=/path/to/hermes-agent` override for temporary Hermes
+source development; do not leave that env set for Craft validation, dashboard
+Update, or packaging.
 
 ## Patch refresh contract
 
@@ -301,14 +310,20 @@ explicitly bumping the Hermes version.
 
 After every Hermes upstream sync, run at minimum:
 
+From the Craft repo root:
+
 ```bash
-cd ../hermes-agent
+# Python-side tests: run from your HERMES_SRC checkout, or from the patched
+# cache after bundle apply.
+cd apps/electron/scripts/.hermes-cache/source
 uv run --extra dev --extra acp python -m pytest \
   tests/acp/test_server.py -k "mcp" \
   tests/tools/test_mcp_tool.py -k "craft or converts_mcp_tool_to_hermes_schema"
 
-cd ../craft-agents-oss
+# Craft-side tests: run from the Craft repo root.
+cd - >/dev/null
 bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
+  packages/shared/src/hermes/__tests__/auth-bridge.test.ts \
   packages/shared/src/mcp/session-tools-server.test.ts \
   packages/shared/src/agent/__tests__/hermes-agent.test.ts \
   packages/server-core/src/handlers/rpc/hermes.test.ts \
@@ -370,9 +385,12 @@ The update script:
      `apps/electron/scripts/hermes-patches/*.patch`.
    - Installs `[web,acp]` extras into a fresh relocatable venv.
    - Mirrors the patched source into `apps/electron/resources/vendor/hermes/hermes-agent/`.
-   - Smoke-tests `acp_adapter` import.
+   - Smoke-tests `acp_adapter` and `acp_adapter.server` import.
 
-A user fork at `../hermes-agent` is bypassed unless `HERMES_SRC` is set.
+User forks, including `guilhermexp/hermes-agent` or sibling
+`../hermes-agent`, are not consulted here. Only an explicit temporary
+`HERMES_SRC=/path/to/hermes-agent` override changes the source, and that
+override is outside the dashboard Update/release path.
 
 After the dashboard-triggered update exits, Hermes writes
 `$HERMES_HOME/craft-hermes-update-result.json`. Craft watches that marker and
@@ -513,7 +531,7 @@ Source of each field:
 | `0.11.0` | `from hermes_cli import __version__` in the bundled venv, or `hermes --version` for system Hermes |
 | `2026.4.23` | exact Git tag on the Hermes source checkout, e.g. `v2026.4.23`; fallback is `git log -1 --format=%cs` |
 | `upstream synced` | `sourceRepoUpstreamRemote` exists, meaning `upstream` is configured |
-| `1d4218be` | `git rev-parse --short HEAD` in `HERMES_SRC` |
+| `1d4218be` | `git rev-parse --short HEAD` in the Craft-owned cache, or in an explicit temporary `HERMES_SRC` override |
 | `+dirty` | `git status --porcelain` is non-empty |
 
 The repo row still shows the fork remote and commit separately. The version
@@ -598,9 +616,9 @@ Important separation rules:
   Or click "Update Hermes" in the dashboard (defaults to `upstream/main` from
   `apps/electron/scripts/hermes-version.txt`).
 - After a pin bump, commit the updated `hermes-version.txt` and any refreshed
-  `hermes-patches/*.patch` files. Optionally commit the regenerated bundle
-  under `apps/electron/resources/vendor/hermes/` if shipping the change in a
-  release; otherwise CI rebuilds it from `(pin + patches)`.
+  `hermes-patches/*.patch` files. Do not commit the regenerated bundle under
+  `apps/electron/resources/vendor/hermes/`; it is gitignored generated output
+  and distribution scripts rebuild it from `(pin + patches)`.
 - Local dev: `update-hermes-runtime.*`. Packaged apps: rebuild and release —
   the runtime cannot mutate itself in a signed bundle.
 
@@ -665,6 +683,7 @@ Run with:
 
 ```bash
 bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
+  packages/shared/src/hermes/__tests__/auth-bridge.test.ts \
   packages/shared/src/mcp/session-tools-server.test.ts \
   packages/shared/src/agent/__tests__/hermes-agent.test.ts \
   packages/shared/src/agent/backend/__tests__/factory.test.ts \
@@ -679,12 +698,13 @@ docs-only update:
 
 ```text
 34 pass across the Hermes/Craft focused test set
-Hermes Python ACP/MCP tests pass for the Craft-specific fork changes
+Hermes Python ACP/MCP tests pass for the Craft-specific overlay patches
 ```
 
-This is not a substitute for the upstream-sync checklist above. If
-`../hermes-agent` has new upstream commits or local changes, re-run the Python
-and Craft test sets after the sync/replay. Run `bun run typecheck:shared`
+This is not a substitute for the upstream-sync checklist above. Craft no longer
+tracks a user Hermes fork. If you temporarily used `HERMES_SRC` for Hermes
+source work, unset it and re-run the update/bundle path against the pinned
+NousResearch cache before relying on the result. Run `bun run typecheck:shared`
 whenever TypeScript runtime wiring changes.
 
 ## File map
@@ -730,7 +750,7 @@ HERMES_VERSION=v2026.4.23 HERMES_PERSIST_PIN=1 \
 
 # Optional dev path: bundle from your own Hermes checkout, skipping the cache
 # clone and overlay patches (use only for active Hermes development):
-HERMES_SRC=~/Documents/Projetos/SelfHosting/hermes-agent \
+HERMES_SRC=/tmp/hermes-agent-dev \
   bash apps/electron/scripts/update-hermes-runtime.sh
 
 # Build the embedded runtime

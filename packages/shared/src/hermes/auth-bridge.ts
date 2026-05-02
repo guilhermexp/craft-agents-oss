@@ -1,26 +1,29 @@
 /**
  * Auth bridge: Craft credentials → embedded Hermes runtime.
  *
- * Bridges OAuth credentials Craft already manages into the formats the
- * embedded Hermes Python runtime expects, so the user does not need to
- * authenticate twice.
+ * Craft's Credential Manager / LLM connections are the source of truth for the
+ * embedded Hermes runtime. The bridge mirrors credentials only into the process
+ * surface Hermes already understands (environment variables and the Codex
+ * OAuth slot in auth.json), so users do not have to configure providers twice.
  *
  *   Craft `claude_oauth`              → env `CLAUDE_CODE_OAUTH_TOKEN`
  *                                       (Hermes provider `anthropic`)
  *   Craft `llm_oauth::chatgpt-plus`   → `<HERMES_HOME>/auth.json` providers
  *                                       slot `openai-codex.tokens.{...}`
+ *   Craft `llm_api_key::*`            → provider-specific env vars
+ *                                       (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+ *                                       `OPENROUTER_API_KEY`, etc.)
  *
  * The reverse direction (Hermes refresh → Craft sync) lives in
  * `packages/server-core/src/handlers/rpc/hermes.ts` (auth.json watcher).
- *
- * Scope: OAuth-only (Claude Max + ChatGPT Plus). API keys are intentionally
- * not bridged — users who configure API keys do so per-stack on purpose.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { getCredentialManager } from '../credentials/manager.ts'
+import { loadStoredConfig } from '../config/storage.ts'
+import type { LlmConnection } from '../config/llm-connections.ts'
 
 /**
  * Minimal credential manager surface the bridge needs. Lets tests inject a
@@ -31,17 +34,59 @@ export interface AuthBridgeCredentialReader {
   getLlmOAuth(connectionSlug: string): Promise<
     { accessToken: string; refreshToken?: string; idToken?: string; expiresAt?: number } | null
   >
+  getLlmApiKey(connectionSlug: string): Promise<string | null>
 }
 
-export type HermesActiveProvider = 'anthropic' | 'openai-codex' | null
+export type HermesActiveProvider =
+  | 'anthropic'
+  | 'openai'
+  | 'openai-codex'
+  | 'google'
+  | 'openrouter'
+  | 'groq'
+  | 'mistral'
+  | 'xai'
+  | 'cerebras'
+  | 'huggingface'
+  | 'deepseek'
+  | null
 
 export interface SeedHermesAuthResult {
   /** Env vars to add to the Hermes subprocess environment. */
   env: Record<string, string>
   /** Providers actually seeded into Hermes. */
-  seededProviders: ('anthropic' | 'openai-codex')[]
-  /** Active provider written into auth.json (or null if none chosen). */
+  seededProviders: Exclude<HermesActiveProvider, null>[]
+  /** Active provider written into auth.json/config.yaml (or null if none chosen). */
   activeProvider: HermesActiveProvider
+}
+
+const PI_AUTH_PROVIDER_TO_HERMES_PROVIDER: Record<string, Exclude<HermesActiveProvider, null>> = {
+  anthropic: 'anthropic',
+  openai: 'openai',
+  'openai-codex': 'openai-codex',
+  google: 'google',
+  gemini: 'google',
+  openrouter: 'openrouter',
+  groq: 'groq',
+  mistral: 'mistral',
+  xai: 'xai',
+  cerebras: 'cerebras',
+  huggingface: 'huggingface',
+  deepseek: 'deepseek',
+}
+
+const HERMES_PROVIDER_ENV_VARS: Record<Exclude<HermesActiveProvider, null>, string[]> = {
+  anthropic: ['ANTHROPIC_API_KEY'],
+  openai: ['OPENAI_API_KEY'],
+  'openai-codex': ['OPENAI_API_KEY'],
+  google: ['GOOGLE_API_KEY', 'GEMINI_API_KEY'],
+  openrouter: ['OPENROUTER_API_KEY'],
+  groq: ['GROQ_API_KEY'],
+  mistral: ['MISTRAL_API_KEY'],
+  xai: ['XAI_API_KEY'],
+  cerebras: ['CEREBRAS_API_KEY'],
+  huggingface: ['HUGGINGFACE_API_KEY'],
+  deepseek: ['DEEPSEEK_API_KEY'],
 }
 
 /**
@@ -54,10 +99,35 @@ export interface SeedHermesAuthResult {
  */
 export function craftConnectionToHermesProvider(
   connectionSlug: string | undefined,
+  connections: LlmConnection[] = loadStoredConfig()?.llmConnections ?? [],
 ): HermesActiveProvider {
   if (!connectionSlug) return null
   if (connectionSlug === 'claude-max') return 'anthropic'
   if (connectionSlug === 'chatgpt-plus') return 'openai-codex'
+  if (connectionSlug === 'hermes') return null
+
+  const connection = connections.find(c => c.slug === connectionSlug)
+  return connectionToHermesProvider(connection)
+}
+
+function connectionToHermesProvider(connection: LlmConnection | undefined): HermesActiveProvider {
+  if (!connection) return null
+  if (connection.providerType === 'anthropic') return 'anthropic'
+  if (connection.providerType === 'pi' || connection.providerType === 'pi_compat') {
+    const key = connection.piAuthProvider?.trim().toLowerCase()
+    if (key && PI_AUTH_PROVIDER_TO_HERMES_PROVIDER[key]) return PI_AUTH_PROVIDER_TO_HERMES_PROVIDER[key]
+
+    const baseUrl = connection.baseUrl?.toLowerCase() ?? ''
+    if (baseUrl.includes('openrouter.ai')) return 'openrouter'
+    if (baseUrl.includes('api.openai.com')) return 'openai'
+    if (baseUrl.includes('generativelanguage.googleapis.com') || baseUrl.includes('googleapis.com')) return 'google'
+    if (baseUrl.includes('api.x.ai')) return 'xai'
+    if (baseUrl.includes('api.groq.com')) return 'groq'
+    if (baseUrl.includes('api.mistral.ai')) return 'mistral'
+    if (baseUrl.includes('api.cerebras.ai')) return 'cerebras'
+    if (baseUrl.includes('huggingface.co')) return 'huggingface'
+    if (baseUrl.includes('api.deepseek.com')) return 'deepseek'
+  }
   return null
 }
 
@@ -70,9 +140,17 @@ export function modelIdToHermesProvider(modelId: string | undefined): HermesActi
   if (!modelId) return null
   const trimmed = modelId.trim().toLowerCase()
   if (!trimmed) return null
+  const providerPrefix = trimmed.includes('/') ? trimmed.split('/')[0] : undefined
+  if (providerPrefix && PI_AUTH_PROVIDER_TO_HERMES_PROVIDER[providerPrefix]) {
+    return PI_AUTH_PROVIDER_TO_HERMES_PROVIDER[providerPrefix]
+  }
   const bare = trimmed.includes('/') ? trimmed.split('/').pop()! : trimmed
   if (bare.startsWith('claude') || bare.includes('anthropic')) return 'anthropic'
   if (bare.startsWith('gpt-') || bare.startsWith('o1') || bare.includes('codex')) return 'openai-codex'
+  if (bare.startsWith('gemini')) return 'google'
+  if (bare.includes('grok')) return 'xai'
+  if (bare.includes('mistral') || bare.includes('codestral')) return 'mistral'
+  if (bare.includes('llama') || bare.includes('qwen') || bare.includes('deepseek')) return 'openrouter'
   return null
 }
 
@@ -107,17 +185,29 @@ function writeAuthStore(authPath: string, store: AuthStoreShape): void {
   writeFileSync(authPath, JSON.stringify(store, null, 2), { mode: 0o600 })
 }
 
+function addProviderEnv(env: Record<string, string>, provider: Exclude<HermesActiveProvider, null>, apiKey: string): void {
+  for (const envName of HERMES_PROVIDER_ENV_VARS[provider] ?? []) {
+    env[envName] = apiKey
+  }
+}
+
+function isApiKeyAuth(authType: LlmConnection['authType']): boolean {
+  return authType === 'api_key' || authType === 'api_key_with_endpoint' || authType === 'bearer_token'
+}
+
 /**
  * Seed the Hermes auth surface from Craft credentials.
  *
  * - Reads available Craft OAuth tokens (Claude Max, ChatGPT Plus).
- * - Returns env vars Hermes reads at startup (`CLAUDE_CODE_OAUTH_TOKEN`).
+ * - Returns env vars Hermes reads at startup (`CLAUDE_CODE_OAUTH_TOKEN`,
+ *   provider-specific `*_API_KEY`s).
  * - Writes Codex tokens directly into `<HERMES_HOME>/auth.json` in the
  *   shape Hermes expects (`providers["openai-codex"].tokens`).
- * - Sets `active_provider` based on the current session's connection slug.
+ * - Sets `active_provider` based on the current session's connection slug or
+ *   model id, but only when credentials for that provider are available.
  *
- * Safe to call repeatedly — overwrites the relevant slots without touching
- * unrelated providers in auth.json.
+ * Safe to call repeatedly — overwrites only the relevant Hermes auth surface
+ * without touching unrelated providers in auth.json.
  */
 export async function seedHermesAuthFromCraft(args: {
   hermesHome: string
@@ -125,17 +215,19 @@ export async function seedHermesAuthFromCraft(args: {
   /** Optional model id used to infer active_provider when connectionSlug === 'hermes'. */
   model?: string
   credentialManager?: AuthBridgeCredentialReader
+  connections?: LlmConnection[]
 }): Promise<SeedHermesAuthResult> {
   const env: Record<string, string> = {}
-  const seededProviders: ('anthropic' | 'openai-codex')[] = []
+  const seededProviderSet = new Set<Exclude<HermesActiveProvider, null>>()
+  const connections = args.connections ?? loadStoredConfig()?.llmConnections ?? []
   const activeProvider =
-    craftConnectionToHermesProvider(args.connectionSlug) ?? modelIdToHermesProvider(args.model)
+    craftConnectionToHermesProvider(args.connectionSlug, connections) ?? modelIdToHermesProvider(args.model)
 
   let credentialManager: AuthBridgeCredentialReader
   try {
     credentialManager = args.credentialManager ?? getCredentialManager()
   } catch {
-    return { env, seededProviders, activeProvider }
+    return { env, seededProviders: [], activeProvider }
   }
 
   // 1. Claude Max: env-only path. Hermes anthropic provider reads
@@ -144,13 +236,31 @@ export async function seedHermesAuthFromCraft(args: {
     const claude = await credentialManager.getClaudeOAuthCredentials()
     if (claude?.accessToken) {
       env.CLAUDE_CODE_OAUTH_TOKEN = claude.accessToken
-      seededProviders.push('anthropic')
+      seededProviderSet.add('anthropic')
     }
   } catch {
     // Credential read failure is non-fatal — Hermes can still start without it.
   }
 
-  // 2. ChatGPT Plus / Codex: must live in <HERMES_HOME>/auth.json.
+  // 2. API-key connections: inject into the Hermes subprocess/dashboard env.
+  //    This keeps Craft Credential Manager as source of truth and avoids a
+  //    duplicate Hermes .env secret store.
+  for (const connection of connections) {
+    if (!isApiKeyAuth(connection.authType)) continue
+    const provider = connectionToHermesProvider(connection)
+    if (!provider) continue
+
+    try {
+      const apiKey = await credentialManager.getLlmApiKey(connection.slug)
+      if (!apiKey) continue
+      addProviderEnv(env, provider, apiKey)
+      seededProviderSet.add(provider)
+    } catch {
+      // Keep seeding other providers even if one credential read fails.
+    }
+  }
+
+  // 3. ChatGPT Plus / Codex: must live in <HERMES_HOME>/auth.json.
   let codexTokens: {
     accessToken: string
     refreshToken?: string
@@ -182,17 +292,19 @@ export async function seedHermesAuthFromCraft(args: {
       last_refresh: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
       auth_mode: 'chatgpt',
     }
-    seededProviders.push('openai-codex')
+    seededProviderSet.add('openai-codex')
   }
+
+  const seededProviders = Array.from(seededProviderSet)
 
   // Only set active_provider if we actually have credentials for it — otherwise
   // we'd point Hermes at an empty slot and immediately fail at first request.
-  const shouldSetActive = activeProvider && seededProviders.includes(activeProvider)
+  const shouldSetActive = activeProvider && seededProviderSet.has(activeProvider)
   if (shouldSetActive) {
     store.active_provider = activeProvider
   }
 
-  if (seededProviders.length > 0) {
+  if (shouldSetActive || (codexTokens?.accessToken && codexTokens.refreshToken)) {
     try {
       writeAuthStore(authPath, store)
     } catch {
@@ -210,7 +322,7 @@ export async function seedHermesAuthFromCraft(args: {
   // remains free to change them; Craft just owns the active selection at
   // spawn time.
   try {
-    syncHermesMainModel(args.hermesHome, args.model, activeProvider)
+    syncHermesMainModel(args.hermesHome, args.model, shouldSetActive ? activeProvider : null)
   } catch {
     // ignore — Hermes will fall back to existing config.yaml state
   }

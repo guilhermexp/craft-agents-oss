@@ -1,20 +1,22 @@
 # ===========================================================================
 # Hermes Agent — pre-build bundling script (Windows)
 #
-# Builds a self-contained Hermes runtime under
-# apps/electron/resources/vendor/hermes/ with:
-#   - Python (relocatable, via uv)
-#   - hermes-venv with Hermes deps installed
-#   - hermes-agent source
-#   - ripgrep
+# Treats Hermes upstream as a pinned dependency, matching bundle-hermes.sh:
+#   1. Reads apps/electron/scripts/hermes-version.txt, or $env:HERMES_VERSION.
+#   2. Maintains a clean NousResearch/hermes-agent clone in
+#      apps/electron/scripts/.hermes-cache/source.
+#   3. Applies Craft overlay patches from apps/electron/scripts/hermes-patches/.
+#   4. Builds a self-contained runtime under apps/electron/resources/vendor/hermes/.
 #
 # Usage (from apps/electron):
 #   pwsh scripts/bundle-hermes.ps1
 #
 # Env vars:
-#   $env:HERMES_SRC          path to Hermes source clone (default: ../../hermes-agent)
+#   $env:HERMES_VERSION      upstream tag/branch/SHA to bundle.
+#   $env:HERMES_SRC          explicit local source override; skips cache + patches.
 #   $env:HERMES_PYTHON_VER   default 3.13
 #   $env:HERMES_RG_VERSION   default 14.1.1
+#   $env:HERMES_REMOTE_URL   default https://github.com/NousResearch/hermes-agent.git
 # ===========================================================================
 
 $ErrorActionPreference = "Stop"
@@ -23,14 +25,91 @@ $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $ElectronDir = Resolve-Path (Join-Path $ScriptDir "..")
 $RepoRoot    = Resolve-Path (Join-Path $ElectronDir "../..")
 
-$HermesSrc = if ($env:HERMES_SRC) { $env:HERMES_SRC } else { Join-Path $RepoRoot "../hermes-agent" }
 $PythonVer = if ($env:HERMES_PYTHON_VER) { $env:HERMES_PYTHON_VER } else { "3.13" }
 $RgVersion = if ($env:HERMES_RG_VERSION) { $env:HERMES_RG_VERSION } else { "14.1.1" }
 
 $VendorDir = Join-Path $ElectronDir "resources/vendor/hermes"
+$PatchesDir = Join-Path $ScriptDir "hermes-patches"
+$PinFile = Join-Path $ScriptDir "hermes-version.txt"
+$CacheDir = Join-Path $ScriptDir ".hermes-cache"
+$CacheSrc = Join-Path $CacheDir "source"
+$HermesRemoteUrl = if ($env:HERMES_REMOTE_URL) { $env:HERMES_REMOTE_URL } else { "https://github.com/NousResearch/hermes-agent.git" }
+
+function Resolve-HermesPin {
+    if ($env:HERMES_VERSION) { return $env:HERMES_VERSION }
+    if (Test-Path $PinFile) {
+        foreach ($line in Get-Content $PinFile) {
+            $trimmed = $line.Trim()
+            if ($trimmed -and -not $trimmed.StartsWith('#')) { return $trimmed }
+        }
+    }
+    return "upstream/main"
+}
+
+$HermesPin = Resolve-HermesPin
+$ApplyPatches = $true
+$HermesResolvedSha = ""
+
+function Ensure-HermesCacheClone {
+    New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
+    if (!(Test-Path (Join-Path $CacheSrc ".git"))) {
+        Write-Host "Cloning Hermes upstream into cache..." -ForegroundColor Cyan
+        if (Test-Path $CacheSrc) { Remove-Item -Recurse -Force $CacheSrc }
+        git clone --filter=blob:none $HermesRemoteUrl $CacheSrc
+    }
+
+    $dirty = git -C $CacheSrc status --porcelain
+    if ($dirty) {
+        Write-Host "Cache had local edits — re-cloning fresh" -ForegroundColor Yellow
+        Remove-Item -Recurse -Force $CacheSrc
+        git clone --filter=blob:none $HermesRemoteUrl $CacheSrc
+    }
+
+    git -C $CacheSrc fetch --all --tags --prune --quiet
+    $ref = $HermesPin
+    if ($ref.StartsWith("upstream/")) { $ref = "origin/" + $ref.Substring("upstream/".Length) }
+
+    git -C $CacheSrc rev-parse --verify $ref 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        $originRef = "origin/$HermesPin"
+        git -C $CacheSrc rev-parse --verify $originRef 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Cannot resolve Hermes pin '$HermesPin' in $CacheSrc" }
+        $ref = $originRef
+    }
+
+    git -C $CacheSrc -c advice.detachedHead=false checkout --quiet $ref
+    git -C $CacheSrc reset --hard --quiet $ref
+    return (git -C $CacheSrc rev-parse --short HEAD).Trim()
+}
+
+if ($env:HERMES_SRC -and (Test-Path $env:HERMES_SRC)) {
+    $HermesSrc = $env:HERMES_SRC
+    $ApplyPatches = $false
+    $HermesResolvedSha = "override"
+    Write-Host "Using HERMES_SRC override: $HermesSrc (skipping pin/cache/patches)" -ForegroundColor Yellow
+} else {
+    $HermesSrc = $CacheSrc
+    $HermesResolvedSha = Ensure-HermesCacheClone
+}
+
+if ($ApplyPatches -and (Test-Path $PatchesDir)) {
+    $Patches = Get-ChildItem -Path $PatchesDir -Filter "*.patch" | Sort-Object Name
+    if ($Patches.Count -gt 0) {
+        Write-Host "Applying $($Patches.Count) Craft overlay patch(es)..." -ForegroundColor Cyan
+        foreach ($Patch in $Patches) {
+            git -C $HermesSrc apply --check $($Patch.FullName) 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Patch failed --check: $($Patch.Name). Pin '$HermesPin' (resolved $HermesResolvedSha) does not match the patch's expected upstream state."
+            }
+            git -C $HermesSrc apply $($Patch.FullName)
+            Write-Host "  OK $($Patch.Name)" -ForegroundColor Green
+        }
+    }
+}
 
 Write-Host ""
 Write-Host "Hermes Bundle (Craft Agents) — Windows" -ForegroundColor Cyan
+Write-Host "  Pin:        $HermesPin -> $HermesResolvedSha"
 Write-Host "  Hermes src: $HermesSrc"
 Write-Host "  Output:     $VendorDir"
 Write-Host ""
@@ -99,72 +178,7 @@ foreach ($d in $CoreDirs) {
     if (Test-Path $src) { Copy-Item -Recurse -Force $src (Join-Path $VendorDir "hermes-agent") }
 }
 
-# 5b. Patch ACP adapter for Craft streaming
-$AcpServer = Join-Path $VendorDir "hermes-agent/acp_adapter/server.py"
-if (Test-Path $AcpServer) {
-    Write-Host "Patching Hermes ACP adapter streaming..." -ForegroundColor Cyan
-    $PatchScript = @'
-from pathlib import Path
-import sys
-path = Path(sys.argv[1])
-text = path.read_text()
-callback_target = """        agent.thinking_callback = thinking_cb
-        agent.step_callback = step_cb
-        agent.message_callback = message_cb
-"""
-callback_replacement = """        # Hermes' AIAgent streams visible assistant text through
-        # run_conversation(stream_callback=...).  The older `message_callback`
-        # attribute is not read by run_agent.py, so setting only that makes ACP
-        # turns finish with no assistant message.
-        agent.reasoning_callback = thinking_cb
-        agent.thinking_callback = thinking_cb
-        agent.step_callback = step_cb
-
-        streamed_text_parts: list[str] = []
-        if message_cb:
-            raw_message_cb = message_cb
-
-            def tracked_message_cb(text: str) -> None:
-                if isinstance(text, str) and text:
-                    streamed_text_parts.append(text)
-                raw_message_cb(text)
-
-            message_cb = tracked_message_cb
-"""
-run_target = """                    task_id=session_id,
-                )
-"""
-run_replacement = """                    task_id=session_id,
-                    stream_callback=message_cb,
-                )
-"""
-final_target = """        if final_response and conn:
-            update = acp.update_agent_message_text(final_response)
-            await conn.session_update(session_id, update)
-"""
-final_replacement = """        if final_response and conn and not streamed_text_parts:
-            update = acp.update_agent_message_text(final_response)
-            await conn.session_update(session_id, update)
-"""
-patches = (
-    (callback_target, callback_replacement, "callback wiring"),
-    (run_target, run_replacement, "run_conversation streaming"),
-    (final_target, final_replacement, "final response streaming guard"),
-)
-for old, new, label in patches:
-    if new in text:
-        continue
-    if old not in text:
-        raise SystemExit(f"Expected ACP adapter patch target not found in {path}: {label}")
-    text = text.replace(old, new, 1)
-path.write_text(text)
-'@
-    $TmpPatch = Join-Path $env:TEMP "craft-hermes-acp-patch.py"
-    Set-Content -Path $TmpPatch -Value $PatchScript
-    & $VenvPython $TmpPatch $AcpServer
-    Remove-Item -Force $TmpPatch
-    Write-Host "ACP adapter patched" -ForegroundColor Green
-}
+# 5b. Craft ACP/MCP changes are applied as overlay patches before install/copy.
 
 # 6. Build/copy Hermes Web Dashboard assets
 $WebDistSrc = Join-Path $HermesSrc "hermes_cli/web_dist"

@@ -14,6 +14,7 @@ import {
 function makeReader(opts: {
   claudeAccess?: string
   codex?: { accessToken: string; refreshToken?: string; idToken?: string }
+  apiKeys?: Record<string, string>
 }): AuthBridgeCredentialReader {
   return {
     getClaudeOAuthCredentials: async () =>
@@ -22,6 +23,7 @@ function makeReader(opts: {
       if (slug !== 'chatgpt-plus') return null
       return opts.codex ?? null
     },
+    getLlmApiKey: async (slug: string) => opts.apiKeys?.[slug] ?? null,
   }
 }
 
@@ -42,6 +44,23 @@ describe('Hermes auth bridge', () => {
     })
     it('maps chatgpt-plus to openai-codex', () => {
       expect(craftConnectionToHermesProvider('chatgpt-plus')).toBe('openai-codex')
+    })
+    it('maps API-key LLM connections by Craft provider metadata', () => {
+      expect(craftConnectionToHermesProvider('or', [{
+        slug: 'or',
+        name: 'OpenRouter',
+        providerType: 'pi',
+        authType: 'api_key',
+        piAuthProvider: 'openrouter',
+        createdAt: Date.now(),
+      }])).toBe('openrouter')
+      expect(craftConnectionToHermesProvider('anthropic-api', [{
+        slug: 'anthropic-api',
+        name: 'Anthropic API',
+        providerType: 'anthropic',
+        authType: 'api_key',
+        createdAt: Date.now(),
+      }])).toBe('anthropic')
     })
     it('returns null for the multi-provider hermes connection (model decides)', () => {
       expect(craftConnectionToHermesProvider('hermes')).toBeNull()
@@ -105,6 +124,55 @@ describe('Hermes auth bridge', () => {
 
       expect(result.seededProviders).not.toContain('openai-codex')
       expect(existsSync(join(hermesHome, 'auth.json'))).toBe(false)
+    })
+
+    it('injects Craft API-key credentials as Hermes provider env vars', async () => {
+      const reader = makeReader({
+        apiKeys: {
+          'anthropic-api': 'anthropic-key',
+          'openrouter-api': 'openrouter-key',
+          'google-api': 'google-key',
+        },
+      })
+      const result = await seedHermesAuthFromCraft({
+        hermesHome,
+        connectionSlug: 'openrouter-api',
+        credentialManager: reader,
+        connections: [
+          {
+            slug: 'anthropic-api',
+            name: 'Anthropic API',
+            providerType: 'anthropic',
+            authType: 'api_key',
+            createdAt: Date.now(),
+          },
+          {
+            slug: 'openrouter-api',
+            name: 'OpenRouter',
+            providerType: 'pi',
+            authType: 'api_key',
+            piAuthProvider: 'openrouter',
+            createdAt: Date.now(),
+          },
+          {
+            slug: 'google-api',
+            name: 'Google AI Studio',
+            providerType: 'pi',
+            authType: 'api_key',
+            piAuthProvider: 'google',
+            createdAt: Date.now(),
+          },
+        ],
+      })
+
+      expect(result.env.ANTHROPIC_API_KEY).toBe('anthropic-key')
+      expect(result.env.OPENROUTER_API_KEY).toBe('openrouter-key')
+      expect(result.env.GOOGLE_API_KEY).toBe('google-key')
+      expect(result.env.GEMINI_API_KEY).toBe('google-key')
+      expect(result.seededProviders).toEqual(expect.arrayContaining(['anthropic', 'openrouter', 'google']))
+      expect(result.activeProvider).toBe('openrouter')
+      const store = JSON.parse(readFileSync(join(hermesHome, 'auth.json'), 'utf-8'))
+      expect(store.active_provider).toBe('openrouter')
     })
 
     it('preserves existing providers when seeding only one', async () => {

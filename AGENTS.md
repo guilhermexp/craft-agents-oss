@@ -1,18 +1,26 @@
 # Craft Agents OSS - Development Notes
 
-This repo is a Craft fork. Treat upstream sync and Hermes integration as
-separate concerns.
+This repo is a Craft fork. Treat Craft upstream sync and Hermes runtime
+updates as separate concerns. Hermes is consumed as a pinned upstream
+dependency plus Craft overlay patches, not as a hand-merged sibling fork.
 
-## Fork remotes
+## Upstream inputs
 
 - Craft fork:
   - local repo: `craft-agents-oss`
   - `origin`: `https://github.com/guilhermexp/craft-agents-oss.git`
   - `upstream`: `https://github.com/lukilabs/craft-agents-oss.git`
-- Hermes fork consumed by Craft:
-  - local repo: `../hermes-agent`
-  - `origin`: `https://github.com/guilhermexp/hermes-agent.git`
-  - `upstream`: `https://github.com/NousResearch/hermes-agent.git`
+- Hermes upstream consumed by Craft:
+  - primary source: pinned `NousResearch/hermes-agent` clone under
+    `apps/electron/scripts/.hermes-cache/source` (gitignored, build-owned)
+  - pin file: `apps/electron/scripts/hermes-version.txt`
+  - Craft overlay patches: `apps/electron/scripts/hermes-patches/*.patch`
+  - no user fork is part of the normal flow. Do not use
+    `guilhermexp/hermes-agent` or a sibling `../hermes-agent` checkout as an
+    implicit source.
+  - explicit dev override only: `HERMES_SRC=/path/to/hermes-agent` skips the
+    cache and patch overlay for short-lived active Hermes development. It must
+    never be the default update/bundle path.
 
 `git fetch upstream --prune` is safe in dirty worktrees. Do not merge,
 fast-forward, rebase, reset, or checkout over local changes unless the user
@@ -37,8 +45,7 @@ The integration contract is documented in
 - `packages/shared/src/agent/hermes-agent.ts`.
 - `packages/shared/src/hermes/acp-config.ts`.
 - `packages/shared/src/mcp/session-tools-server.ts`.
-- Hermes fork files under `../hermes-agent/acp_adapter/` or
-  `../hermes-agent/tools/mcp_tool.py`.
+- Hermes overlay patches under `apps/electron/scripts/hermes-patches/`.
 
 Hermes must stay isolated from other Craft agents:
 
@@ -59,7 +66,7 @@ Craft-native Hermes tools must keep Craft canonical names:
 - External/non-Craft MCP servers keep Hermes normal names such as
   `mcp_filesystem_read_file`.
 
-When syncing Hermes upstream, preserve these fork behaviors:
+When bumping the Hermes upstream pin, preserve these overlay behaviors:
 
 - `acp_adapter/session.py` stores ACP-provided `mcp_servers` on session state.
 - `acp_adapter/server.py` re-registers MCP toolsets after ACP
@@ -91,13 +98,17 @@ For Hermes/Craft integration changes, run the focused Craft tests:
 
 ```bash
 bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
+  packages/shared/src/hermes/__tests__/auth-bridge.test.ts \
   packages/shared/src/mcp/session-tools-server.test.ts \
   packages/shared/src/agent/__tests__/hermes-agent.test.ts \
   packages/server-core/src/handlers/rpc/hermes.test.ts \
   apps/electron/src/transport/__tests__/channel-map-parity.test.ts
 ```
 
-For Hermes fork changes, run from `../hermes-agent`:
+For Hermes overlay changes, run against the patched Hermes source used for the
+bundle. If you are iterating with `HERMES_SRC`, run from that checkout;
+otherwise run from `apps/electron/scripts/.hermes-cache/source` after the
+patches have been applied by `bundle-hermes.*`:
 
 ```bash
 uv run --extra dev --extra acp python -m pytest \
@@ -115,7 +126,8 @@ bun run bundle:hermes
 
 ## CLAUDE.md / AGENTS.md scope
 
-There is no repo-local `CLAUDE.md`. The parent `../CLAUDE.md` is SelfHosting
-infra-oriented and contains environment-specific server notes, so keep
-Craft/Hermes fork instructions in this repo-local `AGENTS.md` and
-`apps/electron/docs/hermes-embed.md`.
+There is a repo-local `CLAUDE.md`, but `AGENTS.md` remains the source of truth
+for Craft fork-sync and Hermes integration contracts. The parent `../CLAUDE.md`
+is SelfHosting infra-oriented and contains environment-specific server notes,
+so keep Craft/Hermes integration instructions in this repo-local `AGENTS.md`
+and `apps/electron/docs/hermes-embed.md`.

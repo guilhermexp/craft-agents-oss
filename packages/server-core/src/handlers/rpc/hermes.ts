@@ -22,7 +22,7 @@ import {
   type HermesUpdateResult,
 } from '@craft-agent/shared/protocol'
 import { normalizeHermesRuntimeConfig, type NormalizedHermesRuntimeConfig } from '@craft-agent/shared/hermes/acp-config'
-import { readHermesCodexTokens } from '@craft-agent/shared/hermes/auth-bridge'
+import { readHermesCodexTokens, seedHermesAuthFromCraft } from '@craft-agent/shared/hermes/auth-bridge'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { parseHermesConfigSnapshot } from '@craft-agent/shared/hermes/runtime-config'
 import type { RpcServer } from '@craft-agent/server-core/transport'
@@ -33,6 +33,8 @@ const execFile = promisify(execFileCb)
 let dashboardProcess: ChildProcess | null = null
 let dashboardUrl: string | null = null
 let dashboardPort: number | null = null
+let dashboardSessionToken: string | null = null
+let dashboardSessionTokenUrl: string | null = null
 let updateMarkerMonitor: ReturnType<typeof setInterval> | null = null
 let updateMarkerMonitorPath: string | null = null
 let updateMarkerLastMtime = 0
@@ -261,6 +263,32 @@ function buildDashboardCommand(runtime: NormalizedHermesRuntimeConfig, port: num
     command: runtime.command,
     args: commonArgs,
   }
+}
+
+function extractDashboardSessionToken(html: string): string | null {
+  const match = html.match(/window\.__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"/)
+  return match?.[1] ?? null
+}
+
+async function getDashboardSessionToken(baseUrl: string): Promise<string> {
+  if (dashboardSessionToken && dashboardSessionTokenUrl === baseUrl) {
+    return dashboardSessionToken
+  }
+
+  const response = await fetch(baseUrl)
+  const html = await response.text()
+  if (!response.ok) {
+    throw new Error(`Hermes dashboard token unavailable: HTTP ${response.status}`)
+  }
+
+  const token = extractDashboardSessionToken(html)
+  if (!token) {
+    throw new Error('Hermes dashboard session token not found')
+  }
+
+  dashboardSessionToken = token
+  dashboardSessionTokenUrl = baseUrl
+  return token
 }
 
 async function buildDetectionResult(deps?: HandlerDeps): Promise<HermesDetectionResult> {
@@ -497,16 +525,38 @@ async function getGitInfo(repoPath: string): Promise<HermesGitInfo> {
 function resolveHermesSourceRepo(deps: HandlerDeps, agentRoot?: string): string | undefined {
   const envSource = process.env.HERMES_SRC?.trim() || process.env.HERMES_SOURCE_DIR?.trim()
   const candidates = [
+    // Explicit dev override only. Do not auto-bind to a sibling fork just
+    // because ../hermes-agent exists; the bundled update path uses the pinned
+    // cache clone below as its source of truth.
     envSource,
-    join(deps.platform.appRootPath, '..', 'hermes-agent'),
-    join(deps.platform.appRootPath, '..', '..', 'hermes-agent'),
-    join(deps.platform.appRootPath, '..', '..', '..', 'hermes-agent'),
-    join(process.cwd(), '..', 'hermes-agent'),
-    join(process.cwd(), '..', '..', 'hermes-agent'),
-    join(process.cwd(), '..', '..', '..', 'hermes-agent'),
+    join(deps.platform.appRootPath, 'scripts', '.hermes-cache', 'source'),
+    join(deps.platform.appRootPath, 'apps', 'electron', 'scripts', '.hermes-cache', 'source'),
+    join(process.cwd(), 'apps', 'electron', 'scripts', '.hermes-cache', 'source'),
+    join(process.cwd(), 'scripts', '.hermes-cache', 'source'),
     agentRoot,
   ].filter((candidate): candidate is string => Boolean(candidate))
   return candidates.find(candidate => existsSync(join(candidate, 'pyproject.toml')))
+}
+
+function resolveHermesPinPath(deps: HandlerDeps): string | undefined {
+  const candidates = [
+    join(deps.platform.appRootPath, 'scripts', 'hermes-version.txt'),
+    join(deps.platform.appRootPath, 'apps', 'electron', 'scripts', 'hermes-version.txt'),
+    join(process.cwd(), 'apps', 'electron', 'scripts', 'hermes-version.txt'),
+    join(process.cwd(), 'scripts', 'hermes-version.txt'),
+  ]
+  return candidates.find(candidate => existsSync(candidate))
+}
+
+async function readHermesPin(pinPath?: string): Promise<string | undefined> {
+  const override = process.env.HERMES_VERSION?.trim()
+  if (override) return override
+  if (!pinPath) return undefined
+  const content = await readFile(pinPath, 'utf-8').catch(() => '')
+  return content
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .find(line => line && !line.startsWith('#'))
 }
 
 async function listAvailableProviders(agentRoot?: string): Promise<string[]> {
@@ -675,6 +725,8 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     const detection = await buildDetectionResult(deps)
     const agentRoot = process.env.CRAFT_HERMES_AGENT_ROOT?.trim() || undefined
     const sourceRepoPath = resolveHermesSourceRepo(deps, agentRoot)
+    const hermesPinPath = resolveHermesPinPath(deps)
+    const hermesPin = await readHermesPin(hermesPinPath)
     const sourceInfo = sourceRepoPath ? await getGitInfo(sourceRepoPath) : {}
     return {
       ...detection,
@@ -686,6 +738,8 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
       agentRoot,
       virtualEnv: process.env.CRAFT_HERMES_VIRTUAL_ENV?.trim() || undefined,
       vendorBinPath: process.env.CRAFT_HERMES_VENDOR_BIN?.trim() || undefined,
+      hermesPin,
+      hermesPinPath,
       sourceRepoPath,
       sourceRepoRemote: sourceInfo.remote,
       sourceRepoUpstreamRemote: sourceInfo.upstreamRemote,
@@ -719,8 +773,23 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     const port = await findFreePort()
     const { command, args } = buildDashboardCommand(runtime, port)
     startHermesUpdateMarkerMonitor(deps, runtime)
+    const env = buildHermesDashboardEnv(deps, runtime)
+    try {
+      const seed = await seedHermesAuthFromCraft({
+        hermesHome: runtime.hermesHome,
+        connectionSlug: undefined,
+      })
+      Object.assign(env, seed.env)
+      if (seed.seededProviders.length > 0) {
+        deps.platform.logger.info('[Hermes] Seeded dashboard provider auth from Craft credentials', {
+          providers: seed.seededProviders,
+        })
+      }
+    } catch (error) {
+      deps.platform.logger.warn('[Hermes] Failed to seed dashboard provider auth from Craft credentials', error)
+    }
     const child = spawn(command, args, {
-      env: buildHermesDashboardEnv(deps, runtime),
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
@@ -738,6 +807,8 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
         dashboardProcess = null
         dashboardUrl = null
         dashboardPort = null
+        dashboardSessionToken = null
+        dashboardSessionTokenUrl = null
       }
     })
 
@@ -781,9 +852,17 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     if (!ready.success || !ready.url) {
       throw new Error(ready.error || 'Hermes dashboard unavailable')
     }
-    const response = await fetch(`${ready.url}${path}`, init)
+    const headers = new Headers(init?.headers)
+    if (path.startsWith('/api/')) {
+      headers.set('X-Hermes-Session-Token', await getDashboardSessionToken(ready.url))
+    }
+    const response = await fetch(`${ready.url}${path}`, { ...init, headers })
     const text = await response.text()
     if (!response.ok) {
+      if (response.status === 401 && dashboardSessionTokenUrl === ready.url) {
+        dashboardSessionToken = null
+        dashboardSessionTokenUrl = null
+      }
       throw new Error(`HTTP ${response.status}: ${text || response.statusText}`)
     }
     if (!text) return null
@@ -800,7 +879,27 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
 
   server.handle(RPC_CHANNELS.hermes.GET_API_CONFIG, async () => {
     try {
-      return { success: true as const, data: await fetchDashboardJson('/api/config') }
+      const [config, modelInfo, modelOptions] = await Promise.all([
+        fetchDashboardJson('/api/config'),
+        fetchDashboardJson('/api/model/info'),
+        fetchDashboardJson('/api/model/options'),
+      ]) as [
+        Record<string, unknown>,
+        { provider?: string; model?: string },
+        { providers?: Array<{ slug?: string; models?: string[] }> },
+      ]
+      return {
+        success: true as const,
+        data: {
+          activeProvider: modelInfo.provider || undefined,
+          activeModel: modelInfo.model || (typeof config.model === 'string' ? config.model : undefined),
+          providers: (modelOptions.providers ?? []).map(provider => ({
+            id: provider.slug,
+            configured: true,
+          })),
+          config,
+        },
+      }
     } catch (error) {
       return { success: false as const, error: error instanceof Error ? error.message : String(error) }
     }
@@ -811,10 +910,25 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     body: { config?: Record<string, unknown>; env?: Record<string, string> },
   ) => {
     try {
+      const provider = typeof body.config?.provider === 'string' ? body.config.provider : ''
+      let model = typeof body.config?.model === 'string' ? body.config.model : ''
+      if (provider && !model) {
+        const modelInfo = await fetchDashboardJson('/api/model/info') as { model?: string }
+        model = modelInfo.model || ''
+      }
+      if (provider && model) {
+        const data = await fetchDashboardJson('/api/model/set', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope: 'main', provider, model }),
+        })
+        return { success: true as const, data }
+      }
+      const currentConfig = await fetchDashboardJson('/api/config') as Record<string, unknown>
       const data = await fetchDashboardJson('/api/config', {
-        method: 'PATCH',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ config: { ...currentConfig, ...(body.config ?? {}) } }),
       })
       return { success: true as const, data }
     } catch (error) {
@@ -824,8 +938,14 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
 
   server.handle(RPC_CHANNELS.hermes.GET_PROVIDER_MODELS, async (_ctx, provider: string) => {
     try {
-      const data = await fetchDashboardJson(`/api/provider-models?provider=${encodeURIComponent(provider)}`)
-      return { success: true as const, data }
+      const data = await fetchDashboardJson('/api/model/options') as {
+        providers?: Array<{ slug?: string; models?: string[] }>
+      } | null
+      const matchingProvider = data?.providers?.find(entry => entry.slug === provider)
+      const models = (matchingProvider?.models ?? [])
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+        .map(id => ({ id }))
+      return { success: true as const, data: { models } }
     } catch (error) {
       return { success: false as const, error: error instanceof Error ? error.message : String(error) }
     }

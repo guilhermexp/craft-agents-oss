@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { promisify } from 'node:util'
 import { execFile as execFileCb } from 'node:child_process'
-import { mkdtemp, mkdir, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -73,6 +73,67 @@ afterEach(() => {
 })
 
 describe('registerHermesHandlers local file controls', () => {
+  it('authenticates internal dashboard API calls with the injected Hermes session token', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'craft-hermes-home-'))
+    const binDir = await mkdtemp(join(tmpdir(), 'craft-hermes-bin-'))
+    const fakeHermes = join(binDir, 'fake-hermes-dashboard.js')
+    process.env.CRAFT_HERMES_HOME = home
+    process.env.CRAFT_HERMES_COMMAND = fakeHermes
+
+    await writeFile(fakeHermes, `#!/usr/bin/env node
+const http = require('node:http')
+const token = 'test-token'
+const port = Number(process.argv[process.argv.indexOf('--port') + 1])
+const server = http.createServer((req, res) => {
+  if (req.url === '/') {
+    res.setHeader('content-type', 'text/html')
+    res.end('<script>window.__HERMES_SESSION_TOKEN__="test-token";</script>')
+    return
+  }
+  if (!req.headers['x-hermes-session-token'] || req.headers['x-hermes-session-token'] !== token) {
+    res.statusCode = 401
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ detail: 'Unauthorized' }))
+    return
+  }
+  if (req.url === '/api/config') {
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ model: 'gpt-5.5' }))
+    return
+  }
+  if (req.url === '/api/model/info') {
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ provider: 'openai-codex', model: 'gpt-5.5' }))
+    return
+  }
+  if (req.url === '/api/model/options') {
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ providers: [{ slug: 'openai-codex', models: ['gpt-5.5'] }] }))
+    setTimeout(() => server.close(() => process.exit(0)), 100)
+    return
+  }
+  res.statusCode = 404
+  res.end('not found')
+})
+server.listen(port, '127.0.0.1')
+`)
+    await chmod(fakeHermes, 0o755)
+
+    const { handlers, ctx } = createHarness()
+    const getApiConfig = handlers.get(RPC_CHANNELS.hermes.GET_API_CONFIG)
+    const getProviderModels = handlers.get(RPC_CHANNELS.hermes.GET_PROVIDER_MODELS)
+    expect(getApiConfig).toBeDefined()
+    expect(getProviderModels).toBeDefined()
+
+    const configResult = await getApiConfig!(ctx)
+    const modelsResult = await getProviderModels!(ctx, 'openai-codex')
+
+    expect(configResult.success).toBe(true)
+    expect(configResult.data.activeProvider).toBe('openai-codex')
+    expect(modelsResult.success).toBe(true)
+    expect(modelsResult.data.models).toEqual([{ id: 'gpt-5.5' }])
+  })
+
   it('lists Hermes home files without exposing secrets or expanding operational directories', async () => {
     const home = await mkdtemp(join(tmpdir(), 'craft-hermes-test-'))
     process.env.CRAFT_HERMES_HOME = home
@@ -190,5 +251,44 @@ describe('registerHermesHandlers local file controls', () => {
     expect(result.sourceRepoCommitDate).toBe('2026-04-23')
     expect(result.sourceRepoCommit).toMatch(/^[0-9a-f]{7}$/)
     expect(result.sourceRepoDirty).toBe(false)
+  })
+
+  it('reports the pinned Hermes cache instead of auto-binding to a sibling fork', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'craft-hermes-home-'))
+    const root = await mkdtemp(join(tmpdir(), 'craft-electron-root-'))
+    const appRoot = join(root, 'app')
+    const cacheRepo = join(appRoot, 'scripts', '.hermes-cache', 'source')
+    const siblingFork = join(root, 'hermes-agent')
+    process.env.CRAFT_HERMES_HOME = home
+    process.env.CRAFT_HERMES_COMMAND = process.execPath
+    delete process.env.HERMES_SRC
+    delete process.env.HERMES_SOURCE_DIR
+
+    await mkdir(cacheRepo, { recursive: true })
+    await writeFile(join(appRoot, 'scripts', 'hermes-version.txt'), '# comment\nupstream/main\n')
+    await mkdir(siblingFork, { recursive: true })
+    for (const [repo, remote] of [
+      [cacheRepo, 'https://github.com/NousResearch/hermes-agent.git'],
+      [siblingFork, 'https://github.com/guilhermexp/hermes-agent.git'],
+    ] as const) {
+      await writeFile(join(repo, 'pyproject.toml'), '[project]\nname = "hermes-agent"\nversion = "0.11.0"\n')
+      await execFile('git', ['-C', repo, 'init'])
+      await execFile('git', ['-C', repo, 'config', 'user.email', 'test@example.com'])
+      await execFile('git', ['-C', repo, 'config', 'user.name', 'Test User'])
+      await execFile('git', ['-C', repo, 'add', 'pyproject.toml'])
+      await execFile('git', ['-C', repo, 'commit', '-m', 'test hermes source'])
+      await execFile('git', ['-C', repo, 'remote', 'add', 'origin', remote])
+    }
+
+    const { handlers, ctx } = createHarness({ appRootPath: appRoot })
+    const getRuntimeDetails = handlers.get(RPC_CHANNELS.hermes.GET_RUNTIME_DETAILS)
+    expect(getRuntimeDetails).toBeDefined()
+
+    const result = await getRuntimeDetails!(ctx)
+
+    expect(result.sourceRepoPath).toBe(cacheRepo)
+    expect(result.sourceRepoRemote).toBe('https://github.com/NousResearch/hermes-agent.git')
+    expect(result.hermesPin).toBe('upstream/main')
+    expect(result.hermesPinPath).toBe(join(appRoot, 'scripts', 'hermes-version.txt'))
   })
 })

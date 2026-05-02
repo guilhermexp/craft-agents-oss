@@ -13,7 +13,7 @@ import {
 /**
  * Provider catalog mirrored from the Hermes dashboard's "Set Main Model"
  * dialog. Keep this list aligned with the Hermes provider plugins. Auth
- * type drives whether we collect an API key or hand off to a separate flow.
+ * type describes what Craft connection/credential the embedded runtime consumes.
  */
 type ProviderDef = {
   id: string
@@ -34,7 +34,7 @@ const PROVIDERS: ProviderDef[] = [
     name: 'OpenAI Codex',
     description: 'ChatGPT Plus / Pro subscription',
     authType: 'oauth',
-    helpText: 'Configure no dashboard pelo fluxo OAuth — Craft compartilha tokens automaticamente quando você loga no Codex pelo Craft.',
+    helpText: 'Usa a conexão ChatGPT Plus/Codex já autenticada no Craft. O auth-bridge propaga o token ao Hermes na inicialização.',
     popular: true,
   },
   {
@@ -117,7 +117,6 @@ function getProviderById(id: string | null): ProviderDef | null {
 export function HermesAiModelsConfig() {
   const [config, setConfig] = useState<ApiConfigShape | null>(null)
   const [selectedProvider, setSelectedProvider] = useState<string>('')
-  const [apiKey, setApiKey] = useState<string>('')
   const [baseUrl, setBaseUrl] = useState<string>('')
   const [models, setModels] = useState<string[]>([])
   const [selectedModel, setSelectedModel] = useState<string>('')
@@ -187,7 +186,6 @@ export function HermesAiModelsConfig() {
 
   const handleProviderChange = (id: string) => {
     setSelectedProvider(id)
-    setApiKey('')
     setBaseUrl('')
     if (config?.activeProvider !== id) {
       setSelectedModel('')
@@ -204,9 +202,6 @@ export function HermesAiModelsConfig() {
       }
       if ((provider.id === 'ollama' || provider.authType === 'custom') && baseUrl.trim()) {
         body.config.base_url = baseUrl.trim()
-      }
-      if (provider.envKey && apiKey.trim()) {
-        body.env = { [provider.envKey]: apiKey.trim() }
       }
       const result = await window.electronAPI.patchHermesApiConfig(body)
       if (!result.success) {
@@ -255,14 +250,13 @@ export function HermesAiModelsConfig() {
     provider?.envKey && (config?.hasApiKeys?.[provider.envKey] ?? false)
 
   return (
-    <SettingsSection title="Hermes — Provider & Modelo">
+    <SettingsSection title="Provider & Modelo">
       <SettingsCard>
         <SettingsCardContent className="space-y-4">
           <div className="text-xs text-muted-foreground leading-relaxed">
-            Configure provider e modelo do Hermes direto daqui — sem precisar abrir o Dashboard.
-            As mudanças escrevem em <code className="px-1 rounded bg-muted/60">~/.hermes/config.yaml</code> via
-            API local do runtime e aplicam-se a novas sessões. OAuth (Codex/ChatGPT Plus) usa o token
-            que o Craft já compartilha automaticamente.
+            O Hermes embutido usa as conexões e credenciais já cadastradas no Craft como fonte de verdade.
+            Esta tela só escolhe o provider/modelo ativo no runtime isolado do app; API keys e subscriptions continuam
+            no gerenciador de credenciais do Craft.
           </div>
 
           {loadingConfig ? (
@@ -298,22 +292,11 @@ export function HermesAiModelsConfig() {
               )}
 
               {provider?.authType === 'api_key' && (
-                <SettingsRow
-                  label={`API key (${provider.envKey})`}
-                  description={
-                    apiKeyAlreadyConfigured
-                      ? 'Já configurada no Hermes — só preencha para substituir'
-                      : provider.helpText
-                  }
-                >
-                  <input
-                    type="password"
-                    className="bg-background border border-border rounded-md text-sm px-2 py-1 min-w-[280px] font-mono"
-                    placeholder={provider.placeholder}
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                  />
-                </SettingsRow>
+                <div className="text-xs text-muted-foreground bg-muted/30 rounded-md p-2">
+                  {apiKeyAlreadyConfigured
+                    ? `Usando conexão/credencial do Craft para ${provider.name} (${provider.envKey}).`
+                    : `Nenhuma credencial Craft detectada para ${provider.name} (${provider.envKey}). Configure a conexão em Settings → AI Connections; o Hermes receberá a chave automaticamente ao iniciar.`}
+                </div>
               )}
 
               {(provider?.authType === 'custom' || provider?.id === 'ollama') && (
@@ -330,8 +313,8 @@ export function HermesAiModelsConfig() {
 
               {provider?.authType === 'oauth' && (
                 <div className="text-xs text-muted-foreground bg-muted/30 rounded-md p-2">
-                  Provider OAuth — a autenticação acontece pela conexão do Craft (ChatGPT Plus).
-                  Os tokens já são propagados ao Hermes automaticamente pelo auth-bridge.
+                  Provider OAuth — a autenticação vem da conexão/subscription do Craft (ex.: ChatGPT Plus/Codex).
+                  Os tokens são propagados ao Hermes pelo auth-bridge; se falhar, reautentique a conexão no Craft.
                 </div>
               )}
 
@@ -362,7 +345,7 @@ export function HermesAiModelsConfig() {
                   </div>
                 ) : models.length === 0 ? (
                   <div className="text-xs text-muted-foreground">
-                    Nenhum modelo disponível. Configure as credenciais primeiro.
+                    Nenhum modelo disponível. Verifique se há uma conexão Craft autenticada para este provider e reinicie o dashboard Hermes para ele herdar as credenciais.
                   </div>
                 ) : (
                   <div className="max-h-64 overflow-auto rounded-lg border border-border/60 p-1">

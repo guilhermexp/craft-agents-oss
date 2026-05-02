@@ -48,6 +48,7 @@ Single-test patterns:
 bun test path/to/file.test.ts                        # one file
 bun test path/to/file.test.ts -t "name pattern"      # one case
 bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
+        packages/shared/src/hermes/__tests__/auth-bridge.test.ts \
         packages/shared/src/mcp/session-tools-server.test.ts \
         packages/shared/src/agent/__tests__/hermes-agent.test.ts \
         packages/server-core/src/handlers/rpc/hermes.test.ts \
@@ -87,7 +88,7 @@ The `CraftAgent` abstraction routes between two SDKs depending on the LLM connec
 
 - **Claude backend** — `@anthropic-ai/claude-agent-sdk`. Handles Anthropic API key, Claude Max/Pro OAuth, and any third-party endpoint surfaced through the “Claude / Anthropic API Key” connection (OpenRouter, Vercel AI Gateway, Ollama, custom).
 - **Pi backend** — `@mariozechner/pi-coding-agent` driven by `packages/pi-agent-server`. Handles Google AI Studio, ChatGPT Plus (Codex OAuth), GitHub Copilot OAuth, and OpenAI API key.
-- **Hermes backend** — embedded NousResearch fork (see below). A third backend launched as a subprocess with its own ACP adapter.
+- **Hermes backend** — embedded NousResearch Hermes runtime consumed as a pinned upstream dependency plus Craft overlay patches (see below). A third backend launched as a subprocess with its own ACP adapter.
 
 When changing agent code, identify which backend(s) are affected — the Pi and Hermes paths each have separate subprocess bundles that must be rebuilt (`server:build:subprocess`, `electron:bundle:hermes`).
 
@@ -97,7 +98,7 @@ Hermes is a Python agent runtime vendored into the Electron app:
 
 - Bundling scripts: `apps/electron/scripts/bundle-hermes.{sh,ps1}`. Output lands in `apps/electron/resources/vendor/hermes/`.
 - Wiring: `packages/shared/src/agent/hermes-agent.ts`, `packages/shared/src/hermes/acp-config.ts`, `packages/shared/src/mcp/session-tools-server.ts`, `packages/server-core/src/handlers/rpc/hermes.ts`, `apps/electron/src/renderer/pages/settings/HermesSettingsPage.tsx`.
-- The Hermes fork lives at `../hermes-agent` (sibling repo). MCP wiring depends on patches to `../hermes-agent/acp_adapter/{session,server}.py` and `../hermes-agent/tools/mcp_tool.py` — preserve them on upstream sync.
+- Hermes source for builds is the pinned cache at `apps/electron/scripts/.hermes-cache/source`; Craft-specific MCP/ACP behavior lives in `apps/electron/scripts/hermes-patches/*.patch`. Do not use `guilhermexp/hermes-agent` or a sibling `../hermes-agent` checkout as a source. `HERMES_SRC` is only a short-lived explicit override for active Hermes development and must never become the normal update/bundle path.
 - Hermes config/state is app-scoped under `HERMES_HOME`. Never let user `HERMES_HOME` data leak into the repo. Do not wire Craft-native session tools through a static `mcp.json` — they go through ACP `session.mcpServers`.
 - Tool naming convention: `craft-session` and `craft-sources` MCP tools keep Craft canonical names (`mcp__session__…`, `mcp__github__…`); external MCP servers keep Hermes-normal names (`mcp_filesystem_read_file`).
 - Always rebuild Hermes (`bun run electron:bundle:hermes`) before any `electron:dist*` step.
@@ -131,6 +132,6 @@ i18n key parity is enforced (`scripts/check-i18n-parity.ts`). When adding a key 
 - Logs: `~/Library/Logs/@craft-agent/electron/main.log` (mac), `%APPDATA%\@craft-agent\electron\logs\main.log` (win), `~/.config/@craft-agent/electron/logs/main.log` (linux). Launch packaged app with `-- --debug` for verbose logging.
 - Deep links: `craftagents://…` (handled in main process).
 
-## Fork sync
+## Fork sync / Hermes pin bumps
 
-Two upstream forks. Read `AGENTS.md` for the recording protocol before touching either. `git fetch upstream --prune` is safe in dirty worktrees; merge / rebase / reset / checkout over local changes are not — only run them when the user explicitly asks.
+Read `AGENTS.md` for the recording protocol before touching Craft upstream or bumping Hermes. Craft upstream sync and Hermes runtime updates are separate: Craft uses normal fork remotes, while Hermes uses `hermes-version.txt` + overlay patches. `git fetch upstream --prune` is safe in dirty worktrees; merge / rebase / reset / checkout over local changes are not — only run them when the user explicitly asks.
