@@ -109,6 +109,11 @@ const server = http.createServer((req, res) => {
   if (req.url === '/api/model/options') {
     res.setHeader('content-type', 'application/json')
     res.end(JSON.stringify({ providers: [{ slug: 'openai-codex', models: ['gpt-5.5'] }] }))
+    return
+  }
+  if (req.url === '/api/profiles') {
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ profiles: [{ name: 'default', path: '${home}', is_default: true, model: 'gpt-5.5', provider: 'openai-codex', has_env: true, skill_count: 9 }] }))
     setTimeout(() => server.close(() => process.exit(0)), 100)
     return
   }
@@ -122,16 +127,29 @@ server.listen(port, '127.0.0.1')
     const { handlers, ctx } = createHarness()
     const getApiConfig = handlers.get(RPC_CHANNELS.hermes.GET_API_CONFIG)
     const getProviderModels = handlers.get(RPC_CHANNELS.hermes.GET_PROVIDER_MODELS)
+    const listProfiles = handlers.get(RPC_CHANNELS.hermes.LIST_PROFILES)
     expect(getApiConfig).toBeDefined()
     expect(getProviderModels).toBeDefined()
+    expect(listProfiles).toBeDefined()
 
     const configResult = await getApiConfig!(ctx)
     const modelsResult = await getProviderModels!(ctx, 'openai-codex')
+    const profilesResult = await listProfiles!(ctx)
 
     expect(configResult.success).toBe(true)
     expect(configResult.data.activeProvider).toBe('openai-codex')
     expect(modelsResult.success).toBe(true)
     expect(modelsResult.data.models).toEqual([{ id: 'gpt-5.5' }])
+    expect(profilesResult.success).toBe(true)
+    expect(profilesResult.profiles).toEqual([{
+      name: 'default',
+      path: home,
+      isDefault: true,
+      model: 'gpt-5.5',
+      provider: 'openai-codex',
+      hasEnv: true,
+      skillCount: 9,
+    }])
   })
 
   it('lists Hermes home files without exposing secrets or expanding operational directories', async () => {

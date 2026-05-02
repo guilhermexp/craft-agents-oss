@@ -511,9 +511,17 @@ restart of the user's session.
 - `hermes:listLogs` / `hermes:readLog` — enumerate and tail app-scoped Hermes logs.
 - `hermes:listHomeFiles` / `hermes:openPath` — browse/reveal files under `HERMES_HOME` only. Secrets (`.env`, `auth.json`, locks) are omitted, path traversal is blocked, and operational directories such as `sessions/`, `logs/`, `skills/`, `memories/`, and `cron/` are shown as collapsed top-level folders so Settings does not render raw session dumps.
 - `hermes:listSkills` — lists installed Hermes skills from app-scoped `HERMES_HOME/skills`.
+- `hermes:listProfiles`, `hermes:createProfile`, `hermes:renameProfile`,
+  `hermes:deleteProfile`, `hermes:getProfileSetupCommand`,
+  `hermes:getProfileSoul`, and `hermes:updateProfileSoul` proxy the dashboard
+  `/api/profiles*` endpoints through the same authenticated embedded dashboard
+  bridge. Settings may manage Hermes multi-agent profiles from the app, but the
+  source of truth remains the app-scoped Hermes runtime/dashboard API.
 
 `Settings / AI` remains generic: connections, model defaults, thinking level, workspace overrides.
-`Settings / Hermes` is the Hermes-specific operational page: **Abrir Dashboard Hermes**, **Ver logs**, **Files**, **Skills do Hermes**, and **Conectores do Hermes**.
+`Settings / Hermes` is the Hermes-specific operational page organized in tabs:
+**Runtime Hermes**, **Provider & Modelo**, **Profiles**, **Skills do Hermes**,
+and **Logs**.
 Clicking **Abrir Dashboard Hermes** launches the dashboard and opens the returned localhost URL in the existing Craft embedded browser with `browserPane.create({ url, show: true })`, not in the OS default browser.
 
 ### Version display

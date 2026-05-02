@@ -510,6 +510,42 @@ export interface HermesOpenPathResult {
   error?: string
 }
 
+export interface HermesProfileInfo {
+  name: string
+  path: string
+  isDefault: boolean
+  model?: string
+  provider?: string
+  hasEnv: boolean
+  skillCount: number
+}
+
+export interface HermesListProfilesResult {
+  success: boolean
+  profiles: HermesProfileInfo[]
+  error?: string
+}
+
+export interface HermesProfileMutationResult {
+  success: boolean
+  name?: string
+  path?: string
+  error?: string
+}
+
+export interface HermesProfileSetupCommandResult {
+  success: boolean
+  command?: string
+  error?: string
+}
+
+export interface HermesProfileSoulResult {
+  success: boolean
+  content?: string
+  exists?: boolean
+  error?: string
+}
+
 // ---------------------------------------------------------------------------
 // Source / skill types
 // ---------------------------------------------------------------------------

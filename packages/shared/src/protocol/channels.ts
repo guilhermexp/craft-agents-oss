@@ -233,6 +233,13 @@ export const RPC_CHANNELS = {
     PATCH_API_CONFIG: 'hermes:patchApiConfig',
     /** GET dashboard /api/provider-models?provider=X. */
     GET_PROVIDER_MODELS: 'hermes:getProviderModels',
+    LIST_PROFILES: 'hermes:listProfiles',
+    CREATE_PROFILE: 'hermes:createProfile',
+    RENAME_PROFILE: 'hermes:renameProfile',
+    DELETE_PROFILE: 'hermes:deleteProfile',
+    GET_PROFILE_SETUP_COMMAND: 'hermes:getProfileSetupCommand',
+    GET_PROFILE_SOUL: 'hermes:getProfileSoul',
+    UPDATE_PROFILE_SOUL: 'hermes:updateProfileSoul',
   },
   dialog: {
     OPEN_FOLDER: 'dialog:openFolder',

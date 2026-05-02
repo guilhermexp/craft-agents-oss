@@ -15,6 +15,7 @@ import {
   SettingsSection,
 } from '@/components/settings'
 import { HermesAiModelsConfig } from './HermesAiModelsConfig'
+import { HermesProfilesConfig } from './HermesProfilesConfig'
 import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import type {
   HermesLogFileInfo,
@@ -187,6 +188,7 @@ export default function HermesSettingsPage() {
               <TabsList className="h-auto w-auto justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0">
                 <TabsTrigger className="h-9 data-[state=active]:shadow-none" value="runtime">Runtime Hermes</TabsTrigger>
                 <TabsTrigger className="h-9 data-[state=active]:shadow-none" value="provider">Provider & Modelo</TabsTrigger>
+                <TabsTrigger className="h-9 data-[state=active]:shadow-none" value="profiles">Profiles</TabsTrigger>
                 <TabsTrigger className="h-9 data-[state=active]:shadow-none" value="skills">Skills do Hermes</TabsTrigger>
                 <TabsTrigger className="h-9 data-[state=active]:shadow-none" value="logs">Logs</TabsTrigger>
               </TabsList>
@@ -302,6 +304,10 @@ export default function HermesSettingsPage() {
                   </SettingsCardContent>
                 </SettingsCard>
               </SettingsSection>
+            </TabsContent>
+
+            <TabsContent value="profiles" className="mt-0 space-y-5">
+              <HermesProfilesConfig />
             </TabsContent>
 
             <TabsContent value="skills" className="mt-0 space-y-5">

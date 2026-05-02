@@ -224,6 +224,10 @@ import type {
   HermesListHomeFilesResult,
   HermesListSkillsResult,
   HermesOpenPathResult,
+  HermesListProfilesResult,
+  HermesProfileMutationResult,
+  HermesProfileSetupCommandResult,
+  HermesProfileSoulResult,
 } from '@craft-agent/shared/protocol'
 
 export interface ElectronAPI {
@@ -443,6 +447,13 @@ export interface ElectronAPI {
   getHermesApiConfig(): Promise<{ success: true; data: unknown } | { success: false; error: string }>
   patchHermesApiConfig(body: { config?: Record<string, unknown>; env?: Record<string, string> }): Promise<{ success: true; data: unknown } | { success: false; error: string }>
   getHermesProviderModels(provider: string): Promise<{ success: true; data: unknown } | { success: false; error: string }>
+  listHermesProfiles(): Promise<HermesListProfilesResult>
+  createHermesProfile(body: { name: string; cloneFromDefault: boolean }): Promise<HermesProfileMutationResult>
+  renameHermesProfile(name: string, newName: string): Promise<HermesProfileMutationResult>
+  deleteHermesProfile(name: string): Promise<HermesProfileMutationResult>
+  getHermesProfileSetupCommand(name: string): Promise<HermesProfileSetupCommandResult>
+  getHermesProfileSoul(name: string): Promise<HermesProfileSoulResult>
+  updateHermesProfileSoul(name: string, content: string): Promise<HermesProfileMutationResult>
 
   // Session-specific model (overrides global)
   getSessionModel(sessionId: string, workspaceId: string): Promise<string | null>

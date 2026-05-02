@@ -13,9 +13,13 @@ import {
   type HermesHomeFileInfo,
   type HermesListHomeFilesResult,
   type HermesListLogsResult,
+  type HermesListProfilesResult,
   type HermesListSkillsResult,
   type HermesLogFileInfo,
   type HermesOpenPathResult,
+  type HermesProfileMutationResult,
+  type HermesProfileSetupCommandResult,
+  type HermesProfileSoulResult,
   type HermesReadLogResult,
   type HermesRuntimeDetailsResult,
   type HermesSkillInfo,
@@ -548,6 +552,52 @@ function resolveHermesPinPath(deps: HandlerDeps): string | undefined {
   return candidates.find(candidate => existsSync(candidate))
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function booleanValue(value: unknown): boolean {
+  return typeof value === 'boolean' ? value : false
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function normalizeHermesProfile(value: unknown) {
+  const record = asRecord(value)
+  if (!record) return null
+  const name = optionalString(record.name)
+  const path = optionalString(record.path)
+  if (!name || !path) return null
+  return {
+    name,
+    path,
+    isDefault: booleanValue(record.is_default ?? record.isDefault),
+    model: optionalString(record.model),
+    provider: optionalString(record.provider),
+    hasEnv: booleanValue(record.has_env ?? record.hasEnv),
+    skillCount: numberValue(record.skill_count ?? record.skillCount),
+  }
+}
+
+function normalizeHermesProfilesPayload(payload: unknown): HermesListProfilesResult {
+  const record = asRecord(payload)
+  const rawProfiles = Array.isArray(record?.profiles) ? record.profiles : []
+  return {
+    success: true,
+    profiles: rawProfiles
+      .map(normalizeHermesProfile)
+      .filter((profile): profile is NonNullable<ReturnType<typeof normalizeHermesProfile>> => profile !== null),
+  }
+}
+
 async function readHermesPin(pinPath?: string): Promise<string | undefined> {
   const override = process.env.HERMES_VERSION?.trim()
   if (override) return override
@@ -948,6 +998,121 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
       return { success: true as const, data: { models } }
     } catch (error) {
       return { success: false as const, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.hermes.LIST_PROFILES, async (): Promise<HermesListProfilesResult> => {
+    try {
+      return normalizeHermesProfilesPayload(await fetchDashboardJson('/api/profiles'))
+    } catch (error) {
+      return { success: false, profiles: [], error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.hermes.CREATE_PROFILE, async (
+    _ctx,
+    body: { name: string; cloneFromDefault: boolean },
+  ): Promise<HermesProfileMutationResult> => {
+    try {
+      const data = asRecord(await fetchDashboardJson('/api/profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: body.name,
+          clone_from_default: body.cloneFromDefault,
+        }),
+      }))
+      return {
+        success: true,
+        name: optionalString(data?.name) ?? body.name,
+        path: optionalString(data?.path),
+      }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.hermes.RENAME_PROFILE, async (
+    _ctx,
+    name: string,
+    newName: string,
+  ): Promise<HermesProfileMutationResult> => {
+    try {
+      const data = asRecord(await fetchDashboardJson(`/api/profiles/${encodeURIComponent(name)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_name: newName }),
+      }))
+      return {
+        success: true,
+        name: optionalString(data?.name) ?? newName,
+        path: optionalString(data?.path),
+      }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.hermes.DELETE_PROFILE, async (
+    _ctx,
+    name: string,
+  ): Promise<HermesProfileMutationResult> => {
+    try {
+      const data = asRecord(await fetchDashboardJson(`/api/profiles/${encodeURIComponent(name)}`, {
+        method: 'DELETE',
+      }))
+      return {
+        success: true,
+        name,
+        path: optionalString(data?.path),
+      }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.hermes.GET_PROFILE_SETUP_COMMAND, async (
+    _ctx,
+    name: string,
+  ): Promise<HermesProfileSetupCommandResult> => {
+    try {
+      const data = asRecord(await fetchDashboardJson(`/api/profiles/${encodeURIComponent(name)}/setup-command`))
+      return { success: true, command: optionalString(data?.command) }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.hermes.GET_PROFILE_SOUL, async (
+    _ctx,
+    name: string,
+  ): Promise<HermesProfileSoulResult> => {
+    try {
+      const data = asRecord(await fetchDashboardJson(`/api/profiles/${encodeURIComponent(name)}/soul`))
+      return {
+        success: true,
+        content: optionalString(data?.content) ?? '',
+        exists: booleanValue(data?.exists),
+      }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.hermes.UPDATE_PROFILE_SOUL, async (
+    _ctx,
+    name: string,
+    content: string,
+  ): Promise<HermesProfileMutationResult> => {
+    try {
+      await fetchDashboardJson(`/api/profiles/${encodeURIComponent(name)}/soul`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      })
+      return { success: true, name }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
     }
   })
 

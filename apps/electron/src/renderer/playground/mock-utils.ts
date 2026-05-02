@@ -275,6 +275,13 @@ export const mockElectronAPI = {
   getHermesApiConfig: async () => ({ success: false as const, error: 'Hermes API config not available in playground mode.' }),
   patchHermesApiConfig: async () => ({ success: false as const, error: 'Hermes API config not available in playground mode.' }),
   getHermesProviderModels: async () => ({ success: false as const, error: 'Hermes API not available in playground mode.' }),
+  listHermesProfiles: async () => ({ success: true, profiles: [] }),
+  createHermesProfile: async () => ({ success: false, error: 'Hermes profiles are not available in playground mode.' }),
+  renameHermesProfile: async () => ({ success: false, error: 'Hermes profiles are not available in playground mode.' }),
+  deleteHermesProfile: async () => ({ success: false, error: 'Hermes profiles are not available in playground mode.' }),
+  getHermesProfileSetupCommand: async () => ({ success: false, error: 'Hermes profiles are not available in playground mode.' }),
+  getHermesProfileSoul: async () => ({ success: false, error: 'Hermes profiles are not available in playground mode.' }),
+  updateHermesProfileSoul: async () => ({ success: false, error: 'Hermes profiles are not available in playground mode.' }),
   getPiProviderModels: async (provider: string) => {
     const MOCK_MODELS: Record<string, Array<{ id: string; name: string; costInput: number; costOutput: number; contextWindow: number; reasoning: boolean }>> = {
       'openrouter': [
