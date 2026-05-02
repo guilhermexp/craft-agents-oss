@@ -112,6 +112,112 @@ export function setSessionPlatform(platform: PlatformServices): void {
   sessionLog = createScopedLogger(platform.logger, 'session')
 }
 
+const TERMINAL_COLORS = {
+  reset: '\x1b[0m',
+  bold: '\x1b[1m',
+  dim: '\x1b[2m',
+  cyan: '\x1b[36m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  red: '\x1b[31m',
+  magenta: '\x1b[35m',
+} as const
+
+function colorLog(text: string, color: keyof typeof TERMINAL_COLORS, options: { bold?: boolean } = {}): string {
+  const prefix = `${options.bold ? TERMINAL_COLORS.bold : ''}${TERMINAL_COLORS[color]}`
+  return `${prefix}${text}${TERMINAL_COLORS.reset}`
+}
+
+function formatLogValue(value: unknown): string {
+  if (value === undefined) return 'undefined'
+  if (value === null) return 'null'
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function truncateLogValue(value: string, maxLength = 360): string {
+  if (value.length <= maxLength) return value
+  return `${value.slice(0, maxLength - 1)}...`
+}
+
+function summarizeToolInput(input: Record<string, unknown> | undefined): string {
+  if (!input || Object.keys(input).length === 0) return ''
+
+  const priorityKeys = [
+    'file_path',
+    'path',
+    'url',
+    'command',
+    'cmd',
+    'query',
+    'prompt',
+    'message',
+    'description',
+    'instanceId',
+    'ref',
+  ]
+  const keys = [
+    ...priorityKeys.filter(key => Object.prototype.hasOwnProperty.call(input, key)),
+    ...Object.keys(input).filter(key => !priorityKeys.includes(key)),
+  ].slice(0, 4)
+
+  return keys
+    .map(key => `${key}=${truncateLogValue(formatLogValue(input[key]), 180)}`)
+    .join(' ')
+}
+
+function getRuntimeDisplayName(providerType?: string): string {
+  switch (providerType) {
+    case 'anthropic':
+      return 'ClaudeAgent'
+    case 'pi':
+    case 'pi_compat':
+      return 'PiAgent'
+    case 'hermes':
+      return 'HermesAgent'
+    default:
+      return providerType ? `${providerType} agent` : 'unknown agent'
+  }
+}
+
+function logAgentExecutionStart(args: {
+  sessionId: string
+  sessionName?: string
+  connectionSlug?: string
+  connectionName?: string
+  providerType?: string
+  model?: string
+  workspaceRootPath: string
+  workingDirectory?: string
+  sdkSessionId?: string
+  attachmentCount: number
+  message: string
+}): void {
+  const runtime = getRuntimeDisplayName(args.providerType)
+  const connection = args.connectionSlug
+    ? `${args.connectionName || args.connectionSlug} (${args.connectionSlug})`
+    : 'default'
+  const title = `AGENT RUNNING: ${runtime} | ${connection} | ${args.model || 'model:unknown'}`
+  const rule = '='.repeat(Math.max(80, title.length + 8))
+
+  sessionLog.info(colorLog(rule, 'cyan'))
+  sessionLog.info(colorLog(`>>> ${title}`, 'green', { bold: true }))
+  sessionLog.info(`${colorLog('    session:', 'cyan')} ${args.sessionName || 'Untitled'} (${args.sessionId})`)
+  sessionLog.info(`${colorLog('    provider:', 'cyan')} ${args.providerType || 'unknown'}`)
+  sessionLog.info(`${colorLog('    workspace:', 'cyan')} ${args.workspaceRootPath}`)
+  sessionLog.info(`${colorLog('    cwd:', 'cyan')} ${args.workingDirectory || args.workspaceRootPath}`)
+  sessionLog.info(`${colorLog('    sdkSession:', 'cyan')} ${args.sdkSessionId || 'new'}`)
+  sessionLog.info(`${colorLog('    attachments:', 'cyan')} ${args.attachmentCount}`)
+  sessionLog.info(`${colorLog('    message:', 'cyan')} ${truncateLogValue(args.message.replace(/\s+/g, ' ').trim(), 220)}`)
+  sessionLog.info(colorLog(rule, 'cyan'))
+}
+
 interface SessionRuntimeHooks {
   updateBadgeCount: (count: number) => void
   captureException: (error: unknown, context?: { errorSource?: string; sessionId?: string }) => void
@@ -5095,17 +5201,24 @@ export class SessionManager implements ISessionManager {
     }
 
     try {
-      sessionLog.info('Starting chat for session:', sessionId)
-      sessionLog.info('Workspace:', JSON.stringify(managed.workspace, null, 2))
-      sessionLog.info('Message:', message)
-      sessionLog.info('Agent model:', agent.getModel())
+      const activeConnection = managed.llmConnection ? getLlmConnection(managed.llmConnection) : null
+      logAgentExecutionStart({
+        sessionId,
+        sessionName: managed.name,
+        connectionSlug: activeConnection?.slug ?? managed.llmConnection,
+        connectionName: activeConnection?.name,
+        providerType: activeConnection?.providerType,
+        model: agent.getModel(),
+        workspaceRootPath,
+        workingDirectory: managed.workingDirectory,
+        sdkSessionId: managed.sdkSessionId,
+        attachmentCount: attachments?.length ?? 0,
+        message,
+      })
       sessionLog.info('process.cwd():', process.cwd())
 
       // Process the message through the agent
       sessionLog.info('Calling agent.chat()...')
-      if (attachments?.length) {
-        sessionLog.info('Attachments:', attachments.length)
-      }
 
       // Skills mentioned via @mentions are handled by the SDK's Skill tool.
       // The UI layer (extractBadges in mentions.ts) injects fully-qualified names
@@ -5135,9 +5248,11 @@ export class SessionManager implements ISessionManager {
         // Log events (skip noisy text_delta)
         if (event.type !== 'text_delta') {
           if (event.type === 'tool_start') {
-            sessionLog.info(`tool_start: ${event.toolName} (${event.toolUseId})`)
+            const inputSummary = summarizeToolInput(event.input)
+            sessionLog.info(colorLog(`>>> TOOL RUNNING: ${event.toolName} (${event.toolUseId})${inputSummary ? ` | ${inputSummary}` : ''}`, 'yellow', { bold: true }))
           } else if (event.type === 'tool_result') {
-            sessionLog.info(`tool_result: ${event.toolUseId} isError=${event.isError}`)
+            const color = event.isError ? 'red' : 'green'
+            sessionLog.info(colorLog(`<<< TOOL DONE: ${event.toolName || 'unknown'} (${event.toolUseId}) isError=${event.isError}`, color, { bold: event.isError }))
           } else {
             sessionLog.info('Got event:', event.type)
           }
