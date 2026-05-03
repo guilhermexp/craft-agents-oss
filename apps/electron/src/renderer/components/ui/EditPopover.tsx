@@ -82,6 +82,7 @@ export type EditContextKey =
   | 'add-skill'
   | 'edit-statuses'
   | 'edit-labels'
+  | 'edit-channels'
   | 'edit-auto-rules'
   | 'add-label'
   | 'edit-views'
@@ -443,6 +444,29 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
     model: 'fast',               // Use fast model for quick config edits
     systemPromptPreset: 'mini',   // Use focused mini prompt
     inlineExecution: true,        // Execute inline in popover
+  }),
+
+  // Channel configuration context
+  'edit-channels': (location) => ({
+    context: {
+      label: 'Channel Configuration',
+      filePath: `${location}/channels/config.json`,
+      context:
+        'The user wants to customize first-class workspace channels. ' +
+        'Channels are stored in channels/config.json as a flat array. ' +
+        'Each channel has: id (slug, globally unique), name (display), labelId (required backing label id), description (optional), color (optional EntityColor). ' +
+        'The backing labelId must be a real unique label id in labels/config.json, usually "channel-{id}". ' +
+        'Never use valued-label syntax like "channel::cert-certificados" for channels because sidebar label filtering treats the part before "::" as the canonical label id. ' +
+        'If you add or rename a channel, keep the corresponding backing label in labels/config.json in sync. ' +
+        'Deleting a channel should remove the channel config only; preserve the backing label unless the user explicitly asks to delete historical labeling. ' +
+        'Confirm clearly when done.',
+    },
+    example: 'Add a "Cert Certificados" channel',
+    displayLabelKey: 'editPopover.label.channelConfiguration',
+    exampleKey: 'editPopover.example.editChannels',
+    model: 'fast',
+    systemPromptPreset: 'mini',
+    inlineExecution: true,
   }),
 
   // Auto-label rules context (focused on regex patterns within labels)

@@ -265,6 +265,13 @@ export const CHANNEL_MAP = {
   deleteLabel: invoke(RPC_CHANNELS.labels.DELETE),
   onLabelsChanged: listener(RPC_CHANNELS.labels.CHANGED),
 
+  // Channels
+  listChannels: invoke(RPC_CHANNELS.channels.LIST),
+  createChannel: invoke(RPC_CHANNELS.channels.CREATE),
+  updateChannel: invoke(RPC_CHANNELS.channels.UPDATE),
+  deleteChannel: invoke(RPC_CHANNELS.channels.DELETE),
+  onChannelsChanged: listener(RPC_CHANNELS.channels.CHANGED),
+
   // LLM connections change listener
   onLlmConnectionsChanged: listener(RPC_CHANNELS.llmConnections.CHANGED),
 

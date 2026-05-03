@@ -28,7 +28,7 @@ import {
 import { useMenuComponents } from '@/components/ui/menu-context'
 import { getDocUrl, type DocFeature } from '@craft-agent/shared/docs/doc-links'
 
-export type SidebarMenuType = 'allSessions' | 'flagged' | 'status' | 'sources' | 'skills' | 'automations' | 'labels' | 'views' | 'newSession'
+export type SidebarMenuType = 'allSessions' | 'flagged' | 'status' | 'sources' | 'skills' | 'automations' | 'labels' | 'channels' | 'views' | 'newSession'
 
 export interface SidebarMenuProps {
   /** Type of sidebar item (determines available menu items) */
@@ -47,6 +47,16 @@ export interface SidebarMenuProps {
   onAddLabel?: (parentId?: string) => void
   /** Handler for "Delete Label" action - deletes the label identified by labelId */
   onDeleteLabel?: (labelId: string) => void
+  /** Channel ID — when set, this is an individual channel item */
+  channelId?: string
+  /** Handler for "Add Channel" action */
+  onAddChannel?: () => void
+  /** Handler for "Edit Channels" action */
+  onConfigureChannels?: () => void
+  /** Handler for creating a new thread inside a channel */
+  onNewChannelThread?: (channelId: string) => void
+  /** Handler for deleting a channel config */
+  onDeleteChannel?: (channelId: string) => void
   /** Handler for "Add Source" action - only for sources type */
   onAddSource?: () => void
   /** Handler for "Add Skill" action - only for skills type */
@@ -76,6 +86,11 @@ export function SidebarMenu({
   onConfigureLabels,
   onAddLabel,
   onDeleteLabel,
+  channelId,
+  onAddChannel,
+  onConfigureChannels,
+  onNewChannelThread,
+  onDeleteChannel,
   onAddSource,
   onAddSkill,
   onAddAutomation,
@@ -144,6 +159,40 @@ export function SidebarMenu({
             <MenuItem onClick={() => onDeleteLabel(labelId)}>
               <Trash2 className="h-3.5 w-3.5" />
               <span className="flex-1">{t("sidebarMenu.deleteLabel")}</span>
+            </MenuItem>
+          </>
+        )}
+      </>
+    )
+  }
+
+  if (type === 'channels') {
+    return (
+      <>
+        {onAddChannel && (
+          <MenuItem onClick={onAddChannel}>
+            <Plus className="h-3.5 w-3.5" />
+            <span className="flex-1">{t("sidebarMenu.addChannel")}</span>
+          </MenuItem>
+        )}
+        {channelId && onNewChannelThread && (
+          <MenuItem onClick={() => onNewChannelThread(channelId)}>
+            <AppWindow className="h-3.5 w-3.5" />
+            <span className="flex-1">{t("sidebarMenu.newThreadInChannel")}</span>
+          </MenuItem>
+        )}
+        {onConfigureChannels && (
+          <MenuItem onClick={onConfigureChannels}>
+            <Settings2 className="h-3.5 w-3.5" />
+            <span className="flex-1">{t("sidebarMenu.editChannels")}</span>
+          </MenuItem>
+        )}
+        {channelId && onDeleteChannel && (
+          <>
+            <Separator />
+            <MenuItem onClick={() => onDeleteChannel(channelId)}>
+              <Trash2 className="h-3.5 w-3.5" />
+              <span className="flex-1">{t("sidebarMenu.deleteChannel")}</span>
             </MenuItem>
           </>
         )}

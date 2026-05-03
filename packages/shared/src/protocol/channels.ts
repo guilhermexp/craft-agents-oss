@@ -302,6 +302,13 @@ export const RPC_CHANNELS = {
     DELETE: 'labels:delete',
     CHANGED: 'labels:changed',
   },
+  channels: {
+    LIST: 'channels:list',
+    CREATE: 'channels:create',
+    UPDATE: 'channels:update',
+    DELETE: 'channels:delete',
+    CHANGED: 'channels:changed',
+  },
   views: {
     LIST: 'views:list',
     SAVE: 'views:save',

@@ -532,6 +532,13 @@ export interface ElectronAPI {
   deleteLabel(workspaceId: string, labelId: string): Promise<{ stripped: number }>
   onLabelsChanged(callback: (workspaceId: string) => void): () => void
 
+  // Channels (workspace-scoped)
+  listChannels(workspaceId: string): Promise<import('@craft-agent/shared/channels').ChannelConfig[]>
+  createChannel(workspaceId: string, input: import('@craft-agent/shared/channels').CreateChannelInput): Promise<import('@craft-agent/shared/channels').ChannelConfig>
+  updateChannel(workspaceId: string, channelId: string, updates: import('@craft-agent/shared/channels').UpdateChannelInput): Promise<import('@craft-agent/shared/channels').ChannelConfig>
+  deleteChannel(workspaceId: string, channelId: string): Promise<{ deleted: boolean }>
+  onChannelsChanged(callback: (workspaceId: string) => void): () => void
+
   // LLM connections change listener
   onLlmConnectionsChanged(callback: () => void): () => void
 

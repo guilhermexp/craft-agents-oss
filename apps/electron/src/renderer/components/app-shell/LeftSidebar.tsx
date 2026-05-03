@@ -32,6 +32,16 @@ export interface SidebarContextMenuConfig {
   onAddLabel?: (parentId?: string) => void
   /** Handler for "Delete Label" action - deletes the label by labelId */
   onDeleteLabel?: (labelId: string) => void
+  /** Channel ID — when set, this is an individual channel item */
+  channelId?: string
+  /** Handler for "Add Channel" action */
+  onAddChannel?: () => void
+  /** Handler for "Edit Channels" action */
+  onConfigureChannels?: () => void
+  /** Handler for creating a new thread inside a channel */
+  onNewChannelThread?: (channelId: string) => void
+  /** Handler for deleting a channel config */
+  onDeleteChannel?: (channelId: string) => void
   /** Handler for "Add Source" action - for sources type */
   onAddSource?: () => void
   /** Handler for "Add Skill" action - for skills type */
@@ -244,6 +254,11 @@ export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, i
                         onConfigureLabels={link.contextMenu.onConfigureLabels}
                         onAddLabel={link.contextMenu.onAddLabel}
                         onDeleteLabel={link.contextMenu.onDeleteLabel}
+                        channelId={link.contextMenu.channelId}
+                        onAddChannel={link.contextMenu.onAddChannel}
+                        onConfigureChannels={link.contextMenu.onConfigureChannels}
+                        onNewChannelThread={link.contextMenu.onNewChannelThread}
+                        onDeleteChannel={link.contextMenu.onDeleteChannel}
                         onAddSource={link.contextMenu.onAddSource}
                         onAddSkill={link.contextMenu.onAddSkill}
                         onAddAutomation={link.contextMenu.onAddAutomation}
@@ -403,6 +418,11 @@ function SortableStatusList({ items, onReorder, getItemProps, focusedItemId, tra
                         onConfigureLabels={item.contextMenu.onConfigureLabels}
                         onAddLabel={item.contextMenu.onAddLabel}
                         onDeleteLabel={item.contextMenu.onDeleteLabel}
+                        channelId={item.contextMenu.channelId}
+                        onAddChannel={item.contextMenu.onAddChannel}
+                        onConfigureChannels={item.contextMenu.onConfigureChannels}
+                        onNewChannelThread={item.contextMenu.onNewChannelThread}
+                        onDeleteChannel={item.contextMenu.onDeleteChannel}
                         onAddSource={item.contextMenu.onAddSource}
                         onAddSkill={item.contextMenu.onAddSkill}
                         onAddAutomation={item.contextMenu.onAddAutomation}

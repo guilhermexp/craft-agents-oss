@@ -150,6 +150,8 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   // appearance — local UI preferences
   RPC_CHANNELS.appearance.GET_RICH_TOOL_DESCRIPTIONS,
   RPC_CHANNELS.appearance.SET_RICH_TOOL_DESCRIPTIONS,
+  RPC_CHANNELS.appearance.GET_AUTO_EXPAND_ACTIVITIES,
+  RPC_CHANNELS.appearance.SET_AUTO_EXPAND_ACTIVITIES,
 
   // caching — prompt cache and context settings
   RPC_CHANNELS.caching.GET_EXTENDED_PROMPT_CACHE,
@@ -406,6 +408,13 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.labels.CREATE,
   RPC_CHANNELS.labels.DELETE,
   RPC_CHANNELS.labels.CHANGED,
+
+  // channels — workspace metadata backed by labels
+  RPC_CHANNELS.channels.LIST,
+  RPC_CHANNELS.channels.CREATE,
+  RPC_CHANNELS.channels.UPDATE,
+  RPC_CHANNELS.channels.DELETE,
+  RPC_CHANNELS.channels.CHANGED,
 
   // views — workspace UI views
   RPC_CHANNELS.views.LIST,

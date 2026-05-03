@@ -25,6 +25,7 @@ export interface BroadcastEventMap {
   // Domain change broadcasts (global via broadcastToAll)
   [RPC_CHANNELS.sources.CHANGED]: [workspaceId: string, sources: LoadedSource[]]
   [RPC_CHANNELS.labels.CHANGED]: [workspaceId: string]
+  [RPC_CHANNELS.channels.CHANGED]: [workspaceId: string]
   [RPC_CHANNELS.statuses.CHANGED]: [workspaceId: string]
   [RPC_CHANNELS.automations.CHANGED]: [workspaceId: string]
   [RPC_CHANNELS.skills.CHANGED]: [workspaceId: string, skills: LoadedSkill[]]

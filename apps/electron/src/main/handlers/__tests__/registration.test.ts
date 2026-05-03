@@ -73,6 +73,8 @@ function createMockDeps(): HandlerDeps {
       onStateChange: () => {},
       onRemoved: () => {},
       onInteracted: () => {},
+      onProfilesChanged: () => {},
+      onProfileManagementRequested: () => {},
     } as unknown as NonNullable<HandlerDeps['browserPaneManager']>,
     oauthFlowStore: {
       store: () => {},
@@ -90,6 +92,7 @@ async function getExpectedChannels(): Promise<Set<string>> {
   const [
     auth,
     automations,
+    channels,
     files,
     hermes,
     labels,
@@ -107,6 +110,7 @@ async function getExpectedChannels(): Promise<Set<string>> {
   ] = await Promise.all([
     import('@craft-agent/server-core/handlers/rpc/auth'),
     import('@craft-agent/server-core/handlers/rpc/automations'),
+    import('@craft-agent/server-core/handlers/rpc/channels'),
     import('@craft-agent/server-core/handlers/rpc/files'),
     import('@craft-agent/server-core/handlers/rpc/hermes'),
     import('@craft-agent/server-core/handlers/rpc/labels'),
@@ -134,6 +138,7 @@ async function getExpectedChannels(): Promise<Set<string>> {
   return new Set([
     ...auth.HANDLED_CHANNELS,
     ...automations.HANDLED_CHANNELS,
+    ...channels.HANDLED_CHANNELS,
     ...files.HANDLED_CHANNELS,
     ...hermes.HANDLED_CHANNELS,
     ...labels.HANDLED_CHANNELS,

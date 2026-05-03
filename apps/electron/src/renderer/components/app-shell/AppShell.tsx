@@ -30,6 +30,7 @@ import {
   Clock,
   Radio,
   Bot,
+  Hash,
   Info,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
@@ -92,6 +93,7 @@ import { panelStackAtom, panelCountAtom, focusedPanelIdAtom, focusedSessionIdAto
 import { type SessionStatusId, type SessionStatus, statusConfigsToSessionStatuses } from "@/config/session-status-config"
 import { useStatuses } from "@/hooks/useStatuses"
 import { useLabels } from "@/hooks/useLabels"
+import { useChannels } from "@/hooks/useChannels"
 import { useViews } from "@/hooks/useViews"
 import { useContainerWidth } from "@/hooks/useContainerWidth"
 import { LabelIcon, LabelValueTypeIcon } from "@/components/ui/label-icon"
@@ -99,6 +101,7 @@ import { filterSessionStatuses as filterLabelMenuStates } from "@/components/ui/
 import { createLabelMenuItems, filterItems as filterLabelMenuItems, type LabelMenuItem } from "@/components/ui/label-menu-utils"
 import { buildLabelTree, getDescendantIds, getLabelDisplayName, flattenLabels, extractLabelId, findLabelById, sortLabelsForDisplay } from "@craft-agent/shared/labels"
 import type { LabelConfig, LabelTreeNode } from "@craft-agent/shared/labels"
+import type { ChannelConfig } from "@craft-agent/shared/channels"
 import { resolveEntityColor } from "@craft-agent/shared/colors"
 import * as storage from "@/lib/local-storage"
 import { toast } from "sonner"
@@ -120,6 +123,8 @@ import { AutomationsListPanel } from "../automations/AutomationsListPanel"
 import { APP_EVENTS, AGENT_EVENTS, type AutomationFilterKind, AUTOMATION_TYPE_TO_FILTER_KIND } from "../automations/types"
 import { useAutomations } from "@/hooks/useAutomations"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { PanelHeader } from "./PanelHeader"
 import { SendToWorkspaceDialog } from "./SendToWorkspaceDialog"
 import { MessagingDialogHost } from "@/components/messaging/MessagingDialogHost"
@@ -994,11 +999,26 @@ function AppShellContent({
   const { labels: labelConfigs } = useLabels(activeWorkspace?.id || null)
   const displayLabelConfigs = useMemo(() => sortLabelsForDisplay(labelConfigs), [labelConfigs])
 
+  const { channels: channelConfigs } = useChannels(activeWorkspace?.id || null)
+  const channelLabelIds = useMemo(
+    () => new Set(channelConfigs.map(channel => channel.labelId)),
+    [channelConfigs],
+  )
+  const sidebarLabelConfigs = useMemo(() => {
+    const filterLabels = (labels: LabelConfig[]): LabelConfig[] => labels
+      .filter(label => !channelLabelIds.has(label.id))
+      .map(label => ({
+        ...label,
+        ...(label.children ? { children: filterLabels(label.children) } : {}),
+      }))
+    return filterLabels(displayLabelConfigs)
+  }, [displayLabelConfigs, channelLabelIds])
+
   // Views: compiled once on config load, evaluated per session in list/chat
   const { evaluateSession: evaluateViews, viewConfigs } = useViews(activeWorkspace?.id || null)
 
   // Build hierarchical label tree from the display-sorted label config structure
-  const labelTree = useMemo(() => buildLabelTree(displayLabelConfigs), [displayLabelConfigs])
+  const labelTree = useMemo(() => buildLabelTree(sidebarLabelConfigs), [sidebarLabelConfigs])
 
   // Build flat LabelMenuItem[] from hierarchical labels for the filter dropdown's search mode.
   // Uses the same structure as the # inline menu so the two search surfaces stay aligned.
@@ -1392,6 +1412,16 @@ function AppShellContent({
     return counts
   }, [activeSessionMetas, labelConfigs])
 
+  const channelCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const channel of channelConfigs) {
+      counts[channel.id] = activeSessionMetas.filter(
+        session => session.labels?.some(label => extractLabelId(label) === channel.labelId)
+      ).length
+    }
+    return counts
+  }, [activeSessionMetas, channelConfigs])
+
   // Count sessions by individual todo state (dynamic based on effectiveSessionStatuses)
   // Uses activeSessionMetas to exclude archived sessions from counts.
   const sessionStatusCounts = useMemo(() => {
@@ -1662,6 +1692,10 @@ function AppShellContent({
     navigate(routes.view.label(labelId))
   }, [])
 
+  const handleChannelClick = useCallback((channel: ChannelConfig) => {
+    navigate(routes.view.label(channel.labelId))
+  }, [])
+
   const handleViewClick = useCallback((viewId: string) => {
     navigate(routes.view.view(viewId))
   }, [])
@@ -1739,7 +1773,11 @@ function AppShellContent({
   // We use controlled popovers instead of deep links so the user can type
   // their request in the popover UI before opening a new chat window.
   // add-source variants: add-source (generic), add-source-api, add-source-mcp, add-source-local
-  const [editPopoverOpen, setEditPopoverOpen] = useState<'statuses' | 'labels' | 'views' | 'add-source' | 'add-source-api' | 'add-source-mcp' | 'add-source-local' | 'add-skill' | 'add-label' | 'automation-config' | null>(null)
+  const [editPopoverOpen, setEditPopoverOpen] = useState<'statuses' | 'labels' | 'channels' | 'views' | 'add-source' | 'add-source-api' | 'add-source-mcp' | 'add-source-local' | 'add-skill' | 'add-label' | 'automation-config' | null>(null)
+  const [channelDialogOpen, setChannelDialogOpen] = useState(false)
+  const [channelNameDraft, setChannelNameDraft] = useState('')
+  const [channelDescriptionDraft, setChannelDescriptionDraft] = useState('')
+  const [isCreatingChannel, setIsCreatingChannel] = useState(false)
 
   // Stores the Y position of the last right-clicked sidebar item so the EditPopover
   // appears near it rather than at a fixed location. Updated synchronously before
@@ -1796,6 +1834,13 @@ function AppShellContent({
     setTimeout(() => setEditPopoverOpen('labels'), 50)
   }, [captureContextMenuPosition])
 
+  // Handler for "Edit Channels" context menu action
+  // Opens the EditPopover for the channels config file.
+  const openConfigureChannels = useCallback(() => {
+    captureContextMenuPosition()
+    setTimeout(() => setEditPopoverOpen('channels'), 50)
+  }, [captureContextMenuPosition])
+
   // Handler for "Edit Views" context menu action
   // Opens the EditPopover for view configuration
   const openConfigureViews = useCallback(() => {
@@ -1834,6 +1879,67 @@ function AppShellContent({
       console.error('[AppShell] Failed to delete label:', err)
     }
   }, [activeWorkspace?.id])
+
+  const handleAddChannel = useCallback(() => {
+    if (!activeWorkspace?.id) return
+    setChannelNameDraft('')
+    setChannelDescriptionDraft('')
+    setChannelDialogOpen(true)
+  }, [activeWorkspace?.id])
+
+  const handleCreateChannelSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!activeWorkspace?.id) return
+    const name = channelNameDraft.trim()
+    if (!name) return
+    const description = channelDescriptionDraft.trim()
+    setIsCreatingChannel(true)
+    try {
+      const channel = await window.electronAPI.createChannel(activeWorkspace.id, {
+        name,
+        ...(description ? { description } : {}),
+      })
+      setChannelDialogOpen(false)
+      setChannelNameDraft('')
+      setChannelDescriptionDraft('')
+      navigate(routes.view.label(channel.labelId))
+    } catch (err) {
+      console.error('[AppShell] Failed to add channel:', err)
+      toast.error(err instanceof Error ? err.message : 'Failed to add channel')
+    } finally {
+      setIsCreatingChannel(false)
+    }
+  }, [activeWorkspace?.id, channelDescriptionDraft, channelNameDraft])
+
+  const handleNewChannelThread = useCallback((channelId: string) => {
+    const channel = channelConfigs.find(item => item.id === channelId)
+    if (!channel) return
+    navigate(routes.action.newSession({ label: channel.labelId }))
+  }, [channelConfigs])
+
+  const handleChannelSessionDrop = useCallback(async (sessionId: string, channel: ChannelConfig) => {
+    const meta = workspaceSessionMetas.find(item => item.id === sessionId)
+    const currentLabels = meta?.labels ?? []
+    if (currentLabels.some(label => extractLabelId(label) === channel.labelId)) return
+    await handleSessionLabelsChange(sessionId, [...currentLabels, channel.labelId])
+  }, [handleSessionLabelsChange, workspaceSessionMetas])
+
+  const handleDeleteChannel = useCallback(async (channelId: string) => {
+    if (!activeWorkspace?.id) return
+    if (!window.confirm(t("sidebar.deleteChannelConfirm"))) return
+    try {
+      await window.electronAPI.deleteChannel(activeWorkspace.id, channelId)
+      if (sessionFilter?.kind === 'label') {
+        const deleted = channelConfigs.find(item => item.id === channelId)
+        if (deleted?.labelId === sessionFilter.labelId) {
+          navigate(routes.view.allSessions())
+        }
+      }
+    } catch (err) {
+      console.error('[AppShell] Failed to delete channel:', err)
+      toast.error(err instanceof Error ? err.message : 'Failed to delete channel')
+    }
+  }, [activeWorkspace?.id, channelConfigs, sessionFilter, t])
 
   // Handler for "Add Source" context menu action
   // Opens the EditPopover for adding a new source
@@ -1976,7 +2082,13 @@ function AppShellContent({
     result.push({ id: 'nav:flagged', type: 'nav', action: handleFlaggedClick })
     result.push({ id: 'nav:archived', type: 'nav', action: handleArchivedClick })
 
-    // 2. Labels section header + regular label tree for keyboard nav
+    // 2. Channels and labels sections for keyboard nav
+    result.push({ id: 'nav:channels', type: 'nav', action: () => channelConfigs[0] ? handleChannelClick(channelConfigs[0]) : undefined })
+    result.push({ id: 'nav:channel:new', type: 'nav', action: handleAddChannel })
+    for (const channel of channelConfigs) {
+      result.push({ id: `nav:channel:${channel.id}`, type: 'nav', action: () => handleChannelClick(channel) })
+    }
+
     result.push({ id: 'nav:labels', type: 'nav', action: () => handleLabelClick('__all__') })
     // Flatten regular label tree for keyboard navigation (depth-first)
     const flattenTree = (nodes: LabelTreeNode[]) => {
@@ -1997,7 +2109,7 @@ function AppShellContent({
     result.push({ id: 'nav:whats-new', type: 'nav', action: handleWhatsNewClick })
 
     return result
-  }, [handleAllSessionsClick, handleFlaggedClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSkillsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
+  }, [handleAllSessionsClick, handleFlaggedClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, handleChannelClick, handleAddChannel, channelConfigs, labelTree, handleSourcesClick, handleSkillsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
 
   // Toggle folder expanded state
   const handleToggleFolder = React.useCallback((path: string) => {
@@ -2358,6 +2470,53 @@ function AppShellContent({
                           variant: (sessionFilter?.kind === 'archived' ? "default" : "ghost") as "default" | "ghost",
                           onClick: handleArchivedClick,
                         },
+                      ],
+                    },
+                    // Channels: first-class workspace channels backed by unique labels
+                    {
+                      id: "nav:channels",
+                      title: t("sidebar.channels"),
+                      label: channelConfigs.length > 0 ? String(channelConfigs.length) : undefined,
+                      icon: Hash,
+                      variant: "ghost" as const,
+                      onClick: () => {
+                        if (channelConfigs[0]) handleChannelClick(channelConfigs[0])
+                      },
+                      expandable: true,
+                      expanded: isExpanded('nav:channels'),
+                      onToggle: () => toggleExpanded('nav:channels'),
+                      contextMenu: {
+                        type: 'channels' as const,
+                        onAddChannel: handleAddChannel,
+                        onConfigureChannels: openConfigureChannels,
+                      },
+                      items: [
+                        {
+                          id: "nav:channel:new",
+                          title: t("sidebar.newChannel"),
+                          icon: Plus,
+                          variant: "ghost" as const,
+                          compact: true,
+                          onClick: handleAddChannel,
+                        },
+                        ...channelConfigs.map(channel => ({
+                          id: `nav:channel:${channel.id}`,
+                          title: channel.name,
+                          label: channelCounts[channel.id] > 0 ? String(channelCounts[channel.id]) : undefined,
+                          icon: <Hash className="h-3.5 w-3.5" />,
+                          variant: (sessionFilter?.kind === 'label' && sessionFilter.labelId === channel.labelId ? "default" : "ghost") as "default" | "ghost",
+                          compact: true,
+                          onClick: () => handleChannelClick(channel),
+                          onSessionDrop: (sessionId: string) => { void handleChannelSessionDrop(sessionId, channel) },
+                          contextMenu: {
+                            type: 'channels' as const,
+                            channelId: channel.id,
+                            onAddChannel: handleAddChannel,
+                            onConfigureChannels: openConfigureChannels,
+                            onNewChannelThread: handleNewChannelThread,
+                            onDeleteChannel: handleDeleteChannel,
+                          },
+                        })),
                       ],
                     },
                     // Labels: navigable header (shows all labeled sessions) + hierarchical tree (drag-and-drop reorder + re-parent)
@@ -3405,6 +3564,26 @@ function AppShellContent({
               }
             })()}
           />
+          {/* Configure Channels EditPopover - anchored near sidebar */}
+          <EditPopover
+            open={editPopoverOpen === 'channels'}
+            onOpenChange={(isOpen) => setEditPopoverOpen(isOpen ? 'channels' : null)}
+            modal={true}
+            trigger={
+              <div
+                className="fixed w-0 h-0 pointer-events-none"
+                style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
+                aria-hidden="true"
+              />
+            }
+            side="bottom"
+            align="start"
+            secondaryAction={{
+              label: 'Edit File',
+              filePath: `${activeWorkspace.rootPath}/channels/config.json`,
+            }}
+            {...getEditConfig('edit-channels', activeWorkspace.rootPath)}
+          />
           {/* Edit Views EditPopover - anchored near sidebar */}
           <EditPopover
             open={editPopoverOpen === 'views'}
@@ -3542,6 +3721,54 @@ function AppShellContent({
             <Button variant="outline" onClick={() => setAutomationPendingDelete(null)}>{t("common.cancel")}</Button>
             <Button variant="destructive" onClick={confirmDeleteAutomation}>{t("common.delete")}</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New channel dialog */}
+      <Dialog
+        open={channelDialogOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setChannelDialogOpen(true)
+          } else if (!isCreatingChannel) {
+            setChannelDialogOpen(false)
+          }
+        }}
+      >
+        <DialogContent>
+          <form onSubmit={handleCreateChannelSubmit} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle>{t("dialog.channel.title")}</DialogTitle>
+              <DialogDescription>{t("dialog.channel.description")}</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <Input
+                value={channelNameDraft}
+                onChange={(event) => setChannelNameDraft(event.target.value)}
+                placeholder={t("dialog.channel.namePlaceholder")}
+                autoFocus
+              />
+              <Textarea
+                value={channelDescriptionDraft}
+                onChange={(event) => setChannelDescriptionDraft(event.target.value)}
+                placeholder={t("dialog.channel.descriptionPlaceholder")}
+                rows={3}
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setChannelDialogOpen(false)}
+                disabled={isCreatingChannel}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button type="submit" disabled={!channelNameDraft.trim() || isCreatingChannel}>
+                {t("dialog.channel.create")}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

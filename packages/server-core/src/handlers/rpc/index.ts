@@ -3,6 +3,7 @@ import type { HandlerDeps } from '../handler-deps'
 
 import { registerAuthHandlers } from './auth'
 import { registerAutomationsHandlers } from './automations'
+import { registerChannelsHandlers } from './channels'
 import { registerFilesHandlers } from './files'
 import { registerHermesHandlers } from './hermes'
 import { registerLabelsHandlers } from './labels'
@@ -32,6 +33,7 @@ export function registerCoreRpcHandlers(
 ): void {
   registerAuthHandlers(server, deps)
   registerAutomationsHandlers(server, deps)
+  registerChannelsHandlers(server, deps)
   registerFilesHandlers(server, deps)
   registerHermesHandlers(server, deps)
   registerLabelsHandlers(server, deps)
