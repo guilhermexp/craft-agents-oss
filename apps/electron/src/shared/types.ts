@@ -224,6 +224,7 @@ import type {
   HermesListHomeFilesResult,
   HermesListSkillsResult,
   HermesOpenPathResult,
+  HermesActiveProfileResult,
   HermesListProfilesResult,
   HermesProfileMutationResult,
   HermesProfileSetupCommandResult,
@@ -448,6 +449,8 @@ export interface ElectronAPI {
   patchHermesApiConfig(body: { config?: Record<string, unknown>; env?: Record<string, string> }): Promise<{ success: true; data: unknown } | { success: false; error: string }>
   getHermesProviderModels(provider: string): Promise<{ success: true; data: unknown } | { success: false; error: string }>
   listHermesProfiles(): Promise<HermesListProfilesResult>
+  getActiveHermesProfile(): Promise<HermesActiveProfileResult>
+  setActiveHermesProfile(name: string): Promise<HermesActiveProfileResult>
   createHermesProfile(body: { name: string; cloneFromDefault: boolean }): Promise<HermesProfileMutationResult>
   renameHermesProfile(name: string, newName: string): Promise<HermesProfileMutationResult>
   deleteHermesProfile(name: string): Promise<HermesProfileMutationResult>

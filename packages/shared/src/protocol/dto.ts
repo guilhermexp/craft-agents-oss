@@ -518,6 +518,7 @@ export interface HermesProfileInfo {
   provider?: string
   hasEnv: boolean
   skillCount: number
+  isActive?: boolean
 }
 
 export interface HermesListProfilesResult {
@@ -530,6 +531,12 @@ export interface HermesProfileMutationResult {
   success: boolean
   name?: string
   path?: string
+  error?: string
+}
+
+export interface HermesActiveProfileResult {
+  success: boolean
+  name?: string
   error?: string
 }
 

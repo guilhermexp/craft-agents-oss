@@ -20,6 +20,9 @@ export type HermesRuntimeConfig = {
 
 export type NormalizedHermesRuntimeConfig = Required<HermesRuntimeConfig>
 
+const HERMES_DEFAULT_PROFILE = 'default'
+const HERMES_PROFILE_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
+
 export function resolveDefaultHermesPaths(homeDir: string): {
   hermesHome: string
   configPath: string
@@ -91,6 +94,28 @@ export function normalizeHermesRuntimeConfig(runtime: HermesRuntimeConfig = {}):
   const envPath = runtime.envPath?.trim() || join(normalizedHome, '.env')
 
   return { command, args, hermesHome, configPath, envPath }
+}
+
+export function isValidHermesProfileName(name: string): boolean {
+  return name === HERMES_DEFAULT_PROFILE || HERMES_PROFILE_NAME_RE.test(name)
+}
+
+export function applyHermesProfileToRuntime(
+  runtime: NormalizedHermesRuntimeConfig,
+  profileName?: string | null,
+): NormalizedHermesRuntimeConfig {
+  const name = profileName?.trim()
+  if (!name || name === HERMES_DEFAULT_PROFILE || !isValidHermesProfileName(name)) {
+    return runtime
+  }
+
+  const hermesHome = join(runtime.hermesHome, 'profiles', name)
+  return {
+    ...runtime,
+    hermesHome,
+    configPath: join(hermesHome, 'config.yaml'),
+    envPath: join(hermesHome, '.env'),
+  }
 }
 
 function headersToAcp(headers?: Record<string, string>): AcpHeader[] {

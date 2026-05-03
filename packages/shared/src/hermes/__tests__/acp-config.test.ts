@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 
-import { buildHermesAcpMcpServers, normalizeHermesRuntimeConfig, sdkMcpServerToHermesAcp } from '../acp-config.ts'
+import { applyHermesProfileToRuntime, buildHermesAcpMcpServers, normalizeHermesRuntimeConfig, sdkMcpServerToHermesAcp } from '../acp-config.ts'
 
 const HERMES_ENV_KEYS = [
   'CRAFT_HERMES_PYTHON',
@@ -109,6 +109,22 @@ describe('Hermes ACP config', () => {
 
     const runtime = normalizeHermesRuntimeConfig()
     expect(runtime.hermesHome).toBe('/app-scoped')
+  })
+
+  it('resolves non-default profiles under the app-scoped Hermes home', () => {
+    const runtime = normalizeHermesRuntimeConfig({ hermesHome: '/tmp/app-hermes' })
+    const profileRuntime = applyHermesProfileToRuntime(runtime, 'server-ops')
+
+    expect(profileRuntime.hermesHome).toBe('/tmp/app-hermes/profiles/server-ops')
+    expect(profileRuntime.configPath).toBe('/tmp/app-hermes/profiles/server-ops/config.yaml')
+    expect(profileRuntime.envPath).toBe('/tmp/app-hermes/profiles/server-ops/.env')
+  })
+
+  it('keeps the base Hermes home for default or invalid profiles', () => {
+    const runtime = normalizeHermesRuntimeConfig({ hermesHome: '/tmp/app-hermes' })
+
+    expect(applyHermesProfileToRuntime(runtime, 'default')).toEqual(runtime)
+    expect(applyHermesProfileToRuntime(runtime, '../bad')).toEqual(runtime)
   })
 
   it('maps Craft HTTP MCP configs to ACP mcpServers shape', () => {

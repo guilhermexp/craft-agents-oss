@@ -149,6 +149,7 @@ server.listen(port, '127.0.0.1')
       provider: 'openai-codex',
       hasEnv: true,
       skillCount: 9,
+      isActive: true,
     }])
   })
 

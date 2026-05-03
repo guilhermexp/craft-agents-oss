@@ -8,6 +8,7 @@ import net from 'node:net'
 
 import {
   RPC_CHANNELS,
+  type HermesActiveProfileResult,
   type HermesDashboardResult,
   type HermesDetectionResult,
   type HermesHomeFileInfo,
@@ -25,9 +26,10 @@ import {
   type HermesSkillInfo,
   type HermesUpdateResult,
 } from '@craft-agent/shared/protocol'
-import { normalizeHermesRuntimeConfig, type NormalizedHermesRuntimeConfig } from '@craft-agent/shared/hermes/acp-config'
+import { isValidHermesProfileName, normalizeHermesRuntimeConfig, type NormalizedHermesRuntimeConfig } from '@craft-agent/shared/hermes/acp-config'
 import { readHermesCodexTokens, seedHermesAuthFromCraft } from '@craft-agent/shared/hermes/auth-bridge'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
+import { getActiveHermesProfile, setActiveHermesProfile } from '@craft-agent/shared/config'
 import { parseHermesConfigSnapshot } from '@craft-agent/shared/hermes/runtime-config'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
@@ -589,12 +591,15 @@ function normalizeHermesProfile(value: unknown) {
 
 function normalizeHermesProfilesPayload(payload: unknown): HermesListProfilesResult {
   const record = asRecord(payload)
+  const activeProfile = getActiveHermesProfile()
   const rawProfiles = Array.isArray(record?.profiles) ? record.profiles : []
+  const profiles = rawProfiles
+    .map(normalizeHermesProfile)
+    .filter((profile): profile is NonNullable<ReturnType<typeof normalizeHermesProfile>> => profile !== null)
+  const effectiveActiveProfile = profiles.some(profile => profile.name === activeProfile) ? activeProfile : 'default'
   return {
     success: true,
-    profiles: rawProfiles
-      .map(normalizeHermesProfile)
-      .filter((profile): profile is NonNullable<ReturnType<typeof normalizeHermesProfile>> => profile !== null),
+    profiles: profiles.map(profile => ({ ...profile, isActive: profile.name === effectiveActiveProfile })),
   }
 }
 
@@ -698,6 +703,15 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.hermes.GET_API_CONFIG,
   RPC_CHANNELS.hermes.PATCH_API_CONFIG,
   RPC_CHANNELS.hermes.GET_PROVIDER_MODELS,
+  RPC_CHANNELS.hermes.LIST_PROFILES,
+  RPC_CHANNELS.hermes.GET_ACTIVE_PROFILE,
+  RPC_CHANNELS.hermes.SET_ACTIVE_PROFILE,
+  RPC_CHANNELS.hermes.CREATE_PROFILE,
+  RPC_CHANNELS.hermes.RENAME_PROFILE,
+  RPC_CHANNELS.hermes.DELETE_PROFILE,
+  RPC_CHANNELS.hermes.GET_PROFILE_SETUP_COMMAND,
+  RPC_CHANNELS.hermes.GET_PROFILE_SOUL,
+  RPC_CHANNELS.hermes.UPDATE_PROFILE_SOUL,
 ] as const
 
 /**
@@ -1009,6 +1023,35 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
+  server.handle(RPC_CHANNELS.hermes.GET_ACTIVE_PROFILE, async (): Promise<HermesActiveProfileResult> => {
+    return { success: true, name: getActiveHermesProfile() }
+  })
+
+  server.handle(RPC_CHANNELS.hermes.SET_ACTIVE_PROFILE, async (
+    _ctx,
+    name: string,
+  ): Promise<HermesActiveProfileResult> => {
+    try {
+      const target = name.trim() || 'default'
+      if (!isValidHermesProfileName(target)) {
+        return { success: false, error: 'Nome de profile Hermes inválido.' }
+      }
+
+      const profiles = normalizeHermesProfilesPayload(await fetchDashboardJson('/api/profiles')).profiles
+      if (target !== 'default' && !profiles.some(profile => profile.name === target)) {
+        return { success: false, error: `Profile Hermes não encontrado: ${target}` }
+      }
+
+      if (!setActiveHermesProfile(target)) {
+        return { success: false, error: 'Config local do Craft não encontrada.' }
+      }
+
+      return { success: true, name: target }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
   server.handle(RPC_CHANNELS.hermes.CREATE_PROFILE, async (
     _ctx,
     body: { name: string; cloneFromDefault: boolean },
@@ -1043,9 +1086,11 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ new_name: newName }),
       }))
+      const savedName = optionalString(data?.name) ?? newName
+      if (getActiveHermesProfile() === name) setActiveHermesProfile(savedName)
       return {
         success: true,
-        name: optionalString(data?.name) ?? newName,
+        name: savedName,
         path: optionalString(data?.path),
       }
     } catch (error) {
@@ -1061,6 +1106,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
       const data = asRecord(await fetchDashboardJson(`/api/profiles/${encodeURIComponent(name)}`, {
         method: 'DELETE',
       }))
+      if (getActiveHermesProfile() === name) setActiveHermesProfile('default')
       return {
         success: true,
         name,

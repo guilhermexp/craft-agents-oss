@@ -13,8 +13,8 @@ import { getBackendRuntime } from './backend/internal/driver-types.ts'
 import type { FileAttachment } from '../utils/files.ts'
 import type { PermissionMode } from './mode-manager.ts'
 import type { LLMQueryRequest, LLMQueryResult } from './llm-tool.ts'
-import type { Workspace } from '../config/storage.ts'
-import { buildHermesAcpMcpServers, normalizeHermesRuntimeConfig, type HermesRuntimeConfig } from '../hermes/acp-config.ts'
+import { getActiveHermesProfile, type Workspace } from '../config/storage.ts'
+import { applyHermesProfileToRuntime, buildHermesAcpMcpServers, normalizeHermesRuntimeConfig, type HermesRuntimeConfig } from '../hermes/acp-config.ts'
 import { seedHermesAuthFromCraft } from '../hermes/auth-bridge.ts'
 import { CraftSessionToolsMcpServer } from '../mcp/session-tools-server.ts'
 import { clearPlanFileState, mergeSessionScopedToolCallbacks, unregisterSessionScopedToolCallbacks } from './session-scoped-tools.ts'
@@ -120,6 +120,7 @@ export class HermesAgent extends BaseAgent {
   protected backendName = 'Hermes'
 
   private provider: ACPProvider | null = null
+  private providerRuntimeHome: string | null = null
   private hermesSessionId: string | null = null
   private isStreaming = false
   private abortController: AbortController | null = null
@@ -155,6 +156,7 @@ export class HermesAgent extends BaseAgent {
     this.pendingProviderRestart = false
     this.provider?.cleanup()
     this.provider = null
+    this.providerRuntimeHome = null
     void this.stopSessionToolsServer()
   }
 
@@ -164,10 +166,12 @@ export class HermesAgent extends BaseAgent {
     this.pendingProviderRestart = false
     this.provider?.cleanup()
     this.provider = null
+    this.providerRuntimeHome = null
   }
 
   private getRuntimeConfig() {
-    return normalizeHermesRuntimeConfig(getBackendRuntime(this.config) as HermesRuntimeConfig)
+    const runtime = normalizeHermesRuntimeConfig(getBackendRuntime(this.config) as HermesRuntimeConfig)
+    return applyHermesProfileToRuntime(runtime, getActiveHermesProfile())
   }
 
   private resolvedCwd(): string {
@@ -220,10 +224,17 @@ export class HermesAgent extends BaseAgent {
   }
 
   private async getOrCreateProvider(): Promise<ACPProvider> {
-    if (this.provider) return this.provider
+    const runtime = this.getRuntimeConfig()
+    if (this.provider && this.providerRuntimeHome === runtime.hermesHome) return this.provider
+
+    if (this.provider) {
+      this.provider.cleanup()
+      this.provider = null
+      this.providerRuntimeHome = null
+      this.hermesSessionId = null
+    }
 
     const sessionToolsServerUrl = await this.ensureSessionToolsServer()
-    const runtime = this.getRuntimeConfig()
     const baseEnv = buildHermesProcessEnv(runtime)
     let bridgedEnv: Record<string, string> = {}
     try {
@@ -256,6 +267,7 @@ export class HermesAgent extends BaseAgent {
       ...(this.hermesSessionId ? { existingSessionId: this.hermesSessionId } : {}),
       persistSession: true,
     })
+    this.providerRuntimeHome = runtime.hermesHome
 
     return this.provider
   }
@@ -313,6 +325,7 @@ export class HermesAgent extends BaseAgent {
 
     this.provider?.cleanup()
     this.provider = null
+    this.providerRuntimeHome = null
   }
 
   protected async *chatImpl(
@@ -419,6 +432,7 @@ export class HermesAgent extends BaseAgent {
         this.pendingProviderRestart = false
         this.provider?.cleanup()
         this.provider = null
+        this.providerRuntimeHome = null
       }
     }
   }
@@ -470,11 +484,13 @@ export class HermesAgent extends BaseAgent {
     super.updateWorkingDirectory(path)
     this.provider?.cleanup()
     this.provider = null
+    this.providerRuntimeHome = null
   }
 
   override destroy(): void {
     this.provider?.cleanup()
     this.provider = null
+    this.providerRuntimeHome = null
     this.abortController?.abort()
     this.abortController = null
     this.isStreaming = false

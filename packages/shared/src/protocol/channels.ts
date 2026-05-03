@@ -234,6 +234,8 @@ export const RPC_CHANNELS = {
     /** GET dashboard /api/provider-models?provider=X. */
     GET_PROVIDER_MODELS: 'hermes:getProviderModels',
     LIST_PROFILES: 'hermes:listProfiles',
+    GET_ACTIVE_PROFILE: 'hermes:getActiveProfile',
+    SET_ACTIVE_PROFILE: 'hermes:setActiveProfile',
     CREATE_PROFILE: 'hermes:createProfile',
     RENAME_PROFILE: 'hermes:renameProfile',
     DELETE_PROFILE: 'hermes:deleteProfile',

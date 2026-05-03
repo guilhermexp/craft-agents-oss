@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, Copy, Pencil, Plus, Save, Trash2, Users, X } from 'lucide-react'
+import { CheckCircle2, ChevronDown, Copy, Pencil, Plus, Save, Trash2, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Spinner } from '@craft-agent/ui'
 
@@ -29,6 +29,7 @@ export function HermesProfilesConfig() {
   const [newName, setNewName] = useState('')
   const [cloneFromDefault, setCloneFromDefault] = useState(true)
   const [isCreating, setIsCreating] = useState(false)
+  const [settingActive, setSettingActive] = useState<string | null>(null)
   const [renamingFrom, setRenamingFrom] = useState<string | null>(null)
   const [renameTo, setRenameTo] = useState('')
   const [editingSoulFor, setEditingSoulFor] = useState<string | null>(null)
@@ -166,6 +167,26 @@ export function HermesProfilesConfig() {
     }
   }, [soulText])
 
+  const setActiveProfile = useCallback(async (profile: HermesProfileInfo) => {
+    if (profile.isActive) return
+    setSettingActive(profile.name)
+    try {
+      const result = await window.electronAPI.setActiveHermesProfile(profile.name)
+      if (!result.success) {
+        toast.error('Falha ao ativar profile Hermes', { description: result.error })
+        return
+      }
+      toast.success(`Profile ativo: ${result.name ?? profile.name}`)
+      await loadProfiles()
+    } catch (error) {
+      toast.error('Falha ao ativar profile Hermes', { description: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setSettingActive(null)
+    }
+  }, [loadProfiles])
+
+  const activeProfile = profiles.find(profile => profile.isActive)?.name ?? 'default'
+
   return (
     <SettingsSection title="Profiles">
       <SettingsCard>
@@ -207,6 +228,9 @@ export function HermesProfilesConfig() {
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm font-medium">
               <Users className="h-4 w-4" /> Profiles ({profiles.length})
+              <span className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase text-emerald-600 dark:text-emerald-400">
+                ativo: {activeProfile}
+              </span>
             </div>
             {isLoading ? (
               <div className="flex h-20 items-center justify-center">
@@ -244,6 +268,7 @@ export function HermesProfilesConfig() {
                               <span className="truncate text-sm font-medium">{profile.name}</span>
                             )}
                             {profile.isDefault && <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] uppercase text-muted-foreground">default</span>}
+                            {profile.isActive && <span className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase text-emerald-600 dark:text-emerald-400">ativo</span>}
                             {profile.hasEnv && <span className="rounded-md border border-border px-2 py-0.5 text-[10px] uppercase text-muted-foreground">env</span>}
                           </div>
                           <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -268,6 +293,16 @@ export function HermesProfilesConfig() {
                             </>
                           ) : (
                             <>
+                              <Button
+                                size="sm"
+                                variant={profile.isActive ? 'secondary' : 'ghost'}
+                                className="h-7 px-2"
+                                title={profile.isActive ? 'Profile ativo no chat Hermes' : 'Ativar no chat Hermes'}
+                                disabled={profile.isActive || settingActive === profile.name}
+                                onClick={() => setActiveProfile(profile)}
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                              </Button>
                               <Button size="sm" variant="ghost" className="h-7 px-2" title="Editar SOUL.md" onClick={() => toggleSoulEditor(profile.name)}>
                                 {isEditingSoul ? <ChevronDown className="h-3.5 w-3.5" /> : <span className="text-xs font-bold">S</span>}
                               </Button>

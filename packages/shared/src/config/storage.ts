@@ -83,6 +83,8 @@ export interface StoredConfig {
   networkProxy?: import('./types.ts').NetworkProxySettings;
   // Browser profiles — isolation per profile (cookies/storage/cache)
   browserProfileSettings?: import('./types.ts').BrowserProfileSettings;
+  // Hermes profile used by new Hermes chat turns. "default" means base HERMES_HOME.
+  activeHermesProfile?: string;
   // Windows: path to Git Bash (bash.exe) for the SDK subprocess
   gitBashPath?: string;
   // User chose "Setup later" during onboarding — skip showing onboarding on next launch
@@ -316,6 +318,19 @@ export function setNotificationsEnabled(enabled: boolean): void {
   if (!config) return;
   config.notificationsEnabled = enabled;
   saveConfig(config);
+}
+
+export function getActiveHermesProfile(): string {
+  const active = loadStoredConfig()?.activeHermesProfile?.trim();
+  return active || 'default';
+}
+
+export function setActiveHermesProfile(name: string): boolean {
+  const config = loadStoredConfig();
+  if (!config) return false;
+  config.activeHermesProfile = name.trim() || 'default';
+  saveConfig(config);
+  return true;
 }
 
 /**
