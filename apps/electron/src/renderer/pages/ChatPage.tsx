@@ -11,6 +11,7 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import { AlertCircle, Globe, Copy, RefreshCw, Link2Off, Info } from 'lucide-react'
 import { ChatDisplay, type ChatDisplayHandle } from '@/components/app-shell/ChatDisplay'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
+import { ChannelBadge } from '@/components/app-shell/ChannelBadge'
 import { SessionMenu } from '@/components/app-shell/SessionMenu'
 import { SessionInfoPopover } from '@/components/app-shell/SessionInfoPopover'
 import { RenameDialog } from '@/components/ui/rename-dialog'
@@ -58,6 +59,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     enabledSources,
     skills,
     labels,
+    workspaceChannels,
     onSessionLabelsChange,
     enabledModes,
     sessionStatuses,
@@ -531,6 +533,21 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
   const headerActions = isCompactMode ? compactInfoButton : shareButton
 
+  // Channel breadcrumb: shown next to the title when the session carries one
+  // or more channel-backed labels (Slack-style #channel-name indicator).
+  // We prefer fully-loaded session labels but fall back to sessionMeta.labels
+  // so the badge is visible during the loading skeleton state too.
+  const channelBadge = React.useMemo(() => {
+    const sessionLabels = session?.labels ?? sessionMeta?.labels ?? []
+    if (sessionLabels.length === 0 || !workspaceChannels?.length) return undefined
+    return (
+      <ChannelBadge
+        sessionLabels={sessionLabels}
+        channels={workspaceChannels}
+      />
+    )
+  }, [session?.labels, sessionMeta?.labels, workspaceChannels])
+
   // Build title menu content for chat sessions using shared SessionMenu
   const titleMenu = React.useMemo(() => sessionMeta ? (
     <SessionMenu
@@ -585,7 +602,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
       return (
         <>
           <div className="h-full flex flex-col">
-            <PanelHeader  title={displayTitle} titleMenu={titleMenu} leadingAction={leadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
+            <PanelHeader  title={displayTitle} badge={channelBadge} titleMenu={titleMenu} leadingAction={leadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
             <div className="flex-1 flex flex-col min-h-0">
               <ChatDisplay
                 ref={chatDisplayRef}
@@ -654,7 +671,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   return (
     <>
       <div className="h-full flex flex-col">
-        <PanelHeader  title={displayTitle} titleMenu={titleMenu} leadingAction={leadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
+        <PanelHeader  title={displayTitle} badge={channelBadge} titleMenu={titleMenu} leadingAction={leadingAction} actions={headerActions} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
         <div className="flex-1 flex flex-col min-h-0">
           <ChatDisplay
             ref={chatDisplayRef}

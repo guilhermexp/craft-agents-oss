@@ -153,6 +153,7 @@
   "chat.noOutputYet": "Még nincs elérhető kimenet",
   "chat.noResults": "Nincs találat",
   "chat.onBranch": "a(z) {{branch}} branchen",
+  "chat.openChannel": "#{{name}} csatorna megnyitása",
   "chat.openedClosestMatch": "Legközelebbi egyezés megnyitva: {{path}}",
   "chat.openFile": "Megnyitás",
   "chat.permissionRequired": "Engedély szükséges",

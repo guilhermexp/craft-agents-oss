@@ -153,6 +153,7 @@
   "chat.noOutputYet": "暂无输出",
   "chat.noResults": "无结果",
   "chat.onBranch": "在 {{branch}} 分支",
+  "chat.openChannel": "打开 #{{name}} 频道",
   "chat.openedClosestMatch": "已打开最接近的匹配: {{path}}",
   "chat.openFile": "打开",
   "chat.permissionRequired": "需要权限",

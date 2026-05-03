@@ -153,6 +153,7 @@
   "chat.noOutputYet": "出力はまだありません",
   "chat.noResults": "結果なし",
   "chat.onBranch": "{{branch}} ブランチ",
+  "chat.openChannel": "#{{name}} チャンネルを開く",
   "chat.openedClosestMatch": "最も近い一致を開きました: {{path}}",
   "chat.openFile": "開く",
   "chat.permissionRequired": "権限が必要です",

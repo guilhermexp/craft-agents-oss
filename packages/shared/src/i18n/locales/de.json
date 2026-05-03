@@ -153,6 +153,7 @@
   "chat.noOutputYet": "Noch keine Ausgabe verfügbar",
   "chat.noResults": "Keine Ergebnisse",
   "chat.onBranch": "auf {{branch}}",
+  "chat.openChannel": "Kanal #{{name}} öffnen",
   "chat.openedClosestMatch": "Nächste Übereinstimmung geöffnet: {{path}}",
   "chat.openFile": "Öffnen",
   "chat.permissionRequired": "Berechtigung erforderlich",

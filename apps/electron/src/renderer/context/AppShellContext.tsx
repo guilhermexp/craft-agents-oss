@@ -61,6 +61,8 @@ export interface AppShellContextType {
   activeSessionWorkingDirectory?: string
   /** All label configs (tree) for label menu and badge display */
   labels?: import('@craft-agent/shared/labels').LabelConfig[]
+  /** All workspace channels (used by session header to render channel breadcrumbs) */
+  workspaceChannels?: import('@craft-agent/shared/channels').ChannelConfig[]
   /** Callback when session labels change */
   onSessionLabelsChange?: (sessionId: string, labels: string[]) => void
   /** Enabled permission modes for Shift+Tab cycling */
