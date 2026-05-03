@@ -31,9 +31,10 @@ describe('channel CRUD', () => {
     expect(labels.some(label => label.id === 'channel')).toBe(false);
   });
 
-  it('keeps channel ids and label ids unique when names collide', () => {
+  it('keeps channel ids and label ids unique when slugs collide', () => {
+    // Different display names that slugify to the same root.
     const first = createChannel(workspaceRoot, { name: 'Client' });
-    const second = createChannel(workspaceRoot, { name: 'Client' });
+    const second = createChannel(workspaceRoot, { name: 'Client!' });
 
     expect(first.id).toBe('client');
     expect(first.labelId).toBe('channel-client');
@@ -101,5 +102,58 @@ describe('channel CRUD', () => {
     expect(listChannels(workspaceRoot)).toEqual([]);
     const labels = flattenLabels(loadLabelConfig(workspaceRoot).labels);
     expect(labels.some(label => label.id === channel.labelId)).toBe(true);
+  });
+
+  it('does NOT remove the backing label when removeBackingLabel flag is omitted', () => {
+    const channel = createChannel(workspaceRoot, { name: 'Inbox' });
+
+    const result = deleteChannel(workspaceRoot, channel.id);
+
+    expect(result).toEqual({ deleted: true });
+    const labels = flattenLabels(loadLabelConfig(workspaceRoot).labels);
+    expect(labels.some(label => label.id === channel.labelId)).toBe(true);
+  });
+
+  it('removes the backing label when removeBackingLabel is true', () => {
+    const channel = createChannel(workspaceRoot, { name: 'Inbox' });
+
+    const result = deleteChannel(workspaceRoot, channel.id, { removeBackingLabel: true });
+
+    expect(result.deleted).toBe(true);
+    expect(result.labelDeleted).toBe(true);
+    const labels = flattenLabels(loadLabelConfig(workspaceRoot).labels);
+    expect(labels.some(label => label.id === channel.labelId)).toBe(false);
+  });
+
+  it('throws on emoji-only or symbol-only channel names', () => {
+    expect(() => createChannel(workspaceRoot, { name: '!!!' })).toThrow(
+      /alphanumeric/i,
+    );
+    expect(() => createChannel(workspaceRoot, { name: '🚀🚀🚀' })).toThrow(
+      /alphanumeric/i,
+    );
+  });
+
+  it('rejects duplicate channel names on create (case-insensitive)', () => {
+    createChannel(workspaceRoot, { name: 'Support' });
+
+    expect(() => createChannel(workspaceRoot, { name: '  support ' })).toThrow(
+      /already exists/i,
+    );
+  });
+
+  it('rejects duplicate channel names on update (case-insensitive)', () => {
+    createChannel(workspaceRoot, { name: 'Support' });
+    const second = createChannel(workspaceRoot, { name: 'Sales' });
+
+    expect(() => updateChannel(workspaceRoot, second.id, { name: 'SUPPORT' })).toThrow(
+      /already exists/i,
+    );
+  });
+
+  it('allows updating a channel to its own name (no false self-collision)', () => {
+    const channel = createChannel(workspaceRoot, { name: 'Support' });
+    const updated = updateChannel(workspaceRoot, channel.id, { name: 'Support' });
+    expect(updated.name).toBe('Support');
   });
 });

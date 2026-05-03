@@ -1,8 +1,9 @@
 import { loadChannelsConfig, saveChannelsConfig } from './storage.ts';
-import type { ChannelConfig, CreateChannelInput, UpdateChannelInput } from './types.ts';
+import type { ChannelConfig, CreateChannelInput, UpdateChannelInput, WorkspaceChannelsConfig } from './types.ts';
 import { loadLabelConfig, saveLabelConfig } from '../labels/storage.ts';
 import { collectAllIds, findLabelById } from '../labels/tree.ts';
 import type { LabelConfig } from '../labels/types.ts';
+import { deleteLabel } from '../labels/crud.ts';
 
 const SLUG_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 
@@ -28,6 +29,23 @@ function uniqueSlug(base: string, used: Set<string>): string {
 function assertValidChannelName(name: string): void {
   if (!name.trim()) {
     throw new Error('Channel name is required');
+  }
+  if (slugify(name) === '') {
+    throw new Error('Channel name must contain alphanumeric characters');
+  }
+}
+
+function assertUniqueChannelName(
+  name: string,
+  config: WorkspaceChannelsConfig,
+  excludeId?: string,
+): void {
+  const target = name.trim().toLowerCase();
+  const collision = config.channels.find(
+    channel => channel.id !== excludeId && channel.name.trim().toLowerCase() === target,
+  );
+  if (collision) {
+    throw new Error(`A channel named ${collision.name.trim()} already exists`);
   }
 }
 
@@ -79,6 +97,7 @@ export function createChannel(workspaceRootPath: string, input: CreateChannelInp
   assertValidChannelName(input.name);
 
   const config = loadChannelsConfig(workspaceRootPath);
+  assertUniqueChannelName(input.name, config);
   const channelIds = new Set(config.channels.map(channel => channel.id));
   const labelIds = collectAllIds(loadLabelConfig(workspaceRootPath).labels);
   const id = uniqueSlug(slugify(input.name), channelIds);
@@ -112,6 +131,7 @@ export function updateChannel(
 
   if (updates.name !== undefined) {
     assertValidChannelName(updates.name);
+    assertUniqueChannelName(updates.name, config, channelId);
     channel.name = updates.name.trim();
   }
   if (updates.description !== undefined) {
@@ -131,13 +151,42 @@ export function updateChannel(
   return channel;
 }
 
-export function deleteChannel(workspaceRootPath: string, channelId: string): { deleted: boolean } {
+export interface DeleteChannelOptions {
+  removeBackingLabel?: boolean;
+}
+
+export interface DeleteChannelResult {
+  deleted: boolean;
+  labelDeleted?: boolean;
+}
+
+export function deleteChannel(
+  workspaceRootPath: string,
+  channelId: string,
+  options: DeleteChannelOptions = {},
+): DeleteChannelResult {
   const config = loadChannelsConfig(workspaceRootPath);
-  const before = config.channels.length;
-  config.channels = config.channels.filter(channel => channel.id !== channelId);
-  if (config.channels.length === before) {
+  const target = config.channels.find(channel => channel.id === channelId);
+  if (!target) {
     throw new Error(`Channel '${channelId}' not found`);
   }
+  config.channels = config.channels.filter(channel => channel.id !== channelId);
   saveChannelsConfig(workspaceRootPath, config);
-  return { deleted: true };
+
+  let labelDeleted: boolean | undefined;
+  if (options.removeBackingLabel) {
+    const labelConfig = loadLabelConfig(workspaceRootPath);
+    if (findLabelById(labelConfig.labels, target.labelId)) {
+      try {
+        deleteLabel(workspaceRootPath, target.labelId);
+        labelDeleted = true;
+      } catch {
+        labelDeleted = false;
+      }
+    } else {
+      labelDeleted = false;
+    }
+  }
+
+  return labelDeleted === undefined ? { deleted: true } : { deleted: true, labelDeleted };
 }

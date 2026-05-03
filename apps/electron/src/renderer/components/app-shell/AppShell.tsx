@@ -1941,6 +1941,23 @@ function AppShellContent({
     }
   }, [activeWorkspace?.id, channelConfigs, sessionFilter, t])
 
+  const handleDeleteChannelWithLabel = useCallback(async (channelId: string) => {
+    if (!activeWorkspace?.id) return
+    if (!window.confirm(t("sidebar.deleteChannelWithLabelConfirm"))) return
+    try {
+      await window.electronAPI.deleteChannel(activeWorkspace.id, channelId, { removeBackingLabel: true })
+      if (sessionFilter?.kind === 'label') {
+        const deleted = channelConfigs.find(item => item.id === channelId)
+        if (deleted?.labelId === sessionFilter.labelId) {
+          navigate(routes.view.allSessions())
+        }
+      }
+    } catch (err) {
+      console.error('[AppShell] Failed to delete channel + label:', err)
+      toast.error(err instanceof Error ? err.message : 'Failed to delete channel')
+    }
+  }, [activeWorkspace?.id, channelConfigs, sessionFilter, t])
+
   // Handler for "Add Source" context menu action
   // Opens the EditPopover for adding a new source
   // Optional sourceType param allows filter-aware context (from subcategory menus or filtered views)
@@ -2515,6 +2532,7 @@ function AppShellContent({
                             onConfigureChannels: openConfigureChannels,
                             onNewChannelThread: handleNewChannelThread,
                             onDeleteChannel: handleDeleteChannel,
+                            onDeleteChannelWithLabel: handleDeleteChannelWithLabel,
                           },
                         })),
                       ],

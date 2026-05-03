@@ -42,6 +42,8 @@ export interface SidebarContextMenuConfig {
   onNewChannelThread?: (channelId: string) => void
   /** Handler for deleting a channel config */
   onDeleteChannel?: (channelId: string) => void
+  /** Handler for deleting a channel + its backing label */
+  onDeleteChannelWithLabel?: (channelId: string) => void
   /** Handler for "Add Source" action - for sources type */
   onAddSource?: () => void
   /** Handler for "Add Skill" action - for skills type */
@@ -259,6 +261,7 @@ export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, i
                         onConfigureChannels={link.contextMenu.onConfigureChannels}
                         onNewChannelThread={link.contextMenu.onNewChannelThread}
                         onDeleteChannel={link.contextMenu.onDeleteChannel}
+                        onDeleteChannelWithLabel={link.contextMenu.onDeleteChannelWithLabel}
                         onAddSource={link.contextMenu.onAddSource}
                         onAddSkill={link.contextMenu.onAddSkill}
                         onAddAutomation={link.contextMenu.onAddAutomation}
@@ -423,6 +426,7 @@ function SortableStatusList({ items, onReorder, getItemProps, focusedItemId, tra
                         onConfigureChannels={item.contextMenu.onConfigureChannels}
                         onNewChannelThread={item.contextMenu.onNewChannelThread}
                         onDeleteChannel={item.contextMenu.onDeleteChannel}
+                        onDeleteChannelWithLabel={item.contextMenu.onDeleteChannelWithLabel}
                         onAddSource={item.contextMenu.onAddSource}
                         onAddSkill={item.contextMenu.onAddSkill}
                         onAddAutomation={item.contextMenu.onAddAutomation}

@@ -41,13 +41,21 @@ export function registerChannelsHandlers(server: RpcServer, _deps: HandlerDeps):
     return channel
   })
 
-  server.handle(RPC_CHANNELS.channels.DELETE, async (_ctx, workspaceId: string, channelId: string) => {
+  server.handle(RPC_CHANNELS.channels.DELETE, async (
+    _ctx,
+    workspaceId: string,
+    channelId: string,
+    options?: import('@craft-agent/shared/channels').DeleteChannelOptions,
+  ) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
     const { deleteChannel } = await import('@craft-agent/shared/channels/crud')
-    const result = deleteChannel(workspace.rootPath, channelId)
+    const result = deleteChannel(workspace.rootPath, channelId, options)
     pushTyped(server, RPC_CHANNELS.channels.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
+    if (result.labelDeleted) {
+      pushTyped(server, RPC_CHANNELS.labels.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
+    }
     return result
   })
 }

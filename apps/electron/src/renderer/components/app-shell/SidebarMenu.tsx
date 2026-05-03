@@ -57,6 +57,8 @@ export interface SidebarMenuProps {
   onNewChannelThread?: (channelId: string) => void
   /** Handler for deleting a channel config */
   onDeleteChannel?: (channelId: string) => void
+  /** Handler for deleting a channel config along with its backing label */
+  onDeleteChannelWithLabel?: (channelId: string) => void
   /** Handler for "Add Source" action - only for sources type */
   onAddSource?: () => void
   /** Handler for "Add Skill" action - only for skills type */
@@ -91,6 +93,7 @@ export function SidebarMenu({
   onConfigureChannels,
   onNewChannelThread,
   onDeleteChannel,
+  onDeleteChannelWithLabel,
   onAddSource,
   onAddSkill,
   onAddAutomation,
@@ -194,6 +197,12 @@ export function SidebarMenu({
               <Trash2 className="h-3.5 w-3.5" />
               <span className="flex-1">{t("sidebarMenu.deleteChannel")}</span>
             </MenuItem>
+            {onDeleteChannelWithLabel && (
+              <MenuItem onClick={() => onDeleteChannelWithLabel(channelId)}>
+                <Trash2 className="h-3.5 w-3.5" />
+                <span className="flex-1">{t("sidebarMenu.deleteChannelWithLabel")}</span>
+              </MenuItem>
+            )}
           </>
         )}
       </>
