@@ -186,6 +186,24 @@ function getRuntimeDisplayName(providerType?: string): string {
   }
 }
 
+function getRuntimeLogTag(providerType?: string): string {
+  switch (providerType) {
+    case 'anthropic':
+      return 'claude-code-agent'
+    case 'pi':
+    case 'pi_compat':
+      return 'pi-agent'
+    case 'hermes':
+      return 'hermes-agent'
+    default:
+      return providerType ? `${providerType}-agent` : 'unknown-agent'
+  }
+}
+
+function formatRuntimeLogPrefix(providerType?: string): string {
+  return colorLog(`[${getRuntimeLogTag(providerType)}]`, 'magenta', { bold: true })
+}
+
 function logAgentExecutionStart(args: {
   sessionId: string
   sessionName?: string
@@ -205,16 +223,17 @@ function logAgentExecutionStart(args: {
     : 'default'
   const title = `AGENT RUNNING: ${runtime} | ${connection} | ${args.model || 'model:unknown'}`
   const rule = '='.repeat(Math.max(80, title.length + 8))
+  const prefix = formatRuntimeLogPrefix(args.providerType)
 
   sessionLog.info(colorLog(rule, 'cyan'))
-  sessionLog.info(colorLog(`>>> ${title}`, 'green', { bold: true }))
-  sessionLog.info(`${colorLog('    session:', 'cyan')} ${args.sessionName || 'Untitled'} (${args.sessionId})`)
-  sessionLog.info(`${colorLog('    provider:', 'cyan')} ${args.providerType || 'unknown'}`)
-  sessionLog.info(`${colorLog('    workspace:', 'cyan')} ${args.workspaceRootPath}`)
-  sessionLog.info(`${colorLog('    cwd:', 'cyan')} ${args.workingDirectory || args.workspaceRootPath}`)
-  sessionLog.info(`${colorLog('    sdkSession:', 'cyan')} ${args.sdkSessionId || 'new'}`)
-  sessionLog.info(`${colorLog('    attachments:', 'cyan')} ${args.attachmentCount}`)
-  sessionLog.info(`${colorLog('    message:', 'cyan')} ${truncateLogValue(args.message.replace(/\s+/g, ' ').trim(), 220)}`)
+  sessionLog.info(`${prefix} ${colorLog(`>>> ${title}`, 'green', { bold: true })}`)
+  sessionLog.info(`${prefix} ${colorLog('    session:', 'cyan')} ${args.sessionName || 'Untitled'} (${args.sessionId})`)
+  sessionLog.info(`${prefix} ${colorLog('    provider:', 'cyan')} ${args.providerType || 'unknown'}`)
+  sessionLog.info(`${prefix} ${colorLog('    workspace:', 'cyan')} ${args.workspaceRootPath}`)
+  sessionLog.info(`${prefix} ${colorLog('    cwd:', 'cyan')} ${args.workingDirectory || args.workspaceRootPath}`)
+  sessionLog.info(`${prefix} ${colorLog('    sdkSession:', 'cyan')} ${args.sdkSessionId || 'new'}`)
+  sessionLog.info(`${prefix} ${colorLog('    attachments:', 'cyan')} ${args.attachmentCount}`)
+  sessionLog.info(`${prefix} ${colorLog('    message:', 'cyan')} ${truncateLogValue(args.message.replace(/\s+/g, ' ').trim(), 220)}`)
   sessionLog.info(colorLog(rule, 'cyan'))
 }
 
@@ -5202,6 +5221,7 @@ export class SessionManager implements ISessionManager {
 
     try {
       const activeConnection = managed.llmConnection ? getLlmConnection(managed.llmConnection) : null
+      const runtimeLogPrefix = formatRuntimeLogPrefix(activeConnection?.providerType)
       logAgentExecutionStart({
         sessionId,
         sessionName: managed.name,
@@ -5249,10 +5269,10 @@ export class SessionManager implements ISessionManager {
         if (event.type !== 'text_delta') {
           if (event.type === 'tool_start') {
             const inputSummary = summarizeToolInput(event.input)
-            sessionLog.info(colorLog(`>>> TOOL RUNNING: ${event.toolName} (${event.toolUseId})${inputSummary ? ` | ${inputSummary}` : ''}`, 'yellow', { bold: true }))
+            sessionLog.info(`${runtimeLogPrefix} ${colorLog(`>>> TOOL RUNNING: ${event.toolName} (${event.toolUseId})${inputSummary ? ` | ${inputSummary}` : ''}`, 'yellow', { bold: true })}`)
           } else if (event.type === 'tool_result') {
             const color = event.isError ? 'red' : 'green'
-            sessionLog.info(colorLog(`<<< TOOL DONE: ${event.toolName || 'unknown'} (${event.toolUseId}) isError=${event.isError}`, color, { bold: event.isError }))
+            sessionLog.info(`${runtimeLogPrefix} ${colorLog(`<<< TOOL DONE: ${event.toolName || 'unknown'} (${event.toolUseId}) isError=${event.isError}`, color, { bold: event.isError })}`)
           } else {
             sessionLog.info('Got event:', event.type)
           }
