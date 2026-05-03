@@ -44,9 +44,27 @@ export const routes = {
      * @param send - If true and input is provided, immediately sends the message
      * @param status - Optional status/todo-state ID to apply to the new session
      * @param label - Optional label ID to apply to the new session
+     * @param mode - Optional permission mode to apply to the new session
+     * @param sources - Optional list of source slugs to permit on the new session
      */
-    newSession: (params?: { input?: string; name?: string; send?: boolean; status?: string; label?: string }) =>
-      `action/new-session${toQueryString(params ? { ...params, send: params.send ? 'true' : undefined } : undefined)}` as const,
+    newSession: (params?: {
+      input?: string
+      name?: string
+      send?: boolean
+      status?: string
+      label?: string
+      mode?: PermissionMode
+      sources?: string[]
+    }) => {
+      if (!params) return 'action/new-session' as const
+      const { sources, send, ...rest } = params
+      const query: Record<string, string | undefined> = {
+        ...rest,
+        send: send ? 'true' : undefined,
+        sources: sources && sources.length > 0 ? sources.join(',') : undefined,
+      }
+      return `action/new-session${toQueryString(query)}` as const
+    },
 
     /** Rename a session */
     renameSession: (sessionId: string, name: string) =>

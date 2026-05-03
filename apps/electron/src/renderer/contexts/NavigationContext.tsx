@@ -712,6 +712,15 @@ export function NavigationProvider({
           if (parsed.params.label) {
             await window.electronAPI.sessionCommand(session.id, { type: 'setLabels', labels: [parsed.params.label] })
           }
+          if (parsed.params.sources) {
+            const sourceSlugs = parsed.params.sources
+              .split(',')
+              .map(slug => slug.trim())
+              .filter(Boolean)
+            if (sourceSlugs.length > 0) {
+              await window.electronAPI.sessionCommand(session.id, { type: 'setSources', sourceSlugs })
+            }
+          }
 
           // Determine navigation filter
           const filter: import('../../shared/types').SessionFilter =

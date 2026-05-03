@@ -1914,8 +1914,14 @@ function AppShellContent({
   const handleNewChannelThread = useCallback((channelId: string) => {
     const channel = channelConfigs.find(item => item.id === channelId)
     if (!channel) return
-    navigate(routes.action.newSession({ label: channel.labelId }))
-  }, [channelConfigs])
+    navigate(routes.action.newSession({
+      label: channel.labelId,
+      ...(channel.defaultPermissionMode ? { mode: channel.defaultPermissionMode } : {}),
+      ...(channel.defaultSourceSlugs && channel.defaultSourceSlugs.length > 0
+        ? { sources: channel.defaultSourceSlugs }
+        : {}),
+    }))
+  }, [channelConfigs, navigate])
 
   const handleChannelSessionDrop = useCallback(async (sessionId: string, channel: ChannelConfig) => {
     const meta = workspaceSessionMetas.find(item => item.id === sessionId)
