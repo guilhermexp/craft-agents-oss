@@ -442,6 +442,10 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   // avoiding reading node_modules/etc. contents entirely. Uses withFileTypes
   // to get entry types without separate stat calls.
   server.handle(RPC_CHANNELS.fs.SEARCH, async (_ctx, basePath: string, query: string) => {
+    if (basePath === '~' || basePath.startsWith('~/')) {
+      basePath = basePath === '~' ? homedir() : join(homedir(), basePath.slice(2))
+    }
+
     deps.platform.logger.info('[FS_SEARCH] called:', basePath, query)
     const MAX_RESULTS = 50
 

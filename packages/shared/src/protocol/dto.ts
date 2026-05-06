@@ -68,6 +68,8 @@ export interface Session {
   hasUnread?: boolean
   enabledSourceSlugs?: string[]
   workingDirectory?: string
+  /** Original SDK working directory for files generated before workingDirectory changed */
+  sdkCwd?: string
   sessionFolderPath?: string
   sharedUrl?: string
   sharedId?: string

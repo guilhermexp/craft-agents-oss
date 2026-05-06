@@ -76,4 +76,23 @@ describe('resolveOpenFilePath', () => {
     expect(result.path).toBe('/workspace/sessions/260506-lively-spray/assets/recreated_old_way_new_way_wide.png')
     expect(result.fallbackPath).toBe('/workspace/sessions/260506-lively-spray/assets/recreated_old_way_new_way_wide.png')
   })
+
+  it('uses the immutable sdk cwd before the mutable session working directory', async () => {
+    const searchFiles = createSearchFiles([
+      { path: '/workspace/autocode-os/Autoclaude_Visual_Guide_recreated_page4.pdf' },
+    ])
+
+    const result = await resolveOpenFilePath({
+      path: '260506-lively-spray/Autoclaude_Visual_Guide_recreated_page4.pdf',
+      sessionId: '260506-lively-spray',
+      baseDirs: [
+        '/workspace/autocode-os',
+        '/workspace/sessions/260506-lively-spray',
+      ],
+      searchFiles,
+    })
+
+    expect(result.path).toBe('/workspace/autocode-os/Autoclaude_Visual_Guide_recreated_page4.pdf')
+    expect(result.fallbackPath).toBe('/workspace/autocode-os/Autoclaude_Visual_Guide_recreated_page4.pdf')
+  })
 })

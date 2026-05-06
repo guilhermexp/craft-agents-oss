@@ -1625,6 +1625,7 @@ function AppShellContent({
     const targetSessionId = focusedSessionId ?? session.selected ?? null
     const targetSessionMeta = targetSessionId ? sessionMetaMap.get(targetSessionId) : undefined
     const workingDirectory = rightSidebarSession?.workingDirectory ?? targetSessionMeta?.workingDirectory ?? activeSessionWorkingDirectory
+    const sdkCwd = rightSidebarSession?.sdkCwd ?? targetSessionMeta?.sdkCwd
     const workspaceRootPath = activeWorkspace?.rootPath
     const sessionFolderPath = rightSidebarSession?.sessionFolderPath
       ?? (workspaceRootPath && targetSessionId ? `${workspaceRootPath}/sessions/${targetSessionId}` : undefined)
@@ -1633,6 +1634,7 @@ function AppShellContent({
       path,
       sessionId: targetSessionId,
       baseDirs: [
+        sdkCwd,
         workingDirectory,
         sessionFolderPath,
         workspaceRootPath,
@@ -1650,6 +1652,7 @@ function AppShellContent({
     contextValue,
     focusedSessionId,
     rightSidebarSession?.sessionFolderPath,
+    rightSidebarSession?.sdkCwd,
     rightSidebarSession?.workingDirectory,
     session.selected,
     sessionMetaMap,

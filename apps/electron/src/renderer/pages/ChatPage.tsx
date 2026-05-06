@@ -274,6 +274,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
         path,
         sessionId,
         baseDirs: [
+          session?.sdkCwd ?? sessionMeta?.sdkCwd,
           workingDirectory,
           sessionFolderPath,
           workspaceRootPath,
@@ -288,7 +289,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
       onOpenFile(resolved)
     },
-    [onOpenFile, workingDirectory, activeWorkspace?.rootPath, session?.sessionFolderPath, sessionId, t]
+    [onOpenFile, workingDirectory, activeWorkspace?.rootPath, session?.sessionFolderPath, session?.sdkCwd, sessionMeta?.sdkCwd, sessionId, t]
   )
 
   const handleOpenUrl = React.useCallback(

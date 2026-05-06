@@ -28,6 +28,8 @@ export interface SessionMeta {
   isFlagged?: boolean
   lastReadMessageId?: string
   workingDirectory?: string
+  /** Original SDK working directory for files generated before workingDirectory changed */
+  sdkCwd?: string
   enabledSourceSlugs?: string[]
   /** Shared viewer URL (if shared via viewer) */
   sharedUrl?: string
