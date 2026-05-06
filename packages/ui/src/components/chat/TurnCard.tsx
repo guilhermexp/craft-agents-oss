@@ -319,6 +319,8 @@ export interface TurnCardProps {
   autoExpand?: boolean
   /** Callback when file path is clicked */
   onOpenFile?: (path: string) => void
+  /** Resolve relative file paths before inline previews read them */
+  onResolveFilePath?: (path: string) => Promise<string | null>
   /** Callback when URL is clicked */
   onOpenUrl?: (url: string) => void
   /** Callback to open response in Monaco editor */
@@ -1397,6 +1399,8 @@ export interface ResponseCardProps {
   streamStartTime?: number
   /** Callback to open file in editor */
   onOpenFile?: (path: string) => void
+  /** Resolve relative file paths before inline previews read them */
+  onResolveFilePath?: (path: string) => Promise<string | null>
   /** Callback to open URL */
   onOpenUrl?: (url: string) => void
   /** Callback to open response in Monaco editor */
@@ -1657,6 +1661,7 @@ export function ResponseCard({
   isStreaming,
   streamStartTime,
   onOpenFile,
+  onResolveFilePath,
   onOpenUrl,
   onPopOut,
   variant = 'response',
@@ -2429,7 +2434,7 @@ export function ResponseCard({
 
     return (
       <>
-        <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden relative group">
+        <div className="bg-background shadow-minimal rounded-[10px] overflow-hidden relative group">
           {/* Fullscreen button - desktop only; compact mode keeps message chrome minimal */}
           {!compactMode && (
           <button
@@ -2481,6 +2486,7 @@ export function ResponseCard({
                 mode="minimal"
                 onUrlClick={onOpenUrl}
                 onFileClick={onOpenFile}
+                onResolveFilePath={onResolveFilePath}
               >
                 {text}
               </Markdown>
@@ -2583,7 +2589,7 @@ export function ResponseCard({
   // Streaming response - show throttled content with spinner
   return (
     <>
-      <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden group">
+      <div className="bg-background shadow-minimal rounded-[10px] overflow-hidden group">
         {/* Content area - uses displayedText (throttled) for performance */}
         {/* Subtle fade at top and bottom edges (dark mode only) */}
         <div
@@ -2606,6 +2612,7 @@ export function ResponseCard({
               mode="minimal"
               onUrlClick={onOpenUrl}
               onFileClick={onOpenFile}
+              onResolveFilePath={onResolveFilePath}
             >
               {displayedText}
             </Markdown>
@@ -2733,6 +2740,7 @@ export const TurnCard = React.memo(function TurnCard({
   onExpandedActivityGroupsChange,
   autoExpand = false,
   onOpenFile,
+  onResolveFilePath,
   onOpenUrl,
   onPopOut,
   onOpenDetails,
@@ -3102,6 +3110,7 @@ export const TurnCard = React.memo(function TurnCard({
             isStreaming={false}
             sessionId={sessionId}
             onOpenFile={onOpenFile}
+            onResolveFilePath={onResolveFilePath}
             onOpenUrl={onOpenUrl}
             onPopOut={onPopOut ? () => onPopOut(planActivity.content || '') : undefined}
             variant="plan"
@@ -3141,6 +3150,7 @@ export const TurnCard = React.memo(function TurnCard({
                 streamStartTime={response.streamStartTime}
                 sessionId={sessionId}
                 onOpenFile={onOpenFile}
+                onResolveFilePath={onResolveFilePath}
                 onOpenUrl={onOpenUrl}
                 onPopOut={onPopOut ? () => onPopOut(response.text) : undefined}
                 variant={response.isPlan ? 'plan' : 'response'}
@@ -3173,6 +3183,7 @@ export const TurnCard = React.memo(function TurnCard({
             streamStartTime={response.streamStartTime}
             sessionId={sessionId}
             onOpenFile={onOpenFile}
+            onResolveFilePath={onResolveFilePath}
             onOpenUrl={onOpenUrl}
             onPopOut={onPopOut ? () => onPopOut(response.text) : undefined}
             variant={response.isPlan ? 'plan' : 'response'}

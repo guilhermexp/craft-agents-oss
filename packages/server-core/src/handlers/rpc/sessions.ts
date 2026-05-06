@@ -1,5 +1,6 @@
-import { readFile, writeFile, stat } from 'fs/promises'
-import { join } from 'path'
+import { createHash } from 'node:crypto'
+import { mkdir, readFile, readdir, unlink, writeFile } from 'fs/promises'
+import { basename, join } from 'path'
 import { RPC_CHANNELS, type FileAttachment, type SendMessageOptions, type SessionEvent } from '@craft-agent/shared/protocol'
 import type { StoredAttachment } from '@craft-agent/core/types'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
@@ -19,6 +20,18 @@ interface ClientSessionWatchState {
 
 // Per-client session file watcher state (supports concurrent windows/clients safely)
 const clientSessionWatches = new Map<string, ClientSessionWatchState>()
+const MERMAID_FENCE_RE = /```[ \t]*mermaid[^\n]*\n([\s\S]*?)```/gi
+const MAX_MERMAID_ARTIFACTS_PER_SESSION = 50
+const MERMAID_SVG_COLORS = {
+  bg: '#0f1117',
+  fg: '#f4f4f5',
+  accent: '#22c55e',
+  line: '#9ca3af',
+  muted: '#a1a1aa',
+  surface: '#18181b',
+  border: '#3f3f46',
+  faint: '#71717a',
+} as const
 
 /**
  * Clean up session file watcher for a client.
@@ -37,6 +50,154 @@ export function cleanupSessionFileWatchForClient(clientId: string): void {
   clientSessionWatches.delete(clientId)
 }
 
+function extractMermaidBlocksFromMarkdown(content: string): string[] {
+  const blocks: string[] = []
+  for (const match of content.matchAll(MERMAID_FENCE_RE)) {
+    const code = match[1]?.trim()
+    if (code) blocks.push(code)
+  }
+  return blocks
+}
+
+function stableDiagramName(sequence: number, messageId: string, code: string): string {
+  const messagePart = messageId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 18) || 'message'
+  const hash = createHash('sha256').update(code).digest('hex').slice(0, 10)
+  return `mermaid-${String(sequence).padStart(2, '0')}-${messagePart}-${hash}`
+}
+
+async function writeFileIfChanged(filePath: string, content: string): Promise<void> {
+  try {
+    const existing = await readFile(filePath, 'utf-8')
+    if (existing === content) return
+  } catch {
+    // Missing or unreadable generated artifact: rewrite it below.
+  }
+  await writeFile(filePath, content, 'utf-8')
+}
+
+async function removeVisibleMermaidSources(diagramsDir: string): Promise<void> {
+  let entries: string[]
+  try {
+    entries = await readdir(diagramsDir)
+  } catch {
+    return
+  }
+
+  await Promise.all(
+    entries
+      .filter((name) => name.endsWith('.mmd'))
+      .map((name) => unlink(join(diagramsDir, name)).catch(() => {}))
+  )
+}
+
+function makeMermaidSvgStandalone(svg: string): string {
+  const replacements = new Map<string, string>([
+    ['var(--bg)', MERMAID_SVG_COLORS.bg],
+    ['var(--fg)', MERMAID_SVG_COLORS.fg],
+    ['var(--line)', MERMAID_SVG_COLORS.line],
+    ['var(--accent)', MERMAID_SVG_COLORS.accent],
+    ['var(--muted)', MERMAID_SVG_COLORS.muted],
+    ['var(--surface)', MERMAID_SVG_COLORS.surface],
+    ['var(--border)', MERMAID_SVG_COLORS.border],
+    ['var(--_text)', MERMAID_SVG_COLORS.fg],
+    ['var(--_text-sec)', MERMAID_SVG_COLORS.muted],
+    ['var(--_text-muted)', MERMAID_SVG_COLORS.muted],
+    ['var(--_text-faint)', MERMAID_SVG_COLORS.faint],
+    ['var(--_line)', MERMAID_SVG_COLORS.line],
+    ['var(--_arrow)', MERMAID_SVG_COLORS.accent],
+    ['var(--_node-fill)', MERMAID_SVG_COLORS.surface],
+    ['var(--_node-stroke)', MERMAID_SVG_COLORS.border],
+    ['var(--_group-fill)', MERMAID_SVG_COLORS.bg],
+    ['var(--_group-hdr)', MERMAID_SVG_COLORS.surface],
+    ['var(--_inner-stroke)', MERMAID_SVG_COLORS.border],
+    ['var(--_key-badge)', MERMAID_SVG_COLORS.surface],
+  ])
+
+  let standalone = svg
+    .replace(/style="[^"]*background:var\(--bg\)[^"]*"/, `style="background:${MERMAID_SVG_COLORS.bg}"`)
+    .replace(/<style>[\s\S]*?<\/style>\n?/, '<style>text { font-family: Inter, system-ui, sans-serif; }</style>\n')
+
+  for (const [token, color] of replacements) {
+    standalone = standalone.split(token).join(color)
+  }
+
+  return standalone
+}
+
+async function renderMermaidSvg(code: string): Promise<string | null> {
+  try {
+    const { renderMermaidSVG } = await import('beautiful-mermaid')
+    const svg = renderMermaidSVG(code, {
+      bg: MERMAID_SVG_COLORS.bg,
+      fg: MERMAID_SVG_COLORS.fg,
+      accent: MERMAID_SVG_COLORS.accent,
+      line: MERMAID_SVG_COLORS.line,
+      muted: MERMAID_SVG_COLORS.muted,
+      surface: MERMAID_SVG_COLORS.surface,
+      border: MERMAID_SVG_COLORS.border,
+      transparent: false,
+      interactive: true,
+    })
+    return makeMermaidSvgStandalone(svg)
+  } catch {
+    return null
+  }
+}
+
+export async function syncMermaidDiagramArtifacts(sessionPath: string): Promise<void> {
+  const sessionFile = join(sessionPath, 'session.jsonl')
+  let content: string
+  try {
+    content = await readFile(sessionFile, 'utf-8')
+  } catch {
+    return
+  }
+
+  const diagrams: Array<{ messageId: string; code: string }> = []
+  const lines = content.split('\n').filter(Boolean).slice(1)
+  for (const line of lines) {
+    if (diagrams.length >= MAX_MERMAID_ARTIFACTS_PER_SESSION) break
+    let parsed: { id?: unknown; content?: unknown }
+    try {
+      parsed = JSON.parse(line) as { id?: unknown; content?: unknown }
+    } catch {
+      continue
+    }
+    if (typeof parsed.content !== 'string') continue
+    const blocks = extractMermaidBlocksFromMarkdown(parsed.content)
+    for (const code of blocks) {
+      if (diagrams.length >= MAX_MERMAID_ARTIFACTS_PER_SESSION) break
+      diagrams.push({
+        messageId: typeof parsed.id === 'string' ? parsed.id : `message-${diagrams.length + 1}`,
+        code,
+      })
+    }
+  }
+
+  if (diagrams.length === 0) return
+
+  const diagramsDir = join(sessionPath, 'diagrams')
+  const sourceDir = join(sessionPath, '.diagram-sources')
+  await Promise.all([
+    mkdir(diagramsDir, { recursive: true }),
+    mkdir(sourceDir, { recursive: true }),
+  ])
+  await removeVisibleMermaidSources(diagramsDir)
+
+  await Promise.all(diagrams.map(async ({ messageId, code }, index) => {
+    const baseName = stableDiagramName(index + 1, messageId, code)
+    const sourcePath = join(sourceDir, `${baseName}.mmd`)
+    const svgPath = join(diagramsDir, `${baseName}.svg`)
+
+    const source = `%% Generated from session Mermaid block. Edit the chat message to change the source.\n${code}\n`
+    const svg = await renderMermaidSvg(code)
+    await Promise.all([
+      writeFileIfChanged(sourcePath, source),
+      svg ? writeFileIfChanged(svgPath, svg) : Promise.resolve(),
+    ])
+  }))
+}
+
 // Recursive directory scanner for session files
 // Filters out internal files (session.jsonl) and hidden files (. prefix)
 // Returns only non-empty directories
@@ -48,6 +209,7 @@ async function scanSessionDirectory(dirPath: string): Promise<import('@craft-age
   for (const entry of entries) {
     // Skip internal and hidden files
     if (entry.name === 'session.jsonl' || entry.name.startsWith('.')) continue
+    if (basename(dirPath) === 'diagrams' && entry.name.endsWith('.mmd')) continue
 
     const fullPath = join(dirPath, entry.name)
 
@@ -379,6 +541,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
     if (!sessionPath) return []
 
     try {
+      await syncMermaidDiagramArtifacts(sessionPath)
       return await scanSessionDirectory(sessionPath)
     } catch (error) {
       log.error('Failed to get session files:', error)
