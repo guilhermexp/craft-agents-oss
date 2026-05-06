@@ -127,6 +127,14 @@
     rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 12px 12px 0px,
     rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 24px 24px 0px;
 
+  /* Preview overlays follow theme colors instead of hardcoded black/backdrop/shadow values. */
+  --preview-overlay-background: var(--foreground-3);
+  --preview-overlay-backdrop: color-mix(in srgb, var(--background) 72%, transparent);
+  --preview-overlay-backdrop-blur: 0px;
+  --preview-overlay-surface: var(--background);
+  --preview-overlay-card-background: var(--background);
+  --preview-overlay-shadow: var(--shadow-modal-small);
+
   /* === MIX VARIANTS (solid interpolation toward background) === */
   /* Use -2, -3, -5, -10, -20, ..., -90, -95 for solid colors (e.g., separators, Explore mode) */
   --foreground-1\.5: color-mix(in srgb, var(--foreground) 1.5%, var(--background));
@@ -705,6 +713,30 @@ html[data-font="inter"] {
     box-shadow: var(--shadow-modal-small);
   }
 
+  .fullscreen-overlay-background {
+    background: var(--preview-overlay-background);
+    backdrop-filter: blur(var(--preview-overlay-backdrop-blur));
+    -webkit-backdrop-filter: blur(var(--preview-overlay-backdrop-blur));
+  }
+
+  .preview-overlay-modal-backdrop {
+    background: var(--preview-overlay-backdrop);
+    backdrop-filter: blur(var(--preview-overlay-backdrop-blur));
+    -webkit-backdrop-filter: blur(var(--preview-overlay-backdrop-blur));
+  }
+
+  .preview-overlay-modal-surface,
+  .overlay-solid-surface {
+    background: var(--preview-overlay-surface);
+    box-shadow: var(--preview-overlay-shadow);
+  }
+
+  .overlay-solid-surface {
+    background: var(--preview-overlay-card-background);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
   /* =============================================================================
      UNIFIED POPOVER STYLING
 
@@ -809,28 +841,31 @@ html[data-scenic] .popover-styled {
   -webkit-backdrop-filter: blur(24px);
 }
 
-/* Scenic mode: Fullscreen overlay background gets glass effect
-   Applied to the AI response fullscreen view background so it blends
-   with the scenic background image when viewing expanded content. */
-html[data-scenic] .fullscreen-overlay-background {
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+/* Scenic mode: overlay glass follows the user's background opacity/blur preferences
+   instead of covering the scenic background with a fixed solid layer. */
+html[data-scenic] {
+  --preview-overlay-background-mix: calc(45% + (var(--scenic-background-opacity, 1) * 25%));
+  --preview-overlay-background: color-mix(in srgb, var(--foreground-3) var(--preview-overlay-background-mix), transparent);
+  --preview-overlay-backdrop: color-mix(in srgb, var(--foreground-3) var(--preview-overlay-background-mix), transparent);
+  --preview-overlay-backdrop-blur: calc(12px + var(--scenic-background-blur, 0px));
+  --preview-overlay-card-background: var(--foreground-3);
 }
 
-html[data-scenic]:not(.dark) .fullscreen-overlay-background {
-  background: color-mix(in srgb, var(--foreground-3) 70%, transparent);
-}
-
-html.dark[data-scenic] .fullscreen-overlay-background {
-  background: color-mix(in srgb, var(--foreground-3) 60%, transparent);
+html.dark[data-scenic] {
+  --preview-overlay-background-mix: calc(40% + (var(--scenic-background-opacity, 1) * 20%));
 }
 
 /* Scenic mode: Expanded document/markdown cards must stay fully readable.
    Opt these overlays out of the translucent glass background used by normal panels. */
 html[data-scenic] .overlay-solid-surface {
-  background: var(--foreground-3);
+  background: var(--preview-overlay-card-background);
+  box-shadow: var(--preview-overlay-shadow);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+html[data-scenic] .overlay-solid-surface::before {
+  content: none;
 }
 
 /* =============================================================================

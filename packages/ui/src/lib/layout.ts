@@ -18,7 +18,7 @@ export const OVERLAY_LAYOUT = {
   /** Modal max height as percentage of viewport */
   modalMaxHeightPercent: 85,
   /** Backdrop class for modal mode (semi-transparent) */
-  modalBackdropClass: 'bg-black/50',
+  modalBackdropClass: 'preview-overlay-modal-backdrop',
   /** Backdrop class for fullscreen mode (solid) */
   fullscreenBackdropClass: 'bg-background',
 } as const

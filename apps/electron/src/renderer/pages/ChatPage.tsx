@@ -14,6 +14,7 @@ import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ChannelBadge } from '@/components/app-shell/ChannelBadge'
 import { SessionMenu } from '@/components/app-shell/SessionMenu'
 import { SessionInfoPopover } from '@/components/app-shell/SessionInfoPopover'
+import { PanelRightRounded } from '@/components/icons/PanelRightRounded'
 import { RenameDialog } from '@/components/ui/rename-dialog'
 import { toast } from 'sonner'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
@@ -22,6 +23,8 @@ import { StyledDropdownMenuContent, StyledDropdownMenuItem, StyledDropdownMenuSe
 import { useAppShellContext, usePendingPermission, usePendingCredential, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
 import { rendererPerf } from '@/lib/perf'
 import { routes } from '@/lib/navigate'
+import { resolveOpenFilePath } from '@/lib/resolve-open-file-path'
+import { useNavigation, useNavigationState } from '@/contexts/NavigationContext'
 import { coerceInputText } from '@/lib/input-text'
 import { ensureSessionMessagesLoadedAtom, loadedSessionsAtom, sessionMetaMapAtom } from '@/atoms/sessions'
 import { getSessionTitle } from '@/utils/session'
@@ -80,6 +83,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onChatMatchInfoChange,
     isFocusedPanel,
   } = useAppShellContext()
+  const { updateRightSidebar } = useNavigation()
+  const navigationState = useNavigationState()
 
   // Use the unified session options hook for clean access
   const {
@@ -262,50 +267,28 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
   const handleOpenFile = React.useCallback(
     async (path: string) => {
-      // Resolve bare relative paths against session working directory,
-      // or workspace root as a fallback when workingDirectory is not set.
-      const resolved = (() => {
-        if (path.startsWith('/') || path.startsWith('~/')) return path
+      const workspaceRootPath = activeWorkspace?.rootPath
+      const sessionFolderPath = session?.sessionFolderPath
+        ?? (workspaceRootPath ? `${workspaceRootPath}/sessions/${sessionId}` : undefined)
+      const { path: resolved, fallbackPath } = await resolveOpenFilePath({
+        path,
+        sessionId,
+        baseDirs: [
+          workingDirectory,
+          sessionFolderPath,
+          workspaceRootPath,
+          workspaceRootPath ? `${workspaceRootPath}/sessions` : undefined,
+        ],
+        searchFiles: window.electronAPI.searchFiles,
+      })
 
-        const baseDir = workingDirectory || activeWorkspace?.rootPath
-        if (!baseDir) return path
-
-        const cleanedBase = baseDir.replace(/\/+$/, '')
-        const cleanedPath = path.replace(/^\.\//, '')
-        return `${cleanedBase}/${cleanedPath}`
-      })()
-
-      // Smart fallback for missing files in AI output:
-      // if the exact path doesn't exist, search nearby for same basename
-      // (e.g. markdown/linkify.test.ts -> markdown/__tests__/linkify.test.ts).
-      if (resolved.startsWith('/')) {
-        const lastSlash = resolved.lastIndexOf('/')
-        if (lastSlash > 0 && lastSlash < resolved.length - 1) {
-          const parentDir = resolved.slice(0, lastSlash)
-          const fileName = resolved.slice(lastSlash + 1)
-          try {
-            const matches = await window.electronAPI.searchFiles(parentDir, fileName)
-            const files = matches.filter((m) => m.type === 'file' && m.name === fileName)
-            const exact = files.find((m) => m.path === resolved)
-            if (exact) {
-              onOpenFile(exact.path)
-              return
-            }
-
-            if (files.length === 1) {
-              onOpenFile(files[0].path)
-              toast.info(t('chat.openedClosestMatch', { path: files[0].relativePath }))
-              return
-            }
-          } catch {
-            // Search fallback is best-effort; proceed with original resolved path.
-          }
-        }
+      if (fallbackPath) {
+        toast.info(t('chat.openedClosestMatch', { path: fallbackPath }))
       }
 
       onOpenFile(resolved)
     },
-    [onOpenFile, workingDirectory, activeWorkspace?.rootPath]
+    [onOpenFile, workingDirectory, activeWorkspace?.rootPath, session?.sessionFolderPath, sessionId, t]
   )
 
   const handleOpenUrl = React.useCallback(
@@ -531,7 +514,32 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     )
   }, [isCompactMode, sessionId, session?.sessionFolderPath, sessionMeta])
 
-  const headerActions = isCompactMode ? compactInfoButton : shareButton
+  const sessionInfoSidebarButton = React.useMemo(() => {
+    if (isCompactMode || !sessionMeta) return undefined
+
+    const isOpen = navigationState.rightSidebar?.type === 'session-info'
+
+    return (
+      <PanelHeaderCenterButton
+        icon={<PanelRightRounded className="h-4 w-4" />}
+        tooltip={t("chat.sessionInfo")}
+        aria-pressed={isOpen}
+        onClick={() => updateRightSidebar(isOpen ? undefined : { type: 'session-info' })}
+        className={isOpen ? 'opacity-100 bg-foreground/[0.06]' : undefined}
+      />
+    )
+  }, [isCompactMode, navigationState.rightSidebar?.type, sessionMeta, t, updateRightSidebar])
+
+  const headerActions = React.useMemo(() => {
+    if (isCompactMode) return compactInfoButton
+
+    return (
+      <div className="flex items-center gap-1">
+        {sessionInfoSidebarButton}
+        {shareButton}
+      </div>
+    )
+  }, [compactInfoButton, isCompactMode, sessionInfoSidebarButton, shareButton])
 
   // Channel breadcrumb: shown next to the title when the session carries one
   // or more channel-backed labels (Slack-style #channel-name indicator).

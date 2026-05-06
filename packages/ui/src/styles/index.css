@@ -76,6 +76,14 @@
     rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 12px 12px 0px,
     rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 24px 24px 0px;
 
+  /* Preview overlays: theme-aware by default, app shells can override for glass/scenic modes. */
+  --preview-overlay-background: var(--foreground-3);
+  --preview-overlay-backdrop: color-mix(in srgb, var(--background) 72%, transparent);
+  --preview-overlay-backdrop-blur: 0px;
+  --preview-overlay-surface: var(--background);
+  --preview-overlay-card-background: var(--background);
+  --preview-overlay-shadow: var(--shadow-modal-small);
+
   /* === Z-INDEX SCALE === */
   --z-base: 0;
   --z-local: 10;
@@ -434,6 +442,30 @@ html[data-font="inter"] {
 
   .shadow-modal-small {
     box-shadow: var(--shadow-modal-small);
+  }
+
+  .fullscreen-overlay-background {
+    background: var(--preview-overlay-background);
+    backdrop-filter: blur(var(--preview-overlay-backdrop-blur));
+    -webkit-backdrop-filter: blur(var(--preview-overlay-backdrop-blur));
+  }
+
+  .preview-overlay-modal-backdrop {
+    background: var(--preview-overlay-backdrop);
+    backdrop-filter: blur(var(--preview-overlay-backdrop-blur));
+    -webkit-backdrop-filter: blur(var(--preview-overlay-backdrop-blur));
+  }
+
+  .preview-overlay-modal-surface,
+  .overlay-solid-surface {
+    background: var(--preview-overlay-surface);
+    box-shadow: var(--preview-overlay-shadow);
+  }
+
+  .overlay-solid-surface {
+    background: var(--preview-overlay-card-background);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   /* Smooth corners (iOS-style superellipse)

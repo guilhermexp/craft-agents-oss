@@ -1,0 +1,27 @@
+{
+  "name": "Warp Phenomenon",
+  "description": "Cinematic sunset alpine — Warp Terminal default theme.",
+  "author": "Warp (adapted for Craft)",
+  "license": "Reference design",
+  "source": "https://www.warp.dev/",
+  "mode": "scenic",
+  "backgroundImage": "https://images.pexels.com/photos/618833/pexels-photo-618833.jpeg",
+  "scenicBackgroundOpacity": 1,
+  "scenicBackgroundContrast": 1,
+  "scenicBackgroundBlur": 1,
+  "supportedModes": ["dark"],
+  "shikiTheme": {
+    "dark": "github-dark"
+  },
+  "background": "rgba(17, 17, 17, 0.62)",
+  "foreground": "#ffffff",
+  "accent": "#4b7ee2",
+  "info": "#dba33e",
+  "success": "#50fa7b",
+  "destructive": "#ef4444",
+  "paper": "#161616",
+  "navigator": "#111111",
+  "input": "#1c1c1c",
+  "popover": "rgba(30, 30, 30, 0.95)",
+  "popoverSolid": "#1e1e1e"
+}

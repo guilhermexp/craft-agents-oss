@@ -97,7 +97,7 @@ export function SessionInfoPopover({
   )
 }
 
-function SessionInfoPopoverContent({ sessionId, sessionFolderPath }: { sessionId: string; sessionFolderPath?: string }) {
+export function SessionInfoPopoverContent({ sessionId, sessionFolderPath }: { sessionId: string; sessionFolderPath?: string }) {
   const { t } = useTranslation()
   const session = useSession(sessionId)
   const { onRenameSession } = useAppShellContext()

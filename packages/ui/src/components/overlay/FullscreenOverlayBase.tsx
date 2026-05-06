@@ -9,7 +9,7 @@
  *
  * Additionally handles:
  * - macOS traffic light hiding (via PlatformContext)
- * - Default scenic background (bg-foreground-3 + fullscreen-overlay-background blur)
+ * - Theme-aware preview background (fullscreen-overlay-background)
  *   Callers can override via className (twMerge resolves conflicts)
  * - Optional structured header with badges (typeBadge, filePath, title, subtitle)
  * - Optional built-in copy button (copyContent prop)
@@ -146,7 +146,7 @@ export function FullscreenOverlayBase({
         <Dialog.Content
           className={cn(
             'fixed inset-0 overflow-hidden outline-none',
-            'bg-foreground-3 fullscreen-overlay-background',
+            'fullscreen-overlay-background',
             className
           )}
           style={{ zIndex: Z_FULLSCREEN }}

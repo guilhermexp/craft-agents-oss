@@ -193,7 +193,7 @@ export function PreviewOverlay({
       }}
     >
       <div
-        className={`flex flex-col ${bgClass} shadow-3xl overflow-hidden smooth-corners`}
+        className={`preview-overlay-modal-surface flex flex-col ${bgClass} overflow-hidden smooth-corners`}
         style={{
           width: '90vw',
           maxWidth: OVERLAY_LAYOUT.modalMaxWidth,

@@ -72,6 +72,7 @@ import {
 import { SessionList, type ChatGroupingMode } from "./SessionList"
 import { MainContentPanel } from "./MainContentPanel"
 import { PanelStackContainer } from "./PanelStackContainer"
+import { SessionInfoPopoverContent } from "./SessionInfoPopover"
 import type { ChatDisplayHandle } from "./ChatDisplay"
 import { LeftSidebar } from "./LeftSidebar"
 import { useSession } from "@/hooks/useSession"
@@ -86,7 +87,7 @@ import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
 import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter } from "../../../shared/types"
-import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
+import { sessionAtomFamily, sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
 import { panelStackAtom, panelCountAtom, focusedPanelIdAtom, focusedSessionIdAtom, focusNextPanelAtom, focusPrevPanelAtom, parseSessionIdFromRoute } from "@/atoms/panel-stack"
@@ -104,6 +105,7 @@ import type { LabelConfig, LabelTreeNode } from "@craft-agent/shared/labels"
 import type { ChannelConfig } from "@craft-agent/shared/channels"
 import { resolveEntityColor } from "@craft-agent/shared/colors"
 import * as storage from "@/lib/local-storage"
+import { resolveOpenFilePath } from "@/lib/resolve-open-file-path"
 import { toast } from "sonner"
 import { navigate, routes } from "@/lib/navigate"
 import {
@@ -126,6 +128,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { PanelHeader } from "./PanelHeader"
+import { PanelHeaderCenterButton } from "@/components/ui/PanelHeaderCenterButton"
 import { SendToWorkspaceDialog } from "./SendToWorkspaceDialog"
 import { MessagingDialogHost } from "@/components/messaging/MessagingDialogHost"
 import { EditPopover, getEditConfig, type EditContextKey } from "@/components/ui/EditPopover"
@@ -545,6 +548,9 @@ function AppShellContent({
   const [sessionListWidth, setSessionListWidth] = React.useState(() => {
     return storage.get(storage.KEYS.sessionListWidth, 300)
   })
+  const [rightSidebarWidth, setRightSidebarWidth] = React.useState(() => {
+    return storage.get(storage.KEYS.rightSidebarWidth, 320)
+  })
 
   // Hides both sidebar and navigator (CMD+. toggle)
   // Seed from either focused window param or persisted preference, then keep it toggleable.
@@ -576,14 +582,16 @@ function AppShellContent({
     })
   }, [])
 
-  const [isResizing, setIsResizing] = React.useState<'sidebar' | 'session-list' | null>(null)
+  const [isResizing, setIsResizing] = React.useState<'sidebar' | 'session-list' | 'right-sidebar' | null>(null)
   const [sidebarHandleY, setSidebarHandleY] = React.useState<number | null>(null)
   const [sessionListHandleY, setSessionListHandleY] = React.useState<number | null>(null)
+  const [rightSidebarHandleY, setRightSidebarHandleY] = React.useState<number | null>(null)
   const resizeHandleRef = React.useRef<HTMLDivElement>(null)
   const sessionListHandleRef = React.useRef<HTMLDivElement>(null)
+  const rightSidebarHandleRef = React.useRef<HTMLDivElement>(null)
   const [session, setSession] = useSession()
   const { resolvedMode, isDark, setMode } = useTheme()
-  const { canGoBack, canGoForward, goBack, goForward, navigateToSource, navigateToSession } = useNavigation()
+  const { canGoBack, canGoForward, goBack, goForward, navigateToSource, navigateToSession, updateRightSidebar } = useNavigation()
 
   // Double-Esc interrupt feature: first Esc shows warning, second Esc interrupts
   const { handleEscapePress } = useEscapeInterrupt()
@@ -596,6 +604,10 @@ function AppShellContent({
   const panelStack = useAtomValue(panelStackAtom)
   const panelCount = useAtomValue(panelCountAtom)
   const focusedSessionId = useAtomValue(focusedSessionIdAtom)
+  const rightSidebarSessionId = focusedSessionId ?? session.selected
+  const rightSidebarSession = useAtomValue(sessionAtomFamily(rightSidebarSessionId ?? ''))
+  const rightSidebarPanel = navState.rightSidebar
+  const isRightSidebarVisible = !isAutoCompact && rightSidebarPanel?.type === 'session-info' && !!rightSidebarSessionId
 
   // Navigate the focused panel to a session.
   // If the session is already open in another panel, focus that panel instead.
@@ -1261,6 +1273,13 @@ function AppShellContent({
           const rect = sessionListHandleRef.current.getBoundingClientRect()
           setSessionListHandleY(e.clientY - rect.top)
         }
+      } else if (isResizing === 'right-sidebar') {
+        const newWidth = Math.min(Math.max(window.innerWidth - e.clientX - PANEL_EDGE_INSET, 260), 520)
+        setRightSidebarWidth(newWidth)
+        if (rightSidebarHandleRef.current) {
+          const rect = rightSidebarHandleRef.current.getBoundingClientRect()
+          setRightSidebarHandleY(e.clientY - rect.top)
+        }
       }
     }
 
@@ -1271,6 +1290,9 @@ function AppShellContent({
       } else if (isResizing === 'session-list') {
         storage.set(storage.KEYS.sessionListWidth, sessionListWidth)
         setSessionListHandleY(null)
+      } else if (isResizing === 'right-sidebar') {
+        storage.set(storage.KEYS.rightSidebarWidth, rightSidebarWidth)
+        setRightSidebarHandleY(null)
       }
       setIsResizing(null)
     }
@@ -1286,6 +1308,7 @@ function AppShellContent({
     isResizing,
     sidebarWidth,
     sessionListWidth,
+    rightSidebarWidth,
     isSidebarVisible,
   ])
 
@@ -1598,10 +1621,45 @@ function AppShellContent({
     return onDeleteSession(sessionId, skipConfirmation)
   }, [session.selected, setSession, onDeleteSession])
 
+  const handleContextOpenFile = useCallback((path: string) => {
+    const targetSessionId = focusedSessionId ?? session.selected ?? null
+    const targetSessionMeta = targetSessionId ? sessionMetaMap.get(targetSessionId) : undefined
+    const workingDirectory = rightSidebarSession?.workingDirectory ?? targetSessionMeta?.workingDirectory ?? activeSessionWorkingDirectory
+    const workspaceRootPath = activeWorkspace?.rootPath
+    const sessionFolderPath = rightSidebarSession?.sessionFolderPath
+      ?? (workspaceRootPath && targetSessionId ? `${workspaceRootPath}/sessions/${targetSessionId}` : undefined)
+
+    void resolveOpenFilePath({
+      path,
+      sessionId: targetSessionId,
+      baseDirs: [
+        workingDirectory,
+        sessionFolderPath,
+        workspaceRootPath,
+        workspaceRootPath ? `${workspaceRootPath}/sessions` : undefined,
+      ],
+      searchFiles: window.electronAPI.searchFiles,
+    }).then((resolved) => {
+      contextValue.onOpenFile(resolved.path)
+    }).catch(() => {
+      contextValue.onOpenFile(path)
+    })
+  }, [
+    activeSessionWorkingDirectory,
+    activeWorkspace?.rootPath,
+    contextValue,
+    focusedSessionId,
+    rightSidebarSession?.sessionFolderPath,
+    rightSidebarSession?.workingDirectory,
+    session.selected,
+    sessionMetaMap,
+  ])
+
   // Extend context value with local overrides (wrapped onDeleteSession, sources, skills, labels, enabledModes, rightSidebarOpenButton, effectiveSessionStatuses)
   const appShellContextValue = React.useMemo<AppShellContextType>(() => ({
     ...contextValue,
     onDeleteSession: handleDeleteSession,
+    onOpenFile: handleContextOpenFile,
     enabledSources: sources,
     skills,
     activeSessionWorkingDirectory,
@@ -1625,7 +1683,7 @@ function AppShellContent({
     automationTestResults,
     getAutomationHistory,
     onReplayAutomation: handleReplayAutomation,
-  }), [contextValue, handleDeleteSession, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, channelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
+  }), [contextValue, handleDeleteSession, handleContextOpenFile, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, channelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
 
   // Persist expanded folders to localStorage (workspace-scoped)
   React.useEffect(() => {
@@ -3447,10 +3505,77 @@ function AppShellContent({
           }
           navigatorWidth={isAutoCompact ? sessionListWidth : (effectiveSidebarAndNavigatorHidden ? 0 : sessionListWidth)}
           isSidebarAndNavigatorHidden={effectiveSidebarAndNavigatorHidden}
-          isRightSidebarVisible={false}
+          isRightSidebarVisible={isRightSidebarVisible}
           isCompact={isAutoCompact}
           isResizing={!!isResizing}
         />
+
+        {isRightSidebarVisible && rightSidebarSessionId && (
+          <motion.aside
+            data-panel-role="right-sidebar"
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: rightSidebarWidth, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={isResizing ? { duration: 0 } : springTransition}
+            className="h-full shrink-0 overflow-hidden bg-background shadow-middle relative z-panel"
+            style={{
+              borderTopLeftRadius: RADIUS_INNER,
+              borderBottomLeftRadius: RADIUS_INNER,
+              borderTopRightRadius: RADIUS_INNER,
+              borderBottomRightRadius: RADIUS_EDGE,
+            }}
+          >
+            <div className="h-full min-h-0 flex flex-col" style={{ width: rightSidebarWidth }}>
+              <PanelHeader
+                title={t("chat.sessionInfo")}
+                actions={(
+                  <PanelHeaderCenterButton
+                    icon={<X className="h-4 w-4" />}
+                    tooltip={t("common.close")}
+                    onClick={() => updateRightSidebar(undefined)}
+                  />
+                )}
+              />
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <SessionInfoPopoverContent
+                  sessionId={rightSidebarSessionId}
+                  sessionFolderPath={rightSidebarSession?.sessionFolderPath}
+                />
+              </div>
+            </div>
+          </motion.aside>
+        )}
+
+        {/* Right Sidebar Resize Handle */}
+        {isRightSidebarVisible && (
+          <div
+            ref={rightSidebarHandleRef}
+            onMouseDown={(e) => { e.preventDefault(); setIsResizing('right-sidebar') }}
+            onMouseMove={(e) => {
+              if (rightSidebarHandleRef.current) {
+                const rect = rightSidebarHandleRef.current.getBoundingClientRect()
+                setRightSidebarHandleY(e.clientY - rect.top)
+              }
+            }}
+            onMouseLeave={() => { if (isResizing !== 'right-sidebar') setRightSidebarHandleY(null) }}
+            className="absolute cursor-col-resize z-panel flex justify-center"
+            style={{
+              width: PANEL_SASH_HIT_WIDTH,
+              top: PANEL_STACK_VERTICAL_OVERFLOW,
+              bottom: PANEL_STACK_VERTICAL_OVERFLOW,
+              right: PANEL_EDGE_INSET + rightSidebarWidth + (PANEL_GAP / 2) - PANEL_SASH_HALF_HIT_WIDTH,
+              transition: isResizing === 'right-sidebar' ? undefined : 'right 0.15s ease-out',
+            }}
+          >
+            <div
+              className="h-full"
+              style={{
+                ...getResizeGradientStyle(rightSidebarHandleY, rightSidebarHandleRef.current?.clientHeight ?? null),
+                width: PANEL_SASH_LINE_WIDTH,
+              }}
+            />
+          </div>
+        )}
 
         {/* Sidebar Resize Handle (absolute, hidden in focused mode) */}
         {!effectiveSidebarAndNavigatorHidden && (
