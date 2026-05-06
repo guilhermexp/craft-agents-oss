@@ -62,7 +62,7 @@ Files under `apps/electron/scripts/hermes-patches/`:
 
 | Patch | Purpose |
 | ----- | ------- |
-| `01-acp-server.patch` | ACP adapter `acp_adapter/server.py` + `session.py` — stores ACP-provided `mcp_servers` on session state, wires `stream_callback` so Hermes streams text live to Craft instead of dumping a single final message, and reapplies ACP MCP toolsets after `/model` or ACP `session/set_model` recreates the underlying `AIAgent`. Upstream Hermes now owns reasoning-delta routing, so do not reintroduce duplicate `reasoning_callback` patches unless upstream removes it. |
+| `01-acp-server.patch` | ACP adapter `acp_adapter/server.py` + `session.py` — stores ACP-provided `mcp_servers` on session state, wires a single streaming path (`stream_callback`) so Hermes streams text live to Craft without duplicate deltas across profile-local sessions, and reapplies ACP MCP toolsets after `/model` or ACP `session/set_model` recreates the underlying `AIAgent`. Upstream Hermes now owns reasoning-delta routing, so do not reintroduce duplicate `reasoning_callback` patches unless upstream removes it. |
 | `02-mcp-tool-craft-naming.patch` | `tools/mcp_tool.py` — keep `craft-session` and `craft-sources` MCP servers under Craft canonical tool names (`mcp__session__…`, `mcp__github__…`); other MCP servers stay on Hermes-normal names. |
 | `03-web-server-craft-embedded.patch` | `hermes_cli/web_server.py` — `_craft_embedded_update_command()` so the Hermes dashboard's Update button delegates to Craft's update script when running embedded inside Craft, rather than running the standalone Hermes installer. |
 

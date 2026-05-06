@@ -7,7 +7,7 @@ normal bundle/update path must not use `guilhermexp/hermes-agent` or a sibling
 
 | Patch | Purpose |
 | --- | --- |
-| `01-acp-server.patch` | ACP adapter (`acp_adapter/server.py`, `session.py`) — stores ACP-provided `mcp_servers`, wires `stream_callback` so Hermes streams text to Craft instead of dumping a single final message, and reapplies ACP MCP toolsets after `/model` or ACP `session/set_model` recreates the underlying `AIAgent`. Upstream Hermes owns reasoning-delta routing; do not duplicate that here unless upstream removes it. |
+| `01-acp-server.patch` | ACP adapter (`acp_adapter/server.py`, `session.py`) — stores ACP-provided `mcp_servers`, wires one streaming path (`stream_callback`) so Hermes streams text to Craft without duplicating deltas across profile-local sessions, and reapplies ACP MCP toolsets after `/model` or ACP `session/set_model` recreates the underlying `AIAgent`. Upstream Hermes owns reasoning-delta routing; do not duplicate that here unless upstream removes it. |
 | `02-mcp-tool-craft-naming.patch` | `tools/mcp_tool.py` — keep `craft-session`/`craft-sources` MCP server tools under Craft canonical names (`mcp__session__…`, `mcp__github__…`); other MCP servers stay on Hermes-normal names. |
 | `03-web-server-craft-embedded.patch` | `hermes_cli/web_server.py` — `_craft_embedded_update_command()` so the Hermes dashboard's "Update" button delegates to Craft's update script when running embedded inside Craft. |
 | `04-acp-tools-json-scope.patch` | `acp_adapter/tools.py` — removes a local `import json` inside `build_tool_start()` that shadows the module import and crashes history replay for polished tool calls with `UnboundLocalError`. |

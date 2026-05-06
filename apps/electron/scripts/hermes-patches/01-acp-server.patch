@@ -33,7 +33,21 @@ index dd9d75af..05de7554 100644
              )
              state.agent.enabled_toolsets = enabled_toolsets
              disabled_toolsets = getattr(state.agent, "disabled_toolsets", None)
-@@ -965,6 +975,7 @@ class HermesACPAgent(acp.Agent):
+@@ -905,7 +915,12 @@ class HermesACPAgent(acp.Agent):
+         agent.thinking_callback = None
+         agent.reasoning_callback = reasoning_cb
+         agent.step_callback = step_cb
+-        agent.stream_delta_callback = stream_delta_cb
++        # Do not also assign agent.stream_delta_callback here: run_conversation
++        # receives stream_callback=stream_delta_cb below and AIAgent fans out to
++        # both callbacks when both are set. Registering the same callback twice
++        # duplicates every streamed token in Craft, especially visible across
++        # profile-local Hermes sessions such as server-ops.
++        agent.stream_delta_callback = None
+ 
+         # Approval callback is per-thread (thread-local, GHSA-qg5c-hvr5-hjgr).
+         # Set it INSIDE _run_agent so the TLS write happens in the executor
+@@ -965,6 +980,7 @@ class HermesACPAgent(acp.Agent):
                      conversation_history=state.history,
                      task_id=session_id,
                      persist_user_message=user_text or "[Image attachment]",
