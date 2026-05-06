@@ -35,6 +35,13 @@ export interface ChatPageProps {
   sessionId: string
 }
 
+type InlineFileResolveCacheEntry = {
+  promise: Promise<string | null>
+  expiresAt: number
+}
+
+const INLINE_FILE_MISSING_CACHE_TTL_MS = 10_000
+
 const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const { t } = useTranslation()
   // Diagnostic: mark when component runs
@@ -260,17 +267,18 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     () => workspaces.find((w) => w.id === activeWorkspaceId) || null,
     [workspaces, activeWorkspaceId]
   )
+  const inlineFileResolveCacheRef = React.useRef(new Map<string, InlineFileResolveCacheEntry>())
   const handleWorkingDirectoryChange = React.useCallback(async (path: string) => {
     if (!session) return
     await window.electronAPI.sessionCommand(session.id, { type: 'updateWorkingDirectory', dir: path })
   }, [session])
 
-  const handleOpenFile = React.useCallback(
+  const resolveSessionFilePath = React.useCallback(
     async (path: string) => {
       const workspaceRootPath = activeWorkspace?.rootPath
       const sessionFolderPath = session?.sessionFolderPath
         ?? (workspaceRootPath ? `${workspaceRootPath}/sessions/${sessionId}` : undefined)
-      const { path: resolved, fallbackPath } = await resolveOpenFilePath({
+      const { path: resolved, fallbackPath, found } = await resolveOpenFilePath({
         path,
         sessionId,
         baseDirs: [
@@ -283,13 +291,72 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
         searchFiles: window.electronAPI.searchFiles,
       })
 
+      return { resolved, fallbackPath, found }
+    },
+    [workingDirectory, activeWorkspace?.rootPath, session?.sessionFolderPath, session?.sdkCwd, sessionMeta?.sdkCwd, sessionId]
+  )
+
+  const resolveInlineFilePath = React.useCallback(
+    async (path: string) => {
+      const contextKey = [
+        sessionId,
+        session?.sdkCwd ?? sessionMeta?.sdkCwd ?? '',
+        workingDirectory ?? '',
+        session?.sessionFolderPath ?? '',
+        activeWorkspace?.rootPath ?? '',
+      ].join('\u0000')
+      const cacheKey = `${contextKey}\u0000${path}`
+      const now = Date.now()
+      const cached = inlineFileResolveCacheRef.current.get(cacheKey)
+
+      if (cached && cached.expiresAt > now) {
+        return cached.promise
+      }
+
+      const promise = resolveSessionFilePath(path).then(({ resolved, found }) => {
+        const value = found ? resolved : null
+        const existing = inlineFileResolveCacheRef.current.get(cacheKey)
+        if (existing?.promise === promise) {
+          inlineFileResolveCacheRef.current.set(cacheKey, {
+            promise: Promise.resolve(value),
+            expiresAt: value ? Number.POSITIVE_INFINITY : Date.now() + INLINE_FILE_MISSING_CACHE_TTL_MS,
+          })
+        }
+        return value
+      }).catch((err) => {
+        inlineFileResolveCacheRef.current.delete(cacheKey)
+        throw err
+      })
+
+      inlineFileResolveCacheRef.current.set(cacheKey, {
+        promise,
+        expiresAt: now + INLINE_FILE_MISSING_CACHE_TTL_MS,
+      })
+
+      return promise
+    },
+    [
+      activeWorkspace?.rootPath,
+      resolveSessionFilePath,
+      session?.sdkCwd,
+      session?.sessionFolderPath,
+      sessionId,
+      sessionMeta?.sdkCwd,
+      workingDirectory,
+    ]
+  )
+
+  const handleOpenFile = React.useCallback(
+    async (path: string) => {
+      const { resolved, fallbackPath } = await resolveSessionFilePath(path)
+
       if (fallbackPath) {
         toast.info(t('chat.openedClosestMatch', { path: fallbackPath }))
       }
 
       onOpenFile(resolved)
     },
-    [onOpenFile, workingDirectory, activeWorkspace?.rootPath, session?.sessionFolderPath, session?.sdkCwd, sessionMeta?.sdkCwd, sessionId, t]
+    [onOpenFile, resolveSessionFilePath, t]
   )
 
   const handleOpenUrl = React.useCallback(
@@ -618,6 +685,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
                 session={skeletonSession}
                 onSendMessage={() => {}}
                 onOpenFile={handleOpenFile}
+                onResolveFilePath={resolveInlineFilePath}
                 onOpenUrl={handleOpenUrl}
                 currentModel={effectiveModel}
                 onModelChange={handleModelChange}
@@ -691,6 +759,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
               }
             }}
             onOpenFile={handleOpenFile}
+            onResolveFilePath={resolveInlineFilePath}
             onOpenUrl={handleOpenUrl}
             currentModel={effectiveModel}
             onModelChange={handleModelChange}

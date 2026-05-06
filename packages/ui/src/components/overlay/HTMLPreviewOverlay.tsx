@@ -16,21 +16,7 @@ import { Globe } from 'lucide-react'
 import { PreviewOverlay } from './PreviewOverlay'
 import { CopyButton } from './CopyButton'
 import { ItemNavigator } from './ItemNavigator'
-
-/**
- * Inject `<base target="_top">` so link clicks navigate the top frame,
- * which Electron's will-navigate handler intercepts → system browser.
- */
-function injectBaseTarget(html: string): string {
-  if (/<base\s/i.test(html)) return html
-  if (/<head[^>]*>/i.test(html)) {
-    return html.replace(/(<head[^>]*>)/i, '$1<base target="_top">')
-  }
-  if (/<html[^>]*>/i.test(html)) {
-    return html.replace(/(<html[^>]*>)/i, '$1<head><base target="_top"></head>')
-  }
-  return `<head><base target="_top"></head>${html}`
-}
+import { prepareHtmlPreviewSrcDoc } from '../../lib/html-preview-sanitizer'
 
 interface PreviewItem {
   src: string
@@ -129,9 +115,9 @@ export function HTMLPreviewOverlay({
       .finally(() => setLoadingItem(false))
   }, [isOpen, activeItem?.src, mergedCache, onLoadContent])
 
-  // Preprocess active HTML
+  // Preprocess active HTML before assigning it to iframe srcDoc.
   const processedHtml = React.useMemo(
-    () => activeContent ? injectBaseTarget(activeContent) : null,
+    () => activeContent ? prepareHtmlPreviewSrcDoc(activeContent) : null,
     [activeContent]
   )
 

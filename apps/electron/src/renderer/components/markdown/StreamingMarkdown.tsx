@@ -7,6 +7,7 @@ interface StreamingMarkdownProps {
   mode?: RenderMode
   onUrlClick?: (url: string) => void
   onFileClick?: (path: string) => void
+  onResolveFilePath?: (path: string) => Promise<string | null>
 }
 
 interface Block {
@@ -103,20 +104,22 @@ const MemoizedBlock = React.memo(function Block({
   mode,
   onUrlClick,
   onFileClick,
+  onResolveFilePath,
 }: {
   content: string
   mode: RenderMode
   onUrlClick?: (url: string) => void
   onFileClick?: (path: string) => void
+  onResolveFilePath?: (path: string) => Promise<string | null>
 }) {
   return (
-    <Markdown mode={mode} onUrlClick={onUrlClick} onFileClick={onFileClick}>
+    <Markdown mode={mode} onUrlClick={onUrlClick} onFileClick={onFileClick} onResolveFilePath={onResolveFilePath}>
       {content}
     </Markdown>
   )
 }, (prev, next) => {
   // Only re-render if content actually changed
-  return prev.content === next.content && prev.mode === next.mode
+  return prev.content === next.content && prev.mode === next.mode && prev.onResolveFilePath === next.onResolveFilePath
 })
 MemoizedBlock.displayName = 'MemoizedBlock'
 
@@ -142,6 +145,7 @@ export function StreamingMarkdown({
   mode = 'minimal',
   onUrlClick,
   onFileClick,
+  onResolveFilePath,
 }: StreamingMarkdownProps) {
   // Split into blocks - memoized to avoid recomputation
   // Must be called unconditionally to satisfy Rules of Hooks
@@ -153,7 +157,7 @@ export function StreamingMarkdown({
   // Not streaming - use simple Markdown (no block splitting needed)
   if (!isStreaming) {
     return (
-      <Markdown mode={mode} onUrlClick={onUrlClick} onFileClick={onFileClick}>
+      <Markdown mode={mode} onUrlClick={onUrlClick} onFileClick={onFileClick} onResolveFilePath={onResolveFilePath}>
         {content}
       </Markdown>
     )
@@ -177,6 +181,7 @@ export function StreamingMarkdown({
             mode={mode}
             onUrlClick={onUrlClick}
             onFileClick={onFileClick}
+            onResolveFilePath={onResolveFilePath}
           />
         )
       })}

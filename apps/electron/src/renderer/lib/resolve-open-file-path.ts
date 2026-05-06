@@ -15,6 +15,7 @@ export interface ResolveOpenFilePathOptions {
 export interface ResolvedOpenFilePath {
   path: string
   fallbackPath?: string
+  found: boolean
 }
 
 function isAbsoluteLikePath(path: string): boolean {
@@ -43,6 +44,10 @@ function parentDir(path: string): string | null {
   const index = normalized.lastIndexOf('/')
   if (index <= 0) return null
   return normalized.slice(0, index)
+}
+
+function hasDirectorySegment(path: string): boolean {
+  return cleanRelativePath(path).includes('/')
 }
 
 function uniqueNonEmpty(values: Array<string | null | undefined>): string[] {
@@ -134,16 +139,16 @@ export async function resolveOpenFilePath({
 
   const existingCandidate = await findExistingCandidate(candidates, searchFiles)
   if (existingCandidate) {
-    return { path: existingCandidate, fallbackPath: existingCandidate === primaryPath ? undefined : existingCandidate }
+    return { path: existingCandidate, fallbackPath: existingCandidate === primaryPath ? undefined : existingCandidate, found: true }
   }
 
   const fileName = basename(path)
-  if (fileName && normalizedBaseDirs.length > 0) {
+  if (fileName && hasDirectorySegment(path) && normalizedBaseDirs.length > 0) {
     const basenameMatch = await findByBasename(fileName, normalizedBaseDirs, path, searchFiles)
     if (basenameMatch) {
-      return { path: basenameMatch, fallbackPath: basenameMatch === primaryPath ? undefined : basenameMatch }
+      return { path: basenameMatch, fallbackPath: basenameMatch === primaryPath ? undefined : basenameMatch, found: true }
     }
   }
 
-  return { path: primaryPath }
+  return { path: primaryPath, found: false }
 }

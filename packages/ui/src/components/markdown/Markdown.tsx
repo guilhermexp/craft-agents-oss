@@ -18,6 +18,16 @@ import { MarkdownLatexBlock } from './MarkdownLatexBlock'
 import { MarkdownPdfBlock } from './MarkdownPdfBlock'
 import { preprocessLinks } from './linkify'
 import { resolveMarkdownLinkTarget } from './link-target'
+import { classifyFile } from '../../lib/file-classification'
+import { PlatformProvider, usePlatform } from '../../context/PlatformContext'
+import {
+  TranscriptViewerAudio,
+  TranscriptViewerContainer,
+  TranscriptViewerPlayPauseButton,
+  TranscriptViewerScrubBar,
+  type CharacterAlignmentResponseModel,
+} from '../ui/transcript-viewer'
+import { PauseIcon, PlayIcon } from 'lucide-react'
 import remarkCollapsibleSections from './remarkCollapsibleSections'
 import { CollapsibleSection } from './CollapsibleSection'
 import { useCollapsibleMarkdown } from './CollapsibleMarkdownContext'
@@ -61,6 +71,10 @@ export interface MarkdownProps {
    * Callback when a file path is clicked
    */
   onFileClick?: (path: string) => void
+  /**
+   * Resolve a markdown file path before inline media previews read it.
+   */
+  onResolveFilePath?: (path: string) => Promise<string | null>
   /**
    * Enable collapsible headings
    * Requires wrapping in CollapsibleMarkdownProvider
@@ -134,6 +148,130 @@ function InlineCodeWithFileClick({
   )
 }
 
+const EMPTY_AUDIO_ALIGNMENT: CharacterAlignmentResponseModel = {
+  characters: [],
+  characterStartTimesSeconds: [],
+  characterEndTimesSeconds: [],
+}
+
+const audioPreviewDataUrlCache = new Map<string, Promise<string>>()
+
+function MarkdownAudioInlinePreview({
+  filePath,
+}: {
+  filePath: string
+}) {
+  const { onReadFileDataUrl, onResolveFilePath } = usePlatform()
+  const [audioSrc, setAudioSrc] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
+  const [isMissing, setIsMissing] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!onReadFileDataUrl) return
+
+    let cancelled = false
+    setAudioSrc(null)
+    setError(null)
+    setIsMissing(false)
+
+    const load = async () => {
+      const resolvedPath = onResolveFilePath ? await onResolveFilePath(filePath) : filePath
+      if (!resolvedPath) return null
+
+      const cached = audioPreviewDataUrlCache.get(resolvedPath)
+      if (cached) return cached
+
+      const request = onReadFileDataUrl(resolvedPath).catch((err) => {
+        audioPreviewDataUrlCache.delete(resolvedPath)
+        throw err
+      })
+      audioPreviewDataUrlCache.set(resolvedPath, request)
+      return request
+    }
+
+    load()
+      .then((url) => {
+        if (cancelled) return
+        if (url) {
+          setAudioSrc(url)
+        } else {
+          setIsMissing(true)
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load audio')
+      })
+
+    return () => { cancelled = true }
+  }, [filePath, onReadFileDataUrl, onResolveFilePath])
+
+  if (!onReadFileDataUrl || isMissing) return null
+
+  return (
+    <span className="my-3 block w-full max-w-2xl">
+      <TranscriptViewerContainer
+        as="span"
+        className="bg-card w-full rounded-[8px] border border-border/60 p-3 shadow-minimal"
+        audioSrc={audioSrc ?? ''}
+        audioType={inferAudioMimeType(filePath)}
+        alignment={EMPTY_AUDIO_ALIGNMENT}
+      >
+        {audioSrc && <TranscriptViewerAudio className="sr-only" />}
+        {audioSrc ? (
+          <>
+            <span className="block truncate rounded-[8px] border border-border/60 bg-foreground-2 px-3 py-2 text-sm text-muted-foreground">
+              {filePath.split('/').pop() || filePath}
+            </span>
+            <TranscriptViewerScrubBar />
+            <TranscriptViewerPlayPauseButton className="w-full cursor-pointer" disabled={!audioSrc}>
+              {({ isPlaying }) => (
+                <>
+                  {isPlaying ? (
+                    <>
+                      <PauseIcon className="size-4" /> Pause
+                    </>
+                  ) : (
+                    <>
+                      <PlayIcon className="size-4" /> Play
+                    </>
+                  )}
+                </>
+              )}
+            </TranscriptViewerPlayPauseButton>
+          </>
+        ) : (
+          <span className="block text-sm text-muted-foreground">
+            {error ? `Audio preview failed: ${error}` : 'Loading audio...'}
+          </span>
+        )}
+      </TranscriptViewerContainer>
+    </span>
+  )
+}
+
+function inferAudioMimeType(filePath: string): string {
+  const ext = filePath.split('.').pop()?.toLowerCase()
+  switch (ext) {
+    case 'mp3':
+      return 'audio/mpeg'
+    case 'wav':
+      return 'audio/wav'
+    case 'm4a':
+      return 'audio/mp4'
+    case 'aac':
+      return 'audio/aac'
+    case 'ogg':
+    case 'oga':
+      return 'audio/ogg'
+    case 'opus':
+      return 'audio/opus'
+    case 'flac':
+      return 'audio/flac'
+    default:
+      return 'audio/mpeg'
+  }
+}
+
 function createComponents(
   mode: RenderMode,
   onUrlClick?: (url: string) => void,
@@ -193,28 +331,27 @@ function createComponents(
     },
     // Links: Make clickable with callbacks
     a: ({ href, children }) => {
+      const fallbackText = React.Children.toArray(children)
+        .map((child) => (typeof child === 'string' ? child : ''))
+        .join('')
+        .trim()
+      const target = (href?.trim() || fallbackText)
+      const resolvedTarget = target ? resolveMarkdownLinkTarget(target) : null
+      const isAudioFile = resolvedTarget?.kind === 'file' && classifyFile(resolvedTarget.path).type === 'audio'
+
       const handleClick = (e: React.MouseEvent) => {
         e.preventDefault()
 
-        // Some AI outputs include raw HTML anchors with empty href but path text content.
-        // Fallback to the anchor text when href is missing/empty.
-        const fallbackText = React.Children.toArray(children)
-          .map((child) => (typeof child === 'string' ? child : ''))
-          .join('')
-          .trim()
-
-        const target = (href?.trim() || fallbackText)
         if (!target) return
 
-        const resolvedTarget = resolveMarkdownLinkTarget(target)
-        if (resolvedTarget.kind === 'file' && onFileClick) {
+        if (resolvedTarget?.kind === 'file' && onFileClick) {
           onFileClick(resolvedTarget.path)
-        } else if (resolvedTarget.kind === 'url' && onUrlClick) {
+        } else if (resolvedTarget?.kind === 'url' && onUrlClick) {
           onUrlClick(resolvedTarget.url)
         }
       }
 
-      return (
+      const link = (
         <a
           href={href}
           onClick={handleClick}
@@ -222,6 +359,19 @@ function createComponents(
         >
           {children}
         </a>
+      )
+
+      if (isAudioFile) {
+        return (
+          <>
+            {link}
+            <MarkdownAudioInlinePreview filePath={resolvedTarget.path} />
+          </>
+        )
+      }
+
+      return (
+        link
       )
     },
   }
@@ -564,9 +714,11 @@ export function Markdown({
   id,
   onUrlClick,
   onFileClick,
+  onResolveFilePath,
   collapsible = false,
   hideFirstMermaidExpand = true,
 }: MarkdownProps) {
+  const platformActions = usePlatform()
   // Get collapsible context if enabled
   const collapsibleContext = useCollapsibleMarkdown()
 
@@ -586,6 +738,11 @@ export function Markdown({
   const components = React.useMemo(
     () => wrapWithSafeProxy(createComponents(mode, onUrlClick, onFileClick, collapsible ? collapsibleContext : null, firstMermaidCodeRef, hideFirstMermaidExpand)),
     [mode, onUrlClick, onFileClick, collapsible, collapsibleContext, hideFirstMermaidExpand]
+  )
+
+  const scopedPlatformActions = React.useMemo(
+    () => onResolveFilePath ? { ...platformActions, onResolveFilePath } : platformActions,
+    [platformActions, onResolveFilePath]
   )
 
   // Preprocess to convert raw URLs and file paths to markdown links
@@ -611,15 +768,17 @@ export function Markdown({
   )
 
   return (
-    <div className={cn('markdown-content', className)}>
-      <ReactMarkdown
-        remarkPlugins={remarkPlugins}
-        rehypePlugins={[rehypeKatex, rehypeRaw]}
-        components={components}
-      >
-        {processedContent}
-      </ReactMarkdown>
-    </div>
+    <PlatformProvider actions={scopedPlatformActions}>
+      <div className={cn('markdown-content', className)}>
+        <ReactMarkdown
+          remarkPlugins={remarkPlugins}
+          rehypePlugins={[rehypeKatex, rehypeRaw]}
+          components={components}
+        >
+          {processedContent}
+        </ReactMarkdown>
+      </div>
+    </PlatformProvider>
   )
 }
 

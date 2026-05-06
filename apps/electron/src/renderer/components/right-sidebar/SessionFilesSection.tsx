@@ -18,7 +18,7 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { AnimatePresence, motion, type Variants } from 'motion/react'
-import { File, Folder, FolderOpen, FileText, Image, FileCode, ChevronRight, ExternalLink } from 'lucide-react'
+import { File, Folder, FolderOpen, FileText, Image, FileCode, ChevronRight, ExternalLink, Music, Video } from 'lucide-react'
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -104,6 +104,23 @@ function collectDirectoryPaths(entries: SessionFile[]): string[] {
   return directories
 }
 
+function filterSessionFilesForPanel(entries: SessionFile[], parentName?: string): SessionFile[] {
+  return entries.flatMap((entry): SessionFile[] => {
+    if (parentName === 'diagrams' && entry.type === 'file' && entry.name.endsWith('.mmd')) {
+      return []
+    }
+
+    if (entry.type !== 'directory') {
+      return [entry]
+    }
+
+    const children = filterSessionFilesForPanel(entry.children ?? [], entry.name)
+    if (children.length === 0) return []
+
+    return [{ ...entry, children }]
+  })
+}
+
 /**
  * Get icon for file based on name/type (14x14px matching sidebar)
  */
@@ -124,6 +141,14 @@ function getFileIcon(file: SessionFile, isExpanded?: boolean) {
 
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico'].includes(ext || '')) {
     return <Image className={iconClass} />
+  }
+
+  if (['mp3', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'flac'].includes(ext || '')) {
+    return <Music className={iconClass} />
+  }
+
+  if (['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(ext || '')) {
+    return <Video className={iconClass} />
   }
 
   if (['ts', 'tsx', 'js', 'jsx', 'json', 'yaml', 'yml', 'py', 'rb', 'go', 'rs'].includes(ext || '')) {
@@ -466,7 +491,7 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
 
     setIsLoading(true)
     try {
-      const sessionFiles = await window.electronAPI.getSessionFiles(sessionId)
+      const sessionFiles = filterSessionFilesForPanel(await window.electronAPI.getSessionFiles(sessionId))
       if (mountedRef.current) {
         setFiles(sessionFiles)
 

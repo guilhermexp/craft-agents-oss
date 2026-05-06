@@ -221,7 +221,8 @@ function renderContentWithBadges(
   content: string,
   badges: ContentBadge[],
   onUrlClick?: (url: string) => void,
-  onFileClick?: (path: string) => void
+  onFileClick?: (path: string) => void,
+  onResolveFilePath?: (path: string) => Promise<string | null>
 ): ReactNode {
   if (badges.length === 0) {
     return (
@@ -229,6 +230,7 @@ function renderContentWithBadges(
         mode="minimal"
         onUrlClick={onUrlClick}
         onFileClick={onFileClick}
+        onResolveFilePath={onResolveFilePath}
         className="text-sm [&_a]:underline [&_code]:bg-foreground/10 [&_p]:whitespace-pre-wrap"
       >
         {content}
@@ -253,6 +255,7 @@ function renderContentWithBadges(
             mode="minimal"
             onUrlClick={onUrlClick}
             onFileClick={onFileClick}
+            onResolveFilePath={onResolveFilePath}
             className="inline text-sm [&_a]:underline [&_code]:bg-foreground/10 [&_p]:whitespace-pre-wrap [&_p]:inline"
           >
             {textBefore}
@@ -289,6 +292,7 @@ function renderContentWithBadges(
           mode="minimal"
           onUrlClick={onUrlClick}
           onFileClick={onFileClick}
+          onResolveFilePath={onResolveFilePath}
           className="inline text-sm [&_a]:underline [&_code]:bg-foreground/10 [&_p]:whitespace-pre-wrap [&_p]:inline"
         >
           {textAfter}
@@ -310,6 +314,8 @@ export interface UserMessageBubbleProps {
   onUrlClick?: (url: string) => void
   /** Callback when a file path is clicked */
   onFileClick?: (path: string) => void
+  /** Resolve local file references before inline previews read them */
+  onResolveFilePath?: (path: string) => Promise<string | null>
   /** Stored attachments (images, documents) */
   attachments?: StoredAttachment[]
   /** Content badges for inline display (sources, skills) */
@@ -327,6 +333,7 @@ export function UserMessageBubble({
   className,
   onUrlClick,
   onFileClick,
+  onResolveFilePath,
   attachments,
   badges,
   isPending,
@@ -434,12 +441,13 @@ export function UserMessageBubble({
         )}
       >
         {hasInlineBadges
-          ? renderContentWithBadges(displayContent, inlineBadges, onUrlClick, onFileClick)
+          ? renderContentWithBadges(displayContent, inlineBadges, onUrlClick, onFileClick, onResolveFilePath)
           : (
             <Markdown
               mode="minimal"
               onUrlClick={onUrlClick}
               onFileClick={onFileClick}
+              onResolveFilePath={onResolveFilePath}
               className="text-sm [&_a]:underline [&_code]:bg-foreground/10 [&_p]:whitespace-pre-wrap"
             >
               {displayContent}

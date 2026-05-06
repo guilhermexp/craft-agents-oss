@@ -43,6 +43,7 @@ describe('resolveOpenFilePath', () => {
 
     expect(result.path).toBe('/workspace/project/assets/recreated_old_way_new_way_wide.png')
     expect(result.fallbackPath).toBeUndefined()
+    expect(result.found).toBe(true)
   })
 
   it('strips the current session id when resolving files inside the session folder', async () => {
@@ -59,6 +60,7 @@ describe('resolveOpenFilePath', () => {
 
     expect(result.path).toBe('/workspace/sessions/260506-lively-spray/Autoclaude_Visual_Guide_recreated_page4.pdf')
     expect(result.fallbackPath).toBe('/workspace/sessions/260506-lively-spray/Autoclaude_Visual_Guide_recreated_page4.pdf')
+    expect(result.found).toBe(true)
   })
 
   it('falls back to a unique basename match across global preview base dirs', async () => {
@@ -75,6 +77,7 @@ describe('resolveOpenFilePath', () => {
 
     expect(result.path).toBe('/workspace/sessions/260506-lively-spray/assets/recreated_old_way_new_way_wide.png')
     expect(result.fallbackPath).toBe('/workspace/sessions/260506-lively-spray/assets/recreated_old_way_new_way_wide.png')
+    expect(result.found).toBe(true)
   })
 
   it('uses the immutable sdk cwd before the mutable session working directory', async () => {
@@ -94,5 +97,19 @@ describe('resolveOpenFilePath', () => {
 
     expect(result.path).toBe('/workspace/autocode-os/Autoclaude_Visual_Guide_recreated_page4.pdf')
     expect(result.fallbackPath).toBe('/workspace/autocode-os/Autoclaude_Visual_Guide_recreated_page4.pdf')
+    expect(result.found).toBe(true)
+  })
+
+  it('marks unresolved relative paths as not found', async () => {
+    const result = await resolveOpenFilePath({
+      path: 'en_4.wav',
+      sessionId: '260505-active-deer',
+      baseDirs: ['/workspace/project', '/workspace/sessions/260505-active-deer'],
+      searchFiles: createSearchFiles([]),
+    })
+
+    expect(result.path).toBe('/workspace/project/en_4.wav')
+    expect(result.fallbackPath).toBeUndefined()
+    expect(result.found).toBe(false)
   })
 })

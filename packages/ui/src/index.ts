@@ -205,6 +205,7 @@ export {
   DataTableOverlay,
   DocumentFormattedMarkdownOverlay,
   ImagePreviewOverlay,
+  AudioPreviewOverlay,
   PDFPreviewOverlay,
   ExcalidrawPreviewOverlay,
   detectLanguage,
@@ -219,11 +220,26 @@ export {
   type DataTableOverlayProps,
   type DocumentFormattedMarkdownOverlayProps,
   type ImagePreviewOverlayProps,
+  type AudioPreviewOverlayProps,
   type PDFPreviewOverlayProps,
   type ExcalidrawPreviewOverlayProps,
   ActivityCardsOverlay,
   type ActivityCardsOverlayProps,
 } from './components/overlay'
+
+export {
+  TranscriptViewerAudio,
+  TranscriptViewerContainer,
+  TranscriptViewerPlayPauseButton,
+  TranscriptViewerScrubBar,
+  TranscriptViewerWords,
+  type CharacterAlignmentResponseModel,
+  type TranscriptViewerAudioProps,
+  type TranscriptViewerContainerProps,
+  type TranscriptViewerPlayPauseButtonProps,
+  type TranscriptViewerScrubBarProps,
+  type TranscriptViewerWordsProps,
+} from './components/ui'
 
 // File classification (for link interceptor)
 export {

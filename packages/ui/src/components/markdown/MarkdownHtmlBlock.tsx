@@ -36,6 +36,7 @@ import { HTMLPreviewOverlay } from '../overlay/HTMLPreviewOverlay'
 import { ItemNavigator } from '../overlay/ItemNavigator'
 import { usePlatform } from '../../context/PlatformContext'
 import { useTranslation } from 'react-i18next'
+import { prepareHtmlPreviewSrcDoc } from '../../lib/html-preview-sanitizer'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,25 +66,6 @@ class HtmlBlockErrorBoundary extends React.Component<
     if (this.state.hasError) return this.props.fallback
     return this.props.children
   }
-}
-
-// ── HTML preprocessing ───────────────────────────────────────────────────────
-
-/**
- * Inject `<base target="_top">` into HTML so link clicks navigate the top frame
- * instead of the iframe. Combined with `allow-top-navigation-by-user-activation`
- * in the sandbox, this lets Electron's `will-navigate` handler intercept the
- * navigation and open the URL in the system browser.
- */
-function injectBaseTarget(html: string): string {
-  if (/<base\s/i.test(html)) return html
-  if (/<head[^>]*>/i.test(html)) {
-    return html.replace(/(<head[^>]*>)/i, '$1<base target="_top">')
-  }
-  if (/<html[^>]*>/i.test(html)) {
-    return html.replace(/(<html[^>]*>)/i, '$1<head><base target="_top"></head>')
-  }
-  return `<head><base target="_top"></head>${html}`
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
@@ -151,11 +133,11 @@ export function MarkdownHtmlBlock({ code, className }: MarkdownHtmlBlockProps) {
       .finally(() => setLoading(false))
   }, [activeItem?.src, onReadFile, contentCache])
 
-  // Preprocess all cached HTML (inject base target for links)
+  // Preprocess all cached HTML before assigning it to iframe srcDoc.
   const processedCache = React.useMemo(() => {
     const result: Record<string, string> = {}
     for (const [src, html] of Object.entries(contentCache)) {
-      result[src] = injectBaseTarget(html)
+      result[src] = prepareHtmlPreviewSrcDoc(html)
     }
     return result
   }, [contentCache])
@@ -262,4 +244,3 @@ export function MarkdownHtmlBlock({ code, className }: MarkdownHtmlBlockProps) {
     </HtmlBlockErrorBoundary>
   )
 }
-

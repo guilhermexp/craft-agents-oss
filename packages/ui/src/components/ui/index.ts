@@ -61,3 +61,16 @@ export {
   useIslandNavigation,
   type IslandNavigation,
 } from './useIslandNavigation'
+export {
+  TranscriptViewerAudio,
+  TranscriptViewerContainer,
+  TranscriptViewerPlayPauseButton,
+  TranscriptViewerScrubBar,
+  TranscriptViewerWords,
+  type CharacterAlignmentResponseModel,
+  type TranscriptViewerAudioProps,
+  type TranscriptViewerContainerProps,
+  type TranscriptViewerPlayPauseButtonProps,
+  type TranscriptViewerScrubBarProps,
+  type TranscriptViewerWordsProps,
+} from './transcript-viewer'

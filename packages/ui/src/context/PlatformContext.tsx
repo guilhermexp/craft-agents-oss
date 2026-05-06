@@ -89,6 +89,12 @@ export interface PlatformActions {
   onReadFileDataUrl?: (path: string) => Promise<string>
 
   /**
+   * Resolve a displayed file path to an absolute/readable path.
+   * Used by inline previews where the markdown only has a relative filename.
+   */
+  onResolveFilePath?: (path: string) => Promise<string | null>
+
+  /**
    * Read a file as binary Uint8Array (Electron: fs.readFile via IPC)
    * Used by PDF preview blocks that need raw binary data
    */

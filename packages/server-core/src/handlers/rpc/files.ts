@@ -70,6 +70,14 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
         bmp: 'image/bmp',
         ico: 'image/x-icon',
         avif: 'image/avif',
+        mp3: 'audio/mpeg',
+        wav: 'audio/wav',
+        m4a: 'audio/mp4',
+        aac: 'audio/aac',
+        ogg: 'audio/ogg',
+        oga: 'audio/ogg',
+        opus: 'audio/opus',
+        flac: 'audio/flac',
       }
       const mime = mimeMap[ext] || 'application/octet-stream'
       const base64 = buffer.toString('base64')
@@ -446,7 +454,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
       basePath = basePath === '~' ? homedir() : join(homedir(), basePath.slice(2))
     }
 
-    deps.platform.logger.info('[FS_SEARCH] called:', basePath, query)
+    deps.platform.logger.debug('[FS_SEARCH] called:', basePath, query)
     const MAX_RESULTS = 50
 
     // Directories to never recurse into
@@ -520,7 +528,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
         return a.name.length - b.name.length
       })
 
-      deps.platform.logger.info('[FS_SEARCH] returning', results.length, 'results')
+      deps.platform.logger.debug('[FS_SEARCH] returning', results.length, 'results')
       return results
     } catch (err) {
       deps.platform.logger.error('[FS_SEARCH] error:', err)

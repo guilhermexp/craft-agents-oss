@@ -64,6 +64,7 @@ import {
   DocumentFormattedMarkdownOverlay,
   JSONPreviewOverlay,
   ExcalidrawPreviewOverlay,
+  AudioPreviewOverlay,
 } from '@craft-agent/ui'
 import { useLinkInterceptor, type FilePreviewState } from '@/hooks/useLinkInterceptor'
 import { useTransportConnectionState } from '@/hooks/useTransportConnectionState'
@@ -1984,6 +1985,7 @@ function WindowCloseHandler() {
  *
  * Handles all preview types from the link interceptor:
  * - image → ImagePreviewOverlay (binary, loaded via data URL)
+ * - audio → AudioPreviewOverlay (binary, loaded via data URL)
  * - pdf → PDFPreviewOverlay (binary, embedded via Chromium viewer)
  * - code/text → CodePreviewOverlay (syntax highlighted)
  * - markdown → DocumentFormattedMarkdownOverlay
@@ -2011,6 +2013,17 @@ function FilePreviewRenderer({
     case 'image':
       return (
         <ImagePreviewOverlay
+          isOpen
+          onClose={onClose}
+          filePath={state.filePath}
+          loadDataUrl={loadDataUrl}
+          theme={theme}
+        />
+      )
+
+    case 'audio':
+      return (
+        <AudioPreviewOverlay
           isOpen
           onClose={onClose}
           filePath={state.filePath}

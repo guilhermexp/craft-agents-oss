@@ -133,6 +133,7 @@ interface ChatDisplayProps {
   session: Session | null
   onSendMessage: (message: string, attachments?: FileAttachment[], skillSlugs?: string[]) => void
   onOpenFile: (path: string) => void
+  onResolveFilePath?: (path: string) => Promise<string | null>
   onOpenUrl: (url: string) => void
   // Model selection
   currentModel: string
@@ -427,6 +428,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   session,
   onSendMessage,
   onOpenFile,
+  onResolveFilePath,
   onOpenUrl,
   currentModel,
   onModelChange,
@@ -1557,6 +1559,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                           <MemoizedMessageBubble
                             message={turn.message}
                             onOpenFile={onOpenFile}
+                            onResolveFilePath={onResolveFilePath}
                             onOpenUrl={onOpenUrl}
                             sessionId={session?.id}
                             compactMode={compactMode}
@@ -1580,6 +1583,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                           <MemoizedMessageBubble
                             message={turn.message}
                             onOpenFile={onOpenFile}
+                            onResolveFilePath={onResolveFilePath}
                             onOpenUrl={onOpenUrl}
                             sessionId={session?.id}
                             onRetry={turn.message.role === 'error' ? () => {
@@ -1654,6 +1658,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         onExpandedActivityGroupsChange={setExpandedActivityGroups}
                         todos={turn.todos}
                         onOpenFile={onOpenFile}
+                        onResolveFilePath={onResolveFilePath}
                         onOpenUrl={onOpenUrl}
                         isLastResponse={isLastResponse}
                         compactMode={compactMode}
@@ -2055,6 +2060,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 interface MessageBubbleProps {
   message: Message
   onOpenFile: (path: string) => void
+  onResolveFilePath?: (path: string) => Promise<string | null>
   onOpenUrl: (url: string) => void
   sessionId?: string
   /**
@@ -2076,11 +2082,13 @@ function InlineMessageMarkdown({
   content,
   onOpenUrl,
   onOpenFile,
+  onResolveFilePath,
   className,
 }: {
   content: string
   onOpenUrl?: (url: string) => void
   onOpenFile?: (path: string) => void
+  onResolveFilePath?: (path: string) => Promise<string | null>
   className?: string
 }) {
   return (
@@ -2088,6 +2096,7 @@ function InlineMessageMarkdown({
       mode="minimal"
       onUrlClick={onOpenUrl}
       onFileClick={onOpenFile}
+      onResolveFilePath={onResolveFilePath}
       className={cn(
         "text-sm [&_p]:m-0 [&_p]:whitespace-pre-wrap [&_a]:underline",
         className
@@ -2105,12 +2114,14 @@ function ErrorMessage({
   message,
   onOpenUrl,
   onOpenFile,
+  onResolveFilePath,
   sessionId,
   onRetry,
 }: {
   message: Message
   onOpenUrl?: (url: string) => void
   onOpenFile?: (path: string) => void
+  onResolveFilePath?: (path: string) => Promise<string | null>
   sessionId?: string
   onRetry?: () => void
 }) {
@@ -2139,6 +2150,7 @@ function ErrorMessage({
           content={message.content}
           onOpenUrl={onOpenUrl}
           onOpenFile={onOpenFile}
+          onResolveFilePath={onResolveFilePath}
           className="text-destructive [&_a]:text-destructive"
         />
 
@@ -2194,6 +2206,7 @@ function ErrorMessage({
 function MessageBubble({
   message,
   onOpenFile,
+  onResolveFilePath,
   onOpenUrl,
   sessionId,
   renderMode = 'minimal',
@@ -2214,6 +2227,7 @@ function MessageBubble({
         isQueued={message.isQueued}
         onUrlClick={onOpenUrl}
         onFileClick={onOpenFile}
+        onResolveFilePath={onResolveFilePath}
         compactMode={compactMode}
       />
     )
@@ -2242,6 +2256,7 @@ function MessageBubble({
               mode={renderMode}
               onUrlClick={onOpenUrl}
               onFileClick={onOpenFile}
+              onResolveFilePath={onResolveFilePath}
             />
           ) : (
             <CollapsibleMarkdownProvider>
@@ -2249,6 +2264,7 @@ function MessageBubble({
                 mode={renderMode}
                 onUrlClick={onOpenUrl}
                 onFileClick={onOpenFile}
+                onResolveFilePath={onResolveFilePath}
                 id={message.id}
                 className="text-sm"
                 collapsible
@@ -2264,7 +2280,7 @@ function MessageBubble({
 
   // === ERROR MESSAGE: Red bordered bubble with warning icon and collapsible details ===
   if (message.role === 'error') {
-    return <ErrorMessage message={message} onOpenUrl={onOpenUrl} onOpenFile={onOpenFile} sessionId={sessionId} onRetry={onRetry} />
+    return <ErrorMessage message={message} onOpenUrl={onOpenUrl} onOpenFile={onOpenFile} onResolveFilePath={onResolveFilePath} sessionId={sessionId} onRetry={onRetry} />
   }
 
   // === STATUS MESSAGE: Matches ProcessingIndicator layout for visual consistency ===
@@ -2279,6 +2295,7 @@ function MessageBubble({
           content={message.content}
           onOpenUrl={onOpenUrl}
           onOpenFile={onOpenFile}
+          onResolveFilePath={onResolveFilePath}
           className="text-[13px]"
         />
       </div>
@@ -2319,6 +2336,7 @@ function MessageBubble({
           content={message.content}
           onOpenUrl={onOpenUrl}
           onOpenFile={onOpenFile}
+          onResolveFilePath={onResolveFilePath}
           className="text-[13px]"
         />
       </div>
@@ -2337,6 +2355,7 @@ function MessageBubble({
             content={message.content}
             onOpenUrl={onOpenUrl}
             onOpenFile={onOpenFile}
+            onResolveFilePath={onResolveFilePath}
             className="text-info [&_a]:text-info"
           />
         </div>
@@ -2365,6 +2384,7 @@ const MemoizedMessageBubble = React.memo(MessageBubble, (prev, next) => {
     prev.message.content === next.message.content &&
     prev.message.role === next.message.role &&
     prev.sessionId === next.sessionId &&
-    prev.compactMode === next.compactMode
+    prev.compactMode === next.compactMode &&
+    prev.onResolveFilePath === next.onResolveFilePath
   )
 })
