@@ -80,12 +80,13 @@ import type { HandlerDeps } from './handlers/handler-deps'
 import { bootstrapServer, releaseServerLock } from '@craft-agent/server-core/bootstrap'
 import { createMessagingBootstrap, type MessagingBootstrapHandle } from '@craft-agent/messaging-gateway'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
+import { getValidClaudeOAuthToken } from '@craft-agent/shared/auth'
 import { initModelRefreshService, getModelRefreshService, setFetcherPlatform } from '@craft-agent/server-core/model-fetchers'
 import { setSearchPlatform, setImageProcessor } from '@craft-agent/server-core/services'
 import { createApplicationMenu } from './menu'
 import { WindowManager } from './window-manager'
 import { loadWindowState, saveWindowState } from './window-state'
-import { getWorkspaces, getWorkspaceByNameOrId, loadStoredConfig, addWorkspace, saveConfig } from '@craft-agent/shared/config'
+import { getLlmConnection, getWorkspaces, getWorkspaceByNameOrId, loadStoredConfig, addWorkspace, saveConfig } from '@craft-agent/shared/config'
 import { getDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
 import { initializeDocs } from '@craft-agent/shared/docs'
 import { initializeReleaseNotes } from '@craft-agent/shared/release-notes'
@@ -687,15 +688,20 @@ app.whenReady().then(async () => {
         setSessionEventSink: (sm, sink) => sm.setEventSink(sink),
         initializeSessionManager: (sm) => sm.initialize(),
         initModelRefreshService: () => initModelRefreshService(async (slug: string) => {
-          const { getCredentialManager } = await import('@craft-agent/shared/credentials')
           const manager = getCredentialManager()
           const [apiKey, oauth] = await Promise.all([
             manager.getLlmApiKey(slug).catch(() => null),
             manager.getLlmOAuth(slug).catch(() => null),
           ])
+          const connection = getLlmConnection(slug)
+          let oauthAccessToken = oauth?.accessToken
+          if (connection?.providerType === 'anthropic' && connection.authType === 'oauth') {
+            const tokenResult = await getValidClaudeOAuthToken(slug)
+            oauthAccessToken = tokenResult.accessToken ?? oauthAccessToken
+          }
           return {
             apiKey: apiKey ?? undefined,
-            oauthAccessToken: oauth?.accessToken,
+            oauthAccessToken,
             oauthRefreshToken: oauth?.refreshToken,
             oauthIdToken: oauth?.idToken,
           }

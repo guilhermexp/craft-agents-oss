@@ -34,7 +34,7 @@ import { bootstrapServer, startHealthHttpServer, generateServerToken } from '@cr
 import { validateSession, createWebuiHandler, nodeHttpAdapter } from '@craft-agent/server-core/webui'
 import type { WebuiHandler } from '@craft-agent/server-core/webui'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
-import { getWorkspaces } from '@craft-agent/shared/config'
+import { getLlmConnection, getWorkspaces } from '@craft-agent/shared/config'
 import { createMessagingBootstrap, type MessagingBootstrapHandle } from '@craft-agent/messaging-gateway'
 
 // --generate-token: print a crypto-random token and exit
@@ -48,6 +48,7 @@ import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@cra
 import { initModelRefreshService, setFetcherPlatform } from '@craft-agent/server-core/model-fetchers'
 import { setSearchPlatform, setImageProcessor } from '@craft-agent/server-core/services'
 import type { HandlerDeps } from '@craft-agent/server-core/handlers'
+import { getValidClaudeOAuthToken } from '@craft-agent/shared/auth'
 
 process.env.CRAFT_IS_PACKAGED ??= 'false'
 
@@ -197,9 +198,15 @@ const instance = await (async () => {
           manager.getLlmApiKey(slug).catch(() => null),
           manager.getLlmOAuth(slug).catch(() => null),
         ])
+        const connection = getLlmConnection(slug)
+        let oauthAccessToken = oauth?.accessToken
+        if (connection?.providerType === 'anthropic' && connection.authType === 'oauth') {
+          const tokenResult = await getValidClaudeOAuthToken(slug)
+          oauthAccessToken = tokenResult.accessToken ?? oauthAccessToken
+        }
         return {
           apiKey: apiKey ?? undefined,
-          oauthAccessToken: oauth?.accessToken,
+          oauthAccessToken,
           oauthRefreshToken: oauth?.refreshToken,
           oauthIdToken: oauth?.idToken,
         }

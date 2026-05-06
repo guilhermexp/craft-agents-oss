@@ -27,9 +27,18 @@ not as a hand-maintained fork:
 - The embedded runtime under `apps/electron/resources/vendor/hermes/` is a
   generated bundle, fully reproducible from `(pin + patches)`.
 
-This means a Hermes upgrade is just a pin bump: change the version file (or
-pass `HERMES_VERSION=…`), click Update, the bundle pulls upstream and reapplies
-the overlay. There is no hand-merging into a fork.
+In local development the default pin is intentionally `upstream/main`, so the
+Dashboard's **Update Hermes** action can keep following NousResearch upstream
+automatically. A Hermes upgrade is therefore either:
+
+- the normal automatic path: leave `hermes-version.txt` at `upstream/main`,
+  click Update, and refresh Craft overlay patches only if upstream drift makes
+  `git apply --check` fail; or
+- a release/reproducibility path: persist a tag/SHA in `hermes-version.txt` and
+  rebuild from that fixed `(pin + patches)` pair.
+
+There is no hand-merging into a fork, and no other Craft agent backend shares
+Hermes' Python runtime, config, sessions, or tool registry.
 
 ## Pinning and updating
 
@@ -53,22 +62,39 @@ Files under `apps/electron/scripts/hermes-patches/`:
 
 | Patch | Purpose |
 | ----- | ------- |
-| `01-acp-server.patch` | ACP adapter `acp_adapter/server.py` + `session.py` — `stream_callback`/`reasoning_callback` wiring (so Hermes streams text/reasoning live to Craft instead of dumping a single final message), plus `_refresh_session_mcp_tool_surface` for ACP MCP toolset reapply on model/source changes. |
+| `01-acp-server.patch` | ACP adapter `acp_adapter/server.py` + `session.py` — stores ACP-provided `mcp_servers` on session state, wires `stream_callback` so Hermes streams text live to Craft instead of dumping a single final message, and reapplies ACP MCP toolsets after `/model` or ACP `session/set_model` recreates the underlying `AIAgent`. Upstream Hermes now owns reasoning-delta routing, so do not reintroduce duplicate `reasoning_callback` patches unless upstream removes it. |
 | `02-mcp-tool-craft-naming.patch` | `tools/mcp_tool.py` — keep `craft-session` and `craft-sources` MCP servers under Craft canonical tool names (`mcp__session__…`, `mcp__github__…`); other MCP servers stay on Hermes-normal names. |
 | `03-web-server-craft-embedded.patch` | `hermes_cli/web_server.py` — `_craft_embedded_update_command()` so the Hermes dashboard's Update button delegates to Craft's update script when running embedded inside Craft, rather than running the standalone Hermes installer. |
 
-When a patch fails `git apply --check` after a pin bump, upstream changed the
-patched code. Refresh the patch against the new pin:
+When a patch fails `git apply --check`, upstream changed the patched code. If
+`hermes-version.txt` is `upstream/main`, this does **not** mean automatic update
+should be disabled or pinned back to an old SHA. Refresh the affected overlay
+patch against the new cache head:
 
 ```bash
 # After update-hermes-runtime.sh failed with "Patch failed --check: NN-name.patch":
 HERMES_PIN_DIR=apps/electron/scripts/.hermes-cache/source
-# Inspect the new upstream code, hand-apply the intended change, then:
-git -C "$HERMES_PIN_DIR" diff -- <files…> > apps/electron/scripts/hermes-patches/NN-name.patch
+
+# 1. Start from the pristine upstream commit that the update resolved.
+git -C "$HERMES_PIN_DIR" reset --hard HEAD
+
+# 2. Inspect the new upstream code and hand-apply the intended Craft behavior.
+#    Keep the patch minimal: only Craft's bridge/embedding delta belongs here.
+
+# 3. Capture the new diff back into the matching patch file.
+git -C "$HERMES_PIN_DIR" diff -- <files…> \
+  > apps/electron/scripts/hermes-patches/NN-name.patch
+
+# 4. Prove every overlay still applies to a clean cache checkout.
+git -C "$HERMES_PIN_DIR" reset --hard HEAD
+for p in apps/electron/scripts/hermes-patches/*.patch; do
+  git -C "$HERMES_PIN_DIR" apply --check "$PWD/$p"
+done
 ```
 
 Commit the refreshed patch to Craft. The pin file does not need to change for
-patch refreshes — it only changes when bumping Hermes versions.
+patch refreshes while tracking `upstream/main`; it changes only when choosing a
+fixed release/tag/SHA.
 
 ### Explicit source override
 
@@ -99,30 +125,36 @@ When syncing Craft upstream, preserve these Craft-side integration points:
 
 The intended runtime model is:
 
-- Hermes config/state is isolated in app-scoped `HERMES_HOME`.
-- Hermes Python is isolated in the vendored venv.
-- Hermes receives Craft source tools and session tools only through local MCP.
+- Hermes is a separate Python/ACP agent backend. It is not the Claude SDK
+  backend, not the Pi SDK backend, and not a generic Craft subprocess that may
+  share another agent's runtime assumptions.
+- Hermes config/state is isolated in app-scoped `HERMES_HOME` under Electron
+  `userData`; it never reads or writes the user's standalone `~/.hermes` unless
+  a developer explicitly runs a standalone Hermes outside Craft.
+- Hermes Python is isolated in the vendored venv under
+  `apps/electron/resources/vendor/hermes/hermes-venv`; packaged builds must not
+  fall back to a system `hermes` binary.
+- Hermes receives Craft source tools and session tools only through ACP
+  `session.mcpServers` pointing at Craft-owned, local-only MCP bridges. Do not
+  move Craft-native tools into a static Hermes `mcp.json`, because that mixes
+  global Hermes config with per-Craft-session capabilities.
+- Hermes' tool names at the boundary are deliberate: Craft-native session tools
+  stay `mcp__session__…`; Craft source tools stay `mcp__<source>__…`; external
+  MCP servers keep normal Hermes names such as `mcp_filesystem_read_file`.
 - Hermes must not reuse generic Craft mini-model fallbacks as its own native
-  provider/model configuration.
+  provider/model configuration. Provider/model state is resolved by the Hermes
+  backend and its app-scoped config/profile.
 - Packaged apps must not mutate the signed runtime. Dev mode may update and
-  rebuild the local bundle.
-- OAuth bridge is one-way at spawn (Craft → Hermes) for the user's existing
-  Claude Max and ChatGPT Plus subscriptions; refreshed Codex tokens flow back
-  Hermes → Craft via the `auth.json` watcher. API keys are not bridged. The
-  embedded Hermes runtime never reaches into a user's standalone `~/.hermes`
-  store, and a standalone `hermes`/Codex CLI sharing the same Codex refresh
-  token is out of scope (refresh-token rotation is single-use upstream).
-- Packaged apps must not fall back to a standalone/system Hermes. If the
-  bundled Python runtime is missing or broken, Craft reports that failure
-  instead of spawning `hermes` from `PATH`; this preserves the app-scoped
-  authentication, config, memory, provider, and session boundary.
-- Hermes is a **pinned dependency**, not a hand-merged fork. Updates are pin
-  bumps + automatic overlay reapply, executed by clicking "Update Hermes"
-  (or `update-hermes-runtime.sh`). The Hermes source the bundle uses comes
-  from `apps/electron/scripts/.hermes-cache/source` (Craft-owned, gitignored);
-  `guilhermexp/hermes-agent` and sibling `../hermes-agent` checkouts are not
-  part of this flow. Only an explicitly set `HERMES_SRC` can override it, and
-  that override is for temporary Hermes source development only.
+  rebuild the local bundle; release updates come through a new Craft build.
+- Auth bridging is intentionally scoped: at spawn, Craft seeds Hermes with the
+  user's selected Craft credentials (OAuth tokens and API-key env vars) so the
+  embedded runtime works without a separate Hermes `.env`; refreshed Codex
+  tokens flow back Hermes → Craft via the `auth.json` watcher. Do not make
+  Hermes scrape unrelated agent credentials or global user auth stores.
+- Hermes is a **pinned upstream dependency plus Craft overlay patches**, not a
+  hand-merged fork. In dev, the pin may be `upstream/main` for automatic
+  dashboard updates; when upstream changes break an overlay, refresh the patch
+  rather than switching the architecture to a user fork or another agent path.
 
 ## Why embedded
 
@@ -305,8 +337,9 @@ patch targets. The bundle aborts so a stale-bundle never ships. Refresh:
    ```
 4. Commit the refreshed patch in the Craft repo.
 
-The pin file itself doesn't change for patch refreshes — it changes only when
-explicitly bumping the Hermes version.
+The pin file itself doesn't change for patch refreshes while tracking
+`upstream/main` — it changes only when intentionally selecting a fixed Hermes
+version for a reproducible build/release.
 
 After every Hermes upstream sync, run at minimum:
 

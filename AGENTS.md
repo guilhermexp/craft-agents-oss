@@ -3,6 +3,10 @@
 This repo is a Craft fork. Treat Craft upstream sync and Hermes runtime
 updates as separate concerns. Hermes is consumed as a pinned upstream
 dependency plus Craft overlay patches, not as a hand-merged sibling fork.
+In local development the Hermes pin may intentionally be `upstream/main` so the
+Dashboard **Update Hermes** action follows NousResearch upstream automatically;
+when that breaks an overlay, refresh the patch instead of switching to a user
+fork or another Craft agent backend.
 
 ## Upstream inputs
 
@@ -49,14 +53,23 @@ The integration contract is documented in
 
 Hermes must stay isolated from other Craft agents:
 
-- Hermes config/state lives under app-scoped `HERMES_HOME`.
+- Hermes is a separate Python/ACP backend, not the Claude SDK backend and not
+  the Pi SDK backend. Do not share runtime assumptions, model fallback logic,
+  session state, or tool registry shortcuts across those backends.
+- Hermes config/state lives under app-scoped `HERMES_HOME`; it must not read or
+  write the user's standalone `~/.hermes` during embedded Craft operation.
 - The vendored Python runtime is generated under
-  `apps/electron/resources/vendor/hermes/`.
+  `apps/electron/resources/vendor/hermes/`; packaged builds must fail closed if
+  it is missing instead of silently spawning a system `hermes` from `PATH`.
 - Do not commit Hermes sessions, logs, generated runtime state, or user
   `HERMES_HOME` data to the repo.
 - Do not wire Craft-native session tools through a static Hermes `mcp.json` as
   the primary path. Craft passes session-scoped MCP endpoints through ACP
-  `session.mcpServers`.
+  `session.mcpServers` so browser/session/delegation tools remain per Craft
+  session and do not become global Hermes tools.
+- Auth bridging is scoped to the active Hermes subprocess/profile: Craft seeds
+  selected OAuth/API-key credentials at spawn and watches app-scoped Codex token
+  refreshes. Do not scrape unrelated agent credentials or global auth stores.
 
 Craft-native Hermes tools must keep Craft canonical names:
 
@@ -66,13 +79,19 @@ Craft-native Hermes tools must keep Craft canonical names:
 - External/non-Craft MCP servers keep Hermes normal names such as
   `mcp_filesystem_read_file`.
 
-When bumping the Hermes upstream pin, preserve these overlay behaviors:
+When bumping or automatically following the Hermes upstream pin, preserve these
+overlay behaviors:
 
 - `acp_adapter/session.py` stores ACP-provided `mcp_servers` on session state.
-- `acp_adapter/server.py` re-registers MCP toolsets after ACP
-  `session/set_model` and Hermes `/model`.
+- `acp_adapter/server.py` passes `stream_callback` into `AIAgent.run_conversation`
+  and re-registers MCP toolsets after ACP `session/set_model` and Hermes
+  `/model` recreate the underlying agent. Upstream Hermes already handles
+  reasoning-delta routing; avoid duplicate local reasoning patches unless the
+  upstream contract changes.
 - `tools/mcp_tool.py` special-cases Craft MCP naming while preserving normal
   Hermes MCP naming for external servers.
+- `hermes_cli/web_server.py` delegates dashboard Update to Craft's host update
+  command only when `CRAFT_HERMES_EMBEDDED=1`.
 
 When syncing Craft upstream, preserve these Craft-side integration points:
 
@@ -105,7 +124,17 @@ bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
   apps/electron/src/transport/__tests__/channel-map-parity.test.ts
 ```
 
-For Hermes overlay changes, run against the patched Hermes source used for the
+For Hermes overlay changes, first prove all overlays apply from a clean cache
+checkout:
+
+```bash
+git -C apps/electron/scripts/.hermes-cache/source reset --hard HEAD
+for p in apps/electron/scripts/hermes-patches/*.patch; do
+  git -C apps/electron/scripts/.hermes-cache/source apply --check "$PWD/$p"
+done
+```
+
+Then run Python-side tests against the patched Hermes source used for the
 bundle. If you are iterating with `HERMES_SRC`, run from that checkout;
 otherwise run from `apps/electron/scripts/.hermes-cache/source` after the
 patches have been applied by `bundle-hermes.*`:
