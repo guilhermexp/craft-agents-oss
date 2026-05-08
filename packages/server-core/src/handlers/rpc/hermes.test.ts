@@ -79,6 +79,9 @@ describe('registerHermesHandlers local file controls', () => {
     const fakeHermes = join(binDir, 'fake-hermes-dashboard.js')
     process.env.CRAFT_HERMES_HOME = home
     process.env.CRAFT_HERMES_COMMAND = fakeHermes
+    delete process.env.CRAFT_HERMES_PYTHON
+    delete process.env.CRAFT_HERMES_ARGS
+    delete process.env.CRAFT_HERMES_BUNDLED_REQUIRED
 
     await writeFile(fakeHermes, `#!/usr/bin/env node
 const http = require('node:http')

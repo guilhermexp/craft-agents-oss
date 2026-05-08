@@ -18,7 +18,7 @@ import {
   type BackendHostRuntimeContext,
   type PostInitResult,
 } from '@craft-agent/shared/agent/backend'
-import { getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, resetManagedAnthropicAuthEnvVars } from '@craft-agent/shared/config'
+import { getActiveHermesProfile, getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, resetManagedAnthropicAuthEnvVars } from '@craft-agent/shared/config'
 import { PrivilegedExecutionBroker } from '@craft-agent/server-core/services'
 import { isValidWorkingDirectory } from '../utils/path-validation'
 import { InitGate } from '@craft-agent/server-core/domain'
@@ -94,6 +94,7 @@ import { extractLabelId, resolveSessionLabels } from '@craft-agent/shared/labels
 import { ensureLabelsExist } from '@craft-agent/shared/labels/crud'
 import { loadStatusConfig } from '@craft-agent/shared/statuses/storage'
 import { AutomationSystem, createPromptHistoryEntry, appendAutomationHistoryEntry, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
+import { isValidHermesProfileName } from '@craft-agent/shared/hermes/acp-config'
 
 // Import from server-core domain utilities
 import { sanitizeForTitle, shouldActivateBrowserOverlay, normalizeBrowserToolName, rollbackFailedBranchCreation, releaseBrowserOwnershipOnForcedStop } from '@craft-agent/server-core/domain'
@@ -911,6 +912,10 @@ interface ManagedSession {
   connectionLocked?: boolean
   // Thinking level for this session ('off', 'think', 'max')
   thinkingLevel?: ThinkingLevel
+  // Hermes profile pinned to this session. Undefined means not yet locked for Hermes.
+  hermesProfile?: string
+  // Set when the Hermes profile changes during a turn; restart the backend before the next queued turn.
+  pendingHermesAgentRestart?: boolean
   // System prompt preset for mini agents ('default' | 'mini')
   systemPromptPreset?: 'default' | 'mini' | string
   // Role/type of the last message (for badge display without loading messages)
@@ -1080,6 +1085,15 @@ function resolveSupportsBranching(managed: ManagedSession): boolean {
 const DEFAULT_TOKEN_USAGE = {
   inputTokens: 0, outputTokens: 0, totalTokens: 0,
   contextTokens: 0, costUsd: 0,
+}
+
+function normalizeHermesSessionProfile(profile: string | undefined | null): string {
+  const trimmed = profile?.trim()
+  return trimmed && isValidHermesProfileName(trimmed) ? trimmed : 'default'
+}
+
+function resolveHermesSessionProfile(sessionProfile: string | undefined, activeProfile: string): string {
+  return normalizeHermesSessionProfile(sessionProfile ?? activeProfile)
 }
 
 /**
@@ -2229,6 +2243,9 @@ export class SessionManager implements ISessionManager {
       if (storedSession.connectionLocked) {
         managed.connectionLocked = storedSession.connectionLocked
       }
+      if (storedSession.hermesProfile) {
+        managed.hermesProfile = storedSession.hermesProfile
+      }
       // Sync transferred session summary state from disk
       managed.transferredSessionSummary = storedSession.transferredSessionSummary
       managed.transferredSessionSummaryApplied = storedSession.transferredSessionSummaryApplied
@@ -2353,6 +2370,7 @@ export class SessionManager implements ISessionManager {
       branchFromSessionPath?: string
       branchFromSdkCwd?: string
       branchFromSdkTurnId?: string
+      hermesProfile?: string
     } | undefined
 
     if (options?.branchFromSessionId || options?.branchFromMessageId) {
@@ -2516,6 +2534,7 @@ export class SessionManager implements ISessionManager {
         branchFromSessionPath,
         branchFromSdkCwd,
         branchFromSdkTurnId,
+        hermesProfile: sourceSession.hermesProfile ?? sourceManaged?.hermesProfile,
       }
 
       sessionLog.info('Branch validation succeeded', {
@@ -2537,6 +2556,7 @@ export class SessionManager implements ISessionManager {
       sessionStatus: options?.sessionStatus,
       labels: options?.labels,
       isFlagged: options?.isFlagged,
+      hermesProfile: options?.hermesProfile ?? validatedBranch?.hermesProfile,
     })
 
     // Branch: copy messages from source session up to and including the branch point
@@ -2596,6 +2616,7 @@ export class SessionManager implements ISessionManager {
       workingDirectory: resolvedWorkingDir,
       model: resolvedModel,
       llmConnection: options?.llmConnection,
+      hermesProfile: options?.hermesProfile ?? validatedBranch?.hermesProfile,
       thinkingLevel: defaultThinkingLevel,
       systemPromptPreset: options?.systemPromptPreset,
       enabledSourceSlugs: defaultEnabledSourceSlugs,
@@ -2694,14 +2715,26 @@ export class SessionManager implements ISessionManager {
         managedModel: managed.model,
       })
       const connection = backendContext.connection
+      const provider = backendContext.provider
+      let metadataChanged = false
+      let sentConnectionChanged = false
+
+      if (provider === 'hermes') {
+        const hermesProfile = resolveHermesSessionProfile(managed.hermesProfile, getActiveHermesProfile())
+        if (managed.hermesProfile !== hermesProfile) {
+          managed.hermesProfile = hermesProfile
+          metadataChanged = true
+          sessionLog.info(`Locked session ${managed.id} to Hermes profile "${hermesProfile}"`)
+        }
+      }
 
       // Lock the connection after first resolution
       // This ensures the session always uses the same provider
       if (connection && !managed.connectionLocked) {
         managed.llmConnection = connection.slug
         managed.connectionLocked = true
+        metadataChanged = true
         sessionLog.info(`Locked session ${managed.id} to connection "${connection.slug}"`)
-        this.persistSession(managed)
 
         // Keep renderer session capabilities in sync when auto-locking the connection.
         this.sendEvent({
@@ -2709,10 +2742,24 @@ export class SessionManager implements ISessionManager {
           sessionId: managed.id,
           connectionSlug: connection.slug,
           supportsBranching: resolveSupportsBranching(managed),
+          hermesProfile: managed.hermesProfile,
         }, managed.workspace.id)
+        sentConnectionChanged = true
       }
 
-      const provider = backendContext.provider
+      if (metadataChanged) {
+        this.persistSession(managed)
+        if (!sentConnectionChanged && managed.llmConnection) {
+          this.sendEvent({
+            type: 'connection_changed',
+            sessionId: managed.id,
+            connectionSlug: managed.llmConnection,
+            supportsBranching: resolveSupportsBranching(managed),
+            hermesProfile: managed.hermesProfile,
+          }, managed.workspace.id)
+        }
+      }
+
       if (connection) {
         sessionLog.info(`Using LLM connection "${connection.slug}" (${connection.providerType}) for session ${managed.id}`)
       } else {
@@ -2784,6 +2831,7 @@ export class SessionManager implements ISessionManager {
         sdkCwd: managed.sdkCwd,
         model: managed.model,
         llmConnection: managed.llmConnection,
+        hermesProfile: managed.hermesProfile,
         permissionMode: managed.permissionMode,
         previousPermissionMode: managed.previousPermissionMode,
       }
@@ -3955,6 +4003,59 @@ export class SessionManager implements ISessionManager {
     }, managed.workspace.id)
   }
 
+  async setSessionHermesProfile(sessionId: string, profileName: string): Promise<void> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) {
+      sessionLog.warn(`setSessionHermesProfile: session ${sessionId} not found`)
+      throw new Error(`Session ${sessionId} not found`)
+    }
+
+    const workspaceConfig = loadWorkspaceConfig(managed.workspace.rootPath)
+    const backendContext = resolveBackendContext({
+      sessionConnectionSlug: managed.llmConnection,
+      workspaceDefaultConnectionSlug: workspaceConfig?.defaults?.defaultLlmConnection,
+      managedModel: managed.model,
+    })
+    if (backendContext.provider !== 'hermes') {
+      throw new Error('Hermes profile can only be changed for Hermes sessions')
+    }
+
+    const target = profileName.trim() || 'default'
+    if (!isValidHermesProfileName(target)) {
+      sessionLog.warn(`setSessionHermesProfile: invalid profile "${profileName}" for session ${sessionId}`)
+      throw new Error('Invalid Hermes profile name')
+    }
+
+    if (managed.hermesProfile === target) {
+      return
+    }
+
+    managed.hermesProfile = target
+    managed.sdkSessionId = undefined
+
+    // A live Hermes ACP subprocess is scoped to HERMES_HOME. Restart it so the
+    // next turn uses the newly selected profile. If a turn is streaming, defer
+    // cleanup until the event loop has drained to avoid dropping in-flight events.
+    if (managed.agent) {
+      if (managed.isProcessing) {
+        managed.pendingHermesAgentRestart = true
+      } else {
+        managed.agent.destroy()
+        managed.agent = null
+      }
+    }
+
+    this.persistSession(managed)
+    await this.flushSession(managed.id)
+    sessionLog.info(`Set Hermes profile for session ${sessionId} to "${target}"`)
+
+    this.sendEvent({
+      type: 'hermes_profile_changed',
+      sessionId,
+      hermesProfile: target,
+    }, managed.workspace.id)
+  }
+
   // ============================================
   // Pending Plan Execution (Accept & Compact)
   // ============================================
@@ -4492,6 +4593,7 @@ export class SessionManager implements ISessionManager {
             id: `title-${managed.id}`,
             workspaceRootPath: managed.workspace.rootPath,
             llmConnection: managed.llmConnection,
+            hermesProfile: managed.hermesProfile,
             createdAt: Date.now(),
             lastUsedAt: Date.now(),
           },
@@ -5690,6 +5792,15 @@ export class SessionManager implements ISessionManager {
       this.applyExternalSessionMetadata(managed, pendingHeader)
     }
 
+    if (managed.pendingHermesAgentRestart) {
+      managed.pendingHermesAgentRestart = false
+      // The previous Hermes session ID belongs to the old profile's HERMES_HOME.
+      // Drop it before the next turn so the selected profile starts its own ACP session.
+      managed.sdkSessionId = undefined
+      managed.agent?.destroy()
+      managed.agent = null
+    }
+
     // 5. Check queue and process or complete
     if (managed.messageQueue.length > 0) {
       // Has queued messages - process next
@@ -6148,6 +6259,7 @@ export class SessionManager implements ISessionManager {
             id: `title-${managed.id}`,
             workspaceRootPath: managed.workspace.rootPath,
             llmConnection: managed.llmConnection,
+            hermesProfile: managed.hermesProfile,
             createdAt: Date.now(),
             lastUsedAt: Date.now(),
           },
@@ -7006,6 +7118,7 @@ export class SessionManager implements ISessionManager {
           sdkCwd: managed.sdkCwd,
           model: managed.model,
           llmConnection: managed.llmConnection,
+          hermesProfile: managed.hermesProfile,
           permissionMode: managed.permissionMode,
           previousPermissionMode: managed.previousPermissionMode,
         },
@@ -7196,6 +7309,7 @@ export class SessionManager implements ISessionManager {
       llmConnection: header.llmConnection,
       connectionLocked: header.connectionLocked,
       thinkingLevel: header.thinkingLevel,
+      hermesProfile: header.hermesProfile,
       hidden: header.hidden,
       transferredSessionSummary: header.transferredSessionSummary,
       transferredSessionSummaryApplied: header.transferredSessionSummaryApplied,

@@ -7,14 +7,21 @@
  * teardown, pendingProviderRestart flag, and mcpPool.sync calls.
  */
 import { describe, it, expect, beforeEach } from 'bun:test'
+import type { ACPProvider } from '@mcpc-tech/acp-ai-provider'
+import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
 
 import { HermesAgent, extractHermesTextDelta, resolveHermesModelId } from '../hermes-agent.ts'
-import { createMockBackendConfig } from './test-utils.ts'
+import { createMockBackendConfig, createMockSession } from './test-utils.ts'
 import type { BackendConfig, SdkMcpServerConfig } from '../backend/types.ts'
+import type { NormalizedHermesRuntimeConfig } from '../../hermes/acp-config.ts'
 
 type FakeProvider = {
   cleanup: () => void
   cleanupCount: number
+}
+
+type HermesAgentPermissionInstaller = {
+  installAcpPermissionHandler: (provider: ACPProvider) => void
 }
 
 function makeFakeProvider(): FakeProvider {
@@ -53,6 +60,12 @@ class TestableHermesAgent extends HermesAgent {
       ;(this.getProviderForTest() as { cleanup?: () => void } | null)?.cleanup?.()
       ;(this as unknown as { provider: unknown }).provider = null
     }
+  }
+  getRuntimeConfigForTest(): NormalizedHermesRuntimeConfig {
+    return (this as unknown as { getRuntimeConfig: () => NormalizedHermesRuntimeConfig }).getRuntimeConfig()
+  }
+  installAcpPermissionHandlerForTest(provider: ACPProvider): void {
+    ;(this as unknown as HermesAgentPermissionInstaller).installAcpPermissionHandler(provider)
   }
 }
 
@@ -97,6 +110,22 @@ describe('resolveHermesModelId', () => {
     // which routed e.g. a Codex pick into Anthropic and burned the wrong
     // provider's quota. The user pick wins.
     expect(resolveHermesModelId('claude-opus-4-7', models)).toBe('claude-opus-4-7')
+  })
+})
+
+describe('HermesAgent runtime profile resolution', () => {
+  it('uses the persisted session profile when deriving HERMES_HOME', () => {
+    const session = { ...createMockSession(), hermesProfile: 'session-profile-test' }
+    const agent = new TestableHermesAgent(createHermesConfig({
+      session,
+      runtime: {
+        command: 'hermes',
+        args: ['acp'],
+        hermesHome: '/tmp/craft-hermes-test-home',
+      },
+    }))
+
+    expect(agent.getRuntimeConfigForTest().hermesHome).toBe('/tmp/craft-hermes-test-home/profiles/session-profile-test')
   })
 })
 
@@ -232,5 +261,55 @@ describe('HermesAgent.postInit', () => {
     await agent.postInit()
 
     expect(syncCalls).toBe(1)
+  })
+})
+
+describe('HermesAgent ACP permission bridge', () => {
+  it('routes ACP permission requests through the Craft permission UI callback', async () => {
+    let capturedHandler: (request: RequestPermissionRequest) => Promise<unknown> = async () => {
+      throw new Error('permission handler was not installed')
+    }
+    const fakeProvider = {
+      model: {
+        client: {
+          setPermissionRequestHandler: (handler: (request: RequestPermissionRequest) => Promise<unknown>) => {
+            capturedHandler = handler
+          },
+        },
+      },
+    } as unknown as ACPProvider
+    const agent = new TestableHermesAgent(createHermesConfig())
+    let pendingRequestId = ''
+    let pendingCommand = ''
+
+    agent.onPermissionRequest = (request) => {
+      pendingRequestId = request.requestId
+      pendingCommand = request.command ?? ''
+    }
+    agent.installAcpPermissionHandlerForTest(fakeProvider)
+
+    const responsePromise = capturedHandler({
+      sessionId: 'hermes-session-1',
+      toolCall: {
+        toolCallId: 'perm-check',
+        kind: 'execute',
+        title: 'npm install',
+        rawInput: 'npm install',
+      },
+      options: [
+        { optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' },
+        { optionId: 'allow_always', kind: 'allow_always', name: 'Allow always' },
+        { optionId: 'deny', kind: 'reject_once', name: 'Deny' },
+      ],
+    })
+
+    expect(pendingRequestId).toStartWith('hermes-acp-')
+    expect(pendingCommand).toBe('npm install')
+
+    agent.respondToPermission(pendingRequestId, true, false)
+
+    await expect(responsePromise).resolves.toEqual({
+      outcome: { outcome: 'selected', optionId: 'allow_once' },
+    })
   })
 })

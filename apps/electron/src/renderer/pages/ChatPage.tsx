@@ -26,7 +26,7 @@ import { routes } from '@/lib/navigate'
 import { resolveOpenFilePath } from '@/lib/resolve-open-file-path'
 import { useNavigation, useNavigationState } from '@/contexts/NavigationContext'
 import { coerceInputText } from '@/lib/input-text'
-import { ensureSessionMessagesLoadedAtom, loadedSessionsAtom, sessionMetaMapAtom } from '@/atoms/sessions'
+import { ensureSessionMessagesLoadedAtom, loadedSessionsAtom, sessionMetaMapAtom, updateSessionAtom } from '@/atoms/sessions'
 import { getSessionTitle } from '@/utils/session'
 // Model resolution: connection.defaultModel (no hardcoded defaults)
 import { resolveEffectiveConnectionSlug, isSessionConnectionUnavailable } from '@config/llm-connections'
@@ -110,6 +110,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   // Check if session exists in metadata (for loading state detection)
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
   const sessionMeta = sessionMetaMap.get(sessionId)
+
+  const updateSession = useSetAtom(updateSessionAtom)
 
   // Fallback: ensure messages are loaded when session is viewed
   const ensureMessagesLoaded = useSetAtom(ensureSessionMessagesLoadedAtom)
@@ -225,10 +227,18 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
   // Session model change handler - persists per-session model and connection
   const handleModelChange = React.useCallback((model: string, connection?: string) => {
+    updateSession(sessionId, current => current ? {
+      ...current,
+      model,
+      llmConnection: connection ?? current.llmConnection,
+    } : current)
     if (activeWorkspaceId) {
       window.electronAPI.setSessionModel(sessionId, activeWorkspaceId, model, connection)
+        .catch(error => {
+          console.error('Failed to change model:', error)
+        })
     }
-  }, [sessionId, activeWorkspaceId])
+  }, [sessionId, activeWorkspaceId, updateSession])
 
   // Session connection change handler - can only change before first message
   const handleConnectionChange = React.useCallback(async (connectionSlug: string) => {
@@ -239,6 +249,18 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
       console.error('Failed to change connection:', error)
     }
   }, [sessionId])
+
+  // Hermes profile can change at any time; active streams keep running and the next turn uses the new profile.
+  const handleHermesProfileChange = React.useCallback(async (profileName: string) => {
+    const previousProfile = session?.hermesProfile
+    updateSession(sessionId, current => current ? { ...current, hermesProfile: profileName } : current)
+    try {
+      await window.electronAPI.sessionCommand(sessionId, { type: 'setHermesProfile', profileName })
+    } catch (error) {
+      updateSession(sessionId, current => current ? { ...current, hermesProfile: previousProfile } : current)
+      throw error
+    }
+  }, [session?.hermesProfile, sessionId, updateSession])
 
   // Check if session's locked connection has been removed
   const connectionUnavailable = React.useMemo(() =>
@@ -690,6 +712,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
                 currentModel={effectiveModel}
                 onModelChange={handleModelChange}
                 onConnectionChange={handleConnectionChange}
+                onHermesProfileChange={handleHermesProfileChange}
                 pendingPermission={undefined}
                 onRespondToPermission={onRespondToPermission}
                 pendingCredential={undefined}
@@ -764,6 +787,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
             currentModel={effectiveModel}
             onModelChange={handleModelChange}
             onConnectionChange={handleConnectionChange}
+            onHermesProfileChange={handleHermesProfileChange}
             pendingPermission={pendingPermission}
             onRespondToPermission={onRespondToPermission}
             pendingCredential={pendingCredential}

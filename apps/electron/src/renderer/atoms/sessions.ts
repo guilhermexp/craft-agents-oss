@@ -59,6 +59,8 @@ export interface SessionMeta {
   model?: string
   /** LLM connection slug for this session */
   llmConnection?: string
+  /** Hermes profile pinned to this session */
+  hermesProfile?: string
   /** Token usage stats (from JSONL header, available without loading messages) */
   tokenUsage?: {
     inputTokens: number

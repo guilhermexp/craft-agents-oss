@@ -537,7 +537,20 @@ export interface ElectronAPI {
   createChannel(workspaceId: string, input: import('@craft-agent/shared/channels').CreateChannelInput): Promise<import('@craft-agent/shared/channels').ChannelConfig>
   updateChannel(workspaceId: string, channelId: string, updates: import('@craft-agent/shared/channels').UpdateChannelInput): Promise<import('@craft-agent/shared/channels').ChannelConfig>
   deleteChannel(workspaceId: string, channelId: string, options?: import('@craft-agent/shared/channels').DeleteChannelOptions): Promise<import('@craft-agent/shared/channels').DeleteChannelResult>
+  listChannelMessages(workspaceId: string, channelId: string): Promise<import('@craft-agent/shared/channels').ChannelMessage[]>
+  sendChannelMessage(workspaceId: string, input: {
+    channelId: string
+    text: string
+    authorId?: string
+    mentionedParticipantIds?: string[]
+  }): Promise<{
+    message: import('@craft-agent/shared/channels').ChannelMessage
+    targetedParticipantIds: string[]
+    unknownMentions: string[]
+    failures: Array<{ participantId: string; message: string }>
+  }>
   onChannelsChanged(callback: (workspaceId: string) => void): () => void
+  onChannelMessagesChanged(callback: (workspaceId: string, channelId: string) => void): () => void
 
   // LLM connections change listener
   onLlmConnectionsChanged(callback: () => void): () => void

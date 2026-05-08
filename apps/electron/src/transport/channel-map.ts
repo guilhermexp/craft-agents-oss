@@ -270,7 +270,10 @@ export const CHANNEL_MAP = {
   createChannel: invoke(RPC_CHANNELS.channels.CREATE),
   updateChannel: invoke(RPC_CHANNELS.channels.UPDATE),
   deleteChannel: invoke(RPC_CHANNELS.channels.DELETE),
+  listChannelMessages: invoke(RPC_CHANNELS.channels.LIST_MESSAGES),
+  sendChannelMessage: invoke(RPC_CHANNELS.channels.SEND_MESSAGE),
   onChannelsChanged: listener(RPC_CHANNELS.channels.CHANGED),
+  onChannelMessagesChanged: listener(RPC_CHANNELS.channels.MESSAGES_CHANGED),
 
   // LLM connections change listener
   onLlmConnectionsChanged: listener(RPC_CHANNELS.llmConnections.CHANGED),

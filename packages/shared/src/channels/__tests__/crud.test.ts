@@ -156,4 +156,52 @@ describe('channel CRUD', () => {
     const updated = updateChannel(workspaceRoot, channel.id, { name: 'Support' });
     expect(updated.name).toBe('Support');
   });
+
+  it('persists channel participants without changing the backing label', () => {
+    const channel = createChannel(workspaceRoot, {
+      name: 'Architecture',
+      participants: [
+        {
+          id: 'hermes-lead',
+          displayName: 'Hermes Lead',
+          llmConnection: 'hermes',
+          hermesProfile: 'lead',
+        },
+      ],
+    });
+
+    expect(channel.labelId).toBe('channel-architecture');
+    expect(channel.participants).toEqual([
+      {
+        id: 'hermes-lead',
+        displayName: 'Hermes Lead',
+        llmConnection: 'hermes',
+        hermesProfile: 'lead',
+      },
+    ]);
+
+    const updated = updateChannel(workspaceRoot, channel.id, {
+      participants: [
+        {
+          id: 'pi-reviewer',
+          displayName: 'Pi Reviewer',
+          llmConnection: 'pi-copilot',
+          model: 'auto',
+        },
+      ],
+    });
+
+    expect(updated.labelId).toBe(channel.labelId);
+    expect(updated.participants?.map(participant => participant.id)).toEqual(['pi-reviewer']);
+  });
+
+  it('rejects duplicate channel participant ids', () => {
+    expect(() => createChannel(workspaceRoot, {
+      name: 'Architecture',
+      participants: [
+        { id: 'hermes', displayName: 'Hermes', llmConnection: 'hermes' },
+        { id: 'HERMES', displayName: 'Hermes Duplicate', llmConnection: 'hermes' },
+      ],
+    })).toThrow(/duplicate participant/i);
+  });
 });

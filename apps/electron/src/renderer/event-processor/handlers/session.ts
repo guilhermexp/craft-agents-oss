@@ -32,6 +32,7 @@ import type {
   PermissionModeChangedEvent,
   SessionModelChangedEvent,
   LLMConnectionChangedEvent,
+  HermesProfileChangedEvent,
   UserMessageEvent,
   MessageAnnotationsUpdatedEvent,
   SessionSharedEvent,
@@ -472,6 +473,28 @@ export function handleConnectionChanged(
         ...session,
         llmConnection: event.connectionSlug,
         ...(event.supportsBranching !== undefined && { supportsBranching: event.supportsBranching }),
+        ...(event.hermesProfile !== undefined && { hermesProfile: event.hermesProfile }),
+      },
+      streaming,
+    },
+    effects: [],
+  }
+}
+
+/**
+ * Handle hermes_profile_changed - sync session.hermesProfile to renderer state
+ */
+export function handleHermesProfileChanged(
+  state: SessionState,
+  event: HermesProfileChangedEvent
+): ProcessResult {
+  const { session, streaming } = state
+
+  return {
+    state: {
+      session: {
+        ...session,
+        hermesProfile: event.hermesProfile,
       },
       streaming,
     },

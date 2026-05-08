@@ -27,7 +27,7 @@ import {
   TranscriptViewerScrubBar,
   type CharacterAlignmentResponseModel,
 } from '../ui/transcript-viewer'
-import { PauseIcon, PlayIcon } from 'lucide-react'
+import { ImageIcon, ImageOffIcon, PauseIcon, PlayIcon } from 'lucide-react'
 import remarkCollapsibleSections from './remarkCollapsibleSections'
 import { CollapsibleSection } from './CollapsibleSection'
 import { useCollapsibleMarkdown } from './CollapsibleMarkdownContext'
@@ -35,6 +35,7 @@ import { wrapWithSafeProxy } from './safe-components'
 import { MARKDOWN_MATH_OPTIONS } from './math-options'
 import { buildPdfPreviewCodeFromPlainPath } from './pdf-path-preview'
 import { buildTabularPreviewCodeFromPlainPath } from './tabular-preview'
+import { prefixFolderContext } from './folder-context-prefix'
 
 /**
  * Render modes for markdown content:
@@ -249,6 +250,100 @@ function MarkdownAudioInlinePreview({
   )
 }
 
+const imagePreviewDataUrlCache = new Map<string, Promise<string>>()
+
+function MarkdownImageInlinePreview({
+  filePath,
+}: {
+  filePath: string
+}) {
+  const { onReadFileDataUrl, onResolveFilePath } = usePlatform()
+  const [imageSrc, setImageSrc] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
+  const [isMissing, setIsMissing] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!onReadFileDataUrl) return
+
+    let cancelled = false
+    setImageSrc(null)
+    setError(null)
+    setIsMissing(false)
+
+    const load = async () => {
+      const resolvedPath = onResolveFilePath ? await onResolveFilePath(filePath) : filePath
+      if (!resolvedPath) return null
+
+      const cached = imagePreviewDataUrlCache.get(resolvedPath)
+      if (cached) return cached
+
+      const request = onReadFileDataUrl(resolvedPath).catch((err) => {
+        imagePreviewDataUrlCache.delete(resolvedPath)
+        throw err
+      })
+      imagePreviewDataUrlCache.set(resolvedPath, request)
+      return request
+    }
+
+    load()
+      .then((url) => {
+        if (cancelled) return
+        if (url) {
+          setImageSrc(url)
+        } else {
+          setIsMissing(true)
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load image')
+      })
+
+    return () => { cancelled = true }
+  }, [filePath, onReadFileDataUrl, onResolveFilePath])
+
+  if (!onReadFileDataUrl) return null
+
+  const fileName = filePath.split('/').pop() || filePath
+
+  if (isMissing) {
+    return (
+      <span className="my-2 inline-flex max-w-full items-center gap-2 rounded-[8px] border border-dashed border-border/60 bg-muted/20 px-3 py-2 text-[13px] text-muted-foreground">
+        <ImageOffIcon className="size-4 flex-shrink-0" />
+        <span className="truncate">File not found: {fileName}</span>
+      </span>
+    )
+  }
+
+  if (error) {
+    return (
+      <span className="my-2 inline-flex max-w-full items-center gap-2 rounded-[8px] border border-dashed border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
+        <ImageOffIcon className="size-4 flex-shrink-0" />
+        <span className="truncate">Failed to load {fileName}: {error}</span>
+      </span>
+    )
+  }
+
+  if (!imageSrc) {
+    return (
+      <span className="my-2 inline-flex max-w-full items-center gap-2 rounded-[8px] border border-border/60 bg-muted/20 px-3 py-2 text-[13px] text-muted-foreground">
+        <ImageIcon className="size-4 flex-shrink-0 animate-pulse" />
+        <span className="truncate">Loading {fileName}…</span>
+      </span>
+    )
+  }
+
+  return (
+    <span className="my-3 block max-w-2xl">
+      <img
+        src={imageSrc}
+        alt={fileName}
+        className="block max-w-full rounded-[8px] border border-border/60 shadow-minimal"
+        draggable={false}
+      />
+    </span>
+  )
+}
+
 function inferAudioMimeType(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase()
   switch (ext) {
@@ -337,7 +432,9 @@ function createComponents(
         .trim()
       const target = (href?.trim() || fallbackText)
       const resolvedTarget = target ? resolveMarkdownLinkTarget(target) : null
-      const isAudioFile = resolvedTarget?.kind === 'file' && classifyFile(resolvedTarget.path).type === 'audio'
+      const fileKind = resolvedTarget?.kind === 'file' ? classifyFile(resolvedTarget.path).type : null
+      const isAudioFile = fileKind === 'audio'
+      const isImageFile = fileKind === 'image'
 
       const handleClick = (e: React.MouseEvent) => {
         e.preventDefault()
@@ -361,11 +458,20 @@ function createComponents(
         </a>
       )
 
-      if (isAudioFile) {
+      if (isAudioFile && resolvedTarget?.kind === 'file') {
         return (
           <>
             {link}
             <MarkdownAudioInlinePreview filePath={resolvedTarget.path} />
+          </>
+        )
+      }
+
+      if (isImageFile && resolvedTarget?.kind === 'file') {
+        return (
+          <>
+            {link}
+            <MarkdownImageInlinePreview filePath={resolvedTarget.path} />
           </>
         )
       }
@@ -745,9 +851,11 @@ export function Markdown({
     [platformActions, onResolveFilePath]
   )
 
-  // Preprocess to convert raw URLs and file paths to markdown links
+  // Preprocess to convert raw URLs and file paths to markdown links.
+  // prefixFolderContext runs first so "Pasta:/Folder:" + bullet basenames
+  // become absolute markdown links before linkify sees them.
   const processedContent = React.useMemo(
-    () => preprocessLinks(children),
+    () => preprocessLinks(prefixFolderContext(children)),
     [children]
   )
 

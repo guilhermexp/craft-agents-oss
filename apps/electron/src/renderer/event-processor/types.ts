@@ -320,6 +320,16 @@ export interface LLMConnectionChangedEvent {
   sessionId: string
   connectionSlug: string
   supportsBranching?: boolean
+  hermesProfile?: string
+}
+
+/**
+ * Hermes profile changed event - syncs session.hermesProfile to renderer state
+ */
+export interface HermesProfileChangedEvent {
+  type: 'hermes_profile_changed'
+  sessionId: string
+  hermesProfile: string
 }
 
 /**
@@ -502,6 +512,7 @@ export type AgentEvent =
   | PermissionModeChangedEvent
   | SessionModelChangedEvent
   | LLMConnectionChangedEvent
+  | HermesProfileChangedEvent
   | TaskBackgroundedEvent
   | ShellBackgroundedEvent
   | TaskProgressEvent

@@ -21,6 +21,7 @@ import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import { Panel } from './Panel'
 import { MultiSelectPanel } from './MultiSelectPanel'
+import { ChannelConversationPanel } from './ChannelConversationPanel'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
 import { StoplightProvider } from '@/context/StoplightContext'
@@ -81,6 +82,7 @@ export function MainContentPanel({
     automationTestResults,
     getAutomationHistory,
     activeSessionWorkingDirectory,
+    workspaceChannels,
   } = useAppShellContext()
 
   // Session multi-select state
@@ -378,6 +380,17 @@ export function MainContentPanel({
           <ChatPage sessionId={navState.details.sessionId} />
         </Panel>
       )
+    }
+    const sessionFilter = navState.filter
+    if (activeWorkspaceId && sessionFilter.kind === 'label') {
+      const channel = workspaceChannels?.find(item => item.labelId === sessionFilter.labelId)
+      if (channel) {
+        return wrapWithStoplight(
+          <Panel variant="grow" className={className}>
+            <ChannelConversationPanel workspaceId={activeWorkspaceId} channel={channel} />
+          </Panel>
+        )
+      }
     }
     // No session selected - empty state
     return wrapWithStoplight(

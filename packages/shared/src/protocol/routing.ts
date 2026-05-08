@@ -414,7 +414,10 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.channels.CREATE,
   RPC_CHANNELS.channels.UPDATE,
   RPC_CHANNELS.channels.DELETE,
+  RPC_CHANNELS.channels.LIST_MESSAGES,
+  RPC_CHANNELS.channels.SEND_MESSAGE,
   RPC_CHANNELS.channels.CHANGED,
+  RPC_CHANNELS.channels.MESSAGES_CHANGED,
 
   // views — workspace UI views
   RPC_CHANNELS.views.LIST,

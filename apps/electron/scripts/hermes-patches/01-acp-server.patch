@@ -5,16 +5,16 @@ index dd9d75af..05de7554 100644
 @@ -387,6 +387,8 @@ class HermesACPAgent(acp.Agent):
          if not mcp_servers:
              return
- 
+
 +        state.mcp_servers = list(mcp_servers)
 +
          try:
              from tools.mcp_tool import register_mcp_servers
- 
+
 @@ -415,12 +417,20 @@ class HermesACPAgent(acp.Agent):
              )
              return
- 
+
 +        self._refresh_session_mcp_tool_surface(state, [server.name for server in mcp_servers])
 +
 +    def _refresh_session_mcp_tool_surface(
@@ -25,7 +25,7 @@ index dd9d75af..05de7554 100644
 +        """Reapply ACP MCP toolsets after the underlying AIAgent is recreated."""
          try:
              from model_tools import get_tool_definitions
- 
+
              enabled_toolsets = _expand_acp_enabled_toolsets(
                  getattr(state.agent, "enabled_toolsets", None) or ["hermes-acp"],
 -                mcp_server_names=[server.name for server in mcp_servers],
@@ -44,7 +44,7 @@ index dd9d75af..05de7554 100644
 +        # duplicates every streamed token in Craft, especially visible across
 +        # profile-local Hermes sessions such as server-ops.
 +        agent.stream_delta_callback = None
- 
+
          # Approval callback is per-thread (thread-local, GHSA-qg5c-hvr5-hjgr).
          # Set it INSIDE _run_agent so the TLS write happens in the executor
 @@ -965,6 +980,7 @@ class HermesACPAgent(acp.Agent):
@@ -86,6 +86,58 @@ index d6dace66..27b36af0 100644
      current_prompt_text: str = ""
      interrupted_prompt_text: str = ""
 +    mcp_servers: List[Any] = field(default_factory=list)
- 
- 
+
+
  class SessionManager:
+@@ -597,6 +598,7 @@ class SessionManager:
+             ),
+             "quiet_mode": True,
+             "session_id": session_id,
++            "session_db": self._get_db(),
+             "model": model or default_model,
+         }
+
+diff --git a/acp_adapter/permissions.py b/acp_adapter/permissions.py
+index c2e1a598..0a04fe8b 100644
+--- a/acp_adapter/permissions.py
++++ b/acp_adapter/permissions.py
+@@ -28,9 +28,9 @@ def make_approval_callback(
+     loop: asyncio.AbstractEventLoop,
+     session_id: str,
+     timeout: float = 60.0,
+-) -> Callable[[str, str], str]:
++) -> Callable[..., str]:
+     """
+-    Return a hermes-compatible ``approval_callback(command, description) -> str``
++    Return a hermes-compatible ``approval_callback(command, description, *, allow_permanent=True) -> str``
+     that bridges to the ACP client's ``request_permission`` call.
+
+     Args:
+@@ -40,12 +40,13 @@ def make_approval_callback(
+         timeout: Seconds to wait for a response before auto-denying.
+     """
+
+-    def _callback(command: str, description: str) -> str:
++    def _callback(command: str, description: str, *, allow_permanent: bool = True) -> str:
+         options = [
+             PermissionOption(option_id="allow_once", kind="allow_once", name="Allow once"),
+-            PermissionOption(option_id="allow_always", kind="allow_always", name="Allow always"),
+-            PermissionOption(option_id="deny", kind="reject_once", name="Deny"),
+         ]
++        if allow_permanent:
++            options.append(PermissionOption(option_id="allow_always", kind="allow_always", name="Allow always"))
++        options.append(PermissionOption(option_id="deny", kind="reject_once", name="Deny"))
+         import acp as _acp
+
+         tool_call = _acp.start_tool_call("perm-check", command, kind="execute")
+diff --git a/toolsets.py b/toolsets.py
+--- a/toolsets.py
++++ b/toolsets.py
+@@ -314,6 +314,7 @@ TOOLSETS = {
+             "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
+             "todo", "memory",
+             "session_search",
++            "cronjob",
+             "execute_code", "delegate_task",
+         ],
+         "includes": []

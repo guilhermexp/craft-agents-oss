@@ -50,6 +50,8 @@
     "./channels": "./src/channels/index.ts",
     "./channels/storage": "./src/channels/storage.ts",
     "./channels/crud": "./src/channels/crud.ts",
+    "./channels/mentions": "./src/channels/mentions.ts",
+    "./channels/messages": "./src/channels/messages.ts",
     "./views": "./src/views/index.ts",
     "./views/storage": "./src/views/storage.ts",
     "./validation": "./src/validation/index.ts",
