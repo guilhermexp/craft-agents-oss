@@ -27,6 +27,58 @@ import type {
 export { generateMessageId } from '@craft-agent/core/types'
 
 // ---------------------------------------------------------------------------
+// Meetings types
+// ---------------------------------------------------------------------------
+
+export type MeetingStatus = 'starting' | 'running' | 'stopped' | 'error'
+
+export interface MeetingStartInput {
+  /** Google Meet URL or code (e.g. abc-defg-hij). */
+  urlOrCode: string
+  /** Optional browser profile id used by the integrated BrowserView. */
+  profileId?: string
+  /** Optional display title persisted with the record. */
+  title?: string
+  /** Whether the native meeting flow should prepare transcript capture. */
+  transcribe?: boolean
+  /** Whether Craft should summarize the meeting after it ends. */
+  summarizeOnEnd?: boolean
+  /** Whether Craft should extract follow-up tasks after it ends. */
+  followUpOnEnd?: boolean
+}
+
+export interface MeetingRecord {
+  id: string
+  provider: 'google-meet'
+  status: MeetingStatus
+  url: string
+  code?: string
+  browserInstanceId: string
+  title?: string
+  startedAt: number
+  updatedAt: number
+  endedAt?: number
+  error?: string
+}
+
+export interface MeetingTranscriptSegment {
+  id: string
+  speaker?: string
+  text: string
+  startedAt?: number
+  endedAt?: number
+  timestamp: number
+}
+
+export interface MeetingTranscriptResult {
+  meetingId: string
+  status: 'placeholder' | 'capturing' | 'ready' | 'unavailable'
+  transcript: MeetingTranscriptSegment[]
+  message?: string
+  updatedAt: number
+}
+
+// ---------------------------------------------------------------------------
 // Session types
 // ---------------------------------------------------------------------------
 

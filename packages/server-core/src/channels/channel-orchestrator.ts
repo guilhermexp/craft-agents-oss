@@ -104,7 +104,7 @@ function resolveTargets(
     return { participants, unknownMentions: mentions.unknownMentions };
   }
 
-  if (mode === 'lead' && channel.routing?.leadParticipantId) {
+  if (mode === 'lead') {
     const lead = resolveLeadParticipant(channel);
     return { participants: lead ? [lead] : [], unknownMentions: mentions.unknownMentions };
   }

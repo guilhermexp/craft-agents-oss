@@ -47,6 +47,7 @@ export default defineConfig({
       'react-dom': resolve(__dirname, '../../node_modules/react-dom'),
       // Electron-specific modules → empty shims for browser builds
       'electron-log/renderer': resolve(__dirname, 'src/shims/electron-log.ts'),
+      'electron-log/main': resolve(__dirname, 'src/shims/electron-log.ts'),
       'electron-log': resolve(__dirname, 'src/shims/electron-log.ts'),
       '@sentry/electron/renderer': resolve(__dirname, 'src/shims/sentry-electron.ts'),
       '@sentry/electron': resolve(__dirname, 'src/shims/sentry-electron.ts'),

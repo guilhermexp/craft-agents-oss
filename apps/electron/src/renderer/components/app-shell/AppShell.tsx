@@ -116,6 +116,7 @@ import {
   isSettingsNavigation,
   isSkillsNavigation,
   isAutomationsNavigation,
+  isMeetingsNavigation,
   type NavigationState,
 } from "@/contexts/NavigationContext"
 import type { SettingsSubpage } from "../../../shared/types"
@@ -1810,6 +1811,10 @@ function AppShellContent({
     navigate(routes.view.automationsAgentic())
   }, [])
 
+  const handleMeetingsClick = useCallback(() => {
+    navigate(routes.view.meetings())
+  }, [])
+
   // Handler for settings view
   const handleSettingsClick = useCallback((subpage: SettingsSubpage = 'app') => {
     navigate(routes.view.settings(subpage))
@@ -2190,11 +2195,12 @@ function AppShellContent({
     result.push({ id: 'nav:sources', type: 'nav', action: handleSourcesClick })
     result.push({ id: 'nav:skills', type: 'nav', action: handleSkillsClick })
     result.push({ id: 'nav:automations', type: 'nav', action: handleAutomationsClick })
+    result.push({ id: 'nav:meetings', type: 'nav', action: handleMeetingsClick })
     result.push({ id: 'nav:settings', type: 'nav', action: () => handleSettingsClick('app') })
     result.push({ id: 'nav:whats-new', type: 'nav', action: handleWhatsNewClick })
 
     return result
-  }, [handleAllSessionsClick, handleFlaggedClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, handleChannelClick, handleAddChannel, channelConfigs, labelTree, handleSourcesClick, handleSkillsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
+  }, [handleAllSessionsClick, handleFlaggedClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, handleChannelClick, handleAddChannel, channelConfigs, labelTree, handleSourcesClick, handleSkillsClick, handleAutomationsClick, handleMeetingsClick, handleSettingsClick, handleWhatsNewClick])
 
   // Toggle folder expanded state
   const handleToggleFolder = React.useCallback((path: string) => {
@@ -2322,6 +2328,10 @@ function AppShellContent({
         case 'agentic': return t("sidebar.agentic")
         default: return t("sidebar.allAutomations")
       }
+    }
+
+    if (isMeetingsNavigation(navState)) {
+      return t("sidebar.meetings")
     }
 
     // Settings navigator
@@ -2739,6 +2749,13 @@ function AppShellContent({
                           contextMenu: { type: 'automations' as const, onAddAutomation: openAddAutomation },
                         },
                       ],
+                    },
+                    {
+                      id: "nav:meetings",
+                      title: t("sidebar.meetings"),
+                      icon: Calendar,
+                      variant: isMeetingsNavigation(navState) ? "default" : "ghost",
+                      onClick: handleMeetingsClick,
                     },
                     // --- Separator ---
                     { id: "separator:skills-settings", type: "separator" },

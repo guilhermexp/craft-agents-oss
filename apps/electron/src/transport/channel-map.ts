@@ -372,6 +372,13 @@ export const CHANNEL_MAP = {
   menuPaste: invoke(RPC_CHANNELS.menu.PASTE),
   menuSelectAll: invoke(RPC_CHANNELS.menu.SELECT_ALL),
 
+  // Meetings MVP
+  'meetings.start': invoke(RPC_CHANNELS.meetings.START),
+  'meetings.list': invoke(RPC_CHANNELS.meetings.LIST),
+  'meetings.status': invoke(RPC_CHANNELS.meetings.STATUS),
+  'meetings.stop': invoke(RPC_CHANNELS.meetings.STOP),
+  'meetings.transcript': invoke(RPC_CHANNELS.meetings.TRANSCRIPT),
+
   // Browser pane management
   'browserPane.create': invoke(RPC_CHANNELS.browserPane.CREATE),
   'browserPane.destroy': invoke(RPC_CHANNELS.browserPane.DESTROY),

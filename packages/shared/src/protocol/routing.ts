@@ -236,6 +236,13 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   RPC_CHANNELS.hermes.GET_PROFILE_SETUP_COMMAND,
   RPC_CHANNELS.hermes.GET_PROFILE_SOUL,
   RPC_CHANNELS.hermes.UPDATE_PROFILE_SOUL,
+
+  // meetings — local Electron BrowserView-backed meeting control
+  RPC_CHANNELS.meetings.START,
+  RPC_CHANNELS.meetings.LIST,
+  RPC_CHANNELS.meetings.STATUS,
+  RPC_CHANNELS.meetings.STOP,
+  RPC_CHANNELS.meetings.TRANSCRIPT,
 ])
 
 // ---------------------------------------------------------------------------

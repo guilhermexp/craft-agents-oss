@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Hash, Send } from 'lucide-react'
+import { Hash, Loader2, Send } from 'lucide-react'
 import type { ChannelConfig, ChannelMessage } from '@craft-agent/shared/channels'
 import { cn } from '@/lib/utils'
 
@@ -25,8 +25,10 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
   const [draft, setDraft] = React.useState('')
   const [isLoading, setIsLoading] = React.useState(true)
   const [isSending, setIsSending] = React.useState(false)
+  const [lastDispatchSummary, setLastDispatchSummary] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null)
+  const messagesEndRef = React.useRef<HTMLDivElement | null>(null)
 
   const loadMessages = React.useCallback(async () => {
     setIsLoading(true)
@@ -53,21 +55,40 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
     })
   }, [channel.id, loadMessages, workspaceId])
 
+  React.useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: 'end' })
+  }, [messages.length, isSending])
+
   const sendMessage = React.useCallback(async () => {
     const text = draft.trim()
     if (!text || isSending) return
     setIsSending(true)
+    setLastDispatchSummary('Enviando para o canal...')
     try {
-      await window.electronAPI.sendChannelMessage(workspaceId, {
+      const result = await window.electronAPI.sendChannelMessage(workspaceId, {
         channelId: channel.id,
         text,
         authorId: 'human',
       })
       setDraft('')
       setError(null)
+      const summaryParts: string[] = []
+      if (result.targetedParticipantIds.length > 0) {
+        summaryParts.push(`Hermes acionou ${result.targetedParticipantIds.map(id => `@${id}`).join(' ')}`)
+      } else {
+        summaryParts.push('Mensagem salva no canal; nenhum agente foi acionado')
+      }
+      if (result.unknownMentions.length > 0) {
+        summaryParts.push(`menções não encontradas: ${result.unknownMentions.map(id => `@${id}`).join(' ')}`)
+      }
+      if (result.failures.length > 0) {
+        summaryParts.push(`falhas: ${result.failures.map(failure => `@${failure.participantId}: ${failure.message}`).join('; ')}`)
+      }
+      setLastDispatchSummary(summaryParts.join(' · '))
       await loadMessages()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send channel message')
+      setLastDispatchSummary(null)
     } finally {
       setIsSending(false)
       textareaRef.current?.focus()
@@ -123,6 +144,13 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
                 <p className="whitespace-pre-wrap leading-6 text-foreground">{message.text}</p>
               </article>
             ))}
+            {isSending ? (
+              <div className="flex items-center gap-2 rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Hermes está processando a mensagem do canal...
+              </div>
+            ) : null}
+            <div ref={messagesEndRef} />
           </div>
         )}
       </div>
@@ -130,6 +158,7 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
       <footer className="shrink-0 border-t border-border/60 p-4">
         <div className="mx-auto max-w-3xl">
           {error ? <div className="mb-2 text-xs text-destructive">{error}</div> : null}
+          {lastDispatchSummary && !error ? <div className="mb-2 text-xs text-muted-foreground">{lastDispatchSummary}</div> : null}
           <div className="rounded-md border border-border bg-background">
             <textarea
               ref={textareaRef}
@@ -153,7 +182,7 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
                 className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Enviar mensagem para o canal"
               >
-                <Send className="h-4 w-4" />
+                {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </button>
             </div>
           </div>

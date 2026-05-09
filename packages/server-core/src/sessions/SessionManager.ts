@@ -3328,6 +3328,83 @@ export class SessionManager implements ISessionManager {
               return bpm.detectSecurityChallenge(instanceId)
             },
           } satisfies BrowserPaneFns,
+          meetingToolFn: async (request) => {
+            const toMeetUrl = (value: unknown): string => {
+              const raw = String(value ?? '').trim()
+              if (!raw) throw new Error('Google Meet URL or code is required')
+              if (/^https?:\/\//i.test(raw)) {
+                const parsed = new URL(raw)
+                if (parsed.hostname !== 'meet.google.com' && parsed.hostname !== 'www.meet.google.com') {
+                  throw new Error(`Only Google Meet URLs are supported: ${raw}`)
+                }
+                return parsed.toString()
+              }
+              const code = raw
+                .replace(/^meet\.google\.com\//i, '')
+                .replace(/[^a-zA-Z0-9-]/g, '')
+                .toLowerCase()
+              if (!code) throw new Error('Google Meet URL or code is required')
+              return `https://meet.google.com/${code}`
+            }
+
+            const command = request.command
+            if (command === 'start') {
+              const url = toMeetUrl(request.url ?? request.urlOrCode ?? request.input)
+              const instanceId = bpm.focusBoundForSession(sid)
+              await bpm.navigate(instanceId, url)
+              return {
+                ok: true,
+                meetingId: `session:${sid}`,
+                browserInstanceId: instanceId,
+                status: 'running',
+                url,
+                message: 'Google Meet opened in Craft integrated browser. Native transcript capture is not implemented in this MVP yet.',
+              }
+            }
+
+            if (command === 'list') {
+              return {
+                ok: true,
+                meetings: bpm.listInstances()
+                  .filter((window) => window.boundSessionId === sid || window.ownerSessionId === sid)
+                  .map((window) => ({
+                    meetingId: `browser:${window.id}`,
+                    browserInstanceId: window.id,
+                    title: window.title,
+                    url: window.url,
+                    status: 'running',
+                  })),
+              }
+            }
+
+            if (command === 'status') {
+              const windows = bpm.listInstances()
+              const target = windows.find((window) => window.boundSessionId === sid || window.ownerSessionId === sid)
+              return target
+                ? { ok: true, meetingId: request.meetingId ?? `browser:${target.id}`, browserInstanceId: target.id, title: target.title, url: target.url, status: 'running' }
+                : { ok: false, status: 'stopped', reason: 'No meeting browser is associated with this session.' }
+            }
+
+            if (command === 'transcript') {
+              return {
+                ok: true,
+                meetingId: request.meetingId ?? `session:${sid}`,
+                status: 'placeholder',
+                transcript: [],
+                message: 'Native transcript capture via Google Meet captions is planned but not implemented in this MVP.',
+              }
+            }
+
+            if (command === 'stop') {
+              const windows = bpm.listInstances()
+              const target = windows.find((window) => window.boundSessionId === sid || window.ownerSessionId === sid)
+              if (!target) return { ok: false, status: 'stopped', reason: 'No meeting browser is associated with this session.' }
+              bpm.destroyInstance(target.id)
+              return { ok: true, meetingId: request.meetingId ?? `browser:${target.id}`, browserInstanceId: target.id, status: 'stopped' }
+            }
+
+            return { ok: false, reason: `Unknown meeting_tool command: ${String(command)}` }
+          },
         })
       }
 

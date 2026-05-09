@@ -16,6 +16,20 @@ import type { BrowserPaneFns } from './browser-tools.ts';
 import type { AuthRequest } from '@craft-agent/session-tools-core';
 import { debug } from '../utils/debug.ts';
 
+export type MeetingToolCommand = 'start' | 'status' | 'list' | 'transcript' | 'stop';
+
+export interface MeetingToolRequest {
+  command: MeetingToolCommand;
+  meetingId?: string;
+  id?: string;
+  title?: string;
+  url?: string;
+  limit?: number;
+  [key: string]: unknown;
+}
+
+export type MeetingToolFn = (request: MeetingToolRequest) => unknown | Promise<unknown>;
+
 /**
  * Callbacks that can be registered per-session
  */
@@ -50,6 +64,12 @@ export interface SessionScopedToolCallbacks {
    * with the session's bound browser instance.
    */
   browserPaneFns?: BrowserPaneFns;
+
+  /**
+   * Craft-native meeting control callback exposed to Hermes through the session MCP bridge.
+   * Optional because desktop/native meeting integration may not be available in every runtime.
+   */
+  meetingToolFn?: MeetingToolFn;
 
   /** Set labels on a session (defaults to current). */
   setSessionLabelsFn?: (sessionId: string | undefined, labels: string[]) => void | Promise<void>;

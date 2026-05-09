@@ -229,6 +229,9 @@ import type {
   HermesProfileMutationResult,
   HermesProfileSetupCommandResult,
   HermesProfileSoulResult,
+  MeetingRecord,
+  MeetingStartInput,
+  MeetingTranscriptResult,
 } from '@craft-agent/shared/protocol'
 
 export interface ElectronAPI {
@@ -660,6 +663,15 @@ export interface ElectronAPI {
   menuPaste(): Promise<void>
   menuSelectAll(): Promise<void>
 
+  // Meetings MVP (integrated browser-backed Google Meet)
+  meetings: {
+    start(input: string | MeetingStartInput): Promise<MeetingRecord>
+    list(): Promise<MeetingRecord[]>
+    status(id: string): Promise<MeetingRecord | null>
+    stop(id: string): Promise<MeetingRecord>
+    transcript(id: string): Promise<MeetingTranscriptResult>
+  }
+
   // Browser pane management
   browserPane: {
     create(input?: string | BrowserPaneCreateOptions): Promise<string>
@@ -859,6 +871,11 @@ export interface AutomationsNavigationState {
   rightSidebar?: RightSidebarPanel
 }
 
+export interface MeetingsNavigationState {
+  navigator: 'meetings'
+  rightSidebar?: RightSidebarPanel
+}
+
 /**
  * Unified navigation state
  */
@@ -868,6 +885,7 @@ export type NavigationState =
   | SettingsNavigationState
   | SkillsNavigationState
   | AutomationsNavigationState
+  | MeetingsNavigationState
 
 export const isSessionsNavigation = (
   state: NavigationState
@@ -888,6 +906,10 @@ export const isSkillsNavigation = (
 export const isAutomationsNavigation = (
   state: NavigationState
 ): state is AutomationsNavigationState => state.navigator === 'automations'
+
+export const isMeetingsNavigation = (
+  state: NavigationState
+): state is MeetingsNavigationState => state.navigator === 'meetings'
 
 export const DEFAULT_NAVIGATION_STATE: NavigationState = {
   navigator: 'sessions',
@@ -913,6 +935,9 @@ export const getNavigationStateKey = (state: NavigationState): string => {
       return `automations/automation/${state.details.automationId}`
     }
     return 'automations'
+  }
+  if (state.navigator === 'meetings') {
+    return 'meetings'
   }
   if (state.navigator === 'settings') {
     return `settings:${state.subpage}`
@@ -960,6 +985,9 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
     }
     return { navigator: 'automations', details: null }
   }
+
+  // Handle meetings
+  if (key === 'meetings') return { navigator: 'meetings' }
 
   // Handle settings
   if (key === 'settings') return { navigator: 'settings', subpage: 'app' }

@@ -8,7 +8,7 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { AlertCircle, Globe, Copy, RefreshCw, Link2Off, Info } from 'lucide-react'
+import { AlertCircle, Globe, Copy, RefreshCw, Link2Off, Info, Pencil, Trash2 } from 'lucide-react'
 import { ChatDisplay, type ChatDisplayHandle } from '@/components/app-shell/ChatDisplay'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ChannelBadge } from '@/components/app-shell/ChannelBadge'
@@ -41,6 +41,7 @@ type InlineFileResolveCacheEntry = {
 }
 
 const INLINE_FILE_MISSING_CACHE_TTL_MS = 10_000
+const HEADER_ICON_ONLY_BUTTON_CLASS = '!bg-transparent !shadow-none hover:!bg-transparent'
 
 const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const { t } = useTranslation()
@@ -538,7 +539,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
                 <path d="M8 8.53809C6.74209 8.60866 5.94798 8.80911 5.37868 9.37841C4.5 10.2571 4.5 11.6713 4.5 14.4997V15.4997C4.5 18.3282 4.5 19.7424 5.37868 20.6211C6.25736 21.4997 7.67157 21.4997 10.5 21.4997H13.5C16.3284 21.4997 17.7426 21.4997 18.6213 20.6211C19.5 19.7424 19.5 18.3282 19.5 15.4997V14.4997C19.5 11.6713 19.5 10.2571 18.6213 9.37841C18.052 8.80911 17.2579 8.60866 16 8.53809M12 14V3.5M9.5 5.5C9.99903 4.50411 10.6483 3.78875 11.5606 3.24093C11.7612 3.12053 11.8614 3.06033 12 3.06033C12.1386 3.06033 12.2388 3.12053 12.4394 3.24093C13.3517 3.78875 14.001 4.50411 14.5 5.5" />
               </svg>
           }
-          className={sharedUrl ? 'text-accent' : undefined}
+          className={sharedUrl ? `${HEADER_ICON_ONLY_BUTTON_CLASS} text-accent` : HEADER_ICON_ONLY_BUTTON_CLASS}
         />
       </DropdownMenuTrigger>
       <StyledDropdownMenuContent align="end" sideOffset={8}>
@@ -598,6 +599,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
           <PanelHeaderCenterButton
             icon={<Info className="h-4 w-4" />}
             aria-label={t("chat.sessionInfo")}
+            className={HEADER_ICON_ONLY_BUTTON_CLASS}
           />
         )}
       />
@@ -615,21 +617,50 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
         tooltip={t("chat.sessionInfo")}
         aria-pressed={isOpen}
         onClick={() => updateRightSidebar(isOpen ? undefined : { type: 'session-info' })}
-        className={isOpen ? 'opacity-100 bg-foreground/[0.06]' : undefined}
+        className={isOpen ? `${HEADER_ICON_ONLY_BUTTON_CLASS} opacity-100` : HEADER_ICON_ONLY_BUTTON_CLASS}
       />
     )
   }, [isCompactMode, navigationState.rightSidebar?.type, sessionMeta, t, updateRightSidebar])
 
-  const headerActions = React.useMemo(() => {
-    if (isCompactMode) return compactInfoButton
+  const quickSessionActions = React.useMemo(() => {
+    if (!sessionMeta) return undefined
 
     return (
       <div className="flex items-center gap-1">
+        <PanelHeaderCenterButton
+          icon={<Pencil className="h-4 w-4" />}
+          tooltip={t('common.rename')}
+          onClick={handleRename}
+          className={HEADER_ICON_ONLY_BUTTON_CLASS}
+        />
+        <PanelHeaderCenterButton
+          icon={<Trash2 className="h-4 w-4" />}
+          tooltip={t('common.delete')}
+          onClick={handleDelete}
+          className={`${HEADER_ICON_ONLY_BUTTON_CLASS} text-destructive hover:text-destructive opacity-75 hover:opacity-100`}
+        />
+      </div>
+    )
+  }, [handleDelete, handleRename, sessionMeta, t])
+
+  const headerActions = React.useMemo(() => {
+    if (isCompactMode) {
+      return (
+        <div className="flex items-center gap-1">
+          {quickSessionActions}
+          {compactInfoButton}
+        </div>
+      )
+    }
+
+    return (
+      <div className="flex items-center gap-1">
+        {quickSessionActions}
         {sessionInfoSidebarButton}
         {shareButton}
       </div>
     )
-  }, [compactInfoButton, isCompactMode, sessionInfoSidebarButton, shareButton])
+  }, [compactInfoButton, isCompactMode, quickSessionActions, sessionInfoSidebarButton, shareButton])
 
   // Channel breadcrumb: shown next to the title when the session carries one
   // or more channel-backed labels (Slack-style #channel-name indicator).

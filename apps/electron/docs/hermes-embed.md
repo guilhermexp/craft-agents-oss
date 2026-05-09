@@ -598,7 +598,7 @@ Hermes sessions now receive two separate local MCP endpoints in their ACP
 | MCP name | Owner | Purpose |
 | -------- | ----- | ------- |
 | `craft-sources` | existing `McpPoolServer` | Workspace source tools (GitHub, Linear, Notion, etc.) through the shared source pool. |
-| `craft-session` | `CraftSessionToolsMcpServer` | Craft-native session tools: plan/auth/config helpers, `call_llm`, `spawn_session`, session metadata tools, `browser_tool`, and `automation_tool`. |
+| `craft-session` | `CraftSessionToolsMcpServer` | Craft-native session tools: plan/auth/config helpers, `call_llm`, `spawn_session`, session metadata tools, `browser_tool`, `automation_tool`, and `meeting_tool`. |
 
 This is intentionally Hermes-only wiring in `HermesAgent`; Claude and Pi keep
 their existing adapters. The bridge reuses the same session callback registry
@@ -634,6 +634,7 @@ Important separation rules:
 - `craft-sources` and `craft-session` are local-only `127.0.0.1` endpoints.
 - `browser_tool` uses Craft's built-in browser abstraction, not an external OS browser.
 - Scheduled-task creation goes through `automation_tool`, which writes Craft `automations.json` and reloads the active `AutomationSystem`; Hermes' native `HERMES_HOME/cron/jobs.json` should remain disabled/hidden in Craft context.
+- Meeting control goes through `meeting_tool`, which only forwards `start`, `status`, `list`, `transcript`, and `stop` to session-scoped Craft-native meeting callbacks when a native runtime has registered them; otherwise it fails closed with an unavailable error. Hermes Python upstream is not patched for meeting support.
 
 ## Session and configuration isolation
 
@@ -710,8 +711,9 @@ updates `SourceManager` state.
     `craft-sources` + `craft-session` MCP config.
 - `packages/shared/src/mcp/session-tools-server.test.ts`
   - Covers canonical tool listing plus `call_llm`, `spawn_session`,
-    late-bound session-management callbacks, and `automation_tool`
-    create/list/toggle/delete behavior through the MCP bridge.
+    late-bound session-management callbacks, `meeting_tool` callback/fallback
+    behavior, and `automation_tool` create/list/toggle/delete behavior through
+    the MCP bridge.
 - `packages/shared/src/agent/__tests__/hermes-agent.test.ts`
   - No-op when descriptors unchanged.
   - Restart provider on descriptor change.

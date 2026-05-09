@@ -243,6 +243,13 @@ export const RPC_CHANNELS = {
     GET_PROFILE_SOUL: 'hermes:getProfileSoul',
     UPDATE_PROFILE_SOUL: 'hermes:updateProfileSoul',
   },
+  meetings: {
+    START: 'meetings:start',
+    LIST: 'meetings:list',
+    STATUS: 'meetings:status',
+    STOP: 'meetings:stop',
+    TRANSCRIPT: 'meetings:transcript',
+  },
   dialog: {
     OPEN_FOLDER: 'dialog:openFolder',
   },

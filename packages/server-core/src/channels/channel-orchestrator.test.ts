@@ -194,4 +194,24 @@ describe('ChannelOrchestrator', () => {
     expect(runtime.created).toEqual([]);
     expect(runtime.sent).toEqual([]);
   });
+
+  it('routes untagged lead-mode messages to the inferred Hermes lead even without an explicit lead id', async () => {
+    const runtime = createRuntime();
+    const orchestrator = createChannelOrchestrator({ runtime });
+
+    const result = await orchestrator.sendMessage({
+      channel: {
+        ...channel,
+        routing: { mode: 'lead' },
+      },
+      text: 'organize isso no canal',
+      authorId: 'human',
+    });
+
+    expect(result.targetedParticipantIds).toEqual(['hermes-lead']);
+    expect(runtime.created).toHaveLength(1);
+    expect(runtime.created[0]?.hermesProfile).toBe('lead');
+    expect(runtime.sent).toHaveLength(1);
+    expect(runtime.sent[0]?.message).toContain('organize isso no canal');
+  });
 });

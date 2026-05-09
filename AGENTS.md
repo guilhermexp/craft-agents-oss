@@ -111,6 +111,24 @@ When syncing Craft upstream, preserve these Craft-side integration points:
   giant session/skill dumps. Settings must not duplicate the dashboard's native
   update action.
 
+## Channels / Hermes War Room
+
+The Slack-like channel/War Room contract is documented in
+`apps/electron/docs/channels-war-room.md`. Update that document whenever
+changing:
+
+- shared channel types, CRUD, message storage, or mention resolution;
+- `packages/server-core/src/channels/channel-orchestrator.ts`;
+- `packages/server-core/src/handlers/rpc/channels.ts`;
+- `packages/server-core/src/channels/hermes-kanban.ts`;
+- `apps/electron/src/renderer/components/app-shell/ChannelConversationPanel.tsx`.
+
+Preserve the product model: channel messages are a shared room surface, while
+agent sessions are implementation details. Do not require `leadParticipantId`
+for usable `lead`/`orchestrator` rooms; infer a Hermes lead first, then the
+first participant. Keep Hermes Kanban using app-scoped `HERMES_HOME` and
+profile-slug assignees so worker tasks and channel updates stay connected.
+
 ## Validation
 
 For Hermes/Craft integration changes, run the focused Craft tests:

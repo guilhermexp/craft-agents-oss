@@ -35,6 +35,7 @@ describe('CraftSessionToolsMcpServer', () => {
     expect(toolNames).toContain('call_llm');
     expect(toolNames).toContain('spawn_session');
     expect(toolNames).toContain('get_session_info');
+    expect(toolNames).toContain('meeting_tool');
   });
 
   it('serves session tools through the Streamable HTTP MCP bridge', async () => {
@@ -50,6 +51,7 @@ describe('CraftSessionToolsMcpServer', () => {
       expect(toolNames).toContain('browser_tool');
       expect(toolNames).toContain('call_llm');
       expect(toolNames).toContain('spawn_session');
+      expect(toolNames).toContain('meeting_tool');
     } finally {
       await client.close().catch(() => {});
       await server.stop();
@@ -88,6 +90,32 @@ describe('CraftSessionToolsMcpServer', () => {
     expect(result.isError).toBeUndefined();
     expect(result.content[0]?.type).toBe('text');
     expect((result.content[0] as { text: string }).text).toContain('child-session');
+  });
+
+  it('returns a clear unavailable error when meeting callbacks are not registered', async () => {
+    const server = new CraftSessionToolsMcpServer({ sessionId, workspaceRootPath, workspaceId: 'ws-test' });
+
+    const result = await server.callTool('meeting_tool', { command: 'status' });
+
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain('Craft native meeting callbacks are not registered');
+  });
+
+  it('executes meeting_tool through the session callback registry', async () => {
+    const seenCommands: string[] = [];
+    mergeSessionScopedToolCallbacks(sessionId, {
+      meetingToolFn: async (request) => {
+        seenCommands.push(request.command);
+        return { ok: true, meetingId: request.meetingId ?? 'meeting-1', status: 'recording' };
+      },
+    });
+    const server = new CraftSessionToolsMcpServer({ sessionId, workspaceRootPath, workspaceId: 'ws-test' });
+
+    const result = await server.callTool('meeting_tool', { command: 'start', meetingId: 'meeting-1', title: 'Planning' });
+
+    expect(result.isError).toBeUndefined();
+    expect(seenCommands).toEqual(['start']);
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toEqual({ ok: true, meetingId: 'meeting-1', status: 'recording' });
   });
 
   it('executes registry session-management tools with late-bound callbacks', async () => {
