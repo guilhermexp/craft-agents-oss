@@ -2050,11 +2050,14 @@ export function FreeFormInput({
                           "input-toolbar-btn inline-flex items-center h-7 px-2 mr-1 gap-1 text-[12px] font-medium text-muted-foreground rounded-[6px] border border-foreground/10 bg-foreground/[0.03] hover:bg-foreground/5 transition-colors select-none",
                           hermesProfileDropdownOpen && "bg-foreground/5",
                         )}
-                        disabled={!onHermesProfileChange}
-                      >
-                        <span className="max-w-[160px] truncate">{hermesProfileSelectorLabel}</span>
-                        {changingHermesProfile ? <Spinner className="h-3 w-3" /> : <ChevronDown className="h-3 w-3 opacity-60" />}
-                      </button>
+	                        disabled={!onHermesProfileChange}
+	                      >
+	                        {isHermesConnection && effectiveConnectionDetails && llmConnections.length > 1 && storage.get(storage.KEYS.showConnectionIcons, true) && (
+	                          <ConnectionIcon connection={effectiveConnectionDetails} size={14} showTooltip />
+	                        )}
+	                        <span className="max-w-[160px] truncate">{hermesProfileSelectorLabel}</span>
+	                        {changingHermesProfile ? <Spinner className="h-3 w-3" /> : <ChevronDown className="h-3 w-3 opacity-60" />}
+	                      </button>
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
                   <TooltipContent side="top">
@@ -2116,12 +2119,12 @@ export function FreeFormInput({
                         <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                         {t('common.unavailable')}
                       </>
-                    ) : (
-                      <>
-                        {effectiveConnectionDetails && llmConnections.length > 1 && storage.get(storage.KEYS.showConnectionIcons, true) && <ConnectionIcon connection={effectiveConnectionDetails} size={14} showTooltip />}
-                        {currentModelDisplayName}
-                        {!connectionDefaultModel && <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />}
-                      </>
+	                    ) : (
+	                      <>
+	                        {!isHermesConnection && effectiveConnectionDetails && llmConnections.length > 1 && storage.get(storage.KEYS.showConnectionIcons, true) && <ConnectionIcon connection={effectiveConnectionDetails} size={14} showTooltip />}
+	                        {currentModelDisplayName}
+	                        {!connectionDefaultModel && <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />}
+	                      </>
                     )}
                   </button>
                 </DropdownMenuTrigger>

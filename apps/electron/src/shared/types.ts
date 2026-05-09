@@ -213,6 +213,7 @@ import type {
   TestAutomationResult,
   WindowCloseRequest,
   DirectoryListingResult,
+  FileTreeListingResult,
   RemoteSessionTransferPayload,
   ImportRemoteSessionTransferResult,
   HermesDetectionResult,
@@ -342,6 +343,7 @@ export interface ElectronAPI {
 
   // Server filesystem browsing (remote mode)
   listServerDirectory(dirPath: string): Promise<DirectoryListingResult>
+  listFileTree(rootPath?: string, dirPath?: string): Promise<FileTreeListingResult>
   // Debug: send renderer logs to main process log file
   debugLog(...args: unknown[]): void
 

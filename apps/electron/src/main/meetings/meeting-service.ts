@@ -1,7 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import { randomUUID } from 'crypto'
-import { app } from 'electron'
+import { app, session } from 'electron'
 import type {
   MeetingRecord,
   MeetingStartInput,
@@ -9,6 +11,10 @@ import type {
   MeetingTranscriptResult,
 } from '../../shared/types'
 import type { BrowserPaneManager } from '../browser-pane-manager'
+import { getHermesRuntimePaths } from '../handlers/hermes-runtime'
+import { getProfilePartition } from '../browser-profile-resolver'
+
+const execFileAsync = promisify(execFile)
 
 const GOOGLE_MEET_HOSTS = new Set(['meet.google.com', 'www.meet.google.com'])
 const MEET_CODE_RE = /^[a-z]{3}-[a-z]{4}-[a-z]{3}$/i
@@ -64,6 +70,15 @@ export class MeetingService {
       await this.browserPaneManager.navigate(browserInstanceId, normalized.url)
       // Bring the meeting window forward again after the real navigation is started.
       this.browserPaneManager.focus(browserInstanceId)
+
+      if (payload.transcribe !== false) {
+        await this.exportCraftGoogleSessionToHermesAuth(payload.profileId)
+        const botStart = await this.runHermesMeetPlugin('start', { url: normalized.url })
+        if (!botStart.ok) {
+          throw new Error(botStart.error || botStart.reason || 'Hermes Google Meet bot did not start')
+        }
+      }
+
       this.updateRecord(id, { status: 'running', error: undefined })
     } catch (error) {
       this.updateRecord(id, {
@@ -96,6 +111,7 @@ export class MeetingService {
 
     try {
       this.browserPaneManager.destroyInstance(record.browserInstanceId)
+      void this.runHermesMeetPlugin('stop').catch(() => undefined)
       this.updateRecord(id, { status: 'stopped', endedAt: Date.now(), error: undefined })
     } catch (error) {
       this.updateRecord(id, {
@@ -120,6 +136,105 @@ export class MeetingService {
     const placeholder = createTranscriptPlaceholder(record)
     this.transcripts.set(id, placeholder)
     return placeholder
+  }
+
+  private async exportCraftGoogleSessionToHermesAuth(profileId?: string): Promise<void> {
+    const runtime = getHermesRuntimePaths()
+    if (!runtime) return
+
+    const partition = getProfilePartition(profileId)
+    const electronSession = session.fromPartition(partition)
+    const cookies = await electronSession.cookies.get({})
+    const googleCookies = cookies.filter((cookie) => isGoogleAuthCookieDomain(cookie.domain))
+
+    if (googleCookies.length === 0) {
+      return
+    }
+
+    const authPath = join(runtime.hermesHome, 'workspace', 'meetings', 'auth.json')
+    mkdirSync(dirname(authPath), { recursive: true })
+
+    const storageState = {
+      cookies: googleCookies.map((cookie) => ({
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.domain,
+        path: cookie.path || '/',
+        expires: typeof cookie.expirationDate === 'number' ? cookie.expirationDate : -1,
+        httpOnly: Boolean(cookie.httpOnly),
+        secure: Boolean(cookie.secure),
+        sameSite: toPlaywrightSameSite(cookie.sameSite),
+      })),
+      origins: [],
+    }
+
+    writeFileSync(authPath, JSON.stringify(storageState, null, 2), { mode: 0o600 })
+  }
+
+  private async runHermesMeetPlugin(command: 'start' | 'status' | 'transcript' | 'stop', payload: Record<string, unknown> = {}): Promise<Record<string, any>> {
+    const runtime = getHermesRuntimePaths()
+    if (!runtime) {
+      return { ok: false, error: 'Hermes runtime is not available. Rebuild/bundle Hermes before using meeting bots.' }
+    }
+
+    const script = String.raw`
+import json, sys
+from pathlib import Path
+from plugins.google_meet import process_manager as pm
+from plugins.google_meet.tools import check_meet_requirements
+
+command = sys.argv[1]
+payload = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+try:
+    if command == 'check':
+        print(json.dumps({'ok': bool(check_meet_requirements())}))
+    elif command == 'start':
+        if not check_meet_requirements():
+            print(json.dumps({
+                'ok': False,
+                'error': 'Hermes Google Meet plugin is not ready: Playwright/Chromium is missing. Run the plugin setup before starting the bot.'
+            }))
+        else:
+            from hermes_constants import get_hermes_home
+            auth_path = Path(get_hermes_home()) / 'workspace' / 'meetings' / 'auth.json'
+            res = pm.start(
+                url=str(payload.get('url') or ''),
+                headed=bool(payload.get('headed', False)),
+                guest_name=str(payload.get('guest_name') or 'Hermes Agent'),
+                duration=str(payload.get('duration')) if payload.get('duration') else None,
+                auth_state=str(auth_path) if auth_path.is_file() else None,
+                mode=str(payload.get('mode') or 'transcribe'),
+            )
+            print(json.dumps(res))
+    elif command == 'status':
+        print(json.dumps(pm.status()))
+    elif command == 'transcript':
+        print(json.dumps(pm.transcript(last=payload.get('last'))))
+    elif command == 'stop':
+        print(json.dumps(pm.stop(reason='Craft Meetings stopped')))
+    else:
+        print(json.dumps({'ok': False, 'error': f'Unknown command: {command}'}))
+except Exception as exc:
+    print(json.dumps({'ok': False, 'error': str(exc)}))
+`
+
+    const { stdout } = await execFileAsync(runtime.python, ['-c', script, command, JSON.stringify(payload)], {
+      cwd: runtime.hermesAgentRoot,
+      env: {
+        ...process.env,
+        HERMES_HOME: runtime.hermesHome,
+        VIRTUAL_ENV: runtime.virtualEnv,
+        PATH: `${runtime.vendorBinDir}:${process.env.PATH ?? ''}`,
+      },
+      maxBuffer: 1024 * 1024,
+    })
+
+    try {
+      const lines = stdout.trim().split(/\r?\n/).filter(Boolean)
+      return JSON.parse(lines.at(-1) || '{}')
+    } catch (error) {
+      return { ok: false, error: `Could not parse Hermes Meet plugin output: ${error instanceof Error ? error.message : String(error)}` }
+    }
   }
 
   private getRequired(id: string): MeetingRecord {
@@ -226,6 +341,20 @@ function normalizeMeetCode(value: string): string | null {
   const compact = cleaned.replace(/[^a-z]/g, '')
   if (!COMPACT_MEET_CODE_RE.test(compact)) return null
   return `${compact.slice(0, 3)}-${compact.slice(3, 7)}-${compact.slice(7)}`
+}
+
+function isGoogleAuthCookieDomain(domain: string | undefined): boolean {
+  const normalized = (domain ?? '').replace(/^\./, '').toLowerCase()
+  return normalized === 'google.com'
+    || normalized.endsWith('.google.com')
+    || normalized === 'meet.google.com'
+    || normalized === 'accounts.google.com'
+}
+
+function toPlaywrightSameSite(value: unknown): 'Strict' | 'Lax' | 'None' {
+  if (value === 'strict' || value === 'Strict') return 'Strict'
+  if (value === 'no_restriction' || value === 'none' || value === 'None') return 'None'
+  return 'Lax'
 }
 
 function createTranscriptPlaceholder(record: MeetingRecord): MeetingTranscriptResult {

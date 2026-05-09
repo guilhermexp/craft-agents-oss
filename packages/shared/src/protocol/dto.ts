@@ -387,6 +387,15 @@ export interface SessionFile {
   type: 'file' | 'directory'
   size?: number
   children?: SessionFile[]
+  hasChildren?: boolean
+}
+
+export interface FileTreeListingResult {
+  rootPath: string
+  currentPath: string
+  entries: SessionFile[]
+  truncated: boolean
+  totalEntries: number
 }
 
 export interface FileSearchResult {

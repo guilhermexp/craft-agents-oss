@@ -172,6 +172,18 @@ export const mockElectronAPI = {
     return []
   },
 
+  listFileTree: async (rootPath?: string, dirPath?: string) => {
+    console.log('[Playground] listFileTree called:', rootPath, dirPath)
+    const root = rootPath || '/mock/workspace'
+    return {
+      rootPath: root,
+      currentPath: dirPath || root,
+      entries: [],
+      truncated: false,
+      totalEntries: 0,
+    }
+  },
+
   watchSessionFiles: (sessionId: string) => {
     console.log('[Playground] watchSessionFiles called:', sessionId)
   },

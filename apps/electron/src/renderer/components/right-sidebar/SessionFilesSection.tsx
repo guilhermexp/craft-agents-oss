@@ -28,7 +28,7 @@ import {
 import type { SessionFile } from '../../../shared/types'
 import { cn } from '@/lib/utils'
 import * as storage from '@/lib/local-storage'
-import { useAppShellContext } from '@/context/AppShellContext'
+import { useAppShellContext, useSession } from '@/context/AppShellContext'
 import { getFileManagerName } from '@/lib/platform'
 import { restoreSessionFileWatch } from './session-files-watch'
 
@@ -268,6 +268,7 @@ interface FileTreeItemProps {
   depth: number
   expandedPaths: Set<string>
   onToggleExpand: (path: string) => void
+  onDirectoryExpand?: (file: SessionFile) => void
   onFileClick: (file: SessionFile) => void
   onFileDoubleClick: (file: SessionFile) => void
   onRevealInFileManager: (path: string) => void
@@ -287,6 +288,7 @@ function FileTreeItem({
   depth,
   expandedPaths,
   onToggleExpand,
+  onDirectoryExpand,
   onFileClick,
   onFileDoubleClick,
   onRevealInFileManager,
@@ -295,10 +297,12 @@ function FileTreeItem({
   const { t } = useTranslation()
   const isDirectory = file.type === 'directory'
   const isExpanded = expandedPaths.has(file.path)
-  const hasChildren = isDirectory && file.children && file.children.length > 0
+  const hasChildren = isDirectory && ((file.children && file.children.length > 0) || file.hasChildren)
+  const children = file.children ?? []
 
   const handleClick = () => {
     if (isDirectory && hasChildren) {
+      onDirectoryExpand?.(file)
       onToggleExpand(file.path)
     } else {
       onFileClick(file)
@@ -313,6 +317,7 @@ function FileTreeItem({
   const handleChevronClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     if (hasChildren) {
+      onDirectoryExpand?.(file)
       onToggleExpand(file.path)
     }
   }
@@ -417,13 +422,14 @@ function FileTreeItem({
                     className="absolute left-[13px] top-1 bottom-1 w-px bg-foreground/10"
                     aria-hidden="true"
                   />
-                  {file.children!.map((child) => (
+                  {children.map((child) => (
                     <motion.div key={child.path} variants={itemVariants} className="min-w-0">
                       <FileTreeItem
                         file={child}
                         depth={depth + 1}
                         expandedPaths={expandedPaths}
                         onToggleExpand={onToggleExpand}
+                        onDirectoryExpand={onDirectoryExpand}
                         onFileClick={onFileClick}
                         onFileDoubleClick={onFileDoubleClick}
                         onRevealInFileManager={onRevealInFileManager}
@@ -639,6 +645,167 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
                 onFileClick={handleFileClick}
                 onFileDoubleClick={handleFileDoubleClick}
                 onRevealInFileManager={handleRevealInFileManager}
+              />
+            ))}
+          </nav>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function updateTreeNode(entries: SessionFile[], path: string, children: SessionFile[]): SessionFile[] {
+  return entries.map((entry) => {
+    if (entry.path === path) {
+      return { ...entry, children, hasChildren: children.length > 0 }
+    }
+
+    if (entry.children && entry.children.length > 0) {
+      return { ...entry, children: updateTreeNode(entry.children, path, children) }
+    }
+
+    return entry
+  })
+}
+
+export function WorkspaceFilesSection({ sessionId, className }: { sessionId?: string; className?: string }) {
+  const { t } = useTranslation()
+  const session = useSession(sessionId || '')
+  const { workspaces, activeWorkspaceId, onOpenFile } = useAppShellContext()
+  const activeWorkspace = workspaces.find(workspace => workspace.id === activeWorkspaceId)
+  const rootPath = session?.workingDirectory || activeWorkspace?.rootPath
+  const storageScope = rootPath || 'default'
+  const [files, setFiles] = useState<SessionFile[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
+  const loadedPathsRef = useRef<Set<string>>(new Set())
+  const mountedRef = useRef(true)
+  const fileManagerName = getFileManagerName()
+
+  useEffect(() => {
+    const saved = storage.get<string[]>(storage.KEYS.workspaceFilesExpandedFolders, [], storageScope)
+    setExpandedPaths(new Set(saved))
+    loadedPathsRef.current = new Set()
+  }, [storageScope])
+
+  const saveExpandedPaths = useCallback((paths: Set<string>) => {
+    storage.set(storage.KEYS.workspaceFilesExpandedFolders, Array.from(paths), storageScope)
+  }, [storageScope])
+
+  const loadDirectory = useCallback(async (dirPath?: string) => {
+    if (!rootPath) {
+      setFiles([])
+      return
+    }
+
+    const targetPath = dirPath || rootPath
+    if (loadedPathsRef.current.has(targetPath)) return
+
+    setIsLoading(true)
+    try {
+      const result = await window.electronAPI.listFileTree(rootPath, targetPath)
+      if (!mountedRef.current) return
+
+      loadedPathsRef.current.add(result.currentPath)
+      if (result.currentPath === result.rootPath) {
+        setFiles(result.entries)
+      } else {
+        setFiles(prev => updateTreeNode(prev, result.currentPath, result.entries))
+      }
+    } catch (error) {
+      console.error('Failed to load workspace files:', error)
+      if (mountedRef.current && targetPath === rootPath) {
+        setFiles([])
+      }
+    } finally {
+      if (mountedRef.current) setIsLoading(false)
+    }
+  }, [rootPath])
+
+  useEffect(() => {
+    mountedRef.current = true
+    setFiles([])
+    void loadDirectory()
+
+    return () => {
+      mountedRef.current = false
+    }
+  }, [loadDirectory])
+
+  const handleToggleExpand = useCallback((path: string) => {
+    setExpandedPaths((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) {
+        next.delete(path)
+      } else {
+        next.add(path)
+      }
+      saveExpandedPaths(next)
+      return next
+    })
+  }, [saveExpandedPaths])
+
+  const handleDirectoryExpand = useCallback((file: SessionFile) => {
+    if (file.type === 'directory' && file.hasChildren && !file.children) {
+      void loadDirectory(file.path)
+    }
+  }, [loadDirectory])
+
+  const handleFileClick = useCallback((file: SessionFile) => {
+    if (file.type === 'directory') {
+      if (file.hasChildren) handleDirectoryExpand(file)
+      handleToggleExpand(file.path)
+      return
+    }
+
+    onOpenFile(file.path)
+  }, [handleDirectoryExpand, handleToggleExpand, onOpenFile])
+
+  const handleFileDoubleClick = useCallback((file: SessionFile) => {
+    if (file.type === 'directory') {
+      window.electronAPI.openFile(file.path)
+    } else {
+      onOpenFile(file.path)
+    }
+  }, [onOpenFile])
+
+  if (!sessionId) return null
+
+  return (
+    <div className={cn('flex flex-col h-full min-h-0', className)}>
+      <div className="flex items-center justify-between px-4 pt-4 pb-2 shrink-0 select-none">
+        <span className="text-xs font-medium text-muted-foreground">{t('chat.workspaceFiles')}</span>
+        {rootPath && (
+          <button
+            type="button"
+            onClick={() => window.electronAPI.showInFolder(rootPath)}
+            className="text-xs text-foreground/50 hover:text-foreground/80 hover:underline underline-offset-2 transition-colors"
+          >
+            {t('chat.viewInFileManager', { fileManager: fileManagerName })}
+          </button>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto overflow-x-hidden pb-2 min-h-0">
+        {!rootPath || files.length === 0 ? (
+          <div className="px-4 text-muted-foreground select-none">
+            <p className="text-xs">
+              {isLoading ? t('chat.sessionFilesLoading') : t('chat.workspaceFilesEmpty')}
+            </p>
+          </div>
+        ) : (
+          <nav className="grid gap-0.5 px-2">
+            {files.map((file) => (
+              <FileTreeItem
+                key={file.path}
+                file={file}
+                depth={0}
+                expandedPaths={expandedPaths}
+                onToggleExpand={handleToggleExpand}
+                onDirectoryExpand={handleDirectoryExpand}
+                onFileClick={handleFileClick}
+                onFileDoubleClick={handleFileDoubleClick}
+                onRevealInFileManager={(path) => window.electronAPI.showInFolder(path)}
               />
             ))}
           </nav>

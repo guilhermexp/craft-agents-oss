@@ -8,7 +8,7 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { AlertCircle, Globe, Copy, RefreshCw, Link2Off, Info, Pencil, Trash2 } from 'lucide-react'
+import { AlertCircle, Globe, Copy, RefreshCw, Link2Off, Info, Trash2 } from 'lucide-react'
 import { ChatDisplay, type ChatDisplayHandle } from '@/components/app-shell/ChatDisplay'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ChannelBadge } from '@/components/app-shell/ChannelBadge'
@@ -439,6 +439,15 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     setRenameDialogOpen(false)
   }, [sessionId, renameName, displayTitle, onRenameSession])
 
+  const handleRefreshTitle = React.useCallback(async () => {
+    const result = await window.electronAPI.sessionCommand(sessionId, { type: 'refreshTitle' }) as { success: boolean; title?: string; error?: string } | undefined
+    if (result?.success) {
+      toast.success(t('toast.titleRefreshed'), { description: result.title })
+    } else {
+      toast.error(t('toast.failedToRefreshTitle'), { description: result?.error || t('toast.unknownError') })
+    }
+  }, [sessionId, t])
+
   const handleFlag = React.useCallback(() => {
     onFlagSession(sessionId)
   }, [sessionId, onFlagSession])
@@ -628,9 +637,9 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     return (
       <div className="flex items-center gap-1">
         <PanelHeaderCenterButton
-          icon={<Pencil className="h-4 w-4" />}
-          tooltip={t('common.rename')}
-          onClick={handleRename}
+          icon={<RefreshCw className="h-4 w-4" />}
+          tooltip={t('sessionMenu.regenerateTitle')}
+          onClick={() => void handleRefreshTitle()}
           className={HEADER_ICON_ONLY_BUTTON_CLASS}
         />
         <PanelHeaderCenterButton
@@ -641,7 +650,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
         />
       </div>
     )
-  }, [handleDelete, handleRename, sessionMeta, t])
+  }, [handleDelete, handleRefreshTitle, sessionMeta, t])
 
   const headerActions = React.useMemo(() => {
     if (isCompactMode) {

@@ -29,6 +29,7 @@ export const KEYS = {
 
   // Session files panel state
   sessionFilesExpandedFolders: 'session-files-expanded', // Expanded folders in session files tree (keyed by sessionId)
+  workspaceFilesExpandedFolders: 'workspace-files-expanded', // Expanded folders in workspace files tree (keyed by root path)
 
   // Theme
   theme: 'theme',

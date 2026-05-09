@@ -426,8 +426,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     this.setupSessionPermissions(ses)
     this.setupSessionObservers(ses)
 
-    // Match background to current OS theme to prevent black/white flash on open
-    const bgColor = nativeTheme.shouldUseDarkColors ? '#2b292e' : '#fafafb'
+    // Keep the native window chrome aligned with the OS theme, but keep web page
+    // surfaces light by default. Some external sites (notably Google Meet) render
+    // parts of their app transparent; using the dark app background behind the
+    // page makes those sites show dark text over a dark surface.
+    const chromeBgColor = nativeTheme.shouldUseDarkColors ? '#2b292e' : '#fafafb'
+    const pageBgColor = '#ffffff'
 
     const window = new BrowserWindow({
       width: 1200,
@@ -435,7 +439,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       minWidth: 700,
       minHeight: 500,
       show: false, // Always hidden until toolbar is painted (ready-to-show)
-      backgroundColor: bgColor,
+      backgroundColor: chromeBgColor,
       // Fully chromeless — toolbar is rendered in a dedicated BrowserView
       frame: false,
       webPreferences: {
@@ -483,11 +487,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       },
     })
 
-    // Set BrowserView backgrounds to match theme so about:blank doesn't flash white
+    // Set BrowserView backgrounds. External pages should not inherit Craft's dark
+    // chrome color behind transparent document areas.
     const toolbarWcWithBg = toolbarView.webContents as typeof toolbarView.webContents & { setBackgroundColor?: (color: string) => void }
     toolbarWcWithBg.setBackgroundColor?.('#00000000')
     const pageWcWithBg = pageView.webContents as typeof pageView.webContents & { setBackgroundColor?: (color: string) => void }
-    pageWcWithBg.setBackgroundColor?.(bgColor)
+    pageWcWithBg.setBackgroundColor?.(pageBgColor)
     const overlayWcWithBg = nativeOverlayView.webContents as typeof nativeOverlayView.webContents & { setBackgroundColor?: (color: string) => void }
     overlayWcWithBg.setBackgroundColor?.('#00000000')
 
