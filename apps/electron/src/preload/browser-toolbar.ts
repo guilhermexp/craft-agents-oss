@@ -22,6 +22,7 @@ const CHANNELS = {
   THEME_COLOR: 'browser-toolbar:theme-color',
   REQUEST_PROFILE_MANAGEMENT: 'browser-toolbar:request-profile-management',
   SWITCH_PROFILE: 'browser-toolbar:switch-profile',
+  MEETINGS_START: 'meetings:start',
 } as const
 
 // Instance ID is passed via query parameter by BrowserPaneManager
@@ -39,6 +40,21 @@ contextBridge.exposeInMainWorld('browserToolbar', {
   closeWindowEntirely: () => ipcRenderer.invoke(CHANNELS.DESTROY, instanceId),
   requestProfileManagement: () => ipcRenderer.invoke(CHANNELS.REQUEST_PROFILE_MANAGEMENT, instanceId),
   switchProfile: (profileId: string) => ipcRenderer.invoke(CHANNELS.SWITCH_PROFILE, instanceId, profileId),
+  inviteHermesToMeet: (payload: { urlOrCode: string; profileId?: string }) => {
+    console.info('[browser-toolbar] inviteHermesToMeet clicked', {
+      instanceId,
+      urlOrCode: payload.urlOrCode,
+      profileId: payload.profileId,
+    })
+    return ipcRenderer.invoke(CHANNELS.MEETINGS_START, {
+      ...payload,
+      browserInstanceId: instanceId,
+      title: 'Google Meet',
+      transcribe: true,
+      summarizeOnEnd: true,
+      followUpOnEnd: false,
+    })
+  },
   onStateUpdate: (callback: (state: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state)
     ipcRenderer.on(CHANNELS.STATE_UPDATE, handler)

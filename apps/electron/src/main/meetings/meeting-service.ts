@@ -13,6 +13,7 @@ import type {
 import type { BrowserPaneManager } from '../browser-pane-manager'
 import { getHermesRuntimePaths } from '../handlers/hermes-runtime'
 import { getProfilePartition } from '../browser-profile-resolver'
+import { mainLog } from '../logger'
 
 const execFileAsync = promisify(execFile)
 
@@ -40,10 +41,17 @@ export class MeetingService {
     const normalized = normalizeGoogleMeetUrl(payload?.urlOrCode)
     const now = Date.now()
     const id = randomUUID()
-    const browserInstanceId = this.browserPaneManager.createInstance(undefined, {
-      show: true,
-      profileId: payload?.profileId,
-    })
+    const requestedBrowserInstanceId = typeof payload?.browserInstanceId === 'string'
+      ? payload.browserInstanceId
+      : undefined
+    const existingBrowserInstance = requestedBrowserInstanceId
+      ? this.browserPaneManager.getInstance(requestedBrowserInstanceId)
+      : undefined
+    const browserInstanceId = existingBrowserInstance?.id
+      ?? this.browserPaneManager.createInstance(undefined, {
+        show: true,
+        profileId: payload?.profileId,
+      })
 
     const record: MeetingRecord = {
       id,
@@ -64,26 +72,40 @@ export class MeetingService {
     this.persist()
 
     try {
-      // Navigate explicitly after the BrowserView is created. Some pages, including
-      // Google Meet, may internally redirect and make Electron report ERR_ABORTED
-      // for the initial load even though the browser continues navigating.
-      await this.browserPaneManager.navigate(browserInstanceId, normalized.url)
-      // Bring the meeting window forward again after the real navigation is started.
-      this.browserPaneManager.focus(browserInstanceId)
+      // If the meeting was detected from an already-open Browser Pane, reuse it
+      // instead of creating/navigating another user browser. The separate Hermes
+      // bot is started below by the google_meet Playwright process.
+      if (!existingBrowserInstance) {
+        await this.browserPaneManager.navigate(browserInstanceId, normalized.url)
+        this.browserPaneManager.focus(browserInstanceId)
+      }
 
       if (payload.transcribe !== false) {
-        await this.exportCraftGoogleSessionToHermesAuth(payload.profileId)
-        const botStart = await this.runHermesMeetPlugin('start', { url: normalized.url })
+        mainLog.info(`[meetings] starting Hermes Meet bot url=${normalized.url} profileId=${payload.profileId ?? 'default'} browserInstanceId=${browserInstanceId}`)
+        const botStart = await this.runHermesMeetPlugin('start', { url: normalized.url, headed: true })
         if (!botStart.ok) {
           throw new Error(botStart.error || botStart.reason || 'Hermes Google Meet bot did not start')
+        }
+        const botStatus = await this.waitForHermesMeetBotReady(botStart, 20_000)
+        mainLog.info(`[meetings] Hermes Meet bot start result pid=${botStart.pid ?? 'unknown'} alive=${String(botStatus.alive ?? 'unknown')} meetingId=${botStatus.meetingId ?? botStart.meeting_id ?? 'unknown'} inCall=${String(botStatus.inCall ?? false)} lobbyWaiting=${String(botStatus.lobbyWaiting ?? false)} error=${botStatus.error ?? 'none'} leaveReason=${botStatus.leaveReason ?? 'none'}`)
+        if (botStatus.ok && (botStatus.inCall || botStatus.lobbyWaiting)) {
+          // Good: the bot either joined directly or is waiting for host approval.
+        } else if (botStatus.error) {
+          throw new Error(`Hermes Google Meet bot failed: ${botStatus.error}`)
+        } else if (botStatus.leaveReason) {
+          throw new Error(`Hermes Google Meet bot left before joining: ${botStatus.leaveReason}`)
+        } else {
+          throw new Error('Hermes Google Meet bot started, but did not reach the lobby or the call. Configure a dedicated Hermes Google account instead of using the organizer account.')
         }
       }
 
       this.updateRecord(id, { status: 'running', error: undefined })
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      mainLog.error(`[meetings] start failed id=${id} url=${normalized.url}: ${message}`)
       this.updateRecord(id, {
         status: 'error',
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
       })
     }
 
@@ -136,6 +158,21 @@ export class MeetingService {
     const placeholder = createTranscriptPlaceholder(record)
     this.transcripts.set(id, placeholder)
     return placeholder
+  }
+
+  private async waitForHermesMeetBotReady(botStart: Record<string, any>, timeoutMs: number): Promise<Record<string, any>> {
+    const deadline = Date.now() + timeoutMs
+    let lastStatus: Record<string, any> = botStart
+
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      lastStatus = await this.runHermesMeetPlugin('status')
+      if (lastStatus.inCall || lastStatus.lobbyWaiting || lastStatus.error || lastStatus.leaveReason || lastStatus.exited === true) {
+        return lastStatus
+      }
+    }
+
+    return lastStatus
   }
 
   private async exportCraftGoogleSessionToHermesAuth(profileId?: string): Promise<void> {
@@ -196,13 +233,19 @@ try:
             }))
         else:
             from hermes_constants import get_hermes_home
-            auth_path = Path(get_hermes_home()) / 'workspace' / 'meetings' / 'auth.json'
+            auth_path = Path(get_hermes_home()) / 'workspace' / 'meetings' / 'bot-auth.json'
+            if not auth_path.is_file():
+                print(json.dumps({
+                    'ok': False,
+                    'error': 'Hermes Google Meet bot is not authenticated. Run apps/electron/scripts/create-meet-bot-auth.py with the bundled Hermes venv and sign in with a dedicated bot Google account.'
+                }))
+                sys.exit(0)
             res = pm.start(
                 url=str(payload.get('url') or ''),
                 headed=bool(payload.get('headed', False)),
                 guest_name=str(payload.get('guest_name') or 'Hermes Agent'),
                 duration=str(payload.get('duration')) if payload.get('duration') else None,
-                auth_state=str(auth_path) if auth_path.is_file() else None,
+                auth_state=str(auth_path),
                 mode=str(payload.get('mode') or 'transcribe'),
             )
             print(json.dumps(res))

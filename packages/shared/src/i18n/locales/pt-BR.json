@@ -363,6 +363,7 @@
   "hints.summarizeGmail": "Resumir sua caixa de entrada {source:Gmail}, rascunhar respostas e salvar notas no {source:Craft}",
   "hints.syncCalendar": "Sincronizar eventos do {source:Calendar} com prazos de projetos {source:Linear}",
   "hints.transcribeVoiceMemo": "Transcrever um {file:memo de voz} e transformá-lo em tarefas {source:Notion}",
+  "meetings.agentApiUnavailable": "API de reuniões do Hermes indisponível nesta janela. Reinicie o Craft para carregar a integração do agente.",
   "meetings.agentInvited": "Convite enviado para o Hermes entrar na reunião.",
   "meetings.apiReady": "Serviço nativo de reuniões disponível.",
   "meetings.authDescription": "Abre o Google Meet no navegador do Craft. Se você não estiver logado, o Google vai pedir login nessa tela.",

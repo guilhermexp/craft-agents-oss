@@ -449,6 +449,7 @@
   "hints.syncCalendar": "Szinkronizáld a {source:Calendar} eseményeket a {source:Linear} projekt határidőivel",
   "hints.transcribeVoiceMemo": "Írd át a {file:hangfeljegyzést}, és alakítsd {source:Notion} feladatokká",
   "labels.addNewLabel": "Új címke hozzáadása {{prefill}}",
+  "meetings.agentApiUnavailable": "A Hermes értekezlet API nem érhető el ebben az ablakban. Indítsd újra a Craftot az ügynök integráció betöltéséhez.",
   "meetings.agentInvited": "Meghívó elküldve, hogy Hermes csatlakozzon az értekezlethez.",
   "meetings.detectedApprove": "Hermes meghívása",
   "meetings.detectedDescription": "Aktív értekezletlinket észleltünk a Craft böngészőben. Erősítsd meg, hogy elküldjük ezt a meghívót a Hermes ügynöknek.",

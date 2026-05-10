@@ -37,6 +37,8 @@ export interface MeetingStartInput {
   urlOrCode: string
   /** Optional browser profile id used by the integrated BrowserView. */
   profileId?: string
+  /** Existing Browser Pane instance already showing the meeting. */
+  browserInstanceId?: string
   /** Optional display title persisted with the record. */
   title?: string
   /** Whether the native meeting flow should prepare transcript capture. */

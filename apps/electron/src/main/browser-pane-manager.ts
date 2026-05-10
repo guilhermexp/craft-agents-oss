@@ -541,6 +541,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
 
     const defaultUa = pageView.webContents.userAgent || ''
+    toolbarView.webContents.on('console-message', (_event, level, message) => {
+      if (message.includes('[browser-toolbar]')) {
+        mainLog.info(`[browser-pane] toolbar console id=${instance.id} level=${level}: ${message}`)
+      }
+    })
+
     const sanitizedUa = defaultUa.replace(/\sElectron\/[^\s]+/g, '')
     if (sanitizedUa && sanitizedUa !== defaultUa) {
       pageView.webContents.setUserAgent(sanitizedUa)

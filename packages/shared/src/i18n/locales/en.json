@@ -449,6 +449,7 @@
   "hints.syncCalendar": "Sync {source:Calendar} events with {source:Linear} project deadlines",
   "hints.transcribeVoiceMemo": "Transcribe a {file:voice memo} and turn it into {source:Notion} tasks",
   "labels.addNewLabel": "Add new label {{prefill}}",
+  "meetings.agentApiUnavailable": "Hermes meetings API is unavailable in this window. Restart Craft to load the agent integration.",
   "meetings.agentInvited": "Invitation sent for Hermes to join the meeting.",
   "meetings.apiReady": "Native meeting service is available.",
   "meetings.authDescription": "Opens Google Meet in the Craft browser. If you are signed out, Google will ask you to sign in there.",

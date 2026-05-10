@@ -449,6 +449,7 @@
   "hints.syncCalendar": "同步 {source:Calendar} 事件与 {source:Linear} 项目截止日期",
   "hints.transcribeVoiceMemo": "转录 {file:voice memo} 并转为 {source:Notion} 任务",
   "labels.addNewLabel": "添加新标签 {{prefill}}",
+  "meetings.agentApiUnavailable": "此窗口中 Hermes 会议 API 不可用。请重启 Craft 以加载代理集成。",
   "meetings.agentInvited": "已发送邀请，让 Hermes 加入会议。",
   "meetings.apiReady": "原生会议服务可用。",
   "meetings.authDescription": "在 Craft 浏览器中打开 Google Meet。如果尚未登录，Google 会在该页面要求登录。",

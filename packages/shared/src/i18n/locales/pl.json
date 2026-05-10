@@ -449,6 +449,7 @@
   "hints.syncCalendar": "Synchronizuj wydarzenia {source:Calendar} z terminami projektów {source:Linear}",
   "hints.transcribeVoiceMemo": "Transkrybuj {file:voice memo} i zamień w zadania {source:Notion}",
   "labels.addNewLabel": "Dodaj nową etykietę {{prefill}}",
+  "meetings.agentApiUnavailable": "API spotkań Hermes jest niedostępne w tym oknie. Uruchom ponownie Craft, aby wczytać integrację agenta.",
   "meetings.agentInvited": "Wysłano zaproszenie, aby Hermes dołączył do spotkania.",
   "meetings.detectedApprove": "Zaproś Hermesa",
   "meetings.detectedDescription": "Wykryliśmy aktywny link spotkania w przeglądarce Craft. Potwierdź, aby wysłać to zaproszenie do agenta Hermes.",

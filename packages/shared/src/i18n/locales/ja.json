@@ -449,6 +449,7 @@
   "hints.syncCalendar": "{source:Calendar}のイベントを{source:Linear}のプロジェクト期限と同期する",
   "hints.transcribeVoiceMemo": "{file:voice memo}を書き起こし、{source:Notion}のタスクに変換する",
   "labels.addNewLabel": "新しいラベル{{prefill}}を追加",
+  "meetings.agentApiUnavailable": "このウィンドウでは Hermes の会議 API を利用できません。エージェント連携を読み込むには Craft を再起動してください。",
   "meetings.agentInvited": "Hermes が会議に参加するための招待を送信しました。",
   "meetings.detectedApprove": "Hermes を招待",
   "meetings.detectedDescription": "Craft ブラウザで有効な会議リンクを検出しました。この招待を Hermes エージェントに送信するには確認してください。",

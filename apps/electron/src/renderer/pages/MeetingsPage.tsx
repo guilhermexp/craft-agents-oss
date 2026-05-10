@@ -62,8 +62,13 @@ function extractGoogleMeetMeetingUrl(value: string | undefined | null): string |
 
     return `${GOOGLE_MEET_PREFIX}${match[1]}`
   } catch {
-    return null
+    const match = value.toLowerCase().match(/\b([a-z]{3}-[a-z]{4}-[a-z]{3})\b/)
+    return match ? `${GOOGLE_MEET_PREFIX}${match[1]}` : null
   }
+}
+
+function extractGoogleMeetMeetingUrlFromBrowserInfo(info: BrowserInstanceInfo): string | null {
+  return extractGoogleMeetMeetingUrl(info.url) ?? extractGoogleMeetMeetingUrl(info.title)
 }
 
 interface MeetingOptionProps {
@@ -134,7 +139,7 @@ export function MeetingsPage() {
   const [followUpEnabled, setFollowUpEnabled] = useState(false)
   const [isJoining, setIsJoining] = useState(false)
   const [isAuthenticating, setIsAuthenticating] = useState(false)
-  const [detectedMeeting, setDetectedMeeting] = useState<{ url: string; instanceId: string; title?: string } | null>(null)
+  const [detectedMeeting, setDetectedMeeting] = useState<{ url: string; instanceId: string; profileId?: string; title?: string } | null>(null)
   const promptedMeetUrlsRef = React.useRef<Set<string>>(new Set())
   const launchedMeetUrlsRef = React.useRef<Set<string>>(new Set())
   const normalizedUrl = useMemo(() => normalizeGoogleMeetInput(meetingInput), [meetingInput])
@@ -164,9 +169,11 @@ export function MeetingsPage() {
     }
   }
 
-  const startHermesForMeet = React.useCallback(async (meetingUrl: string) => {
+  const startHermesForMeet = React.useCallback(async (meetingUrl: string, options?: { profileId?: string; browserInstanceId?: string }) => {
     const request: MeetingStartInput = {
       urlOrCode: meetingUrl,
+      profileId: options?.profileId,
+      browserInstanceId: options?.browserInstanceId,
       title: 'Google Meet',
       transcribe: transcriptionEnabled,
       summarizeOnEnd: summaryEnabled,
@@ -176,27 +183,15 @@ export function MeetingsPage() {
     setIsJoining(true)
     try {
       const meetingsApi = window.electronAPI.meetings
-      if (meetingsApi?.start) {
-        const result: MeetingRecord = await meetingsApi.start(request)
-        if (result.status === 'error') throw new Error(result.error || t('meetings.joinError'))
-        launchedMeetUrlsRef.current.add(meetingUrl)
-        setDetectedMeeting((current) => current?.url === meetingUrl ? null : current)
-        toast.success(t('meetings.agentInvited'))
-        return
+      if (!meetingsApi?.start) {
+        throw new Error(t('meetings.agentApiUnavailable'))
       }
 
-      if (window.electronAPI.browserPane?.create) {
-        await window.electronAPI.browserPane.create({ show: true, url: meetingUrl })
-        launchedMeetUrlsRef.current.add(meetingUrl)
-        setDetectedMeeting((current) => current?.url === meetingUrl ? null : current)
-        toast.success(t('meetings.openedInBrowser'))
-        return
-      }
-
-      await window.electronAPI.openUrl(meetingUrl)
+      const result: MeetingRecord = await meetingsApi.start(request)
+      if (result.status === 'error') throw new Error(result.error || t('meetings.joinError'))
       launchedMeetUrlsRef.current.add(meetingUrl)
       setDetectedMeeting((current) => current?.url === meetingUrl ? null : current)
-      toast.success(t('meetings.openedInBrowser'))
+      toast.success(t('meetings.agentInvited'))
     } catch (error) {
       const message = error instanceof Error ? error.message : t('meetings.joinError')
       toast.error(message)
@@ -205,25 +200,51 @@ export function MeetingsPage() {
     }
   }, [followUpEnabled, summaryEnabled, t, transcriptionEnabled])
 
-  React.useEffect(() => {
-    const unsubscribe = window.electronAPI.browserPane?.onStateChanged?.((info: BrowserInstanceInfo) => {
-      const meetingUrl = extractGoogleMeetMeetingUrl(info.url)
-      if (!meetingUrl) return
-      if (launchedMeetUrlsRef.current.has(meetingUrl)) return
-      if (promptedMeetUrlsRef.current.has(meetingUrl)) return
+  const handleDetectedBrowserMeeting = React.useCallback((info: BrowserInstanceInfo) => {
+    const meetingUrl = extractGoogleMeetMeetingUrlFromBrowserInfo(info)
+    if (!meetingUrl) return
+    if (launchedMeetUrlsRef.current.has(meetingUrl)) return
+    if (promptedMeetUrlsRef.current.has(meetingUrl)) return
 
-      promptedMeetUrlsRef.current.add(meetingUrl)
-      setMeetingInput(meetingUrl)
-      setDetectedMeeting({ url: meetingUrl, instanceId: info.id, title: info.title })
-      toast.info(t('meetings.detectedToast'))
+    promptedMeetUrlsRef.current.add(meetingUrl)
+    setMeetingInput(meetingUrl)
+    setDetectedMeeting({ url: meetingUrl, instanceId: info.id, profileId: info.profileId, title: info.title })
+    toast.info(t('meetings.detectedToast'))
+  }, [t])
+
+  React.useEffect(() => {
+    void window.electronAPI.browserPane?.list?.().then((instances: BrowserInstanceInfo[]) => {
+      for (const info of instances) {
+        handleDetectedBrowserMeeting(info)
+      }
+    }).catch(() => {
+      // Browser pane list is opportunistic; the live listener below is the primary path.
     })
 
-    return () => unsubscribe?.()
-  }, [t])
+    const unsubscribe = window.electronAPI.browserPane?.onStateChanged?.(handleDetectedBrowserMeeting)
+
+    const handleFocus = () => {
+      void window.electronAPI.browserPane?.list?.().then((instances: BrowserInstanceInfo[]) => {
+        for (const info of instances) {
+          handleDetectedBrowserMeeting(info)
+        }
+      }).catch(() => {})
+    }
+
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      unsubscribe?.()
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [handleDetectedBrowserMeeting])
 
   const handleApproveDetectedMeeting = async () => {
     if (!detectedMeeting) return
-    await startHermesForMeet(detectedMeeting.url)
+    await startHermesForMeet(detectedMeeting.url, {
+      profileId: detectedMeeting.profileId,
+      browserInstanceId: detectedMeeting.instanceId,
+    })
   }
 
   const handleDismissDetectedMeeting = () => {
