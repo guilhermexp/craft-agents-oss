@@ -73,6 +73,44 @@ function titleCaseToolName(toolName: string): string {
     .join(' ') || toolName
 }
 
+function normalizeV4aPatchToChanges(patchText: string): Array<{ path: string; diff: string }> | undefined {
+  const lines = patchText.split(/\r?\n/)
+  const changes: Array<{ path: string; diffLines: string[] }> = []
+  let current: { path: string; diffLines: string[] } | null = null
+
+  for (const line of lines) {
+    const updateMatch = line.match(/^\*\*\* Update File:\s+(.+)$/)
+    const addMatch = line.match(/^\*\*\* Add File:\s+(.+)$/)
+    const filePath = updateMatch?.[1] ?? addMatch?.[1]
+    if (filePath) {
+      current = { path: filePath.trim(), diffLines: [] }
+      changes.push(current)
+      continue
+    }
+
+    if (!current) continue
+    if (line.startsWith('*** End Patch') || line.startsWith('*** Begin Patch')) continue
+    if (line.startsWith('*** ')) continue
+
+    if (line.startsWith('@@') || line.startsWith('+') || line.startsWith('-') || line.startsWith(' ')) {
+      current.diffLines.push(line)
+    }
+  }
+
+  const normalized = changes
+    .map(change => {
+      const body = change.diffLines.join('\n').trimEnd()
+      if (!body) return null
+      return {
+        path: change.path,
+        diff: `--- a/${change.path}\n+++ b/${change.path}\n${body}`,
+      }
+    })
+    .filter((change): change is { path: string; diff: string } => Boolean(change))
+
+  return normalized.length > 0 ? normalized : undefined
+}
+
 function normalizeInput(toolName: string, args: Record<string, unknown>): Record<string, unknown> {
   switch (toolName) {
     case 'read_file':
@@ -92,7 +130,13 @@ function normalizeInput(toolName: string, args: Record<string, unknown>): Record
     }
     case 'patch':
     case 'edit': {
-      const { path, file_path, old_string, new_string, ...rest } = args
+      const { path, file_path, old_string, new_string, patch, ...rest } = args
+      if (typeof patch === 'string') {
+        const changes = normalizeV4aPatchToChanges(patch)
+        if (changes) {
+          return { ...rest, changes, patch }
+        }
+      }
       return {
         ...rest,
         file_path: file_path ?? path,

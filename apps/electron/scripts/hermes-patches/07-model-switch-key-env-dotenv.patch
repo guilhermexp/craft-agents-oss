@@ -1,0 +1,33 @@
+diff --git a/hermes_cli/model_switch.py b/hermes_cli/model_switch.py
+index b6cf6344..f5876ef3 100644
+--- a/hermes_cli/model_switch.py
++++ b/hermes_cli/model_switch.py
+@@ -1511,7 +1511,12 @@ def list_authenticated_providers(
+             api_key = str(ep_cfg.get("api_key", "") or "").strip()
+             if not api_key:
+                 key_env = str(ep_cfg.get("key_env", "") or "").strip()
+-                api_key = os.environ.get(key_env, "").strip() if key_env else ""
++                if key_env:
++                    try:
++                        from hermes_cli.config import get_env_value
++                        api_key = (get_env_value(key_env) or "").strip()
++                    except ImportError:
++                        api_key = os.environ.get(key_env, "").strip()
+             discover = ep_cfg.get("discover_models", True)
+             if isinstance(discover, str):
+                 discover = discover.lower() not in ("false", "no", "0")
+@@ -1578,6 +1583,14 @@ def list_authenticated_providers(
+             if not raw_name or not api_url:
+                 continue
+             api_key = (entry.get("api_key") or "").strip()
++            if not api_key:
++                key_env = str(entry.get("key_env", "") or "").strip()
++                if key_env:
++                    try:
++                        from hermes_cli.config import get_env_value
++                        api_key = (get_env_value(key_env) or "").strip()
++                    except ImportError:
++                        api_key = os.environ.get(key_env, "").strip()
+ 
+             group_key = (api_url, api_key)
+             if group_key not in groups:

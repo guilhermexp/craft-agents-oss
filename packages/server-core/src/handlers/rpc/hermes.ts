@@ -33,9 +33,10 @@ import { isValidHermesProfileName, normalizeHermesRuntimeConfig, type Normalized
 import { readHermesCodexTokens, seedHermesAuthFromCraft } from '@craft-agent/shared/hermes/auth-bridge'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { getActiveHermesProfile, setActiveHermesProfile } from '@craft-agent/shared/config'
-import { parseHermesConfigSnapshot } from '@craft-agent/shared/hermes/runtime-config'
+import { parseHermesConfigSnapshot, updateHermesConfigMainModel } from '@craft-agent/shared/hermes/runtime-config'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
+import type { Logger } from '../../runtime/platform'
 
 const execFile = promisify(execFileCb)
 
@@ -53,6 +54,75 @@ let authJsonWatcherPath: string | null = null
 let authJsonSyncInFlight = false
 let authJsonLastSyncedAccessToken: string | null = null
 let authJsonDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+function parseEnvFile(content: string): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+    const idx = line.indexOf('=')
+    if (idx <= 0) continue
+    const key = line.slice(0, idx).trim()
+    let value = line.slice(idx + 1).trim()
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
+    }
+    if (key) env[key] = value
+  }
+  return env
+}
+
+async function listCustomProviderModels(runtime: NormalizedHermesRuntimeConfig, provider: string, logger?: Logger): Promise<Array<{ id: string }>> {
+  const rawConfig = existsSync(runtime.configPath) ? await readFile(runtime.configPath, 'utf-8') : ''
+  const snapshot = parseHermesConfigSnapshot(rawConfig)
+  const customProvider = snapshot.customProviders.find(entry => entry.name === provider)
+  if (!customProvider) return []
+
+  const configuredModels = (customProvider.models ?? [])
+    .filter(id => typeof id === 'string' && id.length > 0)
+    .map(id => ({ id }))
+
+  if (!customProvider.baseUrl) {
+    return configuredModels
+  }
+
+  const envFile = existsSync(runtime.envPath) ? parseEnvFile(await readFile(runtime.envPath, 'utf-8')) : {}
+  const apiKey = customProvider.keyEnv ? (envFile[customProvider.keyEnv] || process.env[customProvider.keyEnv] || '') : ''
+  const modelsUrl = `${customProvider.baseUrl.replace(/\/$/, '')}/models`
+
+  try {
+    const response = await fetch(modelsUrl, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!response.ok) return configuredModels
+    const body = await response.json() as { data?: Array<{ id?: unknown }>; models?: Array<{ id?: unknown }> }
+    const remoteModels = (Array.isArray(body.data) ? body.data : body.models ?? [])
+      .map(entry => (typeof entry?.id === 'string' ? entry.id : null))
+      .filter((id): id is string => Boolean(id))
+      .slice(0, 100)
+      .map(id => ({ id }))
+    return remoteModels.length > 0 ? remoteModels : configuredModels
+  } catch (error) {
+    logger?.debug('[Hermes] Failed to discover custom provider models', { provider, modelsUrl, error })
+    return configuredModels
+  }
+}
+
+async function preserveDashboardMainModelBaseUrl(
+  fetchJson: (path: string, init?: RequestInit) => Promise<unknown>,
+  provider: string,
+  model: string,
+  baseUrl: string,
+): Promise<unknown> {
+  const rawConfig = await fetchJson('/api/config/raw') as { yaml?: string }
+  const yamlText = updateHermesConfigMainModel(rawConfig.yaml ?? '', { provider, model, baseUrl })
+  return fetchJson('/api/config/raw', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ yaml_text: yamlText }),
+  })
+}
 
 /**
  * Gracefully shut down the Hermes dashboard child (and its uvicorn worker fork).
@@ -1080,11 +1150,16 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
         model = modelInfo.model || ''
       }
       if (provider && model) {
+        const baseUrl = typeof body.config?.base_url === 'string' ? body.config.base_url.trim() : ''
         const data = await fetchDashboardJson('/api/model/set', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ scope: 'main', provider, model }),
         })
+        if (baseUrl) {
+          const configData = await preserveDashboardMainModelBaseUrl(fetchDashboardJson, provider, model, baseUrl)
+          return { success: true as const, data: { model: data, config: configData } }
+        }
         return { success: true as const, data }
       }
       const currentConfig = await fetchDashboardJson('/api/config') as Record<string, unknown>
@@ -1105,9 +1180,14 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
         providers?: Array<{ slug?: string; models?: string[] }>
       } | null
       const matchingProvider = data?.providers?.find(entry => entry.slug === provider)
-      const models = (matchingProvider?.models ?? [])
+      let models = (matchingProvider?.models ?? [])
         .filter((id): id is string => typeof id === 'string' && id.length > 0)
         .map(id => ({ id }))
+
+      if (models.length === 0 && provider) {
+        models = await listCustomProviderModels(normalizeHermesRuntimeConfig(), provider, deps.platform.logger)
+      }
+
       return { success: true as const, data: { models } }
     } catch (error) {
       return { success: false as const, error: error instanceof Error ? error.message : String(error) }

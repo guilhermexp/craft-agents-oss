@@ -123,6 +123,34 @@ describe('HermesEventAdapter', () => {
     }))
 
     expect(adapter.adaptToolCall({
+      toolCallId: 'edit-patch-1',
+      toolName: 'patch',
+      args: {
+        mode: 'patch',
+        patch: `*** Begin Patch
+*** Update File: packages/shared/src/agent/hermes-agent.ts
+@@
+-old line
++new line
+*** End Patch`,
+      },
+    })[0]).toEqual(expect.objectContaining({
+      type: 'tool_start',
+      toolName: 'Edit',
+      input: expect.objectContaining({
+        changes: [{
+          path: 'packages/shared/src/agent/hermes-agent.ts',
+          diff: `--- a/packages/shared/src/agent/hermes-agent.ts
++++ b/packages/shared/src/agent/hermes-agent.ts
+@@
+-old line
++new line`,
+        }],
+      }),
+      displayName: 'Edit File',
+    }))
+
+    expect(adapter.adaptToolCall({
       toolCallId: 'py-1',
       toolName: 'execute_code',
       args: { code: 'from hermes_tools import terminal' },
