@@ -226,10 +226,14 @@ VENV_PYTHON="$VENDOR_DIR/hermes-venv/bin/python3"
 UV_PROJECT_ENVIRONMENT="$VENDOR_DIR/hermes-venv" \
     uv pip install --python "$VENV_PYTHON" "$HERMES_USED_SRC[web,acp]" 2>&1 | tail -15
 
+UV_PROJECT_ENVIRONMENT="$VENDOR_DIR/hermes-venv" \
+    uv pip install --python "$VENV_PYTHON" playwright websockets 2>&1 | tail -15
+"$VENV_PYTHON" -m playwright install chromium
+
 if [ -d "$HERMES_USED_SRC/build" ]; then
     rm -rf "$HERMES_USED_SRC/build"
 fi
-echo -e "${GREEN}✓${NC} Hermes installed with web dashboard and ACP dependencies"
+echo -e "${GREEN}✓${NC} Hermes installed with web dashboard, ACP, and Google Meet dependencies"
 
 # --------------------------------------------------------------------------
 # 5. Copy Hermes source (subset needed for ACP runtime, with patches applied)

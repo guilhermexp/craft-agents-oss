@@ -89,14 +89,6 @@ index d6dace66..27b36af0 100644
 
 
  class SessionManager:
-@@ -597,6 +598,7 @@ class SessionManager:
-             ),
-             "quiet_mode": True,
-             "session_id": session_id,
-+            "session_db": self._get_db(),
-             "model": model or default_model,
-         }
-
 diff --git a/acp_adapter/permissions.py b/acp_adapter/permissions.py
 index c2e1a598..0a04fe8b 100644
 --- a/acp_adapter/permissions.py

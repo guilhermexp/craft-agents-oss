@@ -1,0 +1,117 @@
+diff --git a/plugins/google_meet/meet_bot.py b/plugins/google_meet/meet_bot.py
+index 0915a0c..fbbe254 100644
+--- a/plugins/google_meet/meet_bot.py
++++ b/plugins/google_meet/meet_bot.py
+@@ -560,7 +560,9 @@ def run_bot() -> int:  # noqa: C901 — orchestration, explicit branches
+             page = context.new_page()
+ 
+             try:
++                _log(f"launch headed={headed} auth_state={bool(auth_state and Path(auth_state).is_file())} url={url}")
+                 page.goto(url, wait_until="domcontentloaded", timeout=30_000)
++                _write_page_debug(page, out_dir, "after-goto")
+             except Exception as e:
+                 state.set(error=f"navigate failed: {e}", exited=True)
+                 return 4
+@@ -568,7 +570,9 @@ def run_bot() -> int:  # noqa: C901 — orchestration, explicit branches
+             # Guest-mode: Meet shows a name field before "Ask to join". When
+             # we're authed, we instead see "Join now".
+             _try_guest_name(page, guest_name)
+-            _click_join(page, state)
++            joined_click = _click_join(page, state)
++            _log(f"join click result={joined_click} lobby_waiting={state.lobby_waiting}")
++            _write_page_debug(page, out_dir, "after-click-join")
+ 
+             # Install caption observer and attempt to enable captions.
+             try:
+@@ -728,6 +732,37 @@ def run_bot() -> int:  # noqa: C901 — orchestration, explicit branches
+         return 1
+ 
+ 
++def _log(message: str) -> None:
++    ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
++    print(f"[{ts}] {message}", flush=True)
++
++
++def _write_page_debug(page, out_dir: Path, label: str) -> None:
++    """Write safe debug artifacts showing where Meet automation is stuck."""
++    safe_label = re.sub(r"[^a-zA-Z0-9_.-]+", "-", label).strip("-") or "debug"
++    try:
++        info = page.evaluate(
++            r"""
++            () => {
++              const text = (document.body && document.body.innerText || '').slice(0, 4000);
++              const buttons = Array.from(document.querySelectorAll('button'))
++                .map((b) => ({ text: (b.innerText || '').trim(), aria: b.getAttribute('aria-label') || '', visible: !!(b.offsetWidth || b.offsetHeight || b.getClientRects().length) }))
++                .filter((b) => b.text || b.aria)
++                .slice(0, 80);
++              return { url: location.href, title: document.title, text, buttons };
++            }
++            """
++        )
++        (out_dir / f"debug-{safe_label}.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
++        _log(f"debug {safe_label}: title={info.get('title')!r} url={info.get('url')!r} buttons={len(info.get('buttons') or [])}")
++    except Exception as e:
++        _log(f"debug {safe_label} failed: {e}")
++    try:
++        page.screenshot(path=str(out_dir / f"debug-{safe_label}.png"), full_page=True, timeout=5000)
++    except Exception as e:
++        _log(f"debug screenshot {safe_label} failed: {e}")
++
++
+ def _try_guest_name(page, guest_name: str) -> None:
+     """If Meet is showing a guest-name input, type *guest_name* into it."""
+     try:
+@@ -813,7 +848,7 @@ def _looks_like_human_speaker(speaker: str, bot_guest_name: str) -> bool:
+     return True
+ 
+ 
+-def _click_join(page, state: _BotState) -> None:
++def _click_join(page, state: _BotState) -> bool:
+     """Click the Meet join/request button if it is visible.
+ 
+     Flags ``lobby_waiting`` when we hit the "waiting for host to admit you"
+@@ -844,10 +879,43 @@ def _click_join(page, state: _BotState) -> None:
+                 btn.click(timeout=3_000)
+                 if waits_for_host:
+                     state.set(lobby_waiting=True)
+-                break
++                return True
+         except Exception:
+             continue
+ 
++    # Fallback for Meet UI/localization rewrites: inspect visible buttons in JS
++    # and click anything whose text/aria label looks like a join/request action.
++    try:
++        result = page.evaluate(
++            r"""
++            () => {
++              const askRe = /(ask|request|pedir|solicitar|demander).{0,30}(join|particip|entrar|unirse)|(^|\b)(join|participar|entrar|unirse|rejoindre)(\b|$)/i;
++              const negativeRe = /(leave|sair|encerrar|cancel|cancelar|deny|negar)/i;
++              const buttons = Array.from(document.querySelectorAll('button'));
++              for (const button of buttons) {
++                const text = `${button.innerText || ''} ${button.getAttribute('aria-label') || ''}`.trim();
++                const visible = !!(button.offsetWidth || button.offsetHeight || button.getClientRects().length);
++                if (!visible || !text || negativeRe.test(text)) continue;
++                if (askRe.test(text)) {
++                  button.click();
++                  return { clicked: true, text };
++                }
++              }
++              return { clicked: false, buttons: buttons.map((b) => `${b.innerText || ''} ${b.getAttribute('aria-label') || ''}`.trim()).filter(Boolean).slice(0, 40) };
++            }
++            """
++        )
++        if isinstance(result, dict) and result.get("clicked"):
++            clicked_text = str(result.get("text") or "")
++            if re.search(r"ask|request|pedir|solicitar|demander", clicked_text, re.I):
++                state.set(lobby_waiting=True)
++            _log(f"fallback join clicked: {clicked_text!r}")
++            return True
++        _log(f"join button not found; candidates={result}")
++    except Exception as e:
++        _log(f"fallback join click failed: {e}")
++    return False
++
+ 
+ def _parse_duration(raw: str) -> Optional[float]:
+     """Parse ``30m`` / ``2h`` / ``90`` (seconds) → float seconds, or None."""

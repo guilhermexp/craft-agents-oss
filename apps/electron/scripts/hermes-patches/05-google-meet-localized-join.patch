@@ -1,0 +1,43 @@
+diff --git a/plugins/google_meet/meet_bot.py b/plugins/google_meet/meet_bot.py
+index eb9318ae..0915a0cb 100644
+--- a/plugins/google_meet/meet_bot.py
++++ b/plugins/google_meet/meet_bot.py
+@@ -814,17 +814,35 @@ def _looks_like_human_speaker(speaker: str, bot_guest_name: str) -> bool:
+ 
+ 
+ def _click_join(page, state: _BotState) -> None:
+-    """Click 'Join now' or 'Ask to join' if either button is visible.
++    """Click the Meet join/request button if it is visible.
+ 
+     Flags ``lobby_waiting`` when we hit the "waiting for host to admit you"
+     state so the agent can surface that in status.
+     """
+-    for label in ("Join now", "Ask to join"):
++    join_labels = (
++        "Join now",
++        "Participar agora",
++        "Entrar agora",
++        "Unirse ahora",
++        "Rejoindre maintenant",
++    )
++    ask_labels = (
++        "Ask to join",
++        "Pedir para participar",
++        "Pedir para entrar",
++        "Solicitar unirse",
++        "Demander a participer",
++        "Demander à participer",
++    )
++    for label, waits_for_host in (
++        *[(label, False) for label in join_labels],
++        *[(label, True) for label in ask_labels],
++    ):
+         try:
+             btn = page.get_by_role("button", name=label, exact=False).first
+             if btn.count() and btn.is_visible():
+                 btn.click(timeout=3_000)
+-                if label == "Ask to join":
++                if waits_for_host:
+                     state.set(lobby_waiting=True)
+                 break
+         except Exception:

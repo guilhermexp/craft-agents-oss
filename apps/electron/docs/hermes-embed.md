@@ -259,6 +259,8 @@ on macOS and the equivalent on Windows / Linux.
 2. `python3 -m venv` creates `hermes-venv/` from the bundled Python.
 3. `uv pip install <HERMES_SRC>[web,acp]` (non-editable) installs Hermes,
    the web dashboard dependencies, and `agent-client-protocol` into the venv.
+   The bundle then installs the Google Meet bot runtime dependencies
+   (`playwright`, `websockets`) and Playwright Chromium into the same venv.
    Relocatable: no egg-link with absolute paths.
 4. Removes transient `HERMES_SRC/build/` output if the Python install created it.
 5. Mirrors a curated subset of Hermes source (`agent/`, `tools/`,
@@ -634,7 +636,7 @@ Important separation rules:
 - `craft-sources` and `craft-session` are local-only `127.0.0.1` endpoints.
 - `browser_tool` uses Craft's built-in browser abstraction, not an external OS browser.
 - Scheduled-task creation goes through `automation_tool`, which writes Craft `automations.json` and reloads the active `AutomationSystem`; Hermes' native `HERMES_HOME/cron/jobs.json` should remain disabled/hidden in Craft context.
-- Meeting control goes through `meeting_tool`, which only forwards `start`, `status`, `list`, `transcript`, and `stop` to session-scoped Craft-native meeting callbacks when a native runtime has registered them; otherwise it fails closed with an unavailable error. Hermes Python upstream is not patched for meeting support.
+- Meeting control goes through `meeting_tool`, which only forwards `start`, `status`, `list`, `transcript`, and `stop` to session-scoped Craft-native meeting callbacks when a native runtime has registered them; otherwise it fails closed with an unavailable error. Google Meet bot startup is delegated to Hermes' `google_meet` plugin through Craft's native meeting service and requires a dedicated Playwright storage state at `<HERMES_HOME>/workspace/meetings/bot-auth.json`; do not reuse the meeting organizer's visible BrowserPane cookies as the bot identity.
 
 ## Session and configuration isolation
 
