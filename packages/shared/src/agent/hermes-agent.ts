@@ -18,6 +18,7 @@ import { getActiveHermesProfile, type Workspace } from '../config/storage.ts'
 import { applyHermesProfileToRuntime, buildHermesAcpMcpServers, isValidHermesProfileName, normalizeHermesRuntimeConfig, type HermesRuntimeConfig } from '../hermes/acp-config.ts'
 import { seedHermesAuthFromCraft } from '../hermes/auth-bridge.ts'
 import { CraftSessionToolsMcpServer } from '../mcp/session-tools-server.ts'
+import { HermesEventAdapter } from './backend/hermes/event-adapter.ts'
 import { clearPlanFileState, mergeSessionScopedToolCallbacks, unregisterSessionScopedToolCallbacks } from './session-scoped-tools.ts'
 
 type StreamToolPart = {
@@ -59,16 +60,6 @@ export function extractHermesTextDelta(part: StreamTextDeltaPart): string {
   // completing a turn after tool calls without rendering the final answer.
   if (typeof part.delta === 'string') return part.delta
   return ''
-}
-
-function serializeToolResult(result: unknown): string {
-  if (typeof result === 'string') return result
-  if (result instanceof Error) return result.message
-  try {
-    return JSON.stringify(result, null, 2)
-  } catch {
-    return String(result)
-  }
 }
 
 function modelIdAliases(modelId: string): string[] {
@@ -461,16 +452,18 @@ export class HermesAgent extends BaseAgent {
       ],
     })
 
-    let finalText = ''
+    const adapter = new HermesEventAdapter()
+    adapter.startTurn()
+    let completionUsage: AgentEvent | null = null
 
     try {
       for await (const part of result.fullStream) {
         switch (part.type) {
           case 'text-delta': {
             const delta = extractHermesTextDelta(part)
-            if (!delta) break
-            finalText += delta
-            yield { type: 'text_delta', text: delta }
+            for (const event of adapter.adaptTextDelta(delta)) {
+              yield event
+            }
             break
           }
           case 'tool-call': {
@@ -478,12 +471,12 @@ export class HermesAgent extends BaseAgent {
             if (toolPart.toolName !== ACP_PROVIDER_AGENT_DYNAMIC_TOOL_NAME) break
             const parsed = providerAgentDynamicToolSchema.safeParse(toolPart.input)
             if (!parsed.success) break
-            yield {
-              type: 'tool_start',
+            for (const event of adapter.adaptToolCall({
+              toolCallId: parsed.data.toolCallId,
               toolName: parsed.data.toolName,
-              toolUseId: parsed.data.toolCallId,
-              input: parsed.data.args,
-              displayName: parsed.data.toolName,
+              args: parsed.data.args,
+            })) {
+              yield event
             }
             break
           }
@@ -492,24 +485,29 @@ export class HermesAgent extends BaseAgent {
             if (toolPart.toolName !== ACP_PROVIDER_AGENT_DYNAMIC_TOOL_NAME) break
             const parsed = providerAgentDynamicToolSchema.safeParse(toolPart.input)
             if (!parsed.success) break
-            yield {
-              type: 'tool_result',
-              toolUseId: parsed.data.toolCallId,
+            for (const event of adapter.adaptToolResult({
+              toolCallId: parsed.data.toolCallId,
               toolName: parsed.data.toolName,
-              input: parsed.data.args,
-              result: serializeToolResult(toolPart.output),
-              isError: toolPart.output instanceof Error,
+              args: parsed.data.args,
+              output: toolPart.output,
+            })) {
+              yield event
             }
+            break
+          }
+          case 'finish': {
+            completionUsage = adapter.adaptFinish(part)[0] ?? null
             break
           }
         }
       }
 
+      const finalText = adapter.flushFinalText()
       if (finalText) {
-        yield { type: 'text_complete', text: finalText }
+        yield finalText
       }
 
-      yield { type: 'complete' }
+      yield completionUsage ?? { type: 'complete' }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       yield { type: 'error', message }
