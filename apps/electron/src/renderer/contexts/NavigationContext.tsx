@@ -68,6 +68,7 @@ import {
   isSettingsNavigation,
   isSkillsNavigation,
   isAutomationsNavigation,
+  isMeetingsNavigation,
   DEFAULT_NAVIGATION_STATE,
 } from '../../shared/types'
 import { isValidSettingsSubpage, type SettingsSubpage } from '../../shared/settings-registry'
@@ -91,7 +92,7 @@ export type { Route }
 
 // Re-export navigation state types for consumers
 export type { NavigationState, SessionFilter }
-export { isSessionsNavigation, isSourcesNavigation, isSettingsNavigation, isSkillsNavigation, isAutomationsNavigation }
+export { isSessionsNavigation, isSourcesNavigation, isSettingsNavigation, isSkillsNavigation, isAutomationsNavigation, isMeetingsNavigation }
 
 // =============================================================================
 // Context
@@ -630,8 +631,15 @@ export function NavigationProvider({
         }
       }
 
+      // Channel-backed labels own the details pane as a shared room. Do not
+      // auto-select the first thread; users can still choose a session from
+      // the list when they want to open a specific thread.
+      const isChannelRoom = isSessionsNavigation(nextState)
+        && nextState.filter.kind === 'label'
+        && nextState.filter.labelId.startsWith('channel-')
+
       // Sessions: auto-select last/first session
-      if (isSessionsNavigation(nextState) && !nextState.details && !options?.skipAutoSelect) {
+      if (isSessionsNavigation(nextState) && !nextState.details && !options?.skipAutoSelect && !isChannelRoom) {
         const lastSelectedSessionId = getLastSelectedSessionId(nextState.filter)
         const fallbackSessionId = lastSelectedSessionId ?? getFirstSessionId(nextState.filter)
         if (fallbackSessionId) {

@@ -1,14 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import http from 'node:http'
 import { promisify } from 'node:util'
 import { execFile as execFileCb } from 'node:child_process'
-import { chmod, mkdtemp, mkdir, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import type { RpcServer, HandlerFn, RequestContext } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
-import { registerHermesHandlers } from './hermes'
+import { registerHermesHandlers, shutdownHermesDashboard } from './hermes'
 
 const originalEnv = { ...process.env }
 const execFile = promisify(execFileCb)
@@ -68,7 +69,8 @@ beforeEach(() => {
   process.env = { ...originalEnv }
 })
 
-afterEach(() => {
+afterEach(async () => {
+  await shutdownHermesDashboard(100)
   process.env = { ...originalEnv }
 })
 
@@ -79,6 +81,9 @@ describe('registerHermesHandlers local file controls', () => {
     const fakeHermes = join(binDir, 'fake-hermes-dashboard.js')
     process.env.CRAFT_HERMES_HOME = home
     process.env.CRAFT_HERMES_COMMAND = fakeHermes
+    delete process.env.CRAFT_HERMES_PYTHON
+    delete process.env.CRAFT_HERMES_ARGS
+    delete process.env.CRAFT_HERMES_BUNDLED_REQUIRED
 
     await writeFile(fakeHermes, `#!/usr/bin/env node
 const http = require('node:http')
@@ -151,6 +156,160 @@ server.listen(port, '127.0.0.1')
       skillCount: 9,
       isActive: true,
     }])
+  })
+
+  it('falls back to app-scoped custom provider config when Hermes returns no models', async () => {
+    const modelServer = http.createServer((req, res) => {
+      if (req.url === '/v1/models') {
+        expect(req.headers.authorization).toBe('Bearer cliproxy-secret')
+        res.setHeader('content-type', 'application/json')
+        res.end(JSON.stringify({ data: [{ id: 'claude-sonnet-4-6' }, { id: 'gemini-2.5-pro' }] }))
+        return
+      }
+      res.statusCode = 404
+      res.end('not found')
+    })
+    await new Promise<void>((resolve) => modelServer.listen(0, '127.0.0.1', resolve))
+    const modelAddress = modelServer.address()
+    if (!modelAddress || typeof modelAddress === 'string') throw new Error('model server did not bind')
+
+    const home = await mkdtemp(join(tmpdir(), 'craft-hermes-home-'))
+    const binDir = await mkdtemp(join(tmpdir(), 'craft-hermes-bin-'))
+    const fakeHermes = join(binDir, 'fake-hermes-dashboard.js')
+    process.env.CRAFT_HERMES_HOME = home
+    process.env.CRAFT_HERMES_COMMAND = fakeHermes
+    delete process.env.CRAFT_HERMES_PYTHON
+    delete process.env.CRAFT_HERMES_ARGS
+    delete process.env.CRAFT_HERMES_BUNDLED_REQUIRED
+
+    await writeFile(join(home, 'config.yaml'), [
+      'providers:',
+      '  cliproxy:',
+      `    base_url: http://127.0.0.1:${modelAddress.port}/v1`,
+      '    key_env: CLIPROXY_API_KEY',
+      '    models:',
+      '      configured-fallback: {}',
+    ].join('\n'))
+    await writeFile(join(home, '.env'), 'CLIPROXY_API_KEY=cliproxy-secret\n')
+
+    await writeFile(fakeHermes, `#!/usr/bin/env node
+const http = require('node:http')
+const token = 'test-token'
+const port = Number(process.argv[process.argv.indexOf('--port') + 1])
+const server = http.createServer((req, res) => {
+  if (req.url === '/') {
+    res.setHeader('content-type', 'text/html')
+    res.end('<script>window.__HERMES_SESSION_TOKEN__="test-token";</script>')
+    return
+  }
+  if (!req.headers['x-hermes-session-token'] || req.headers['x-hermes-session-token'] !== token) {
+    res.statusCode = 401
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ detail: 'Unauthorized' }))
+    return
+  }
+  if (req.url === '/api/model/options') {
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ providers: [{ slug: 'cliproxy', models: [] }] }))
+    setTimeout(() => server.close(() => process.exit(0)), 100)
+    return
+  }
+  res.statusCode = 404
+  res.end('not found')
+})
+server.listen(port, '127.0.0.1')
+`)
+    await chmod(fakeHermes, 0o755)
+
+    try {
+      const { handlers, ctx } = createHarness()
+      const getProviderModels = handlers.get(RPC_CHANNELS.hermes.GET_PROVIDER_MODELS)
+      expect(getProviderModels).toBeDefined()
+
+      const result = await getProviderModels!(ctx, 'cliproxy')
+
+      expect(result.success).toBe(true)
+      expect(result.data.models).toEqual([{ id: 'claude-sonnet-4-6' }, { id: 'gemini-2.5-pro' }])
+    } finally {
+      await new Promise<void>((resolve) => modelServer.close(() => resolve()))
+    }
+  })
+
+  it('preserves custom provider base URL when saving the main Hermes model', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'craft-hermes-home-'))
+    const binDir = await mkdtemp(join(tmpdir(), 'craft-hermes-bin-'))
+    const fakeHermes = join(binDir, 'fake-hermes-dashboard.js')
+    const capturedConfig = join(home, 'captured-config.json')
+    process.env.CRAFT_HERMES_HOME = home
+    process.env.CRAFT_HERMES_COMMAND = fakeHermes
+    delete process.env.CRAFT_HERMES_PYTHON
+    delete process.env.CRAFT_HERMES_ARGS
+    delete process.env.CRAFT_HERMES_BUNDLED_REQUIRED
+
+    await writeFile(fakeHermes, `#!/usr/bin/env node
+const http = require('node:http')
+const fs = require('node:fs')
+const token = 'test-token'
+const port = Number(process.argv[process.argv.indexOf('--port') + 1])
+const server = http.createServer((req, res) => {
+  if (req.url === '/') {
+    res.setHeader('content-type', 'text/html')
+    res.end('<script>window.__HERMES_SESSION_TOKEN__="test-token";</script>')
+    return
+  }
+  if (!req.headers['x-hermes-session-token'] || req.headers['x-hermes-session-token'] !== token) {
+    res.statusCode = 401
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ detail: 'Unauthorized' }))
+    return
+  }
+  if (req.url === '/api/model/set' && req.method === 'POST') {
+    req.resume()
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ ok: true }))
+    return
+  }
+  if (req.url === '/api/config/raw' && req.method === 'GET') {
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ yaml: 'model:\\n  provider: custom\\n  default: old-model\\n  api_mode: chat_completions\\n' }))
+    return
+  }
+  if (req.url === '/api/config/raw' && req.method === 'PUT') {
+    let body = ''
+    req.on('data', chunk => { body += chunk })
+    req.on('end', () => {
+      fs.writeFileSync(${JSON.stringify(capturedConfig)}, body)
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ ok: true }))
+      setTimeout(() => server.close(() => process.exit(0)), 100)
+    })
+    return
+  }
+  res.statusCode = 404
+  res.end('not found')
+})
+server.listen(port, '127.0.0.1')
+`)
+    await chmod(fakeHermes, 0o755)
+
+    const { handlers, ctx } = createHarness()
+    const patchApiConfig = handlers.get(RPC_CHANNELS.hermes.PATCH_API_CONFIG)
+    expect(patchApiConfig).toBeDefined()
+
+    const result = await patchApiConfig!(ctx, {
+      config: {
+        provider: 'cliproxy',
+        model: 'claude-sonnet-4-6',
+        base_url: 'http://127.0.0.1:8317/v1',
+      },
+    })
+
+    expect(result.success).toBe(true)
+    const captured = JSON.parse(await readFile(capturedConfig, 'utf-8')) as { yaml_text: string }
+    expect(captured.yaml_text).toContain('provider: cliproxy')
+    expect(captured.yaml_text).toContain('default: claude-sonnet-4-6')
+    expect(captured.yaml_text).toContain('api_mode: chat_completions')
+    expect(captured.yaml_text).toContain('base_url: http://127.0.0.1:8317/v1')
   })
 
   it('lists Hermes home files without exposing secrets or expanding operational directories', async () => {

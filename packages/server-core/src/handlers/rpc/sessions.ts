@@ -454,6 +454,9 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
       case 'setConnection':
         log.info(`IPC: setConnection received for session ${sessionId}, connection: ${command.connectionSlug}`)
         return sessionManager.setSessionConnection(sessionId, command.connectionSlug)
+      case 'setHermesProfile':
+        log.info(`IPC: setHermesProfile received for session ${sessionId}, profile: ${command.profileName}`)
+        return sessionManager.setSessionHermesProfile(sessionId, command.profileName)
       // Pending plan execution (Accept & Compact flow)
       case 'setPendingPlanExecution':
         return sessionManager.setPendingPlanExecution(sessionId, command.planPath, command.draftInputSnapshot)

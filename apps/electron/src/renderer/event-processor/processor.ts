@@ -40,6 +40,7 @@ import {
   handlePermissionModeChanged,
   handleSessionModelChanged,
   handleConnectionChanged,
+  handleHermesProfileChanged,
   handleUserMessage,
   handleMessageAnnotationsUpdated,
   handleSessionShared,
@@ -149,6 +150,9 @@ export function processEvent(
 
     case 'connection_changed':
       return handleConnectionChanged(state, event)
+
+    case 'hermes_profile_changed':
+      return handleHermesProfileChanged(state, event)
 
     case 'sources_changed':
       return handleSourcesChanged(state, event)

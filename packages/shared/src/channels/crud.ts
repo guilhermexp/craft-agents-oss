@@ -6,6 +6,7 @@ import type { LabelConfig } from '../labels/types.ts';
 import { deleteLabel } from '../labels/crud.ts';
 
 const SLUG_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+const PARTICIPANT_ID_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 
 function slugify(name: string): string {
   return name
@@ -47,6 +48,46 @@ function assertUniqueChannelName(
   if (collision) {
     throw new Error(`A channel named ${collision.name.trim()} already exists`);
   }
+}
+
+function normalizeParticipants(
+  participants: ChannelConfig['participants'] | undefined,
+): ChannelConfig['participants'] | undefined {
+  if (participants === undefined) return undefined;
+
+  const seen = new Set<string>();
+  const normalized = participants.map(participant => {
+    const id = participant.id.trim().toLowerCase();
+    if (!PARTICIPANT_ID_PATTERN.test(id)) {
+      throw new Error(`Invalid channel participant id: ${participant.id}`);
+    }
+    if (seen.has(id)) {
+      throw new Error(`Duplicate participant id: ${id}`);
+    }
+    seen.add(id);
+
+    const displayName = participant.displayName.trim();
+    if (!displayName) {
+      throw new Error(`Channel participant '${id}' display name is required`);
+    }
+    const llmConnection = participant.llmConnection.trim();
+    if (!llmConnection) {
+      throw new Error(`Channel participant '${id}' llmConnection is required`);
+    }
+
+    return {
+      id,
+      displayName,
+      llmConnection,
+      ...(participant.model !== undefined ? { model: participant.model } : {}),
+      ...(participant.hermesProfile !== undefined ? { hermesProfile: participant.hermesProfile } : {}),
+      ...(participant.defaultSourceSlugs !== undefined ? { defaultSourceSlugs: participant.defaultSourceSlugs } : {}),
+      ...(participant.permissionMode !== undefined ? { permissionMode: participant.permissionMode } : {}),
+      ...(participant.workingDirectory !== undefined ? { workingDirectory: participant.workingDirectory } : {}),
+    };
+  });
+
+  return normalized.length > 0 ? normalized : undefined;
 }
 
 interface EnsureChannelLabelOptions {
@@ -102,6 +143,7 @@ export function createChannel(workspaceRootPath: string, input: CreateChannelInp
   const labelIds = collectAllIds(loadLabelConfig(workspaceRootPath).labels);
   const id = uniqueSlug(slugify(input.name), channelIds);
   const labelId = uniqueSlug(`channel-${id}`, labelIds);
+  const participants = normalizeParticipants(input.participants);
 
   const channel: ChannelConfig = {
     id,
@@ -111,6 +153,9 @@ export function createChannel(workspaceRootPath: string, input: CreateChannelInp
     ...(input.color !== undefined ? { color: input.color } : {}),
     ...(input.defaultSourceSlugs !== undefined ? { defaultSourceSlugs: input.defaultSourceSlugs } : {}),
     ...(input.defaultPermissionMode !== undefined ? { defaultPermissionMode: input.defaultPermissionMode } : {}),
+    ...(input.workingDirectory !== undefined ? { workingDirectory: input.workingDirectory } : {}),
+    ...(participants !== undefined ? { participants } : {}),
+    ...(input.routing !== undefined ? { routing: input.routing } : {}),
   };
 
   ensureChannelLabel(workspaceRootPath, channel, { expectFresh: true });
@@ -145,6 +190,16 @@ export function updateChannel(
   if (updates.color !== undefined) channel.color = updates.color;
   if (updates.defaultSourceSlugs !== undefined) channel.defaultSourceSlugs = updates.defaultSourceSlugs;
   if (updates.defaultPermissionMode !== undefined) channel.defaultPermissionMode = updates.defaultPermissionMode;
+  if (updates.workingDirectory !== undefined) channel.workingDirectory = updates.workingDirectory;
+  if (updates.participants !== undefined) {
+    const participants = normalizeParticipants(updates.participants);
+    if (participants) {
+      channel.participants = participants;
+    } else {
+      delete channel.participants;
+    }
+  }
+  if (updates.routing !== undefined) channel.routing = updates.routing;
 
   ensureChannelLabel(workspaceRootPath, channel, { previousName });
   saveChannelsConfig(workspaceRootPath, config);

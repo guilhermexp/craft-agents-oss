@@ -10,7 +10,13 @@ const workspace = {
 let idCounter = 0
 const storedById = new Map<string, any>()
 const deletedIds: string[] = []
-let mockedProvider: 'anthropic' | 'pi' = 'anthropic'
+let mockedProvider: 'anthropic' | 'pi' | 'hermes' = 'anthropic'
+
+function mockedResolvedModel(): string {
+  if (mockedProvider === 'anthropic') return 'claude-sonnet-4-20250514'
+  if (mockedProvider === 'hermes') return 'hermes'
+  return 'pi/gpt-5'
+}
 
 // Partial-mock baseline: import real modules via file paths (avoids recursive mock imports)
 const actualSharedAgentModule = await import('../../../../../packages/shared/src/agent/index.ts')
@@ -71,6 +77,8 @@ mock.module('@craft-agent/shared/config', () => ({
   getToolIconsDir: () => '/tmp/tool-icons',
   getMiniModel: () => 'claude-haiku-4-5-20251001',
   getDefaultThinkingLevel: () => 'medium',
+  getActiveHermesProfile: () => 'default',
+  resetManagedAnthropicAuthEnvVars: () => {},
   ConfigWatcher: class ConfigWatcher {
     constructor(..._args: unknown[]) {}
     start() {}
@@ -143,8 +151,8 @@ mock.module('@craft-agent/shared/agent/backend', () => ({
   },
   resolveBackendContext: () => ({
     provider: mockedProvider,
-    resolvedModel: mockedProvider === 'anthropic' ? 'claude-sonnet-4-20250514' : 'pi/gpt-5',
-    connection: { providerType: mockedProvider === 'anthropic' ? 'anthropic' : 'pi' },
+    resolvedModel: mockedResolvedModel(),
+    connection: { providerType: mockedProvider },
   }),
   createBackendFromResolvedContext: () => {
     throw new Error('not used in this test')
@@ -213,6 +221,7 @@ mock.module('@craft-agent/shared/sessions', () => ({
       messages: [],
       permissionMode: opts?.permissionMode ?? 'ask',
       workingDirectory: opts?.workingDirectory,
+      hermesProfile: opts?.hermesProfile,
       hidden: !!opts?.hidden,
       labels: [],
       isFlagged: false,
@@ -237,7 +246,12 @@ mock.module('@craft-agent/shared/sessions', () => ({
   getSessionAttachmentsPath: () => '/tmp/attachments',
   getSessionPath: (_root: string, id: string) => `${workspaceRootPath}/sessions/${id}`,
   getOrCreateLatestSession: async () => null,
-  sessionPersistenceQueue: { flush: async () => {} },
+  sessionPersistenceQueue: {
+    enqueue: (session: any) => {
+      storedById.set(session.id, session)
+    },
+    flush: async () => {},
+  },
   pickSessionFields: (s: any) => {
     // Must match SESSION_PERSISTENT_FIELDS to prevent contamination of persistence tests
     const fields = [
@@ -246,7 +260,7 @@ mock.module('@craft-agent/shared/sessions', () => ({
       'name','isFlagged','sessionStatus','labels','hidden',
       'lastReadMessageId','hasUnread',
       'enabledSourceSlugs','permissionMode','previousPermissionMode','workingDirectory',
-      'model','llmConnection','connectionLocked','thinkingLevel',
+      'model','llmConnection','connectionLocked','thinkingLevel','hermesProfile',
       'sharedUrl','sharedId','pendingPlanExecution',
       'isArchived','archivedAt',
       'branchFromMessageId','branchFromSdkSessionId','branchFromSessionPath',
@@ -272,6 +286,7 @@ describe('session branch rollback on preflight failure', () => {
       workspaceRootPath,
       llmConnection: undefined,
       model: 'claude-sonnet-4-20250514',
+      hermesProfile: 'devops',
       sdkSessionId: 'sdk-parent',
       messages: [
         { id: 'm1', type: 'user', content: 'hello', timestamp: Date.now() - 10 },
@@ -280,6 +295,81 @@ describe('session branch rollback on preflight failure', () => {
       createdAt: Date.now() - 20,
       lastUsedAt: Date.now() - 5,
     })
+  })
+
+  it('updates and persists a session Hermes profile pin', async () => {
+    mockedProvider = 'hermes'
+
+    const manager = new SessionManager()
+    const child = await manager.createSession('ws-1', {} as any)
+    ;(manager as any).sessions.get(child.id).sdkSessionId = 'old-profile-sdk-session'
+
+    await manager.setSessionHermesProfile(child.id, 'devops')
+
+    expect(storedById.get('child-1')?.hermesProfile).toBe('devops')
+    expect(storedById.get('child-1')?.sdkSessionId).toBeUndefined()
+  })
+
+  it('defers Hermes agent restart when the profile changes during processing', async () => {
+    mockedProvider = 'hermes'
+
+    const manager = new SessionManager()
+    const child = await manager.createSession('ws-1', {} as any)
+    const managed = (manager as any).sessions.get(child.id)
+    let destroyCount = 0
+    managed.agent = {
+      supportsBranching: true,
+      destroy: () => {
+        destroyCount += 1
+      },
+    }
+    managed.isProcessing = true
+    managed.sdkSessionId = 'old-profile-sdk-session'
+
+    await manager.setSessionHermesProfile(child.id, 'devops')
+
+    expect(destroyCount).toBe(0)
+    expect(managed.pendingHermesAgentRestart).toBe(true)
+
+    // Simulate the still-running old Hermes agent reporting its previous session id
+    // after the user already selected a different profile.
+    managed.sdkSessionId = 'old-profile-sdk-session-after-stream'
+    await (manager as any).onProcessingStopped(child.id, 'complete')
+
+    expect(destroyCount).toBe(1)
+    expect(managed.agent).toBeNull()
+    expect(managed.sdkSessionId).toBeUndefined()
+  })
+
+  it('rejects Hermes profile changes for non-Hermes sessions', async () => {
+    const manager = new SessionManager()
+    const child = await manager.createSession('ws-1', {} as any)
+
+    await expect(manager.setSessionHermesProfile(child.id, 'devops')).rejects.toThrow('Hermes profile can only be changed for Hermes sessions')
+  })
+
+  it('inherits source Hermes profile when creating a branch', async () => {
+    mockedProvider = 'hermes'
+
+    const manager = new SessionManager()
+
+    ;(manager as any).ensureMessagesLoaded = async (_managed: any) => {}
+    ;(manager as any).getOrCreateAgent = async (managed: any) => {
+      managed.agent = {
+        supportsBranching: true,
+        ensureBranchReady: async () => {},
+        destroy: () => {},
+      }
+      return managed.agent
+    }
+
+    const child = await manager.createSession('ws-1', {
+      branchFromSessionId: 'source-1',
+      branchFromMessageId: 'm1',
+    } as any)
+
+    expect(child.hermesProfile).toBe('devops')
+    expect(storedById.get('child-1')?.hermesProfile).toBe('devops')
   })
 
   it('deletes newly created child session when ensureBranchReady throws', async () => {

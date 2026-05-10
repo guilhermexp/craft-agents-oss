@@ -65,6 +65,9 @@ Files under `apps/electron/scripts/hermes-patches/`:
 | `01-acp-server.patch` | ACP adapter `acp_adapter/server.py` + `session.py` — stores ACP-provided `mcp_servers` on session state, wires a single streaming path (`stream_callback`) so Hermes streams text live to Craft without duplicate deltas across profile-local sessions, and reapplies ACP MCP toolsets after `/model` or ACP `session/set_model` recreates the underlying `AIAgent`. Upstream Hermes now owns reasoning-delta routing, so do not reintroduce duplicate `reasoning_callback` patches unless upstream removes it. |
 | `02-mcp-tool-craft-naming.patch` | `tools/mcp_tool.py` — keep `craft-session` and `craft-sources` MCP servers under Craft canonical tool names (`mcp__session__…`, `mcp__github__…`); other MCP servers stay on Hermes-normal names. |
 | `03-web-server-craft-embedded.patch` | `hermes_cli/web_server.py` — `_craft_embedded_update_command()` so the Hermes dashboard's Update button delegates to Craft's update script when running embedded inside Craft, rather than running the standalone Hermes installer. |
+| `04-acp-tools-json-scope.patch` | `acp_adapter/tools.py` — removes a local `import json` inside `build_tool_start()` that shadows the module import and crashes history replay for polished tool calls with `UnboundLocalError`. |
+| `05-google-meet-localized-join.patch` | `plugins/google_meet/meet_bot.py` — extends the join-button matcher with localized labels (`Participar agora`, `Entrar agora`, `Unirse ahora`, `Pedir para participar`, …) so the bot joins meetings whose UI is not in English. |
+| `06-google-meet-debug-and-robust-click.patch` | `plugins/google_meet/meet_bot.py` — adds structured launch/auth logging plus per-step page screenshots and falls back to Playwright role-based clicks when text matching misses, so toolbar invitations can surface why a join failed instead of timing out silently. |
 
 When a patch fails `git apply --check`, upstream changed the patched code. If
 `hermes-version.txt` is `upstream/main`, this does **not** mean automatic update
@@ -113,7 +116,7 @@ When syncing Craft upstream, preserve these Craft-side integration points:
 
 | Craft file | Craft-required behavior |
 | ---------- | ----------------------- |
-| `packages/shared/src/agent/hermes-agent.ts` | Hermes gets both `craft-sources` and `craft-session` MCP endpoints through ACP; source changes do not kill an active stream; model/session changes do not silently drop MCP config. Before each subprocess spawn, calls `seedHermesAuthFromCraft` so embedded Hermes inherits the user's already-authenticated Craft OAuth/API-key credentials. |
+| `packages/shared/src/agent/hermes-agent.ts` | Hermes gets both `craft-sources` and `craft-session` MCP endpoints through ACP; source changes do not kill an active stream; model/session changes do not silently drop MCP config. Before each subprocess spawn, calls `seedHermesAuthFromCraft` so embedded Hermes inherits the user's already-authenticated Craft OAuth/API-key credentials. ACP permission requests from Hermes are bridged into Craft's native `permission_request` event so the renderer shows the same approval UI and desktop notification used by Claude/Pi. |
 | `packages/shared/src/hermes/acp-config.ts` | Bundled runtime env (`CRAFT_HERMES_PYTHON`, `CRAFT_HERMES_ARGS`, `CRAFT_HERMES_HOME`) is treated as one coherent ACP command/config unit. In packaged builds, `CRAFT_HERMES_REQUIRE_BUNDLED=1` must fail closed instead of falling back to a system `hermes`. |
 | `packages/shared/src/hermes/auth-bridge.ts` | One-way seed (Craft → Hermes) at spawn: Craft Credential Manager / LLM connections are the source of truth. Claude OAuth → `CLAUDE_CODE_OAUTH_TOKEN`; ChatGPT Plus/Codex OAuth → `<HERMES_HOME>/auth.json` `providers["openai-codex"].tokens`; API-key connections → provider env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GOOGLE_API_KEY`/`GEMINI_API_KEY`, `XAI_API_KEY`, etc.) for the Hermes subprocess/dashboard. No separate Hermes `.env` secret store is required for the embedded app. |
 | `packages/shared/src/mcp/session-tools-server.ts` | Craft-native tools exposed to Hermes include browser, delegation/session, LLM, auth/config helpers, metadata, and automation; callbacks stay session-scoped. |
@@ -259,6 +262,8 @@ on macOS and the equivalent on Windows / Linux.
 2. `python3 -m venv` creates `hermes-venv/` from the bundled Python.
 3. `uv pip install <HERMES_SRC>[web,acp]` (non-editable) installs Hermes,
    the web dashboard dependencies, and `agent-client-protocol` into the venv.
+   The bundle then installs the Google Meet bot runtime dependencies
+   (`playwright`, `websockets`) and Playwright Chromium into the same venv.
    Relocatable: no egg-link with absolute paths.
 4. Removes transient `HERMES_SRC/build/` output if the Python install created it.
 5. Mirrors a curated subset of Hermes source (`agent/`, `tools/`,
@@ -554,11 +559,19 @@ restart of the user's session.
   active Craft chat profile is stored in Craft config as a profile name:
   `default` uses the base app-scoped `HERMES_HOME`, while non-default profiles
   run the Hermes ACP subprocess with `HERMES_HOME=<base>/profiles/<name>`.
+- `hermes:listEnv`, `hermes:setEnv`, and `hermes:deleteEnv` proxy the dashboard
+  `/api/env` endpoint so the AI Models tab can list optional Hermes env vars
+  with `is_set`/redacted previews and write/clear secrets without leaving Craft.
+  The handler runs through the same authenticated embedded-dashboard bridge as
+  the profile RPCs and never reads or writes the user's standalone `~/.hermes`.
 
 `Settings / AI` remains generic: connections, model defaults, thinking level, workspace overrides.
 `Settings / Hermes` is the Hermes-specific operational page organized in tabs:
-**Runtime Hermes**, **Provider & Modelo**, **Profiles**, **Skills do Hermes**,
-and **Logs**.
+**Runtime Hermes**, **Provider & Modelo**, **Profiles**, **Messengers**,
+**Skills do Hermes**, and **Logs**. Each non-runtime tab is its own component
+(`HermesAiModelsConfig`, `HermesProfilesConfig`, `HermesMessengersConfig`,
+`HermesSkillsConfig`, `HermesLogsConfig`) so the page can grow without turning
+back into a single giant file.
 Clicking **Abrir Dashboard Hermes** launches the dashboard and opens the returned localhost URL in the existing Craft embedded browser with `browserPane.create({ url, show: true })`, not in the OS default browser.
 
 ### Version display
@@ -598,7 +611,7 @@ Hermes sessions now receive two separate local MCP endpoints in their ACP
 | MCP name | Owner | Purpose |
 | -------- | ----- | ------- |
 | `craft-sources` | existing `McpPoolServer` | Workspace source tools (GitHub, Linear, Notion, etc.) through the shared source pool. |
-| `craft-session` | `CraftSessionToolsMcpServer` | Craft-native session tools: plan/auth/config helpers, `call_llm`, `spawn_session`, session metadata tools, `browser_tool`, and `automation_tool`. |
+| `craft-session` | `CraftSessionToolsMcpServer` | Craft-native session tools: plan/auth/config helpers, `call_llm`, `spawn_session`, session metadata tools, `browser_tool`, `automation_tool`, and `meeting_tool`. |
 
 This is intentionally Hermes-only wiring in `HermesAgent`; Claude and Pi keep
 their existing adapters. The bridge reuses the same session callback registry
@@ -621,12 +634,20 @@ special-cases `craft-session` and `craft-sources` so these tools pass through
 the same permission, prerequisite, logging, and UI paths as Pi/Claude tools
 instead of looking like unrelated external MCP tools.
 
+Hermes tool approvals are intentionally handled by Craft's UI. The Hermes ACP
+server emits `session/request_permission`; `HermesAgent` converts that to the
+normal Craft permission request callback, and `respondToPermission` resolves
+the ACP option (`allow_once`, `allow_always`, or reject). Do not rely on the
+ACP provider's default permission behavior, because without an explicit client
+handler it may select the first option instead of pausing for the user.
+
 Important separation rules:
 
 - No Craft internals are injected into Hermes Python. Hermes only sees MCP.
 - `craft-sources` and `craft-session` are local-only `127.0.0.1` endpoints.
 - `browser_tool` uses Craft's built-in browser abstraction, not an external OS browser.
 - Scheduled-task creation goes through `automation_tool`, which writes Craft `automations.json` and reloads the active `AutomationSystem`; Hermes' native `HERMES_HOME/cron/jobs.json` should remain disabled/hidden in Craft context.
+- Meeting control goes through `meeting_tool`, which only forwards `start`, `status`, `list`, `transcript`, and `stop` to session-scoped Craft-native meeting callbacks when a native runtime has registered them; otherwise it fails closed with an unavailable error. Google Meet bot startup is delegated to Hermes' `google_meet` plugin through Craft's native meeting service and requires a dedicated Playwright storage state at `<HERMES_HOME>/workspace/meetings/bot-auth.json`; do not reuse the meeting organizer's visible BrowserPane cookies as the bot identity. The Browser Pane toolbar can hand an already-open Meet tab to `MeetingService.start({ browserInstanceId })` so the user keeps their visible session while the bot joins as a separate Playwright participant; the bundle ships `playwright` + `websockets` + Chromium inside `hermes-venv` and `apps/electron/scripts/create-meet-bot-auth.py` is the helper to mint `bot-auth.json` from a dedicated Google account.
 
 ## Session and configuration isolation
 
@@ -703,8 +724,9 @@ updates `SourceManager` state.
     `craft-sources` + `craft-session` MCP config.
 - `packages/shared/src/mcp/session-tools-server.test.ts`
   - Covers canonical tool listing plus `call_llm`, `spawn_session`,
-    late-bound session-management callbacks, and `automation_tool`
-    create/list/toggle/delete behavior through the MCP bridge.
+    late-bound session-management callbacks, `meeting_tool` callback/fallback
+    behavior, and `automation_tool` create/list/toggle/delete behavior through
+    the MCP bridge.
 - `packages/shared/src/agent/__tests__/hermes-agent.test.ts`
   - No-op when descriptors unchanged.
   - Restart provider on descriptor change.
@@ -773,8 +795,13 @@ whenever TypeScript runtime wiring changes.
 | `packages/shared/src/hermes/__tests__/auth-bridge.test.ts`                                          | Auth bridge tests (Claude env, Codex auth.json, active provider) |
 | `packages/shared/src/mcp/session-tools-server.ts`                                                   | Local MCP bridge for Craft-native session tools      |
 | `packages/shared/src/agent/hermes-agent.ts`                                                         | Streaming-safe lifecycle + Hermes MCP wiring         |
-| `packages/server-core/src/handlers/rpc/hermes.ts`                                                    | Runtime detection, dashboard launch, dashboard update env, marker watcher, logs, files |
-| `apps/electron/src/renderer/pages/settings/HermesSettingsPage.tsx`                                  | Hermes Settings operational UI                       |
+| `packages/shared/src/agent/backend/hermes/event-adapter.ts`                                         | Normalizes Hermes ACP `text-delta` / `tool-call` / `tool-result` / `finish` events into Craft `AgentEvent`s, shared with the other backends' display logic |
+| `packages/server-core/src/handlers/rpc/hermes.ts`                                                    | Runtime detection, dashboard launch, dashboard update env, marker watcher, logs, files, env CRUD |
+| `apps/electron/src/renderer/pages/settings/HermesSettingsPage.tsx`                                  | Hermes Settings operational UI shell (tabs)          |
+| `apps/electron/src/renderer/pages/settings/HermesAiModelsConfig.tsx`                                | Provider + model picker, brand icons, env management |
+| `apps/electron/src/renderer/pages/settings/HermesMessengersConfig.tsx`                              | Messengers tab content                               |
+| `apps/electron/src/renderer/pages/settings/HermesSkillsConfig.tsx`                                  | Skills tab content                                   |
+| `apps/electron/src/renderer/pages/settings/HermesLogsConfig.tsx`                                    | Logs tab content                                     |
 | `packages/shared/src/hermes/__tests__/acp-config.test.ts`                                           | Resolver/MCP config tests                            |
 | `packages/shared/src/mcp/session-tools-server.test.ts`                                              | Craft session tools MCP tests                        |
 | `packages/shared/src/agent/__tests__/hermes-agent.test.ts`                                          | Lifecycle tests                                      |

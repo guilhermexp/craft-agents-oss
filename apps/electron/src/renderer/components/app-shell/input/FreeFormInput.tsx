@@ -66,6 +66,7 @@ import { SourceSelectorPopover } from '@/components/ui/SourceSelectorPopover'
 import { ConnectionIcon } from '@/components/icons/ConnectionIcon'
 import { FreeFormInputContextBadge } from './FreeFormInputContextBadge'
 import type { FileAttachment, LoadedSource, LoadedSkill } from '../../../../shared/types'
+import type { HermesProfileInfo } from '@craft-agent/shared/protocol'
 import type { PermissionMode } from '@craft-agent/shared/agent/modes'
 import { type ThinkingLevel, THINKING_LEVELS, getThinkingLevelNameKey } from '@craft-agent/shared/agent/thinking-levels'
 import { useEscapeInterrupt } from '@/context/EscapeInterruptContext'
@@ -80,6 +81,7 @@ import {
   removeRecentWorkingDir,
 } from './working-directory-history'
 import { CompactPermissionModeSelector } from './CompactPermissionModeSelector'
+import { getHermesProfileModel, getHermesProfileSelectorLabel, mergeHermesProfileModels, resolveHermesProfileSelection } from './hermes-profile-badge'
 
 /**
  * Format token count for display (e.g., 1500 -> "1.5k", 200000 -> "200k")
@@ -228,6 +230,10 @@ export interface FreeFormInputProps {
   // Connection selection (hierarchical connection → model selector)
   /** Current LLM connection slug (locked after first message) */
   currentConnection?: string
+  /** Hermes profile pinned to this session */
+  hermesProfile?: string
+  /** Callback when the Hermes profile changes for this session */
+  onHermesProfileChange?: (profileName: string) => void | Promise<void>
   /** Callback when connection changes (only works when session is empty) */
   onConnectionChange?: (connectionSlug: string) => void
   /** When true, the session's locked connection has been removed */
@@ -286,6 +292,8 @@ export function FreeFormInput({
   onFollowUpIndexClick,
   compactMode = false,
   currentConnection,
+  hermesProfile,
+  onHermesProfileChange,
   onConnectionChange,
   connectionUnavailable = false,
 }: FreeFormInputProps) {
@@ -342,25 +350,6 @@ export function FreeFormInput({
 
   const availableThinkingLevels = THINKING_LEVELS
 
-  // Disable thinking selector when the current model explicitly doesn't support it
-  const thinkingDisabled = React.useMemo(() => {
-    const model = availableModels.find(m => typeof m !== 'string' && m.id === currentModel)
-    return typeof model !== 'string' && model?.supportsThinking === false
-  }, [availableModels, currentModel])
-
-  // Get display name for current model (full name, not short name)
-  const currentModelDisplayName = React.useMemo(() => {
-    const modelToDisplay = connectionDefaultModel ?? currentModel
-    const model = availableModels.find(m =>
-      typeof m === 'string' ? m === modelToDisplay : m.id === modelToDisplay
-    )
-    if (!model) {
-      // Fallback: use helper function to format unknown model IDs nicely
-      return stripPiPrefixForDisplay(getModelDisplayName(modelToDisplay))
-    }
-    return typeof model === 'string' ? stripPiPrefixForDisplay(model) : model.name
-  }, [availableModels, currentModel, connectionDefaultModel])
-
   // Group connections by provider type for hierarchical dropdown
   // Each provider (Anthropic, Pi, Hermes) can have multiple connections (API Key, OAuth, etc.)
   const connectionsByProvider = React.useMemo(() => {
@@ -404,6 +393,103 @@ export function FreeFormInput({
     return llmConnections.find(c => c.slug === effectiveConnection) ?? null
   }, [llmConnections, effectiveConnection])
 
+  const isHermesConnection = effectiveConnectionDetails?.providerType === 'hermes'
+  const [hermesProfiles, setHermesProfiles] = React.useState<HermesProfileInfo[]>([])
+  const [hermesProfilesLoading, setHermesProfilesLoading] = React.useState(false)
+  const [hermesProfilesLoaded, setHermesProfilesLoaded] = React.useState(false)
+  const [hermesProfileDropdownOpen, setHermesProfileDropdownOpen] = React.useState(false)
+  const [changingHermesProfile, setChangingHermesProfile] = React.useState<string | null>(null)
+
+  const activeHermesProfile = React.useMemo(
+    () => hermesProfiles.find(profile => profile.isActive)?.name ?? null,
+    [hermesProfiles]
+  )
+  const selectedHermesProfile = resolveHermesProfileSelection(hermesProfile, activeHermesProfile) ?? 'default'
+  const hermesProfileSelectorLabel = getHermesProfileSelectorLabel(
+    effectiveConnectionDetails?.providerType,
+    hermesProfile,
+    activeHermesProfile,
+    hermesProfilesLoading || (!hermesProfilesLoaded && !hermesProfile),
+  )
+  const effectiveAvailableModels = React.useMemo(() => {
+    if (!isHermesConnection) return availableModels
+    return mergeHermesProfileModels(availableModels, hermesProfiles)
+  }, [availableModels, hermesProfiles, isHermesConnection])
+  const selectedHermesProfileModel = React.useMemo(
+    () => getHermesProfileModel(hermesProfiles, selectedHermesProfile),
+    [hermesProfiles, selectedHermesProfile],
+  )
+
+  // Disable thinking selector when the current model explicitly doesn't support it
+  const thinkingDisabled = React.useMemo(() => {
+    const model = effectiveAvailableModels.find(m => typeof m !== 'string' && m.id === currentModel)
+    return typeof model !== 'string' && model?.supportsThinking === false
+  }, [effectiveAvailableModels, currentModel])
+
+  // Get display name for current model (full name, not short name)
+  const currentModelDisplayName = React.useMemo(() => {
+    const modelToDisplay = connectionDefaultModel ?? selectedHermesProfileModel ?? currentModel
+    const model = effectiveAvailableModels.find(m =>
+      typeof m === 'string' ? m === modelToDisplay : m.id === modelToDisplay
+    )
+    if (!model) {
+      // Fallback: use helper function to format unknown model IDs nicely
+      return stripPiPrefixForDisplay(getModelDisplayName(modelToDisplay))
+    }
+    return typeof model === 'string' ? stripPiPrefixForDisplay(getModelDisplayName(model)) : model.name
+  }, [effectiveAvailableModels, currentModel, connectionDefaultModel, selectedHermesProfileModel])
+
+  const loadHermesProfiles = React.useCallback(async () => {
+    if (!isHermesConnection) return
+    setHermesProfilesLoading(true)
+    try {
+      const result = await window.electronAPI.listHermesProfiles()
+      if (!result.success) {
+        toast.error('Failed to list Hermes profiles', { description: result.error })
+        return
+      }
+      setHermesProfiles(result.profiles)
+    } catch (error) {
+      toast.error('Failed to list Hermes profiles', { description: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setHermesProfilesLoaded(true)
+      setHermesProfilesLoading(false)
+    }
+  }, [isHermesConnection])
+
+  React.useEffect(() => {
+    if (!isHermesConnection) {
+      setHermesProfilesLoaded(false)
+      setHermesProfiles([])
+      return
+    }
+    if (compactMode) return
+    void loadHermesProfiles()
+  }, [compactMode, isHermesConnection, loadHermesProfiles])
+
+  const handleHermesProfileDropdownOpenChange = React.useCallback((open: boolean) => {
+    setHermesProfileDropdownOpen(open)
+    if (open) void loadHermesProfiles()
+  }, [loadHermesProfiles])
+
+  const handleHermesProfileSelect = React.useCallback(async (profileName: string) => {
+    if (profileName === selectedHermesProfile || changingHermesProfile) return
+    if (!onHermesProfileChange) return
+
+    setChangingHermesProfile(profileName)
+    try {
+      await onHermesProfileChange(profileName)
+      const profileModel = getHermesProfileModel(hermesProfiles, profileName)
+      if (profileModel && profileModel !== currentModel) {
+        onModelChange(profileModel, effectiveConnection)
+      }
+      toast.success(`Hermes profile: ${profileName}`)
+    } catch (error) {
+      toast.error('Failed to change Hermes profile', { description: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setChangingHermesProfile(null)
+    }
+  }, [changingHermesProfile, currentModel, effectiveConnection, hermesProfiles, onHermesProfileChange, onModelChange, selectedHermesProfile])
 
   // Access sessionStatuses and onSessionStatusChange from context for the # menu state picker
   const sessionStatuses = appShellCtx?.sessionStatuses ?? []
@@ -1953,7 +2039,68 @@ export function FreeFormInput({
 
           {/* Right side: Model + Send - never shrink so they're always visible */}
           <div className="flex items-center shrink-0">
-          {/* 5. Model/Connection Selector - Hidden in compact mode (EditPopover embedding) */}
+            {hermesProfileSelectorLabel && !compactMode && (
+              <DropdownMenu open={hermesProfileDropdownOpen} onOpenChange={handleHermesProfileDropdownOpenChange}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className={cn(
+                          "input-toolbar-btn inline-flex items-center h-7 px-2 mr-1 gap-1 text-[12px] font-medium text-muted-foreground rounded-[6px] border border-foreground/10 bg-foreground/[0.03] hover:bg-foreground/5 transition-colors select-none",
+                          hermesProfileDropdownOpen && "bg-foreground/5",
+                        )}
+	                        disabled={!onHermesProfileChange}
+	                      >
+	                        {isHermesConnection && effectiveConnectionDetails && llmConnections.length > 1 && storage.get(storage.KEYS.showConnectionIcons, true) && (
+	                          <ConnectionIcon connection={effectiveConnectionDetails} size={14} showTooltip />
+	                        )}
+	                        <span className="max-w-[160px] truncate">{hermesProfileSelectorLabel}</span>
+	                        {changingHermesProfile ? <Spinner className="h-3 w-3" /> : <ChevronDown className="h-3 w-3 opacity-60" />}
+	                      </button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    Hermes profile for this session
+                  </TooltipContent>
+                </Tooltip>
+                <StyledDropdownMenuContent side="top" align="end" sideOffset={8} className="min-w-[240px] max-h-[300px] overflow-y-auto">
+                  {hermesProfilesLoading ? (
+                    <StyledDropdownMenuItem disabled>
+                      <Spinner className="h-3.5 w-3.5" />
+                      Loading profiles…
+                    </StyledDropdownMenuItem>
+                  ) : hermesProfiles.length === 0 ? (
+                    <StyledDropdownMenuItem disabled>
+                      No Hermes profiles found
+                    </StyledDropdownMenuItem>
+                  ) : (
+                    hermesProfiles.map((profile) => {
+                      const isSelected = profile.name === selectedHermesProfile
+                      const isChanging = changingHermesProfile === profile.name
+                      const modelText = profile.model
+                        ? profile.provider ? `${profile.model} (${profile.provider})` : profile.model
+                        : 'No model configured'
+                      return (
+                        <StyledDropdownMenuItem
+                          key={profile.name}
+                          disabled={!!changingHermesProfile}
+                          onSelect={() => void handleHermesProfileSelect(profile.name)}
+                          className="min-w-0 items-start py-2"
+                        >
+                          {isChanging ? <Spinner className="mt-0.5 h-3.5 w-3.5" /> : <Check className={cn("mt-0.5 h-3.5 w-3.5", isSelected ? "opacity-100" : "opacity-0")} />}
+                          <span className="min-w-0 flex-1">
+                            <span className={cn("block truncate text-[13px]", isSelected && "font-medium text-accent")}>{profile.name}</span>
+                            <span className="block max-w-[190px] truncate text-[11px] text-muted-foreground">{modelText}</span>
+                          </span>
+                        </StyledDropdownMenuItem>
+                      )
+                    })
+                  )}
+                </StyledDropdownMenuContent>
+              </DropdownMenu>
+            )}
+            {/* 5. Model/Connection Selector - Hidden in compact mode (EditPopover embedding) */}
           {!compactMode && (
           <DropdownMenu open={modelDropdownOpen} onOpenChange={setModelDropdownOpen}>
             <Tooltip>
@@ -1972,12 +2119,12 @@ export function FreeFormInput({
                         <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                         {t('common.unavailable')}
                       </>
-                    ) : (
-                      <>
-                        {effectiveConnectionDetails && llmConnections.length > 1 && storage.get(storage.KEYS.showConnectionIcons, true) && <ConnectionIcon connection={effectiveConnectionDetails} size={14} showTooltip />}
-                        {currentModelDisplayName}
-                        {!connectionDefaultModel && <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />}
-                      </>
+	                    ) : (
+	                      <>
+	                        {!isHermesConnection && effectiveConnectionDetails && llmConnections.length > 1 && storage.get(storage.KEYS.showConnectionIcons, true) && <ConnectionIcon connection={effectiveConnectionDetails} size={14} showTooltip />}
+	                        {currentModelDisplayName}
+	                        {!connectionDefaultModel && <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />}
+	                      </>
                     )}
                   </button>
                 </DropdownMenuTrigger>
@@ -2040,10 +2187,13 @@ export function FreeFormInput({
                           </StyledDropdownMenuSubTrigger>
                           {isAuthenticated && (
                             <StyledDropdownMenuSubContent className="min-w-[220px]">
-                              {(conn.models || ANTHROPIC_MODELS).map((model) => {
+                              {(conn.providerType === 'hermes'
+                                ? mergeHermesProfileModels(conn.models || ANTHROPIC_MODELS, hermesProfiles)
+                                : (conn.models || ANTHROPIC_MODELS)
+                              ).map((model) => {
                                 const modelId = typeof model === 'string' ? model : model.id
                                 const modelName = typeof model === 'string' ? stripPiPrefixForDisplay(getModelShortName(model)) : model.name
-                                const isSelectedModel = isCurrentConnection && currentModel === modelId
+                                const isSelectedModel = isCurrentConnection && (selectedHermesProfileModel ?? currentModel) === modelId
                                 return (
                                   <StyledDropdownMenuItem
                                     key={modelId}
@@ -2085,10 +2235,10 @@ export function FreeFormInput({
                     </>
                   )}
                   {/* Model options based on effective connection's provider type */}
-                  {availableModels.map((model) => {
+                  {effectiveAvailableModels.map((model) => {
                     const modelId = typeof model === 'string' ? model : model.id
                     const modelName = typeof model === 'string' ? stripPiPrefixForDisplay(getModelShortName(model)) : model.name
-                    const isSelected = currentModel === modelId
+                    const isSelected = (selectedHermesProfileModel ?? currentModel) === modelId
                     const descriptionKey = typeof model !== 'string' && 'descriptionKey' in model ? (model.descriptionKey as string) : undefined
                     const description = descriptionKey ? t(descriptionKey) : (typeof model !== 'string' && 'description' in model ? (model.description as string) : '')
                     return (

@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import { createACPProvider, ACP_PROVIDER_AGENT_DYNAMIC_TOOL_NAME, providerAgentDynamicToolSchema, type ACPProvider } from '@mcpc-tech/acp-ai-provider'
+import type { PermissionOption, RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk'
 import { generateText, streamText } from 'ai'
 
 import type { AgentEvent } from '@craft-agent/core/types'
@@ -14,9 +15,10 @@ import type { FileAttachment } from '../utils/files.ts'
 import type { PermissionMode } from './mode-manager.ts'
 import type { LLMQueryRequest, LLMQueryResult } from './llm-tool.ts'
 import { getActiveHermesProfile, type Workspace } from '../config/storage.ts'
-import { applyHermesProfileToRuntime, buildHermesAcpMcpServers, normalizeHermesRuntimeConfig, type HermesRuntimeConfig } from '../hermes/acp-config.ts'
+import { applyHermesProfileToRuntime, buildHermesAcpMcpServers, isValidHermesProfileName, normalizeHermesRuntimeConfig, type HermesRuntimeConfig } from '../hermes/acp-config.ts'
 import { seedHermesAuthFromCraft } from '../hermes/auth-bridge.ts'
 import { CraftSessionToolsMcpServer } from '../mcp/session-tools-server.ts'
+import { HermesEventAdapter } from './backend/hermes/event-adapter.ts'
 import { clearPlanFileState, mergeSessionScopedToolCallbacks, unregisterSessionScopedToolCallbacks } from './session-scoped-tools.ts'
 
 type StreamToolPart = {
@@ -31,6 +33,25 @@ type StreamTextDeltaPart = {
   delta?: unknown
 }
 
+type AcpPermissionHandler = (request: RequestPermissionRequest) => Promise<RequestPermissionResponse>
+
+type AcpClientWithPermissionHandler = {
+  setPermissionRequestHandler?: (handler: AcpPermissionHandler) => void
+}
+
+type AcpLanguageModelWithClient = {
+  client?: AcpClientWithPermissionHandler
+}
+
+type AcpProviderInternalShape = {
+  model?: AcpLanguageModelWithClient
+}
+
+type PendingAcpPermission = {
+  resolve: (response: RequestPermissionResponse) => void
+  options: PermissionOption[]
+}
+
 export function extractHermesTextDelta(part: StreamTextDeltaPart): string {
   if (typeof part.text === 'string') return part.text
   // @mcpc-tech/acp-ai-provider currently emits LanguageModelV3-style
@@ -39,16 +60,6 @@ export function extractHermesTextDelta(part: StreamTextDeltaPart): string {
   // completing a turn after tool calls without rendering the final answer.
   if (typeof part.delta === 'string') return part.delta
   return ''
-}
-
-function serializeToolResult(result: unknown): string {
-  if (typeof result === 'string') return result
-  if (result instanceof Error) return result.message
-  try {
-    return JSON.stringify(result, null, 2)
-  } catch {
-    return String(result)
-  }
 }
 
 function modelIdAliases(modelId: string): string[] {
@@ -116,6 +127,42 @@ function buildHermesProcessEnv(runtime: ReturnType<typeof normalizeHermesRuntime
   return env
 }
 
+function stringifyAcpValue(value: unknown): string | undefined {
+  if (typeof value === 'string') return value
+  if (value === null || value === undefined) return undefined
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function getAcpToolCallCommand(request: RequestPermissionRequest): string | undefined {
+  const rawInput = stringifyAcpValue(request.toolCall.rawInput)
+  if (rawInput) return rawInput
+  const title = request.toolCall.title?.trim()
+  if (title) return title
+  return undefined
+}
+
+function chooseAcpPermissionOption(
+  options: PermissionOption[],
+  allowed: boolean,
+  alwaysAllow: boolean,
+): PermissionOption | undefined {
+  if (allowed) {
+    if (alwaysAllow) {
+      const allowAlways = options.find(option => option.kind === 'allow_always')
+      if (allowAlways) return allowAlways
+    }
+    return options.find(option => option.kind === 'allow_once')
+      ?? options.find(option => option.kind === 'allow_always')
+  }
+
+  return options.find(option => option.kind === 'reject_once')
+    ?? options.find(option => option.kind === 'reject_always')
+}
+
 export class HermesAgent extends BaseAgent {
   protected backendName = 'Hermes'
 
@@ -128,6 +175,7 @@ export class HermesAgent extends BaseAgent {
   private pendingProviderRestart = false
   private sessionToolsServer: CraftSessionToolsMcpServer | null = null
   private sessionToolsServerUrl: string | undefined
+  private pendingAcpPermissions = new Map<string, PendingAcpPermission>()
 
   constructor(config: BackendConfig) {
     super(config, config.model || '', 200_000)
@@ -171,7 +219,12 @@ export class HermesAgent extends BaseAgent {
 
   private getRuntimeConfig() {
     const runtime = normalizeHermesRuntimeConfig(getBackendRuntime(this.config) as HermesRuntimeConfig)
-    return applyHermesProfileToRuntime(runtime, getActiveHermesProfile())
+    const sessionProfile = this.config.session?.hermesProfile?.trim()
+    const activeProfile = getActiveHermesProfile()
+    const profileName = sessionProfile && isValidHermesProfileName(sessionProfile)
+      ? sessionProfile
+      : activeProfile
+    return applyHermesProfileToRuntime(runtime, isValidHermesProfileName(profileName) ? profileName : 'default')
   }
 
   private resolvedCwd(): string {
@@ -272,6 +325,36 @@ export class HermesAgent extends BaseAgent {
     return this.provider
   }
 
+  private installAcpPermissionHandler(provider: ACPProvider): void {
+    const client = (provider as unknown as AcpProviderInternalShape).model?.client
+    if (!client?.setPermissionRequestHandler) return
+
+    client.setPermissionRequestHandler(async (request: RequestPermissionRequest) => this.handleAcpPermissionRequest(request))
+  }
+
+  private async handleAcpPermissionRequest(request: RequestPermissionRequest): Promise<RequestPermissionResponse> {
+    if (!this.onPermissionRequest) {
+      this.onDebug?.('[hermes-permission] ACP permission request received without UI handler; denying')
+      return { outcome: { outcome: 'cancelled' } }
+    }
+
+    const requestId = `hermes-acp-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const command = getAcpToolCallCommand(request)
+    const toolName = request.toolCall.title?.trim() || request.toolCall.kind || 'Hermes tool'
+    const description = command ? `Hermes wants to run: ${command}` : 'Hermes wants to run a protected action.'
+
+    return await new Promise<RequestPermissionResponse>((resolve) => {
+      this.pendingAcpPermissions.set(requestId, { resolve, options: request.options })
+      this.onPermissionRequest?.({
+        requestId,
+        toolName,
+        command,
+        description,
+        type: request.toolCall.kind === 'execute' ? 'bash' : 'api_mutation',
+      })
+    })
+  }
+
   override async postInit(): Promise<PostInitResult> {
     this.refreshSessionToolCallbacks()
     await this.ensureSessionToolsServer()
@@ -338,6 +421,7 @@ export class HermesAgent extends BaseAgent {
 
     const provider = await this.getOrCreateProvider()
     const sessionInfo = await provider.initSession()
+    this.installAcpPermissionHandler(provider)
 
     this.hermesSessionId = provider.getSessionId() || sessionInfo.sessionId || null
     if (this.hermesSessionId) {
@@ -368,16 +452,18 @@ export class HermesAgent extends BaseAgent {
       ],
     })
 
-    let finalText = ''
+    const adapter = new HermesEventAdapter()
+    adapter.startTurn()
+    let completionUsage: AgentEvent | null = null
 
     try {
       for await (const part of result.fullStream) {
         switch (part.type) {
           case 'text-delta': {
             const delta = extractHermesTextDelta(part)
-            if (!delta) break
-            finalText += delta
-            yield { type: 'text_delta', text: delta }
+            for (const event of adapter.adaptTextDelta(delta)) {
+              yield event
+            }
             break
           }
           case 'tool-call': {
@@ -385,12 +471,12 @@ export class HermesAgent extends BaseAgent {
             if (toolPart.toolName !== ACP_PROVIDER_AGENT_DYNAMIC_TOOL_NAME) break
             const parsed = providerAgentDynamicToolSchema.safeParse(toolPart.input)
             if (!parsed.success) break
-            yield {
-              type: 'tool_start',
+            for (const event of adapter.adaptToolCall({
+              toolCallId: parsed.data.toolCallId,
               toolName: parsed.data.toolName,
-              toolUseId: parsed.data.toolCallId,
-              input: parsed.data.args,
-              displayName: parsed.data.toolName,
+              args: parsed.data.args,
+            })) {
+              yield event
             }
             break
           }
@@ -399,24 +485,29 @@ export class HermesAgent extends BaseAgent {
             if (toolPart.toolName !== ACP_PROVIDER_AGENT_DYNAMIC_TOOL_NAME) break
             const parsed = providerAgentDynamicToolSchema.safeParse(toolPart.input)
             if (!parsed.success) break
-            yield {
-              type: 'tool_result',
-              toolUseId: parsed.data.toolCallId,
+            for (const event of adapter.adaptToolResult({
+              toolCallId: parsed.data.toolCallId,
               toolName: parsed.data.toolName,
-              input: parsed.data.args,
-              result: serializeToolResult(toolPart.output),
-              isError: toolPart.output instanceof Error,
+              args: parsed.data.args,
+              output: toolPart.output,
+            })) {
+              yield event
             }
+            break
+          }
+          case 'finish': {
+            completionUsage = adapter.adaptFinish(part)[0] ?? null
             break
           }
         }
       }
 
+      const finalText = adapter.flushFinalText()
       if (finalText) {
-        yield { type: 'text_complete', text: finalText }
+        yield finalText
       }
 
-      yield { type: 'complete' }
+      yield completionUsage ?? { type: 'complete' }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       yield { type: 'error', message }
@@ -455,8 +546,21 @@ export class HermesAgent extends BaseAgent {
     return this.isStreaming
   }
 
-  override respondToPermission(_requestId: string, _allowed: boolean, _alwaysAllow?: boolean): void {
-    // Hermes handles its own local runtime permission UX.
+  override respondToPermission(requestId: string, allowed: boolean, alwaysAllow?: boolean): void {
+    const pending = this.pendingAcpPermissions.get(requestId)
+    if (!pending) return
+
+    this.pendingAcpPermissions.delete(requestId)
+    const option = chooseAcpPermissionOption(
+      pending.options,
+      allowed,
+      alwaysAllow ?? false,
+    )
+    pending.resolve({
+      outcome: option
+        ? { outcome: 'selected', optionId: option.optionId }
+        : { outcome: 'cancelled' },
+    })
   }
 
   async runMiniCompletion(prompt: string): Promise<string | null> {

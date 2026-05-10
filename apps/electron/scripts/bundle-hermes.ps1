@@ -152,6 +152,8 @@ $VenvPython = Join-Path $VendorDir "hermes-venv/Scripts/python.exe"
 Write-Host "Installing Hermes (non-editable)..." -ForegroundColor Cyan
 $env:UV_PROJECT_ENVIRONMENT = (Join-Path $VendorDir "hermes-venv")
 & uv pip install --python $VenvPython "${HermesSrc}[web,acp]"
+& uv pip install --python $VenvPython playwright websockets
+& $VenvPython -m playwright install chromium
 git -C $HermesSrc rev-parse --is-inside-work-tree 2>$null | Out-Null
 if ($LASTEXITCODE -eq 0) {
     $sourceBuildStatus = git -C $HermesSrc status --porcelain -- build

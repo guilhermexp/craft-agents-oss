@@ -9,11 +9,31 @@ export interface ChannelConfig {
   labelId: string;
   defaultSourceSlugs?: string[];
   defaultPermissionMode?: PermissionMode;
+  workingDirectory?: string;
+  participants?: ChannelParticipant[];
+  routing?: ChannelRoutingConfig;
 }
 
 export interface WorkspaceChannelsConfig {
   version: number;
   channels: ChannelConfig[];
+}
+
+export interface ChannelParticipant {
+  id: string;
+  displayName: string;
+  llmConnection: string;
+  model?: string;
+  hermesProfile?: string;
+  defaultSourceSlugs?: string[];
+  permissionMode?: PermissionMode;
+  workingDirectory?: string;
+}
+
+export interface ChannelRoutingConfig {
+  mode: 'manual-tags' | 'lead' | 'all' | 'orchestrator';
+  leadParticipantId?: string;
+  allowAllMention?: boolean;
 }
 
 export interface CreateChannelInput {
@@ -22,6 +42,9 @@ export interface CreateChannelInput {
   color?: EntityColor;
   defaultSourceSlugs?: string[];
   defaultPermissionMode?: PermissionMode;
+  workingDirectory?: string;
+  participants?: ChannelParticipant[];
+  routing?: ChannelRoutingConfig;
 }
 
 export interface UpdateChannelInput {
@@ -30,4 +53,7 @@ export interface UpdateChannelInput {
   color?: EntityColor;
   defaultSourceSlugs?: string[];
   defaultPermissionMode?: PermissionMode;
+  workingDirectory?: string;
+  participants?: ChannelParticipant[];
+  routing?: ChannelRoutingConfig;
 }

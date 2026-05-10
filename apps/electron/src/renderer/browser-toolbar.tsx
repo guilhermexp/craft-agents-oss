@@ -10,7 +10,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import ReactDOM from 'react-dom/client'
 import { initReactI18next } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
-import { EyeOff, X, XCircle } from 'lucide-react'
+import { EyeOff, Sparkles, X, XCircle } from 'lucide-react'
 import { BrowserControls } from '@craft-agent/ui'
 import { setupI18n } from '@craft-agent/shared/i18n'
 import { HeaderIconButton } from '@/components/ui/HeaderIconButton'
@@ -61,10 +61,30 @@ declare global {
       closeWindowEntirely: () => Promise<void>
       requestProfileManagement: () => Promise<void>
       switchProfile: (profileId: string) => Promise<string | null>
+      inviteHermesToMeet: (payload: { urlOrCode: string; profileId?: string }) => Promise<{ status?: string; error?: string }>
       onStateUpdate: (callback: (state: ToolbarState) => void) => () => void
       onThemeColor: (callback: (color: string | null) => void) => () => void
       onForceCloseMenu: (callback: (payload: { reason?: string }) => void) => () => void
     }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                           */
+/* ------------------------------------------------------------------ */
+
+const GOOGLE_MEET_PREFIX = 'https://meet.google.com/'
+
+function extractGoogleMeetMeetingUrl(value: string | undefined | null): string | null {
+  if (!value) return null
+  try {
+    const url = new URL(value)
+    if (url.hostname !== 'meet.google.com') return null
+    const match = url.pathname.toLowerCase().match(/^\/([a-z]{3}-[a-z]{4}-[a-z]{3})(?:$|[/?#])/)
+    return match ? `${GOOGLE_MEET_PREFIX}${match[1]}` : null
+  } catch {
+    const match = value.toLowerCase().match(/\b([a-z]{3}-[a-z]{4}-[a-z]{3})\b/)
+    return match ? `${GOOGLE_MEET_PREFIX}${match[1]}` : null
   }
 }
 
@@ -83,11 +103,26 @@ function BrowserToolbarApp() {
   const [themeColor, setThemeColor] = useState<string | null>(null)
   const [windowMenuOpen, setWindowMenuOpen] = useState(false)
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [inviteState, setInviteState] = useState<'idle' | 'starting' | 'sent' | 'error'>('idle')
+  const [inviteError, setInviteError] = useState<string | null>(null)
   const menuContentRef = useRef<HTMLDivElement | null>(null)
   const profileMenuContentRef = useRef<HTMLDivElement | null>(null)
   const anyMenuOpen = windowMenuOpen || profileMenuOpen
 
   const api = window.browserToolbar
+  const detectedMeetUrl = extractGoogleMeetMeetingUrl(state.url) ?? extractGoogleMeetMeetingUrl(state.title)
+
+  useEffect(() => {
+    setInviteState('idle')
+    setInviteError(null)
+    if (detectedMeetUrl) {
+      console.info('[browser-toolbar] detected Google Meet URL', {
+        instanceId: api?.instanceId,
+        detectedMeetUrl,
+        rawUrl: state.url,
+      })
+    }
+  }, [api?.instanceId, detectedMeetUrl, state.url])
 
   useEffect(() => {
     if (!api) return
@@ -166,6 +201,35 @@ function BrowserToolbarApp() {
     void api?.stop()
   }, [api])
 
+  const handleInviteHermes = useCallback(async () => {
+    if (!api || !detectedMeetUrl || inviteState === 'starting' || inviteState === 'sent') return
+    setInviteState('starting')
+    setInviteError(null)
+    console.info('[browser-toolbar] invite Hermes handler start', {
+      instanceId: api.instanceId,
+      detectedMeetUrl,
+      profileId: state.profile?.id,
+    })
+
+    try {
+      const result = await api.inviteHermesToMeet({
+        urlOrCode: detectedMeetUrl,
+        profileId: state.profile?.id,
+      })
+      if (result?.status === 'error') throw new Error(result.error || 'Hermes failed to join')
+      setInviteState('sent')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('[browser-toolbar] invite Hermes failed', {
+        instanceId: api.instanceId,
+        detectedMeetUrl,
+        error: message,
+      })
+      setInviteError(message)
+      setInviteState('error')
+    }
+  }, [api, detectedMeetUrl, inviteState, state.profile?.id])
+
   const handleHideWindow = useCallback(() => {
     setWindowMenuOpen(false)
     void api?.hideWindow()
@@ -175,6 +239,30 @@ function BrowserToolbarApp() {
     setWindowMenuOpen(false)
     void api?.closeWindowEntirely()
   }, [api])
+
+  const inviteButtonTitle = inviteError ?? detectedMeetUrl ?? undefined
+  const inviteButtonClassName = inviteState === 'error'
+    ? 'titlebar-no-drag inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 text-xs font-semibold text-destructive shadow-minimal transition-colors hover:bg-destructive/15'
+    : 'titlebar-no-drag inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/12 px-2.5 text-xs font-semibold text-emerald-700 shadow-minimal transition-colors hover:bg-emerald-500/20 disabled:cursor-default disabled:opacity-70 dark:text-emerald-300'
+
+  const hermesInviteButton = detectedMeetUrl ? (
+    <button
+      type="button"
+      onClick={handleInviteHermes}
+      disabled={inviteState === 'starting' || inviteState === 'sent'}
+      className={inviteButtonClassName}
+      title={inviteButtonTitle}
+    >
+      <Sparkles className="h-3.5 w-3.5" />
+      {inviteState === 'starting'
+        ? 'Chamando...'
+        : inviteState === 'sent'
+          ? 'Hermes chamado'
+          : inviteState === 'error'
+            ? 'Hermes falhou'
+            : 'Convidar Hermes'}
+    </button>
+  ) : null
 
   return (
     <>
@@ -204,6 +292,7 @@ function BrowserToolbarApp() {
         onGoForward={handleGoForward}
         onReload={handleReload}
         onStop={handleStop}
+        leadingContent={hermesInviteButton}
         trailingContent={(
           <div className="ml-2 flex items-center gap-1.5 titlebar-no-drag">
             {state.profile && (
@@ -241,6 +330,18 @@ function BrowserToolbarApp() {
                 minWidth="min-w-44"
                 className="titlebar-no-drag z-[110] max-h-none overflow-visible"
               >
+                {detectedMeetUrl && (
+                  <StyledDropdownMenuItem onSelect={handleInviteHermes}>
+                    <Sparkles className="h-3.5 w-3.5" />
+                    {inviteState === 'starting'
+                      ? 'Chamando Hermes...'
+                      : inviteState === 'sent'
+                        ? 'Hermes chamado'
+                        : inviteState === 'error'
+                          ? 'Hermes falhou - tentar de novo'
+                          : 'Convidar Hermes para esta reunião'}
+                  </StyledDropdownMenuItem>
+                )}
                 <StyledDropdownMenuItem onSelect={handleHideWindow}>
                   <EyeOff className="h-3.5 w-3.5" />
                   Hide Window

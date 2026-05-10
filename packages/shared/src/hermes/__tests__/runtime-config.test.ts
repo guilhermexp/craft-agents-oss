@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'bun:test'
+import { parseDocument } from 'yaml'
 
 import {
   parseHermesConfigSnapshot,
   resolveDefaultHermesPaths,
+  updateHermesConfigMainModel,
 } from '../runtime-config.ts'
 
 describe('resolveDefaultHermesPaths', () => {
@@ -39,13 +41,39 @@ custom_providers:
         name: 'nous',
         baseUrl: 'https://api.nous.example',
         model: undefined,
+        models: [],
+        keyEnv: undefined,
       },
       {
         name: 'internal-labs',
         baseUrl: undefined,
         model: 'labs/dev-model',
+        models: [],
+        keyEnv: undefined,
       },
     ])
+  })
+
+  it('extracts new-style provider maps with model lists and key env names', () => {
+    const snapshot = parseHermesConfigSnapshot(`
+providers:
+  cliproxy:
+    base_url: http://127.0.0.1:8317/v1
+    key_env: CLIPROXY_API_KEY
+    default_model: claude-sonnet-4-6
+    models:
+      claude-sonnet-4-6: {}
+      gemini-2.5-pro: {}
+`)
+
+    expect(snapshot.providers).toEqual(['cliproxy'])
+    expect(snapshot.customProviders).toEqual([{
+      name: 'cliproxy',
+      baseUrl: 'http://127.0.0.1:8317/v1',
+      model: 'claude-sonnet-4-6',
+      models: ['claude-sonnet-4-6', 'gemini-2.5-pro'],
+      keyEnv: 'CLIPROXY_API_KEY',
+    }])
   })
 
   it('normalizes string-form model config and de-duplicates providers', () => {
@@ -88,5 +116,33 @@ custom_providers:
     expect(snapshot.defaultProvider).toBe('anthropic')
     expect(snapshot.defaultModel).toBe('claude-opus-4-7')
     expect(snapshot.fallbackProviders).toEqual(['openai-codex', 'google'])
+  })
+})
+
+describe('updateHermesConfigMainModel', () => {
+  it('preserves existing model subkeys while setting provider, model, and base URL', () => {
+    const updated = updateHermesConfigMainModel(`
+model:
+  provider: custom
+  default: old-model
+  api_mode: chat_completions
+fallback_providers:
+  - openai-codex
+`, {
+      provider: 'cliproxy',
+      model: 'claude-sonnet-4-6',
+      baseUrl: ' http://127.0.0.1:8317/v1 ',
+    })
+
+    const parsed = parseDocument(updated).toJSON() as Record<string, unknown>
+    expect(parsed).toEqual({
+      model: {
+        provider: 'cliproxy',
+        default: 'claude-sonnet-4-6',
+        api_mode: 'chat_completions',
+        base_url: 'http://127.0.0.1:8317/v1',
+      },
+      fallback_providers: ['openai-codex'],
+    })
   })
 })

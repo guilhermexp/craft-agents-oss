@@ -10,7 +10,7 @@
  */
 
 import type { SettingsSubpage } from '../../../shared/types'
-import hermesIcon from '@/assets/provider-icons/hermes.svg'
+import hermesIcon from '@/assets/provider-icons/nousresearch.webp'
 
 type IconProps = { className?: string }
 
@@ -33,20 +33,11 @@ export const AiSettingsIcon = ({ className }: IconProps) => (
 
 /** Hermes runtime icon */
 export const HermesSettingsIcon = ({ className }: IconProps) => (
-  <span
+  <img
     aria-hidden="true"
-    className={`inline-block ${className ?? ''}`}
-    style={{
-      backgroundColor: 'currentColor',
-      WebkitMaskImage: `url(${hermesIcon})`,
-      WebkitMaskPosition: 'center',
-      WebkitMaskRepeat: 'no-repeat',
-      WebkitMaskSize: 'contain',
-      maskImage: `url(${hermesIcon})`,
-      maskPosition: 'center',
-      maskRepeat: 'no-repeat',
-      maskSize: 'contain',
-    }}
+    src={hermesIcon}
+    alt=""
+    className={`inline-block object-contain ${className ?? ''}`}
   />
 )
 

@@ -72,6 +72,7 @@ export interface ISessionManager {
   setSessionSources(sessionId: string, sourceSlugs: string[]): Promise<void>
   setSessionLabels(sessionId: string, labels: string[]): void
   setSessionConnection(sessionId: string, connectionSlug: string): Promise<void>
+  setSessionHermesProfile(sessionId: string, profileName: string): Promise<void>
   updateSessionModel(sessionId: string, workspaceId: string, model: string | null, connection?: string): Promise<void>
 
   // ---------------------------------------------------------------------------

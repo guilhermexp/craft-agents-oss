@@ -236,6 +236,13 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   RPC_CHANNELS.hermes.GET_PROFILE_SETUP_COMMAND,
   RPC_CHANNELS.hermes.GET_PROFILE_SOUL,
   RPC_CHANNELS.hermes.UPDATE_PROFILE_SOUL,
+
+  // meetings — local Electron BrowserView-backed meeting control
+  RPC_CHANNELS.meetings.START,
+  RPC_CHANNELS.meetings.LIST,
+  RPC_CHANNELS.meetings.STATUS,
+  RPC_CHANNELS.meetings.STOP,
+  RPC_CHANNELS.meetings.TRANSCRIPT,
 ])
 
 // ---------------------------------------------------------------------------
@@ -414,7 +421,10 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.channels.CREATE,
   RPC_CHANNELS.channels.UPDATE,
   RPC_CHANNELS.channels.DELETE,
+  RPC_CHANNELS.channels.LIST_MESSAGES,
+  RPC_CHANNELS.channels.SEND_MESSAGE,
   RPC_CHANNELS.channels.CHANGED,
+  RPC_CHANNELS.channels.MESSAGES_CHANGED,
 
   // views — workspace UI views
   RPC_CHANNELS.views.LIST,

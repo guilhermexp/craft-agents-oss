@@ -35,7 +35,7 @@ export interface ParsedRoute {
 // Compound Route Types (new format)
 // =============================================================================
 
-export type NavigatorType = 'sessions' | 'sources' | 'skills' | 'automations' | 'settings'
+export type NavigatorType = 'sessions' | 'sources' | 'skills' | 'automations' | 'meetings' | 'settings'
 
 export interface ParsedCompoundRoute {
   /** The navigator type */
@@ -61,7 +61,7 @@ export interface ParsedCompoundRoute {
  * Known prefixes that indicate a compound route
  */
 const COMPOUND_ROUTE_PREFIXES = [
-  'allSessions', 'flagged', 'archived', 'state', 'label', 'view', 'sources', 'skills', 'automations', 'settings'
+  'allSessions', 'flagged', 'archived', 'state', 'label', 'view', 'sources', 'skills', 'automations', 'meetings', 'settings'
 ]
 
 /**
@@ -155,6 +155,11 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
     }
 
     return null
+  }
+
+  // Meetings navigator
+  if (first === 'meetings') {
+    return { navigator: 'meetings', details: null }
   }
 
   // Automations navigator - supports type filters (scheduled, event, agentic)
@@ -285,6 +290,10 @@ export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
     return `${base}/automation/${parsed.details.id}`
   }
 
+  if (parsed.navigator === 'meetings') {
+    return 'meetings'
+  }
+
   // Sessions navigator
   let base: string
   const filter = parsed.sessionFilter
@@ -406,6 +415,11 @@ function convertCompoundToViewRoute(compound: ParsedCompoundRoute): ParsedRoute 
       return { type: 'view', name: 'automations', params: {} }
     }
     return { type: 'view', name: 'automation-info', id: compound.details.id, params: {} }
+  }
+
+  // Meetings
+  if (compound.navigator === 'meetings') {
+    return { type: 'view', name: 'meetings', params: {} }
   }
 
   // Sessions
@@ -539,6 +553,11 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
       filter: compound.automationFilter,
       details: { type: 'automation', automationId: compound.details.id },
     }
+  }
+
+  // Meetings
+  if (compound.navigator === 'meetings') {
+    return { navigator: 'meetings' }
   }
 
   // Sessions
@@ -720,6 +739,13 @@ function navigationStateToCompoundRoute(state: NavigationState): ParsedCompoundR
       navigator: 'automations',
       automationFilter: state.filter ?? undefined,
       details: state.details ? { type: 'automation', id: state.details.automationId } : null,
+    }
+  }
+
+  if (state.navigator === 'meetings') {
+    return {
+      navigator: 'meetings',
+      details: null,
     }
   }
 

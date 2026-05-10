@@ -25,20 +25,25 @@ import {
   type HermesRuntimeDetailsResult,
   type HermesSkillInfo,
   type HermesUpdateResult,
+  type HermesEnvVar,
+  type HermesListEnvResult,
+  type HermesEnvMutationResult,
 } from '@craft-agent/shared/protocol'
 import { isValidHermesProfileName, normalizeHermesRuntimeConfig, type NormalizedHermesRuntimeConfig } from '@craft-agent/shared/hermes/acp-config'
 import { readHermesCodexTokens, seedHermesAuthFromCraft } from '@craft-agent/shared/hermes/auth-bridge'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { getActiveHermesProfile, setActiveHermesProfile } from '@craft-agent/shared/config'
-import { parseHermesConfigSnapshot } from '@craft-agent/shared/hermes/runtime-config'
+import { parseHermesConfigSnapshot, updateHermesConfigMainModel } from '@craft-agent/shared/hermes/runtime-config'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
+import type { Logger } from '../../runtime/platform'
 
 const execFile = promisify(execFileCb)
 
 let dashboardProcess: ChildProcess | null = null
 let dashboardUrl: string | null = null
 let dashboardPort: number | null = null
+let dashboardStartPromise: Promise<HermesDashboardResult> | null = null
 let dashboardSessionToken: string | null = null
 let dashboardSessionTokenUrl: string | null = null
 let updateMarkerMonitor: ReturnType<typeof setInterval> | null = null
@@ -49,6 +54,153 @@ let authJsonWatcherPath: string | null = null
 let authJsonSyncInFlight = false
 let authJsonLastSyncedAccessToken: string | null = null
 let authJsonDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+function parseEnvFile(content: string): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+    const idx = line.indexOf('=')
+    if (idx <= 0) continue
+    const key = line.slice(0, idx).trim()
+    let value = line.slice(idx + 1).trim()
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
+    }
+    if (key) env[key] = value
+  }
+  return env
+}
+
+async function listCustomProviderModels(runtime: NormalizedHermesRuntimeConfig, provider: string, logger?: Logger): Promise<Array<{ id: string }>> {
+  const rawConfig = existsSync(runtime.configPath) ? await readFile(runtime.configPath, 'utf-8') : ''
+  const snapshot = parseHermesConfigSnapshot(rawConfig)
+  const customProvider = snapshot.customProviders.find(entry => entry.name === provider)
+  if (!customProvider) return []
+
+  const configuredModels = (customProvider.models ?? [])
+    .filter(id => typeof id === 'string' && id.length > 0)
+    .map(id => ({ id }))
+
+  if (!customProvider.baseUrl) {
+    return configuredModels
+  }
+
+  const envFile = existsSync(runtime.envPath) ? parseEnvFile(await readFile(runtime.envPath, 'utf-8')) : {}
+  const apiKey = customProvider.keyEnv ? (envFile[customProvider.keyEnv] || process.env[customProvider.keyEnv] || '') : ''
+  const modelsUrl = `${customProvider.baseUrl.replace(/\/$/, '')}/models`
+
+  try {
+    const response = await fetch(modelsUrl, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!response.ok) return configuredModels
+    const body = await response.json() as { data?: Array<{ id?: unknown }>; models?: Array<{ id?: unknown }> }
+    const remoteModels = (Array.isArray(body.data) ? body.data : body.models ?? [])
+      .map(entry => (typeof entry?.id === 'string' ? entry.id : null))
+      .filter((id): id is string => Boolean(id))
+      .slice(0, 100)
+      .map(id => ({ id }))
+    return remoteModels.length > 0 ? remoteModels : configuredModels
+  } catch (error) {
+    logger?.debug('[Hermes] Failed to discover custom provider models', { provider, modelsUrl, error })
+    return configuredModels
+  }
+}
+
+async function preserveDashboardMainModelBaseUrl(
+  fetchJson: (path: string, init?: RequestInit) => Promise<unknown>,
+  provider: string,
+  model: string,
+  baseUrl: string,
+): Promise<unknown> {
+  const rawConfig = await fetchJson('/api/config/raw') as { yaml?: string }
+  const yamlText = updateHermesConfigMainModel(rawConfig.yaml ?? '', { provider, model, baseUrl })
+  return fetchJson('/api/config/raw', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ yaml_text: yamlText }),
+  })
+}
+
+/**
+ * Gracefully shut down the Hermes dashboard child (and its uvicorn worker fork).
+ * Spawned with `detached: true` so killing the negative pid signals the whole
+ * process group. SIGTERM first, SIGKILL after `timeoutMs`.
+ */
+export async function shutdownHermesDashboard(timeoutMs = 3000): Promise<void> {
+  const child = dashboardProcess
+  if (!child || child.pid == null || child.exitCode !== null || child.killed) return
+
+  const exited = new Promise<void>((resolveExit) => {
+    child.once('exit', () => resolveExit())
+  })
+
+  if (process.platform === 'win32') {
+    try {
+      await execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'])
+    } catch {
+      try { child.kill('SIGKILL') } catch { /* already gone */ }
+    }
+  } else {
+    try { process.kill(-child.pid, 'SIGTERM') }
+    catch { try { child.kill('SIGTERM') } catch { /* already gone */ } }
+  }
+
+  await Promise.race([
+    exited,
+    new Promise<void>((resolveTimeout) => setTimeout(resolveTimeout, timeoutMs)),
+  ])
+
+  if (child.exitCode === null && !child.killed) {
+    try {
+      if (process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL')
+      else child.kill('SIGKILL')
+    } catch { /* already gone */ }
+  }
+}
+
+/**
+ * Defensive cleanup for crash-leaked dashboards. Scans for live processes that
+ * (a) run from `vendorPython` and (b) execute `hermes_cli.main dashboard ...`.
+ * The launchd-managed gateway uses `gateway run --replace` (no `dashboard`
+ * substring) and is therefore not matched. Best-effort; skips silently on
+ * unsupported platforms.
+ */
+export async function cleanupHermesDashboardOrphans(vendorPython: string): Promise<number[]> {
+  if (!vendorPython || process.platform === 'win32') return []
+  let stdout: string
+  try {
+    ({ stdout } = await execFile('ps', ['-A', '-o', 'pid=,command=']))
+  } catch {
+    return []
+  }
+
+  const pids: number[] = []
+  for (const raw of stdout.split('\n')) {
+    if (!raw.includes(vendorPython)) continue
+    if (!raw.includes('hermes_cli.main')) continue
+    if (!raw.includes(' dashboard')) continue
+    const pid = Number.parseInt(raw.trim().split(/\s+/)[0], 10)
+    if (!Number.isFinite(pid) || pid === process.pid) continue
+    pids.push(pid)
+  }
+
+  for (const pid of pids) {
+    try { process.kill(pid, 'SIGTERM') } catch { /* already gone */ }
+  }
+  if (pids.length === 0) return []
+
+  await new Promise((r) => setTimeout(r, 1000))
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 0)
+      process.kill(pid, 'SIGKILL')
+    } catch { /* already gone */ }
+  }
+  return pids
+}
 
 const HERMES_HOME_HIDDEN_NAMES = new Set(['.env', 'auth.json', 'auth.lock', '.DS_Store'])
 const HERMES_HOME_COLLAPSED_DIRS = new Set(['cron', 'logs', 'memories', 'memory', 'sessions', 'skills', 'skins'])
@@ -816,16 +968,9 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
       pluginNames: await listPluginNames(agentRoot),
     }
   })
-
   async function ensureDashboardRunning(): Promise<HermesDashboardResult> {
-    const runtime = normalizeHermesRuntimeConfig()
-    const resolvedCommand = await resolveHermesBinary(runtime.command)
-    if (!resolvedCommand) {
-      return { success: false, error: `Hermes runtime not found: ${runtime.command}` }
-    }
-
     if (dashboardProcess && dashboardProcess.exitCode === null && !dashboardProcess.killed && dashboardUrl && dashboardPort) {
-      startHermesUpdateMarkerMonitor(deps, runtime)
+      startHermesUpdateMarkerMonitor(deps, normalizeHermesRuntimeConfig())
       return {
         success: true,
         url: dashboardUrl,
@@ -834,81 +979,101 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
       }
     }
 
-    const port = await findFreePort()
-    const { command, args } = buildDashboardCommand(runtime, port)
-    startHermesUpdateMarkerMonitor(deps, runtime)
-    const env = buildHermesDashboardEnv(deps, runtime)
-    try {
-      const seed = await seedHermesAuthFromCraft({
-        hermesHome: runtime.hermesHome,
-        connectionSlug: undefined,
-      })
-      Object.assign(env, seed.env)
-      if (seed.seededProviders.length > 0) {
-        deps.platform.logger.info('[Hermes] Seeded dashboard provider auth from Craft credentials', {
-          providers: seed.seededProviders,
+    if (dashboardStartPromise) {
+      return dashboardStartPromise
+    }
+
+    dashboardStartPromise = (async () => {
+      const runtime = normalizeHermesRuntimeConfig()
+      const resolvedCommand = await resolveHermesBinary(runtime.command)
+      if (!resolvedCommand) {
+        return { success: false, error: `Hermes runtime not found: ${runtime.command}` }
+      }
+
+      const port = await findFreePort()
+      const { command, args } = buildDashboardCommand(runtime, port)
+      startHermesUpdateMarkerMonitor(deps, runtime)
+      const env = buildHermesDashboardEnv(deps, runtime)
+      try {
+        const seed = await seedHermesAuthFromCraft({
+          hermesHome: runtime.hermesHome,
+          connectionSlug: undefined,
         })
+        Object.assign(env, seed.env)
+        if (seed.seededProviders.length > 0) {
+          deps.platform.logger.info('[Hermes] Seeded dashboard provider auth from Craft credentials', {
+            providers: seed.seededProviders,
+          })
+        }
+      } catch (error) {
+        deps.platform.logger.warn('[Hermes] Failed to seed dashboard provider auth from Craft credentials', error)
       }
-    } catch (error) {
-      deps.platform.logger.warn('[Hermes] Failed to seed dashboard provider auth from Craft credentials', error)
-    }
-    const child = spawn(command, args, {
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+      const child = spawn(command, args, {
+        env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        // POSIX only: give the dashboard its own process group so we can signal
+        // the entire tree (the dashboard forks a uvicorn worker) on shutdown.
+        detached: process.platform !== 'win32',
+      })
 
-    let output = ''
-    const appendOutput = (chunk: unknown) => {
-      output += String(chunk)
-      if (output.length > 20_000) output = output.slice(-20_000)
-      deps.platform.logger.debug(`[Hermes dashboard] ${String(chunk).trim()}`)
-    }
-    child.stderr?.on('data', appendOutput)
-    child.stdout?.on('data', appendOutput)
-    child.once('exit', (code, signal) => {
-      deps.platform.logger?.info?.('[Hermes] Dashboard exited', { code, signal })
-      if (dashboardProcess === child) {
-        dashboardProcess = null
-        dashboardUrl = null
-        dashboardPort = null
-        dashboardSessionToken = null
-        dashboardSessionTokenUrl = null
+      let output = ''
+      const appendOutput = (chunk: unknown) => {
+        output += String(chunk)
+        if (output.length > 20_000) output = output.slice(-20_000)
+        deps.platform.logger.debug(`[Hermes dashboard] ${String(chunk).trim()}`)
       }
-    })
+      child.stderr?.on('data', appendOutput)
+      child.stdout?.on('data', appendOutput)
+      child.once('exit', (code, signal) => {
+        deps.platform.logger?.info?.('[Hermes] Dashboard exited', { code, signal })
+        if (dashboardProcess === child) {
+          dashboardProcess = null
+          dashboardUrl = null
+          dashboardPort = null
+          dashboardStartPromise = null
+          dashboardSessionToken = null
+          dashboardSessionTokenUrl = null
+        }
+      })
 
-    try {
-      await Promise.race([
-        waitForPort(port),
-        new Promise<never>((_resolve, reject) => {
-          child.once('error', reject)
-          child.once('exit', (code) => reject(new Error(output.trim() || `Hermes dashboard exited with code ${code}`)))
-        }),
-      ])
-    } catch (err) {
-      if (!child.killed) child.kill()
+      try {
+        await Promise.race([
+          waitForPort(port),
+          new Promise<never>((_resolve, reject) => {
+            child.once('error', reject)
+            child.once('exit', (code) => reject(new Error(output.trim() || `Hermes dashboard exited with code ${code}`)))
+          }),
+        ])
+      } catch (err) {
+        if (!child.killed) child.kill()
+        dashboardStartPromise = null
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        }
+      }
+
+      if (child.exitCode !== null) {
+        dashboardStartPromise = null
+        return {
+          success: false,
+          error: output.trim() || `Hermes dashboard exited with code ${child.exitCode}`,
+        }
+      }
+
+      dashboardProcess = child
+      dashboardPort = port
+      dashboardUrl = `http://127.0.0.1:${port}`
+
       return {
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
+        success: true,
+        url: dashboardUrl,
+        port,
+        pid: child.pid,
       }
-    }
+    })()
 
-    if (child.exitCode !== null) {
-      return {
-        success: false,
-        error: output.trim() || `Hermes dashboard exited with code ${child.exitCode}`,
-      }
-    }
-
-    dashboardProcess = child
-    dashboardPort = port
-    dashboardUrl = `http://127.0.0.1:${port}`
-
-    return {
-      success: true,
-      url: dashboardUrl,
-      port,
-      pid: child.pid,
-    }
+    return dashboardStartPromise
   }
 
   async function fetchDashboardJson(path: string, init?: RequestInit): Promise<unknown> {
@@ -955,7 +1120,11 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
       return {
         success: true as const,
         data: {
-          activeProvider: modelInfo.provider || undefined,
+          activeProvider: modelInfo.provider
+            || (typeof config.provider === 'string' ? config.provider : undefined)
+            || (typeof config.active_provider === 'string' ? config.active_provider : undefined)
+            || modelOptions.providers?.find(provider => typeof provider.slug === 'string')?.slug
+            || undefined,
           activeModel: modelInfo.model || (typeof config.model === 'string' ? config.model : undefined),
           providers: (modelOptions.providers ?? []).map(provider => ({
             id: provider.slug,
@@ -981,11 +1150,16 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
         model = modelInfo.model || ''
       }
       if (provider && model) {
+        const baseUrl = typeof body.config?.base_url === 'string' ? body.config.base_url.trim() : ''
         const data = await fetchDashboardJson('/api/model/set', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ scope: 'main', provider, model }),
         })
+        if (baseUrl) {
+          const configData = await preserveDashboardMainModelBaseUrl(fetchDashboardJson, provider, model, baseUrl)
+          return { success: true as const, data: { model: data, config: configData } }
+        }
         return { success: true as const, data }
       }
       const currentConfig = await fetchDashboardJson('/api/config') as Record<string, unknown>
@@ -1006,9 +1180,14 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
         providers?: Array<{ slug?: string; models?: string[] }>
       } | null
       const matchingProvider = data?.providers?.find(entry => entry.slug === provider)
-      const models = (matchingProvider?.models ?? [])
+      let models = (matchingProvider?.models ?? [])
         .filter((id): id is string => typeof id === 'string' && id.length > 0)
         .map(id => ({ id }))
+
+      if (models.length === 0 && provider) {
+        models = await listCustomProviderModels(normalizeHermesRuntimeConfig(), provider, deps.platform.logger)
+      }
+
       return { success: true as const, data: { models } }
     } catch (error) {
       return { success: false as const, error: error instanceof Error ? error.message : String(error) }
@@ -1157,6 +1336,61 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
         body: JSON.stringify({ content }),
       })
       return { success: true, name }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.hermes.LIST_ENV, async (): Promise<HermesListEnvResult> => {
+    try {
+      const raw = await fetchDashboardJson('/api/env') as Record<string, {
+        is_set?: boolean
+        redacted_value?: string | null
+        description?: string
+        category?: string
+        is_password?: boolean
+      }>
+      const vars: HermesEnvVar[] = Object.entries(raw ?? {}).map(([key, info]) => ({
+        key,
+        isSet: Boolean(info?.is_set),
+        redactedValue: info?.redacted_value ?? undefined,
+        description: info?.description,
+        category: info?.category,
+        isPassword: info?.is_password,
+      }))
+      return { success: true, vars }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.hermes.SET_ENV, async (
+    _ctx,
+    body: { key: string; value: string },
+  ): Promise<HermesEnvMutationResult> => {
+    try {
+      await fetchDashboardJson('/api/env', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: body.key, value: body.value }),
+      })
+      return { success: true, key: body.key }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.hermes.DELETE_ENV, async (
+    _ctx,
+    key: string,
+  ): Promise<HermesEnvMutationResult> => {
+    try {
+      await fetchDashboardJson('/api/env', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key }),
+      })
+      return { success: true, key }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) }
     }

@@ -10,7 +10,7 @@ import azureIcon from '@/assets/provider-icons/azure.svg'
 import claudeIcon from '@/assets/provider-icons/claude.svg'
 import copilotIcon from '@/assets/provider-icons/copilot.svg'
 import googleIcon from '@/assets/provider-icons/google.svg'
-import hermesIcon from '@/assets/provider-icons/hermes.svg'
+import hermesIcon from '@/assets/provider-icons/nousresearch.webp'
 import huggingfaceIcon from '@/assets/provider-icons/huggingface.svg'
 import kimiIcon from '@/assets/provider-icons/kimi.svg'
 import minimaxIcon from '@/assets/provider-icons/minimax.svg'
@@ -226,7 +226,6 @@ export function getProviderIconThemeClassName(
     || resolvedIcon === providerIcons.openrouter
     || resolvedIcon === providerIcons.vercel
     || resolvedIcon === providerIcons.huggingface
-    || resolvedIcon === providerIcons.hermes
   ) {
     return 'theme-aware-invert'
   }

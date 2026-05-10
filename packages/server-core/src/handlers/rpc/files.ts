@@ -1,9 +1,9 @@
 import { readFile, writeFile, unlink, mkdir, readdir, stat } from 'fs/promises'
-import { isAbsolute, join, resolve, dirname, parse as parsePath } from 'path'
+import { isAbsolute, join, resolve, dirname, parse as parsePath, relative } from 'path'
 import { homedir } from 'os'
 import { validatePathFormat } from '../../utils/path-validation'
 import { randomUUID } from 'crypto'
-import { RPC_CHANNELS, type FileAttachment, type DirectoryListingResult } from '@craft-agent/shared/protocol'
+import { RPC_CHANNELS, type FileAttachment, type DirectoryListingResult, type FileTreeListingResult, type SessionFile } from '@craft-agent/shared/protocol'
 import type { StoredAttachment } from '@craft-agent/core/types'
 import { readFileAttachment, validateImageForClaudeAPI, IMAGE_LIMITS } from '@craft-agent/shared/utils'
 import { getSessionAttachmentsPath, validateSessionId } from '@craft-agent/shared/sessions'
@@ -14,6 +14,89 @@ import { MarkItDown } from 'markitdown-js'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { requestClientOpenFileDialog } from '@craft-agent/server-core/transport'
+
+const WORKSPACE_TREE_MAX_ENTRIES = 250
+const WORKSPACE_TREE_SKIP_DIRS = new Set([
+  'node_modules',
+  '.git',
+  '.svn',
+  '.hg',
+  'dist',
+  'build',
+  '.next',
+  '.nuxt',
+  '.cache',
+  '__pycache__',
+  'vendor',
+  '.idea',
+  '.vscode',
+  'coverage',
+  '.nyc_output',
+  '.turbo',
+  'out',
+])
+
+function expandHomePath(path: string): string {
+  if (path === '~') return homedir()
+  if (path.startsWith('~/')) return join(homedir(), path.slice(2))
+  return path
+}
+
+function isPathWithin(basePath: string, targetPath: string): boolean {
+  const rel = relative(basePath, targetPath)
+  return rel === '' || (!!rel && !rel.startsWith('..') && !isAbsolute(rel))
+}
+
+function shouldSkipWorkspaceTreeEntry(name: string): boolean {
+  return name.startsWith('.') || WORKSPACE_TREE_SKIP_DIRS.has(name)
+}
+
+async function directoryHasVisibleChildren(dirPath: string): Promise<boolean> {
+  try {
+    const entries = await readdir(dirPath, { withFileTypes: true })
+    return entries.some(entry => !shouldSkipWorkspaceTreeEntry(entry.name))
+  } catch {
+    return false
+  }
+}
+
+async function buildWorkspaceTreeEntries(dirPath: string): Promise<{ entries: SessionFile[]; truncated: boolean; totalEntries: number }> {
+  const rawEntries = await readdir(dirPath, { withFileTypes: true })
+  const visibleEntries = rawEntries.filter(entry => !shouldSkipWorkspaceTreeEntry(entry.name))
+  const sortedEntries = visibleEntries.sort((a, b) => {
+    if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1
+    return a.name.localeCompare(b.name)
+  })
+  const limitedEntries = sortedEntries.slice(0, WORKSPACE_TREE_MAX_ENTRIES)
+
+  const entries = await Promise.all(limitedEntries.map(async (entry): Promise<SessionFile | null> => {
+    if (entry.isSymbolicLink()) return null
+
+    const fullPath = join(dirPath, entry.name)
+    if (entry.isDirectory()) {
+      return {
+        name: entry.name,
+        path: fullPath,
+        type: 'directory',
+        hasChildren: await directoryHasVisibleChildren(fullPath),
+      }
+    }
+
+    const stats = await stat(fullPath).catch(() => null)
+    return {
+      name: entry.name,
+      path: fullPath,
+      type: 'file',
+      size: stats?.size,
+    }
+  }))
+
+  return {
+    entries: entries.filter((entry): entry is SessionFile => entry !== null),
+    truncated: visibleEntries.length > WORKSPACE_TREE_MAX_ENTRIES,
+    totalEntries: visibleEntries.length,
+  }
+}
 
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.file.READ,
@@ -27,6 +110,7 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.file.GENERATE_THUMBNAIL,
   RPC_CHANNELS.fs.SEARCH,
   RPC_CHANNELS.fs.LIST_DIRECTORY,
+  RPC_CHANNELS.fs.LIST_TREE,
 ] as const
 
 export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): void {
@@ -450,9 +534,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   // avoiding reading node_modules/etc. contents entirely. Uses withFileTypes
   // to get entry types without separate stat calls.
   server.handle(RPC_CHANNELS.fs.SEARCH, async (_ctx, basePath: string, query: string) => {
-    if (basePath === '~' || basePath.startsWith('~/')) {
-      basePath = basePath === '~' ? homedir() : join(homedir(), basePath.slice(2))
-    }
+    basePath = expandHomePath(basePath)
 
     deps.platform.logger.debug('[FS_SEARCH] called:', basePath, query)
     const MAX_RESULTS = 50
@@ -533,6 +615,43 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
     } catch (err) {
       deps.platform.logger.error('[FS_SEARCH] error:', err)
       return []
+    }
+  })
+
+  // Workspace/project file tree for the session info panel. This returns one
+  // directory level at a time so large repositories do not block the renderer.
+  server.handle(RPC_CHANNELS.fs.LIST_TREE, async (ctx, rootPath?: string, dirPath?: string): Promise<FileTreeListingResult> => {
+    const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
+    const workspace = workspaceId ? getWorkspaceByNameOrId(workspaceId) : null
+    const requestedRoot = expandHomePath(rootPath?.trim() || workspace?.rootPath || homedir())
+    const requestedDir = expandHomePath(dirPath?.trim() || requestedRoot)
+
+    const rootCheck = validatePathFormat(requestedRoot)
+    if (!rootCheck.valid) throw new Error(rootCheck.reason!)
+
+    const dirCheck = validatePathFormat(requestedDir)
+    if (!dirCheck.valid) throw new Error(dirCheck.reason!)
+
+    const allowedDirs = getWorkspaceAllowedDirs(workspaceId)
+    const safeRoot = await validateFilePath(resolve(requestedRoot), allowedDirs)
+    const safeDir = await validateFilePath(resolve(requestedDir), [safeRoot, ...allowedDirs])
+
+    if (!isPathWithin(safeRoot, safeDir)) {
+      throw new Error('Directory is outside the workspace tree root')
+    }
+
+    const stats = await stat(safeDir)
+    if (!stats.isDirectory()) {
+      throw new Error('Path is not a directory')
+    }
+
+    const listing = await buildWorkspaceTreeEntries(safeDir)
+    return {
+      rootPath: safeRoot,
+      currentPath: safeDir,
+      entries: listing.entries,
+      truncated: listing.truncated,
+      totalEntries: listing.totalEntries,
     }
   })
 

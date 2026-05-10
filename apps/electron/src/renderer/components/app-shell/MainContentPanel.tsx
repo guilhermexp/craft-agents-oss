@@ -21,6 +21,7 @@ import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import { Panel } from './Panel'
 import { MultiSelectPanel } from './MultiSelectPanel'
+import { ChannelConversationPanel } from './ChannelConversationPanel'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
 import { StoplightProvider } from '@/context/StoplightContext'
@@ -31,6 +32,7 @@ import {
   isSettingsNavigation,
   isSkillsNavigation,
   isAutomationsNavigation,
+  isMeetingsNavigation,
 } from '@/contexts/NavigationContext'
 import { useSessionSelection, useIsMultiSelectActive, useSelectedIds, useSelectionCount } from '@/hooks/useSession'
 import { sourceSelection, skillSelection, automationSelection } from '@/hooks/useEntitySelection'
@@ -40,6 +42,7 @@ import { SourceInfoPage, ChatPage } from '@/pages'
 import SkillInfoPage from '@/pages/SkillInfoPage'
 import { getSettingsPageComponent } from '@/pages/settings/settings-pages'
 import { AutomationInfoPage } from '../automations/AutomationInfoPage'
+import { MeetingsPage } from '@/pages/MeetingsPage'
 import type { ExecutionEntry } from '../automations/types'
 import { automationsAtom } from '@/atoms/automations'
 import { SendResourceToWorkspaceDialog, type SendResourceType } from './SendResourceToWorkspaceDialog'
@@ -81,6 +84,7 @@ export function MainContentPanel({
     automationTestResults,
     getAutomationHistory,
     activeSessionWorkingDirectory,
+    workspaceChannels,
   } = useAppShellContext()
 
   // Session multi-select state
@@ -309,6 +313,14 @@ export function MainContentPanel({
     )
   }
 
+  if (isMeetingsNavigation(navState)) {
+    return wrapWithStoplight(
+      <Panel variant="grow" className={className}>
+        <MeetingsPage />
+      </Panel>
+    )
+  }
+
   // Automations navigator - show automation info, multi-select panel, or empty state
   if (isAutomationsNavigation(navState)) {
     if (isAutomationMultiSelectActive) {
@@ -378,6 +390,17 @@ export function MainContentPanel({
           <ChatPage sessionId={navState.details.sessionId} />
         </Panel>
       )
+    }
+    const sessionFilter = navState.filter
+    if (activeWorkspaceId && sessionFilter.kind === 'label') {
+      const channel = workspaceChannels?.find(item => item.labelId === sessionFilter.labelId)
+      if (channel) {
+        return wrapWithStoplight(
+          <Panel variant="grow" className={className}>
+            <ChannelConversationPanel workspaceId={activeWorkspaceId} channel={channel} />
+          </Panel>
+        )
+      }
     }
     // No session selected - empty state
     return wrapWithStoplight(

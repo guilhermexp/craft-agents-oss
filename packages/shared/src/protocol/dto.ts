@@ -27,6 +27,60 @@ import type {
 export { generateMessageId } from '@craft-agent/core/types'
 
 // ---------------------------------------------------------------------------
+// Meetings types
+// ---------------------------------------------------------------------------
+
+export type MeetingStatus = 'starting' | 'running' | 'stopped' | 'error'
+
+export interface MeetingStartInput {
+  /** Google Meet URL or code (e.g. abc-defg-hij). */
+  urlOrCode: string
+  /** Optional browser profile id used by the integrated BrowserView. */
+  profileId?: string
+  /** Existing Browser Pane instance already showing the meeting. */
+  browserInstanceId?: string
+  /** Optional display title persisted with the record. */
+  title?: string
+  /** Whether the native meeting flow should prepare transcript capture. */
+  transcribe?: boolean
+  /** Whether Craft should summarize the meeting after it ends. */
+  summarizeOnEnd?: boolean
+  /** Whether Craft should extract follow-up tasks after it ends. */
+  followUpOnEnd?: boolean
+}
+
+export interface MeetingRecord {
+  id: string
+  provider: 'google-meet'
+  status: MeetingStatus
+  url: string
+  code?: string
+  browserInstanceId: string
+  title?: string
+  startedAt: number
+  updatedAt: number
+  endedAt?: number
+  error?: string
+}
+
+export interface MeetingTranscriptSegment {
+  id: string
+  speaker?: string
+  text: string
+  startedAt?: number
+  endedAt?: number
+  timestamp: number
+}
+
+export interface MeetingTranscriptResult {
+  meetingId: string
+  status: 'placeholder' | 'capturing' | 'ready' | 'unavailable'
+  transcript: MeetingTranscriptSegment[]
+  message?: string
+  updatedAt: number
+}
+
+// ---------------------------------------------------------------------------
 // Session types
 // ---------------------------------------------------------------------------
 
@@ -75,6 +129,7 @@ export interface Session {
   sharedId?: string
   model?: string
   llmConnection?: string
+  hermesProfile?: string
   thinkingLevel?: ThinkingLevel
   lastMessageRole?: 'user' | 'assistant' | 'plan' | 'tool' | 'error'
   lastFinalMessageId?: string
@@ -124,6 +179,7 @@ export interface CreateSessionOptions {
   workingDirectory?: string | 'user_default' | 'none'
   model?: string
   llmConnection?: string
+  hermesProfile?: string
   systemPromptPreset?: 'default' | 'mini' | string
   hidden?: boolean
   sessionStatus?: SessionStatus
@@ -187,7 +243,8 @@ export type SessionEvent =
   | { type: 'plan_submitted'; sessionId: string; message: Message }
   | { type: 'sources_changed'; sessionId: string; enabledSourceSlugs: string[] }
   | { type: 'labels_changed'; sessionId: string; labels: string[] }
-  | { type: 'connection_changed'; sessionId: string; connectionSlug: string; supportsBranching?: boolean }
+  | { type: 'connection_changed'; sessionId: string; connectionSlug: string; supportsBranching?: boolean; hermesProfile?: string }
+  | { type: 'hermes_profile_changed'; sessionId: string; hermesProfile: string }
   | { type: 'task_backgrounded'; sessionId: string; toolUseId: string; taskId: string; intent?: string; turnId?: string }
   | { type: 'shell_backgrounded'; sessionId: string; toolUseId: string; shellId: string; intent?: string; command?: string; turnId?: string }
   | { type: 'task_progress'; sessionId: string; toolUseId: string; elapsedSeconds: number; turnId?: string }
@@ -244,6 +301,7 @@ export type SessionCommand =
   | { type: 'revokeShare' }
   | { type: 'refreshTitle' }
   | { type: 'setConnection'; connectionSlug: string }
+  | { type: 'setHermesProfile'; profileName: string }
   | { type: 'setPendingPlanExecution'; planPath: string; draftInputSnapshot?: string }
   | { type: 'markCompactionComplete' }
   | { type: 'markPendingPlanExecutionDispatched' }
@@ -331,6 +389,15 @@ export interface SessionFile {
   type: 'file' | 'directory'
   size?: number
   children?: SessionFile[]
+  hasChildren?: boolean
+}
+
+export interface FileTreeListingResult {
+  rootPath: string
+  currentPath: string
+  entries: SessionFile[]
+  truncated: boolean
+  totalEntries: number
 }
 
 export interface FileSearchResult {
@@ -552,6 +619,27 @@ export interface HermesProfileSoulResult {
   success: boolean
   content?: string
   exists?: boolean
+  error?: string
+}
+
+export interface HermesEnvVar {
+  key: string
+  isSet: boolean
+  redactedValue?: string
+  description?: string
+  category?: string
+  isPassword?: boolean
+}
+
+export interface HermesListEnvResult {
+  success: boolean
+  vars?: HermesEnvVar[]
+  error?: string
+}
+
+export interface HermesEnvMutationResult {
+  success: boolean
+  key?: string
   error?: string
 }
 

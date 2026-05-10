@@ -426,8 +426,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     this.setupSessionPermissions(ses)
     this.setupSessionObservers(ses)
 
-    // Match background to current OS theme to prevent black/white flash on open
-    const bgColor = nativeTheme.shouldUseDarkColors ? '#2b292e' : '#fafafb'
+    // Keep the native window chrome aligned with the OS theme, but keep web page
+    // surfaces light by default. Some external sites (notably Google Meet) render
+    // parts of their app transparent; using the dark app background behind the
+    // page makes those sites show dark text over a dark surface.
+    const chromeBgColor = nativeTheme.shouldUseDarkColors ? '#2b292e' : '#fafafb'
+    const pageBgColor = '#ffffff'
 
     const window = new BrowserWindow({
       width: 1200,
@@ -435,7 +439,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       minWidth: 700,
       minHeight: 500,
       show: false, // Always hidden until toolbar is painted (ready-to-show)
-      backgroundColor: bgColor,
+      backgroundColor: chromeBgColor,
       // Fully chromeless — toolbar is rendered in a dedicated BrowserView
       frame: false,
       webPreferences: {
@@ -483,11 +487,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       },
     })
 
-    // Set BrowserView backgrounds to match theme so about:blank doesn't flash white
+    // Set BrowserView backgrounds. External pages should not inherit Craft's dark
+    // chrome color behind transparent document areas.
     const toolbarWcWithBg = toolbarView.webContents as typeof toolbarView.webContents & { setBackgroundColor?: (color: string) => void }
     toolbarWcWithBg.setBackgroundColor?.('#00000000')
     const pageWcWithBg = pageView.webContents as typeof pageView.webContents & { setBackgroundColor?: (color: string) => void }
-    pageWcWithBg.setBackgroundColor?.(bgColor)
+    pageWcWithBg.setBackgroundColor?.(pageBgColor)
     const overlayWcWithBg = nativeOverlayView.webContents as typeof nativeOverlayView.webContents & { setBackgroundColor?: (color: string) => void }
     overlayWcWithBg.setBackgroundColor?.('#00000000')
 
@@ -536,6 +541,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
 
     const defaultUa = pageView.webContents.userAgent || ''
+    toolbarView.webContents.on('console-message', (_event, level, message) => {
+      if (message.includes('[browser-toolbar]')) {
+        mainLog.info(`[browser-pane] toolbar console id=${instance.id} level=${level}: ${message}`)
+      }
+    })
+
     const sanitizedUa = defaultUa.replace(/\sElectron\/[^\s]+/g, '')
     if (sanitizedUa && sanitizedUa !== defaultUa) {
       pageView.webContents.setUserAgent(sanitizedUa)
@@ -567,13 +578,24 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const initialUrl = options?.url?.trim()
     if (initialUrl) {
       void this.navigate(instance.id, initialUrl).catch((error) => {
-        mainLog.warn(`[browser-pane] initial URL load failed id=${instance.id}: ${error instanceof Error ? error.message : String(error)}`)
-        void pageView.webContents.loadURL('about:blank')
+        const message = error instanceof Error ? error.message : String(error)
+        mainLog.warn(`[browser-pane] initial URL load failed id=${instance.id}: ${message}`)
+        // ERR_ABORTED is commonly emitted when a site redirects/replaces a navigation
+        // while Electron is still awaiting loadURL(). Do not blank the page in that case.
+        if (!message.includes('ERR_ABORTED')) {
+          void pageView.webContents.loadURL('about:blank')
+        }
       })
     } else {
       void this.loadEmptyStatePage(instance).catch((error) => {
-        mainLog.warn(`[browser-pane] empty-state load failed id=${instance.id}: ${error instanceof Error ? error.message : String(error)}`)
-        void pageView.webContents.loadURL('about:blank')
+        const message = error instanceof Error ? error.message : String(error)
+        mainLog.warn(`[browser-pane] empty-state load failed id=${instance.id}: ${message}`)
+        // If a caller navigates immediately after creating the BrowserView, the empty
+        // state data URL can be aborted by the real navigation. Loading about:blank
+        // here races and can overwrite the requested page, so only blank on real errors.
+        if (!message.includes('ERR_ABORTED')) {
+          void pageView.webContents.loadURL('about:blank')
+        }
       })
     }
 
@@ -930,6 +952,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       this.pushToolbarState(instance)
 
       return { url: instance.currentUrl, title: instance.title }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (message.includes('ERR_ABORTED')) {
+        mainLog.info(`[browser-pane] navigation reported ERR_ABORTED but may continue id=${id} url=${normalizedUrl}`)
+        this.pushToolbarState(instance)
+        return { url: instance.currentUrl || normalizedUrl, title: instance.title }
+      }
+      throw error
     } finally {
       if (timeoutHandle) {
         clearTimeout(timeoutHandle)
@@ -3038,6 +3068,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       'notifications',
       'geolocation',
       'media',
+      'speaker-selection',
+      'screen-wake-lock',
       'clipboard-read',
       'clipboard-sanitized-write',
       'idle-detection',

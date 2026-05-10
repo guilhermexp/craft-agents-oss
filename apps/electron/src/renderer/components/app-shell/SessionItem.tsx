@@ -34,6 +34,18 @@ const PLATFORM_PILL: Record<'telegram' | 'whatsapp', { label: string; colorClass
   },
 }
 
+function getHermesProfileSessionBadge(item: SessionMeta): string | null {
+  if (item.llmConnection !== 'hermes') return null
+
+  const profile = item.hermesProfile?.trim()
+  if (!profile) return null
+
+  const normalized = profile.toLowerCase()
+  if (normalized === 'default' || normalized === 'hermes') return null
+
+  return profile
+}
+
 function resolveSessionConnection(
   item: SessionMeta,
   llmConnections: LlmConnectionWithStatus[],
@@ -110,6 +122,8 @@ export function SessionItem({
   const sessionBindings = messagingBindingsBySession.get(item.id) ?? []
   const hasMessagingBinding = sessionBindings.length > 0
   const sessionConnection = resolveSessionConnection(item, llmConnections, workspaceDefaultLlmConnection)
+  const hermesProfileBadge = getHermesProfileSessionBadge(item)
+  const hasTitleSuffix = hasMessagingBinding || hermesProfileBadge !== null
 
   const handleDragStart = (event: React.DragEvent<HTMLButtonElement>) => {
     event.dataTransfer.effectAllowed = 'move'
@@ -214,8 +228,18 @@ export function SessionItem({
       titleClassName={cn("text-[13px]", item.isAsyncOperationOngoing && "animate-shimmer-text")}
       subtitle={previewText}
       titleSuffix={
-        hasMessagingBinding ? (
-          <div className="flex items-center gap-1">
+        hasTitleSuffix ? (
+          <div className="flex min-w-0 items-center gap-1">
+            {hermesProfileBadge ? (
+              <EntityListBadge
+                variant="text"
+                colorClass="bg-cyan-500/10 text-cyan-700 dark:bg-cyan-400/15 dark:text-cyan-200"
+                className="max-w-[92px] truncate"
+                tooltip={`Hermes profile: ${hermesProfileBadge}`}
+              >
+                {hermesProfileBadge}
+              </EntityListBadge>
+            ) : null}
             {sessionBindings.map((binding) => {
               const pill = PLATFORM_PILL[binding.platform as 'telegram' | 'whatsapp']
               if (!pill) return null

@@ -141,6 +141,8 @@ interface ChatDisplayProps {
   // Connection selection (locked after first message)
   /** Callback when LLM connection changes (only works when session is empty) */
   onConnectionChange?: (connectionSlug: string) => void
+  /** Callback when Hermes profile changes for the current session */
+  onHermesProfileChange?: (profileName: string) => void | Promise<void>
   /** Ref for the input, used for external focus control */
   textareaRef?: React.RefObject<RichTextInputHandle>
   /** When true, disables input (e.g., when agent needs activation) */
@@ -433,6 +435,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   currentModel,
   onModelChange,
   onConnectionChange,
+  onHermesProfileChange,
   textareaRef: externalTextareaRef,
   disabled = false,
   pendingPermission,
@@ -1675,6 +1678,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                                 name: `Branch of ${session.name || 'Untitled'}`,
                                 // Keep branch on the same backend/provider by inheriting parent session settings.
                                 llmConnection: session.llmConnection,
+                                hermesProfile: session.hermesProfile,
                                 model: session.model,
                                 permissionMode: session.permissionMode,
                                 workingDirectory: session.workingDirectory,
@@ -1894,6 +1898,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
               connectionUnavailable,
               isEmptySession: session.messages.length === 0,
               currentConnection: session.llmConnection,
+              hermesProfile: session.hermesProfile,
+              onHermesProfileChange,
               onConnectionChange,
               contextStatus: {
                 isCompacting: session.currentStatus?.statusType === 'compacting',

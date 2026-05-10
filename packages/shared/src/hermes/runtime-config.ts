@@ -1,4 +1,4 @@
-import { parseDocument } from 'yaml'
+import { parseDocument, stringify } from 'yaml'
 
 export { resolveDefaultHermesPaths } from './acp-config.ts'
 
@@ -6,6 +6,8 @@ export interface HermesCustomProviderSnapshot {
   name: string
   baseUrl?: string
   model?: string
+  models?: string[]
+  keyEnv?: string
 }
 
 export interface HermesConfigSnapshot {
@@ -21,6 +23,12 @@ export interface HermesConfigSnapshot {
   fallbackProviders: string[]
   providers: string[]
   customProviders: HermesCustomProviderSnapshot[]
+}
+
+export interface HermesMainModelUpdate {
+  provider: string
+  model: string
+  baseUrl?: string
 }
 
 function trimString(value: unknown): string | undefined {
@@ -55,6 +63,17 @@ function readModelProvider(value: unknown): string | undefined {
   return trimString(record.provider)
 }
 
+function readProviderModels(value: unknown): string[] {
+  if (!value) return []
+  if (Array.isArray(value)) {
+    return value.map(entry => trimString(entry)).filter((entry): entry is string => Boolean(entry))
+  }
+  if (typeof value === 'object') {
+    return Object.keys(value as Record<string, unknown>).filter(Boolean)
+  }
+  return []
+}
+
 export function parseHermesConfigSnapshot(rawConfig: string): HermesConfigSnapshot {
   try {
     const parsed = parseDocument(rawConfig).toJSON() as Record<string, unknown> | null
@@ -71,6 +90,22 @@ export function parseHermesConfigSnapshot(rawConfig: string): HermesConfigSnapsh
 
     const customProviders: HermesCustomProviderSnapshot[] = []
 
+    if (parsed.providers && typeof parsed.providers === 'object' && !Array.isArray(parsed.providers)) {
+      for (const [name, value] of Object.entries(parsed.providers as Record<string, unknown>)) {
+        const providerName = trimString(name)
+        if (!providerName || !value || typeof value !== 'object') continue
+
+        const record = value as Record<string, unknown>
+        customProviders.push({
+          name: providerName,
+          baseUrl: trimString(record.base_url) ?? trimString(record.baseUrl),
+          model: trimString(record.default_model) ?? trimString(record.defaultModel) ?? readModelValue(record.model),
+          models: readProviderModels(record.models),
+          keyEnv: trimString(record.key_env) ?? trimString(record.keyEnv),
+        })
+      }
+    }
+
     if (Array.isArray(parsed.custom_providers)) {
       for (const entry of parsed.custom_providers) {
         if (!entry || typeof entry !== 'object') continue
@@ -83,13 +118,19 @@ export function parseHermesConfigSnapshot(rawConfig: string): HermesConfigSnapsh
           name,
           baseUrl: trimString(record.base_url) ?? trimString(record.baseUrl),
           model: readModelValue(record.model),
+          models: readProviderModels(record.models),
+          keyEnv: trimString(record.key_env) ?? trimString(record.keyEnv),
         })
       }
     }
 
+    const builtInProviders = parsed.providers && typeof parsed.providers === 'object' && !Array.isArray(parsed.providers)
+      ? []
+      : normalizeProviderValue(parsed.providers)
+
     const providers = Array.from(
       new Set([
-        ...normalizeProviderValue(parsed.providers),
+        ...builtInProviders,
         ...customProviders.map(provider => provider.name),
       ]),
     )
@@ -112,4 +153,30 @@ export function parseHermesConfigSnapshot(rawConfig: string): HermesConfigSnapsh
       customProviders: [],
     }
   }
+}
+
+export function updateHermesConfigMainModel(rawConfig: string, update: HermesMainModelUpdate): string {
+  let parsed: Record<string, unknown> = {}
+  try {
+    const value = parseDocument(rawConfig).toJSON()
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      parsed = { ...(value as Record<string, unknown>) }
+    }
+  } catch {
+    parsed = {}
+  }
+
+  const existingModel = parsed.model && typeof parsed.model === 'object' && !Array.isArray(parsed.model)
+    ? { ...(parsed.model as Record<string, unknown>) }
+    : {}
+
+  const baseUrl = update.baseUrl?.trim()
+  parsed.model = {
+    ...existingModel,
+    provider: update.provider,
+    default: update.model,
+    ...(baseUrl ? { base_url: baseUrl } : {}),
+  }
+
+  return stringify(parsed)
 }

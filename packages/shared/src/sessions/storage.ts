@@ -183,6 +183,7 @@ export async function createSession(
     enabledSourceSlugs?: string[];
     model?: string;
     llmConnection?: string;
+    hermesProfile?: string;
     hidden?: boolean;
     sessionStatus?: SessionConfig['sessionStatus'];
     labels?: string[];
@@ -214,6 +215,7 @@ export async function createSession(
     enabledSourceSlugs: options?.enabledSourceSlugs,
     model: options?.model,
     llmConnection: options?.llmConnection,
+    hermesProfile: options?.hermesProfile,
     hidden: options?.hidden,
     sessionStatus: options?.sessionStatus,
     labels: options?.labels,
@@ -256,6 +258,7 @@ export async function getOrCreateSessionById(
       lastUsedAt: existing.lastUsedAt,
       sdkCwd: existing.sdkCwd,
       workingDirectory: existing.workingDirectory,
+      hermesProfile: existing.hermesProfile,
     };
   }
 
@@ -478,6 +481,7 @@ export async function getOrCreateLatestSession(workspaceRootPath: string): Promi
       name: latest.name,
       createdAt: latest.createdAt,
       lastUsedAt: latest.lastUsedAt,
+      hermesProfile: latest.hermesProfile,
     };
   }
   return createSession(workspaceRootPath);
@@ -539,6 +543,7 @@ export async function updateSessionMetadata(
     | 'sharedId'
     | 'model'
     | 'llmConnection'
+    | 'hermesProfile'
     | 'isArchived'
     | 'archivedAt'
   >>
@@ -560,6 +565,7 @@ export async function updateSessionMetadata(
   if ('sharedId' in updates) session.sharedId = updates.sharedId;
   if (updates.model !== undefined) session.model = updates.model;
   if (updates.llmConnection !== undefined) session.llmConnection = updates.llmConnection;
+  if (updates.hermesProfile !== undefined) session.hermesProfile = updates.hermesProfile;
   if (updates.isArchived !== undefined) session.isArchived = updates.isArchived;
   if ('archivedAt' in updates) session.archivedAt = updates.archivedAt;
 

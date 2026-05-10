@@ -14,6 +14,7 @@ mock.module('electron', () => ({
   app: {
     isPackaged: false,
     getAppPath: () => '/',
+    getPath: () => '/tmp/craft-agent-test',
     quit: () => {},
     dock: { setIcon: () => {}, setBadge: () => {} },
   },
@@ -128,8 +129,9 @@ async function getExpectedChannels(): Promise<Set<string>> {
   ])
 
   // GUI handler channels (remain in electron)
-  const [browser, guiSystem, guiWorkspace, guiSettings] = await Promise.all([
+  const [browser, meetings, guiSystem, guiWorkspace, guiSettings] = await Promise.all([
     import('../browser'),
+    import('../meetings'),
     import('../system'),
     import('../workspace'),
     import('../settings'),
@@ -158,6 +160,7 @@ async function getExpectedChannels(): Promise<Set<string>> {
     RPC_CHANNELS.transfer.COMMIT,
     RPC_CHANNELS.transfer.ABORT,
     ...browser.HANDLED_CHANNELS,
+    ...meetings.HANDLED_CHANNELS,
     ...guiSystem.GUI_HANDLED_CHANNELS,
     ...guiWorkspace.GUI_HANDLED_CHANNELS,
     ...guiSettings.GUI_HANDLED_CHANNELS,

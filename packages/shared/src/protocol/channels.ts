@@ -91,6 +91,7 @@ export const RPC_CHANNELS = {
   fs: {
     SEARCH: 'fs:search',
     LIST_DIRECTORY: 'fs:listDirectory',
+    LIST_TREE: 'fs:listTree',
   },
   debug: {
     LOG: 'debug:log',
@@ -242,6 +243,19 @@ export const RPC_CHANNELS = {
     GET_PROFILE_SETUP_COMMAND: 'hermes:getProfileSetupCommand',
     GET_PROFILE_SOUL: 'hermes:getProfileSoul',
     UPDATE_PROFILE_SOUL: 'hermes:updateProfileSoul',
+    /** GET dashboard /api/env (list optional env vars + is_set/redacted). */
+    LIST_ENV: 'hermes:listEnv',
+    /** PUT dashboard /api/env { key, value }. */
+    SET_ENV: 'hermes:setEnv',
+    /** DELETE dashboard /api/env { key }. */
+    DELETE_ENV: 'hermes:deleteEnv',
+  },
+  meetings: {
+    START: 'meetings:start',
+    LIST: 'meetings:list',
+    STATUS: 'meetings:status',
+    STOP: 'meetings:stop',
+    TRANSCRIPT: 'meetings:transcript',
   },
   dialog: {
     OPEN_FOLDER: 'dialog:openFolder',
@@ -307,7 +321,10 @@ export const RPC_CHANNELS = {
     CREATE: 'channels:create',
     UPDATE: 'channels:update',
     DELETE: 'channels:delete',
+    LIST_MESSAGES: 'channels:listMessages',
+    SEND_MESSAGE: 'channels:sendMessage',
     CHANGED: 'channels:changed',
+    MESSAGES_CHANGED: 'channels:messagesChanged',
   },
   views: {
     LIST: 'views:list',

@@ -59,6 +59,7 @@ type McpContent =
 const BROWSER_RELEASE_HINT = '\n\nWhen you are done using the browser, call browser_tool with command \"close\" to close the window entirely, or \"release\" to dismiss the overlay and let the user continue browsing.';
 
 const AUTOMATION_TOOL_NAME = 'automation_tool';
+const MEETING_TOOL_NAME = 'meeting_tool';
 const AUTOMATION_TOOL_DESCRIPTION = `Manage Craft-native automations for this workspace.
 
 Use this instead of Hermes native cron while running inside Craft. Scheduled prompt jobs are written to the workspace automations.json and appear in Craft Automations / Scheduled.
@@ -85,6 +86,30 @@ const AUTOMATION_TOOL_SCHEMA = {
     permissionMode: { type: 'string', enum: ['safe', 'ask', 'allow-all'], description: 'Permission mode for created sessions' },
     enabled: { type: 'boolean', description: 'Enable/disable value for create_scheduled or toggle' },
     limit: { type: 'number', description: 'History entry limit, default 20' },
+  },
+  required: ['command'],
+} as const;
+
+const MEETING_TOOL_DESCRIPTION = `Control Craft-native meeting capture for this session when desktop/native meeting callbacks are available.
+
+Commands:
+- start: start or attach to a meeting capture
+- status: get current meeting capture status
+- list: list known/recent meeting captures
+- transcript: fetch a meeting transcript
+- stop: stop an active meeting capture
+
+If the active Craft runtime has not registered meeting callbacks, this tool returns a clear unavailable error instead of touching Hermes upstream.`;
+
+const MEETING_TOOL_SCHEMA = {
+  type: 'object',
+  properties: {
+    command: { type: 'string', enum: ['start', 'status', 'list', 'transcript', 'stop'] },
+    meetingId: { type: 'string', description: 'Meeting/capture id for status, transcript, or stop' },
+    id: { type: 'string', description: 'Alias for meetingId when native callbacks use id' },
+    title: { type: 'string', description: 'Optional meeting title for start' },
+    url: { type: 'string', description: 'Optional meeting URL for start/attach' },
+    limit: { type: 'number', description: 'Optional result limit for list/transcript' },
   },
   required: ['command'],
 } as const;
@@ -168,11 +193,18 @@ export class CraftSessionToolsMcpServer {
       inputSchema: AUTOMATION_TOOL_SCHEMA as unknown as Record<string, unknown>,
     });
 
+    tools.push({
+      name: MEETING_TOOL_NAME,
+      description: MEETING_TOOL_DESCRIPTION,
+      inputSchema: MEETING_TOOL_SCHEMA as unknown as Record<string, unknown>,
+    });
+
     return tools;
   }
 
   async callTool(name: string, args: Record<string, unknown> = {}): Promise<{ content: McpContent[]; isError?: boolean }> {
     if (name === AUTOMATION_TOOL_NAME) return this.automationTool(args);
+    if (name === MEETING_TOOL_NAME) return this.meetingTool(args);
 
     const def = SESSION_TOOL_REGISTRY.get(name);
     if (!def) return errorResult(`Unknown Craft session tool: ${name}`);
@@ -506,6 +538,24 @@ export class CraftSessionToolsMcpServer {
       return errorResult(`Unknown automation_tool command: ${command}`);
     } catch (error) {
       return errorResult(`automation_tool failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async meetingTool(args: Record<string, unknown>) {
+    const command = String(args.command ?? '');
+    if (!['start', 'status', 'list', 'transcript', 'stop'].includes(command)) {
+      return errorResult(`Unknown meeting_tool command: ${command || '(missing)'}`);
+    }
+
+    const meetingToolFn = getSessionScopedToolCallbacks(this.options.sessionId)?.meetingToolFn;
+    if (!meetingToolFn) {
+      return errorResult('meeting_tool is not available in this context. Craft native meeting callbacks are not registered for this session/runtime.');
+    }
+
+    try {
+      return jsonResult(await meetingToolFn({ ...args, command: command as 'start' | 'status' | 'list' | 'transcript' | 'stop' }));
+    } catch (error) {
+      return errorResult(`meeting_tool failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

@@ -73,6 +73,10 @@ import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@craft-agent/server-core/sessions'
 import { registerAllRpcHandlers } from './handlers/index'
 import { publishHermesRuntimeEnv } from './handlers/hermes-runtime'
+import {
+  cleanupHermesDashboardOrphans,
+  shutdownHermesDashboard,
+} from '@craft-agent/server-core/handlers/rpc/hermes'
 import { registerCoreRpcHandlers, cleanupSessionFileWatchForClient } from '@craft-agent/server-core/handlers/rpc'
 import type { PlatformServices } from '../runtime/platform'
 import { createElectronPlatform } from './platform'
@@ -182,6 +186,21 @@ if (isDebugMode) {
 // path/env settings so HermesAgent can spawn the embedded ACP subprocess
 // instead of a system-wide `hermes` install.
 publishHermesRuntimeEnv()
+
+// Reap dashboard children leaked by a previous Craft session that crashed or
+// exited without running before-quit. Targets only this build's vendor python.
+{
+  const vendorPython = process.env.CRAFT_HERMES_PYTHON
+  if (vendorPython) {
+    cleanupHermesDashboardOrphans(vendorPython)
+      .then((pids) => {
+        if (pids.length > 0) {
+          mainLog.info('Reaped leaked Hermes dashboard processes from prior session', { pids })
+        }
+      })
+      .catch((err) => mainLog.warn('Hermes orphan cleanup failed', err))
+  }
+}
 
 // Register Pi model resolver so llm-connections.ts can resolve Pi models
 // without importing @mariozechner/pi-ai (which breaks the Vite renderer build)
@@ -1175,6 +1194,14 @@ app.on('before-quit', async (event) => {
     // Clean up power manager (release power blocker)
     const { cleanup: cleanupPowerManager } = await import('./power-manager')
     cleanupPowerManager()
+
+    // Stop the Hermes dashboard subprocess and its uvicorn worker fork so they
+    // don't survive Craft as launchd-adopted orphans on consecutive ports.
+    try {
+      await shutdownHermesDashboard()
+    } catch (err) {
+      mainLog.error('[Hermes] Dashboard shutdown failed:', err)
+    }
 
     // Release the server lock file so the next launch doesn't see a stale PID.
     // This must happen regardless of the exit path (normal quit or update quit).

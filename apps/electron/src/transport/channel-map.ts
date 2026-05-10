@@ -186,6 +186,9 @@ export const CHANNEL_MAP = {
   getHermesProfileSetupCommand: invoke(RPC_CHANNELS.hermes.GET_PROFILE_SETUP_COMMAND),
   getHermesProfileSoul: invoke(RPC_CHANNELS.hermes.GET_PROFILE_SOUL),
   updateHermesProfileSoul: invoke(RPC_CHANNELS.hermes.UPDATE_PROFILE_SOUL),
+  listHermesEnv: invoke(RPC_CHANNELS.hermes.LIST_ENV),
+  setHermesEnv: invoke(RPC_CHANNELS.hermes.SET_ENV),
+  deleteHermesEnv: invoke(RPC_CHANNELS.hermes.DELETE_ENV),
 
   // Session-specific model
   getSessionModel: invoke(RPC_CHANNELS.sessions.GET_MODEL),
@@ -203,6 +206,7 @@ export const CHANNEL_MAP = {
 
   // Server filesystem browsing (remote mode)
   listServerDirectory: invoke(RPC_CHANNELS.fs.LIST_DIRECTORY),
+  listFileTree: invoke(RPC_CHANNELS.fs.LIST_TREE),
 
   // Debug logging
   debugLog: invoke(RPC_CHANNELS.debug.LOG),
@@ -270,7 +274,10 @@ export const CHANNEL_MAP = {
   createChannel: invoke(RPC_CHANNELS.channels.CREATE),
   updateChannel: invoke(RPC_CHANNELS.channels.UPDATE),
   deleteChannel: invoke(RPC_CHANNELS.channels.DELETE),
+  listChannelMessages: invoke(RPC_CHANNELS.channels.LIST_MESSAGES),
+  sendChannelMessage: invoke(RPC_CHANNELS.channels.SEND_MESSAGE),
   onChannelsChanged: listener(RPC_CHANNELS.channels.CHANGED),
+  onChannelMessagesChanged: listener(RPC_CHANNELS.channels.MESSAGES_CHANGED),
 
   // LLM connections change listener
   onLlmConnectionsChanged: listener(RPC_CHANNELS.llmConnections.CHANGED),
@@ -368,6 +375,13 @@ export const CHANNEL_MAP = {
   menuCopy: invoke(RPC_CHANNELS.menu.COPY),
   menuPaste: invoke(RPC_CHANNELS.menu.PASTE),
   menuSelectAll: invoke(RPC_CHANNELS.menu.SELECT_ALL),
+
+  // Meetings MVP
+  'meetings.start': invoke(RPC_CHANNELS.meetings.START),
+  'meetings.list': invoke(RPC_CHANNELS.meetings.LIST),
+  'meetings.status': invoke(RPC_CHANNELS.meetings.STATUS),
+  'meetings.stop': invoke(RPC_CHANNELS.meetings.STOP),
+  'meetings.transcript': invoke(RPC_CHANNELS.meetings.TRANSCRIPT),
 
   // Browser pane management
   'browserPane.create': invoke(RPC_CHANNELS.browserPane.CREATE),

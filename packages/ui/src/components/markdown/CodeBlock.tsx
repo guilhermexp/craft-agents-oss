@@ -2,6 +2,8 @@ import * as React from 'react'
 import { codeToHtml, bundledLanguages, type BundledLanguage } from 'shiki'
 import { cn } from '../../lib/utils'
 import { useShikiTheme } from '../../context/ShikiThemeContext'
+import { detectLinks } from './linkify'
+import { resolveMarkdownLinkTarget } from './link-target'
 
 export interface CodeBlockProps {
   code: string
@@ -18,6 +20,8 @@ export interface CodeBlockProps {
    * Force a specific theme. If not provided, detects from document.documentElement.classList
    */
   forcedTheme?: 'light' | 'dark'
+  onUrlClick?: (url: string) => void
+  onFileClick?: (path: string) => void
 }
 
 // Languages to pre-load (most common in chat contexts)
@@ -46,6 +50,72 @@ const LANGUAGE_ALIASES: Record<string, BundledLanguage> = {
 const highlightCache = new Map<string, string>()
 const CACHE_MAX_SIZE = 200
 
+function LinkifiedCodeText({
+  code,
+  onUrlClick,
+  onFileClick,
+  className,
+}: {
+  code: string
+  onUrlClick?: (url: string) => void
+  onFileClick?: (path: string) => void
+  className?: string
+}) {
+  const links = React.useMemo(() => detectLinks(code), [code])
+
+  if (links.length === 0) {
+    return (
+      <pre className={cn('font-mono text-sm whitespace-pre-wrap break-all', className)}>
+        <code>{code}</code>
+      </pre>
+    )
+  }
+
+  const parts: React.ReactNode[] = []
+  let lastIndex = 0
+
+  links.forEach((link, index) => {
+    if (link.start > lastIndex) {
+      parts.push(code.slice(lastIndex, link.start))
+    }
+
+    const resolvedTarget = resolveMarkdownLinkTarget(link.url)
+    const handleClick = (event: React.MouseEvent) => {
+      event.preventDefault()
+
+      if (resolvedTarget.kind === 'file') {
+        onFileClick?.(resolvedTarget.path)
+      } else {
+        onUrlClick?.(resolvedTarget.url)
+      }
+    }
+
+    parts.push(
+      <a
+        key={`${link.start}-${link.end}-${index}`}
+        href={resolvedTarget.kind === 'url' ? resolvedTarget.url : '#'}
+        onClick={handleClick}
+        className="text-accent underline underline-offset-2 hover:text-accent/80"
+        title={resolvedTarget.kind === 'file' ? resolvedTarget.path : resolvedTarget.url}
+      >
+        {code.slice(link.start, link.end)}
+      </a>
+    )
+
+    lastIndex = link.end
+  })
+
+  if (lastIndex < code.length) {
+    parts.push(code.slice(lastIndex))
+  }
+
+  return (
+    <pre className={cn('font-mono text-sm whitespace-pre-wrap break-all', className)}>
+      <code>{parts}</code>
+    </pre>
+  )
+}
+
 function getCacheKey(code: string, lang: string, theme: string): string {
   return `${theme}:${lang}:${code}`
 }
@@ -61,7 +131,7 @@ function isValidLanguage(lang: string): lang is BundledLanguage {
  * Uses VS Code's syntax highlighting engine for accurate highlighting.
  * Lazy-loads highlighting and caches results for performance.
  */
-export function CodeBlock({ code, language = 'text', className, mode = 'full', forcedTheme }: CodeBlockProps) {
+export function CodeBlock({ code, language = 'text', className, mode = 'full', forcedTheme, onUrlClick, onFileClick }: CodeBlockProps) {
   const [highlighted, setHighlighted] = React.useState<string | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
   const [copied, setCopied] = React.useState(false)
@@ -152,19 +222,37 @@ export function CodeBlock({ code, language = 'text', className, mode = 'full', f
   // Terminal mode: raw monospace with minimal styling
   if (mode === 'terminal') {
     return (
-      <pre className={cn('font-mono text-sm whitespace-pre-wrap', className)}>
-        <code>{code}</code>
-      </pre>
+      <LinkifiedCodeText
+        code={code}
+        onUrlClick={onUrlClick}
+        onFileClick={onFileClick}
+        className={className}
+      />
     )
   }
 
   // Minimal mode: just syntax highlighting, no chrome
   if (mode === 'minimal') {
+    const shouldLinkifyPlainCode = detectLinks(code).length > 0
+    if (shouldLinkifyPlainCode) {
+      return (
+        <LinkifiedCodeText
+          code={code}
+          onUrlClick={onUrlClick}
+          onFileClick={onFileClick}
+          className={className}
+        />
+      )
+    }
+
     if (isLoading || !highlighted) {
       return (
-        <pre className={cn('font-mono text-sm whitespace-pre-wrap', className)}>
-          <code>{code}</code>
-        </pre>
+        <LinkifiedCodeText
+          code={code}
+          onUrlClick={onUrlClick}
+          onFileClick={onFileClick}
+          className={className}
+        />
       )
     }
 
@@ -177,6 +265,7 @@ export function CodeBlock({ code, language = 'text', className, mode = 'full', f
   }
 
   // Full mode: rich styling with header and copy button
+  const shouldLinkifyPlainCode = detectLinks(code).length > 0
   return (
     <div className={cn('relative group rounded-[8px] overflow-hidden border bg-muted/30', className)}>
       {/* Language label + copy button */}
@@ -203,10 +292,12 @@ export function CodeBlock({ code, language = 'text', className, mode = 'full', f
 
       {/* Code content */}
       <div className="p-3 overflow-x-auto">
-        {isLoading || !highlighted ? (
-          <pre className="font-mono text-sm whitespace-pre-wrap break-all">
-            <code>{code}</code>
-          </pre>
+        {shouldLinkifyPlainCode || isLoading || !highlighted ? (
+          <LinkifiedCodeText
+            code={code}
+            onUrlClick={onUrlClick}
+            onFileClick={onFileClick}
+          />
         ) : (
           <div
             className="font-mono text-sm [&_pre]:!bg-transparent [&_pre]:!m-0 [&_pre]:!p-0 [&_pre]:whitespace-pre-wrap [&_pre]:break-all [&_code]:!bg-transparent"

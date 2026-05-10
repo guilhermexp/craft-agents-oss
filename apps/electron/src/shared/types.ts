@@ -213,6 +213,7 @@ import type {
   TestAutomationResult,
   WindowCloseRequest,
   DirectoryListingResult,
+  FileTreeListingResult,
   RemoteSessionTransferPayload,
   ImportRemoteSessionTransferResult,
   HermesDetectionResult,
@@ -229,6 +230,11 @@ import type {
   HermesProfileMutationResult,
   HermesProfileSetupCommandResult,
   HermesProfileSoulResult,
+  HermesListEnvResult,
+  HermesEnvMutationResult,
+  MeetingRecord,
+  MeetingStartInput,
+  MeetingTranscriptResult,
 } from '@craft-agent/shared/protocol'
 
 export interface ElectronAPI {
@@ -339,6 +345,7 @@ export interface ElectronAPI {
 
   // Server filesystem browsing (remote mode)
   listServerDirectory(dirPath: string): Promise<DirectoryListingResult>
+  listFileTree(rootPath?: string, dirPath?: string): Promise<FileTreeListingResult>
   // Debug: send renderer logs to main process log file
   debugLog(...args: unknown[]): void
 
@@ -457,6 +464,9 @@ export interface ElectronAPI {
   getHermesProfileSetupCommand(name: string): Promise<HermesProfileSetupCommandResult>
   getHermesProfileSoul(name: string): Promise<HermesProfileSoulResult>
   updateHermesProfileSoul(name: string, content: string): Promise<HermesProfileMutationResult>
+  listHermesEnv(): Promise<HermesListEnvResult>
+  setHermesEnv(body: { key: string; value: string }): Promise<HermesEnvMutationResult>
+  deleteHermesEnv(key: string): Promise<HermesEnvMutationResult>
 
   // Session-specific model (overrides global)
   getSessionModel(sessionId: string, workspaceId: string): Promise<string | null>
@@ -537,7 +547,20 @@ export interface ElectronAPI {
   createChannel(workspaceId: string, input: import('@craft-agent/shared/channels').CreateChannelInput): Promise<import('@craft-agent/shared/channels').ChannelConfig>
   updateChannel(workspaceId: string, channelId: string, updates: import('@craft-agent/shared/channels').UpdateChannelInput): Promise<import('@craft-agent/shared/channels').ChannelConfig>
   deleteChannel(workspaceId: string, channelId: string, options?: import('@craft-agent/shared/channels').DeleteChannelOptions): Promise<import('@craft-agent/shared/channels').DeleteChannelResult>
+  listChannelMessages(workspaceId: string, channelId: string): Promise<import('@craft-agent/shared/channels').ChannelMessage[]>
+  sendChannelMessage(workspaceId: string, input: {
+    channelId: string
+    text: string
+    authorId?: string
+    mentionedParticipantIds?: string[]
+  }): Promise<{
+    message: import('@craft-agent/shared/channels').ChannelMessage
+    targetedParticipantIds: string[]
+    unknownMentions: string[]
+    failures: Array<{ participantId: string; message: string }>
+  }>
   onChannelsChanged(callback: (workspaceId: string) => void): () => void
+  onChannelMessagesChanged(callback: (workspaceId: string, channelId: string) => void): () => void
 
   // LLM connections change listener
   onLlmConnectionsChanged(callback: () => void): () => void
@@ -646,6 +669,15 @@ export interface ElectronAPI {
   menuCopy(): Promise<void>
   menuPaste(): Promise<void>
   menuSelectAll(): Promise<void>
+
+  // Meetings MVP (integrated browser-backed Google Meet)
+  meetings: {
+    start(input: string | MeetingStartInput): Promise<MeetingRecord>
+    list(): Promise<MeetingRecord[]>
+    status(id: string): Promise<MeetingRecord | null>
+    stop(id: string): Promise<MeetingRecord>
+    transcript(id: string): Promise<MeetingTranscriptResult>
+  }
 
   // Browser pane management
   browserPane: {
@@ -846,6 +878,11 @@ export interface AutomationsNavigationState {
   rightSidebar?: RightSidebarPanel
 }
 
+export interface MeetingsNavigationState {
+  navigator: 'meetings'
+  rightSidebar?: RightSidebarPanel
+}
+
 /**
  * Unified navigation state
  */
@@ -855,6 +892,7 @@ export type NavigationState =
   | SettingsNavigationState
   | SkillsNavigationState
   | AutomationsNavigationState
+  | MeetingsNavigationState
 
 export const isSessionsNavigation = (
   state: NavigationState
@@ -875,6 +913,10 @@ export const isSkillsNavigation = (
 export const isAutomationsNavigation = (
   state: NavigationState
 ): state is AutomationsNavigationState => state.navigator === 'automations'
+
+export const isMeetingsNavigation = (
+  state: NavigationState
+): state is MeetingsNavigationState => state.navigator === 'meetings'
 
 export const DEFAULT_NAVIGATION_STATE: NavigationState = {
   navigator: 'sessions',
@@ -900,6 +942,9 @@ export const getNavigationStateKey = (state: NavigationState): string => {
       return `automations/automation/${state.details.automationId}`
     }
     return 'automations'
+  }
+  if (state.navigator === 'meetings') {
+    return 'meetings'
   }
   if (state.navigator === 'settings') {
     return `settings:${state.subpage}`
@@ -947,6 +992,9 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
     }
     return { navigator: 'automations', details: null }
   }
+
+  // Handle meetings
+  if (key === 'meetings') return { navigator: 'meetings' }
 
   // Handle settings
   if (key === 'settings') return { navigator: 'settings', subpage: 'app' }

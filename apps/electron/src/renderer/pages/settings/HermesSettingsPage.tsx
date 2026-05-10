@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ExternalLink, FolderOpen, RefreshCw, ScrollText, Wrench } from 'lucide-react'
+import { ExternalLink, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Spinner } from '@craft-agent/ui'
 
@@ -15,7 +15,10 @@ import {
   SettingsSection,
 } from '@/components/settings'
 import { HermesAiModelsConfig } from './HermesAiModelsConfig'
+import { HermesLogsConfig } from './HermesLogsConfig'
+import { HermesMessengersConfig } from './HermesMessengersConfig'
 import { HermesProfilesConfig } from './HermesProfilesConfig'
+import { HermesSkillsConfig } from './HermesSkillsConfig'
 import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import type {
   HermesLogFileInfo,
@@ -26,18 +29,6 @@ import type {
 export const meta: DetailsPageMeta = {
   navigator: 'settings',
   slug: 'hermes',
-}
-
-function formatBytes(size?: number): string {
-  if (size === undefined) return '—'
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function formatDate(ms?: number): string {
-  if (!ms) return '—'
-  return new Date(ms).toLocaleString()
 }
 
 function formatHermesReleaseLabel(runtime?: HermesRuntimeDetailsResult | null): string | undefined {
@@ -74,8 +65,6 @@ export default function HermesSettingsPage() {
   const [runtime, setRuntime] = useState<HermesRuntimeDetailsResult | null>(null)
   const [logs, setLogs] = useState<HermesLogFileInfo[]>([])
   const [skills, setSkills] = useState<HermesSkillInfo[]>([])
-  const [selectedLogName, setSelectedLogName] = useState<string | null>(null)
-  const [selectedLogContent, setSelectedLogContent] = useState<string>('')
   const [isLoading, setIsLoading] = useState(true)
   const [isOpeningDashboard, setIsOpeningDashboard] = useState(false)
 
@@ -159,17 +148,6 @@ export default function HermesSettingsPage() {
     }
   }, [loadHermes])
 
-  const readLog = useCallback(async (name: string) => {
-    setSelectedLogName(name)
-    const result = await window.electronAPI.readHermesLog(name)
-    if (!result.success) {
-      setSelectedLogContent('')
-      toast.error('Falha ao ler log Hermes', { description: result.error })
-      return
-    }
-    setSelectedLogContent(`${result.truncated ? '[conteúdo truncado para as últimas linhas]\n\n' : ''}${result.content ?? ''}`)
-  }, [])
-
   if (isLoading && !runtime) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -184,13 +162,14 @@ export default function HermesSettingsPage() {
       <ScrollArea className="flex-1">
         <div className="px-5 py-7 max-w-4xl mx-auto space-y-5">
           <Tabs defaultValue="runtime" className="space-y-5">
-            <div className="sticky top-0 z-10 bg-background pb-3 pt-1">
+            <div className="sticky top-0 z-10 bg-background/80 backdrop-blur rounded-xl px-2 pb-2 pt-1.5">
               <TabsList className="h-auto w-auto justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0">
-                <TabsTrigger className="h-9 data-[state=active]:shadow-none" value="runtime">Runtime Hermes</TabsTrigger>
-                <TabsTrigger className="h-9 data-[state=active]:shadow-none" value="provider">Provider & Modelo</TabsTrigger>
-                <TabsTrigger className="h-9 data-[state=active]:shadow-none" value="profiles">Profiles</TabsTrigger>
-                <TabsTrigger className="h-9 data-[state=active]:shadow-none" value="skills">Skills do Hermes</TabsTrigger>
-                <TabsTrigger className="h-9 data-[state=active]:shadow-none" value="logs">Logs</TabsTrigger>
+                <TabsTrigger className="h-9 rounded-lg data-[state=active]:shadow-none" value="runtime">Runtime Hermes</TabsTrigger>
+                <TabsTrigger className="h-9 rounded-lg data-[state=active]:shadow-none" value="provider">Provider & Modelo</TabsTrigger>
+                <TabsTrigger className="h-9 rounded-lg data-[state=active]:shadow-none" value="profiles">Profiles</TabsTrigger>
+                <TabsTrigger className="h-9 rounded-lg data-[state=active]:shadow-none" value="messengers">Messengers</TabsTrigger>
+                <TabsTrigger className="h-9 rounded-lg data-[state=active]:shadow-none" value="skills">Skills do Hermes</TabsTrigger>
+                <TabsTrigger className="h-9 rounded-lg data-[state=active]:shadow-none" value="logs">Logs</TabsTrigger>
               </TabsList>
             </div>
 
@@ -310,62 +289,24 @@ export default function HermesSettingsPage() {
               <HermesProfilesConfig />
             </TabsContent>
 
+            <TabsContent value="messengers" className="mt-0 space-y-5">
+              <HermesMessengersConfig />
+            </TabsContent>
+
             <TabsContent value="skills" className="mt-0 space-y-5">
-              <SettingsSection title="Skills do Hermes">
-                <SettingsCard>
-                  <SettingsCardContent className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 text-sm font-medium"><Wrench className="h-4 w-4" /> {skills.length} skill(s) do repo/runtime</div>
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={openBundledSkillsPath}>
-                        <FolderOpen className="h-3.5 w-3.5 mr-1.5" /> Abrir pasta
-                      </Button>
-                    </div>
-                    {skills.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">Nenhuma skill encontrada no runtime Hermes.</p>
-                    ) : (
-                      <div className="max-h-[420px] overflow-auto rounded-lg border border-border/60 p-1">
-                        {skills.map((skill) => (
-                          <button key={skill.path} type="button" className="w-full text-left px-2 py-1 rounded-md hover:bg-muted/60" onClick={() => openSkillPath(skill)}>
-                            <div className="flex min-w-0 items-center gap-2">
-                              <span className="truncate text-xs font-medium leading-5">{skill.name}</span>
-                              <span className="shrink-0 text-[10px] text-muted-foreground">{skill.source ?? 'home'}</span>
-                            </div>
-                            {skill.description && <div className="text-[11px] leading-4 text-muted-foreground truncate">{skill.description}</div>}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </SettingsCardContent>
-                </SettingsCard>
-              </SettingsSection>
+              <HermesSkillsConfig
+                skills={skills}
+                onOpenSkill={openSkillPath}
+                onOpenFolder={openBundledSkillsPath}
+              />
             </TabsContent>
 
             <TabsContent value="logs" className="mt-0 space-y-5">
-              <SettingsSection title="Logs">
-                <SettingsCard>
-                  <SettingsCardContent className="grid gap-3 md:grid-cols-[260px_1fr]">
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <div className="flex items-center gap-2 text-sm font-medium"><ScrollText className="h-4 w-4" /> Ver logs</div>
-                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openHermesPath('logs')}>
-                          <FolderOpen className="h-3.5 w-3.5 mr-1.5" /> Pasta
-                        </Button>
-                      </div>
-                      {logs.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">Nenhum log encontrado.</p>
-                      ) : logs.map((log) => (
-                        <button key={log.path} type="button" onClick={() => readLog(log.name)} className={`w-full text-left px-2 py-1.5 rounded-md text-xs hover:bg-muted/60 ${selectedLogName === log.name ? 'bg-muted' : ''}`}>
-                          <div className="font-medium truncate">{log.name}</div>
-                          <div className="text-[11px] text-muted-foreground">{formatBytes(log.size)} · {formatDate(log.modifiedAt)}</div>
-                        </button>
-                      ))}
-                    </div>
-                    <pre className="min-h-[320px] max-h-[560px] overflow-auto rounded-lg bg-muted/50 p-3 text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
-                      {selectedLogContent || 'Selecione um log para visualizar.'}
-                    </pre>
-                  </SettingsCardContent>
-                </SettingsCard>
-              </SettingsSection>
+              <HermesLogsConfig
+                logs={logs}
+                onOpenFolder={() => openHermesPath('logs')}
+                onReadLog={(name) => window.electronAPI.readHermesLog(name)}
+              />
             </TabsContent>
           </Tabs>
         </div>

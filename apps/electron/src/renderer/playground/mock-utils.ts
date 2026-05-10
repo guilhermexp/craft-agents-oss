@@ -172,6 +172,18 @@ export const mockElectronAPI = {
     return []
   },
 
+  listFileTree: async (rootPath?: string, dirPath?: string) => {
+    console.log('[Playground] listFileTree called:', rootPath, dirPath)
+    const root = rootPath || '/mock/workspace'
+    return {
+      rootPath: root,
+      currentPath: dirPath || root,
+      entries: [],
+      truncated: false,
+      totalEntries: 0,
+    }
+  },
+
   watchSessionFiles: (sessionId: string) => {
     console.log('[Playground] watchSessionFiles called:', sessionId)
   },
@@ -284,6 +296,9 @@ export const mockElectronAPI = {
   getHermesProfileSetupCommand: async () => ({ success: false, error: 'Hermes profiles are not available in playground mode.' }),
   getHermesProfileSoul: async () => ({ success: false, error: 'Hermes profiles are not available in playground mode.' }),
   updateHermesProfileSoul: async () => ({ success: false, error: 'Hermes profiles are not available in playground mode.' }),
+  listHermesEnv: async () => ({ success: false as const, error: 'Hermes env is not available in playground mode.' }),
+  setHermesEnv: async () => ({ success: false as const, error: 'Hermes env is not available in playground mode.' }),
+  deleteHermesEnv: async () => ({ success: false as const, error: 'Hermes env is not available in playground mode.' }),
   getPiProviderModels: async (provider: string) => {
     const MOCK_MODELS: Record<string, Array<{ id: string; name: string; costInput: number; costOutput: number; contextWindow: number; reasoning: boolean }>> = {
       'openrouter': [

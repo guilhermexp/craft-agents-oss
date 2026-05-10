@@ -25,6 +25,8 @@ import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton
 import { MainContentPanel } from './MainContentPanel'
 import { PANEL_MIN_WIDTH, RADIUS_EDGE, RADIUS_INNER } from './panel-constants'
 
+const HEADER_ICON_ONLY_BUTTON_CLASS = '!bg-transparent !shadow-none hover:!bg-transparent'
+
 interface PanelSlotProps {
   entry: PanelStackEntry
   isOnly: boolean
@@ -71,6 +73,7 @@ export function PanelSlot({
         icon={<X className="h-4 w-4" />}
         onClick={handleClose}
         tooltip={t("common.close")}
+        className={HEADER_ICON_ONLY_BUTTON_CLASS}
       />
     )
   }, [handleClose])
