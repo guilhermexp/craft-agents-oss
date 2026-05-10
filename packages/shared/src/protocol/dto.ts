@@ -622,6 +622,27 @@ export interface HermesProfileSoulResult {
   error?: string
 }
 
+export interface HermesEnvVar {
+  key: string
+  isSet: boolean
+  redactedValue?: string
+  description?: string
+  category?: string
+  isPassword?: boolean
+}
+
+export interface HermesListEnvResult {
+  success: boolean
+  vars?: HermesEnvVar[]
+  error?: string
+}
+
+export interface HermesEnvMutationResult {
+  success: boolean
+  key?: string
+  error?: string
+}
+
 // ---------------------------------------------------------------------------
 // Source / skill types
 // ---------------------------------------------------------------------------

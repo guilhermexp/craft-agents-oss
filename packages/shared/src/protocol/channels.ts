@@ -243,6 +243,12 @@ export const RPC_CHANNELS = {
     GET_PROFILE_SETUP_COMMAND: 'hermes:getProfileSetupCommand',
     GET_PROFILE_SOUL: 'hermes:getProfileSoul',
     UPDATE_PROFILE_SOUL: 'hermes:updateProfileSoul',
+    /** GET dashboard /api/env (list optional env vars + is_set/redacted). */
+    LIST_ENV: 'hermes:listEnv',
+    /** PUT dashboard /api/env { key, value }. */
+    SET_ENV: 'hermes:setEnv',
+    /** DELETE dashboard /api/env { key }. */
+    DELETE_ENV: 'hermes:deleteEnv',
   },
   meetings: {
     START: 'meetings:start',

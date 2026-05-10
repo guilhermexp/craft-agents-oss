@@ -186,6 +186,9 @@ export const CHANNEL_MAP = {
   getHermesProfileSetupCommand: invoke(RPC_CHANNELS.hermes.GET_PROFILE_SETUP_COMMAND),
   getHermesProfileSoul: invoke(RPC_CHANNELS.hermes.GET_PROFILE_SOUL),
   updateHermesProfileSoul: invoke(RPC_CHANNELS.hermes.UPDATE_PROFILE_SOUL),
+  listHermesEnv: invoke(RPC_CHANNELS.hermes.LIST_ENV),
+  setHermesEnv: invoke(RPC_CHANNELS.hermes.SET_ENV),
+  deleteHermesEnv: invoke(RPC_CHANNELS.hermes.DELETE_ENV),
 
   // Session-specific model
   getSessionModel: invoke(RPC_CHANNELS.sessions.GET_MODEL),

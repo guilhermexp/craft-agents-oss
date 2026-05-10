@@ -25,6 +25,9 @@ import {
   type HermesRuntimeDetailsResult,
   type HermesSkillInfo,
   type HermesUpdateResult,
+  type HermesEnvVar,
+  type HermesListEnvResult,
+  type HermesEnvMutationResult,
 } from '@craft-agent/shared/protocol'
 import { isValidHermesProfileName, normalizeHermesRuntimeConfig, type NormalizedHermesRuntimeConfig } from '@craft-agent/shared/hermes/acp-config'
 import { readHermesCodexTokens, seedHermesAuthFromCraft } from '@craft-agent/shared/hermes/auth-bridge'
@@ -1253,6 +1256,61 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
         body: JSON.stringify({ content }),
       })
       return { success: true, name }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.hermes.LIST_ENV, async (): Promise<HermesListEnvResult> => {
+    try {
+      const raw = await fetchDashboardJson('/api/env') as Record<string, {
+        is_set?: boolean
+        redacted_value?: string | null
+        description?: string
+        category?: string
+        is_password?: boolean
+      }>
+      const vars: HermesEnvVar[] = Object.entries(raw ?? {}).map(([key, info]) => ({
+        key,
+        isSet: Boolean(info?.is_set),
+        redactedValue: info?.redacted_value ?? undefined,
+        description: info?.description,
+        category: info?.category,
+        isPassword: info?.is_password,
+      }))
+      return { success: true, vars }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.hermes.SET_ENV, async (
+    _ctx,
+    body: { key: string; value: string },
+  ): Promise<HermesEnvMutationResult> => {
+    try {
+      await fetchDashboardJson('/api/env', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: body.key, value: body.value }),
+      })
+      return { success: true, key: body.key }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  server.handle(RPC_CHANNELS.hermes.DELETE_ENV, async (
+    _ctx,
+    key: string,
+  ): Promise<HermesEnvMutationResult> => {
+    try {
+      await fetchDashboardJson('/api/env', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key }),
+      })
+      return { success: true, key }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) }
     }

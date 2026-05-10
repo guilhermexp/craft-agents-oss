@@ -230,6 +230,8 @@ import type {
   HermesProfileMutationResult,
   HermesProfileSetupCommandResult,
   HermesProfileSoulResult,
+  HermesListEnvResult,
+  HermesEnvMutationResult,
   MeetingRecord,
   MeetingStartInput,
   MeetingTranscriptResult,
@@ -462,6 +464,9 @@ export interface ElectronAPI {
   getHermesProfileSetupCommand(name: string): Promise<HermesProfileSetupCommandResult>
   getHermesProfileSoul(name: string): Promise<HermesProfileSoulResult>
   updateHermesProfileSoul(name: string, content: string): Promise<HermesProfileMutationResult>
+  listHermesEnv(): Promise<HermesListEnvResult>
+  setHermesEnv(body: { key: string; value: string }): Promise<HermesEnvMutationResult>
+  deleteHermesEnv(key: string): Promise<HermesEnvMutationResult>
 
   // Session-specific model (overrides global)
   getSessionModel(sessionId: string, workspaceId: string): Promise<string | null>
