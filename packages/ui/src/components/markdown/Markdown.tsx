@@ -580,7 +580,19 @@ function createComponents(
               props.node?.position,
             )
           }
-          return wrapBlock('code', code, <CodeBlock code={code} language={match?.[1]} mode="full" className="my-2" />, props.node?.position)
+          return wrapBlock(
+            'code',
+            code,
+            <CodeBlock
+              code={code}
+              language={match?.[1]}
+              mode="full"
+              className="my-2"
+              onUrlClick={onUrlClick}
+              onFileClick={onFileClick}
+            />,
+            props.node?.position,
+          )
         }
 
         // Inline code
@@ -716,7 +728,19 @@ function createComponents(
             props.node?.position,
           )
         }
-        return wrapBlock('code', code, <CodeBlock code={code} language={match?.[1]} mode="full" className="my-2" />, props.node?.position)
+        return wrapBlock(
+          'code',
+          code,
+          <CodeBlock
+            code={code}
+            language={match?.[1]}
+            mode="full"
+            className="my-2"
+            onUrlClick={onUrlClick}
+            onFileClick={onFileClick}
+          />,
+          props.node?.position,
+        )
       }
 
       return <InlineCodeWithFileClick onFileClick={onFileClick}>{children}</InlineCodeWithFileClick>
