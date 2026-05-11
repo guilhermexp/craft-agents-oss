@@ -79,6 +79,22 @@ Craft-native Hermes tools must keep Craft canonical names:
 - External/non-Craft MCP servers keep Hermes normal names such as
   `mcp_filesystem_read_file`.
 
+Session tools exposed across native TypeScript adapters and Hermes ACP/MCP are
+the `session-tools-mcp` frontier API:
+
+- Register every frontier tool through `defineTool(...)` in
+  `packages/session-tools-core/src/tool-defs.ts`.
+- Keep existing public tools on `apiVersion: "v1"` and preserve the Hermes
+  consumer prefix `mcp__session__<tool>`.
+- Any incompatible change to a public tool name, required input, output shape,
+  or documented error contract must be introduced as a new major version
+  instead of mutating `v1` in place. Deprecate `v1` only after a documented
+  migration window.
+- Every exposed tool must declare explicit Zod `inputSchema` and `outputSchema`;
+  the derived JSON Schema feeds MCP and the runtime validators.
+- Run `bun run lint:tool-contracts` after changing session tools, in addition
+  to the focused Hermes/Craft tests below.
+
 When bumping or automatically following the Hermes upstream pin, preserve these
 overlay behaviors:
 

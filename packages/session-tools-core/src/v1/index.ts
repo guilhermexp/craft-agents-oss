@@ -1,0 +1,30 @@
+export {
+  SESSION_TOOLS_FRONTIER_API_VERSION,
+  SESSION_TOOL_DEFS,
+  SESSION_TOOL_REGISTRY,
+  getSessionToolDefs,
+  getSessionToolNames,
+  getSessionToolRegistry,
+  getSessionBackendToolNames,
+  getSessionRegistryToolNames,
+  getSessionSafeAllowedToolNames,
+  getSessionSafeBlockedToolNames,
+  getToolDefsAsJsonSchema,
+  validateSessionToolInput,
+  validateSessionToolOutput,
+  executeSessionTool,
+} from '../tool-defs.ts';
+
+export type {
+  SessionToolApiVersion,
+  SessionToolExposure,
+  SessionToolExecutionMode,
+  SessionToolSafeMode,
+  SessionToolDef,
+  RegistrySessionToolDef,
+  BackendSessionToolDef,
+  SessionToolHandler,
+  JsonSchemaToolDef,
+  SessionToolFilterOptions,
+  SessionToolNameOptions,
+} from '../tool-defs.ts';

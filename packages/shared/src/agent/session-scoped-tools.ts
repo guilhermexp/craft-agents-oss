@@ -25,6 +25,7 @@ import { basename } from 'node:path';
 import {
   SESSION_BACKEND_TOOL_NAMES,
   SESSION_TOOL_REGISTRY,
+  executeSessionTool,
   getSessionToolDefs,
   TOOL_DESCRIPTIONS as BASE_DESCRIPTIONS,
   // Types
@@ -261,7 +262,10 @@ export function getSessionScopedTools(
     function registryTool(name: string, schema: any) {
       const def = SESSION_TOOL_REGISTRY.get(name)!;
       return tool(name, TOOL_DESCRIPTIONS[name] || def.description, schema, async (args: any) => {
-        const result = await def.handler!(ctx, args);
+        if (!def.handler) {
+          throw new Error(`Session tool '${name}' is not executable in the registry adapter.`);
+        }
+        const result = await executeSessionTool(def, ctx, args);
         return convertResult(result);
       }, def.readOnly ? { annotations: { readOnlyHint: true } } : undefined);
     }

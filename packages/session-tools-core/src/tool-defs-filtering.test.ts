@@ -7,6 +7,8 @@ import {
   getSessionSafeAllowedToolNames,
   getSessionSafeBlockedToolNames,
   getToolDefsAsJsonSchema,
+  validateSessionToolInput,
+  validateSessionToolOutput,
 } from './tool-defs.ts';
 
 describe('session tool filtering helpers', () => {
@@ -71,6 +73,38 @@ describe('session tool filtering helpers', () => {
     for (const def of SESSION_TOOL_DEFS) {
       expect(def.safeMode === 'allow' || def.safeMode === 'block').toBe(true);
     }
+  });
+
+  it('all canonical session tools declare the v1 frontier contract', () => {
+    for (const def of SESSION_TOOL_DEFS) {
+      expect(def.apiVersion).toBe('v1');
+      expect(def.exposure).toBe('native-and-mcp');
+      expect(def.inputSchema).toBeDefined();
+      expect(def.outputSchema).toBeDefined();
+    }
+  });
+
+  it('json schema conversion includes versioned input and output schemas', () => {
+    const defs = getToolDefsAsJsonSchema({ includeMemory: true });
+    const configValidate = defs.find(def => def.name === 'config_validate');
+
+    expect(configValidate?.apiVersion).toBe('v1');
+    expect(configValidate?.inputSchema.type).toBe('object');
+    expect(configValidate?.outputSchema.type).toBe('object');
+    expect(configValidate?.exposure).toBe('native-and-mcp');
+  });
+
+  it('validates inputs and outputs through the canonical schemas', () => {
+    const def = SESSION_TOOL_DEFS.find(tool => tool.name === 'config_validate');
+    expect(def).toBeDefined();
+    if (!def) return;
+
+    expect(validateSessionToolInput(def, { target: 'config' })).toEqual({ target: 'config' });
+    expect(() => validateSessionToolInput(def, { target: 'unknown' })).toThrow();
+    expect(validateSessionToolOutput(def, { content: [{ type: 'text', text: 'ok' }] })).toEqual({
+      content: [{ type: 'text', text: 'ok' }],
+    });
+    expect(() => validateSessionToolOutput(def, { content: [{ type: 'text' }] })).toThrow();
   });
 
   it('safe-mode helper sets classify expected tools', () => {

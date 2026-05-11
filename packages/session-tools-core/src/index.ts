@@ -200,6 +200,9 @@ export {
   TransformDataSchema,
   ScriptSandboxSchema,
   RenderTemplateSchema,
+  TextContentSchema,
+  ImageContentSchema,
+  ToolResultOutputSchema,
   // Browser tool schema
   BrowserToolSchema,
   // Developer feedback schema
@@ -208,6 +211,7 @@ export {
   TOOL_DESCRIPTIONS,
   // Registry
   SESSION_TOOL_DEFS,
+  SESSION_TOOLS_FRONTIER_API_VERSION,
   SESSION_TOOL_NAMES,
   SESSION_BACKEND_TOOL_NAMES,
   SESSION_REGISTRY_TOOL_NAMES,
@@ -222,6 +226,10 @@ export {
   getSessionToolRegistry,
   getSessionSafeAllowedToolNames,
   getSessionSafeBlockedToolNames,
+  defineTool,
+  validateSessionToolInput,
+  validateSessionToolOutput,
+  executeSessionTool,
   // JSON Schema converter
   getToolDefsAsJsonSchema,
 } from './tool-defs.ts';
@@ -229,6 +237,8 @@ export {
 export type {
   SessionToolExecutionMode,
   SessionToolSafeMode,
+  SessionToolApiVersion,
+  SessionToolExposure,
   SessionToolDef,
   RegistrySessionToolDef,
   BackendSessionToolDef,
@@ -237,3 +247,5 @@ export type {
   SessionToolFilterOptions,
   SessionToolNameOptions,
 } from './tool-defs.ts';
+
+export * as v1 from './v1/index.ts';

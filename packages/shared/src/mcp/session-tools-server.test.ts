@@ -6,6 +6,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 import { CraftSessionToolsMcpServer } from './session-tools-server.ts';
+import { getToolDefsAsJsonSchema } from '@craft-agent/session-tools-core';
 import {
   mergeSessionScopedToolCallbacks,
   unregisterSessionScopedToolCallbacks,
@@ -23,6 +24,8 @@ describe('CraftSessionToolsMcpServer', () => {
 
   afterEach(() => {
     unregisterSessionScopedToolCallbacks(sessionId);
+    delete process.env.CRAFT_FEATURE_DEVELOPER_FEEDBACK;
+    delete process.env.CRAFT_FEATURE_MEMORY;
     if (workspaceRootPath) rmSync(workspaceRootPath, { recursive: true, force: true });
   });
 
@@ -36,6 +39,26 @@ describe('CraftSessionToolsMcpServer', () => {
     expect(toolNames).toContain('spawn_session');
     expect(toolNames).toContain('get_session_info');
     expect(toolNames).toContain('meeting_tool');
+  });
+
+  it('keeps the Hermes MCP bridge catalog aligned with the native v1 catalog', () => {
+    process.env.CRAFT_FEATURE_DEVELOPER_FEEDBACK = '1';
+    process.env.CRAFT_FEATURE_MEMORY = '1';
+    const server = new CraftSessionToolsMcpServer({ sessionId, workspaceRootPath, workspaceId: 'ws-test' });
+    const bridgeTools = new Map(server.getToolDefinitions().map((tool) => [tool.name, tool]));
+    const nativeTools = getToolDefsAsJsonSchema({
+      includeDeveloperFeedback: true,
+      includeMemory: true,
+    }).filter((tool) => tool.name !== 'browser_tool');
+
+    for (const nativeTool of nativeTools) {
+      const bridgeTool = bridgeTools.get(nativeTool.name);
+      expect(bridgeTool).toBeDefined();
+      expect(bridgeTool?.description).toBe(nativeTool.description);
+      expect(bridgeTool?.inputSchema).toEqual(nativeTool.inputSchema);
+      expect(bridgeTool?.outputSchema).toEqual(nativeTool.outputSchema);
+      expect(bridgeTool?._meta?.craftApiVersion).toBe(nativeTool.apiVersion);
+    }
   });
 
   it('serves session tools through the Streamable HTTP MCP bridge', async () => {
@@ -52,6 +75,8 @@ describe('CraftSessionToolsMcpServer', () => {
       expect(toolNames).toContain('call_llm');
       expect(toolNames).toContain('spawn_session');
       expect(toolNames).toContain('meeting_tool');
+      const callLlmTool = listed.tools.find((tool) => tool.name === 'call_llm');
+      expect(callLlmTool?.outputSchema?.type).toBe('object');
     } finally {
       await client.close().catch(() => {});
       await server.stop();

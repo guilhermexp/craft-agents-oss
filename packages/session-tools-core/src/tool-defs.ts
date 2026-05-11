@@ -1,14 +1,14 @@
 /**
  * Session Tool Definitions — Single Source of Truth
  *
- * Canonical Zod schemas, descriptions, and handler registry for all
+ * Canonical Zod schemas, descriptions, versions, and handler registry for all
  * session-scoped tools. Consumers derive what they need:
  *
  * - Claude SDK  → `.shape` extracts the plain `{ key: z.string() }` literal
  * - MCP / Pi    → `getToolDefsAsJsonSchema()` auto-converts to JSON Schema
  *
- * Adding a new tool: define the schema, description, handler import, and
- * one entry in SESSION_TOOL_DEFS.
+ * Adding a new tool: define the input/output schemas, description, handler
+ * import, and one defineTool() entry in SESSION_TOOL_DEFS.
  */
 
 import { z } from 'zod';
@@ -528,6 +528,29 @@ Messages will no longer be forwarded between the chat app and this session.`,
 // Tool Definition Type
 // ============================================================
 
+export const SESSION_TOOLS_FRONTIER_API_VERSION = 'v1' as const;
+
+export type SessionToolApiVersion = typeof SESSION_TOOLS_FRONTIER_API_VERSION | 'v2';
+
+export type SessionToolExposure = 'native-and-mcp';
+
+export const TextContentSchema = z.object({
+  type: z.literal('text'),
+  text: z.string(),
+});
+
+export const ImageContentSchema = z.object({
+  type: z.literal('image'),
+  data: z.string(),
+  mimeType: z.string(),
+});
+
+export const ToolResultOutputSchema = z.object({
+  content: z.array(z.union([TextContentSchema, ImageContentSchema])),
+  structuredContent: z.record(z.string(), z.unknown()).optional(),
+  isError: z.boolean().optional(),
+});
+
 /** Handler function signature for session tools. */
 export type SessionToolHandler = (ctx: SessionToolContext, args: any) => Promise<ToolResult>;
 
@@ -539,8 +562,11 @@ export type SessionToolSafeMode = 'allow' | 'block';
 
 interface SessionToolDefBase {
   name: string;
+  apiVersion: SessionToolApiVersion;
   description: string;
   inputSchema: z.ZodObject<z.ZodRawShape>;
+  outputSchema: z.ZodTypeAny;
+  exposure: SessionToolExposure;
   /** Whether this tool is allowed in Explore/Safe mode. */
   safeMode: SessionToolSafeMode;
   /** Whether this tool only reads data (no side effects). Enables parallel execution in backends that support it. */
@@ -562,44 +588,93 @@ export interface BackendSessionToolDef extends SessionToolDefBase {
 /** A single session tool definition combining name, description, schema, mode, and handler. */
 export type SessionToolDef = RegistrySessionToolDef | BackendSessionToolDef;
 
+type DefineToolConfig = Omit<SessionToolDefBase, 'name' | 'apiVersion'> & {
+  version: SessionToolApiVersion;
+} & (
+  | { executionMode: 'registry'; handler: SessionToolHandler }
+  | { executionMode: 'backend'; handler: null }
+);
+
+/**
+ * Canonical registration entry point for session tools exposed as the frontier API.
+ */
+export function defineTool(name: string, config: DefineToolConfig): SessionToolDef {
+  return {
+    name,
+    apiVersion: config.version,
+    description: config.description,
+    inputSchema: config.inputSchema,
+    outputSchema: config.outputSchema,
+    exposure: config.exposure,
+    safeMode: config.safeMode,
+    ...(config.readOnly !== undefined ? { readOnly: config.readOnly } : {}),
+    executionMode: config.executionMode,
+    handler: config.handler,
+  } as SessionToolDef;
+}
+
+export function validateSessionToolInput(def: SessionToolDef, args: unknown): Record<string, unknown> {
+  return def.inputSchema.parse(args) as Record<string, unknown>;
+}
+
+export function validateSessionToolOutput(def: SessionToolDef, result: unknown): ToolResult {
+  return def.outputSchema.parse(result);
+}
+
+export async function executeSessionTool(
+  def: RegistrySessionToolDef,
+  ctx: SessionToolContext,
+  args: unknown,
+): Promise<ToolResult> {
+  const parsedArgs = validateSessionToolInput(def, args);
+  const result = await def.handler(ctx, parsedArgs);
+  return validateSessionToolOutput(def, result);
+}
+
+const FRONTIER_TOOL_DEFAULTS = {
+  version: SESSION_TOOLS_FRONTIER_API_VERSION,
+  outputSchema: ToolResultOutputSchema,
+  exposure: 'native-and-mcp' as const,
+};
+
 // ============================================================
 // Canonical Tool Registry
 // ============================================================
 
 export const SESSION_TOOL_DEFS: SessionToolDef[] = [
-  { name: 'SubmitPlan', description: TOOL_DESCRIPTIONS.SubmitPlan, inputSchema: SubmitPlanSchema, executionMode: 'registry', safeMode: 'allow', handler: handleSubmitPlan },
-  { name: 'config_validate', description: TOOL_DESCRIPTIONS.config_validate, inputSchema: ConfigValidateSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleConfigValidate },
-  { name: 'skill_validate', description: TOOL_DESCRIPTIONS.skill_validate, inputSchema: SkillValidateSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleSkillValidate },
-  { name: 'mermaid_validate', description: TOOL_DESCRIPTIONS.mermaid_validate, inputSchema: MermaidValidateSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleMermaidValidate },
-  { name: 'source_test', description: TOOL_DESCRIPTIONS.source_test, inputSchema: SourceTestSchema, executionMode: 'registry', safeMode: 'allow', handler: handleSourceTest },
-  { name: 'source_oauth_trigger', description: TOOL_DESCRIPTIONS.source_oauth_trigger, inputSchema: SourceOAuthTriggerSchema, executionMode: 'registry', safeMode: 'block', handler: handleSourceOAuthTrigger },
-  { name: 'source_google_oauth_trigger', description: TOOL_DESCRIPTIONS.source_google_oauth_trigger, inputSchema: SourceOAuthTriggerSchema, executionMode: 'registry', safeMode: 'block', handler: handleGoogleOAuthTrigger },
-  { name: 'source_slack_oauth_trigger', description: TOOL_DESCRIPTIONS.source_slack_oauth_trigger, inputSchema: SourceOAuthTriggerSchema, executionMode: 'registry', safeMode: 'block', handler: handleSlackOAuthTrigger },
-  { name: 'source_microsoft_oauth_trigger', description: TOOL_DESCRIPTIONS.source_microsoft_oauth_trigger, inputSchema: SourceOAuthTriggerSchema, executionMode: 'registry', safeMode: 'block', handler: handleMicrosoftOAuthTrigger },
-  { name: 'source_credential_prompt', description: TOOL_DESCRIPTIONS.source_credential_prompt, inputSchema: CredentialPromptSchema, executionMode: 'registry', safeMode: 'block', handler: handleCredentialPrompt },
-  { name: 'update_user_preferences', description: TOOL_DESCRIPTIONS.update_user_preferences, inputSchema: UpdatePreferencesSchema, executionMode: 'registry', safeMode: 'block', handler: handleUpdatePreferences },
-  { name: 'transform_data', description: TOOL_DESCRIPTIONS.transform_data, inputSchema: TransformDataSchema, executionMode: 'registry', safeMode: 'allow', handler: handleTransformData },
-  { name: 'script_sandbox', description: TOOL_DESCRIPTIONS.script_sandbox, inputSchema: ScriptSandboxSchema, executionMode: 'registry', safeMode: 'allow', handler: handleScriptSandbox },
-  { name: 'render_template', description: TOOL_DESCRIPTIONS.render_template, inputSchema: RenderTemplateSchema, executionMode: 'registry', safeMode: 'allow', handler: handleRenderTemplate },
-  { name: 'send_developer_feedback', description: TOOL_DESCRIPTIONS.send_developer_feedback, inputSchema: SendDeveloperFeedbackSchema, executionMode: 'registry', safeMode: 'allow', handler: handleSendDeveloperFeedback },
-  { name: 'call_llm', description: TOOL_DESCRIPTIONS.call_llm, inputSchema: CallLlmSchema, executionMode: 'backend', safeMode: 'allow', readOnly: true, handler: null },
-  { name: 'spawn_session', description: TOOL_DESCRIPTIONS.spawn_session, inputSchema: SpawnSessionSchema, executionMode: 'backend', safeMode: 'block', handler: null },
+  defineTool('SubmitPlan', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.SubmitPlan, inputSchema: SubmitPlanSchema, executionMode: 'registry', safeMode: 'allow', handler: handleSubmitPlan }),
+  defineTool('config_validate', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.config_validate, inputSchema: ConfigValidateSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleConfigValidate }),
+  defineTool('skill_validate', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.skill_validate, inputSchema: SkillValidateSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleSkillValidate }),
+  defineTool('mermaid_validate', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.mermaid_validate, inputSchema: MermaidValidateSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleMermaidValidate }),
+  defineTool('source_test', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.source_test, inputSchema: SourceTestSchema, executionMode: 'registry', safeMode: 'allow', handler: handleSourceTest }),
+  defineTool('source_oauth_trigger', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.source_oauth_trigger, inputSchema: SourceOAuthTriggerSchema, executionMode: 'registry', safeMode: 'block', handler: handleSourceOAuthTrigger }),
+  defineTool('source_google_oauth_trigger', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.source_google_oauth_trigger, inputSchema: SourceOAuthTriggerSchema, executionMode: 'registry', safeMode: 'block', handler: handleGoogleOAuthTrigger }),
+  defineTool('source_slack_oauth_trigger', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.source_slack_oauth_trigger, inputSchema: SourceOAuthTriggerSchema, executionMode: 'registry', safeMode: 'block', handler: handleSlackOAuthTrigger }),
+  defineTool('source_microsoft_oauth_trigger', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.source_microsoft_oauth_trigger, inputSchema: SourceOAuthTriggerSchema, executionMode: 'registry', safeMode: 'block', handler: handleMicrosoftOAuthTrigger }),
+  defineTool('source_credential_prompt', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.source_credential_prompt, inputSchema: CredentialPromptSchema, executionMode: 'registry', safeMode: 'block', handler: handleCredentialPrompt }),
+  defineTool('update_user_preferences', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.update_user_preferences, inputSchema: UpdatePreferencesSchema, executionMode: 'registry', safeMode: 'block', handler: handleUpdatePreferences }),
+  defineTool('transform_data', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.transform_data, inputSchema: TransformDataSchema, executionMode: 'registry', safeMode: 'allow', handler: handleTransformData }),
+  defineTool('script_sandbox', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.script_sandbox, inputSchema: ScriptSandboxSchema, executionMode: 'registry', safeMode: 'allow', handler: handleScriptSandbox }),
+  defineTool('render_template', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.render_template, inputSchema: RenderTemplateSchema, executionMode: 'registry', safeMode: 'allow', handler: handleRenderTemplate }),
+  defineTool('send_developer_feedback', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.send_developer_feedback, inputSchema: SendDeveloperFeedbackSchema, executionMode: 'registry', safeMode: 'allow', handler: handleSendDeveloperFeedback }),
+  defineTool('call_llm', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.call_llm, inputSchema: CallLlmSchema, executionMode: 'backend', safeMode: 'allow', readOnly: true, handler: null }),
+  defineTool('spawn_session', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.spawn_session, inputSchema: SpawnSessionSchema, executionMode: 'backend', safeMode: 'block', handler: null }),
   // Browser tool (backend-specific — requires BrowserPaneManager in Electron)
   // Single CLI-like tool that handles all browser actions via command string.
-  { name: 'browser_tool', description: TOOL_DESCRIPTIONS.browser_tool, inputSchema: BrowserToolSchema, executionMode: 'backend', safeMode: 'allow', handler: null },
+  defineTool('browser_tool', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.browser_tool, inputSchema: BrowserToolSchema, executionMode: 'backend', safeMode: 'allow', handler: null }),
   // Session self-management tools (registry — use context callbacks to reach SessionManager)
-  { name: 'set_session_labels', description: TOOL_DESCRIPTIONS.set_session_labels, inputSchema: SetSessionLabelsSchema, executionMode: 'registry', safeMode: 'block', handler: handleSetSessionLabels },
-  { name: 'set_session_status', description: TOOL_DESCRIPTIONS.set_session_status, inputSchema: SetSessionStatusSchema, executionMode: 'registry', safeMode: 'block', handler: handleSetSessionStatus },
-  { name: 'get_session_info', description: TOOL_DESCRIPTIONS.get_session_info, inputSchema: GetSessionInfoSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleGetSessionInfo },
-  { name: 'list_sessions', description: TOOL_DESCRIPTIONS.list_sessions, inputSchema: ListSessionsSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleListSessions },
+  defineTool('set_session_labels', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.set_session_labels, inputSchema: SetSessionLabelsSchema, executionMode: 'registry', safeMode: 'block', handler: handleSetSessionLabels }),
+  defineTool('set_session_status', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.set_session_status, inputSchema: SetSessionStatusSchema, executionMode: 'registry', safeMode: 'block', handler: handleSetSessionStatus }),
+  defineTool('get_session_info', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.get_session_info, inputSchema: GetSessionInfoSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleGetSessionInfo }),
+  defineTool('list_sessions', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.list_sessions, inputSchema: ListSessionsSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleListSessions }),
   // Memory tools (feature-flagged — handlers gracefully degrade when memory is disabled)
-  { name: 'memory_store', description: TOOL_DESCRIPTIONS.memory_store, inputSchema: MemoryStoreSchema, executionMode: 'registry', safeMode: 'block', handler: handleMemoryStore },
-  { name: 'memory_recall', description: TOOL_DESCRIPTIONS.memory_recall, inputSchema: MemoryRecallSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleMemoryRecall },
+  defineTool('memory_store', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.memory_store, inputSchema: MemoryStoreSchema, executionMode: 'registry', safeMode: 'block', handler: handleMemoryStore }),
+  defineTool('memory_recall', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.memory_recall, inputSchema: MemoryRecallSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleMemoryRecall }),
   // Inter-session messaging
-  { name: 'send_agent_message', description: TOOL_DESCRIPTIONS.send_agent_message, inputSchema: SendAgentMessageSchema, executionMode: 'registry', safeMode: 'block', handler: handleSendAgentMessage },
+  defineTool('send_agent_message', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.send_agent_message, inputSchema: SendAgentMessageSchema, executionMode: 'registry', safeMode: 'block', handler: handleSendAgentMessage }),
   // Messaging gateway tools
-  { name: 'list_messaging_channels', description: TOOL_DESCRIPTIONS.list_messaging_channels, inputSchema: ListMessagingChannelsSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleListMessagingChannels },
-  { name: 'unbind_messaging_channel', description: TOOL_DESCRIPTIONS.unbind_messaging_channel, inputSchema: UnbindMessagingChannelSchema, executionMode: 'registry', safeMode: 'block', handler: handleUnbindMessagingChannel },
+  defineTool('list_messaging_channels', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.list_messaging_channels, inputSchema: ListMessagingChannelsSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleListMessagingChannels }),
+  defineTool('unbind_messaging_channel', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.unbind_messaging_channel, inputSchema: UnbindMessagingChannelSchema, executionMode: 'registry', safeMode: 'block', handler: handleUnbindMessagingChannel }),
 ];
 
 export interface SessionToolFilterOptions {
@@ -725,8 +800,14 @@ export const SESSION_TOOL_REGISTRY = new Map(SESSION_TOOL_DEFS.map(d => [d.name,
 
 export interface JsonSchemaToolDef {
   name: string;
+  apiVersion: SessionToolApiVersion;
   description: string;
   inputSchema: Record<string, unknown>;
+  outputSchema: Record<string, unknown>;
+  exposure: SessionToolExposure;
+  executionMode: SessionToolExecutionMode;
+  safeMode: SessionToolSafeMode;
+  readOnly?: boolean;
 }
 
 /**
@@ -750,14 +831,23 @@ export function getToolDefsAsJsonSchema(opts?: {
   return defs.map(def => {
     // Explicit `as any` avoids TS2589 ("type instantiation is excessively deep")
     // caused by zodToJsonSchema inferring deep generic chains from union schemas.
-    const jsonSchema = zodToJsonSchema(def.inputSchema as any, { $refStrategy: 'none' }) as Record<string, unknown>;
+    const inputSchema = zodToJsonSchema(def.inputSchema as any, { $refStrategy: 'none' }) as Record<string, unknown>;
+    const outputSchema = zodToJsonSchema(def.outputSchema as any, { $refStrategy: 'none' }) as Record<string, unknown>;
     // Strip metadata not needed by MCP/Pi consumers
-    delete jsonSchema.$schema;
-    delete jsonSchema.additionalProperties;
+    delete inputSchema.$schema;
+    delete inputSchema.additionalProperties;
+    delete outputSchema.$schema;
+    delete outputSchema.additionalProperties;
     return {
       name: prefix + def.name,
+      apiVersion: def.apiVersion,
       description: def.description,
-      inputSchema: jsonSchema,
+      inputSchema,
+      outputSchema,
+      exposure: def.exposure,
+      executionMode: def.executionMode,
+      safeMode: def.safeMode,
+      ...(def.readOnly !== undefined ? { readOnly: def.readOnly } : {}),
     };
   });
 }

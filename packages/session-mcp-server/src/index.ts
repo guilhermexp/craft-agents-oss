@@ -44,6 +44,9 @@ import {
   // Registry
   getSessionToolRegistry,
   getToolDefsAsJsonSchema,
+  validateSessionToolInput,
+  validateSessionToolOutput,
+  executeSessionTool,
   // Helpers
   loadSourceConfig as loadSourceConfigFromHelpers,
   errorResponse,
@@ -266,6 +269,11 @@ function createSessionTools(includeDeveloperFeedback: boolean): Tool[] {
     name: def.name,
     description: def.description,
     inputSchema: def.inputSchema as Tool['inputSchema'],
+    outputSchema: def.outputSchema as Tool['outputSchema'],
+    _meta: {
+      craftApiVersion: def.apiVersion,
+      craftExposure: def.exposure,
+    },
   }));
 }
 
@@ -507,7 +515,8 @@ async function main() {
   const ctx = createCodexContext(config);
 
   const includeDeveloperFeedback = isDeveloperFeedbackEnabled();
-  const sessionToolRegistry = getSessionToolRegistry({ includeDeveloperFeedback });
+  const includeMemory = isMemoryEnabled();
+  const sessionToolRegistry = getSessionToolRegistry({ includeDeveloperFeedback, includeMemory });
 
   // Create MCP server
   const server = new Server(
@@ -537,18 +546,24 @@ async function main() {
     try {
       // call_llm has backend-specific execution (precomputed result / HTTP callback)
       if (name === 'call_llm') {
-        return await handleCallLlm(toolArgs as Record<string, unknown>, config);
+        const def = sessionToolRegistry.get(name);
+        if (!def) return errorResponse(`Unknown tool: ${name}`);
+        const parsedArgs = validateSessionToolInput(def, toolArgs ?? {});
+        return validateSessionToolOutput(def, await handleCallLlm(parsedArgs, config));
       }
 
       // spawn_session has backend-specific execution (precomputed result / HTTP callback)
       if (name === 'spawn_session') {
-        return await handleSpawnSession(toolArgs as Record<string, unknown>, config);
+        const def = sessionToolRegistry.get(name);
+        if (!def) return errorResponse(`Unknown tool: ${name}`);
+        const parsedArgs = validateSessionToolInput(def, toolArgs ?? {});
+        return validateSessionToolOutput(def, await handleSpawnSession(parsedArgs, config));
       }
 
       // Check canonical session tool registry first (feature-filtered)
       const def = sessionToolRegistry.get(name);
       if (def?.handler) {
-        return await def.handler(ctx, toolArgs);
+        return await executeSessionTool(def, ctx, toolArgs ?? {});
       }
 
       // Route to docs upstream if it's a docs tool

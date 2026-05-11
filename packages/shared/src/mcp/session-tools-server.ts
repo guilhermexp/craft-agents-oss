@@ -20,8 +20,11 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import {
-  SESSION_TOOL_REGISTRY,
+  executeSessionTool,
+  getSessionToolRegistry,
   getToolDefsAsJsonSchema,
+  validateSessionToolInput,
+  validateSessionToolOutput,
   type ToolResult as SessionToolResult,
 } from '@craft-agent/session-tools-core';
 import { createClaudeContext } from '../agent/claude-context.ts';
@@ -55,6 +58,14 @@ export interface CraftSessionToolsMcpServerOptions {
 type McpContent =
   | { type: 'text'; text: string }
   | { type: 'image'; data: string; mimeType: string };
+
+type BridgeToolDefinition = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  _meta?: Record<string, unknown>;
+};
 
 const BROWSER_RELEASE_HINT = '\n\nWhen you are done using the browser, call browser_tool with command \"close\" to close the window entirely, or \"release\" to dismiss the overlay and let the user continue browsing.';
 
@@ -117,6 +128,7 @@ const MEETING_TOOL_SCHEMA = {
 function toMcpResult(result: SessionToolResult): { content: McpContent[]; isError?: boolean } {
   return {
     content: result.content.map((entry) => ({ type: 'text' as const, text: entry.text })),
+    ...(result.structuredContent ? { structuredContent: result.structuredContent } : {}),
     ...(result.isError ? { isError: true } : {}),
   };
 }
@@ -180,23 +192,40 @@ export class CraftSessionToolsMcpServer {
     return this.url;
   }
 
-  getToolDefinitions(): Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> {
+  getToolDefinitions(): BridgeToolDefinition[] {
     const browserEnabled = getBrowserToolEnabled();
-    const tools = getToolDefsAsJsonSchema({
+    const tools: BridgeToolDefinition[] = getToolDefsAsJsonSchema({
       includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback,
       includeMemory: FEATURE_FLAGS.memory,
-    }).filter((def) => browserEnabled || def.name !== 'browser_tool');
+    })
+      .filter((def) => browserEnabled || def.name !== 'browser_tool')
+      .map((def) => ({
+        name: def.name,
+        description: def.description,
+        inputSchema: def.inputSchema,
+        outputSchema: def.outputSchema,
+        _meta: {
+          craftApiVersion: def.apiVersion,
+          craftExposure: def.exposure,
+          craftExecutionMode: def.executionMode,
+          craftSafeMode: def.safeMode,
+        },
+      }));
 
     tools.push({
       name: AUTOMATION_TOOL_NAME,
       description: AUTOMATION_TOOL_DESCRIPTION,
       inputSchema: AUTOMATION_TOOL_SCHEMA as unknown as Record<string, unknown>,
+      outputSchema: this.bridgeToolOutputSchema(),
+      _meta: { craftApiVersion: 'v1', craftBridgeOnly: true },
     });
 
     tools.push({
       name: MEETING_TOOL_NAME,
       description: MEETING_TOOL_DESCRIPTION,
       inputSchema: MEETING_TOOL_SCHEMA as unknown as Record<string, unknown>,
+      outputSchema: this.bridgeToolOutputSchema(),
+      _meta: { craftApiVersion: 'v1', craftBridgeOnly: true },
     });
 
     return tools;
@@ -206,17 +235,21 @@ export class CraftSessionToolsMcpServer {
     if (name === AUTOMATION_TOOL_NAME) return this.automationTool(args);
     if (name === MEETING_TOOL_NAME) return this.meetingTool(args);
 
-    const def = SESSION_TOOL_REGISTRY.get(name);
+    const def = getSessionToolRegistry({
+      includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback,
+      includeMemory: FEATURE_FLAGS.memory,
+    }).get(name);
     if (!def) return errorResult(`Unknown Craft session tool: ${name}`);
 
     if (def.handler) {
-      const result = await def.handler(this.createContext(), args);
+      const result = await executeSessionTool(def, this.createContext(), args);
       return toMcpResult(result);
     }
 
-    if (name === 'call_llm') return this.callLlm(args);
-    if (name === 'spawn_session') return this.spawnSession(args);
-    if (name === 'browser_tool') return this.browserTool(args);
+    const parsedArgs = validateSessionToolInput(def, args);
+    if (name === 'call_llm') return validateSessionToolOutput(def, await this.callLlm(parsedArgs));
+    if (name === 'spawn_session') return validateSessionToolOutput(def, await this.spawnSession(parsedArgs));
+    if (name === 'browser_tool') return validateSessionToolOutput(def, await this.browserTool(parsedArgs));
 
     return errorResult(`Craft session tool is not executable in this context: ${name}`);
   }
@@ -327,6 +360,8 @@ export class CraftSessionToolsMcpServer {
         name: def.name,
         description: def.description,
         inputSchema: def.inputSchema as { type: 'object'; properties?: Record<string, unknown> },
+        outputSchema: def.outputSchema as { type: 'object'; properties?: Record<string, unknown> },
+        _meta: def._meta,
       })),
     }));
 
@@ -565,6 +600,27 @@ export class CraftSessionToolsMcpServer {
 
   private configAutomationSystemReload(): void {
     this.options.automationSystem?.reloadConfig();
+  }
+
+  private bridgeToolOutputSchema(): Record<string, unknown> {
+    return {
+      type: 'object',
+      properties: {
+        content: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              type: { type: 'string', const: 'text' },
+              text: { type: 'string' },
+            },
+            required: ['type', 'text'],
+          },
+        },
+        isError: { type: 'boolean' },
+      },
+      required: ['content'],
+    };
   }
 
   private debug(message: string): void {
