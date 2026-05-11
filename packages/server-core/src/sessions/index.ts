@@ -1,1 +1,8 @@
 export { SessionManager, setSessionPlatform, setSessionRuntimeHooks, sanitizeForTitle, AGENT_FLAGS } from './SessionManager'
+export { SessionArtifactRenderer } from './session-artifact-renderer'
+export { SessionEventPublisher } from './session-event-publisher'
+export { SessionLifecycleManager } from './session-lifecycle-manager'
+export { SessionMessageStore } from './session-message-store'
+export type { ArtifactRenderResult } from './session-artifact-renderer'
+export type { SessionLifecycleDelegate } from './session-lifecycle-manager'
+export type { StoreManagedSession } from './session-message-store'

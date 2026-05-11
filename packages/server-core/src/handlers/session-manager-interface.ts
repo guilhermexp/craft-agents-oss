@@ -194,6 +194,7 @@ export interface ISessionManager {
   // ---------------------------------------------------------------------------
 
   getSessionPath(sessionId: string): string | null
+  getSessionFiles(sessionId: string): Promise<import('@craft-agent/shared/protocol').SessionFile[]>
   watchSessionFilesForClient(clientId: string, sessionId: string): Promise<void>
   unwatchSessionFilesForClient(clientId: string): void
   cleanupClientSessionState(clientId: string): void

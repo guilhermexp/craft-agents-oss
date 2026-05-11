@@ -58,7 +58,6 @@ import {
   ensureSessionDir,
   getSessionFilePath,
   generateSessionId,
-  sessionPersistenceQueue,
   getHeaderMetadataSignature,
   writeSessionJsonl,
   serializeSession,
@@ -82,7 +81,7 @@ import { restoreFiles } from '@craft-agent/shared/utils/bundle-files'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { CraftMcpClient, McpClientPool, McpPoolServer } from '@craft-agent/shared/mcp'
 import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type UnreadSummary, type RemoteSessionTransferPayload, type ImportRemoteSessionTransferResult, RPC_NAMESPACES, generateMessageId } from '@craft-agent/shared/protocol'
-import { messageToStored, storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta } from '@craft-agent/core/types'
+import { storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta } from '@craft-agent/core/types'
 import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlAsync, getEmojiIcon, resetSummarizationClient, resolveToolIcon, readFileAttachment, selectSpreadMessages, normalizePath } from '@craft-agent/shared/utils'
 import { loadAllSkills, loadSkillBySlug, invalidateSkillsCache, type LoadedSkill } from '@craft-agent/shared/skills'
 import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
@@ -101,6 +100,10 @@ import { isValidHermesProfileName } from '@craft-agent/shared/hermes/acp-config'
 // Import from server-core domain utilities
 import { sanitizeForTitle, shouldActivateBrowserOverlay, normalizeBrowserToolName, rollbackFailedBranchCreation, releaseBrowserOwnershipOnForcedStop } from '@craft-agent/server-core/domain'
 import { resizeImageForAPI, resizeIconBuffer } from '@craft-agent/server-core/services'
+import { SessionEventPublisher } from './session-event-publisher'
+import { SessionMessageStore } from './session-message-store'
+import { SessionArtifactRenderer } from './session-artifact-renderer'
+import { SessionLifecycleManager } from './session-lifecycle-manager'
 export { sanitizeForTitle }
 
 // Module-level platform ref — set once during init via setSessionPlatform()
@@ -1170,13 +1173,6 @@ function managedToSession(m: ManagedSession, overrides?: Partial<Session>): Sess
 }
 
 // Performance: Batch IPC delta events to reduce renderer load
-const DELTA_BATCH_INTERVAL_MS = 50  // Flush batched deltas every 50ms
-
-interface PendingDelta {
-  delta: string
-  turnId?: string
-}
-
 interface ClientSessionWatchState {
   watcher: FSWatcher
   sessionId: string
@@ -1185,9 +1181,30 @@ interface ClientSessionWatchState {
 
 export class SessionManager implements ISessionManager {
   private sessions: Map<string, ManagedSession> = new Map()
-  // Delta batching for performance - reduces IPC events from 50+/sec to ~20/sec
-  private pendingDeltas: Map<string, PendingDelta> = new Map()
-  private deltaFlushTimers: Map<string, NodeJS.Timeout> = new Map()
+  private readonly events = new SessionEventPublisher({
+    warn: (message) => sessionLog.warn(message),
+  })
+  private readonly store = new SessionMessageStore({
+    onQueuedMessagesRecovered: (sessionId) => this.processNextQueuedMessage(sessionId),
+    debug: (message) => sessionLog.debug(message),
+    info: (message) => sessionLog.info(message),
+    error: (message, error) => sessionLog.error(message, error),
+  })
+  private readonly artifacts = new SessionArtifactRenderer()
+  private readonly lifecycle = new SessionLifecycleManager({
+    initialize: () => this.initialize(),
+    createSession: (workspaceId, options) => this.createSession(workspaceId, options),
+    getSession: (sessionId) => this.getSession(sessionId),
+    getSessions: (workspaceId) => this.getSessions(workspaceId),
+    sendMessage: (sessionId, message, attachments, storedAttachments, options) => this.sendMessage(sessionId, message, attachments, storedAttachments, options),
+    cancelProcessing: (sessionId, silent) => this.cancelProcessing(sessionId, silent),
+    rollbackToMessage: async (sessionId, messageId) => {
+      throw new Error(`Rollback to message is not exposed by SessionManager yet: ${sessionId}/${messageId}`)
+    },
+    deleteSession: (sessionId) => this.deleteSession(sessionId),
+    exportSession: (sessionId, workspaceId) => this.exportSession(sessionId, workspaceId),
+    importSession: (workspaceId, bundle, mode) => this.importSession(workspaceId, bundle, mode),
+  })
   // Config watchers for live updates (sources, etc.) - one per workspace
   private configWatchers: Map<string, ConfigWatcher> = new Map()
   private clientSessionWatches = new Map<string, ClientSessionWatchState>()
@@ -1209,8 +1226,6 @@ export class SessionManager implements ISessionManager {
     expiresAt: number
     sourceRequestId: string
   }> = new Map()
-  // Promise deduplication for lazy-loading messages (prevents race conditions)
-  private messageLoadingPromises: Map<string, Promise<void>> = new Map()
   /**
    * Track which session the user is actively viewing (per workspace).
    * Map of workspaceId -> sessionId. Used to determine if a session should be
@@ -1250,6 +1265,7 @@ export class SessionManager implements ISessionManager {
 
   setEventSink(sink: EventSink): void {
     this.eventSink = sink
+    this.events.setSink(sink)
   }
 
   setBrowserPaneManager(bpm: IBrowserPaneManager): void {
@@ -1267,13 +1283,13 @@ export class SessionManager implements ISessionManager {
   ): { started: true } {
     this.sendMessage(sessionId, message, attachments, storedAttachments, options).catch(err => {
       sessionLog.error('Error in sendMessage:', err)
-      if (!this.eventSink) return
-      this.eventSink(RPC_NAMESPACES.sessions.EVENT, { to: 'client', clientId }, {
+      if (!this.events.getSink()) return
+      this.events.publishToClient(clientId, {
         type: 'error',
         sessionId,
         error: err instanceof Error ? err.message : 'Unknown error',
       } as SessionEvent)
-      this.eventSink(RPC_NAMESPACES.sessions.EVENT, { to: 'client', clientId }, {
+      this.events.publishToClient(clientId, {
         type: 'complete',
         sessionId,
       } as SessionEvent)
@@ -1447,7 +1463,7 @@ export class SessionManager implements ISessionManager {
       sessionLog.info(`External metadata change detected for session ${sessionId}`)
 
       // Prevent stale pending writes from reverting externally-updated metadata.
-      sessionPersistenceQueue.cancel(sessionId)
+      this.store.cancel(sessionId)
       this.persistSession(managed)
     }
 
@@ -1558,7 +1574,7 @@ export class SessionManager implements ISessionManager {
         // Self-writes don't need in-memory sync (already up to date), but
         // still need to notify the automation system for event matching.
         const incomingSignature = getHeaderMetadataSignature(header)
-        const lastWrittenSignature = sessionPersistenceQueue.getLastWrittenSignature(sessionId)
+        const lastWrittenSignature = this.store.getLastWrittenSignature(sessionId)
         const isSelfWrite = !!(lastWrittenSignature && incomingSignature === lastWrittenSignature)
 
         // For external writes: sync in-memory state + emit UI events.
@@ -1923,43 +1939,17 @@ export class SessionManager implements ISessionManager {
 
   // Persist a session to disk (async with debouncing)
   private persistSession(managed: ManagedSession): void {
-    try {
-      // Filter out transient status messages (progress indicators like "Compacting...")
-      // Error messages are now persisted with rich fields for diagnostics
-      const persistableMessages = managed.messages.filter(m =>
-        m.role !== 'status'
-      )
-
-      // If messages haven't been loaded yet (e.g., branched session not yet opened),
-      // skip persistence to avoid overwriting JSONL messages with empty array
-      if (!managed.messagesLoaded) {
-        return
-      }
-
-      const storedSession: StoredSession = {
-        ...pickSessionFields(managed),
-        workspaceRootPath: managed.workspace.rootPath,
-        createdAt: managed.createdAt ?? Date.now(),
-        lastUsedAt: Date.now(),
-        messages: persistableMessages.map(messageToStored),
-        tokenUsage: managed.tokenUsage ?? DEFAULT_TOKEN_USAGE,
-      } as StoredSession
-
-      // Queue for async persistence with debouncing
-      sessionPersistenceQueue.enqueue(storedSession)
-    } catch (error) {
-      sessionLog.error(`Failed to queue session ${managed.id} for persistence:`, error)
-    }
+    this.store.persist(managed)
   }
 
   // Flush a specific session immediately (call on session close/switch)
   async flushSession(sessionId: string): Promise<void> {
-    await sessionPersistenceQueue.flush(sessionId)
+    await this.store.flush(sessionId)
   }
 
   // Flush all pending sessions (call on app quit)
   async flushAllSessions(): Promise<void> {
-    await sessionPersistenceQueue.flushAll()
+    await this.store.flushAll()
   }
 
   // ============================================
@@ -2333,79 +2323,7 @@ export class SessionManager implements ISessionManager {
    * to load messages simultaneously.
    */
   private async ensureMessagesLoaded(managed: ManagedSession): Promise<void> {
-    if (managed.messagesLoaded) return
-
-    // Deduplicate concurrent loads - return existing promise if already loading
-    const existingPromise = this.messageLoadingPromises.get(managed.id)
-    if (existingPromise) {
-      return existingPromise
-    }
-
-    const loadPromise = this.loadMessagesFromDisk(managed)
-    this.messageLoadingPromises.set(managed.id, loadPromise)
-
-    try {
-      await loadPromise
-    } finally {
-      this.messageLoadingPromises.delete(managed.id)
-    }
-  }
-
-  /**
-   * Internal: Load messages from disk storage into the managed session.
-   */
-  private async loadMessagesFromDisk(managed: ManagedSession): Promise<void> {
-    const storedSession = loadStoredSession(managed.workspace.rootPath, managed.id)
-    if (storedSession) {
-      managed.messages = (storedSession.messages || []).map(storedToMessage)
-      managed.tokenUsage = storedSession.tokenUsage
-      managed.lastReadMessageId = storedSession.lastReadMessageId
-      managed.hasUnread = storedSession.hasUnread  // Explicit unread flag for NEW badge state machine
-      managed.enabledSourceSlugs = storedSession.enabledSourceSlugs
-      managed.sharedUrl = storedSession.sharedUrl
-      managed.sharedId = storedSession.sharedId
-      // Sync name from disk - ensures title persistence across lazy loading
-      managed.name = storedSession.name
-      // Restore LLM connection state - ensures correct provider on resume
-      if (storedSession.llmConnection) {
-        managed.llmConnection = storedSession.llmConnection
-      }
-      if (storedSession.connectionLocked) {
-        managed.connectionLocked = storedSession.connectionLocked
-      }
-      if (storedSession.hermesProfile) {
-        managed.hermesProfile = storedSession.hermesProfile
-      }
-      // Sync transferred session summary state from disk
-      managed.transferredSessionSummary = storedSession.transferredSessionSummary
-      managed.transferredSessionSummaryApplied = storedSession.transferredSessionSummaryApplied
-      sessionLog.debug(`Lazy-loaded ${managed.messages.length} messages for session ${managed.id}`)
-
-      // Queue recovery: find orphaned queued messages from crash/restart and re-queue them
-      const orphanedQueued = managed.messages.filter(m =>
-        m.role === 'user' && m.isQueued === true
-      )
-      if (orphanedQueued.length > 0) {
-        sessionLog.info(`Recovering ${orphanedQueued.length} queued message(s) for session ${managed.id}`)
-        for (const msg of orphanedQueued) {
-          managed.messageQueue.push({
-            message: msg.content,
-            messageId: msg.id,
-            attachments: undefined,  // Attachments already stored on disk
-            storedAttachments: msg.attachments,
-            options: undefined,
-          })
-        }
-        // Process queue when session becomes active (will be triggered by first message or interaction)
-        // Use setImmediate to avoid blocking the load and allow session state to settle
-        if (!managed.isProcessing && managed.messageQueue.length > 0) {
-          setImmediate(() => {
-            this.processNextQueuedMessage(managed.id)
-          })
-        }
-      }
-    }
-    managed.messagesLoaded = true
+    await this.store.ensureMessagesLoaded(managed)
   }
 
   /**
@@ -2415,6 +2333,13 @@ export class SessionManager implements ISessionManager {
     const managed = this.sessions.get(sessionId)
     if (!managed) return null
     return getSessionStoragePath(managed.workspace.rootPath, sessionId)
+  }
+
+  async getSessionFiles(sessionId: string): Promise<import('@craft-agent/shared/protocol').SessionFile[]> {
+    const sessionPath = this.getSessionPath(sessionId)
+    if (!sessionPath) return []
+    await this.artifacts.syncSessionArtifacts(sessionPath)
+    return this.artifacts.scanSessionFiles(sessionPath)
   }
 
   async createSession(workspaceId: string, options?: import('@craft-agent/shared/protocol').CreateSessionOptions): Promise<Session> {
@@ -2527,7 +2452,7 @@ export class SessionManager implements ISessionManager {
 
         // Flush source session to disk to ensure latest message list is available for branch copy.
         this.persistSession(sourceManaged)
-        await sessionPersistenceQueue.flush(sourceManaged.id)
+        await this.store.flush(sourceManaged.id)
       }
 
       const sourceSession = loadStoredSession(workspaceRootPath, options.branchFromSessionId)
@@ -2978,14 +2903,14 @@ export class SessionManager implements ISessionManager {
           sessionLog.info(`SDK session ID captured for ${managed.id}: ${sdkSessionId}`)
         }
         this.persistSession(managed)
-        sessionPersistenceQueue.flush(managed.id)
+        this.store.flush(managed.id)
       }
 
       const onSdkSessionIdCleared = () => {
         managed.sdkSessionId = undefined
         sessionLog.info(`SDK session ID cleared for ${managed.id} (resume recovery)`)
         this.persistSession(managed)
-        sessionPersistenceQueue.flush(managed.id)
+        this.store.flush(managed.id)
       }
 
       const getRecoveryMessages = () => {
@@ -5180,18 +5105,12 @@ export class SessionManager implements ISessionManager {
       }
     }
 
-    // Clean up delta flush timers to prevent orphaned timers
-    const timer = this.deltaFlushTimers.get(sessionId)
-    if (timer) {
-      clearTimeout(timer)
-      this.deltaFlushTimers.delete(sessionId)
-    }
-    this.pendingDeltas.delete(sessionId)
+    this.events.cleanupSession(sessionId)
     this.clearAdminRememberApprovalsForSession(sessionId)
     this.clearPendingPermissionRequestsForSession(sessionId)
 
     // Cancel any pending persistence write (session is being deleted, no need to save)
-    sessionPersistenceQueue.cancel(sessionId)
+    this.store.cancel(sessionId)
 
     // Clean up session-scoped tool callbacks to prevent memory accumulation
     unregisterSessionScopedToolCallbacks(sessionId)
@@ -5601,7 +5520,7 @@ export class SessionManager implements ISessionManager {
             sessionLog.info(`Captured SDK session ID via fallback: ${sdkId}`)
             // Also flush here since we're in fallback mode
             this.persistSession(managed)
-            sessionPersistenceQueue.flush(managed.id)
+            this.store.flush(managed.id)
           }
         }
 
@@ -7126,17 +7045,7 @@ export class SessionManager implements ISessionManager {
   }
 
   private sendEvent(event: SessionEvent, workspaceId?: string): void {
-    if (!this.eventSink) {
-      sessionLog.warn('Cannot send event - no event sink')
-      return
-    }
-
-    if (!workspaceId) {
-      sessionLog.warn(`Cannot send ${event.type} event - no workspaceId`)
-      return
-    }
-
-    this.eventSink(RPC_NAMESPACES.sessions.EVENT, { to: 'workspace', workspaceId }, event)
+    this.events.publish(event, workspaceId)
   }
 
   /**
@@ -7144,24 +7053,7 @@ export class SessionManager implements ISessionManager {
    * Instead of sending 50+ IPC events per second, batches deltas and flushes every 50ms
    */
   private queueDelta(sessionId: string, workspaceId: string, delta: string, turnId?: string): void {
-    const existing = this.pendingDeltas.get(sessionId)
-    if (existing) {
-      // Append to existing batch
-      existing.delta += delta
-      // Keep the latest turnId (should be the same, but just in case)
-      if (turnId) existing.turnId = turnId
-    } else {
-      // Start new batch
-      this.pendingDeltas.set(sessionId, { delta, turnId })
-    }
-
-    // Schedule flush if not already scheduled
-    if (!this.deltaFlushTimers.has(sessionId)) {
-      const timer = setTimeout(() => {
-        this.flushDelta(sessionId, workspaceId)
-      }, DELTA_BATCH_INTERVAL_MS)
-      this.deltaFlushTimers.set(sessionId, timer)
-    }
+    this.events.queueTextDelta(sessionId, workspaceId, delta, turnId)
   }
 
   /**
@@ -7169,24 +7061,7 @@ export class SessionManager implements ISessionManager {
    * Called on timer or when streaming ends (text_complete)
    */
   private flushDelta(sessionId: string, workspaceId: string): void {
-    // Clear the timer
-    const timer = this.deltaFlushTimers.get(sessionId)
-    if (timer) {
-      clearTimeout(timer)
-      this.deltaFlushTimers.delete(sessionId)
-    }
-
-    // Send batched delta if any
-    const pending = this.pendingDeltas.get(sessionId)
-    if (pending && pending.delta) {
-      this.sendEvent({
-        type: 'text_delta',
-        sessionId,
-        delta: pending.delta,
-        turnId: pending.turnId
-      }, workspaceId)
-      this.pendingDeltas.delete(sessionId)
-    }
+    this.events.flushTextDelta(sessionId, workspaceId)
   }
 
   /**
@@ -7361,7 +7236,7 @@ export class SessionManager implements ISessionManager {
     }
 
     this.persistSession(managed)
-    await sessionPersistenceQueue.flush(sessionId)
+    await this.store.flush(sessionId)
 
     const summary = await this.generateRemoteTransferSummary(managed)
     if (!summary) {
@@ -7402,7 +7277,7 @@ export class SessionManager implements ISessionManager {
     managed.transferredSessionSummary = payload.summary.trim()
     managed.transferredSessionSummaryApplied = false
     this.persistSession(managed)
-    await sessionPersistenceQueue.flush(session.id)
+    await this.store.flush(session.id)
 
     return { sessionId: session.id }
   }
@@ -7435,7 +7310,7 @@ export class SessionManager implements ISessionManager {
 
     // Flush pending writes to ensure JSONL is up to date
     this.persistSession(managed)
-    await sessionPersistenceQueue.flush(sessionId)
+    await this.store.flush(sessionId)
 
     const bundle = serializeSession(managed.workspace.rootPath, sessionId)
     if (!bundle) {
@@ -7684,12 +7559,7 @@ export class SessionManager implements ISessionManager {
     }
     this.automationSystems.clear()
 
-    // Clear all pending delta flush timers
-    for (const [sessionId, timer] of this.deltaFlushTimers) {
-      clearTimeout(timer)
-    }
-    this.deltaFlushTimers.clear()
-    this.pendingDeltas.clear()
+    this.events.cleanup()
 
     // Clear pending credential resolvers (they won't be resolved, but prevents memory leak)
     this.pendingCredentialResolvers.clear()
