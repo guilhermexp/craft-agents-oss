@@ -205,6 +205,52 @@ export async function cleanupHermesDashboardOrphans(vendorPython: string): Promi
 const HERMES_HOME_HIDDEN_NAMES = new Set(['.env', 'auth.json', 'auth.lock', '.DS_Store'])
 const HERMES_HOME_COLLAPSED_DIRS = new Set(['cron', 'logs', 'memories', 'memory', 'sessions', 'skills', 'skins'])
 const CRAFT_HERMES_UPDATE_MARKER_NAME = 'craft-hermes-update-result.json'
+const HERMES_GATEWAY_ENV_KEYS = new Set([
+  'TELEGRAM_BOT_TOKEN',
+  'TELEGRAM_ALLOWED_USERS',
+  'TELEGRAM_HOME_CHANNEL',
+  'TELEGRAM_HOME_CHANNEL_NAME',
+  'DISCORD_BOT_TOKEN',
+  'DISCORD_ALLOWED_USERS',
+  'DISCORD_ALLOWED_CHANNELS',
+  'DISCORD_HOME_CHANNEL',
+  'SLACK_BOT_TOKEN',
+  'SLACK_APP_TOKEN',
+  'SLACK_FREE_RESPONSE_CHANNELS',
+  'SLACK_HOME_CHANNEL',
+  'SIGNAL_HTTP_URL',
+  'SIGNAL_ACCOUNT',
+  'SIGNAL_HOME_CHANNEL',
+  'WHATSAPP_ENABLED',
+  'WHATSAPP_MODE',
+  'MATRIX_HOMESERVER',
+  'MATRIX_ACCESS_TOKEN',
+  'MATRIX_PASSWORD',
+  'MATRIX_USER_ID',
+  'EMAIL_ADDRESS',
+  'EMAIL_PASSWORD',
+  'EMAIL_IMAP_HOST',
+  'EMAIL_SMTP_HOST',
+  'EMAIL_IMAP_PORT',
+  'EMAIL_SMTP_PORT',
+  'HASS_TOKEN',
+  'HASS_URL',
+  'TWILIO_ACCOUNT_SID',
+  'TWILIO_AUTH_TOKEN',
+  'TWILIO_PHONE_NUMBER',
+  'SMS_WEBHOOK_URL',
+  'SMS_WEBHOOK_PORT',
+  'DINGTALK_CLIENT_ID',
+  'DINGTALK_CLIENT_SECRET',
+  'FEISHU_APP_ID',
+  'FEISHU_APP_SECRET',
+  'FEISHU_VERIFICATION_TOKEN',
+  'MATTERMOST_TOKEN',
+  'MATTERMOST_URL',
+  'BLUEBUBBLES_SERVER_URL',
+  'BLUEBUBBLES_PASSWORD',
+])
+const HERMES_SECRET_ENV_RE = /(TOKEN|PASSWORD|SECRET|API_KEY|APP_KEY|AUTH_TOKEN|ACCESS_TOKEN|CLIENT_SECRET|PASSWORD)$/i
 
 interface HermesUpdateMarker {
   name?: string
@@ -426,6 +472,16 @@ function buildDashboardCommand(runtime: NormalizedHermesRuntimeConfig, port: num
 function extractDashboardSessionToken(html: string): string | null {
   const match = html.match(/window\.__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"/)
   return match?.[1] ?? null
+}
+
+function isSecretHermesEnvKey(key: string): boolean {
+  return HERMES_SECRET_ENV_RE.test(key)
+}
+
+function redactHermesEnvValue(key: string, value: string): string {
+  if (!isSecretHermesEnvKey(key)) return value
+  if (value.length <= 8) return '***'
+  return `${value.slice(0, 4)}...${value.slice(-4)}`
 }
 
 async function getDashboardSessionToken(baseUrl: string): Promise<string> {
@@ -931,6 +987,7 @@ function startHermesAuthJsonWatcher(deps: HandlerDeps): void {
 
 export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): void {
   startHermesAuthJsonWatcher(deps)
+  let gatewayRestartTimer: ReturnType<typeof setTimeout> | null = null
 
   server.handle(RPC_CHANNELS.hermes.DETECT_INSTALLATION, async (): Promise<HermesDetectionResult> => {
     return buildDetectionResult(deps)
@@ -1100,6 +1157,21 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     } catch {
       return text
     }
+  }
+
+  function scheduleGatewayRestartForEnv(key: string): void {
+    if (!HERMES_GATEWAY_ENV_KEYS.has(key)) return
+    if (gatewayRestartTimer) clearTimeout(gatewayRestartTimer)
+    gatewayRestartTimer = setTimeout(() => {
+      gatewayRestartTimer = null
+      void fetchDashboardJson('/api/gateway/restart', { method: 'POST' })
+        .catch((error) => {
+          deps.platform.logger?.warn?.('[Hermes] Failed to restart gateway after env change', {
+            key,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        })
+    }, 1000)
   }
 
   server.handle(RPC_CHANNELS.hermes.START_DASHBOARD, async (): Promise<HermesDashboardResult> => {
@@ -1343,6 +1415,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
 
   server.handle(RPC_CHANNELS.hermes.LIST_ENV, async (): Promise<HermesListEnvResult> => {
     try {
+      const runtime = normalizeHermesRuntimeConfig()
       const raw = await fetchDashboardJson('/api/env') as Record<string, {
         is_set?: boolean
         redacted_value?: string | null
@@ -1358,6 +1431,21 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
         category: info?.category,
         isPassword: info?.is_password,
       }))
+      const knownKeys = new Set(vars.map(v => v.key))
+      if (existsSync(runtime.envPath)) {
+        const diskEnv = parseEnvFile(await readFile(runtime.envPath, 'utf-8').catch(() => ''))
+        for (const [key, value] of Object.entries(diskEnv)) {
+          if (knownKeys.has(key) || !HERMES_GATEWAY_ENV_KEYS.has(key)) continue
+          vars.push({
+            key,
+            isSet: value.length > 0,
+            redactedValue: value ? redactHermesEnvValue(key, value) : undefined,
+            category: 'messaging',
+            isPassword: isSecretHermesEnvKey(key),
+          })
+        }
+      }
+      vars.sort((a, b) => a.key.localeCompare(b.key))
       return { success: true, vars }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) }
@@ -1374,6 +1462,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: body.key, value: body.value }),
       })
+      scheduleGatewayRestartForEnv(body.key)
       return { success: true, key: body.key }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) }
@@ -1390,6 +1479,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key }),
       })
+      scheduleGatewayRestartForEnv(key)
       return { success: true, key }
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) }

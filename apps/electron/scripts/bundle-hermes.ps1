@@ -151,7 +151,7 @@ $VenvPython = Join-Path $VendorDir "hermes-venv/Scripts/python.exe"
 # 4. Install Hermes (non-editable so the venv is relocatable)
 Write-Host "Installing Hermes (non-editable)..." -ForegroundColor Cyan
 $env:UV_PROJECT_ENVIRONMENT = (Join-Path $VendorDir "hermes-venv")
-& uv pip install --python $VenvPython "${HermesSrc}[web,acp]"
+& uv pip install --python $VenvPython "${HermesSrc}[web,acp,messaging]"
 & uv pip install --python $VenvPython playwright websockets
 & $VenvPython -m playwright install chromium
 git -C $HermesSrc rev-parse --is-inside-work-tree 2>$null | Out-Null

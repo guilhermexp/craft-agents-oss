@@ -187,6 +187,34 @@ fi
 # Run electron-builder
 npx electron-builder $BUILDER_ARGS
 
+# Verify Hermes runtime and seed are present in the packaged .app before DMG checks.
+MAC_DIR="mac"
+if [ "$ARCH" = "arm64" ]; then
+    MAC_DIR="mac-arm64"
+fi
+APP_RESOURCES="$ELECTRON_DIR/release/$MAC_DIR/Craft Agents.app/Contents/Resources/app"
+if [ ! -f "$APP_RESOURCES/vendor/hermes/hermes-venv/bin/python3" ]; then
+    echo "ERROR: Bundled Hermes Python missing from packaged app"
+    echo "Expected: $APP_RESOURCES/vendor/hermes/hermes-venv/bin/python3"
+    exit 1
+fi
+if [ ! -f "$APP_RESOURCES/vendor/hermes/hermes-agent/acp_adapter/server.py" ]; then
+    echo "ERROR: Bundled Hermes ACP adapter missing from packaged app"
+    echo "Expected: $APP_RESOURCES/vendor/hermes/hermes-agent/acp_adapter/server.py"
+    exit 1
+fi
+if [ ! -f "$APP_RESOURCES/dist/resources/hermes-seed/manifest.json" ]; then
+    echo "ERROR: Hermes seed manifest missing from packaged app"
+    echo "Expected: $APP_RESOURCES/dist/resources/hermes-seed/manifest.json"
+    exit 1
+fi
+if [ -e "$APP_RESOURCES/dist/resources/vendor/hermes" ]; then
+    echo "ERROR: Hermes runtime was duplicated under dist/resources/vendor/hermes"
+    echo "Hermes must ship only via app/vendor/hermes extraResources."
+    exit 1
+fi
+echo "Hermes runtime and seed verified in packaged app"
+
 # 8. Verify the DMG was built
 # electron-builder.yml uses artifactName to output: Craft-Agents-${arch}.dmg
 DMG_NAME="Craft-Agents-${ARCH}.dmg"

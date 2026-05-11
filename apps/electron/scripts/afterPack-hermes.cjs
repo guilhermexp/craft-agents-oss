@@ -256,7 +256,7 @@ module.exports = async function afterPackHermes(context) {
   }
 
   const resourcesDir = path.join(appBundle, 'Contents', 'Resources');
-  const hermesRoot = path.join(resourcesDir, 'vendor', 'hermes');
+  const hermesRoot = path.join(resourcesDir, 'app', 'vendor', 'hermes');
   if (!fs.existsSync(hermesRoot)) {
     console.log('[hermes] afterPack: vendor/hermes not present in bundle, skipping');
     return;

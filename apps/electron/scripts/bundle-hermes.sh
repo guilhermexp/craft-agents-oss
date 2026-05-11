@@ -224,7 +224,7 @@ echo -e "${CYAN}→${NC} Installing Hermes (non-editable) into venv..."
 VENV_PYTHON="$VENDOR_DIR/hermes-venv/bin/python3"
 
 UV_PROJECT_ENVIRONMENT="$VENDOR_DIR/hermes-venv" \
-    uv pip install --python "$VENV_PYTHON" "$HERMES_USED_SRC[web,acp]" 2>&1 | tail -15
+    uv pip install --python "$VENV_PYTHON" "$HERMES_USED_SRC[web,acp,messaging]" 2>&1 | tail -15
 
 UV_PROJECT_ENVIRONMENT="$VENDOR_DIR/hermes-venv" \
     uv pip install --python "$VENV_PYTHON" playwright websockets 2>&1 | tail -15

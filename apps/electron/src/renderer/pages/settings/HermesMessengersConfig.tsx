@@ -192,7 +192,7 @@ export function HermesMessengersConfig() {
         <SettingsCardContent className="space-y-3">
           <div className="text-xs text-muted-foreground leading-relaxed">
             Conecte plataformas de mensageria ao Hermes embarcado. Cada conector grava as variáveis no <code className="px-1 rounded bg-muted/60">.env</code> do
-            runtime isolado. Reinicie o gateway do Hermes manualmente para que novas credenciais entrem em uso.
+            runtime isolado. O gateway do Hermes é reiniciado automaticamente após mudanças de credenciais.
           </div>
 
           {loading ? (

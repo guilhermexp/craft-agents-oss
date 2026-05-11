@@ -64,7 +64,11 @@ files:
   - "!**/.venv/**"
   # Hermes Python runtime ships via per-platform extraResources (below) to avoid
   # the node_modules collector and to keep symlink/codesign handling under control.
+  # It must not be included through dist/resources either; copy-assets excludes it
+  # and these negations make packaging fail closed if it ever reappears there.
   - "!**/vendor/hermes/**"
+  - "!dist/resources/vendor/hermes/**"
+  - "!dist/resources/vendor/hermes-agent/**"
 
 # SDK is included as per-platform extraResources (below) to bypass node_modules auto-exclusion
 # and to apply platform-specific ripgrep binary filtering.
@@ -91,14 +95,8 @@ mac:
   extendInfo:
     CFBundleIconName: AppIcon
   target:
-    - target: dmg
-      arch:
-        - arm64
-        - x64
-    - target: zip
-      arch:
-        - arm64
-        - x64
+    - dmg
+    - zip
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist

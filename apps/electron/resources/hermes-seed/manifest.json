@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "description": "Craft-native Hermes seed assets. Copy/merge these into app-scoped HERMES_HOME on first launch or versioned migration.",
+  "skills": [
+    {
+      "name": "craft-embedded-runtime",
+      "source": "skills/craft-embedded-runtime",
+      "target": "skills/craft/craft-embedded-runtime",
+      "mergePolicy": "copy-if-missing",
+      "description": "Teaches embedded Hermes how to operate inside Craft Agents Electron on fresh user installs."
+    }
+  ]
+}

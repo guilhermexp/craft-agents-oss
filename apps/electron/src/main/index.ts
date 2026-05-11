@@ -95,6 +95,7 @@ import { getDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
 import { initializeDocs } from '@craft-agent/shared/docs'
 import { initializeReleaseNotes } from '@craft-agent/shared/release-notes'
 import { ensureDefaultPermissions } from '@craft-agent/shared/agent/permissions-config'
+import { ensureHermesSeedSkills } from '@craft-agent/shared/hermes/seed'
 import { ensureToolIcons, ensurePresetThemes } from '@craft-agent/shared/config'
 import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
 import { initializeBackendHostRuntime } from '@craft-agent/shared/agent/backend'
@@ -419,6 +420,15 @@ app.whenReady().then(async () => {
 
   // Seed preset themes to ~/.craft-agent/themes/ (copies bundled theme JSONs on first run)
   ensurePresetThemes()
+
+  // Seed Craft-native Hermes skills into app-scoped HERMES_HOME on first run.
+  const hermesSeed = ensureHermesSeedSkills()
+  if (hermesSeed.copied.length > 0) {
+    mainLog.info('Seeded bundled Hermes skills', { copied: hermesSeed.copied, hermesHome: hermesSeed.hermesHome })
+  }
+  if (hermesSeed.errors.length > 0) {
+    mainLog.warn('Hermes seed skill bootstrap reported errors', { errors: hermesSeed.errors, seedDir: hermesSeed.seedDir })
+  }
 
   // Register thumbnail:// protocol handler (scheme was registered earlier, before app.whenReady)
   registerThumbnailHandler()

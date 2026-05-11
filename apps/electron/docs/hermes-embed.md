@@ -232,7 +232,36 @@ vendor/hermes/
 ```
 
 In packaged builds these land at `<app>/Contents/Resources/app/vendor/hermes/`
-on macOS and the equivalent on Windows / Linux.
+on macOS and the equivalent on Windows / Linux. This `app/vendor/hermes`
+location is intentional: it keeps the symlink-heavy Python runtime out of
+`dist/resources` and gives the macOS signing hook a stable path to clean and
+codesign.
+
+### Repository seed layout
+
+Craft-specific Hermes knowledge that must exist for a fresh install lives in
+`apps/electron/resources/hermes-seed/` instead of the generated runtime bundle:
+
+```txt
+resources/hermes-seed/
+├── manifest.json
+├── README.md
+└── skills/
+    └── craft-embedded-runtime/SKILL.md
+```
+
+`packages/shared/src/hermes/seed.ts` copies these seeds into the app-scoped
+`HERMES_HOME` on launch via `ensureHermesSeedSkills()` from
+`apps/electron/src/main/index.ts`. Copy policy is conservative:
+
+- copy when the target skill is missing;
+- skip when the user already has a file, preserving local edits;
+- no secrets or Guilherme-specific local provider config in seed files;
+- future overwrites must be explicit version migrations in `manifest.json`.
+
+In packaged builds the seed folder remains under
+`<app>/Contents/Resources/app/dist/resources/hermes-seed/` and must be present
+alongside the runtime.
 
 ## Build flow
 
@@ -241,19 +270,27 @@ on macOS and the equivalent on Windows / Linux.
   bun run bundle:hermes  ───────► |  scripts/bundle-hermes.* |
                                   +--------------------------+
                                               ↓
-                  apps/electron/resources/vendor/hermes/  (built once)
+                  apps/electron/resources/vendor/hermes/  (generated runtime)
+                                              ↓
+                                  +--------------------------+
+  bun scripts/copy-assets.ts ───► | dist/resources/          |
+                                  | includes hermes-seed     |
+                                  | excludes vendor/hermes   |
+                                  +--------------------------+
                                               ↓
                                   +--------------------------+
   bun run dist:mac       ───────► |   electron-builder       |
-                                  |   (extraResources copy)  |
+                                  |   extraResources copy    |
+                                  |   to app/vendor/hermes   |
                                   +--------------------------+
                                               ↓
                                   +--------------------------+
                                   | scripts/afterPack.cjs    |
                                   |  └─ afterPack-hermes.cjs |
+                                  |     signs app/vendor/... |
                                   +--------------------------+
                                               ↓
-                            DMG / NSIS / AppImage with signed bundle
+                            DMG / NSIS / AppImage with bundled Hermes
 ```
 
 ### `scripts/bundle-hermes.sh` (macOS / Linux)
@@ -442,7 +479,8 @@ bundle must be updated through Craft releases.
 
 ## Release/package flow
 
-The Electron distribution commands now rebuild Hermes before packaging:
+The Electron distribution commands rebuild Hermes before packaging and then
+validate the packaged app before producing/accepting release artifacts:
 
 ```bash
 bun run electron:dist
@@ -463,14 +501,50 @@ The lower-level release scripts also bundle Hermes before `electron-builder`:
 
 - `apps/electron/scripts/build-dmg.sh`
 - `apps/electron/scripts/build-win.ps1`
+- `scripts/build/darwin.ts`
 
 This is required because `apps/electron/resources/vendor/hermes/` is generated.
 If packaging skips the bundle step, the app may resolve a stale or missing
 runtime.
 
+### Release inclusion rules
+
+- `apps/electron/electron-builder.yml` ships the generated runtime through
+  `extraResources` from `resources/vendor/hermes` to `app/vendor/hermes`.
+- `apps/electron/scripts/copy-assets.ts` clears `dist/resources`, copies normal
+  resources and `hermes-seed`, and deliberately excludes `resources/vendor/hermes`
+  plus dev-only `resources/vendor/hermes-agent` so the runtime is not duplicated
+  under `dist/resources`.
+- `asar` remains disabled for this app so the embedded Python interpreter,
+  symlinks, ripgrep, Playwright assets, and Hermes source mirror are available
+  directly on disk.
+- macOS architecture is selected by the build command (`--arm64` or `--x64`). Do
+  not list both archs in `electron-builder.yml` while the embedded Hermes bundle
+  is architecture-specific.
+
+Required macOS packaged paths:
+
+```txt
+Contents/Resources/app/vendor/hermes/hermes-venv/bin/python3
+Contents/Resources/app/vendor/hermes/hermes-agent/acp_adapter/server.py
+Contents/Resources/app/dist/resources/hermes-seed/manifest.json
+```
+
+Forbidden duplicate path:
+
+```txt
+Contents/Resources/app/dist/resources/vendor/hermes
+```
+
+`build-dmg.sh` and `scripts/build/darwin.ts` fail closed when any required path
+is missing or the duplicate runtime path exists. After a successful macOS build,
+a smoke test should import at least `acp_adapter.server` and `hermes_cli` using
+the Python inside the packaged `.app`; importing only `acp_adapter` is too weak.
+
 ### `scripts/afterPack-hermes.cjs`
 
-Runs only on macOS, after electron-builder copies extraResources:
+Runs only on macOS, after electron-builder copies extraResources. The target is
+`Contents/Resources/app/vendor/hermes` inside the packaged `.app`:
 
 - Removes broken symlinks (codesign --verify rejects them).
 - Converts remaining absolute symlinks inside the bundle to relative ones.

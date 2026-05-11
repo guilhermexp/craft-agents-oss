@@ -29,6 +29,33 @@ export function verifyPackagedSDK(appPath: string, arch: Arch): void {
 }
 
 /**
+ * Verify Hermes runtime/seed are bundled in the packaged macOS app.
+ */
+export function verifyPackagedHermes(appPath: string): void {
+  const appResourcesPath = join(appPath, 'Contents', 'Resources', 'app');
+  const hermesPython = join(appResourcesPath, 'vendor', 'hermes', 'hermes-venv', 'bin', 'python3');
+  const hermesAdapter = join(appResourcesPath, 'vendor', 'hermes', 'hermes-agent', 'acp_adapter', 'server.py');
+  const hermesSeed = join(appResourcesPath, 'dist', 'resources', 'hermes-seed', 'manifest.json');
+  const accidentalDistRuntime = join(appResourcesPath, 'dist', 'resources', 'vendor', 'hermes');
+
+  for (const [label, path] of [
+    ['Hermes Python', hermesPython],
+    ['Hermes ACP adapter', hermesAdapter],
+    ['Hermes seed manifest', hermesSeed],
+  ] as const) {
+    if (!existsSync(path)) {
+      throw new Error(`CRITICAL: ${label} not bundled! Expected at: ${path}`);
+    }
+  }
+
+  if (existsSync(accidentalDistRuntime)) {
+    throw new Error(`CRITICAL: Hermes runtime duplicated under dist/resources: ${accidentalDistRuntime}`);
+  }
+
+  console.log('  Hermes bundled: runtime + seed manifest present');
+}
+
+/**
  * Package the macOS app with electron-builder
  */
 export async function packageDarwin(config: BuildConfig): Promise<string> {
@@ -64,6 +91,8 @@ export async function packageDarwin(config: BuildConfig): Promise<string> {
   const appPath = join(electronDir, 'release', macDir, 'Craft Agents.app');
   console.log('Verifying SDK in packaged app...');
   verifyPackagedSDK(appPath, arch);
+  console.log('Verifying Hermes in packaged app...');
+  verifyPackagedHermes(appPath);
 
   // Verify the DMG and ZIP were built (ZIP is used by electron-updater for auto-updates)
   const dmgName = `Craft-Agents-${arch}.dmg`;
