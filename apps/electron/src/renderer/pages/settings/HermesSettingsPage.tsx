@@ -131,14 +131,6 @@ export default function HermesSettingsPage() {
         toast.error('Dashboard Hermes não abriu', { description: dashboard.error })
         return
       }
-
-      const browserPane = window.electronAPI.browserPane
-      if (browserPane?.create) {
-        const instanceId = await browserPane.create({ show: true, url: dashboard.url })
-        await browserPane.focus(instanceId)
-      } else {
-        await window.electronAPI.openUrl(dashboard.url)
-      }
       toast.success('Dashboard Hermes aberto')
       await loadHermes()
     } catch (error) {

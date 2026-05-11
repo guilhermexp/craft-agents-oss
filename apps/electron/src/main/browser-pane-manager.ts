@@ -192,6 +192,17 @@ interface BrowserInstance {
   networkLogs: BrowserNetworkEntry[]
   downloads: BrowserDownloadEntry[]
   lastLaunchToken: string | null
+  navigationPolicy?: BrowserNavigationPolicy
+}
+
+export type BrowserNavigationDecision =
+  | { action: 'allow' }
+  | { action: 'deny'; reason?: string }
+  | { action: 'external'; reason?: string }
+
+export interface BrowserNavigationPolicy {
+  willNavigate?(url: string): BrowserNavigationDecision
+  windowOpen?(url: string): BrowserNavigationDecision
 }
 
 interface CreateBrowserInstanceOptions {
@@ -205,6 +216,7 @@ interface CreateBrowserInstanceOptions {
    * resolves to the default profile, which uses the legacy partition string.
    */
   profileId?: string
+  navigationPolicy?: BrowserNavigationPolicy
 }
 
 export interface BrowserScreenshotOptions {
@@ -538,6 +550,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       networkLogs: [],
       downloads: [],
       lastLaunchToken: null,
+      navigationPolicy: options?.navigationPolicy,
     }
 
     const defaultUa = pageView.webContents.userAgent || ''
@@ -3305,6 +3318,17 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     pageWc.on('will-navigate', (event, url) => {
+      const decision = instance.navigationPolicy?.willNavigate?.(url)
+      if (decision?.action === 'deny') {
+        event.preventDefault()
+        mainLog.warn(`[browser-pane] navigation denied id=${instance.id} reason=${decision.reason ?? 'policy'} url=${url}`)
+        return
+      }
+      if (decision?.action === 'external') {
+        event.preventDefault()
+        void shell.openExternal(url)
+        return
+      }
       if (url.startsWith(CRAFT_DEEPLINK_SCHEME_PREFIX)) {
         event.preventDefault()
         void this.handleDeepLinkUrl(url)
@@ -3323,6 +3347,16 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
       if (details.url.startsWith(CRAFT_DEEPLINK_SCHEME_PREFIX)) {
         void this.handleDeepLinkUrl(details.url)
+        return { action: 'deny' }
+      }
+
+      const policyDecision = instance.navigationPolicy?.windowOpen?.(details.url)
+      if (policyDecision?.action === 'deny') {
+        mainLog.warn(`[browser-pane] window-open denied id=${instance.id} reason=${policyDecision.reason ?? 'policy'} url=${details.url}`)
+        return { action: 'deny' }
+      }
+      if (policyDecision?.action === 'external') {
+        void shell.openExternal(details.url)
         return { action: 'deny' }
       }
 

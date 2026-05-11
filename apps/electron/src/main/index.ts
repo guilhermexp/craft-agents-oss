@@ -73,6 +73,7 @@ import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@craft-agent/server-core/sessions'
 import { registerAllRpcHandlers } from './handlers/index'
 import { publishHermesRuntimeEnv } from './handlers/hermes-runtime'
+import { HermesDashboardHost } from './hermes-dashboard-host'
 import {
   cleanupHermesDashboardOrphans,
   shutdownHermesDashboard,
@@ -216,6 +217,7 @@ const DEEPLINK_SCHEME = process.env.CRAFT_DEEPLINK_SCHEME || 'craftagents'
 let windowManager: WindowManager | null = null
 let sessionManager: SessionManager | null = null
 let browserPaneManager: BrowserPaneManager | null = null
+let hermesDashboardHost: HermesDashboardHost | null = null
 let oauthFlowStore: OAuthFlowStore | null = null
 let moduleSink: EventSink | null = null
 let moduleClientResolver: ((webContentsId: number) => string | undefined) | null = null
@@ -491,6 +493,7 @@ app.whenReady().then(async () => {
     browserPaneManager = new BrowserPaneManager()
     browserPaneManager.setWindowManager(windowManager)
     browserPaneManager.registerToolbarIpc()
+    hermesDashboardHost = new HermesDashboardHost(browserPaneManager)
 
     // Build real PlatformServices from Electron APIs
     const platform: PlatformServices = createElectronPlatform({
@@ -705,6 +708,7 @@ app.whenReady().then(async () => {
             platform: p,
             windowManager: windowManager ?? undefined,
             browserPaneManager: browserPaneManager ?? undefined,
+            hermesDashboardHost: hermesDashboardHost ?? undefined,
             oauthFlowStore: ofs,
             messagingRegistry: messagingHandle.registry,
           }
@@ -1179,7 +1183,10 @@ app.on('before-quit', async (event) => {
     // Clean up SessionManager resources (file watchers, timers, etc.)
     sessionManager.cleanup()
 
-    // Clean up browser pane instances
+    // Clean up dashboard/browser pane instances
+    if (hermesDashboardHost) {
+      hermesDashboardHost.closeDashboard()
+    }
     if (browserPaneManager) {
       browserPaneManager.destroyAll()
     }

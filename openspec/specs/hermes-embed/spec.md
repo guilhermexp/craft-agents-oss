@@ -70,7 +70,7 @@ O sistema MUST falhar fechado em app empacotado quando o Python vendorizado do H
 
 ### Requirement: Auth bridge scoped ao subprocesso
 
-O sistema MUST injetar credenciais Craft no spawn do Python Hermes sem persistir secrets em seed resources ou em configuração global standalone.
+O sistema MUST injetar credenciais Craft no spawn do Python Hermes sem persistir secrets em seed resources, configuração global standalone ou superfície visual do dashboard.
 
 #### Scenario: Spawn de sessão Hermes
 
@@ -79,8 +79,8 @@ O sistema MUST injetar credenciais Craft no spawn do Python Hermes sem persistir
 
 #### Scenario: Dashboard Hermes
 
-- **WHEN** o dashboard Hermes é iniciado pelo RPC handler
-- **THEN** o ambiente do dashboard recebe credenciais bridged do Craft sem exigir `.env` manual do Hermes embutido
+- **WHEN** o dashboard Hermes é iniciado pelo RPC handler ou pelo `hermes-dashboard-host`
+- **THEN** o ambiente do dashboard recebe credenciais bridged do Craft sem exigir `.env` manual do Hermes embutido e sem expor secrets ao renderer
 
 ### Requirement: ACP session.mcpServers preserva nomes Craft
 
@@ -98,7 +98,7 @@ O sistema MUST expor `craft-session` e `craft-sources` a Hermes por ACP `session
 
 ### Requirement: RPC Hermes preserva providers customizados e valida input
 
-O RPC handler Hermes MUST preservar provider models customizados, `base_url` de provider e validar inputs/caminhos antes de operar no `HERMES_HOME`.
+O RPC handler Hermes MUST preservar provider models customizados, `base_url` de provider, validar inputs/caminhos antes de operar no `HERMES_HOME` e tratar o host visual do dashboard como responsabilidade separada da capability `hermes-dashboard-host`.
 
 #### Scenario: Provider customizado sem modelos do dashboard
 
@@ -114,6 +114,11 @@ O RPC handler Hermes MUST preservar provider models customizados, `base_url` de 
 
 - **WHEN** um RPC de leitura/listagem recebe um caminho relativo
 - **THEN** o handler resolve o caminho dentro do `HERMES_HOME` e rejeita escapes por resolução real de path
+
+#### Scenario: Host visual separado
+
+- **WHEN** uma mudança altera mount/unmount, navegação, reload ou eventos visuais do dashboard Hermes
+- **THEN** a mudança atualiza a capability `hermes-dashboard-host` além de manter `hermes-embed` limitado a runtime, seed, bundling, ACP, auth bridge e APIs locais
 
 ### Requirement: Patches overlay validados antes do bundle
 

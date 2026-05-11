@@ -1175,6 +1175,9 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
   }
 
   server.handle(RPC_NAMESPACES.hermes.START_DASHBOARD, async (): Promise<HermesDashboardResult> => {
+    if (deps.hermesDashboardHost) {
+      return deps.hermesDashboardHost.openDashboard(ensureDashboardRunning)
+    }
     return ensureDashboardRunning()
   })
 
