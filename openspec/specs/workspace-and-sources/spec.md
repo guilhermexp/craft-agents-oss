@@ -26,7 +26,7 @@ The system SHALL require `CRAFT_SERVER_URL` and `CRAFT_SERVER_TOKEN` equivalents
 - **THEN** the system stores the server URL, token and remote workspace identifier in the local workspace remote connection metadata
 
 ### Requirement: Source type discrimination
-The system SHALL require every source to declare exactly one discriminated type: `mcp`, `api` or `filesystem`.
+The system SHALL require every source to declare exactly one discriminated type: `mcp`, `api` or `filesystem`, and service-specific scopes MUST use provider-qualified names when they could collide with product channel vocabulary.
 
 #### Scenario: MCP source config is provided
 - **WHEN** a source declares type `mcp`
@@ -94,4 +94,15 @@ The system SHALL enforce the workspace boundary for filesystem sources and MUST 
 #### Scenario: Filesystem path escapes workspace
 - **WHEN** a filesystem source path resolves outside the workspace boundary or contains traversal
 - **THEN** the system rejects the access before reading or writing data
+
+### Requirement: Slack source scopes are provider-qualified
+The system SHALL name Slack channel-related source scopes as Slack-specific scopes and SHALL NOT expose them as generic channel types.
+
+#### Scenario: Slack channel scope is configured
+- **WHEN** an API source config selects Slack channel capabilities
+- **THEN** the type name identifies the value as a Slack source scope, such as `SlackChannelScope` or `SlackServiceScope`
+
+#### Scenario: Source scope appears in search or imports
+- **WHEN** code searches for War Room channels or external messaging channels
+- **THEN** Slack source scopes are distinguishable by provider-qualified naming and do not appear as ambiguous generic channel types
 

@@ -4,15 +4,15 @@
 Conectar canais de mensageria externos (WhatsApp via Baileys, e futuros) a sessões e agentes Craft através de registry, pairing com confirmação explícita, binding store persistente, router com filtros de protocolo e fanout. Workers de canal rodam como subprocessos isolados; credenciais de pareamento ficam em store seguro, nunca em logs.
 ## Requirements
 ### Requirement: Gateway exposes external channel registry
-The system SHALL expose a workspace-scoped messaging registry for external channels, including WhatsApp and future channel adapters.
+The system SHALL expose a workspace-scoped messaging registry for external messaging chats or channels, including WhatsApp and future adapters, while distinguishing them from War Room channels and RPC namespaces.
 
 #### Scenario: Workspace reads registry config
 - **WHEN** a client requests messaging config for a workspace
-- **THEN** the system returns enabled platforms, runtime status, and configured channel entries for that workspace
+- **THEN** the system returns enabled platforms, runtime status, and configured external messaging entries for that workspace
 
-#### Scenario: Future channel can be registered
-- **WHEN** a new channel adapter implements the platform adapter contract
-- **THEN** the gateway can register it without changing session routing semantics
+#### Scenario: Future adapter can be registered
+- **WHEN** a new messaging adapter implements the platform adapter contract
+- **THEN** the gateway can register it without changing session routing semantics or reusing War Room channel type names
 
 ### Requirement: Pairing requires explicit user confirmation
 The system SHALL require an explicit user-confirmed pairing step before binding an external channel to a Craft session or agent.
@@ -30,25 +30,25 @@ The system SHALL require an explicit user-confirmed pairing step before binding 
 - **THEN** the system does not create a binding
 
 ### Requirement: Binding store persists channel-session links
-The system SHALL persist each external-channel-to-Craft-session binding in a workspace-owned binding store.
+The system SHALL persist each external-messaging-to-Craft-session binding in a workspace-owned binding store with domain-prefixed names for binding types and ids.
 
 #### Scenario: Binding is created
-- **WHEN** pairing, `/new`, or `/bind` creates a channel binding
-- **THEN** the binding store records workspace id, session id, platform, channel id, optional channel name, enabled state, creation time, and normalized binding config
+- **WHEN** pairing, `/new`, or `/bind` creates an external messaging binding
+- **THEN** the binding store records workspace id, session id, platform, external messaging channel or chat id, optional display name, enabled state, creation time, and normalized binding config
 
 #### Scenario: Gateway restarts
 - **WHEN** the gateway restarts for a workspace with an existing binding store
-- **THEN** persisted bindings are loaded before routing inbound messages for that workspace
+- **THEN** persisted external messaging bindings are loaded before routing inbound messages for that workspace
 
 ### Requirement: Router selects destination from protocol filters
-The system SHALL route inbound messages to Craft sessions based on protocol-filtered channel identity, including sender, group or chat identity, and tag or prefix policy when the platform provides those signals.
+The system SHALL route inbound messages to Craft sessions based on protocol-filtered external messaging identity, including sender, group or chat identity, and tag or prefix policy when the platform provides those signals.
 
 #### Scenario: Filtered inbound message has binding
-- **WHEN** an adapter emits an inbound message whose platform and channel id match an enabled binding
+- **WHEN** an adapter emits an inbound message whose platform and external messaging channel id match an enabled binding
 - **THEN** the router sends the message text and supported local attachments to the bound Craft session
 
 #### Scenario: Filtered inbound message has no binding
-- **WHEN** an adapter emits an inbound message with no enabled binding for its platform and channel id
+- **WHEN** an adapter emits an inbound message with no enabled binding for its platform and external messaging channel id
 - **THEN** the router delegates the message to the command handler instead of sending it to a session
 
 ### Requirement: Fanout delivers inbound session events to applicable bindings
@@ -159,4 +159,22 @@ The system SHALL keep messaging channel adapter implementations inside `packages
 - **WHEN** Telegram, Slack, WhatsApp, or another channel adapter is added or changed
 - **THEN** its channel-specific implementation lives under `src/adapters/<channel>/`
 - **AND** shared routing continues through the gateway registry and router instead of a per-adapter workspace package boundary
+
+### Requirement: Messaging IDs are domain-typed
+The system SHALL type external messaging channel or chat identifiers separately from War Room channel ids and RPC namespaces.
+
+#### Scenario: Gateway binding stores external channel id
+- **WHEN** a binding stores the platform destination id
+- **THEN** the field uses a messaging-specific id type or name such as `MessagingChannelId`, `MessagingChatId`, or a platform-specific equivalent
+
+#### Scenario: WhatsApp worker sends command
+- **WHEN** the WhatsApp worker protocol sends or receives a WhatsApp destination id
+- **THEN** the field name and type identify it as a WhatsApp channel or chat id rather than a generic Craft channel id
+
+### Requirement: Approval surface is not named channel
+The system SHALL name the approval location as a surface or mode, not as a channel.
+
+#### Scenario: Binding config selects approval location
+- **WHEN** a binding config chooses whether approval happens in chat or in app
+- **THEN** the field uses a name such as `approvalSurface` and does not overload channel vocabulary
 

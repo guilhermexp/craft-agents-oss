@@ -15,6 +15,8 @@ The system SHALL require every source to declare exactly one discriminated type:
 - **WHEN** a source declares type `filesystem`
 - **THEN** the source MUST include a filesystem path scoped by the workspace boundary
 
+## ADDED Requirements
+
 ### Requirement: Slack source scopes are provider-qualified
 The system SHALL name Slack channel-related source scopes as Slack-specific scopes and SHALL NOT expose them as generic channel types.
 

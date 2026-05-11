@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: Gateway exposes external messaging registry
+### Requirement: Gateway exposes external channel registry
 The system SHALL expose a workspace-scoped messaging registry for external messaging chats or channels, including WhatsApp and future adapters, while distinguishing them from War Room channels and RPC namespaces.
 
 #### Scenario: Workspace reads registry config
@@ -11,7 +11,7 @@ The system SHALL expose a workspace-scoped messaging registry for external messa
 - **WHEN** a new messaging adapter implements the platform adapter contract
 - **THEN** the gateway can register it without changing session routing semantics or reusing War Room channel type names
 
-### Requirement: Binding store persists external-message bindings
+### Requirement: Binding store persists channel-session links
 The system SHALL persist each external-messaging-to-Craft-session binding in a workspace-owned binding store with domain-prefixed names for binding types and ids.
 
 #### Scenario: Binding is created
@@ -32,6 +32,8 @@ The system SHALL route inbound messages to Craft sessions based on protocol-filt
 #### Scenario: Filtered inbound message has no binding
 - **WHEN** an adapter emits an inbound message with no enabled binding for its platform and external messaging channel id
 - **THEN** the router delegates the message to the command handler instead of sending it to a session
+
+## ADDED Requirements
 
 ### Requirement: Messaging IDs are domain-typed
 The system SHALL type external messaging channel or chat identifiers separately from War Room channel ids and RPC namespaces.
