@@ -1,22 +1,22 @@
 import { unlink } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { requestClientConfirmDialog } from '@craft-agent/server-core/transport'
 
 export const HANDLED_CHANNELS = [
-  RPC_CHANNELS.auth.LOGOUT,
-  RPC_CHANNELS.auth.SHOW_LOGOUT_CONFIRMATION,
-  RPC_CHANNELS.auth.SHOW_DELETE_SESSION_CONFIRMATION,
-  RPC_CHANNELS.credentials.HEALTH_CHECK,
+  RPC_NAMESPACES.auth.LOGOUT,
+  RPC_NAMESPACES.auth.SHOW_LOGOUT_CONFIRMATION,
+  RPC_NAMESPACES.auth.SHOW_DELETE_SESSION_CONFIRMATION,
+  RPC_NAMESPACES.credentials.HEALTH_CHECK,
 ] as const
 
 export function registerAuthHandlers(server: RpcServer, deps: HandlerDeps): void {
   // Show logout confirmation dialog (routed to client)
-  server.handle(RPC_CHANNELS.auth.SHOW_LOGOUT_CONFIRMATION, async (ctx) => {
+  server.handle(RPC_NAMESPACES.auth.SHOW_LOGOUT_CONFIRMATION, async (ctx) => {
     const result = await requestClientConfirmDialog(server, ctx.clientId, {
       type: 'warning',
       buttons: ['Cancel', 'Log Out'],
@@ -32,7 +32,7 @@ export function registerAuthHandlers(server: RpcServer, deps: HandlerDeps): void
   })
 
   // Show delete session confirmation dialog (routed to client)
-  server.handle(RPC_CHANNELS.auth.SHOW_DELETE_SESSION_CONFIRMATION, async (ctx, name: string) => {
+  server.handle(RPC_NAMESPACES.auth.SHOW_DELETE_SESSION_CONFIRMATION, async (ctx, name: string) => {
     const result = await requestClientConfirmDialog(server, ctx.clientId, {
       type: 'warning',
       buttons: ['Cancel', 'Delete'],
@@ -48,7 +48,7 @@ export function registerAuthHandlers(server: RpcServer, deps: HandlerDeps): void
   })
 
   // Logout - clear all credentials and config
-  server.handle(RPC_CHANNELS.auth.LOGOUT, async () => {
+  server.handle(RPC_NAMESPACES.auth.LOGOUT, async () => {
     try {
       const manager = getCredentialManager()
 
@@ -73,7 +73,7 @@ export function registerAuthHandlers(server: RpcServer, deps: HandlerDeps): void
 
   // Credential health check - validates credential store is readable and usable
   // Called on app startup to detect corruption, machine migration, or missing credentials
-  server.handle(RPC_CHANNELS.credentials.HEALTH_CHECK, async () => {
+  server.handle(RPC_NAMESPACES.credentials.HEALTH_CHECK, async () => {
     const manager = getCredentialManager()
     return manager.checkHealth()
   })

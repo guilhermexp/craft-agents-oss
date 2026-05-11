@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { join } from 'path'
 import { homedir } from 'os'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { addWorkspace, setActiveWorkspace } from '@craft-agent/shared/config'
 import { getDefaultWorkspacesDir, ensureDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
 import type { ServerStatus, ServerHealth } from '@craft-agent/core/types'
@@ -10,12 +10,12 @@ import type { HandlerDeps } from '../handler-deps'
 import type { ServerHandlerContext } from '../../bootstrap/headless-start'
 
 export const HANDLED_CHANNELS = [
-  RPC_CHANNELS.server.GET_WORKSPACES,
-  RPC_CHANNELS.server.CREATE_WORKSPACE,
-  RPC_CHANNELS.server.GET_STATUS,
-  RPC_CHANNELS.server.GET_HEALTH,
-  RPC_CHANNELS.server.GET_ACTIVE_SESSIONS,
-  RPC_CHANNELS.server.HOME_DIR,
+  RPC_NAMESPACES.server.GET_WORKSPACES,
+  RPC_NAMESPACES.server.CREATE_WORKSPACE,
+  RPC_NAMESPACES.server.GET_STATUS,
+  RPC_NAMESPACES.server.GET_HEALTH,
+  RPC_NAMESPACES.server.GET_ACTIVE_SESSIONS,
+  RPC_NAMESPACES.server.HOME_DIR,
 ] as const
 
 export function registerServerHandlers(
@@ -29,13 +29,13 @@ export function registerServerHandlers(
   // Workspace discovery (moved from workspace.ts — server-level, no workspace context)
   // -----------------------------------------------------------------------
 
-  server.handle(RPC_CHANNELS.server.GET_WORKSPACES, async () => {
+  server.handle(RPC_NAMESPACES.server.GET_WORKSPACES, async () => {
     const workspaces = sessionManager.getWorkspacesInfo()
     deps.platform.logger.info(`[server:getWorkspaces] returning ${workspaces.length} workspaces: ${JSON.stringify(workspaces.map(w => ({ id: w.id, name: w.name })))}`)
     return workspaces
   })
 
-  server.handle(RPC_CHANNELS.server.CREATE_WORKSPACE, async (_ctx, name: string) => {
+  server.handle(RPC_NAMESPACES.server.CREATE_WORKSPACE, async (_ctx, name: string) => {
     if (!name?.trim()) throw new Error('Workspace name is required')
     const trimmed = name.trim()
 
@@ -67,7 +67,7 @@ export function registerServerHandlers(
   // Server Status
   // -----------------------------------------------------------------------
 
-  server.handle(RPC_CHANNELS.server.GET_STATUS, async () => {
+  server.handle(RPC_NAMESPACES.server.GET_STATUS, async () => {
     const workspaces = sessionManager.getWorkspacesInfo()
     const workspaceStatuses = workspaces.map(ws => {
       const summary = sessionManager.getWorkspaceAutomationSummary(ws.id)
@@ -102,7 +102,7 @@ export function registerServerHandlers(
   // Server Health
   // -----------------------------------------------------------------------
 
-  server.handle(RPC_CHANNELS.server.GET_HEALTH, async () => {
+  server.handle(RPC_NAMESPACES.server.GET_HEALTH, async () => {
     return getHealthCheck(deps)
   })
 
@@ -110,7 +110,7 @@ export function registerServerHandlers(
   // Active Session Discovery
   // -----------------------------------------------------------------------
 
-  server.handle(RPC_CHANNELS.server.GET_ACTIVE_SESSIONS, async () => {
+  server.handle(RPC_NAMESPACES.server.GET_ACTIVE_SESSIONS, async () => {
     return sessionManager.getActiveSessionsInfo()
   })
 
@@ -118,7 +118,7 @@ export function registerServerHandlers(
   // Server Home Directory (REMOTE_ELIGIBLE — returns this server's home)
   // -----------------------------------------------------------------------
 
-  server.handle(RPC_CHANNELS.server.HOME_DIR, async () => {
+  server.handle(RPC_NAMESPACES.server.HOME_DIR, async () => {
     return homedir()
   })
 }

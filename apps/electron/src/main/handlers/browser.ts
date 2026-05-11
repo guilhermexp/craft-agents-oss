@@ -1,39 +1,39 @@
-import { RPC_CHANNELS, type BrowserPaneCreateOptions, type BrowserEmptyStateLaunchPayload } from '../../shared/types'
+import { RPC_NAMESPACES, type BrowserPaneCreateOptions, type BrowserEmptyStateLaunchPayload } from '../../shared/types'
 import type { BrowserScreenshotOptions } from '../browser-pane-manager'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
 
 export const HANDLED_CHANNELS = [
-  RPC_CHANNELS.browserPane.CREATE,
-  RPC_CHANNELS.browserPane.DESTROY,
-  RPC_CHANNELS.browserPane.LIST,
-  RPC_CHANNELS.browserPane.NAVIGATE,
-  RPC_CHANNELS.browserPane.GO_BACK,
-  RPC_CHANNELS.browserPane.GO_FORWARD,
-  RPC_CHANNELS.browserPane.RELOAD,
-  RPC_CHANNELS.browserPane.STOP,
-  RPC_CHANNELS.browserPane.FOCUS,
-  RPC_CHANNELS.browserPane.LAUNCH,
-  RPC_CHANNELS.browserPane.SNAPSHOT,
-  RPC_CHANNELS.browserPane.CLICK,
-  RPC_CHANNELS.browserPane.FILL,
-  RPC_CHANNELS.browserPane.SELECT,
-  RPC_CHANNELS.browserPane.SCREENSHOT,
-  RPC_CHANNELS.browserPane.EVALUATE,
-  RPC_CHANNELS.browserPane.SCROLL,
-  RPC_CHANNELS.browserPane.LIST_PROFILES,
-  RPC_CHANNELS.browserPane.CREATE_PROFILE,
-  RPC_CHANNELS.browserPane.DELETE_PROFILE,
-  RPC_CHANNELS.browserPane.RENAME_PROFILE,
-  RPC_CHANNELS.browserPane.GET_PROFILE_SETTINGS,
-  RPC_CHANNELS.browserPane.SET_PROFILE_SETTINGS,
+  RPC_NAMESPACES.browserPane.CREATE,
+  RPC_NAMESPACES.browserPane.DESTROY,
+  RPC_NAMESPACES.browserPane.LIST,
+  RPC_NAMESPACES.browserPane.NAVIGATE,
+  RPC_NAMESPACES.browserPane.GO_BACK,
+  RPC_NAMESPACES.browserPane.GO_FORWARD,
+  RPC_NAMESPACES.browserPane.RELOAD,
+  RPC_NAMESPACES.browserPane.STOP,
+  RPC_NAMESPACES.browserPane.FOCUS,
+  RPC_NAMESPACES.browserPane.LAUNCH,
+  RPC_NAMESPACES.browserPane.SNAPSHOT,
+  RPC_NAMESPACES.browserPane.CLICK,
+  RPC_NAMESPACES.browserPane.FILL,
+  RPC_NAMESPACES.browserPane.SELECT,
+  RPC_NAMESPACES.browserPane.SCREENSHOT,
+  RPC_NAMESPACES.browserPane.EVALUATE,
+  RPC_NAMESPACES.browserPane.SCROLL,
+  RPC_NAMESPACES.browserPane.LIST_PROFILES,
+  RPC_NAMESPACES.browserPane.CREATE_PROFILE,
+  RPC_NAMESPACES.browserPane.DELETE_PROFILE,
+  RPC_NAMESPACES.browserPane.RENAME_PROFILE,
+  RPC_NAMESPACES.browserPane.GET_PROFILE_SETTINGS,
+  RPC_NAMESPACES.browserPane.SET_PROFILE_SETTINGS,
 ] as const
 
 export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): void {
   const { browserPaneManager, windowManager, platform } = deps
   if (!browserPaneManager) return
 
-  server.handle(RPC_CHANNELS.browserPane.CREATE, (_ctx, input?: string | BrowserPaneCreateOptions) => {
+  server.handle(RPC_NAMESPACES.browserPane.CREATE, (_ctx, input?: string | BrowserPaneCreateOptions) => {
     if (typeof input === 'string') {
       return browserPaneManager.createInstance(input)
     }
@@ -52,15 +52,15 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     })
   })
 
-  server.handle(RPC_CHANNELS.browserPane.DESTROY, (_ctx, id: string) => {
+  server.handle(RPC_NAMESPACES.browserPane.DESTROY, (_ctx, id: string) => {
     browserPaneManager.destroyInstance(id)
   })
 
-  server.handle(RPC_CHANNELS.browserPane.LIST, () => {
+  server.handle(RPC_NAMESPACES.browserPane.LIST, () => {
     return browserPaneManager.listInstances()
   })
 
-  server.handle(RPC_CHANNELS.browserPane.NAVIGATE, async (_ctx, id: string, url: string) => {
+  server.handle(RPC_NAMESPACES.browserPane.NAVIGATE, async (_ctx, id: string, url: string) => {
     try {
       return await browserPaneManager.navigate(id, url)
     } catch (err) {
@@ -69,7 +69,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
-  server.handle(RPC_CHANNELS.browserPane.GO_BACK, async (_ctx, id: string) => {
+  server.handle(RPC_NAMESPACES.browserPane.GO_BACK, async (_ctx, id: string) => {
     try {
       return await browserPaneManager.goBack(id)
     } catch (err) {
@@ -78,7 +78,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
-  server.handle(RPC_CHANNELS.browserPane.GO_FORWARD, async (_ctx, id: string) => {
+  server.handle(RPC_NAMESPACES.browserPane.GO_FORWARD, async (_ctx, id: string) => {
     try {
       return await browserPaneManager.goForward(id)
     } catch (err) {
@@ -87,19 +87,19 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
-  server.handle(RPC_CHANNELS.browserPane.RELOAD, (_ctx, id: string) => {
+  server.handle(RPC_NAMESPACES.browserPane.RELOAD, (_ctx, id: string) => {
     browserPaneManager.reload(id)
   })
 
-  server.handle(RPC_CHANNELS.browserPane.STOP, (_ctx, id: string) => {
+  server.handle(RPC_NAMESPACES.browserPane.STOP, (_ctx, id: string) => {
     browserPaneManager.stop(id)
   })
 
-  server.handle(RPC_CHANNELS.browserPane.FOCUS, (_ctx, id: string) => {
+  server.handle(RPC_NAMESPACES.browserPane.FOCUS, (_ctx, id: string) => {
     browserPaneManager.focus(id)
   })
 
-  server.handle(RPC_CHANNELS.browserPane.LAUNCH, async (ctx, payload: BrowserEmptyStateLaunchPayload) => {
+  server.handle(RPC_NAMESPACES.browserPane.LAUNCH, async (ctx, payload: BrowserEmptyStateLaunchPayload) => {
     try {
       return await browserPaneManager.handleEmptyStateLaunchFromRenderer(ctx.webContentsId!, payload)
     } catch (err) {
@@ -108,7 +108,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
-  server.handle(RPC_CHANNELS.browserPane.SNAPSHOT, async (_ctx, id: string) => {
+  server.handle(RPC_NAMESPACES.browserPane.SNAPSHOT, async (_ctx, id: string) => {
     try {
       return await browserPaneManager.getAccessibilitySnapshot(id)
     } catch (err) {
@@ -117,7 +117,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
-  server.handle(RPC_CHANNELS.browserPane.CLICK, async (_ctx, id: string, ref: string) => {
+  server.handle(RPC_NAMESPACES.browserPane.CLICK, async (_ctx, id: string, ref: string) => {
     try {
       return await browserPaneManager.clickElement(id, ref)
     } catch (err) {
@@ -126,7 +126,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
-  server.handle(RPC_CHANNELS.browserPane.FILL, async (_ctx, id: string, ref: string, value: string) => {
+  server.handle(RPC_NAMESPACES.browserPane.FILL, async (_ctx, id: string, ref: string, value: string) => {
     try {
       return await browserPaneManager.fillElement(id, ref, value)
     } catch (err) {
@@ -135,7 +135,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
-  server.handle(RPC_CHANNELS.browserPane.SELECT, async (_ctx, id: string, ref: string, value: string) => {
+  server.handle(RPC_NAMESPACES.browserPane.SELECT, async (_ctx, id: string, ref: string, value: string) => {
     try {
       return await browserPaneManager.selectOption(id, ref, value)
     } catch (err) {
@@ -144,7 +144,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
-  server.handle(RPC_CHANNELS.browserPane.SCREENSHOT, async (_ctx, id: string, options?: BrowserScreenshotOptions) => {
+  server.handle(RPC_NAMESPACES.browserPane.SCREENSHOT, async (_ctx, id: string, options?: BrowserScreenshotOptions) => {
     try {
       const result = await browserPaneManager.screenshot(id, options)
       return {
@@ -158,7 +158,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
-  server.handle(RPC_CHANNELS.browserPane.EVALUATE, async (_ctx, id: string, expression: string) => {
+  server.handle(RPC_NAMESPACES.browserPane.EVALUATE, async (_ctx, id: string, expression: string) => {
     try {
       return await browserPaneManager.evaluate(id, expression)
     } catch (err) {
@@ -167,7 +167,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
-  server.handle(RPC_CHANNELS.browserPane.SCROLL, async (_ctx, id: string, direction: string, amount?: number) => {
+  server.handle(RPC_NAMESPACES.browserPane.SCROLL, async (_ctx, id: string, direction: string, amount?: number) => {
     const validDirections = ['up', 'down', 'left', 'right']
     if (!validDirections.includes(direction)) {
       throw new Error(`Invalid scroll direction: ${direction}`)
@@ -182,23 +182,23 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
 
   // -- Profiles ------------------------------------------------------------
 
-  server.handle(RPC_CHANNELS.browserPane.LIST_PROFILES, () => {
+  server.handle(RPC_NAMESPACES.browserPane.LIST_PROFILES, () => {
     return browserPaneManager.listProfiles()
   })
 
-  server.handle(RPC_CHANNELS.browserPane.GET_PROFILE_SETTINGS, () => {
+  server.handle(RPC_NAMESPACES.browserPane.GET_PROFILE_SETTINGS, () => {
     return browserPaneManager.getProfileSettings()
   })
 
   server.handle(
-    RPC_CHANNELS.browserPane.SET_PROFILE_SETTINGS,
+    RPC_NAMESPACES.browserPane.SET_PROFILE_SETTINGS,
     (_ctx, partial: { alwaysAsk?: boolean; lastUsedProfileId?: string }) => {
       return browserPaneManager.setProfileSettings(partial ?? {})
     },
   )
 
   server.handle(
-    RPC_CHANNELS.browserPane.CREATE_PROFILE,
+    RPC_NAMESPACES.browserPane.CREATE_PROFILE,
     (_ctx, input: { name: string; color: string; avatar?: string }) => {
       try {
         return browserPaneManager.createProfile(input)
@@ -210,7 +210,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
   )
 
   server.handle(
-    RPC_CHANNELS.browserPane.RENAME_PROFILE,
+    RPC_NAMESPACES.browserPane.RENAME_PROFILE,
     (_ctx, payload: { id: string; name: string }) => {
       try {
         return browserPaneManager.renameProfile(payload.id, payload.name)
@@ -221,7 +221,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     },
   )
 
-  server.handle(RPC_CHANNELS.browserPane.DELETE_PROFILE, async (_ctx, id: string) => {
+  server.handle(RPC_NAMESPACES.browserPane.DELETE_PROFILE, async (_ctx, id: string) => {
     try {
       await browserPaneManager.deleteProfile(id)
     } catch (err) {
@@ -232,22 +232,22 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
 
   // Forward browser state changes to all windows
   browserPaneManager.onStateChange((info) => {
-    pushTyped(server, RPC_CHANNELS.browserPane.STATE_CHANGED, { to: 'all' }, info)
+    pushTyped(server, RPC_NAMESPACES.browserPane.STATE_CHANGED, { to: 'all' }, info)
   })
 
   // Forward browser removals so renderer can immediately drop stale tabs
   browserPaneManager.onRemoved((id) => {
-    pushTyped(server, RPC_CHANNELS.browserPane.REMOVED, { to: 'all' }, id)
+    pushTyped(server, RPC_NAMESPACES.browserPane.REMOVED, { to: 'all' }, id)
   })
 
   // Forward browser interaction/focus events so renderer can align panel focus.
   browserPaneManager.onInteracted((id) => {
-    pushTyped(server, RPC_CHANNELS.browserPane.INTERACTED, { to: 'all' }, id)
+    pushTyped(server, RPC_NAMESPACES.browserPane.INTERACTED, { to: 'all' }, id)
   })
 
   // Forward browser profile list/settings changes
   browserPaneManager.onProfilesChanged((settings) => {
-    pushTyped(server, RPC_CHANNELS.browserPane.PROFILES_CHANGED, { to: 'all' }, settings)
+    pushTyped(server, RPC_NAMESPACES.browserPane.PROFILES_CHANGED, { to: 'all' }, settings)
   })
 
   // Forward "manage profiles" requests from inside a browser window so the
@@ -265,6 +265,6 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     } catch (err) {
       platform.logger.warn('[browser-pane] failed to focus main window for picker:', err)
     }
-    pushTyped(server, RPC_CHANNELS.browserPane.PICKER_REQUESTED, { to: 'all' }, { instanceId })
+    pushTyped(server, RPC_NAMESPACES.browserPane.PICKER_REQUESTED, { to: 'all' }, { instanceId })
   })
 }

@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
-const registeredChannels: string[] = []
+const registeredNamespaces: string[] = []
 
 mock.module('electron', () => ({
   ipcMain: {
@@ -45,7 +45,7 @@ mock.module('electron', () => ({
 function createMockServer(): RpcServer {
   return {
     handle(channel: string, _handler: unknown) {
-      registeredChannels.push(channel)
+      registeredNamespaces.push(channel)
     },
     push() {},
     async invokeClient() {},
@@ -144,10 +144,10 @@ async function getExpectedCoreChannels(): Promise<Set<string>> {
     ...resources.HANDLED_CHANNELS,
     ...workspace.CORE_HANDLED_CHANNELS,
     ...onboarding.HANDLED_CHANNELS,
-    RPC_CHANNELS.transfer.START,
-    RPC_CHANNELS.transfer.CHUNK,
-    RPC_CHANNELS.transfer.COMMIT,
-    RPC_CHANNELS.transfer.ABORT,
+    RPC_NAMESPACES.transfer.START,
+    RPC_NAMESPACES.transfer.CHUNK,
+    RPC_NAMESPACES.transfer.COMMIT,
+    RPC_NAMESPACES.transfer.ABORT,
   ])
 }
 
@@ -169,7 +169,7 @@ async function getExpectedGuiChannels(): Promise<Set<string>> {
 
 describe('RPC handler profile registration', () => {
   beforeEach(() => {
-    registeredChannels.length = 0
+    registeredNamespaces.length = 0
   })
 
   it('registerCoreRpcHandlers registers only core channels', async () => {
@@ -178,7 +178,7 @@ describe('RPC handler profile registration', () => {
 
     registerCoreRpcHandlers(createMockServer(), createMockDeps())
 
-    const actual = new Set(registeredChannels.filter(ch => ch.includes(':')))
+    const actual = new Set(registeredNamespaces.filter(ch => ch.includes(':')))
     expect([...expected].filter(ch => !actual.has(ch))).toEqual([])
     expect([...actual].filter(ch => !expected.has(ch))).toEqual([])
   })
@@ -189,7 +189,7 @@ describe('RPC handler profile registration', () => {
 
     registerGuiRpcHandlers(createMockServer(), createMockDeps())
 
-    const actual = new Set(registeredChannels.filter(ch => ch.includes(':')))
+    const actual = new Set(registeredNamespaces.filter(ch => ch.includes(':')))
     expect([...expected].filter(ch => !actual.has(ch))).toEqual([])
     expect([...actual].filter(ch => !expected.has(ch))).toEqual([])
   })

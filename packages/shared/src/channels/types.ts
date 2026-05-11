@@ -1,8 +1,15 @@
 import type { PermissionMode } from '../agent/mode-types.ts';
 import type { EntityColor } from '../colors/types.ts';
+import type { Opaque } from '../opaque.ts';
 
-export interface ChannelConfig {
-  id: string;
+export type WarRoomChannelId = Opaque<string, 'WarRoomChannelId'>;
+
+export function warRoomChannelId(value: string): WarRoomChannelId {
+  return value as WarRoomChannelId;
+}
+
+export interface WarRoomChannel {
+  id: WarRoomChannelId;
   name: string;
   description?: string;
   color?: EntityColor;
@@ -10,16 +17,16 @@ export interface ChannelConfig {
   defaultSourceSlugs?: string[];
   defaultPermissionMode?: PermissionMode;
   workingDirectory?: string;
-  participants?: ChannelParticipant[];
-  routing?: ChannelRoutingConfig;
+  participants?: WarRoomParticipant[];
+  routing?: WarRoomRoutingConfig;
 }
 
-export interface WorkspaceChannelsConfig {
+export interface WorkspaceWarRoomChannelsConfig {
   version: number;
-  channels: ChannelConfig[];
+  channels: WarRoomChannel[];
 }
 
-export interface ChannelParticipant {
+export interface WarRoomParticipant {
   id: string;
   displayName: string;
   llmConnection: string;
@@ -30,30 +37,30 @@ export interface ChannelParticipant {
   workingDirectory?: string;
 }
 
-export interface ChannelRoutingConfig {
+export interface WarRoomRoutingConfig {
   mode: 'manual-tags' | 'lead' | 'all' | 'orchestrator';
   leadParticipantId?: string;
   allowAllMention?: boolean;
 }
 
-export interface CreateChannelInput {
+export interface CreateWarRoomChannelInput {
   name: string;
   description?: string;
   color?: EntityColor;
   defaultSourceSlugs?: string[];
   defaultPermissionMode?: PermissionMode;
   workingDirectory?: string;
-  participants?: ChannelParticipant[];
-  routing?: ChannelRoutingConfig;
+  participants?: WarRoomParticipant[];
+  routing?: WarRoomRoutingConfig;
 }
 
-export interface UpdateChannelInput {
+export interface UpdateWarRoomChannelInput {
   name?: string;
   description?: string;
   color?: EntityColor;
   defaultSourceSlugs?: string[];
   defaultPermissionMode?: PermissionMode;
   workingDirectory?: string;
-  participants?: ChannelParticipant[];
-  routing?: ChannelRoutingConfig;
+  participants?: WarRoomParticipant[];
+  routing?: WarRoomRoutingConfig;
 }

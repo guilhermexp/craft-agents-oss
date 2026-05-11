@@ -102,7 +102,7 @@ import { filterSessionStatuses as filterLabelMenuStates } from "@/components/ui/
 import { createLabelMenuItems, filterItems as filterLabelMenuItems, type LabelMenuItem } from "@/components/ui/label-menu-utils"
 import { buildLabelTree, getDescendantIds, getLabelDisplayName, flattenLabels, extractLabelId, findLabelById, sortLabelsForDisplay } from "@craft-agent/shared/labels"
 import type { LabelConfig, LabelTreeNode } from "@craft-agent/shared/labels"
-import type { ChannelConfig } from "@craft-agent/shared/channels"
+import type { WarRoomChannel } from "@craft-agent/shared/channels"
 import { resolveEntityColor } from "@craft-agent/shared/colors"
 import * as storage from "@/lib/local-storage"
 import { resolveOpenFilePath } from "@/lib/resolve-open-file-path"
@@ -1465,10 +1465,10 @@ function AppShellContent({
 
   // Count sources by type for the Sources dropdown subcategories
   const sourceTypeCounts = useMemo(() => {
-    const counts = { api: 0, mcp: 0, local: 0 }
+    const counts = { api: 0, mcp: 0, filesystem: 0 }
     for (const source of sources) {
       const t = source.config.type
-      if (t === 'api' || t === 'mcp' || t === 'local') {
+      if (t === 'api' || t === 'mcp' || t === 'filesystem') {
         counts[t]++
       }
     }
@@ -1755,7 +1755,7 @@ function AppShellContent({
     navigate(routes.view.label(labelId))
   }, [])
 
-  const handleChannelClick = useCallback((channel: ChannelConfig) => {
+  const handleChannelClick = useCallback((channel: WarRoomChannel) => {
     navigate(routes.view.label(channel.labelId))
   }, [])
 
@@ -1990,7 +1990,7 @@ function AppShellContent({
     }))
   }, [channelConfigs, navigate])
 
-  const handleChannelSessionDrop = useCallback(async (sessionId: string, channel: ChannelConfig) => {
+  const handleChannelSessionDrop = useCallback(async (sessionId: string, channel: WarRoomChannel) => {
     const meta = workspaceSessionMetas.find(item => item.id === sessionId)
     const currentLabels = meta?.labels ?? []
     if (currentLabels.some(label => extractLabelId(label) === channel.labelId)) return
@@ -2682,7 +2682,7 @@ function AppShellContent({
                         {
                           id: "nav:sources:local",
                           title: t("sidebar.localFolders"),
-                          label: String(sourceTypeCounts.local),
+                          label: String(sourceTypeCounts.filesystem),
                           icon: FolderOpen,
                           variant: (sourceFilter?.kind === 'type' && sourceFilter.sourceType === 'local') ? "default" : "ghost",
                           onClick: handleSourcesLocalClick,

@@ -63,7 +63,7 @@ function getSourceUrl(source: LoadedSource): string | null {
 
   if (type === 'mcp' && mcp?.url) return mcp.url
   if (type === 'api' && api?.baseUrl) return api.baseUrl
-  if (type === 'local' && local?.path) return local.path
+  if (type === 'filesystem' && local?.path) return local.path
 
   return null
 }
@@ -147,7 +147,7 @@ function getConnectionDescription(source: LoadedSource, t: (key: string) => stri
   if (type === 'api') {
     return t('sourceInfo.baseUrl')
   }
-  if (type === 'local') {
+  if (type === 'filesystem') {
     return t('sourceInfo.filesystemPath')
   }
   return t('sourceInfo.connectionDetails')

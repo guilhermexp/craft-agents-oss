@@ -21,7 +21,7 @@
 import * as React from 'react'
 import { Hash } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { ChannelConfig } from '@craft-agent/shared/channels'
+import type { WarRoomChannel } from '@craft-agent/shared/channels'
 import { extractLabelId } from '@craft-agent/shared/labels'
 import { resolveEntityColor } from '@craft-agent/shared/colors'
 import { useTheme } from '@/context/ThemeContext'
@@ -32,7 +32,7 @@ export interface ChannelBadgeProps {
   /** Session labels (encoded entries like "bug" or "priority::3") */
   sessionLabels?: string[]
   /** All workspace channels (loaded once at AppShell level) */
-  channels?: ChannelConfig[]
+  channels?: WarRoomChannel[]
   /** Optional className override */
   className?: string
 }
@@ -43,15 +43,15 @@ export interface ChannelBadgeProps {
  */
 export function resolveSessionChannels(
   sessionLabels: string[] | undefined,
-  channels: ChannelConfig[] | undefined,
-): ChannelConfig[] {
+  channels: WarRoomChannel[] | undefined,
+): WarRoomChannel[] {
   if (!sessionLabels?.length || !channels?.length) return []
   const labelIds = new Set(sessionLabels.map(extractLabelId))
   return channels.filter(channel => labelIds.has(channel.labelId))
 }
 
 interface SingleChannelBadgeProps {
-  channel: ChannelConfig
+  channel: WarRoomChannel
   ariaLabel: string
 }
 

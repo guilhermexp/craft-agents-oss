@@ -1,4 +1,4 @@
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { loadWorkspaceSources } from '@craft-agent/shared/sources'
 import { safeJsonParse } from '@craft-agent/shared/utils/files'
@@ -7,22 +7,22 @@ import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
 export const HANDLED_CHANNELS = [
-  RPC_CHANNELS.sources.GET,
-  RPC_CHANNELS.sources.CREATE,
-  RPC_CHANNELS.sources.DELETE,
-  RPC_CHANNELS.sources.START_OAUTH,
-  RPC_CHANNELS.sources.SAVE_CREDENTIALS,
-  RPC_CHANNELS.sources.GET_PERMISSIONS,
-  RPC_CHANNELS.workspace.GET_PERMISSIONS,
-  RPC_CHANNELS.permissions.GET_DEFAULTS,
-  RPC_CHANNELS.sources.GET_MCP_TOOLS,
+  RPC_NAMESPACES.sources.GET,
+  RPC_NAMESPACES.sources.CREATE,
+  RPC_NAMESPACES.sources.DELETE,
+  RPC_NAMESPACES.sources.START_OAUTH,
+  RPC_NAMESPACES.sources.SAVE_CREDENTIALS,
+  RPC_NAMESPACES.sources.GET_PERMISSIONS,
+  RPC_NAMESPACES.workspace.GET_PERMISSIONS,
+  RPC_NAMESPACES.permissions.GET_DEFAULTS,
+  RPC_NAMESPACES.sources.GET_MCP_TOOLS,
 ] as const
 
 export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): void {
   const log = deps.platform.logger
 
   // Get all sources for a workspace
-  server.handle(RPC_CHANNELS.sources.GET, async (_ctx, workspaceId: string) => {
+  server.handle(RPC_NAMESPACES.sources.GET, async (_ctx, workspaceId: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) {
       log.error(`SOURCES_GET: Workspace not found: ${workspaceId}`)
@@ -32,7 +32,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
   })
 
   // Create a new source
-  server.handle(RPC_CHANNELS.sources.CREATE, async (_ctx, workspaceId: string, config: Partial<import('@craft-agent/shared/sources').CreateSourceInput>) => {
+  server.handle(RPC_NAMESPACES.sources.CREATE, async (_ctx, workspaceId: string, config: Partial<import('@craft-agent/shared/sources').CreateSourceInput>) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
     const { createSource } = await import('@craft-agent/shared/sources')
@@ -48,7 +48,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
   })
 
   // Delete a source
-  server.handle(RPC_CHANNELS.sources.DELETE, async (_ctx, workspaceId: string, sourceSlug: string) => {
+  server.handle(RPC_NAMESPACES.sources.DELETE, async (_ctx, workspaceId: string, sourceSlug: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
     const { deleteSource } = await import('@craft-agent/shared/sources')
@@ -65,7 +65,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
 
   // Start OAuth flow for a source (DEPRECATED — use oauth:start + performOAuth client-side)
   // Kept for backward compatibility with old IPC preload; WS clients use performOAuth().
-  server.handle(RPC_CHANNELS.sources.START_OAUTH, async () => {
+  server.handle(RPC_NAMESPACES.sources.START_OAUTH, async () => {
     return {
       success: false,
       error: 'Deprecated: use the client-side performOAuth() flow (oauth:start + oauth:complete) instead',
@@ -73,7 +73,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
   })
 
   // Save credentials for a source (bearer token or API key)
-  server.handle(RPC_CHANNELS.sources.SAVE_CREDENTIALS, async (_ctx, workspaceId: string, sourceSlug: string, credential: string) => {
+  server.handle(RPC_NAMESPACES.sources.SAVE_CREDENTIALS, async (_ctx, workspaceId: string, sourceSlug: string, credential: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
     const { loadSource, getSourceCredentialManager } = await import('@craft-agent/shared/sources')
@@ -91,7 +91,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
   })
 
   // Get permissions config for a source (raw format for UI display)
-  server.handle(RPC_CHANNELS.sources.GET_PERMISSIONS, async (_ctx, workspaceId: string, sourceSlug: string) => {
+  server.handle(RPC_NAMESPACES.sources.GET_PERMISSIONS, async (_ctx, workspaceId: string, sourceSlug: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) return null
 
@@ -111,7 +111,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
   })
 
   // Get permissions config for a workspace (raw format for UI display)
-  server.handle(RPC_CHANNELS.workspace.GET_PERMISSIONS, async (_ctx, workspaceId: string) => {
+  server.handle(RPC_NAMESPACES.workspace.GET_PERMISSIONS, async (_ctx, workspaceId: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) return null
 
@@ -131,7 +131,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
   })
 
   // Get default permissions from ~/.craft-agent/permissions/default.json
-  server.handle(RPC_CHANNELS.permissions.GET_DEFAULTS, async () => {
+  server.handle(RPC_NAMESPACES.permissions.GET_DEFAULTS, async () => {
     const { existsSync, readFileSync } = await import('fs')
     const { getAppPermissionsDir } = await import('@craft-agent/shared/agent')
     const { join } = await import('path')
@@ -149,7 +149,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
   })
 
   // Get MCP tools for a source with permission status
-  server.handle(RPC_CHANNELS.sources.GET_MCP_TOOLS, async (_ctx, workspaceId: string, sourceSlug: string) => {
+  server.handle(RPC_NAMESPACES.sources.GET_MCP_TOOLS, async (_ctx, workspaceId: string, sourceSlug: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) return { success: false, error: 'Workspace not found' }
 

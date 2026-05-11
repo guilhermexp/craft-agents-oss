@@ -61,7 +61,7 @@ import {
   inferSlackServiceFromUrl,
   inferMicrosoftServiceFromUrl,
   type GoogleService,
-  type SlackService,
+  type SlackServiceScope,
   type MicrosoftService,
 } from '../sources/types.ts';
 import { isGoogleOAuthConfigured as isGoogleOAuthConfiguredImpl } from '../auth/google-oauth.ts';
@@ -274,7 +274,7 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
     inferGoogleService: (url?: string): GoogleService | undefined => {
       return inferGoogleServiceFromUrl(url);
     },
-    inferSlackService: (url?: string): SlackService | undefined => {
+    inferSlackService: (url?: string): SlackServiceScope | undefined => {
       return inferSlackServiceFromUrl(url);
     },
     inferMicrosoftService: (url?: string): MicrosoftService | undefined => {

@@ -68,7 +68,7 @@ function createMockServer(opts?: {
           const response: MessageEnvelope = {
             id: envelope.id,
             type: 'response',
-            channel: envelope.channel,
+            rpcNamespace: envelope.rpcNamespace,
             result: envelope.args,
           }
           ws.send(serializeEnvelope(response))
@@ -129,7 +129,7 @@ function createErrorServer(): MockServer {
           const response: MessageEnvelope = {
             id: envelope.id,
             type: 'response',
-            channel: envelope.channel,
+            rpcNamespace: envelope.rpcNamespace,
             error: { code: 'HANDLER_ERROR', message: 'test error' },
           }
           ws.send(serializeEnvelope(response))
@@ -286,7 +286,7 @@ describe('CliRpcClient', () => {
     server.sendToAll({
       id: crypto.randomUUID(),
       type: 'event',
-      channel: 'session:event',
+      rpcNamespace: 'session:event',
       args: [{ type: 'text_delta', sessionId: 's1', delta: 'hello' }],
     })
 
@@ -301,7 +301,7 @@ describe('CliRpcClient', () => {
     server.sendToAll({
       id: crypto.randomUUID(),
       type: 'event',
-      channel: 'session:event',
+      rpcNamespace: 'session:event',
       args: [{ type: 'text_delta', sessionId: 's1', delta: 'world' }],
     })
 

@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
-const registeredChannels: string[] = []
+const registeredNamespaces: string[] = []
 
 mock.module('electron', () => ({
   ipcMain: {
@@ -47,7 +47,7 @@ mock.module('electron', () => ({
 function createMockServer(): RpcServer {
   return {
     handle(channel: string, _handler: unknown) {
-      registeredChannels.push(channel)
+      registeredNamespaces.push(channel)
     },
     push() {},
     async invokeClient() {},
@@ -155,10 +155,10 @@ async function getExpectedChannels(): Promise<Set<string>> {
     ...coreWorkspace.CORE_HANDLED_CHANNELS,
     ...onboarding.HANDLED_CHANNELS,
     ...resources.HANDLED_CHANNELS,
-    RPC_CHANNELS.transfer.START,
-    RPC_CHANNELS.transfer.CHUNK,
-    RPC_CHANNELS.transfer.COMMIT,
-    RPC_CHANNELS.transfer.ABORT,
+    RPC_NAMESPACES.transfer.START,
+    RPC_NAMESPACES.transfer.CHUNK,
+    RPC_NAMESPACES.transfer.COMMIT,
+    RPC_NAMESPACES.transfer.ABORT,
     ...browser.HANDLED_CHANNELS,
     ...meetings.HANDLED_CHANNELS,
     ...guiSystem.GUI_HANDLED_CHANNELS,
@@ -169,7 +169,7 @@ async function getExpectedChannels(): Promise<Set<string>> {
 
 describe('RPC handler registration', () => {
   beforeEach(() => {
-    registeredChannels.length = 0
+    registeredNamespaces.length = 0
   })
 
   it('registers all declared handled channels exactly once', async () => {
@@ -178,7 +178,7 @@ describe('RPC handler registration', () => {
 
     registerAllRpcHandlers(createMockServer(), createMockDeps())
 
-    const appChannels = registeredChannels.filter(ch => ch.includes(':'))
+    const appChannels = registeredNamespaces.filter(ch => ch.includes(':'))
     const actual = new Set(appChannels)
 
     const missing = [...expected].filter(ch => !actual.has(ch)).sort()
@@ -206,7 +206,7 @@ describe('RPC handler registration', () => {
 
     registerAllRpcHandlers(createMockServer(), createMockDeps())
 
-    const actual = new Set(registeredChannels)
+    const actual = new Set(registeredNamespaces)
     const missingOnboarding = HANDLED_CHANNELS.filter(ch => !actual.has(ch))
 
     expect(missingOnboarding).toEqual([])

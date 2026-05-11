@@ -27,10 +27,11 @@
 
 import type {
   PlatformAdapter,
-  ChannelBinding,
+  ExternalMessagingChannelBinding,
   SentMessage,
   InlineButton,
   ResponseMode,
+  MessagingChannelId,
 } from './types'
 import type { PlanTokenRegistry } from './plan-tokens'
 
@@ -88,12 +89,12 @@ const PLAN_INLINE_LIMIT = 3500
 
 /**
  * Hook the renderer calls when it wants to remember a plan message id.
- * Passes the full `ChannelBinding` so callers can attribute the message
+ * Passes the full `ExternalMessagingChannelBinding` so callers can attribute the message
  * to the exact chat that rendered it — not just the session, which may
  * have multiple Telegram bindings.
  */
 export type PlanMessageRecorder = (
-  binding: ChannelBinding,
+  binding: ExternalMessagingChannelBinding,
   token: string,
   messageId: string,
 ) => void
@@ -134,7 +135,7 @@ export class Renderer {
   /** Handle an outbound session event for a specific binding. */
   async handle(
     event: SessionEvent,
-    binding: ChannelBinding,
+    binding: ExternalMessagingChannelBinding,
     adapter: PlatformAdapter,
   ): Promise<void> {
     // Permission / error prompts are mode-agnostic — handle first so they
@@ -173,7 +174,7 @@ export class Renderer {
 
   private async handleStreaming(
     event: SessionEvent,
-    binding: ChannelBinding,
+    binding: ExternalMessagingChannelBinding,
     adapter: PlatformAdapter,
   ): Promise<void> {
     const state = this.getState(binding.id)
@@ -197,7 +198,7 @@ export class Renderer {
 
         if (state.streamingMessageId && adapter.capabilities.messageEditing) {
           if (text.trim()) {
-            await this.tryEditMessage(adapter, binding.channelId, state.streamingMessageId, text.trim(), state)
+            await this.tryEditMessage(adapter, binding.messagingChannelId, state.streamingMessageId, text.trim(), state)
           }
         } else if (text.trim()) {
           await this.sendText(adapter, binding, text.trim())
@@ -227,7 +228,7 @@ export class Renderer {
             this.cancelEditTimer(state)
             await this.tryEditMessage(
               adapter,
-              binding.channelId,
+              binding.messagingChannelId,
               state.streamingMessageId,
               state.textBuffer.trim(),
               state,
@@ -236,9 +237,9 @@ export class Renderer {
             state.textBuffer = ''
             state.lastEditedLength = 0
           }
-          await adapter.sendText(binding.channelId, `🔧 ${displayName}...`)
+          await adapter.sendText(binding.messagingChannelId, `🔧 ${displayName}...`)
         } else {
-          await adapter.sendTyping(binding.channelId).catch(() => {})
+          await adapter.sendTyping(binding.messagingChannelId).catch(() => {})
         }
         break
       }
@@ -247,12 +248,12 @@ export class Renderer {
 
   private async handleStreamingDelta(
     state: RenderState,
-    binding: ChannelBinding,
+    binding: ExternalMessagingChannelBinding,
     adapter: PlatformAdapter,
   ): Promise<void> {
     if (!state.streamingMessageId && state.textBuffer.length > 0) {
       try {
-        const sent = await adapter.sendText(binding.channelId, state.textBuffer)
+        const sent = await adapter.sendText(binding.messagingChannelId, state.textBuffer)
         state.streamingMessageId = sent.messageId
         state.lastEditedLength = state.textBuffer.length
         this.scheduleEdit(state, binding, adapter)
@@ -266,7 +267,7 @@ export class Renderer {
 
   private scheduleEdit(
     state: RenderState,
-    binding: ChannelBinding,
+    binding: ExternalMessagingChannelBinding,
     adapter: PlatformAdapter,
   ): void {
     if (state.editTimer) return
@@ -280,7 +281,7 @@ export class Renderer {
       const text = state.textBuffer.trim()
       if (!text) return
 
-      await this.tryEditMessage(adapter, binding.channelId, state.streamingMessageId, text, state)
+      await this.tryEditMessage(adapter, binding.messagingChannelId, state.streamingMessageId, text, state)
       state.lastEditedLength = state.textBuffer.length
 
       if (state.processing) {
@@ -295,7 +296,7 @@ export class Renderer {
 
   private async handleProgress(
     event: SessionEvent,
-    binding: ChannelBinding,
+    binding: ExternalMessagingChannelBinding,
     adapter: PlatformAdapter,
   ): Promise<void> {
     const state = this.getState(binding.id)
@@ -343,7 +344,7 @@ export class Renderer {
           if (finalText) {
             await this.tryEditMessage(
               adapter,
-              binding.channelId,
+              binding.messagingChannelId,
               state.progressMessageId,
               truncateForAdapter(finalText, adapter),
               state,
@@ -369,13 +370,13 @@ export class Renderer {
    */
   private async ensureProgressBubble(
     state: RenderState,
-    binding: ChannelBinding,
+    binding: ExternalMessagingChannelBinding,
     adapter: PlatformAdapter,
     status: string,
   ): Promise<void> {
     if (!state.progressMessageId) {
       try {
-        const sent = await adapter.sendText(binding.channelId, status)
+        const sent = await adapter.sendText(binding.messagingChannelId, status)
         state.progressMessageId = sent.messageId
         state.progressStatus = status
       } catch {
@@ -385,7 +386,7 @@ export class Renderer {
     }
     if (!adapter.capabilities.messageEditing) return
     if (state.progressStatus === status) return
-    await this.tryEditMessage(adapter, binding.channelId, state.progressMessageId, status, state)
+    await this.tryEditMessage(adapter, binding.messagingChannelId, state.progressMessageId, status, state)
     state.progressStatus = status
   }
 
@@ -395,7 +396,7 @@ export class Renderer {
 
   private async handleFinalOnly(
     event: SessionEvent,
-    binding: ChannelBinding,
+    binding: ExternalMessagingChannelBinding,
     adapter: PlatformAdapter,
   ): Promise<void> {
     const state = this.getState(binding.id)
@@ -431,7 +432,7 @@ export class Renderer {
 
   private async handlePermissionRequest(
     event: SessionEvent,
-    binding: ChannelBinding,
+    binding: ExternalMessagingChannelBinding,
     adapter: PlatformAdapter,
     state: RenderState,
   ): Promise<void> {
@@ -444,7 +445,7 @@ export class Renderer {
       this.cancelEditTimer(state)
       await this.tryEditMessage(
         adapter,
-        binding.channelId,
+        binding.messagingChannelId,
         state.streamingMessageId,
         state.textBuffer.trim(),
         state,
@@ -456,23 +457,23 @@ export class Renderer {
 
     if (binding.platform === 'whatsapp') {
       await adapter.sendText(
-        binding.channelId,
+        binding.messagingChannelId,
         `⏸ Permission required: ${request.description}
 Approve it in the desktop app to continue.`,
       )
       return
     }
 
-    if (binding.config.approvalChannel === 'chat' && adapter.capabilities.inlineButtons) {
+    if (binding.config.approvalSurface === 'chat' && adapter.capabilities.inlineButtons) {
       const text = formatPermissionText(request)
       const buttons: InlineButton[] = [
         { id: `perm:allow:${request.requestId}`, label: '✅ Allow' },
         { id: `perm:deny:${request.requestId}`, label: '❌ Deny' },
       ]
-      await adapter.sendButtons(binding.channelId, text, buttons)
+      await adapter.sendButtons(binding.messagingChannelId, text, buttons)
     } else {
       await adapter.sendText(
-        binding.channelId,
+        binding.messagingChannelId,
         `⏸ Permission required: ${request.description}
 Approve in the desktop app to continue.`,
       )
@@ -480,25 +481,25 @@ Approve in the desktop app to continue.`,
   }
 
   private async handleCredentialRequest(
-    binding: ChannelBinding,
+    binding: ExternalMessagingChannelBinding,
     adapter: PlatformAdapter,
   ): Promise<void> {
     if (binding.platform !== 'whatsapp') return
     await adapter.sendText(
-      binding.channelId,
+      binding.messagingChannelId,
       '🔐 Credentials are required to continue. Open the desktop app to review and submit them securely.',
     )
   }
 
   private async handlePlanSubmitted(
     event: SessionEvent,
-    binding: ChannelBinding,
+    binding: ExternalMessagingChannelBinding,
     adapter: PlatformAdapter,
   ): Promise<void> {
     // WhatsApp: no interactive buttons yet — keep the generic pointer.
     if (binding.platform === 'whatsapp') {
       await adapter.sendText(
-        binding.channelId,
+        binding.messagingChannelId,
         '📝 A plan is ready for review. Open the desktop app to inspect and approve it.',
       )
       return
@@ -510,7 +511,7 @@ Approve in the desktop app to continue.`,
     // degrade to the generic pointer so Telegram still sees *something*.
     if (!this.planTokens) {
       await adapter.sendText(
-        binding.channelId,
+        binding.messagingChannelId,
         '📝 A plan is ready for review. Open the desktop app to inspect and approve it.',
       )
       return
@@ -538,12 +539,12 @@ Approve in the desktop app to continue.`,
         : `${header}\n\n${firstLines(planContent, 15)}\n\n…full plan attached below.`
 
     try {
-      const sent = await adapter.sendButtons(binding.channelId, bodyText, buttons)
+      const sent = await adapter.sendButtons(binding.messagingChannelId, bodyText, buttons)
       this.recordPlanMessage?.(binding, token, sent.messageId)
 
       if (!fitsInline && planContent.length > 0) {
         await adapter.sendFile(
-          binding.channelId,
+          binding.messagingChannelId,
           Buffer.from(planContent, 'utf-8'),
           'plan.md',
           'Full plan',
@@ -552,7 +553,7 @@ Approve in the desktop app to continue.`,
     } catch (err) {
       // Fall back to a plain text notice so the user at least knows.
       await adapter.sendText(
-        binding.channelId,
+        binding.messagingChannelId,
         `📝 A plan is ready for review (couldn't render inline: ${
           err instanceof Error ? err.message : 'unknown error'
         }). Open the desktop app to approve it.`,
@@ -562,13 +563,13 @@ Approve in the desktop app to continue.`,
 
   private async handleError(
     event: SessionEvent,
-    binding: ChannelBinding,
+    binding: ExternalMessagingChannelBinding,
     adapter: PlatformAdapter,
     state: RenderState,
   ): Promise<void> {
     const errorMsg = extractErrorMessage(event.error)
     this.cancelEditTimer(state)
-    await adapter.sendText(binding.channelId, `❌ ${errorMsg}`)
+    await adapter.sendText(binding.messagingChannelId, `❌ ${errorMsg}`)
     this.resetRun(state)
   }
 
@@ -578,7 +579,7 @@ Approve in the desktop app to continue.`,
 
   private async tryEditMessage(
     adapter: PlatformAdapter,
-    channelId: string,
+    messagingChannelId: MessagingChannelId,
     messageId: string,
     text: string,
     state: RenderState,
@@ -586,7 +587,7 @@ Approve in the desktop app to continue.`,
     const truncated = truncateForAdapter(text, adapter)
 
     try {
-      await adapter.editMessage(channelId, messageId, truncated)
+      await adapter.editMessage(messagingChannelId, messageId, truncated)
       state.currentEditIntervalMs = DEFAULT_EDIT_INTERVAL_MS
     } catch (err: unknown) {
       const is429 =
@@ -624,18 +625,18 @@ Approve in the desktop app to continue.`,
   /** Send text, splitting if it exceeds platform limits. */
   private async sendText(
     adapter: PlatformAdapter,
-    binding: ChannelBinding,
+    binding: ExternalMessagingChannelBinding,
     text: string,
   ): Promise<SentMessage | undefined> {
     const maxLen = adapter.capabilities.maxMessageLength
     if (text.length <= maxLen) {
-      return adapter.sendText(binding.channelId, text)
+      return adapter.sendText(binding.messagingChannelId, text)
     }
 
     const chunks = splitText(text, maxLen)
     let last: SentMessage | undefined
     for (const chunk of chunks) {
-      last = await adapter.sendText(binding.channelId, chunk)
+      last = await adapter.sendText(binding.messagingChannelId, chunk)
     }
     return last
   }

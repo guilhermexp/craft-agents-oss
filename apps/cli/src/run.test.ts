@@ -36,7 +36,7 @@ function pushSessionEvents(
       ws.send(serializeEnvelope({
         id: crypto.randomUUID(),
         type: 'event',
-        channel: 'session:event',
+        rpcNamespace: 'session:event',
         args: [{ sessionId, ...ev }],
       }))
     }
@@ -72,7 +72,7 @@ function createMockServer(opts?: MockServerOptions): MockServer {
         }
 
         if (envelope.type === 'request') {
-          const ch = envelope.channel!
+          const ch = envelope.rpcNamespace!
           invokedChannels.push(ch)
           if (!invokeArgs[ch]) invokeArgs[ch] = []
           invokeArgs[ch].push(envelope.args ?? [])
@@ -108,7 +108,7 @@ function createMockServer(opts?: MockServerOptions): MockServer {
               ws.send(serializeEnvelope({
                 id: envelope.id,
                 type: 'response',
-                channel: ch,
+                rpcNamespace: ch,
                 result: { started: true },
               }))
               pushSessionEvents(ws, 'run-session-1', [
@@ -131,7 +131,7 @@ function createMockServer(opts?: MockServerOptions): MockServer {
           ws.send(serializeEnvelope({
             id: envelope.id,
             type: 'response',
-            channel: ch,
+            rpcNamespace: ch,
             result,
           }))
         }

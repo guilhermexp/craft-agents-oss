@@ -26,7 +26,7 @@ export type GoogleService = 'gmail' | 'calendar' | 'drive' | 'docs' | 'sheets' |
 /**
  * Slack service types for OAuth
  */
-export type SlackService = 'messaging' | 'channels' | 'users' | 'files' | 'full';
+export type SlackServiceScope = 'messaging' | 'channels' | 'users' | 'files' | 'full';
 
 /**
  * Microsoft service types for OAuth
@@ -100,7 +100,7 @@ export interface GoogleOAuthAuthRequest extends BaseAuthRequest {
  */
 export interface SlackOAuthAuthRequest extends BaseAuthRequest {
   type: 'oauth-slack';
-  service?: SlackService;
+  service?: SlackServiceScope;
 }
 
 /**
@@ -217,7 +217,7 @@ export interface ValidationResult {
 /**
  * Source type discriminator
  */
-export type SourceType = 'mcp' | 'api' | 'local';
+export type SourceType = 'mcp' | 'api' | 'filesystem';
 
 /**
  * MCP transport type
@@ -273,7 +273,7 @@ export interface ApiSourceConfig {
   googleOAuthClientId?: string;
   googleOAuthClientSecret?: string;
   // Slack OAuth
-  slackService?: SlackService;
+  slackService?: SlackServiceScope;
   // Microsoft OAuth
   microsoftService?: MicrosoftService;
   // Generic OAuth config (when authType is 'oauth' and provider is not google/slack/microsoft)

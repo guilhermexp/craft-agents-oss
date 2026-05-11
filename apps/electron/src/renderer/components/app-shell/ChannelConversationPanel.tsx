@@ -1,11 +1,11 @@
 import * as React from 'react'
 import { Hash, Loader2, Send } from 'lucide-react'
-import type { ChannelConfig, ChannelMessage } from '@craft-agent/shared/channels'
+import type { WarRoomChannel, ChannelMessage } from '@craft-agent/shared/channels'
 import { cn } from '@/lib/utils'
 
 interface ChannelConversationPanelProps {
   workspaceId: string
-  channel: ChannelConfig
+  channel: WarRoomChannel
 }
 
 function formatAuthor(message: ChannelMessage): string {
@@ -14,7 +14,7 @@ function formatAuthor(message: ChannelMessage): string {
   return message.authorId
 }
 
-function participantSummary(channel: ChannelConfig): string {
+function participantSummary(channel: WarRoomChannel): string {
   const participants = channel.participants ?? []
   if (participants.length === 0) return 'Sem agentes configurados'
   return participants.map(participant => `@${participant.id}`).join(' ')

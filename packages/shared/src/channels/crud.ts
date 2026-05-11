@@ -1,5 +1,6 @@
 import { loadChannelsConfig, saveChannelsConfig } from './storage.ts';
-import type { ChannelConfig, CreateChannelInput, UpdateChannelInput, WorkspaceChannelsConfig } from './types.ts';
+import type { CreateWarRoomChannelInput, UpdateWarRoomChannelInput, WarRoomChannel, WorkspaceWarRoomChannelsConfig } from './types.ts';
+import { warRoomChannelId } from './types.ts';
 import { loadLabelConfig, saveLabelConfig } from '../labels/storage.ts';
 import { collectAllIds, findLabelById } from '../labels/tree.ts';
 import type { LabelConfig } from '../labels/types.ts';
@@ -38,7 +39,7 @@ function assertValidChannelName(name: string): void {
 
 function assertUniqueChannelName(
   name: string,
-  config: WorkspaceChannelsConfig,
+  config: WorkspaceWarRoomChannelsConfig,
   excludeId?: string,
 ): void {
   const target = name.trim().toLowerCase();
@@ -51,8 +52,8 @@ function assertUniqueChannelName(
 }
 
 function normalizeParticipants(
-  participants: ChannelConfig['participants'] | undefined,
-): ChannelConfig['participants'] | undefined {
+  participants: WarRoomChannel['participants'] | undefined,
+): WarRoomChannel['participants'] | undefined {
   if (participants === undefined) return undefined;
 
   const seen = new Set<string>();
@@ -101,7 +102,7 @@ interface EnsureChannelLabelOptions {
 
 function ensureChannelLabel(
   workspaceRootPath: string,
-  channel: Pick<ChannelConfig, 'name' | 'labelId' | 'color'>,
+  channel: Pick<WarRoomChannel, 'name' | 'labelId' | 'color'>,
   options: EnsureChannelLabelOptions = {},
 ): void {
   if (!SLUG_PATTERN.test(channel.labelId) || channel.labelId.includes('::')) {
@@ -134,18 +135,18 @@ function ensureChannelLabel(
   saveLabelConfig(workspaceRootPath, labelConfig);
 }
 
-export function createChannel(workspaceRootPath: string, input: CreateChannelInput): ChannelConfig {
+export function createChannel(workspaceRootPath: string, input: CreateWarRoomChannelInput): WarRoomChannel {
   assertValidChannelName(input.name);
 
   const config = loadChannelsConfig(workspaceRootPath);
   assertUniqueChannelName(input.name, config);
-  const channelIds = new Set(config.channels.map(channel => channel.id));
+  const channelIds = new Set<string>(config.channels.map(channel => channel.id));
   const labelIds = collectAllIds(loadLabelConfig(workspaceRootPath).labels);
-  const id = uniqueSlug(slugify(input.name), channelIds);
+  const id = warRoomChannelId(uniqueSlug(slugify(input.name), channelIds));
   const labelId = uniqueSlug(`channel-${id}`, labelIds);
   const participants = normalizeParticipants(input.participants);
 
-  const channel: ChannelConfig = {
+  const channel: WarRoomChannel = {
     id,
     name: input.name.trim(),
     labelId,
@@ -167,8 +168,8 @@ export function createChannel(workspaceRootPath: string, input: CreateChannelInp
 export function updateChannel(
   workspaceRootPath: string,
   channelId: string,
-  updates: UpdateChannelInput,
-): ChannelConfig {
+  updates: UpdateWarRoomChannelInput,
+): WarRoomChannel {
   const config = loadChannelsConfig(workspaceRootPath);
   const channel = config.channels.find(item => item.id === channelId);
   if (!channel) throw new Error(`Channel '${channelId}' not found`);

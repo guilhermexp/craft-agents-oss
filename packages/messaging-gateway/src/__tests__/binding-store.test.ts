@@ -2,7 +2,7 @@
  * BindingStore tests
  *
  * Covers:
- *   - bind / findByChannel / findBySession / getAll roundtrip
+ *   - bind / findByMessagingChannel / findBySession / getAll roundtrip
  *   - one-channel-one-session invariant (second bind evicts first)
  *   - unbind and unbindSession counts
  *   - change listener fires on mutation
@@ -35,13 +35,13 @@ describe('BindingStore', () => {
 
     expect(b.sessionId).toBe('session-A')
     expect(b.platform).toBe('telegram')
-    expect(b.channelId).toBe('chat-1')
+    expect(b.messagingChannelId).toBe('chat-1')
     expect(b.channelName).toBe('Alice')
     expect(b.enabled).toBe(true)
 
-    const hit = store.findByChannel('telegram', 'chat-1')
+    const hit = store.findByMessagingChannel('telegram', 'chat-1')
     expect(hit?.sessionId).toBe('session-A')
-    expect(store.findByChannel('telegram', 'unknown')).toBeUndefined()
+    expect(store.findByMessagingChannel('telegram', 'unknown')).toBeUndefined()
   })
 
   it('evicts prior binding when same channel binds again', () => {
@@ -49,7 +49,7 @@ describe('BindingStore', () => {
     store.bind('ws1', 'sess-1', 'telegram', 'chat-1')
     store.bind('ws1', 'sess-2', 'telegram', 'chat-1')
 
-    const hit = store.findByChannel('telegram', 'chat-1')
+    const hit = store.findByMessagingChannel('telegram', 'chat-1')
     expect(hit?.sessionId).toBe('sess-2')
     expect(store.getAll()).toHaveLength(1)
   })
@@ -94,15 +94,15 @@ describe('BindingStore', () => {
     const b = store.bind('ws1', 'sess', 'whatsapp', 'c2')
 
     expect(store.unbindById(a.id)).toBe(true)
-    expect(store.findByChannel('telegram', 'c1')).toBeUndefined()
-    expect(store.findByChannel('whatsapp', 'c2')?.id).toBe(b.id)
+    expect(store.findByMessagingChannel('telegram', 'c1')).toBeUndefined()
+    expect(store.findByMessagingChannel('whatsapp', 'c2')?.id).toBe(b.id)
     expect(store.unbindById(a.id)).toBe(false)
   })
 
   it('forces WhatsApp bindings to use desktop-only approvals', () => {
     const store = new BindingStore(dir)
     const binding = store.bind('ws1', 'sess', 'whatsapp', 'c2')
-    expect(binding.config.approvalChannel).toBe('app')
+    expect(binding.config.approvalSurface).toBe('app')
   })
 
   it('fires change listener after mutation', () => {
@@ -121,7 +121,7 @@ describe('BindingStore', () => {
     a.bind('ws1', 'sess', 'telegram', 'c1', 'name')
 
     const b = new BindingStore(dir)
-    const hit = b.findByChannel('telegram', 'c1')
+    const hit = b.findByMessagingChannel('telegram', 'c1')
     expect(hit?.channelName).toBe('name')
   })
 
@@ -133,7 +133,7 @@ describe('BindingStore', () => {
         workspaceId: 'ws1',
         sessionId: 'sess',
         platform: 'telegram',
-        channelId: 'c1',
+        messagingChannelId: 'c1',
         enabled: true,
         createdAt: 1,
         config: {},
@@ -142,7 +142,7 @@ describe('BindingStore', () => {
     writeFileSync(legacyFile, JSON.stringify(sample))
 
     const store = new BindingStore(dir, legacyDir)
-    expect(store.findByChannel('telegram', 'c1')?.id).toBe('legacy-1')
+    expect(store.findByMessagingChannel('telegram', 'c1')?.id).toBe('legacy-1')
     expect(existsSync(join(dir, 'bindings.json'))).toBe(true)
   })
 
@@ -157,7 +157,7 @@ describe('BindingStore', () => {
           workspaceId: 'ws1',
           sessionId: 'sess-new',
           platform: 'telegram',
-          channelId: 'c1',
+          messagingChannelId: 'c1',
           enabled: true,
           createdAt: 2,
           config: {},
@@ -173,7 +173,7 @@ describe('BindingStore', () => {
           workspaceId: 'ws1',
           sessionId: 'sess-legacy',
           platform: 'telegram',
-          channelId: 'c1',
+          messagingChannelId: 'c1',
           enabled: true,
           createdAt: 1,
           config: {},
@@ -182,7 +182,7 @@ describe('BindingStore', () => {
     )
 
     const store = new BindingStore(dir, legacyDir)
-    expect(store.findByChannel('telegram', 'c1')?.sessionId).toBe('sess-new')
+    expect(store.findByMessagingChannel('telegram', 'c1')?.sessionId).toBe('sess-new')
   })
 
   it('recovers from corrupt bindings.json as an empty store', () => {

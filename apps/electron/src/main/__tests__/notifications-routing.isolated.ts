@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
-import { RPC_CHANNELS } from '../../shared/types'
+import { RPC_NAMESPACES } from '../../shared/types'
 
 let clickHandler: (() => void) | null = null
 
@@ -70,7 +70,7 @@ describe('notification click routing', () => {
     clickHandler?.()
 
     expect(pushed.length).toBe(1)
-    expect(pushed[0]?.channel).toBe(RPC_CHANNELS.notification.NAVIGATE)
+    expect(pushed[0]?.channel).toBe(RPC_NAMESPACES.notification.NAVIGATE)
     expect(pushed[0]?.target).toEqual({ to: 'client', clientId: 'client-101' })
     expect(pushed[0]?.args[0]).toEqual({ workspaceId: 'ws-1', sessionId: 'sess-1' })
   })

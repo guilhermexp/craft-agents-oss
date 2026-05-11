@@ -171,14 +171,14 @@ describe('RPC', () => {
     expect(result.workspaceId).toBe('test-workspace')
   })
 
-  test('unknown channel returns CHANNEL_NOT_FOUND error', async () => {
+  test('unknown channel returns NAMESPACE_NOT_FOUND error', async () => {
     const { client } = await createPair()
 
     try {
       await client.invoke('nonexistent:channel')
       throw new Error('Should have thrown')
     } catch (err: any) {
-      expect(err.code).toBe('CHANNEL_NOT_FOUND')
+      expect(err.code).toBe('NAMESPACE_NOT_FOUND')
     }
   })
 

@@ -77,7 +77,7 @@ export type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderTy
 
 /**
  * Browser toolbar window IPC channels (preload <-> BrowserPaneManager).
- * Kept separate from RPC_CHANNELS because these are scoped to toolbar windows.
+ * Kept separate from RPC_NAMESPACES because these are scoped to toolbar windows.
  */
 export const BROWSER_TOOLBAR_CHANNELS = {
   NAVIGATE: 'browser-toolbar:navigate',
@@ -543,9 +543,9 @@ export interface ElectronAPI {
   onLabelsChanged(callback: (workspaceId: string) => void): () => void
 
   // Channels (workspace-scoped)
-  listChannels(workspaceId: string): Promise<import('@craft-agent/shared/channels').ChannelConfig[]>
-  createChannel(workspaceId: string, input: import('@craft-agent/shared/channels').CreateChannelInput): Promise<import('@craft-agent/shared/channels').ChannelConfig>
-  updateChannel(workspaceId: string, channelId: string, updates: import('@craft-agent/shared/channels').UpdateChannelInput): Promise<import('@craft-agent/shared/channels').ChannelConfig>
+  listChannels(workspaceId: string): Promise<import('@craft-agent/shared/channels').WarRoomChannel[]>
+  createChannel(workspaceId: string, input: import('@craft-agent/shared/channels').CreateWarRoomChannelInput): Promise<import('@craft-agent/shared/channels').WarRoomChannel>
+  updateChannel(workspaceId: string, channelId: string, updates: import('@craft-agent/shared/channels').UpdateWarRoomChannelInput): Promise<import('@craft-agent/shared/channels').WarRoomChannel>
   deleteChannel(workspaceId: string, channelId: string, options?: import('@craft-agent/shared/channels').DeleteChannelOptions): Promise<import('@craft-agent/shared/channels').DeleteChannelResult>
   listChannelMessages(workspaceId: string, channelId: string): Promise<import('@craft-agent/shared/channels').ChannelMessage[]>
   sendChannelMessage(workspaceId: string, input: {

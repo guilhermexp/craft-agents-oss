@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { loadSource, loadWorkspaceSources, getSourceCredentialManager } from '@craft-agent/shared/sources'
 import { createPendingFlow } from '@craft-agent/shared/auth'
@@ -7,10 +7,10 @@ import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
 export const HANDLED_CHANNELS = [
-  RPC_CHANNELS.oauth.START,
-  RPC_CHANNELS.oauth.COMPLETE,
-  RPC_CHANNELS.oauth.CANCEL,
-  RPC_CHANNELS.oauth.REVOKE,
+  RPC_NAMESPACES.oauth.START,
+  RPC_NAMESPACES.oauth.COMPLETE,
+  RPC_NAMESPACES.oauth.CANCEL,
+  RPC_NAMESPACES.oauth.REVOKE,
 ] as const
 
 /**
@@ -81,7 +81,7 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
   const credManager = getSourceCredentialManager()
 
   // ── oauth:start ──────────────────────────────────────────────
-  server.handle(RPC_CHANNELS.oauth.START, async (ctx, args: {
+  server.handle(RPC_NAMESPACES.oauth.START, async (ctx, args: {
     sourceSlug: string
     callbackPort?: number
     callbackUrl?: string
@@ -129,7 +129,7 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
   })
 
   // ── oauth:complete ───────────────────────────────────────────
-  server.handle(RPC_CHANNELS.oauth.COMPLETE, async (ctx, args: {
+  server.handle(RPC_NAMESPACES.oauth.COMPLETE, async (ctx, args: {
     flowId: string
     code: string
     state: string
@@ -150,7 +150,7 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
       pushSourcesChanged: (workspaceId) => {
         const ws = getWorkspaceByNameOrId(workspaceId)
         const sources = ws ? loadWorkspaceSources(ws.rootPath) : []
-        pushTyped(server, RPC_CHANNELS.sources.CHANGED, { to: 'workspace', workspaceId }, workspaceId, sources)
+        pushTyped(server, RPC_NAMESPACES.sources.CHANGED, { to: 'workspace', workspaceId }, workspaceId, sources)
       },
       logger: log,
       clientId: ctx.clientId,
@@ -159,7 +159,7 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
   })
 
   // ── oauth:cancel ─────────────────────────────────────────────
-  server.handle(RPC_CHANNELS.oauth.CANCEL, async (ctx, args: {
+  server.handle(RPC_NAMESPACES.oauth.CANCEL, async (ctx, args: {
     flowId: string
     state: string
   }) => {
@@ -172,7 +172,7 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
   })
 
   // ── oauth:revoke ─────────────────────────────────────────────
-  server.handle(RPC_CHANNELS.oauth.REVOKE, async (ctx, args: {
+  server.handle(RPC_NAMESPACES.oauth.REVOKE, async (ctx, args: {
     sourceSlug: string
   }) => {
     const { sourceSlug } = args
@@ -196,7 +196,7 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
 
     // Push source status update
     const revokeSources = loadWorkspaceSources(workspace.rootPath)
-    pushTyped(server, RPC_CHANNELS.sources.CHANGED, { to: 'workspace', workspaceId: ctx.workspaceId }, ctx.workspaceId, revokeSources)
+    pushTyped(server, RPC_NAMESPACES.sources.CHANGED, { to: 'workspace', workspaceId: ctx.workspaceId }, ctx.workspaceId, revokeSources)
 
     log.info(`[OAuth] Revoked credentials for ${sourceSlug}`)
     return { success: true }

@@ -12,7 +12,7 @@ import type {
   ToolResult,
   SourceConfig,
   GoogleService,
-  SlackService,
+  SlackServiceScope,
   MicrosoftService,
   McpSourceConfig,
 } from './types.ts';
@@ -217,7 +217,7 @@ export interface SessionToolContext {
   /**
    * Infer Slack service from URL.
    */
-  inferSlackService?(url?: string): SlackService | undefined;
+  inferSlackService?(url?: string): SlackServiceScope | undefined;
 
   /**
    * Infer Microsoft service from URL.
@@ -383,7 +383,7 @@ export interface SessionToolContext {
   /** Get messaging bindings for a session. Injected by backend when messaging is configured. */
   getMessagingBindings?(sessionId: string): Array<{
     platform: string;
-    channelId: string;
+    messagingChannelId: string;
     channelName?: string;
     enabled: boolean;
   }>;

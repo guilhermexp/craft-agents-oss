@@ -226,7 +226,7 @@ describe('isOAuthSource', () => {
   describe('Local sources', () => {
     test('returns false for local filesystem source', () => {
       const source = createMockSource({
-        type: 'local',
+        type: 'filesystem',
         provider: 'filesystem',
         local: {
           path: '/Users/test/documents',

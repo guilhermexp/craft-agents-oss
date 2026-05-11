@@ -393,7 +393,7 @@ async function testConnection(
     success = result.success;
     hasError = result.hasError;
     error = result.error;
-  } else if (source.type === 'local') {
+  } else if (source.type === 'filesystem') {
     const result = testLocalConnection(ctx, source);
     lines.push(...result.lines);
     success = result.success;

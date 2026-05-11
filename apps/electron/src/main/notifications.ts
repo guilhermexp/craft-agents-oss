@@ -11,7 +11,7 @@ import { Notification, app, BrowserWindow, nativeImage } from 'electron'
 import { join } from 'path'
 import { readFileSync } from 'fs'
 import { mainLog } from './logger'
-import { RPC_CHANNELS } from '../shared/types'
+import { RPC_NAMESPACES } from '../shared/types'
 import type { WindowManager } from './window-manager'
 import type { EventSink } from '@craft-agent/server-core/transport'
 
@@ -110,12 +110,12 @@ function handleNotificationClick(workspaceId: string, sessionId: string): void {
     if (eventSink) {
       const clientId = clientResolver?.(window.webContents.id)
       if (clientId) {
-        eventSink(RPC_CHANNELS.notification.NAVIGATE, { to: 'client', clientId }, {
+        eventSink(RPC_NAMESPACES.notification.NAVIGATE, { to: 'client', clientId }, {
           workspaceId,
           sessionId,
         })
       } else {
-        eventSink(RPC_CHANNELS.notification.NAVIGATE, { to: 'workspace', workspaceId }, {
+        eventSink(RPC_NAMESPACES.notification.NAVIGATE, { to: 'workspace', workspaceId }, {
           workspaceId,
           sessionId,
         })
@@ -174,7 +174,7 @@ function updateBadgeCountMacOS(count: number): void {
     if (count > 0) {
       // Draw badge onto icon using the renderer process (Canvas API)
       if (eventSink && baseIconDataUrl) {
-        eventSink(RPC_CHANNELS.badge.DRAW, { to: 'all' }, { count, iconDataUrl: baseIconDataUrl })
+        eventSink(RPC_NAMESPACES.badge.DRAW, { to: 'all' }, { count, iconDataUrl: baseIconDataUrl })
       }
     } else {
       // Reset to original icon (no badge)
@@ -197,7 +197,7 @@ function updateBadgeCountWindows(count: number): void {
     if (count > 0) {
       // Draw overlay icon using the renderer process (Canvas API)
       if (eventSink) {
-        eventSink(RPC_CHANNELS.badge.DRAW_WINDOWS, { to: 'all' }, { count })
+        eventSink(RPC_NAMESPACES.badge.DRAW_WINDOWS, { to: 'all' }, { count })
       }
     } else {
       // Clear the overlay on all windows

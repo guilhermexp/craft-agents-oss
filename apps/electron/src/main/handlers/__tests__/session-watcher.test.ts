@@ -14,7 +14,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import type { RpcServer, RequestContext } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
-import { RPC_CHANNELS } from '../../../shared/types'
+import { RPC_NAMESPACES } from '../../../shared/types'
 
 // ---------------------------------------------------------------------------
 // Electron mock (needed by transitive imports)
@@ -111,8 +111,8 @@ describe('session file watcher isolation', () => {
     const { registerSessionsHandlers, cleanupSessionFileWatchForClient } = await import('@craft-agent/server-core/handlers/rpc')
     registerSessionsHandlers(server, deps)
 
-    const watchHandler = handlers.get(RPC_CHANNELS.sessions.WATCH_FILES)!
-    const unwatchHandler = handlers.get(RPC_CHANNELS.sessions.UNWATCH_FILES)!
+    const watchHandler = handlers.get(RPC_NAMESPACES.sessions.WATCH_FILES)!
+    const unwatchHandler = handlers.get(RPC_NAMESPACES.sessions.UNWATCH_FILES)!
 
     // Client A watches session s1, Client B watches session s2
     await watchHandler(makeCtx('client-a'), 's1')
@@ -131,7 +131,7 @@ describe('session file watcher isolation', () => {
     expect(clientBPushes.length).toBe(0)
 
     // Verify push target is client-specific, not broadcast
-    expect(clientAPushes[0].channel).toBe(RPC_CHANNELS.sessions.FILES_CHANGED)
+    expect(clientAPushes[0].channel).toBe(RPC_NAMESPACES.sessions.FILES_CHANGED)
     expect(clientAPushes[0].target).toEqual({ to: 'client', clientId: 'client-a' })
 
     // Unwatch client A — should not affect client B
@@ -164,7 +164,7 @@ describe('session file watcher isolation', () => {
     const { registerSessionsHandlers, cleanupSessionFileWatchForClient } = await import('@craft-agent/server-core/handlers/rpc')
     registerSessionsHandlers(server, deps)
 
-    const watchHandler = handlers.get(RPC_CHANNELS.sessions.WATCH_FILES)!
+    const watchHandler = handlers.get(RPC_NAMESPACES.sessions.WATCH_FILES)!
 
     // Client A watches s1
     await watchHandler(makeCtx('client-a'), 's1')
@@ -177,7 +177,7 @@ describe('session file watcher isolation', () => {
     await new Promise(r => setTimeout(r, 300))
 
     const s1Pushes = pushCalls.filter(p =>
-      p.args[0] === 's1' && p.channel === RPC_CHANNELS.sessions.FILES_CHANGED
+      p.args[0] === 's1' && p.channel === RPC_NAMESPACES.sessions.FILES_CHANGED
     )
     expect(s1Pushes.length).toBe(0)
 
@@ -186,7 +186,7 @@ describe('session file watcher isolation', () => {
     await new Promise(r => setTimeout(r, 300))
 
     const s2Pushes = pushCalls.filter(p =>
-      p.args[0] === 's2' && p.channel === RPC_CHANNELS.sessions.FILES_CHANGED
+      p.args[0] === 's2' && p.channel === RPC_NAMESPACES.sessions.FILES_CHANGED
     )
     expect(s2Pushes.length).toBeGreaterThanOrEqual(1)
 
@@ -201,7 +201,7 @@ describe('session file watcher isolation', () => {
     const { registerSessionsHandlers, cleanupSessionFileWatchForClient } = await import('@craft-agent/server-core/handlers/rpc')
     registerSessionsHandlers(server, deps)
 
-    const watchHandler = handlers.get(RPC_CHANNELS.sessions.WATCH_FILES)!
+    const watchHandler = handlers.get(RPC_NAMESPACES.sessions.WATCH_FILES)!
     await watchHandler(makeCtx('client-a'), 's1')
 
     // Write internal files — should be ignored

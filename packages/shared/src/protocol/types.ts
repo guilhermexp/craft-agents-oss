@@ -4,9 +4,17 @@
  * Shared between server (main process / headless) and client (renderer / Node).
  */
 
+import type { Opaque } from '../opaque.ts'
+
 // ---------------------------------------------------------------------------
 // Message envelope
 // ---------------------------------------------------------------------------
+
+export type RpcNamespace = Opaque<string, 'RpcNamespace'>
+
+export function rpcNamespace(value: string): RpcNamespace {
+  return value as RpcNamespace
+}
 
 export type MessageType =
   | 'handshake'
@@ -22,7 +30,7 @@ export interface MessageEnvelope {
   id: string
   type: MessageType
   /** Required for request / response / event / error. */
-  channel?: string
+  rpcNamespace?: RpcNamespace
   /** Request args or event payload. */
   args?: unknown[]
   /** Response payload. */
@@ -43,8 +51,8 @@ export interface MessageEnvelope {
   webContentsId?: number
   /** Client capabilities advertised on handshake. */
   clientCapabilities?: string[]
-  /** Server-registered channels, sent in handshake_ack. Clients use this to avoid calling unavailable channels. */
-  registeredChannels?: string[]
+  /** Server-registered namespaces, sent in handshake_ack. Clients use this to avoid calling unavailable namespaces. */
+  registeredNamespaces?: RpcNamespace[]
 
   // -- Reliable delivery fields --
 
@@ -74,7 +82,7 @@ export interface WireError {
 
 export type ErrorCode =
   | 'HANDLER_ERROR'
-  | 'CHANNEL_NOT_FOUND'
+  | 'NAMESPACE_NOT_FOUND'
   | 'AUTH_FAILED'
   | 'PROTOCOL_VERSION_UNSUPPORTED'
   | 'SESSION_NOT_IDLE'

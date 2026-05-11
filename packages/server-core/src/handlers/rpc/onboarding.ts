@@ -8,7 +8,7 @@ import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { setSetupDeferred } from '@craft-agent/shared/config'
 import { prepareClaudeOAuth, exchangeClaudeCode, hasValidOAuthState, clearOAuthState, prepareMcpOAuth } from '@craft-agent/shared/auth'
 import { validateMcpConnection } from '@craft-agent/shared/mcp'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -17,21 +17,21 @@ import type { HandlerDeps } from '../handler-deps'
 // ============================================
 
 export const HANDLED_CHANNELS = [
-  RPC_CHANNELS.onboarding.GET_AUTH_STATE,
-  RPC_CHANNELS.onboarding.VALIDATE_MCP,
-  RPC_CHANNELS.onboarding.START_MCP_OAUTH,
-  RPC_CHANNELS.onboarding.START_CLAUDE_OAUTH,
-  RPC_CHANNELS.onboarding.EXCHANGE_CLAUDE_CODE,
-  RPC_CHANNELS.onboarding.HAS_CLAUDE_OAUTH_STATE,
-  RPC_CHANNELS.onboarding.CLEAR_CLAUDE_OAUTH_STATE,
-  RPC_CHANNELS.onboarding.DEFER_SETUP,
+  RPC_NAMESPACES.onboarding.GET_AUTH_STATE,
+  RPC_NAMESPACES.onboarding.VALIDATE_MCP,
+  RPC_NAMESPACES.onboarding.START_MCP_OAUTH,
+  RPC_NAMESPACES.onboarding.START_CLAUDE_OAUTH,
+  RPC_NAMESPACES.onboarding.EXCHANGE_CLAUDE_CODE,
+  RPC_NAMESPACES.onboarding.HAS_CLAUDE_OAUTH_STATE,
+  RPC_NAMESPACES.onboarding.CLEAR_CLAUDE_OAUTH_STATE,
+  RPC_NAMESPACES.onboarding.DEFER_SETUP,
 ] as const
 
 export function registerOnboardingHandlers(server: RpcServer, deps: HandlerDeps): void {
   const log = deps.platform.logger
 
   // Get current auth state
-  server.handle(RPC_CHANNELS.onboarding.GET_AUTH_STATE, async () => {
+  server.handle(RPC_NAMESPACES.onboarding.GET_AUTH_STATE, async () => {
     const authState = await getAuthState()
     const setupNeeds = getSetupNeeds(authState)
     // Redact raw credentials — renderer only needs boolean flags (hasCredentials, setupNeeds)
@@ -49,7 +49,7 @@ export function registerOnboardingHandlers(server: RpcServer, deps: HandlerDeps)
   })
 
   // Validate MCP connection
-  server.handle(RPC_CHANNELS.onboarding.VALIDATE_MCP, async (_ctx, mcpUrl: string, accessToken?: string) => {
+  server.handle(RPC_NAMESPACES.onboarding.VALIDATE_MCP, async (_ctx, mcpUrl: string, accessToken?: string) => {
     try {
       const result = await validateMcpConnection({
         mcpUrl,
@@ -66,7 +66,7 @@ export function registerOnboardingHandlers(server: RpcServer, deps: HandlerDeps)
   // Returns authUrl for the client to open locally.
   // NOTE: Currently unused in renderer. If re-enabled, needs client-side
   // orchestration (callback server + browser open) like performOAuth().
-  server.handle(RPC_CHANNELS.onboarding.START_MCP_OAUTH, async (_ctx, mcpUrl: string, callbackPort?: number) => {
+  server.handle(RPC_NAMESPACES.onboarding.START_MCP_OAUTH, async (_ctx, mcpUrl: string, callbackPort?: number) => {
     log.info('[Onboarding:Main] ONBOARDING_START_MCP_OAUTH received')
     try {
       if (!callbackPort) {
@@ -93,7 +93,7 @@ export function registerOnboardingHandlers(server: RpcServer, deps: HandlerDeps)
 
   // Prepare Claude OAuth flow (server-side only — no browser open).
   // Returns authUrl for the client to open locally via shell.openExternal.
-  server.handle(RPC_CHANNELS.onboarding.START_CLAUDE_OAUTH, async () => {
+  server.handle(RPC_NAMESPACES.onboarding.START_CLAUDE_OAUTH, async () => {
     try {
       log.info('[Onboarding] Preparing Claude OAuth flow...')
 
@@ -109,7 +109,7 @@ export function registerOnboardingHandlers(server: RpcServer, deps: HandlerDeps)
   })
 
   // Exchange authorization code for tokens
-  server.handle(RPC_CHANNELS.onboarding.EXCHANGE_CLAUDE_CODE, async (_ctx, authorizationCode: string, connectionSlug: string) => {
+  server.handle(RPC_NAMESPACES.onboarding.EXCHANGE_CLAUDE_CODE, async (_ctx, authorizationCode: string, connectionSlug: string) => {
     try {
       log.info(`[Onboarding] Exchanging Claude authorization code for connection: ${connectionSlug}`)
 
@@ -151,18 +151,18 @@ export function registerOnboardingHandlers(server: RpcServer, deps: HandlerDeps)
   })
 
   // Check if there's a valid OAuth state in progress
-  server.handle(RPC_CHANNELS.onboarding.HAS_CLAUDE_OAUTH_STATE, async () => {
+  server.handle(RPC_NAMESPACES.onboarding.HAS_CLAUDE_OAUTH_STATE, async () => {
     return hasValidOAuthState()
   })
 
   // Clear OAuth state (for cancel/reset)
-  server.handle(RPC_CHANNELS.onboarding.CLEAR_CLAUDE_OAUTH_STATE, async () => {
+  server.handle(RPC_NAMESPACES.onboarding.CLEAR_CLAUDE_OAUTH_STATE, async () => {
     clearOAuthState()
     return { success: true }
   })
 
   // User chose "Setup later" — persist so onboarding doesn't re-show on next launch
-  server.handle(RPC_CHANNELS.onboarding.DEFER_SETUP, async () => {
+  server.handle(RPC_NAMESPACES.onboarding.DEFER_SETUP, async () => {
     setSetupDeferred(true)
     log?.info('[Onboarding] User deferred setup')
     return { success: true }

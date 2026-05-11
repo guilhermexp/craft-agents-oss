@@ -29,7 +29,7 @@ export type {
   SentMessage,
   InlineButton,
   ButtonPress,
-  ChannelBinding,
+  ExternalMessagingChannelBinding,
   BindingConfig,
   MessagingConfig,
   MessagingLogger,

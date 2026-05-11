@@ -42,20 +42,20 @@ class FakeAdapter implements PlatformAdapter {
   onMessage(_handler: (msg: IncomingMessage) => Promise<void>): void {}
   onButtonPress(_handler: (press: ButtonPress) => Promise<void>): void {}
 
-  async sendText(channelId: string, _text: string): Promise<SentMessage> {
-    return { platform: this.platform, channelId, messageId: 'fake-message' }
+  async sendText(messagingChannelId: string, _text: string): Promise<SentMessage> {
+    return { platform: this.platform, messagingChannelId, messageId: 'fake-message' }
   }
 
   async editMessage(_channelId: string, _messageId: string, _text: string): Promise<void> {}
 
-  async sendButtons(channelId: string): Promise<SentMessage> {
-    return { platform: this.platform, channelId, messageId: 'fake-buttons' }
+  async sendButtons(messagingChannelId: string): Promise<SentMessage> {
+    return { platform: this.platform, messagingChannelId, messageId: 'fake-buttons' }
   }
 
   async sendTyping(_channelId: string): Promise<void> {}
 
-  async sendFile(channelId: string): Promise<SentMessage> {
-    return { platform: this.platform, channelId, messageId: 'fake-file' }
+  async sendFile(messagingChannelId: string): Promise<SentMessage> {
+    return { platform: this.platform, messagingChannelId, messageId: 'fake-file' }
   }
 }
 

@@ -833,7 +833,7 @@ function ActiveTasksBarContext({ tasks = sampleBackgroundTasks }: ActiveTasksBar
           permissionMode={permissionMode}
           onPermissionModeChange={setPermissionMode}
           sources={mockSources}
-          enabledSourceSlugs={['github-api', 'local-files']}
+          enabledSourceSlugs={['github-api', 'filesystem-files']}
           workingDirectory="/Users/demo/projects/craft-agent"
           sessionId="playground-session"
           onSubmit={mockInputCallbacks.onSubmit}
@@ -936,7 +936,7 @@ function PermissionInputToggle({ autoToggle = false, autoToggleInterval = 3000, 
         permissionMode={permissionMode}
         onPermissionModeChange={setPermissionMode}
         sources={mockSources}
-        enabledSourceSlugs={['github-api', 'local-files']}
+        enabledSourceSlugs={['github-api', 'filesystem-files']}
         workingDirectory="/Users/demo/projects/craft-agent"
         sessionId="playground-session"
         structuredInput={structuredInput}

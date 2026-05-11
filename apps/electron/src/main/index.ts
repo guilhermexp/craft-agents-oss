@@ -69,7 +69,7 @@ Sentry.setUser({ id: machineId })
 
 import { join, delimiter } from 'path'
 import { existsSync, readFileSync } from 'fs'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@craft-agent/server-core/sessions'
 import { registerAllRpcHandlers } from './handlers/index'
 import { publishHermesRuntimeEnv } from './handlers/hermes-runtime'
@@ -940,12 +940,12 @@ app.whenReady().then(async () => {
         enabled: serverModeEnabled,
       }
 
-      instance.wsServer.handle(RPC_CHANNELS.settings.GET_SERVER_CONFIG, async () => {
+      instance.wsServer.handle(RPC_NAMESPACES.settings.GET_SERVER_CONFIG, async () => {
         const { getServerConfig: getConfig } = await import('@craft-agent/shared/config')
         return getConfig()
       })
 
-      instance.wsServer.handle(RPC_CHANNELS.settings.SET_SERVER_CONFIG, async (_ctx: unknown, config: unknown) => {
+      instance.wsServer.handle(RPC_NAMESPACES.settings.SET_SERVER_CONFIG, async (_ctx: unknown, config: unknown) => {
         const { setServerConfig: setConfig } = await import('@craft-agent/shared/config')
         const cfg = config as import('@craft-agent/shared/config/server-config').ServerConfig
         // Validate port range
@@ -962,7 +962,7 @@ app.whenReady().then(async () => {
         setConfig(cfg)
       })
 
-      instance.wsServer.handle(RPC_CHANNELS.settings.GET_SERVER_STATUS, async () => {
+      instance.wsServer.handle(RPC_NAMESPACES.settings.GET_SERVER_STATUS, async () => {
         const { getServerConfig: getConfig } = await import('@craft-agent/shared/config')
         const saved = getConfig()
         const protocol = runningServerState.tls ? 'wss' : 'ws'

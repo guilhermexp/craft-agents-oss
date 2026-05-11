@@ -70,7 +70,7 @@ export function loadSourceConfig(
     const config = readJsonFileSync<FolderSourceConfig>(configPath);
 
     // Expand path variables in local source paths for portability
-    if (config.type === 'local' && config.local?.path) {
+    if (config.type === 'filesystem' && config.local?.path) {
       config.local.path = expandPath(config.local.path);
     }
 
@@ -128,7 +128,7 @@ export function saveSourceConfig(
 
   // Convert local source paths to portable form
   const storageConfig: FolderSourceConfig = { ...config, updatedAt: Date.now() };
-  if (storageConfig.type === 'local' && storageConfig.local?.path) {
+  if (storageConfig.type === 'filesystem' && storageConfig.local?.path) {
     storageConfig.local = {
       ...storageConfig.local,
       path: toPortablePath(storageConfig.local.path),
@@ -492,7 +492,7 @@ export async function createSource(
         config.api = input.api;
       }
       break;
-    case 'local':
+    case 'filesystem':
       if (input.local) {
         config.local = input.local;
       }

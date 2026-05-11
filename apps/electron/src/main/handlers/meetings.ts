@@ -1,15 +1,15 @@
-import { RPC_CHANNELS, type MeetingStartInput } from '../../shared/types'
+import { RPC_NAMESPACES, type MeetingStartInput } from '../../shared/types'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
 import { MeetingService } from '../meetings/meeting-service'
 import { ipcMain } from 'electron'
 
 export const HANDLED_CHANNELS = [
-  RPC_CHANNELS.meetings.START,
-  RPC_CHANNELS.meetings.LIST,
-  RPC_CHANNELS.meetings.STATUS,
-  RPC_CHANNELS.meetings.STOP,
-  RPC_CHANNELS.meetings.TRANSCRIPT,
+  RPC_NAMESPACES.meetings.START,
+  RPC_NAMESPACES.meetings.LIST,
+  RPC_NAMESPACES.meetings.STATUS,
+  RPC_NAMESPACES.meetings.STOP,
+  RPC_NAMESPACES.meetings.TRANSCRIPT,
 ] as const
 
 let meetingService: MeetingService | null = null
@@ -23,7 +23,7 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
 
   if (!meetingsIpcRegistered) {
     meetingsIpcRegistered = true
-    ipcMain.handle(RPC_CHANNELS.meetings.START, async (_event, input: string | MeetingStartInput) => {
+    ipcMain.handle(RPC_NAMESPACES.meetings.START, async (_event, input: string | MeetingStartInput) => {
       try {
         return await meetingService!.start(input)
       } catch (err) {
@@ -33,7 +33,7 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
     })
   }
 
-  server.handle(RPC_CHANNELS.meetings.START, async (_ctx, input: string | MeetingStartInput) => {
+  server.handle(RPC_NAMESPACES.meetings.START, async (_ctx, input: string | MeetingStartInput) => {
     try {
       return await meetingService!.start(input)
     } catch (err) {
@@ -42,15 +42,15 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
-  server.handle(RPC_CHANNELS.meetings.LIST, () => {
+  server.handle(RPC_NAMESPACES.meetings.LIST, () => {
     return meetingService!.list()
   })
 
-  server.handle(RPC_CHANNELS.meetings.STATUS, (_ctx, id: string) => {
+  server.handle(RPC_NAMESPACES.meetings.STATUS, (_ctx, id: string) => {
     return meetingService!.status(id)
   })
 
-  server.handle(RPC_CHANNELS.meetings.STOP, (_ctx, id: string) => {
+  server.handle(RPC_NAMESPACES.meetings.STOP, (_ctx, id: string) => {
     try {
       return meetingService!.stop(id)
     } catch (err) {
@@ -59,7 +59,7 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
-  server.handle(RPC_CHANNELS.meetings.TRANSCRIPT, (_ctx, id: string) => {
+  server.handle(RPC_NAMESPACES.meetings.TRANSCRIPT, (_ctx, id: string) => {
     try {
       return meetingService!.transcript(id)
     } catch (err) {

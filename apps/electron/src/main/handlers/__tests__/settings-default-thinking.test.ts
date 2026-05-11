@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
-import { RPC_CHANNELS } from '../../../shared/types'
+import { RPC_NAMESPACES } from '../../../shared/types'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -71,7 +71,7 @@ describe('settings default thinking RPC handlers', () => {
   })
 
   it('returns persisted default thinking level', async () => {
-    const getHandler = handlers.get(RPC_CHANNELS.settings.GET_DEFAULT_THINKING_LEVEL)
+    const getHandler = handlers.get(RPC_NAMESPACES.settings.GET_DEFAULT_THINKING_LEVEL)
     expect(getHandler).toBeTruthy()
 
     const result = await getHandler!({ clientId: 'client-1' })
@@ -80,7 +80,7 @@ describe('settings default thinking RPC handlers', () => {
   })
 
   it('persists valid thinking level values', async () => {
-    const setHandler = handlers.get(RPC_CHANNELS.settings.SET_DEFAULT_THINKING_LEVEL)
+    const setHandler = handlers.get(RPC_NAMESPACES.settings.SET_DEFAULT_THINKING_LEVEL)
     expect(setHandler).toBeTruthy()
 
     const result = await setHandler!({ clientId: 'client-1' }, 'max')
@@ -90,7 +90,7 @@ describe('settings default thinking RPC handlers', () => {
   })
 
   it('rejects invalid thinking level values before persistence', async () => {
-    const setHandler = handlers.get(RPC_CHANNELS.settings.SET_DEFAULT_THINKING_LEVEL)
+    const setHandler = handlers.get(RPC_NAMESPACES.settings.SET_DEFAULT_THINKING_LEVEL)
     expect(setHandler).toBeTruthy()
 
     await expect(setHandler!({ clientId: 'client-1' }, 'ultra')).rejects.toThrow('Invalid thinking level')

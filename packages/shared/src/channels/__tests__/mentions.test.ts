@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { resolveChannelMentions } from '../mentions.ts';
-import type { ChannelParticipant } from '../types.ts';
+import type { WarRoomParticipant } from '../types.ts';
 
-const participants: ChannelParticipant[] = [
+const participants: WarRoomParticipant[] = [
   { id: 'hermes-lead', displayName: 'Hermes Lead', llmConnection: 'hermes' },
   { id: 'claudio', displayName: 'Claudio', llmConnection: 'anthropic-main' },
   { id: 'pi-reviewer', displayName: 'Pi Reviewer', llmConnection: 'pi-copilot' },

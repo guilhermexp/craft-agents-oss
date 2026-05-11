@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { createChannelOrchestrator, type ChannelAgentRuntime } from './channel-orchestrator.ts';
-import type { ChannelConfig } from '@craft-agent/shared/channels';
+import type { WarRoomChannel } from '@craft-agent/shared/channels';
 
 function createRuntime(): ChannelAgentRuntime & {
   created: Array<Parameters<ChannelAgentRuntime['createSession']>[0]>;
@@ -23,7 +23,7 @@ function createRuntime(): ChannelAgentRuntime & {
   };
 }
 
-const channel: ChannelConfig = {
+const channel: WarRoomChannel = {
   id: 'architecture',
   name: 'Architecture',
   labelId: 'channel-architecture',

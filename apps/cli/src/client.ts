@@ -129,16 +129,16 @@ export class CliRpcClient {
   }
 
   /** Send an RPC request and await the response. */
-  async invoke(channel: string, ...args: unknown[]): Promise<unknown> {
+  async invoke(rpcNamespace: string, ...args: unknown[]): Promise<unknown> {
     if (!this._connected || !this.ws) {
-      throw new Error(`Not connected (channel: ${channel})`)
+      throw new Error(`Not connected (namespace: ${rpcNamespace})`)
     }
 
     return new Promise((resolve, reject) => {
       const id = crypto.randomUUID()
       const timeout = setTimeout(() => {
         this.pending.delete(id)
-        reject(new Error(`Request timeout: ${channel} (${this.requestTimeout}ms)`))
+        reject(new Error(`Request timeout: ${rpcNamespace} (${this.requestTimeout}ms)`))
       }, this.requestTimeout)
 
       this.pending.set(id, { resolve, reject, timeout })
@@ -146,25 +146,25 @@ export class CliRpcClient {
       const envelope: MessageEnvelope = {
         id,
         type: 'request',
-        channel,
+        rpcNamespace: rpcNamespace as MessageEnvelope['rpcNamespace'],
         args,
       }
       this.ws!.send(serializeEnvelope(envelope))
     })
   }
 
-  /** Subscribe to push events on a channel. Returns an unsubscribe function. */
-  on(channel: string, callback: (...args: unknown[]) => void): () => void {
-    let set = this.listeners.get(channel)
+  /** Subscribe to push events on a namespace. Returns an unsubscribe function. */
+  on(rpcNamespace: string, callback: (...args: unknown[]) => void): () => void {
+    let set = this.listeners.get(rpcNamespace)
     if (!set) {
       set = new Set()
-      this.listeners.set(channel, set)
+      this.listeners.set(rpcNamespace, set)
     }
     set.add(callback)
 
     return () => {
       set!.delete(callback)
-      if (set!.size === 0) this.listeners.delete(channel)
+      if (set!.size === 0) this.listeners.delete(rpcNamespace)
     }
   }
 
@@ -220,8 +220,8 @@ export class CliRpcClient {
       }
 
       case 'event': {
-        if (envelope.channel) {
-          const set = this.listeners.get(envelope.channel)
+        if (envelope.rpcNamespace) {
+          const set = this.listeners.get(envelope.rpcNamespace)
           if (set) {
             for (const cb of set) {
               try {

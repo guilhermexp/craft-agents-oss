@@ -4,12 +4,18 @@
  * Workspace-scoped bindings, platform adapter interface, runtime state, and
  * messaging-stack logging contracts.
  */
+import type { Opaque } from '@craft-agent/shared/opaque'
 
 // ---------------------------------------------------------------------------
 // Platform types
 // ---------------------------------------------------------------------------
 
 export type PlatformType = 'telegram' | 'whatsapp'
+export type MessagingChannelId = Opaque<string, 'MessagingChannelId'>
+
+export function messagingChannelId(value: string): MessagingChannelId {
+  return value as MessagingChannelId
+}
 
 // ---------------------------------------------------------------------------
 // Logger
@@ -20,7 +26,7 @@ export interface MessagingLogContext {
   workspaceId?: string
   sessionId?: string
   platform?: string
-  channelId?: string
+  messagingChannelId?: MessagingChannelId
   bindingId?: string
   event?: string
 }
@@ -80,7 +86,7 @@ export interface AdapterCapabilities {
 
 export interface IncomingMessage {
   platform: PlatformType
-  channelId: string
+  messagingChannelId: MessagingChannelId
   messageId: string
   senderId: string
   senderName?: string
@@ -109,7 +115,7 @@ export interface IncomingAttachment {
 
 export interface SentMessage {
   platform: PlatformType
-  channelId: string
+  messagingChannelId: MessagingChannelId
   messageId: string
 }
 
@@ -121,7 +127,7 @@ export interface InlineButton {
 
 export interface ButtonPress {
   platform: PlatformType
-  channelId: string
+  messagingChannelId: MessagingChannelId
   messageId: string
   senderId: string
   buttonId: string
@@ -152,11 +158,11 @@ export interface PlatformAdapter {
   onMessage(handler: (msg: IncomingMessage) => Promise<void>): void
   onButtonPress(handler: (press: ButtonPress) => Promise<void>): void
 
-  sendText(channelId: string, text: string): Promise<SentMessage>
-  editMessage(channelId: string, messageId: string, text: string): Promise<void>
-  sendButtons(channelId: string, text: string, buttons: InlineButton[]): Promise<SentMessage>
-  sendTyping(channelId: string): Promise<void>
-  sendFile(channelId: string, file: Buffer, filename: string, caption?: string): Promise<SentMessage>
+  sendText(messagingChannelId: MessagingChannelId, text: string): Promise<SentMessage>
+  editMessage(messagingChannelId: MessagingChannelId, messageId: string, text: string): Promise<void>
+  sendButtons(messagingChannelId: MessagingChannelId, text: string, buttons: InlineButton[]): Promise<SentMessage>
+  sendTyping(messagingChannelId: MessagingChannelId): Promise<void>
+  sendFile(messagingChannelId: MessagingChannelId, file: Buffer, filename: string, caption?: string): Promise<SentMessage>
 
   /**
    * Clear the inline keyboard on a previously-sent message. Optional because
@@ -164,7 +170,7 @@ export interface PlatformAdapter {
    * Errors are the caller's concern — most implementations should swallow
    * "message can't be edited" since it's non-fatal.
    */
-  clearButtons?(channelId: string, messageId: string): Promise<void>
+  clearButtons?(messagingChannelId: MessagingChannelId, messageId: string): Promise<void>
 
   /** Webhook handler for headless server (Telegram only). */
   handleWebhook?(request: Request): Promise<Response>
@@ -201,7 +207,7 @@ export interface BindingConfig {
   /** Show compact tool activity summaries. Default: false */
   showToolActivity: boolean
   /** WHERE approval happens (not WHETHER — session mode is authoritative). */
-  approvalChannel: 'chat' | 'app'
+  approvalSurface: 'chat' | 'app'
   /** Telegram edit interval in ms. ~3500ms stays under 20 edits/min. */
   editIntervalMs: number
 }
@@ -210,14 +216,14 @@ export const DEFAULT_BINDING_CONFIG: BindingConfig = {
   responseMode: 'progress',
   streamResponses: true,
   showToolActivity: false,
-  approvalChannel: 'chat',
+  approvalSurface: 'chat',
   editIntervalMs: 3500,
 }
 
 export function getDefaultBindingConfig(platform: PlatformType): BindingConfig {
   return {
     ...DEFAULT_BINDING_CONFIG,
-    approvalChannel: platform === 'whatsapp' ? 'app' : DEFAULT_BINDING_CONFIG.approvalChannel,
+    approvalSurface: platform === 'whatsapp' ? 'app' : DEFAULT_BINDING_CONFIG.approvalSurface,
   }
 }
 
@@ -234,16 +240,16 @@ export function normalizeBindingConfig(
     ...base,
     ...config,
     responseMode: resolvedResponseMode,
-    approvalChannel: platform === 'whatsapp' ? 'app' : (config?.approvalChannel ?? base.approvalChannel),
+    approvalSurface: platform === 'whatsapp' ? 'app' : (config?.approvalSurface ?? base.approvalSurface),
   }
 }
 
-export interface ChannelBinding {
+export interface ExternalMessagingChannelBinding {
   id: string
   workspaceId: string
   sessionId: string
   platform: PlatformType
-  channelId: string
+  messagingChannelId: MessagingChannelId
   channelName?: string
   enabled: boolean
   createdAt: number

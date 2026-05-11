@@ -37,7 +37,7 @@
 import type { BrowserWindow } from 'electron'
 import { mainLog } from './logger'
 import type { WindowManager } from './window-manager'
-import { RPC_CHANNELS } from '../shared/types'
+import { RPC_NAMESPACES } from '../shared/types'
 import type { EventSink } from '@craft-agent/server-core/transport'
 
 export interface DeepLinkTarget {
@@ -332,9 +332,9 @@ export async function handleDeepLink(
     const clientId = resolvedClientId ?? (!resolveClientId ? preferredClientId : undefined)
 
     if (sink && clientId) {
-      sink(RPC_CHANNELS.deeplink.NAVIGATE, { to: 'client', clientId }, navigation)
+      sink(RPC_NAMESPACES.deeplink.NAVIGATE, { to: 'client', clientId }, navigation)
     } else if (sink && wsId) {
-      sink(RPC_CHANNELS.deeplink.NAVIGATE, { to: 'workspace', workspaceId: wsId }, navigation)
+      sink(RPC_NAMESPACES.deeplink.NAVIGATE, { to: 'workspace', workspaceId: wsId }, navigation)
     }
   }
 

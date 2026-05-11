@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { RPC_CHANNELS, type BroadcastEventMap } from '../types'
+import { RPC_NAMESPACES, type BroadcastEventMap } from '../types'
 
 function flattenValues(obj: Record<string, unknown>): string[] {
   return Object.values(obj).flatMap(v =>
@@ -286,19 +286,19 @@ const EXPECTED_CHANNELS: string[] = [
 const EXPECTED_COUNT = EXPECTED_CHANNELS.length
 // End auto-generated
 
-describe('RPC_CHANNELS wire-format stability', () => {
+describe('RPC_NAMESPACES wire-format stability', () => {
   it(`contains exactly ${EXPECTED_COUNT} channel strings`, () => {
-    const actual = flattenValues(RPC_CHANNELS)
+    const actual = flattenValues(RPC_NAMESPACES)
     expect(actual.length).toBe(EXPECTED_COUNT)
   })
 
   it('preserves exact wire-format strings (sorted equality)', () => {
-    const actual = flattenValues(RPC_CHANNELS).sort()
+    const actual = flattenValues(RPC_NAMESPACES).sort()
     expect(actual).toEqual(EXPECTED_CHANNELS)
   })
 
   it('has no duplicate wire-format strings', () => {
-    const values = flattenValues(RPC_CHANNELS)
+    const values = flattenValues(RPC_NAMESPACES)
     const unique = new Set(values)
     expect(values.length).toBe(unique.size)
   })
@@ -312,13 +312,13 @@ type AssertTuple<T extends readonly unknown[], N extends number> =
 
 describe('BroadcastEventMap payload shapes', () => {
   it('sources:changed carries (workspaceId, sources)', () => {
-    type Payload = BroadcastEventMap[typeof RPC_CHANNELS.sources.CHANGED]
+    type Payload = BroadcastEventMap[typeof RPC_NAMESPACES.sources.CHANGED]
     const _check: AssertTuple<Payload, 2> = true
     expect(_check).toBe(true)
   })
 
   it('skills:changed carries (workspaceId, skills)', () => {
-    type Payload = BroadcastEventMap[typeof RPC_CHANNELS.skills.CHANGED]
+    type Payload = BroadcastEventMap[typeof RPC_NAMESPACES.skills.CHANGED]
     const _check: AssertTuple<Payload, 2> = true
     expect(_check).toBe(true)
   })

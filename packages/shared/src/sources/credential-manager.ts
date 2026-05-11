@@ -20,7 +20,7 @@ import {
   hasRenewEndpoint,
   type LoadedSource,
   type GoogleService,
-  type SlackService,
+  type SlackServiceScope,
   type MicrosoftService,
 } from './types.ts';
 import { buildAuthorizationHeader } from './api-tools.ts';
@@ -437,7 +437,7 @@ export class SourceCredentialManager {
 
       case 'slack': {
         const api = source.config.api;
-        let service: import('./types.ts').SlackService | undefined;
+        let service: import('./types.ts').SlackServiceScope | undefined;
         let userScopes: string[] | undefined;
 
         if (api?.slackUserScopes && api.slackUserScopes.length > 0) {
@@ -745,7 +745,7 @@ export class SourceCredentialManager {
     try {
       // Determine service/scopes from config
       const api = source.config.api;
-      let service: SlackService | undefined;
+      let service: SlackServiceScope | undefined;
       let userScopes: string[] | undefined;
 
       if (api?.slackUserScopes && api.slackUserScopes.length > 0) {

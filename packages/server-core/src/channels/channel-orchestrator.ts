@@ -1,5 +1,5 @@
 import type { PermissionMode } from '@craft-agent/shared/agent/mode-types';
-import type { ChannelConfig, ChannelParticipant } from '@craft-agent/shared/channels';
+import type { WarRoomChannel, WarRoomParticipant } from '@craft-agent/shared/channels';
 import { resolveChannelMentions } from '@craft-agent/shared/channels/mentions';
 import { getHermesKanbanHome } from './hermes-kanban';
 
@@ -24,7 +24,7 @@ export interface ChannelOrchestratorDeps {
 }
 
 export interface SendChannelMessageInput {
-  channel: ChannelConfig;
+  channel: WarRoomChannel;
   text: string;
   authorId: string;
   mentionedParticipantIds?: string[];
@@ -49,7 +49,7 @@ export interface ChannelTaskUpdate {
 export interface ChannelOrchestrator {
   sendMessage(input: SendChannelMessageInput): Promise<SendChannelMessageResult>;
   sendTaskUpdate(input: {
-    channel: ChannelConfig;
+    channel: WarRoomChannel;
     tasks: ChannelTaskUpdate[];
     recentMessages?: Array<{ authorId: string; text: string }>;
   }): Promise<SendChannelMessageResult>;
@@ -59,11 +59,11 @@ function sessionKey(channelId: string, participantId: string): string {
   return `${channelId}:${participantId}`;
 }
 
-function routingMode(channel: ChannelConfig): 'manual-tags' | 'lead' | 'all' | 'orchestrator' {
+function routingMode(channel: WarRoomChannel): 'manual-tags' | 'lead' | 'all' | 'orchestrator' {
   return channel.routing?.mode ?? 'manual-tags';
 }
 
-function resolveLeadParticipant(channel: ChannelConfig): ChannelParticipant | undefined {
+function resolveLeadParticipant(channel: WarRoomChannel): WarRoomParticipant | undefined {
   const participants = channel.participants ?? [];
   if (channel.routing?.leadParticipantId) {
     return participants.find(participant => participant.id === channel.routing?.leadParticipantId);
@@ -73,10 +73,10 @@ function resolveLeadParticipant(channel: ChannelConfig): ChannelParticipant | un
 }
 
 function resolveTargets(
-  channel: ChannelConfig,
+  channel: WarRoomChannel,
   text: string,
   explicitMentionedParticipantIds?: string[],
-): { participants: ChannelParticipant[]; unknownMentions: string[] } {
+): { participants: WarRoomParticipant[]; unknownMentions: string[] } {
   const participants = channel.participants ?? [];
   const mode = routingMode(channel);
   const mentions = resolveChannelMentions({
@@ -95,7 +95,7 @@ function resolveTargets(
     return {
       participants: mentions.mentionedParticipantIds
         .map(id => participants.find(participant => participant.id === id))
-        .filter((participant): participant is ChannelParticipant => participant !== undefined),
+        .filter((participant): participant is WarRoomParticipant => participant !== undefined),
       unknownMentions: mentions.unknownMentions,
     };
   }
@@ -112,7 +112,7 @@ function resolveTargets(
   return { participants: [], unknownMentions: mentions.unknownMentions };
 }
 
-function kanbanAssigneeSlug(participant: ChannelParticipant): string {
+function kanbanAssigneeSlug(participant: WarRoomParticipant): string {
   return participant.llmConnection === 'hermes' && participant.hermesProfile
     ? participant.hermesProfile
     : participant.id;
@@ -122,7 +122,7 @@ function shellDoubleQuote(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`')}"`;
 }
 
-function buildRoster(channel: ChannelConfig, orchestrator: ChannelParticipant): string {
+function buildRoster(channel: WarRoomChannel, orchestrator: WarRoomParticipant): string {
   const participants = channel.participants ?? [];
   const workers = participants.filter(participant => participant.id !== orchestrator.id);
   if (workers.length === 0) {
@@ -144,8 +144,8 @@ function buildRoster(channel: ChannelConfig, orchestrator: ChannelParticipant): 
 }
 
 function buildChannelWorkPacket(input: {
-  channel: ChannelConfig;
-  participant: ChannelParticipant;
+  channel: WarRoomChannel;
+  participant: WarRoomParticipant;
   text: string;
   recentMessages?: Array<{ authorId: string; text: string }>;
 }): string {
@@ -173,8 +173,8 @@ function buildChannelWorkPacket(input: {
 }
 
 function buildOrchestratorPacket(input: {
-  channel: ChannelConfig;
-  orchestrator: ChannelParticipant;
+  channel: WarRoomChannel;
+  orchestrator: WarRoomParticipant;
   text: string;
   mentionedParticipantIds?: string[];
   recentMessages?: Array<{ authorId: string; text: string }>;
@@ -225,8 +225,8 @@ function buildOrchestratorPacket(input: {
 }
 
 function buildTaskUpdatePacket(input: {
-  channel: ChannelConfig;
-  orchestrator: ChannelParticipant;
+  channel: WarRoomChannel;
+  orchestrator: WarRoomParticipant;
   tasks: ChannelTaskUpdate[];
   recentMessages?: Array<{ authorId: string; text: string }>;
 }): string {
@@ -264,8 +264,8 @@ export function createChannelOrchestrator(deps: ChannelOrchestratorDeps): Channe
   const participantSessions = new Map<string, string>();
 
   async function ensureParticipantSession(
-    channel: ChannelConfig,
-    participant: ChannelParticipant,
+    channel: WarRoomChannel,
+    participant: WarRoomParticipant,
   ): Promise<string> {
     const key = sessionKey(channel.id, participant.id);
     const existing = participantSessions.get(key);

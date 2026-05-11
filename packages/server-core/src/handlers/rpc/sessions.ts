@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, unlink, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
-import { RPC_CHANNELS, type FileAttachment, type SendMessageOptions, type SessionEvent } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES, type FileAttachment, type SendMessageOptions, type SessionEvent } from '@craft-agent/shared/protocol'
 import type { StoredAttachment } from '@craft-agent/core/types'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { perf } from '@craft-agent/shared/utils'
@@ -244,31 +244,31 @@ async function scanSessionDirectory(dirPath: string): Promise<import('@craft-age
 }
 
 export const HANDLED_CHANNELS = [
-  RPC_CHANNELS.sessions.GET,
-  RPC_CHANNELS.sessions.GET_UNREAD_SUMMARY,
-  RPC_CHANNELS.sessions.MARK_ALL_READ,
-  RPC_CHANNELS.sessions.CREATE,
-  RPC_CHANNELS.sessions.DELETE,
-  RPC_CHANNELS.sessions.GET_MESSAGES,
-  RPC_CHANNELS.sessions.SEND_MESSAGE,
-  RPC_CHANNELS.sessions.CANCEL,
-  RPC_CHANNELS.sessions.KILL_SHELL,
-  RPC_CHANNELS.tasks.GET_OUTPUT,
-  RPC_CHANNELS.sessions.RESPOND_TO_PERMISSION,
-  RPC_CHANNELS.sessions.RESPOND_TO_CREDENTIAL,
-  RPC_CHANNELS.sessions.COMMAND,
-  RPC_CHANNELS.sessions.GET_PENDING_PLAN_EXECUTION,
-  RPC_CHANNELS.sessions.GET_PERMISSION_MODE_STATE,
-  RPC_CHANNELS.sessions.SEARCH_CONTENT,
-  RPC_CHANNELS.sessions.GET_FILES,
-  RPC_CHANNELS.sessions.GET_NOTES,
-  RPC_CHANNELS.sessions.SET_NOTES,
-  RPC_CHANNELS.sessions.WATCH_FILES,
-  RPC_CHANNELS.sessions.UNWATCH_FILES,
-  RPC_CHANNELS.sessions.EXPORT,
-  RPC_CHANNELS.sessions.IMPORT,
-  RPC_CHANNELS.sessions.EXPORT_REMOTE_TRANSFER,
-  RPC_CHANNELS.sessions.IMPORT_REMOTE_TRANSFER,
+  RPC_NAMESPACES.sessions.GET,
+  RPC_NAMESPACES.sessions.GET_UNREAD_SUMMARY,
+  RPC_NAMESPACES.sessions.MARK_ALL_READ,
+  RPC_NAMESPACES.sessions.CREATE,
+  RPC_NAMESPACES.sessions.DELETE,
+  RPC_NAMESPACES.sessions.GET_MESSAGES,
+  RPC_NAMESPACES.sessions.SEND_MESSAGE,
+  RPC_NAMESPACES.sessions.CANCEL,
+  RPC_NAMESPACES.sessions.KILL_SHELL,
+  RPC_NAMESPACES.tasks.GET_OUTPUT,
+  RPC_NAMESPACES.sessions.RESPOND_TO_PERMISSION,
+  RPC_NAMESPACES.sessions.RESPOND_TO_CREDENTIAL,
+  RPC_NAMESPACES.sessions.COMMAND,
+  RPC_NAMESPACES.sessions.GET_PENDING_PLAN_EXECUTION,
+  RPC_NAMESPACES.sessions.GET_PERMISSION_MODE_STATE,
+  RPC_NAMESPACES.sessions.SEARCH_CONTENT,
+  RPC_NAMESPACES.sessions.GET_FILES,
+  RPC_NAMESPACES.sessions.GET_NOTES,
+  RPC_NAMESPACES.sessions.SET_NOTES,
+  RPC_NAMESPACES.sessions.WATCH_FILES,
+  RPC_NAMESPACES.sessions.UNWATCH_FILES,
+  RPC_NAMESPACES.sessions.EXPORT,
+  RPC_NAMESPACES.sessions.IMPORT,
+  RPC_NAMESPACES.sessions.EXPORT_REMOTE_TRANSFER,
+  RPC_NAMESPACES.sessions.IMPORT_REMOTE_TRANSFER,
 ] as const
 
 export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): void {
@@ -277,7 +277,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
 
   // Get all sessions for the calling window's workspace
   // Waits for initialization to complete so sessions are never returned empty during startup
-  server.handle(RPC_CHANNELS.sessions.GET, async (ctx) => {
+  server.handle(RPC_NAMESPACES.sessions.GET, async (ctx) => {
     try {
       await sessionManager.waitForInit()
     } catch (error) {
@@ -291,7 +291,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // Get unread summary across all workspaces
-  server.handle(RPC_CHANNELS.sessions.GET_UNREAD_SUMMARY, async () => {
+  server.handle(RPC_NAMESPACES.sessions.GET_UNREAD_SUMMARY, async () => {
     try {
       await sessionManager.waitForInit()
     } catch (error) {
@@ -300,12 +300,12 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
     return sessionManager.getUnreadSummary()
   })
 
-  server.handle(RPC_CHANNELS.sessions.MARK_ALL_READ, async (_ctx, workspaceId: string) => {
+  server.handle(RPC_NAMESPACES.sessions.MARK_ALL_READ, async (_ctx, workspaceId: string) => {
     return sessionManager.markAllSessionsRead(workspaceId)
   })
 
   // Get a single session with messages (for lazy loading)
-  server.handle(RPC_CHANNELS.sessions.GET_MESSAGES, async (_ctx, sessionId: string) => {
+  server.handle(RPC_NAMESPACES.sessions.GET_MESSAGES, async (_ctx, sessionId: string) => {
     const end = perf.start('rpc.getSessionMessages')
     const session = await sessionManager.getSession(sessionId)
     end()
@@ -313,7 +313,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // Create a new session
-  server.handle(RPC_CHANNELS.sessions.CREATE, async (_ctx, workspaceId: string, options?: import('@craft-agent/shared/protocol').CreateSessionOptions) => {
+  server.handle(RPC_NAMESPACES.sessions.CREATE, async (_ctx, workspaceId: string, options?: import('@craft-agent/shared/protocol').CreateSessionOptions) => {
     const end = perf.start('rpc.createSession', { workspaceId })
     const session = await sessionManager.createSession(workspaceId, options)
     end()
@@ -321,7 +321,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // Delete a session
-  server.handle(RPC_CHANNELS.sessions.DELETE, async (_ctx, sessionId: string) => {
+  server.handle(RPC_NAMESPACES.sessions.DELETE, async (_ctx, sessionId: string) => {
     return sessionManager.deleteSession(sessionId)
   })
 
@@ -329,7 +329,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // Note: We intentionally don't await here - the response is streamed via events.
   // The IPC handler returns immediately, and results come through SESSION_EVENT channel.
   // attachments: FileAttachment[] for Claude (has content), storedAttachments: StoredAttachment[] for persistence (has thumbnailBase64)
-  server.handle(RPC_CHANNELS.sessions.SEND_MESSAGE, async (ctx, sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachment[], options?: SendMessageOptions) => {
+  server.handle(RPC_NAMESPACES.sessions.SEND_MESSAGE, async (ctx, sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachment[], options?: SendMessageOptions) => {
     // Capture the caller's clientId for error routing
     const callerClientId = ctx.clientId
 
@@ -337,13 +337,13 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
     sessionManager.sendMessage(sessionId, message, attachments, storedAttachments, options).catch(err => {
       log.error('Error in sendMessage:', err)
       // Send error to the calling client
-      pushTyped(server, RPC_CHANNELS.sessions.EVENT, { to: 'client', clientId: callerClientId }, {
+      pushTyped(server, RPC_NAMESPACES.sessions.EVENT, { to: 'client', clientId: callerClientId }, {
         type: 'error',
         sessionId,
         error: err instanceof Error ? err.message : 'Unknown error'
       } as SessionEvent)
       // Also send complete event to clear processing state
-      pushTyped(server, RPC_CHANNELS.sessions.EVENT, { to: 'client', clientId: callerClientId }, {
+      pushTyped(server, RPC_NAMESPACES.sessions.EVENT, { to: 'client', clientId: callerClientId }, {
         type: 'complete',
         sessionId
       } as SessionEvent)
@@ -353,17 +353,17 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // Cancel processing
-  server.handle(RPC_CHANNELS.sessions.CANCEL, async (_ctx, sessionId: string, silent?: boolean) => {
+  server.handle(RPC_NAMESPACES.sessions.CANCEL, async (_ctx, sessionId: string, silent?: boolean) => {
     return sessionManager.cancelProcessing(sessionId, silent)
   })
 
   // Kill background shell
-  server.handle(RPC_CHANNELS.sessions.KILL_SHELL, async (_ctx, sessionId: string, shellId: string) => {
+  server.handle(RPC_NAMESPACES.sessions.KILL_SHELL, async (_ctx, sessionId: string, shellId: string) => {
     return sessionManager.killShell(sessionId, shellId)
   })
 
   // Get background task output
-  server.handle(RPC_CHANNELS.tasks.GET_OUTPUT, async (_ctx, taskId: string) => {
+  server.handle(RPC_NAMESPACES.tasks.GET_OUTPUT, async (_ctx, taskId: string) => {
     try {
       const output = await sessionManager.getTaskOutput(taskId)
       return output
@@ -375,13 +375,13 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
 
   // Respond to a permission request (bash command approval)
   // Returns true if the response was delivered, false if agent/session is gone
-  server.handle(RPC_CHANNELS.sessions.RESPOND_TO_PERMISSION, async (_ctx, sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean) => {
+  server.handle(RPC_NAMESPACES.sessions.RESPOND_TO_PERMISSION, async (_ctx, sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean) => {
     return sessionManager.respondToPermission(sessionId, requestId, allowed, alwaysAllow)
   })
 
   // Respond to a credential request (secure auth input)
   // Returns true if the response was delivered, false if agent/session is gone
-  server.handle(RPC_CHANNELS.sessions.RESPOND_TO_CREDENTIAL, async (_ctx, sessionId: string, requestId: string, response: import('@craft-agent/shared/protocol').CredentialResponse) => {
+  server.handle(RPC_NAMESPACES.sessions.RESPOND_TO_CREDENTIAL, async (_ctx, sessionId: string, requestId: string, response: import('@craft-agent/shared/protocol').CredentialResponse) => {
     return sessionManager.respondToCredential(sessionId, requestId, response)
   })
 
@@ -390,7 +390,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // ==========================================================================
 
   // Session commands - consolidated handler for session operations
-  server.handle(RPC_CHANNELS.sessions.COMMAND, async (
+  server.handle(RPC_NAMESPACES.sessions.COMMAND, async (
     _ctx,
     sessionId: string,
     command: import('@craft-agent/shared/protocol').SessionCommand
@@ -480,7 +480,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // Get pending plan execution state (for reload recovery)
-  server.handle(RPC_CHANNELS.sessions.GET_PENDING_PLAN_EXECUTION, async (
+  server.handle(RPC_NAMESPACES.sessions.GET_PENDING_PLAN_EXECUTION, async (
     _ctx,
     sessionId: string
   ) => {
@@ -488,7 +488,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // Get authoritative permission mode diagnostics for renderer reconciliation
-  server.handle(RPC_CHANNELS.sessions.GET_PERMISSION_MODE_STATE, async (
+  server.handle(RPC_NAMESPACES.sessions.GET_PERMISSION_MODE_STATE, async (
     _ctx,
     sessionId: string
   ) => {
@@ -500,7 +500,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // ============================================================
 
   // Search session content using ripgrep
-  server.handle(RPC_CHANNELS.sessions.SEARCH_CONTENT, async (_ctx, workspaceId: string, query: string, searchId?: string) => {
+  server.handle(RPC_NAMESPACES.sessions.SEARCH_CONTENT, async (_ctx, workspaceId: string, query: string, searchId?: string) => {
     const id = searchId || Date.now().toString(36)
     log.info('[search]','ipc:request', { searchId: id, query })
 
@@ -539,7 +539,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // ============================================================
 
   // Get files in session directory (recursive tree structure)
-  server.handle(RPC_CHANNELS.sessions.GET_FILES, async (_ctx, sessionId: string) => {
+  server.handle(RPC_NAMESPACES.sessions.GET_FILES, async (_ctx, sessionId: string) => {
     const sessionPath = sessionManager.getSessionPath(sessionId)
     if (!sessionPath) return []
 
@@ -553,7 +553,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // Start watching a session directory for file changes (per client)
-  server.handle(RPC_CHANNELS.sessions.WATCH_FILES, async (ctx, sessionId: string) => {
+  server.handle(RPC_NAMESPACES.sessions.WATCH_FILES, async (ctx, sessionId: string) => {
     const clientId = ctx.clientId
     cleanupSessionFileWatchForClient(clientId)
 
@@ -581,7 +581,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
         }
 
         state.debounceTimer = setTimeout(() => {
-          pushTyped(server, RPC_CHANNELS.sessions.FILES_CHANGED, { to: 'client', clientId }, state.sessionId)
+          pushTyped(server, RPC_NAMESPACES.sessions.FILES_CHANGED, { to: 'client', clientId }, state.sessionId)
         }, 100)
       })
 
@@ -592,12 +592,12 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // Stop watching session files for the calling client
-  server.handle(RPC_CHANNELS.sessions.UNWATCH_FILES, async (ctx) => {
+  server.handle(RPC_NAMESPACES.sessions.UNWATCH_FILES, async (ctx) => {
     cleanupSessionFileWatchForClient(ctx.clientId)
   })
 
   // Get session notes (reads notes.md from session directory)
-  server.handle(RPC_CHANNELS.sessions.GET_NOTES, async (_ctx, sessionId: string) => {
+  server.handle(RPC_NAMESPACES.sessions.GET_NOTES, async (_ctx, sessionId: string) => {
     const sessionPath = sessionManager.getSessionPath(sessionId)
     if (!sessionPath) return ''
 
@@ -612,7 +612,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // Set session notes (writes to notes.md in session directory)
-  server.handle(RPC_CHANNELS.sessions.SET_NOTES, async (_ctx, sessionId: string, content: string) => {
+  server.handle(RPC_NAMESPACES.sessions.SET_NOTES, async (_ctx, sessionId: string, content: string) => {
     const sessionPath = sessionManager.getSessionPath(sessionId)
     if (!sessionPath) {
       throw new Error(`Session not found: ${sessionId}`)
@@ -632,7 +632,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // ============================================
 
   // Export a session as a portable bundle
-  server.handle(RPC_CHANNELS.sessions.EXPORT, async (ctx, sessionId: string) => {
+  server.handle(RPC_NAMESPACES.sessions.EXPORT, async (ctx, sessionId: string) => {
     await sessionManager.waitForInit()
     const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
     if (!workspaceId) throw new Error('No workspace context')
@@ -652,12 +652,12 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
 
     return sessionManager.importSession(targetWorkspaceId, bundle as import('@craft-agent/shared/sessions').SessionBundle, mode)
   }
-  server.handle(RPC_CHANNELS.sessions.IMPORT, importHandler)
+  server.handle(RPC_NAMESPACES.sessions.IMPORT, importHandler)
   // Also register as transferable so chunked transfer can invoke it on commit
-  setTransferableHandler(RPC_CHANNELS.sessions.IMPORT, importHandler)
+  setTransferableHandler(RPC_NAMESPACES.sessions.IMPORT, importHandler)
 
   // Export a session as a summarized remote-transfer payload.
-  server.handle(RPC_CHANNELS.sessions.EXPORT_REMOTE_TRANSFER, async (ctx, sessionId: string) => {
+  server.handle(RPC_NAMESPACES.sessions.EXPORT_REMOTE_TRANSFER, async (ctx, sessionId: string) => {
     await sessionManager.waitForInit()
     const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
     if (!workspaceId) throw new Error('No workspace context')
@@ -668,7 +668,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // Import a summarized remote-transfer payload into a target workspace.
-  server.handle(RPC_CHANNELS.sessions.IMPORT_REMOTE_TRANSFER, async (_ctx, targetWorkspaceId: string, payload: import('@craft-agent/shared/protocol').RemoteSessionTransferPayload) => {
+  server.handle(RPC_NAMESPACES.sessions.IMPORT_REMOTE_TRANSFER, async (_ctx, targetWorkspaceId: string, payload: import('@craft-agent/shared/protocol').RemoteSessionTransferPayload) => {
     await sessionManager.waitForInit()
     if (!targetWorkspaceId || typeof targetWorkspaceId !== 'string') throw new Error('targetWorkspaceId is required')
     return sessionManager.importRemoteSessionTransfer(targetWorkspaceId, payload)

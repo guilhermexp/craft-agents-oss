@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { useTransportConnectionState } from './useTransportConnectionState'
 import { toast } from 'sonner'
 
@@ -28,7 +28,7 @@ export function useDirectoryPicker(
   const connectionState = useTransportConnectionState()
   const isRemote = connectionState?.mode === 'remote'
   const canBrowse = isRemote &&
-    window.electronAPI.isChannelAvailable(RPC_CHANNELS.fs.LIST_DIRECTORY)
+    window.electronAPI.isChannelAvailable(RPC_NAMESPACES.fs.LIST_DIRECTORY)
 
   const [showServerBrowser, setShowServerBrowser] = useState(false)
 

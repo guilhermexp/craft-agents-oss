@@ -17,7 +17,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import type { HandlerFn, RequestContext, RpcServer } from '../../transport/types'
 
 interface TransferState {
@@ -90,7 +90,7 @@ export function __resetTransferStateForTests(): void {
 }
 
 export function registerTransferHandlers(server: RpcServer): void {
-  server.handle(RPC_CHANNELS.transfer.START, async (ctx, opts: {
+  server.handle(RPC_NAMESPACES.transfer.START, async (ctx, opts: {
     totalBytes: number
     chunkCount: number
     channel: string
@@ -143,7 +143,7 @@ export function registerTransferHandlers(server: RpcServer): void {
     return { transferId }
   })
 
-  server.handle(RPC_CHANNELS.transfer.CHUNK, async (ctx, opts: {
+  server.handle(RPC_NAMESPACES.transfer.CHUNK, async (ctx, opts: {
     transferId: string
     index: number
     data: string
@@ -174,7 +174,7 @@ export function registerTransferHandlers(server: RpcServer): void {
     return { received: opts.index }
   })
 
-  server.handle(RPC_CHANNELS.transfer.COMMIT, async (ctx, opts: {
+  server.handle(RPC_NAMESPACES.transfer.COMMIT, async (ctx, opts: {
     transferId: string
   }) => {
     const transfer = activeTransfers.get(opts.transferId)
@@ -249,7 +249,7 @@ export function registerTransferHandlers(server: RpcServer): void {
     }
   })
 
-  server.handle(RPC_CHANNELS.transfer.ABORT, async (ctx, opts: { transferId: string }) => {
+  server.handle(RPC_NAMESPACES.transfer.ABORT, async (ctx, opts: { transferId: string }) => {
     const transfer = activeTransfers.get(opts.transferId)
     if (!transfer) {
       return { aborted: false }

@@ -128,7 +128,7 @@ export function validateEnvelopeShape(value: unknown): value is MessageEnvelope 
     return false
   }
 
-  if ((value.type === 'request' || value.type === 'event') && typeof value.channel !== 'string') {
+  if ((value.type === 'request' || value.type === 'event') && typeof value.rpcNamespace !== 'string') {
     return false
   }
 

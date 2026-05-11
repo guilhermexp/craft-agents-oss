@@ -7,7 +7,7 @@
 
 import type { ISessionManager } from '@craft-agent/server-core/handlers'
 import type { PushTarget } from '@craft-agent/shared/protocol'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { BindingStore } from './binding-store'
 import { Router } from './router'
 import { Commands, type PairingCodeConsumer } from './commands'
@@ -19,6 +19,7 @@ import type {
   IncomingMessage,
   ButtonPress,
   MessagingLogger,
+  MessagingChannelId,
 } from './types'
 
 const consoleLogger: MessagingLogger = {
@@ -57,7 +58,7 @@ export interface GatewayOptions {
 interface PlanMessageRecord {
   bindingId: string
   platform: PlatformType
-  channelId: string
+  messagingChannelId: MessagingChannelId
   messageId: string
 }
 
@@ -66,7 +67,7 @@ interface PendingCompactAccept {
   sessionId: string
   bindingId: string
   platform: PlatformType
-  channelId: string
+  messagingChannelId: MessagingChannelId
   messageId: string
   planPath: string
   createdAt: number
@@ -127,7 +128,7 @@ export class MessagingGateway {
         this.planMessages.set(token, {
           bindingId: binding.id,
           platform: binding.platform,
-          channelId: binding.channelId,
+          messagingChannelId: binding.messagingChannelId,
           messageId,
         })
       },
@@ -243,7 +244,7 @@ export class MessagingGateway {
   // -------------------------------------------------------------------------
 
   onSessionEvent(channel: string, _target: PushTarget, ...args: any[]): void {
-    if (channel !== RPC_CHANNELS.sessions.EVENT) return
+    if (channel !== RPC_NAMESPACES.sessions.EVENT) return
 
     const event = args[0] as SessionEvent | undefined
     if (!event?.sessionId) return
@@ -270,7 +271,7 @@ export class MessagingGateway {
           sessionId: event.sessionId,
           bindingId: binding.id,
           platform: binding.platform,
-          channelId: binding.channelId,
+          messagingChannelId: binding.messagingChannelId,
           error: err,
         })
       })
@@ -289,7 +290,7 @@ export class MessagingGateway {
       const sessionId = press.buttonId.slice('bind:'.length)
       const session = await this.sessionManager.getSession(sessionId)
       if (!session) {
-        await adapter.sendText(press.channelId, 'Session not found.')
+        await adapter.sendText(press.messagingChannelId, 'Session not found.')
         return
       }
 
@@ -297,12 +298,12 @@ export class MessagingGateway {
         this.workspaceId,
         session.id,
         platform,
-        press.channelId,
+        press.messagingChannelId,
         undefined,
       )
 
       await adapter.sendText(
-        press.channelId,
+        press.messagingChannelId,
         `Bound to "${session.name || session.id}"`,
       )
       return
@@ -312,11 +313,11 @@ export class MessagingGateway {
       if (platform === 'whatsapp') {
         this.log.warn('ignored chat-side permission interaction for WhatsApp', {
           event: 'whatsapp_permission_button_ignored',
-          channelId: press.channelId,
+          messagingChannelId: press.messagingChannelId,
           buttonId: press.buttonId,
         })
         await adapter.sendText(
-          press.channelId,
+          press.messagingChannelId,
           '⏸ Permission required. Approve it in the desktop app to continue.',
         )
         return
@@ -327,7 +328,7 @@ export class MessagingGateway {
       const requestId = parts[2]
       if (!requestId) return
 
-      const binding = this.bindingStore.findByChannel(platform, press.channelId)
+      const binding = this.bindingStore.findByMessagingChannel(platform, press.messagingChannelId)
       if (!binding) return
 
       const allowed = action === 'allow'
@@ -338,7 +339,7 @@ export class MessagingGateway {
         false,
       )
 
-      await adapter.sendText(press.channelId, allowed ? '✅ Allowed' : '❌ Denied')
+      await adapter.sendText(press.messagingChannelId, allowed ? '✅ Allowed' : '❌ Denied')
       return
     }
 
@@ -361,7 +362,7 @@ export class MessagingGateway {
     const entry = this.planTokens.resolve(token)
     if (!entry) {
       await adapter.sendText(
-        press.channelId,
+        press.messagingChannelId,
         '⚠️ This plan has expired. Retry from the desktop app.',
       )
       return
@@ -370,7 +371,7 @@ export class MessagingGateway {
     // Disable the buttons so the user can't tap twice. Non-fatal if it fails.
     const record = this.planMessages.get(token)
     if (record && adapter.clearButtons) {
-      await adapter.clearButtons(record.channelId, record.messageId).catch(() => {})
+      await adapter.clearButtons(record.messagingChannelId, record.messageId).catch(() => {})
     }
 
     this.planTokens.revoke(token)
@@ -379,7 +380,7 @@ export class MessagingGateway {
     if (action === 'accept') {
       try {
         await this.sessionManager.acceptPlan(entry.sessionId, entry.planPath)
-        await adapter.sendText(press.channelId, '✅ Plan accepted. Agent resuming.')
+        await adapter.sendText(press.messagingChannelId, '✅ Plan accepted. Agent resuming.')
       } catch (err) {
         this.log.error('acceptPlan failed', {
           event: 'plan_accept_failed',
@@ -387,7 +388,7 @@ export class MessagingGateway {
           error: err,
         })
         await adapter.sendText(
-          press.channelId,
+          press.messagingChannelId,
           '❌ Couldn\'t accept the plan. Check the desktop app.',
         )
       }
@@ -397,7 +398,7 @@ export class MessagingGateway {
     // action === 'compact': persist the "waiting for compaction" intent, send
     // /compact, and let onSessionEvent → finishPendingCompactAccept dispatch
     // the approval once compaction finishes.
-    const binding = this.bindingStore.findByChannel(platform, press.channelId)
+    const binding = this.bindingStore.findByMessagingChannel(platform, press.messagingChannelId)
     if (!binding) return
 
     this.pendingCompactAccepts.set(entry.sessionId, {
@@ -405,7 +406,7 @@ export class MessagingGateway {
       sessionId: entry.sessionId,
       bindingId: binding.id,
       platform,
-      channelId: press.channelId,
+      messagingChannelId: press.messagingChannelId,
       messageId: record?.messageId ?? '',
       planPath: entry.planPath,
       createdAt: Date.now(),
@@ -415,7 +416,7 @@ export class MessagingGateway {
       await this.sessionManager.setPendingPlanExecution(entry.sessionId, entry.planPath)
       await this.sessionManager.sendMessage(entry.sessionId, '/compact')
       await adapter.sendText(
-        press.channelId,
+        press.messagingChannelId,
         '♻️ Compacting conversation, then executing the plan…',
       )
     } catch (err) {
@@ -426,7 +427,7 @@ export class MessagingGateway {
         error: err,
       })
       await adapter.sendText(
-        press.channelId,
+        press.messagingChannelId,
         '❌ Couldn\'t start compaction. Check the desktop app.',
       )
     }
@@ -450,7 +451,7 @@ export class MessagingGateway {
       await this.sessionManager.acceptPlan(sessionId, entry.planPath)
       await this.sessionManager.clearPendingPlanExecution(sessionId)
       if (adapter?.isConnected()) {
-        await adapter.sendText(entry.channelId, '✅ Plan executing after compaction.')
+        await adapter.sendText(entry.messagingChannelId, '✅ Plan executing after compaction.')
       }
     } catch (err) {
       this.log.error('post-compaction acceptPlan failed', {
@@ -460,7 +461,7 @@ export class MessagingGateway {
       })
       if (adapter?.isConnected()) {
         await adapter.sendText(
-          entry.channelId,
+          entry.messagingChannelId,
           '❌ Compaction finished but the plan couldn\'t execute. Check the desktop app.',
         )
       }

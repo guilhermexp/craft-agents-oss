@@ -4,7 +4,7 @@
  * Handles workspace resource export/import (sources, skills, automations).
  */
 
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { getCredentialManager, SOURCE_CREDENTIAL_TYPES } from '@craft-agent/shared/credentials'
 import type { RpcServer } from '@craft-agent/server-core/transport'
@@ -16,14 +16,14 @@ import type {
 } from '@craft-agent/shared/resources'
 
 export const HANDLED_CHANNELS = [
-  RPC_CHANNELS.resources.EXPORT,
-  RPC_CHANNELS.resources.IMPORT,
+  RPC_NAMESPACES.resources.EXPORT,
+  RPC_NAMESPACES.resources.IMPORT,
 ] as const
 
 export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps): void {
   // Export workspace resources to a portable bundle
   server.handle(
-    RPC_CHANNELS.resources.EXPORT,
+    RPC_NAMESPACES.resources.EXPORT,
     async (_ctx, workspaceId: string, options: ExportResourcesOptions) => {
       const workspace = getWorkspaceByNameOrId(workspaceId)
       if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
@@ -45,7 +45,7 @@ export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps):
 
   // Import a resource bundle into a workspace
   server.handle(
-    RPC_CHANNELS.resources.IMPORT,
+    RPC_NAMESPACES.resources.IMPORT,
     async (_ctx, workspaceId: string, bundle: ResourceBundle, mode: ResourceImportMode) => {
       const workspace = getWorkspaceByNameOrId(workspaceId)
       if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)

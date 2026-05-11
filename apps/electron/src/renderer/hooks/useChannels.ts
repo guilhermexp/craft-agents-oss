@@ -1,15 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { ChannelConfig } from '@craft-agent/shared/channels'
+import type { WarRoomChannel } from '@craft-agent/shared/channels'
 
 export interface UseChannelsResult {
-  channels: ChannelConfig[]
+  channels: WarRoomChannel[]
   isLoading: boolean
   error: string | null
   refresh: () => Promise<void>
 }
 
 export function useChannels(workspaceId: string | null): UseChannelsResult {
-  const [channels, setChannels] = useState<ChannelConfig[]>([])
+  const [channels, setChannels] = useState<WarRoomChannel[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 

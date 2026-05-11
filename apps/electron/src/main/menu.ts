@@ -1,6 +1,6 @@
 import { Menu, app, shell, BrowserWindow } from 'electron'
 import { i18n } from '@craft-agent/shared/i18n'
-import { RPC_CHANNELS, type BroadcastEventMap } from '../shared/types'
+import { RPC_NAMESPACES, type BroadcastEventMap } from '../shared/types'
 import { EDIT_MENU, VIEW_MENU, WINDOW_MENU } from '../shared/menu-schema'
 import type { MenuItem } from '../shared/menu-schema'
 import type { WindowManager } from './window-manager'
@@ -88,7 +88,7 @@ export async function rebuildMenu(): Promise<void> {
           label: i18n.t("menu.settings"),
           accelerator: 'CmdOrCtrl+,',
           registerAccelerator: false,  // Action registry handles the keyboard shortcut
-          click: () => sendToRenderer(RPC_CHANNELS.menu.OPEN_SETTINGS)
+          click: () => sendToRenderer(RPC_NAMESPACES.menu.OPEN_SETTINGS)
         },
         { type: 'separator' as const },
         { role: 'hide' as const, label: i18n.t('menu.hideCraftAgents') },
@@ -107,7 +107,7 @@ export async function rebuildMenu(): Promise<void> {
           label: i18n.t("menu.newChat"),
           accelerator: 'CmdOrCtrl+N',
           registerAccelerator: false,  // Action registry handles the keyboard shortcut
-          click: () => sendToRenderer(RPC_CHANNELS.menu.NEW_CHAT)
+          click: () => sendToRenderer(RPC_NAMESPACES.menu.NEW_CHAT)
         },
         {
           label: i18n.t("menu.newWindow"),
@@ -240,7 +240,7 @@ export async function rebuildMenu(): Promise<void> {
           label: i18n.t("menu.keyboardShortcuts"),
           accelerator: 'CmdOrCtrl+/',
           registerAccelerator: false,  // Action registry handles the keyboard shortcut
-          click: () => sendToRenderer(RPC_CHANNELS.menu.KEYBOARD_SHORTCUTS)
+          click: () => sendToRenderer(RPC_NAMESPACES.menu.KEYBOARD_SHORTCUTS)
         }
       ]
     }

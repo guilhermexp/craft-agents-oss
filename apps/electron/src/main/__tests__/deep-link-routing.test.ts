@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { handleDeepLink } from '../deep-link'
-import { RPC_CHANNELS } from '../../shared/types'
+import { RPC_NAMESPACES } from '../../shared/types'
 import type { EventSink } from '@craft-agent/server-core/transport'
 import type { WindowManager } from '../window-manager'
 
@@ -44,7 +44,7 @@ describe('handleDeepLink routing', () => {
     )
 
     expect(sent.length).toBe(1)
-    expect(sent[0]?.channel).toBe(RPC_CHANNELS.deeplink.NAVIGATE)
+    expect(sent[0]?.channel).toBe(RPC_NAMESPACES.deeplink.NAVIGATE)
     expect(sent[0]?.target).toEqual({ to: 'client', clientId: 'client-target' })
   })
 

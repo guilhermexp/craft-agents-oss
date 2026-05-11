@@ -6,7 +6,7 @@ import { chmod, mkdtemp, mkdir, readFile, symlink, writeFile } from 'node:fs/pro
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import type { RpcServer, HandlerFn, RequestContext } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { registerHermesHandlers, shutdownHermesDashboard } from './hermes'
@@ -130,9 +130,9 @@ server.listen(port, '127.0.0.1')
     await chmod(fakeHermes, 0o755)
 
     const { handlers, ctx } = createHarness()
-    const getApiConfig = handlers.get(RPC_CHANNELS.hermes.GET_API_CONFIG)
-    const getProviderModels = handlers.get(RPC_CHANNELS.hermes.GET_PROVIDER_MODELS)
-    const listProfiles = handlers.get(RPC_CHANNELS.hermes.LIST_PROFILES)
+    const getApiConfig = handlers.get(RPC_NAMESPACES.hermes.GET_API_CONFIG)
+    const getProviderModels = handlers.get(RPC_NAMESPACES.hermes.GET_PROVIDER_MODELS)
+    const listProfiles = handlers.get(RPC_NAMESPACES.hermes.LIST_PROFILES)
     expect(getApiConfig).toBeDefined()
     expect(getProviderModels).toBeDefined()
     expect(listProfiles).toBeDefined()
@@ -223,7 +223,7 @@ server.listen(port, '127.0.0.1')
 
     try {
       const { handlers, ctx } = createHarness()
-      const getProviderModels = handlers.get(RPC_CHANNELS.hermes.GET_PROVIDER_MODELS)
+      const getProviderModels = handlers.get(RPC_NAMESPACES.hermes.GET_PROVIDER_MODELS)
       expect(getProviderModels).toBeDefined()
 
       const result = await getProviderModels!(ctx, 'cliproxy')
@@ -293,7 +293,7 @@ server.listen(port, '127.0.0.1')
     await chmod(fakeHermes, 0o755)
 
     const { handlers, ctx } = createHarness()
-    const patchApiConfig = handlers.get(RPC_CHANNELS.hermes.PATCH_API_CONFIG)
+    const patchApiConfig = handlers.get(RPC_NAMESPACES.hermes.PATCH_API_CONFIG)
     expect(patchApiConfig).toBeDefined()
 
     const result = await patchApiConfig!(ctx, {
@@ -328,7 +328,7 @@ server.listen(port, '127.0.0.1')
     await writeFile(join(home, 'logs', 'hermes.log'), 'log')
 
     const { handlers, ctx } = createHarness()
-    const listHomeFiles = handlers.get(RPC_CHANNELS.hermes.LIST_HOME_FILES)
+    const listHomeFiles = handlers.get(RPC_NAMESPACES.hermes.LIST_HOME_FILES)
     expect(listHomeFiles).toBeDefined()
 
     const result = await listHomeFiles!(ctx)
@@ -353,7 +353,7 @@ server.listen(port, '127.0.0.1')
     process.env.CRAFT_HERMES_HOME = home
 
     const { handlers, ctx, openedPaths } = createHarness()
-    const openPath = handlers.get(RPC_CHANNELS.hermes.OPEN_PATH)
+    const openPath = handlers.get(RPC_NAMESPACES.hermes.OPEN_PATH)
     expect(openPath).toBeDefined()
 
     const result = await openPath!(ctx, '../outside')
@@ -370,7 +370,7 @@ server.listen(port, '127.0.0.1')
     await symlink(outside, join(home, 'outside-link'))
 
     const { handlers, ctx, openedPaths } = createHarness()
-    const openPath = handlers.get(RPC_CHANNELS.hermes.OPEN_PATH)
+    const openPath = handlers.get(RPC_NAMESPACES.hermes.OPEN_PATH)
     expect(openPath).toBeDefined()
 
     const result = await openPath!(ctx, 'outside-link')
@@ -385,7 +385,7 @@ server.listen(port, '127.0.0.1')
     process.env.CRAFT_HERMES_HOME = home
 
     const { handlers, ctx } = createHarness({ isPackaged: true })
-    const updateRuntime = handlers.get(RPC_CHANNELS.hermes.UPDATE_RUNTIME)
+    const updateRuntime = handlers.get(RPC_NAMESPACES.hermes.UPDATE_RUNTIME)
     expect(updateRuntime).toBeDefined()
 
     const result = await updateRuntime!(ctx)
@@ -418,7 +418,7 @@ server.listen(port, '127.0.0.1')
     await execFile('git', ['-C', repo, 'remote', 'add', 'upstream', 'https://github.com/NousResearch/hermes-agent.git'])
 
     const { handlers, ctx } = createHarness()
-    const getRuntimeDetails = handlers.get(RPC_CHANNELS.hermes.GET_RUNTIME_DETAILS)
+    const getRuntimeDetails = handlers.get(RPC_NAMESPACES.hermes.GET_RUNTIME_DETAILS)
     expect(getRuntimeDetails).toBeDefined()
 
     const result = await getRuntimeDetails!(ctx)
@@ -459,7 +459,7 @@ server.listen(port, '127.0.0.1')
     }
 
     const { handlers, ctx } = createHarness({ appRootPath: appRoot })
-    const getRuntimeDetails = handlers.get(RPC_CHANNELS.hermes.GET_RUNTIME_DETAILS)
+    const getRuntimeDetails = handlers.get(RPC_NAMESPACES.hermes.GET_RUNTIME_DETAILS)
     expect(getRuntimeDetails).toBeDefined()
 
     const result = await getRuntimeDetails!(ctx)

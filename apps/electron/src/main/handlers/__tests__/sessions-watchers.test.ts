@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import { RPC_CHANNELS } from '../../../shared/types'
+import { RPC_NAMESPACES } from '../../../shared/types'
 import { registerSessionsHandlers, cleanupSessionFileWatchForClient } from '@craft-agent/server-core/handlers/rpc'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
@@ -90,8 +90,8 @@ describe('sessions file watchers', () => {
   })
 
   it('isolates file change notifications per client watcher', async () => {
-    const watch = handlers.get(RPC_CHANNELS.sessions.WATCH_FILES)
-    const unwatch = handlers.get(RPC_CHANNELS.sessions.UNWATCH_FILES)
+    const watch = handlers.get(RPC_NAMESPACES.sessions.WATCH_FILES)
+    const unwatch = handlers.get(RPC_NAMESPACES.sessions.UNWATCH_FILES)
     expect(watch).toBeTruthy()
     expect(unwatch).toBeTruthy()
 
@@ -106,8 +106,8 @@ describe('sessions file watchers', () => {
     const aEvents = pushed.filter((evt) => evt.target?.to === 'client' && evt.target?.clientId === 'client-a')
     const bEvents = pushed.filter((evt) => evt.target?.to === 'client' && evt.target?.clientId === 'client-b')
 
-    expect(aEvents.some((evt) => evt.channel === RPC_CHANNELS.sessions.FILES_CHANGED && evt.args[0] === 'session-a')).toBe(true)
-    expect(bEvents.some((evt) => evt.channel === RPC_CHANNELS.sessions.FILES_CHANGED && evt.args[0] === 'session-b')).toBe(true)
+    expect(aEvents.some((evt) => evt.channel === RPC_NAMESPACES.sessions.FILES_CHANGED && evt.args[0] === 'session-a')).toBe(true)
+    expect(bEvents.some((evt) => evt.channel === RPC_NAMESPACES.sessions.FILES_CHANGED && evt.args[0] === 'session-b')).toBe(true)
 
     pushed.length = 0
     await unwatch!({ clientId: 'client-a' })
@@ -120,11 +120,11 @@ describe('sessions file watchers', () => {
     const bEventsAfter = pushed.filter((evt) => evt.target?.clientId === 'client-b')
 
     expect(aEventsAfter.length).toBe(0)
-    expect(bEventsAfter.some((evt) => evt.channel === RPC_CHANNELS.sessions.FILES_CHANGED && evt.args[0] === 'session-b')).toBe(true)
+    expect(bEventsAfter.some((evt) => evt.channel === RPC_NAMESPACES.sessions.FILES_CHANGED && evt.args[0] === 'session-b')).toBe(true)
   })
 
   it('disconnect cleanup removes watcher and prevents further events', async () => {
-    const watch = handlers.get(RPC_CHANNELS.sessions.WATCH_FILES)
+    const watch = handlers.get(RPC_NAMESPACES.sessions.WATCH_FILES)
     expect(watch).toBeTruthy()
 
     await watch!({ clientId: 'client-a' }, 'session-a')

@@ -15,12 +15,12 @@ import { URL } from 'url';
 import { randomBytes } from 'crypto';
 import { openUrl } from '../utils/open-url.ts';
 import { createCallbackServer, type AppType } from './callback-server.ts';
-import type { SlackService } from '../sources/types.ts';
+import type { SlackServiceScope } from '../sources/types.ts';
 import { type OAuthSessionContext, buildOAuthDeeplinkUrl } from './types.ts';
 import type { PreparedOAuthFlow, OAuthExchangeParams, OAuthExchangeResult } from './oauth-flow-types.ts';
 
 // Re-export for convenience
-export type { SlackService } from '../sources/types.ts';
+export type { SlackServiceScope } from '../sources/types.ts';
 
 // Slack OAuth configuration - must be set via environment variables
 // These are baked into the build at compile time
@@ -36,7 +36,7 @@ const SLACK_TOKEN_URL = 'https://slack.com/api/oauth.v2.access';
  * These are user scopes (user_scope), not bot scopes (scope)
  * User scopes allow acting as the authenticated user
  */
-export const SLACK_SERVICE_SCOPES: Record<SlackService, string[]> = {
+export const SLACK_SERVICE_SCOPES: Record<SlackServiceScope, string[]> = {
   messaging: ['chat:write'],
   channels: ['channels:read', 'channels:history', 'groups:read', 'groups:history'],
   users: ['users:read', 'users:read.email'],
@@ -67,7 +67,7 @@ export const SLACK_SERVICE_SCOPES: Record<SlackService, string[]> = {
  */
 export interface SlackOAuthOptions {
   /** Slack service to authenticate (uses predefined scopes) */
-  service?: SlackService;
+  service?: SlackServiceScope;
   /** Custom user scopes (overrides service scopes if provided) */
   userScopes?: string[];
   /** App type for callback server styling */
@@ -229,18 +229,18 @@ export function getSlackScopes(options: SlackOAuthOptions): string[] {
 
   // Use predefined service scopes
   if (options.service && options.service in SLACK_SERVICE_SCOPES) {
-    return SLACK_SERVICE_SCOPES[options.service];
+    return SLACK_SERVICE_SCOPES[options.service] ?? SLACK_SERVICE_SCOPES.full ?? [];
   }
 
   // Default to full workspace scopes
-  return SLACK_SERVICE_SCOPES.full;
+  return SLACK_SERVICE_SCOPES.full ?? [];
 }
 
 /**
  * Options for preparing a Slack OAuth flow (server-side, no browser interaction)
  */
 export interface PrepareSlackOAuthOptions {
-  service?: SlackService;
+  service?: SlackServiceScope;
   userScopes?: string[];
   /** Port for the local callback server (Electron). One of callbackPort or callbackUrl required. */
   callbackPort?: number;

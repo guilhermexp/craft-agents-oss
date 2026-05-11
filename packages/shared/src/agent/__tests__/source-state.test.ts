@@ -260,7 +260,7 @@ describe('sourceNeedsAuthentication', () => {
   describe('local sources', () => {
     it('should return false for local sources (no auth needed)', () => {
       const source = createMockSource({
-        type: 'local',
+        type: 'filesystem',
         local: { path: '/path/to/files' },
         isAuthenticated: undefined,
       });

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { createChannel } from '@craft-agent/shared/channels/crud'
 import { listChannelMessages } from '@craft-agent/shared/channels/messages'
 import { saveLabelConfig } from '@craft-agent/shared/labels/storage'
@@ -112,7 +112,7 @@ describe('registerChannelsHandlers messages', () => {
     })
 
     const { handlers, ctx, pushed, createdSessions, sentMessages } = createHarness()
-    const send = handlers.get(RPC_CHANNELS.channels.SEND_MESSAGE)
+    const send = handlers.get(RPC_NAMESPACES.channels.SEND_MESSAGE)
     expect(send).toBeDefined()
 
     const result = await send!(ctx, 'ws-1', {
@@ -146,7 +146,7 @@ describe('registerChannelsHandlers messages', () => {
     expect(sentMessages.map(message => message.sessionId)).toEqual(['session-1', 'session-2'])
     expect(listChannelMessages(workspaceRoot, 'architecture')[0]?.tagged).toEqual(['hermes-lead', 'pi-reviewer'])
     expect(listChannelMessages(workspaceRoot, 'architecture').map(message => message.authorType)).toEqual(['user', 'agent', 'agent'])
-    expect(pushed.some(event => event.channel === RPC_CHANNELS.channels.MESSAGES_CHANGED)).toBe(true)
+    expect(pushed.some(event => event.channel === RPC_NAMESPACES.channels.MESSAGES_CHANGED)).toBe(true)
   })
 
   it('routes untagged channel messages through the configured Hermes orchestrator', async () => {
@@ -164,7 +164,7 @@ describe('registerChannelsHandlers messages', () => {
     })
 
     const { handlers, ctx, createdSessions, sentMessages } = createHarness()
-    const result = await handlers.get(RPC_CHANNELS.channels.SEND_MESSAGE)!(ctx, 'ws-1', {
+    const result = await handlers.get(RPC_NAMESPACES.channels.SEND_MESSAGE)!(ctx, 'ws-1', {
       channelId: 'war-room',
       text: 'cria plano e pede revisão do server-ops',
     })
@@ -198,12 +198,12 @@ describe('registerChannelsHandlers messages', () => {
   it('lists stored channel messages without dispatching new work', async () => {
     createChannel(workspaceRoot, { name: 'Notes' })
     const { handlers, ctx, createdSessions } = createHarness()
-    await handlers.get(RPC_CHANNELS.channels.SEND_MESSAGE)!(ctx, 'ws-1', {
+    await handlers.get(RPC_NAMESPACES.channels.SEND_MESSAGE)!(ctx, 'ws-1', {
       channelId: 'notes',
       text: 'só uma nota',
     })
 
-    const list = handlers.get(RPC_CHANNELS.channels.LIST_MESSAGES)
+    const list = handlers.get(RPC_NAMESPACES.channels.LIST_MESSAGES)
     const messages = await list!(ctx, 'ws-1', 'notes')
 
     expect(messages.map((message: { text: string }) => message.text)).toEqual(['só uma nota'])

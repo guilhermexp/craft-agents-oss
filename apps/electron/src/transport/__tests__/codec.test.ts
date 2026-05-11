@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect } from 'bun:test'
+import { rpcNamespace } from '@craft-agent/shared/protocol'
 import { validateEnvelopeShape, deserializeEnvelope, serializeEnvelope } from '../codec'
 
 describe('validateEnvelopeShape', () => {
@@ -13,11 +14,11 @@ describe('validateEnvelopeShape', () => {
   })
 
   it('rejects missing id', () => {
-    expect(validateEnvelopeShape({ type: 'request', channel: 'test' })).toBe(false)
+    expect(validateEnvelopeShape({ type: 'request', rpcNamespace: 'test' })).toBe(false)
   })
 
   it('rejects empty id', () => {
-    expect(validateEnvelopeShape({ id: '', type: 'request', channel: 'test' })).toBe(false)
+    expect(validateEnvelopeShape({ id: '', type: 'request', rpcNamespace: 'test' })).toBe(false)
   })
 
   it('rejects unknown type', () => {
@@ -25,18 +26,18 @@ describe('validateEnvelopeShape', () => {
   })
 
   it('accepts valid request', () => {
-    expect(validateEnvelopeShape({ id: '1', type: 'request', channel: 'test' })).toBe(true)
+    expect(validateEnvelopeShape({ id: '1', type: 'request', rpcNamespace: 'test' })).toBe(true)
   })
 
-  it('rejects request without channel', () => {
+  it('rejects request without rpcNamespace', () => {
     expect(validateEnvelopeShape({ id: '1', type: 'request' })).toBe(false)
   })
 
   it('accepts valid event', () => {
-    expect(validateEnvelopeShape({ id: '1', type: 'event', channel: 'test' })).toBe(true)
+    expect(validateEnvelopeShape({ id: '1', type: 'event', rpcNamespace: 'test' })).toBe(true)
   })
 
-  it('rejects event without channel', () => {
+  it('rejects event without rpcNamespace', () => {
     expect(validateEnvelopeShape({ id: '1', type: 'event' })).toBe(false)
   })
 
@@ -97,11 +98,11 @@ describe('validateEnvelopeShape', () => {
 
 describe('deserializeEnvelope', () => {
   it('roundtrips a valid envelope', () => {
-    const envelope = { id: '1', type: 'request' as const, channel: 'test', args: [1, 'two'] }
+    const envelope = { id: '1', type: 'request' as const, rpcNamespace: rpcNamespace('test'), args: [1, 'two'] }
     const raw = serializeEnvelope(envelope as any)
     const decoded = deserializeEnvelope(raw)
     expect(decoded.id).toBe('1')
-    expect(decoded.channel).toBe('test')
+    expect(decoded.rpcNamespace).toBe(rpcNamespace('test'))
     expect(decoded.args).toEqual([1, 'two'])
   })
 

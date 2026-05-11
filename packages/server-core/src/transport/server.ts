@@ -21,6 +21,7 @@ import {
   type MessageEnvelope,
   type PushTarget,
   type ErrorCode,
+  rpcNamespace,
 } from '@craft-agent/shared/protocol'
 import type { RpcServer, HandlerFn, RequestContext } from './types'
 import { serializeEnvelope, deserializeEnvelope } from './codec'
@@ -233,7 +234,7 @@ export class WsRpcServer implements RpcServer {
       const envelope: MessageEnvelope = {
         id,
         type: 'request',
-        channel,
+        rpcNamespace: rpcNamespace(channel),
         args,
         serverId: this.serverId,
       }
@@ -478,7 +479,7 @@ export class WsRpcServer implements RpcServer {
                   protocolVersion: PROTOCOL_VERSION,
                   serverVersion: this.serverVersion || undefined,
                   clientId: prevClient.id,
-                  registeredChannels: [...this.handlers.keys()],
+                  registeredNamespaces: [...this.handlers.keys()].map(rpcNamespace),
                   reconnected: true,
                 }
                 this.safeSend(ws, serializeEnvelope(ack))
@@ -501,7 +502,7 @@ export class WsRpcServer implements RpcServer {
                   protocolVersion: PROTOCOL_VERSION,
                   serverVersion: this.serverVersion || undefined,
                   clientId: prevClient.id,
-                  registeredChannels: [...this.handlers.keys()],
+                  registeredNamespaces: [...this.handlers.keys()].map(rpcNamespace),
                   reconnected: true,
                   stale: true,
                 }
@@ -561,7 +562,7 @@ export class WsRpcServer implements RpcServer {
           protocolVersion: PROTOCOL_VERSION,
           serverVersion: this.serverVersion || undefined,
           clientId,
-          registeredChannels: [...this.handlers.keys()],
+          registeredNamespaces: [...this.handlers.keys()].map(rpcNamespace),
         }
         this.safeSend(ws, serializeEnvelope(ack))
 
@@ -622,16 +623,16 @@ export class WsRpcServer implements RpcServer {
   private static readonly HANDLER_TIMEOUT_MS = 60_000
 
   private async onRequest(client: ClientConnection, envelope: MessageEnvelope): Promise<void> {
-    const { channel, id, args } = envelope
+    const { rpcNamespace: namespace, id, args } = envelope
 
-    if (!channel) {
-      this.sendResponseError(client.ws, id, undefined, 'CHANNEL_NOT_FOUND', 'Missing channel')
+    if (!namespace) {
+      this.sendResponseError(client.ws, id, undefined, 'NAMESPACE_NOT_FOUND', 'Missing namespace')
       return
     }
 
-    const handler = this.handlers.get(channel)
+    const handler = this.handlers.get(namespace)
     if (!handler) {
-      this.sendResponseError(client.ws, id, channel, 'CHANNEL_NOT_FOUND', `No handler for: ${channel}`)
+      this.sendResponseError(client.ws, id, namespace, 'NAMESPACE_NOT_FOUND', `No handler for: ${namespace}`)
       return
     }
 
@@ -645,21 +646,21 @@ export class WsRpcServer implements RpcServer {
       const result = await Promise.race([
         handler(ctx, ...(args ?? [])),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`Handler timeout: ${channel} (${WsRpcServer.HANDLER_TIMEOUT_MS}ms)`)),
+          setTimeout(() => reject(new Error(`Handler timeout: ${namespace} (${WsRpcServer.HANDLER_TIMEOUT_MS}ms)`)),
             WsRpcServer.HANDLER_TIMEOUT_MS),
         ),
       ])
       const response: MessageEnvelope = {
         id,
         type: 'response',
-        channel,
+        rpcNamespace: namespace,
         result,
       }
       this.safeSend(client.ws, serializeEnvelope(response))
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       const code: ErrorCode = (err as any)?.code ?? 'HANDLER_ERROR'
-      this.sendResponseError(client.ws, id, channel, code, message)
+      this.sendResponseError(client.ws, id, namespace, code, message)
     }
   }
 
@@ -738,7 +739,7 @@ export class WsRpcServer implements RpcServer {
     const envelope: MessageEnvelope = {
       id: randomUUID(),
       type: 'event',
-      channel,
+      rpcNamespace: rpcNamespace(channel),
       args,
       serverId: this.serverId,
       seq,
@@ -810,13 +811,13 @@ export class WsRpcServer implements RpcServer {
 
   /** Handler/request errors — sent as type:'response' with error field. */
   private sendResponseError(
-    ws: WebSocket, id: string, channel: string | undefined,
+    ws: WebSocket, id: string, namespace: string | undefined,
     code: ErrorCode, message: string,
   ): void {
     const envelope: MessageEnvelope = {
       id,
       type: 'response',
-      channel,
+      ...(namespace !== undefined ? { rpcNamespace: rpcNamespace(namespace) } : {}),
       error: { code, message },
     }
     this.safeSend(ws, serializeEnvelope(envelope))

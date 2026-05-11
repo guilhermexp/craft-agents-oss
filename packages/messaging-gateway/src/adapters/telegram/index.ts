@@ -19,7 +19,9 @@ import type {
   InlineButton,
   ButtonPress,
   MessagingLogger,
+  MessagingChannelId,
 } from '../../types'
+import { messagingChannelId } from '../../types'
 import { formatForTelegram } from './format'
 
 /**
@@ -102,9 +104,9 @@ function describeError(err: unknown, depth = 0): Record<string, unknown> {
 
 /**
  * DM-only guard for Phase 1. Groups/supergroups/channels are ignored because
- * the current trust model treats `channelId` as the authorization boundary —
+ * the current trust model treats `messagingChannelId` as the authorization boundary —
  * in a DM, the chat IS the authorized party. Opening to groups requires
- * per-sender authorization keyed by `(channelId, senderId)` everywhere
+ * per-sender authorization keyed by `(messagingChannelId, senderId)` everywhere
  * (bind, /pair consume, permission/plan callbacks), which doesn't exist yet.
  */
 export function isPrivateChat(ctx: Context): boolean {
@@ -175,7 +177,7 @@ export class TelegramAdapter implements PlatformAdapter {
 
       const msg: IncomingMessage = {
         platform: 'telegram',
-        channelId: String(ctx.chat.id),
+        messagingChannelId: messagingChannelId(String(ctx.chat.id)),
         messageId: String(ctx.message.message_id),
         senderId: String(ctx.from?.id ?? ''),
         senderName: ctx.from?.first_name ?? undefined,
@@ -287,7 +289,7 @@ export class TelegramAdapter implements PlatformAdapter {
 
       const press: ButtonPress = {
         platform: 'telegram',
-        channelId: String(ctx.chat?.id ?? ''),
+        messagingChannelId: messagingChannelId(String(ctx.chat?.id ?? '')),
         messageId: String(ctx.callbackQuery.message?.message_id ?? ''),
         senderId: String(ctx.from?.id ?? ''),
         buttonId: ctx.callbackQuery.data ?? '',
@@ -416,7 +418,7 @@ export class TelegramAdapter implements PlatformAdapter {
 
     const msg: IncomingMessage = {
       platform: 'telegram',
-      channelId: String(ctx.chat.id),
+      messagingChannelId: messagingChannelId(String(ctx.chat.id)),
       messageId: String(ctx.message.message_id),
       senderId: String(ctx.from?.id ?? ''),
       senderName: ctx.from?.first_name ?? undefined,
@@ -501,24 +503,24 @@ export class TelegramAdapter implements PlatformAdapter {
     this.buttonHandler = handler
   }
 
-  async sendText(channelId: string, text: string): Promise<SentMessage> {
+  async sendText(messagingChannelId: MessagingChannelId, text: string): Promise<SentMessage> {
     if (!this.bot) throw new Error('Telegram adapter not initialized')
     const formatted = formatForTelegram(text)
-    const sent = await this.bot.api.sendMessage(Number(channelId), formatted)
+    const sent = await this.bot.api.sendMessage(Number(messagingChannelId), formatted)
     return {
       platform: 'telegram',
-      channelId,
+      messagingChannelId,
       messageId: String(sent.message_id),
     }
   }
 
-  async editMessage(channelId: string, messageId: string, text: string): Promise<void> {
+  async editMessage(messagingChannelId: MessagingChannelId, messageId: string, text: string): Promise<void> {
     if (!this.bot) throw new Error('Telegram adapter not initialized')
     const formatted = formatForTelegram(text)
-    await this.bot.api.editMessageText(Number(channelId), Number(messageId), formatted)
+    await this.bot.api.editMessageText(Number(messagingChannelId), Number(messageId), formatted)
   }
 
-  async sendButtons(channelId: string, text: string, buttons: InlineButton[]): Promise<SentMessage> {
+  async sendButtons(messagingChannelId: MessagingChannelId, text: string, buttons: InlineButton[]): Promise<SentMessage> {
     if (!this.bot) throw new Error('Telegram adapter not initialized')
 
     const keyboard = {
@@ -528,39 +530,39 @@ export class TelegramAdapter implements PlatformAdapter {
       }]),
     }
 
-    const sent = await this.bot.api.sendMessage(Number(channelId), text, {
+    const sent = await this.bot.api.sendMessage(Number(messagingChannelId), text, {
       reply_markup: keyboard,
     })
 
     return {
       platform: 'telegram',
-      channelId,
+      messagingChannelId,
       messageId: String(sent.message_id),
     }
   }
 
-  async sendTyping(channelId: string): Promise<void> {
+  async sendTyping(messagingChannelId: MessagingChannelId): Promise<void> {
     if (!this.bot) return
-    await this.bot.api.sendChatAction(Number(channelId), 'typing').catch(() => {})
+    await this.bot.api.sendChatAction(Number(messagingChannelId), 'typing').catch(() => {})
   }
 
-  async sendFile(channelId: string, file: Buffer, filename: string, caption?: string): Promise<SentMessage> {
+  async sendFile(messagingChannelId: MessagingChannelId, file: Buffer, filename: string, caption?: string): Promise<SentMessage> {
     if (!this.bot) throw new Error('Telegram adapter not initialized')
 
     const inputFile = new InputFile(file, filename)
-    const sent = await this.bot.api.sendDocument(Number(channelId), inputFile, { caption })
+    const sent = await this.bot.api.sendDocument(Number(messagingChannelId), inputFile, { caption })
 
     return {
       platform: 'telegram',
-      channelId,
+      messagingChannelId,
       messageId: String(sent.message_id),
     }
   }
 
-  async clearButtons(channelId: string, messageId: string): Promise<void> {
+  async clearButtons(messagingChannelId: MessagingChannelId, messageId: string): Promise<void> {
     if (!this.bot) return
     try {
-      await this.bot.api.editMessageReplyMarkup(Number(channelId), Number(messageId), {
+      await this.bot.api.editMessageReplyMarkup(Number(messagingChannelId), Number(messageId), {
         reply_markup: { inline_keyboard: [] },
       })
     } catch {

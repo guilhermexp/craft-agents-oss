@@ -10,7 +10,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import type { WsRpcClient } from '../transport/client'
 
 /**
@@ -79,7 +79,7 @@ export async function invokeChunked(
 
   let transferId: string | null = null
   try {
-    const startResult = await client.invoke(RPC_CHANNELS.transfer.START, {
+    const startResult = await client.invoke(RPC_NAMESPACES.transfer.START, {
       totalBytes: payload.bytes.length,
       chunkCount: payload.chunkCount,
       channel,
@@ -99,7 +99,7 @@ export async function invokeChunked(
       let lastError: Error | null = null
       for (let attempt = 1; attempt <= MAX_CHUNK_RETRIES; attempt++) {
         try {
-          await client.invoke(RPC_CHANNELS.transfer.CHUNK, {
+          await client.invoke(RPC_NAMESPACES.transfer.CHUNK, {
             transferId,
             index: i,
             data,
@@ -127,14 +127,14 @@ export async function invokeChunked(
     }
 
     console.log('[ChunkedRPC] All chunks sent, committing...')
-    const result = await client.invoke(RPC_CHANNELS.transfer.COMMIT, { transferId })
+    const result = await client.invoke(RPC_NAMESPACES.transfer.COMMIT, { transferId })
     console.log('[ChunkedRPC] Transfer committed successfully')
     transferId = null
     return result
   } catch (error) {
     if (transferId) {
       try {
-        await client.invoke(RPC_CHANNELS.transfer.ABORT, { transferId })
+        await client.invoke(RPC_NAMESPACES.transfer.ABORT, { transferId })
       } catch {
         // Best effort cleanup — the server may already have cleaned up.
       }

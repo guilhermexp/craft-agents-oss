@@ -23,7 +23,9 @@ import {
   parseFrames,
   type WorkerCommand,
   type WorkerEvent,
+  whatsAppChannelId,
 } from './protocol'
+import { messagingChannelId } from '../../types'
 import type {
   PlatformAdapter,
   PlatformConfig,
@@ -32,6 +34,7 @@ import type {
   SentMessage,
   InlineButton,
   ButtonPress,
+  MessagingChannelId,
   MessagingLogger,
 } from '../../types'
 
@@ -274,23 +277,23 @@ export class WhatsAppAdapter implements PlatformAdapter {
     this.sendCommand({ type: 'submit_pairing_phone', phoneNumber })
   }
 
-  async sendText(channelId: string, text: string): Promise<SentMessage> {
+  async sendText(messagingChannelId: MessagingChannelId, text: string): Promise<SentMessage> {
     const id = String(this.nextCmdId++)
-    const result = await this.sendWithResult({ id, type: 'send_text', channelId, text })
+    const result = await this.sendWithResult({ id, type: 'send_text', whatsAppChannelId: whatsAppChannelId(messagingChannelId), text })
     if (!result.ok) throw new Error(result.error ?? 'Send failed')
     return {
       platform: 'whatsapp',
-      channelId,
+      messagingChannelId,
       messageId: result.messageId ?? id,
     }
   }
 
-  async editMessage(_channelId: string, _messageId: string, _text: string): Promise<void> {
+  async editMessage(_channelId: MessagingChannelId, _messageId: string, _text: string): Promise<void> {
     throw new Error('WhatsApp edit not supported in this adapter')
   }
 
   async sendButtons(
-    channelId: string,
+    messagingChannelId: MessagingChannelId,
     text: string,
     buttons: InlineButton[],
   ): Promise<SentMessage> {
@@ -298,16 +301,16 @@ export class WhatsAppAdapter implements PlatformAdapter {
       .map((b, i) => `${i + 1}. ${b.label}`)
       .join('\n')
     const combined = numbered ? `${text}\n\n${numbered}` : text
-    return this.sendText(channelId, combined)
+    return this.sendText(messagingChannelId, combined)
   }
 
-  async sendTyping(_channelId: string): Promise<void> {
+  async sendTyping(_channelId: MessagingChannelId): Promise<void> {
     // No-op — omitting "typing" presence updates avoids an extra round-trip
     // through the worker; UX remains acceptable without it.
   }
 
   async sendFile(
-    channelId: string,
+    messagingChannelId: MessagingChannelId,
     file: Buffer,
     filename: string,
     caption?: string,
@@ -316,7 +319,7 @@ export class WhatsAppAdapter implements PlatformAdapter {
     const result = await this.sendWithResult({
       id,
       type: 'send_file',
-      channelId,
+      whatsAppChannelId: whatsAppChannelId(messagingChannelId),
       dataBase64: file.toString('base64'),
       filename,
       caption,
@@ -324,7 +327,7 @@ export class WhatsAppAdapter implements PlatformAdapter {
     if (!result.ok) throw new Error(result.error ?? 'Send failed')
     return {
       platform: 'whatsapp',
-      channelId,
+      messagingChannelId,
       messageId: result.messageId ?? id,
     }
   }
@@ -443,7 +446,7 @@ export class WhatsAppAdapter implements PlatformAdapter {
         if (this.messageHandler) {
           const msg: IncomingMessage = {
             platform: 'whatsapp',
-            channelId: ev.channelId,
+            messagingChannelId: messagingChannelId(ev.whatsAppChannelId),
             messageId: ev.messageId,
             senderId: ev.senderId,
             senderName: ev.senderName,

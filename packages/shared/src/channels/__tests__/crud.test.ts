@@ -22,7 +22,7 @@ describe('channel CRUD', () => {
   it('creates a channel with a real unique label id instead of a valued channel label', () => {
     const channel = createChannel(workspaceRoot, { name: 'Cert Certificados' });
 
-    expect(channel.id).toBe('cert-certificados');
+    expect(String(channel.id)).toBe('cert-certificados');
     expect(channel.labelId).toBe('channel-cert-certificados');
     expect(channel.labelId.includes('::')).toBe(false);
 
@@ -36,11 +36,11 @@ describe('channel CRUD', () => {
     const first = createChannel(workspaceRoot, { name: 'Client' });
     const second = createChannel(workspaceRoot, { name: 'Client!' });
 
-    expect(first.id).toBe('client');
+    expect(String(first.id)).toBe('client');
     expect(first.labelId).toBe('channel-client');
-    expect(second.id).toBe('client-2');
+    expect(String(second.id)).toBe('client-2');
     expect(second.labelId).toBe('channel-client-2');
-    expect(listChannels(workspaceRoot).map(channel => channel.id)).toEqual(['client', 'client-2']);
+    expect(listChannels(workspaceRoot).map(channel => String(channel.id))).toEqual(['client', 'client-2']);
   });
 
   it('updates name and color and syncs the backing label', () => {

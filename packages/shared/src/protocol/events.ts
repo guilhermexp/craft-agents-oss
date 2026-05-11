@@ -6,7 +6,7 @@
 import type { ThemeOverrides } from '../config/index'
 import type { LoadedSource } from '../sources/types'
 import type { LoadedSkill } from '../skills/types'
-import { RPC_CHANNELS } from './channels'
+import { RPC_NAMESPACES } from './channels'
 import type {
   SessionEvent,
   UnreadSummary,
@@ -18,61 +18,61 @@ import type { BrowserProfileSettings } from '../config/types'
 
 export interface BroadcastEventMap {
   // Session events (workspace-scoped via broadcastToWorkspace)
-  [RPC_CHANNELS.sessions.EVENT]: [event: SessionEvent]
-  [RPC_CHANNELS.sessions.UNREAD_SUMMARY_CHANGED]: [summary: UnreadSummary]
-  [RPC_CHANNELS.sessions.FILES_CHANGED]: [sessionId: string]
+  [RPC_NAMESPACES.sessions.EVENT]: [event: SessionEvent]
+  [RPC_NAMESPACES.sessions.UNREAD_SUMMARY_CHANGED]: [summary: UnreadSummary]
+  [RPC_NAMESPACES.sessions.FILES_CHANGED]: [sessionId: string]
 
   // Domain change broadcasts (global via broadcastToAll)
-  [RPC_CHANNELS.sources.CHANGED]: [workspaceId: string, sources: LoadedSource[]]
-  [RPC_CHANNELS.labels.CHANGED]: [workspaceId: string]
-  [RPC_CHANNELS.channels.CHANGED]: [workspaceId: string]
-  [RPC_CHANNELS.channels.MESSAGES_CHANGED]: [workspaceId: string, channelId: string]
-  [RPC_CHANNELS.statuses.CHANGED]: [workspaceId: string]
-  [RPC_CHANNELS.automations.CHANGED]: [workspaceId: string]
-  [RPC_CHANNELS.skills.CHANGED]: [workspaceId: string, skills: LoadedSkill[]]
-  [RPC_CHANNELS.llmConnections.CHANGED]: []
-  [RPC_CHANNELS.permissions.DEFAULTS_CHANGED]: [value: null]
+  [RPC_NAMESPACES.sources.CHANGED]: [workspaceId: string, sources: LoadedSource[]]
+  [RPC_NAMESPACES.labels.CHANGED]: [workspaceId: string]
+  [RPC_NAMESPACES.channels.CHANGED]: [workspaceId: string]
+  [RPC_NAMESPACES.channels.MESSAGES_CHANGED]: [workspaceId: string, channelId: string]
+  [RPC_NAMESPACES.statuses.CHANGED]: [workspaceId: string]
+  [RPC_NAMESPACES.automations.CHANGED]: [workspaceId: string]
+  [RPC_NAMESPACES.skills.CHANGED]: [workspaceId: string, skills: LoadedSkill[]]
+  [RPC_NAMESPACES.llmConnections.CHANGED]: []
+  [RPC_NAMESPACES.permissions.DEFAULTS_CHANGED]: [value: null]
 
   // Theme broadcasts (global)
-  [RPC_CHANNELS.theme.APP_CHANGED]: [theme: ThemeOverrides | null]
-  [RPC_CHANNELS.theme.SYSTEM_CHANGED]: [isDark: boolean]
-  [RPC_CHANNELS.theme.PREFERENCES_CHANGED]: [preferences: { mode: string; colorTheme: string; font: string }]
-  [RPC_CHANNELS.theme.WORKSPACE_THEME_CHANGED]: [data: { workspaceId: string; themeId: string | null }]
+  [RPC_NAMESPACES.theme.APP_CHANGED]: [theme: ThemeOverrides | null]
+  [RPC_NAMESPACES.theme.SYSTEM_CHANGED]: [isDark: boolean]
+  [RPC_NAMESPACES.theme.PREFERENCES_CHANGED]: [preferences: { mode: string; colorTheme: string; font: string }]
+  [RPC_NAMESPACES.theme.WORKSPACE_THEME_CHANGED]: [data: { workspaceId: string; themeId: string | null }]
 
   // Update broadcasts (global)
-  [RPC_CHANNELS.update.AVAILABLE]: [info: UpdateInfo]
-  [RPC_CHANNELS.update.DOWNLOAD_PROGRESS]: [progress: number]
+  [RPC_NAMESPACES.update.AVAILABLE]: [info: UpdateInfo]
+  [RPC_NAMESPACES.update.DOWNLOAD_PROGRESS]: [progress: number]
 
   // Badge broadcasts (global)
-  [RPC_CHANNELS.badge.DRAW]: [data: { count: number; iconDataUrl: string }]
-  [RPC_CHANNELS.badge.DRAW_WINDOWS]: [data: { count: number }]
+  [RPC_NAMESPACES.badge.DRAW]: [data: { count: number; iconDataUrl: string }]
+  [RPC_NAMESPACES.badge.DRAW_WINDOWS]: [data: { count: number }]
 
   // Window events (per-window)
-  [RPC_CHANNELS.window.FOCUS_STATE]: [isFocused: boolean]
-  [RPC_CHANNELS.window.CLOSE_REQUESTED]: []
+  [RPC_NAMESPACES.window.FOCUS_STATE]: [isFocused: boolean]
+  [RPC_NAMESPACES.window.CLOSE_REQUESTED]: []
 
   // Browser pane events (global)
-  [RPC_CHANNELS.browserPane.STATE_CHANGED]: [info: BrowserInstanceInfo]
-  [RPC_CHANNELS.browserPane.REMOVED]: [id: string]
-  [RPC_CHANNELS.browserPane.INTERACTED]: [id: string]
-  [RPC_CHANNELS.browserPane.PROFILES_CHANGED]: [settings: BrowserProfileSettings]
-  [RPC_CHANNELS.browserPane.PICKER_REQUESTED]: [data: { instanceId: string }]
+  [RPC_NAMESPACES.browserPane.STATE_CHANGED]: [info: BrowserInstanceInfo]
+  [RPC_NAMESPACES.browserPane.REMOVED]: [id: string]
+  [RPC_NAMESPACES.browserPane.INTERACTED]: [id: string]
+  [RPC_NAMESPACES.browserPane.PROFILES_CHANGED]: [settings: BrowserProfileSettings]
+  [RPC_NAMESPACES.browserPane.PICKER_REQUESTED]: [data: { instanceId: string }]
 
   // Navigation events (per-window)
-  [RPC_CHANNELS.notification.NAVIGATE]: [data: { workspaceId: string; sessionId: string }]
-  [RPC_CHANNELS.deeplink.NAVIGATE]: [navigation: DeepLinkNavigation]
+  [RPC_NAMESPACES.notification.NAVIGATE]: [data: { workspaceId: string; sessionId: string }]
+  [RPC_NAMESPACES.deeplink.NAVIGATE]: [navigation: DeepLinkNavigation]
 
   // Copilot device code event
-  [RPC_CHANNELS.copilot.DEVICE_CODE]: [data: { userCode: string; verificationUri: string }]
+  [RPC_NAMESPACES.copilot.DEVICE_CODE]: [data: { userCode: string; verificationUri: string }]
 
   // Menu events (per-window, no payload)
-  [RPC_CHANNELS.menu.NEW_CHAT]: []
-  [RPC_CHANNELS.menu.OPEN_SETTINGS]: []
-  [RPC_CHANNELS.menu.KEYBOARD_SHORTCUTS]: []
-  [RPC_CHANNELS.menu.TOGGLE_FOCUS_MODE]: []
-  [RPC_CHANNELS.menu.TOGGLE_SIDEBAR]: []
+  [RPC_NAMESPACES.menu.NEW_CHAT]: []
+  [RPC_NAMESPACES.menu.OPEN_SETTINGS]: []
+  [RPC_NAMESPACES.menu.KEYBOARD_SHORTCUTS]: []
+  [RPC_NAMESPACES.menu.TOGGLE_FOCUS_MODE]: []
+  [RPC_NAMESPACES.menu.TOGGLE_SIDEBAR]: []
 
   // Messaging gateway broadcasts
-  [RPC_CHANNELS.messaging.BINDING_CHANGED]: [workspaceId: string]
-  [RPC_CHANNELS.messaging.PLATFORM_STATUS]: [workspaceId: string, platform: string, connected: boolean]
+  [RPC_NAMESPACES.messaging.BINDING_CHANGED]: [workspaceId: string]
+  [RPC_NAMESPACES.messaging.PLATFORM_STATUS]: [workspaceId: string, platform: string, connected: boolean]
 }

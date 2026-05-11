@@ -3,7 +3,7 @@ import { isAbsolute, join, resolve, dirname, parse as parsePath, relative } from
 import { homedir } from 'os'
 import { validatePathFormat } from '../../utils/path-validation'
 import { randomUUID } from 'crypto'
-import { RPC_CHANNELS, type FileAttachment, type DirectoryListingResult, type FileTreeListingResult, type SessionFile } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES, type FileAttachment, type DirectoryListingResult, type FileTreeListingResult, type SessionFile } from '@craft-agent/shared/protocol'
 import type { StoredAttachment } from '@craft-agent/core/types'
 import { readFileAttachment, validateImageForClaudeAPI, IMAGE_LIMITS } from '@craft-agent/shared/utils'
 import { getSessionAttachmentsPath, validateSessionId } from '@craft-agent/shared/sessions'
@@ -99,23 +99,23 @@ async function buildWorkspaceTreeEntries(dirPath: string): Promise<{ entries: Se
 }
 
 export const HANDLED_CHANNELS = [
-  RPC_CHANNELS.file.READ,
-  RPC_CHANNELS.file.READ_DATA_URL,
-  RPC_CHANNELS.file.READ_PREVIEW_DATA_URL,
-  RPC_CHANNELS.file.READ_BINARY,
-  RPC_CHANNELS.file.OPEN_DIALOG,
-  RPC_CHANNELS.file.READ_ATTACHMENT,
-  RPC_CHANNELS.file.READ_USER_ATTACHMENT,
-  RPC_CHANNELS.file.STORE_ATTACHMENT,
-  RPC_CHANNELS.file.GENERATE_THUMBNAIL,
-  RPC_CHANNELS.fs.SEARCH,
-  RPC_CHANNELS.fs.LIST_DIRECTORY,
-  RPC_CHANNELS.fs.LIST_TREE,
+  RPC_NAMESPACES.file.READ,
+  RPC_NAMESPACES.file.READ_DATA_URL,
+  RPC_NAMESPACES.file.READ_PREVIEW_DATA_URL,
+  RPC_NAMESPACES.file.READ_BINARY,
+  RPC_NAMESPACES.file.OPEN_DIALOG,
+  RPC_NAMESPACES.file.READ_ATTACHMENT,
+  RPC_NAMESPACES.file.READ_USER_ATTACHMENT,
+  RPC_NAMESPACES.file.STORE_ATTACHMENT,
+  RPC_NAMESPACES.file.GENERATE_THUMBNAIL,
+  RPC_NAMESPACES.fs.SEARCH,
+  RPC_NAMESPACES.fs.LIST_DIRECTORY,
+  RPC_NAMESPACES.fs.LIST_TREE,
 ] as const
 
 export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): void {
   // Read a file (with path validation to prevent traversal attacks)
-  server.handle(RPC_CHANNELS.file.READ, async (ctx, path: string) => {
+  server.handle(RPC_NAMESPACES.file.READ, async (ctx, path: string) => {
     try {
       const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
       const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
@@ -135,7 +135,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
 
   // Read an image file as a data URL for in-app image preview overlays.
   // Returns data:{mime};base64,{content} — used by ImagePreviewOverlay and markdown image blocks.
-  server.handle(RPC_CHANNELS.file.READ_DATA_URL, async (ctx, path: string) => {
+  server.handle(RPC_NAMESPACES.file.READ_DATA_URL, async (ctx, path: string) => {
     try {
       const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
       const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
@@ -175,7 +175,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
 
   // Read an image file as a small preview data URL for lightweight thumbnail rendering.
   // Returns a PNG data URL resized to fit within maxSize×maxSize.
-  server.handle(RPC_CHANNELS.file.READ_PREVIEW_DATA_URL, async (ctx, path: string, maxSize = 64) => {
+  server.handle(RPC_NAMESPACES.file.READ_PREVIEW_DATA_URL, async (ctx, path: string, maxSize = 64) => {
     try {
       const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
       const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
@@ -195,7 +195,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
 
   // Read a file as raw binary (Uint8Array) for react-pdf.
   // The WS transport codec preserves Uint8Array payloads over JSON envelopes.
-  server.handle(RPC_CHANNELS.file.READ_BINARY, async (ctx, path: string) => {
+  server.handle(RPC_NAMESPACES.file.READ_BINARY, async (ctx, path: string) => {
     try {
       const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
       const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
@@ -210,7 +210,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   })
 
   // Open native file dialog for selecting files to attach (routed to client)
-  server.handle(RPC_CHANNELS.file.OPEN_DIALOG, async (ctx) => {
+  server.handle(RPC_NAMESPACES.file.OPEN_DIALOG, async (ctx) => {
     const result = await requestClientOpenFileDialog(server, ctx.clientId, {
       properties: ['openFile', 'multiSelections'],
       filters: [
@@ -225,7 +225,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   })
 
   // Read file and return as FileAttachment with Quick Look thumbnail
-  server.handle(RPC_CHANNELS.file.READ_ATTACHMENT, async (ctx, path: string) => {
+  server.handle(RPC_NAMESPACES.file.READ_ATTACHMENT, async (ctx, path: string) => {
     try {
       const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
       const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
@@ -260,7 +260,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   // NOT exposed to agent code — no equivalent MCP tool. Kept separate from readFileAttachment
   // on purpose to preserve the agent-facing read's narrow trust boundary.
   const USER_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024
-  server.handle(RPC_CHANNELS.file.READ_USER_ATTACHMENT, async (_ctx, path: string) => {
+  server.handle(RPC_NAMESPACES.file.READ_USER_ATTACHMENT, async (_ctx, path: string) => {
     try {
       if (!path || typeof path !== 'string' || !isAbsolute(path)) return null
       const info = await stat(path).catch(() => null)
@@ -288,7 +288,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   })
 
   // Generate thumbnail from base64 data (for drag-drop files where we don't have a path)
-  server.handle(RPC_CHANNELS.file.GENERATE_THUMBNAIL, async (_ctx, base64: string, _mimeType: string): Promise<string | null> => {
+  server.handle(RPC_NAMESPACES.file.GENERATE_THUMBNAIL, async (_ctx, base64: string, _mimeType: string): Promise<string | null> => {
     try {
       const buffer = Buffer.from(base64, 'base64')
       const thumbBuffer = await deps.platform.imageProcessor.process(buffer, {
@@ -304,7 +304,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
 
   // Store an attachment to disk and generate thumbnail/markdown conversion
   // This is the core of the persistent file attachment system
-  server.handle(RPC_CHANNELS.file.STORE_ATTACHMENT, async (ctx, sessionId: string, attachment: FileAttachment): Promise<StoredAttachment> => {
+  server.handle(RPC_NAMESPACES.file.STORE_ATTACHMENT, async (ctx, sessionId: string, attachment: FileAttachment): Promise<StoredAttachment> => {
     // Track files we've written for cleanup on error
     const filesToCleanup: string[] = []
 
@@ -533,7 +533,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
   // Parallel BFS walk that skips ignored directories BEFORE entering them,
   // avoiding reading node_modules/etc. contents entirely. Uses withFileTypes
   // to get entry types without separate stat calls.
-  server.handle(RPC_CHANNELS.fs.SEARCH, async (_ctx, basePath: string, query: string) => {
+  server.handle(RPC_NAMESPACES.fs.SEARCH, async (_ctx, basePath: string, query: string) => {
     basePath = expandHomePath(basePath)
 
     deps.platform.logger.debug('[FS_SEARCH] called:', basePath, query)
@@ -620,7 +620,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
 
   // Workspace/project file tree for the session info panel. This returns one
   // directory level at a time so large repositories do not block the renderer.
-  server.handle(RPC_CHANNELS.fs.LIST_TREE, async (ctx, rootPath?: string, dirPath?: string): Promise<FileTreeListingResult> => {
+  server.handle(RPC_NAMESPACES.fs.LIST_TREE, async (ctx, rootPath?: string, dirPath?: string): Promise<FileTreeListingResult> => {
     const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
     const workspace = workspaceId ? getWorkspaceByNameOrId(workspaceId) : null
     const requestedRoot = expandHomePath(rootPath?.trim() || workspace?.rootPath || homedir())
@@ -657,7 +657,7 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
 
   // List directories in a given path (for remote directory browsing).
   // Returns only directories (not files) — this is a folder picker.
-  server.handle(RPC_CHANNELS.fs.LIST_DIRECTORY, async (_ctx, dirPath: string) => {
+  server.handle(RPC_NAMESPACES.fs.LIST_DIRECTORY, async (_ctx, dirPath: string) => {
     // Resolve ~ to server's home directory (thin clients don't know the server's home)
     if (dirPath === '~' || dirPath.startsWith('~/')) {
       dirPath = dirPath === '~' ? homedir() : join(homedir(), dirPath.slice(2))

@@ -70,7 +70,7 @@ export class Commands {
       await this.handleHelp(adapter, msg)
     } else {
       await adapter.sendText(
-        msg.channelId,
+        msg.messagingChannelId,
         'No session bound to this chat.\n\n' +
         '/new [name] — start a new session\n' +
         '/bind — connect to an existing session\n' +
@@ -90,7 +90,7 @@ export class Commands {
       event: 'command_received',
       workspaceId: this.workspaceId,
       platform: adapter.platform,
-      channelId: msg.channelId,
+      messagingChannelId: msg.messagingChannelId,
       senderId: msg.senderId,
       command: cmd,
     })
@@ -136,13 +136,13 @@ export class Commands {
         this.workspaceId,
         session.id,
         adapter.platform,
-        msg.channelId,
+        msg.messagingChannelId,
         msg.senderName,
       )
 
       const displayName = session.name || session.id
       await adapter.sendText(
-        msg.channelId,
+        msg.messagingChannelId,
         `Created "${displayName}" — you're connected. Just type to start.`,
       )
       this.log.info('session created and bound from chat', {
@@ -150,7 +150,7 @@ export class Commands {
         workspaceId: this.workspaceId,
         sessionId: session.id,
         platform: adapter.platform,
-        channelId: msg.channelId,
+        messagingChannelId: msg.messagingChannelId,
       })
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error'
@@ -158,10 +158,10 @@ export class Commands {
         event: 'session_create_failed',
         workspaceId: this.workspaceId,
         platform: adapter.platform,
-        channelId: msg.channelId,
+        messagingChannelId: msg.messagingChannelId,
         error: err,
       })
-      await adapter.sendText(msg.channelId, `Failed to create session: ${errorMsg}`)
+      await adapter.sendText(msg.messagingChannelId, `Failed to create session: ${errorMsg}`)
     }
   }
 
@@ -172,7 +172,7 @@ export class Commands {
     if (bindArg) {
       const session = await this.resolveBindTarget(bindArg, recent)
       if (!session) {
-        await adapter.sendText(msg.channelId, `Session not found: ${bindArg}`)
+        await adapter.sendText(msg.messagingChannelId, `Session not found: ${bindArg}`)
         return
       }
 
@@ -180,7 +180,7 @@ export class Commands {
         this.workspaceId,
         session.id,
         adapter.platform,
-        msg.channelId,
+        msg.messagingChannelId,
         msg.senderName,
       )
 
@@ -189,17 +189,17 @@ export class Commands {
         workspaceId: this.workspaceId,
         sessionId: session.id,
         platform: adapter.platform,
-        channelId: msg.channelId,
+        messagingChannelId: msg.messagingChannelId,
         bindArg,
       })
 
-      await adapter.sendText(msg.channelId, `Bound to "${session.name || session.id}"`)
+      await adapter.sendText(msg.messagingChannelId, `Bound to "${session.name || session.id}"`)
       return
     }
 
     if (recent.length === 0) {
       await adapter.sendText(
-        msg.channelId,
+        msg.messagingChannelId,
         'No sessions found. Use /new to create one.',
       )
       return
@@ -213,7 +213,7 @@ export class Commands {
       }))
 
       await adapter.sendButtons(
-        msg.channelId,
+        msg.messagingChannelId,
         'Recent sessions:',
         buttons,
       )
@@ -226,14 +226,14 @@ export class Commands {
     })
 
     await adapter.sendText(
-      msg.channelId,
+      msg.messagingChannelId,
       'Recent sessions:\n' + lines.join('\n') + '\n\nUse /bind <number> to connect, or /bind <session-id> if you already know it.',
     )
   }
 
   private async handlePair(adapter: PlatformAdapter, msg: IncomingMessage): Promise<void> {
     if (!this.pairingConsumer) {
-      await adapter.sendText(msg.channelId, 'Pairing is not available in this build.')
+      await adapter.sendText(msg.messagingChannelId, 'Pairing is not available in this build.')
       return
     }
 
@@ -245,11 +245,11 @@ export class Commands {
         event: 'pairing_consume_rate_limited',
         workspaceId: this.workspaceId,
         platform: adapter.platform,
-        channelId: msg.channelId,
+        messagingChannelId: msg.messagingChannelId,
         senderId: msg.senderId,
       })
       await adapter.sendText(
-        msg.channelId,
+        msg.messagingChannelId,
         '⏳ Too many pairing attempts. Try again in a minute.',
       )
       return
@@ -260,7 +260,7 @@ export class Commands {
 
     if (!/^\d{6}$/.test(code)) {
       await adapter.sendText(
-        msg.channelId,
+        msg.messagingChannelId,
         'Usage: /pair <6-digit code>\n\nGenerate a code from the session menu in the Craft Agent app.',
       )
       return
@@ -268,13 +268,13 @@ export class Commands {
 
     const entry = this.pairingConsumer.consume(adapter.platform, code)
     if (!entry) {
-      await adapter.sendText(msg.channelId, 'Invalid or expired pairing code.')
+      await adapter.sendText(msg.messagingChannelId, 'Invalid or expired pairing code.')
       return
     }
 
     const session = await this.sessionManager.getSession(entry.sessionId)
     if (!session) {
-      await adapter.sendText(msg.channelId, 'Session no longer exists.')
+      await adapter.sendText(msg.messagingChannelId, 'Session no longer exists.')
       return
     }
 
@@ -282,7 +282,7 @@ export class Commands {
       entry.workspaceId,
       entry.sessionId,
       adapter.platform,
-      msg.channelId,
+      msg.messagingChannelId,
       msg.senderName,
     )
 
@@ -291,54 +291,54 @@ export class Commands {
       workspaceId: entry.workspaceId,
       sessionId: entry.sessionId,
       platform: adapter.platform,
-      channelId: msg.channelId,
+      messagingChannelId: msg.messagingChannelId,
     })
 
     await adapter.sendText(
-      msg.channelId,
+      msg.messagingChannelId,
       `✅ Paired with "${session.name || session.id}". You can start chatting now.`,
     )
   }
 
   private async handleUnbind(adapter: PlatformAdapter, msg: IncomingMessage): Promise<void> {
-    const removed = this.bindingStore.unbind(adapter.platform, msg.channelId)
+    const removed = this.bindingStore.unbind(adapter.platform, msg.messagingChannelId)
     if (removed) {
-      await adapter.sendText(msg.channelId, 'Disconnected from session.')
+      await adapter.sendText(msg.messagingChannelId, 'Disconnected from session.')
     } else {
-      await adapter.sendText(msg.channelId, 'No session is bound to this chat.')
+      await adapter.sendText(msg.messagingChannelId, 'No session is bound to this chat.')
     }
   }
 
   private async handleStatus(adapter: PlatformAdapter, msg: IncomingMessage): Promise<void> {
-    const binding = this.bindingStore.findByChannel(adapter.platform, msg.channelId)
+    const binding = this.bindingStore.findByMessagingChannel(adapter.platform, msg.messagingChannelId)
     if (!binding) {
-      await adapter.sendText(msg.channelId, 'No session bound. Use /bind, /new, or /pair.')
+      await adapter.sendText(msg.messagingChannelId, 'No session bound. Use /bind, /new, or /pair.')
       return
     }
 
     const session = await this.sessionManager.getSession(binding.sessionId)
     const name = session?.name || binding.sessionId.slice(0, 8)
-    const mode = binding.config.approvalChannel
+    const mode = binding.config.approvalSurface
     const responseMode = binding.config.responseMode
 
     await adapter.sendText(
-      msg.channelId,
+      msg.messagingChannelId,
       `Bound to "${name}"\nApproval: ${mode}\nResponse mode: ${responseMode}`,
     )
   }
 
   private async handleStop(adapter: PlatformAdapter, msg: IncomingMessage): Promise<void> {
-    const binding = this.bindingStore.findByChannel(adapter.platform, msg.channelId)
+    const binding = this.bindingStore.findByMessagingChannel(adapter.platform, msg.messagingChannelId)
     if (!binding) {
-      await adapter.sendText(msg.channelId, 'No session bound.')
+      await adapter.sendText(msg.messagingChannelId, 'No session bound.')
       return
     }
 
     try {
       await this.sessionManager.cancelProcessing(binding.sessionId)
-      await adapter.sendText(msg.channelId, 'Stopped.')
+      await adapter.sendText(msg.messagingChannelId, 'Stopped.')
     } catch {
-      await adapter.sendText(msg.channelId, 'Nothing to stop.')
+      await adapter.sendText(msg.messagingChannelId, 'Nothing to stop.')
     }
   }
 
@@ -348,7 +348,7 @@ export class Commands {
       : '/bind — pick from recent sessions\n'
 
     await adapter.sendText(
-      msg.channelId,
+      msg.messagingChannelId,
       'Commands:\n' +
       '/new [name] — create + bind new session\n' +
       bindLine +

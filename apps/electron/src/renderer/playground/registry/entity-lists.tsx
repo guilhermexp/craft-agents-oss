@@ -116,7 +116,7 @@ const sampleSessions: (SessionMeta & { _status: MockSessionStatus })[] = [
 interface MockSource {
   id: string
   name: string
-  type: 'mcp' | 'api' | 'local'
+  type: 'mcp' | 'api' | 'filesystem'
   tagline: string
   status: 'connected' | 'needs_auth' | 'failed' | 'untested'
   icon: React.ComponentType<{ className?: string }>
@@ -126,7 +126,7 @@ const sampleSources: MockSource[] = [
   { id: 'github', name: 'GitHub', type: 'mcp', tagline: 'Repositories, issues, and pull requests', status: 'connected', icon: Globe },
   { id: 'linear', name: 'Linear', type: 'api', tagline: 'Issue tracking and project management', status: 'connected', icon: Globe },
   { id: 'slack', name: 'Slack', type: 'mcp', tagline: 'Channels, messages, and search', status: 'needs_auth', icon: Globe },
-  { id: 'local-files', name: 'Project Files', type: 'local', tagline: '~/Documents/projects', status: 'connected', icon: HardDrive },
+  { id: 'filesystem-files', name: 'Project Files', type: 'filesystem', tagline: '~/Documents/projects', status: 'connected', icon: HardDrive },
   { id: 'stripe', name: 'Stripe', type: 'api', tagline: 'Payments and subscriptions', status: 'untested', icon: Globe },
 ]
 
@@ -908,7 +908,7 @@ export const entityListComponents: ComponentEntry[] = [
             { label: 'All', value: 'all' },
             { label: 'MCP', value: 'mcp' },
             { label: 'API', value: 'api' },
-            { label: 'Local', value: 'local' },
+            { label: 'Local', value: 'filesystem' },
           ],
         },
         defaultValue: 'all',

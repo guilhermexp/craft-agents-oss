@@ -1,7 +1,7 @@
 /**
  * Router — routes inbound messages from platform adapters to sessions.
  *
- * Looks up the ChannelBinding for (platform, channelId).
+ * Looks up the ExternalMessagingChannelBinding for (platform, messagingChannelId).
  * If found → resolves any `IncomingAttachment.localPath` entries to
  * `FileAttachment`s via `readFileAttachment()`, then forwards to
  * SessionManager.
@@ -31,7 +31,7 @@ export class Router {
   ) {}
 
   async route(adapter: PlatformAdapter, msg: IncomingMessage): Promise<void> {
-    const binding = this.bindingStore.findByChannel(msg.platform, msg.channelId)
+    const binding = this.bindingStore.findByMessagingChannel(msg.platform, msg.messagingChannelId)
 
     if (binding) {
       try {
@@ -39,7 +39,7 @@ export class Router {
         this.log.info('routing inbound chat message to session', {
           event: 'message_routed',
           platform: msg.platform,
-          channelId: msg.channelId,
+          messagingChannelId: msg.messagingChannelId,
           sessionId: binding.sessionId,
           bindingId: binding.id,
           attachmentCount: fileAttachments?.length ?? 0,
@@ -56,13 +56,13 @@ export class Router {
         this.log.error('failed to route inbound chat message', {
           event: 'message_route_failed',
           platform: msg.platform,
-          channelId: msg.channelId,
+          messagingChannelId: msg.messagingChannelId,
           sessionId: binding.sessionId,
           bindingId: binding.id,
           error: err,
         })
         await adapter.sendText(
-          msg.channelId,
+          msg.messagingChannelId,
           `Failed to send message to session: ${errorMsg}`,
         )
       }
@@ -72,7 +72,7 @@ export class Router {
     this.log.info('routing inbound chat message to command handler', {
       event: 'message_unbound',
       platform: msg.platform,
-      channelId: msg.channelId,
+      messagingChannelId: msg.messagingChannelId,
       messageId: msg.messageId,
     })
     await this.commands.handle(adapter, msg)

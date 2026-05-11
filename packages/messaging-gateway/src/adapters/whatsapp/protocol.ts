@@ -10,6 +10,13 @@
  * The protocol is intentionally small — the worker owns all Baileys state;
  * the main process only drives lifecycle and relays incoming/outgoing messages.
  */
+import type { Opaque } from '@craft-agent/shared/opaque'
+
+export type WhatsAppChannelId = Opaque<string, 'WhatsAppChannelId'>
+
+export function whatsAppChannelId(value: string): WhatsAppChannelId {
+  return value as WhatsAppChannelId
+}
 
 // ---------------------------------------------------------------------------
 // Commands (main → worker)
@@ -57,14 +64,14 @@ export interface SubmitPairingPhoneCommand {
 export interface SendTextCommand {
   id: string
   type: 'send_text'
-  channelId: string
+  whatsAppChannelId: WhatsAppChannelId
   text: string
 }
 
 export interface SendFileCommand {
   id: string
   type: 'send_file'
-  channelId: string
+  whatsAppChannelId: WhatsAppChannelId
   /** Base64-encoded file bytes. */
   dataBase64: string
   filename: string
@@ -127,7 +134,7 @@ export interface DisconnectedEvent {
 
 export interface IncomingEvent {
   type: 'incoming'
-  channelId: string
+  whatsAppChannelId: WhatsAppChannelId
   messageId: string
   senderId: string
   senderName?: string

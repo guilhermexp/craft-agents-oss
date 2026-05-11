@@ -288,7 +288,7 @@ if (webuiHandler) {
   const { getSourceCredentialManager, loadWorkspaceSources } = await import('@craft-agent/shared/sources')
   const { getWorkspaceByNameOrId } = await import('@craft-agent/shared/config')
   const { pushTyped } = await import('@craft-agent/server-core/transport')
-  const { RPC_CHANNELS } = await import('@craft-agent/shared/protocol')
+  const { RPC_NAMESPACES } = await import('@craft-agent/shared/protocol')
 
   webuiHandler.setOAuthCallbackDeps({
     flowStore: instance.oauthFlowStore,
@@ -297,7 +297,7 @@ if (webuiHandler) {
     pushSourcesChanged: (workspaceId: string) => {
       const ws = getWorkspaceByNameOrId(workspaceId)
       const sources = ws ? loadWorkspaceSources(ws.rootPath) : []
-      pushTyped(instance.wsServer, RPC_CHANNELS.sources.CHANGED, { to: 'workspace', workspaceId }, workspaceId, sources)
+      pushTyped(instance.wsServer, RPC_NAMESPACES.sources.CHANGED, { to: 'workspace', workspaceId }, workspaceId, sources)
     },
   })
 }

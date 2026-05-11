@@ -13,7 +13,7 @@
 /**
  * Source types - how we connect to the source
  */
-export type SourceType = 'mcp' | 'api' | 'local';
+export type SourceType = 'mcp' | 'api' | 'filesystem';
 
 /**
  * MCP source authentication types (for individual source connections)
@@ -34,7 +34,7 @@ export type GoogleService = 'gmail' | 'calendar' | 'drive' | 'docs' | 'sheets' |
 /**
  * Slack service types for OAuth scope selection
  */
-export type SlackService = 'messaging' | 'channels' | 'users' | 'files' | 'full';
+export type SlackServiceScope = 'messaging' | 'channels' | 'users' | 'files' | 'full';
 
 /**
  * Microsoft service types for OAuth scope selection
@@ -87,7 +87,7 @@ export function inferGoogleServiceFromUrl(baseUrl: string | undefined): GoogleSe
  * Infer Slack service from API baseUrl.
  * Returns 'full' by default if URL matches Slack API pattern.
  */
-export function inferSlackServiceFromUrl(baseUrl: string | undefined): SlackService | undefined {
+export function inferSlackServiceFromUrl(baseUrl: string | undefined): SlackServiceScope | undefined {
   if (!baseUrl) return undefined;
 
   let hostname: string;
@@ -387,7 +387,7 @@ export interface ApiSourceConfig {
 
   // Slack OAuth fields (used when provider is 'slack')
   // Uses user_scope for user authentication (posts as the user, not a bot)
-  slackService?: SlackService; // Predefined service for scope selection
+  slackService?: SlackServiceScope; // Predefined service for scope selection
   slackUserScopes?: string[]; // Custom user scopes (overrides slackService)
 
   // Microsoft OAuth fields (used when provider is 'microsoft')

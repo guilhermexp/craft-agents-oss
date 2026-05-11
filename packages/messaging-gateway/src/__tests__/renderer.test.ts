@@ -16,7 +16,7 @@ import { Renderer, type SessionEvent } from '../renderer'
 import {
   DEFAULT_BINDING_CONFIG,
   type AdapterCapabilities,
-  type ChannelBinding,
+  type ExternalMessagingChannelBinding,
   type PlatformAdapter,
   type SentMessage,
   type BindingConfig,
@@ -29,7 +29,7 @@ import {
 
 interface Call {
   kind: 'sendText' | 'editMessage' | 'sendButtons' | 'sendTyping'
-  channelId: string
+  messagingChannelId: string
   messageId?: string
   text?: string
 }
@@ -61,25 +61,25 @@ function makeAdapter(
     },
     onMessage() {},
     onButtonPress() {},
-    async sendText(channelId: string, text: string): Promise<SentMessage> {
+    async sendText(messagingChannelId: string, text: string): Promise<SentMessage> {
       const messageId = String(nextId++)
-      calls.push({ kind: 'sendText', channelId, text, messageId })
-      return { platform: 'telegram', channelId, messageId }
+      calls.push({ kind: 'sendText', messagingChannelId, text, messageId })
+      return { platform: 'telegram', messagingChannelId, messageId }
     },
-    async editMessage(channelId: string, messageId: string, text: string): Promise<void> {
-      calls.push({ kind: 'editMessage', channelId, messageId, text })
+    async editMessage(messagingChannelId: string, messageId: string, text: string): Promise<void> {
+      calls.push({ kind: 'editMessage', messagingChannelId, messageId, text })
     },
-    async sendButtons(channelId: string, text: string): Promise<SentMessage> {
+    async sendButtons(messagingChannelId: string, text: string): Promise<SentMessage> {
       const messageId = String(nextId++)
-      calls.push({ kind: 'sendButtons', channelId, text, messageId })
-      return { platform: 'telegram', channelId, messageId }
+      calls.push({ kind: 'sendButtons', messagingChannelId, text, messageId })
+      return { platform: 'telegram', messagingChannelId, messageId }
     },
-    async sendTyping(channelId: string): Promise<void> {
-      calls.push({ kind: 'sendTyping', channelId })
+    async sendTyping(messagingChannelId: string): Promise<void> {
+      calls.push({ kind: 'sendTyping', messagingChannelId })
     },
-    async sendFile(channelId: string): Promise<SentMessage> {
+    async sendFile(messagingChannelId: string): Promise<SentMessage> {
       const messageId = String(nextId++)
-      return { platform: 'telegram', channelId, messageId }
+      return { platform: 'telegram', messagingChannelId, messageId }
     },
   }
 
@@ -90,13 +90,13 @@ function makeAdapter(
 // Fixture helpers
 // ---------------------------------------------------------------------------
 
-function makeBinding(overrides: Partial<BindingConfig> = {}): ChannelBinding {
+function makeBinding(overrides: Partial<BindingConfig> = {}): ExternalMessagingChannelBinding {
   return {
     id: 'bind-1',
     workspaceId: 'ws-1',
     sessionId: 'sess-1',
     platform: 'telegram',
-    channelId: 'chan-1',
+    messagingChannelId: 'chan-1',
     enabled: true,
     createdAt: Date.now(),
     config: { ...DEFAULT_BINDING_CONFIG, ...overrides },
@@ -105,7 +105,7 @@ function makeBinding(overrides: Partial<BindingConfig> = {}): ChannelBinding {
 
 async function play(
   renderer: Renderer,
-  binding: ChannelBinding,
+  binding: ExternalMessagingChannelBinding,
   adapter: PlatformAdapter,
   events: SessionEvent[],
 ): Promise<void> {
@@ -380,7 +380,7 @@ describe('Renderer — permissions and errors', () => {
   it('permission_request sends buttons in chat channel', async () => {
     const renderer = new Renderer()
     const adapter = makeAdapter()
-    const binding = makeBinding({ approvalChannel: 'chat' })
+    const binding = makeBinding({ approvalSurface: 'chat' })
     await renderer.handle(
       {
         type: 'permission_request',
@@ -422,9 +422,9 @@ describe('Renderer — WhatsApp desktop-only approvals', () => {
     const adapter = makeAdapter({ inlineButtons: false, messageEditing: false, markdown: 'whatsapp' })
     ;(adapter as any).platform = 'whatsapp'
     const binding = {
-      ...makeBinding({ approvalChannel: 'chat' }),
+      ...makeBinding({ approvalSurface: 'chat' }),
       platform: 'whatsapp' as const,
-      channelId: 'wa-1',
+      messagingChannelId: 'wa-1',
     }
 
     await renderer.handle(
@@ -454,7 +454,7 @@ describe('Renderer — WhatsApp desktop-only approvals', () => {
     const binding = {
       ...makeBinding(),
       platform: 'whatsapp' as const,
-      channelId: 'wa-1',
+      messagingChannelId: 'wa-1',
     }
 
     await renderer.handle(

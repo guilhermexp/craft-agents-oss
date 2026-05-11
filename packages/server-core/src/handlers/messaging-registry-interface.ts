@@ -10,7 +10,7 @@ export interface MessagingBindingInfo {
   workspaceId: string
   sessionId: string
   platform: string
-  channelId: string
+  messagingChannelId: string
   channelName?: string
   enabled: boolean
   createdAt: number

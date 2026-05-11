@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import type { Session } from '../../shared/types'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 
 /**
  * Draw a badge onto an icon image using Canvas
@@ -143,7 +143,7 @@ export function useNotifications({
 
   // Check once whether this server has GUI notification channels (headless servers don't)
   const hasGuiChannels = useMemo(
-    () => window.electronAPI.isChannelAvailable(RPC_CHANNELS.notification.SHOW),
+    () => window.electronAPI.isChannelAvailable(RPC_NAMESPACES.notification.SHOW),
     [],
   )
 

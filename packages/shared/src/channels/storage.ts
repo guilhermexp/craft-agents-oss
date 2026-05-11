@@ -2,16 +2,17 @@ import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { readJsonFileSync } from '../utils/files.ts';
 import { debug } from '../utils/debug.ts';
-import type { ChannelConfig, WorkspaceChannelsConfig } from './types.ts';
+import type { WarRoomChannel, WorkspaceWarRoomChannelsConfig } from './types.ts';
+import { warRoomChannelId } from './types.ts';
 
 const CHANNELS_CONFIG_DIR = 'channels';
 const CHANNELS_CONFIG_FILE = 'channels/config.json';
 
-export function getDefaultChannelsConfig(): WorkspaceChannelsConfig {
+export function getDefaultChannelsConfig(): WorkspaceWarRoomChannelsConfig {
   return { version: 1, channels: [] };
 }
 
-export function loadChannelsConfig(workspaceRootPath: string): WorkspaceChannelsConfig {
+export function loadChannelsConfig(workspaceRootPath: string): WorkspaceWarRoomChannelsConfig {
   const configPath = join(workspaceRootPath, CHANNELS_CONFIG_FILE);
   if (!existsSync(configPath)) {
     const defaults = getDefaultChannelsConfig();
@@ -20,10 +21,12 @@ export function loadChannelsConfig(workspaceRootPath: string): WorkspaceChannels
   }
 
   try {
-    const config = readJsonFileSync<WorkspaceChannelsConfig>(configPath);
+    const config = readJsonFileSync<WorkspaceWarRoomChannelsConfig>(configPath);
     return {
       version: config.version || 1,
-      channels: Array.isArray(config.channels) ? config.channels : [],
+      channels: Array.isArray(config.channels)
+        ? config.channels.map(channel => ({ ...channel, id: warRoomChannelId(channel.id) }))
+        : [],
     };
   } catch (error) {
     debug('[loadChannelsConfig] Failed to parse config:', error);
@@ -33,7 +36,7 @@ export function loadChannelsConfig(workspaceRootPath: string): WorkspaceChannels
 
 export function saveChannelsConfig(
   workspaceRootPath: string,
-  config: WorkspaceChannelsConfig,
+  config: WorkspaceWarRoomChannelsConfig,
 ): void {
   const channelsDir = join(workspaceRootPath, CHANNELS_CONFIG_DIR);
   const configPath = join(workspaceRootPath, CHANNELS_CONFIG_FILE);
@@ -50,6 +53,6 @@ export function saveChannelsConfig(
   }
 }
 
-export function listChannels(workspaceRootPath: string): ChannelConfig[] {
+export function listChannels(workspaceRootPath: string): WarRoomChannel[] {
   return loadChannelsConfig(workspaceRootPath).channels;
 }

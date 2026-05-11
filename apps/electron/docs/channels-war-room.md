@@ -32,7 +32,7 @@ Do not collapse this back into one private chat session. The channel log is the 
 
 ## Routing contract
 
-Channel routing is defined by `ChannelRoutingConfig.mode`:
+Channel routing is defined by `WarRoomRoutingConfig.mode`:
 
 - `manual-tags`: only mentioned participants are targeted. Untagged messages stay in the channel and do not spawn agents.
 - `lead`: mentioned participants win; if there are no mentions, send the message to the lead participant.
@@ -61,7 +61,7 @@ Do **not** reintroduce a hard requirement that `leadParticipantId` must be set f
    - user message;
    - for orchestrators, the worker roster and Kanban operating rules.
 6. Assistant replies are appended back as channel messages with `authorType: 'agent'`, `authorId: participantId`, and `sourceSessionId`.
-7. The server broadcasts `RPC_CHANNELS.channels.MESSAGES_CHANGED` so the UI refreshes.
+7. The server broadcasts `RPC_NAMESPACES.channels.MESSAGES_CHANGED` so the UI refreshes.
 
 Important: individual sessions do **not** share private history. The channel log is the shared memory. Keep passing recent channel context in orchestration packets.
 

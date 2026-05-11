@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import type { HandlerFn, RequestContext, RpcServer } from '../../transport/types'
 import {
   __resetTransferStateForTests,
@@ -23,10 +23,10 @@ function createHarness() {
 
   registerTransferHandlers(server)
 
-  const start = handlers.get(RPC_CHANNELS.transfer.START)
-  const chunk = handlers.get(RPC_CHANNELS.transfer.CHUNK)
-  const commit = handlers.get(RPC_CHANNELS.transfer.COMMIT)
-  const abort = handlers.get(RPC_CHANNELS.transfer.ABORT)
+  const start = handlers.get(RPC_NAMESPACES.transfer.START)
+  const chunk = handlers.get(RPC_NAMESPACES.transfer.CHUNK)
+  const commit = handlers.get(RPC_NAMESPACES.transfer.COMMIT)
+  const abort = handlers.get(RPC_NAMESPACES.transfer.ABORT)
 
   if (!start || !chunk || !commit || !abort) {
     throw new Error('transfer handlers not registered')

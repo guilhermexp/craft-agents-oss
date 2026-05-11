@@ -14,6 +14,7 @@ import {
   REQUEST_TIMEOUT_MS,
   SEQUENCE_ACK_INTERVAL_MS,
   type MessageEnvelope,
+  rpcNamespace,
 } from '@craft-agent/shared/protocol'
 import type { RpcClient } from './types'
 import { serializeEnvelope, deserializeEnvelope } from './codec'
@@ -192,7 +193,7 @@ export class WsRpcClient implements RpcClient {
       const envelope: MessageEnvelope = {
         id,
         type: 'request',
-        channel,
+        rpcNamespace: rpcNamespace(channel),
         args,
       }
 
@@ -518,8 +519,8 @@ export class WsRpcClient implements RpcClient {
         this.pendingReconnect = null
         this.clientId = envelope.clientId ?? null
         this._serverVersion = envelope.serverVersion ?? null
-        this.serverChannels = envelope.registeredChannels
-          ? new Set(envelope.registeredChannels)
+        this.serverChannels = envelope.registeredNamespaces
+          ? new Set(envelope.registeredNamespaces)
           : null
         this.connected = true
         this.connectError = null
@@ -601,7 +602,7 @@ export class WsRpcClient implements RpcClient {
 
       case 'request': {
         // Server→client capability invocation
-        if (envelope.channel) {
+        if (envelope.rpcNamespace) {
           this.onServerRequest(envelope)
         }
         break
@@ -616,9 +617,9 @@ export class WsRpcClient implements RpcClient {
           this.lastSeenSeq = envelope.seq
         }
 
-        if (envelope.channel) {
+        if (envelope.rpcNamespace) {
           // Server is shutting down — stop reconnection before dispatching
-          if (envelope.channel === 'server:shuttingDown') {
+          if (envelope.rpcNamespace === 'server:shuttingDown') {
             this.permanentlyClosed = true
             this.setConnectionState({
               status: 'disconnected',
@@ -626,7 +627,7 @@ export class WsRpcClient implements RpcClient {
             })
           }
 
-          const set = this.listeners.get(envelope.channel)
+          const set = this.listeners.get(envelope.rpcNamespace)
           if (set) {
             for (const cb of set) {
               try {
@@ -639,7 +640,7 @@ export class WsRpcClient implements RpcClient {
           // Wildcard listeners (used by RemoteClientBridge for event forwarding)
           for (const cb of this.anyEventListeners) {
             try {
-              cb(envelope.channel, ...(envelope.args ?? []))
+              cb(envelope.rpcNamespace, ...(envelope.args ?? []))
             } catch {
               // Listener errors shouldn't break the client
             }
@@ -651,13 +652,14 @@ export class WsRpcClient implements RpcClient {
   }
 
   private async onServerRequest(envelope: MessageEnvelope): Promise<void> {
-    const handler = this.capabilityHandlers.get(envelope.channel!)
+    const namespace = envelope.rpcNamespace
+    const handler = namespace ? this.capabilityHandlers.get(namespace) : undefined
     if (!handler) {
       const response: MessageEnvelope = {
         id: envelope.id,
         type: 'response',
-        channel: envelope.channel,
-        error: { code: 'CHANNEL_NOT_FOUND', message: `No handler for: ${envelope.channel}` },
+        ...(namespace !== undefined ? { rpcNamespace: namespace } : {}),
+        error: { code: 'NAMESPACE_NOT_FOUND', message: `No handler for: ${namespace}` },
       }
       this.trySendEnvelope(this.ws, response)
       return
@@ -668,7 +670,7 @@ export class WsRpcClient implements RpcClient {
       const response: MessageEnvelope = {
         id: envelope.id,
         type: 'response',
-        channel: envelope.channel,
+        rpcNamespace: namespace,
         result,
       }
       this.trySendEnvelope(this.ws, response)
@@ -677,7 +679,7 @@ export class WsRpcClient implements RpcClient {
       const response: MessageEnvelope = {
         id: envelope.id,
         type: 'response',
-        channel: envelope.channel,
+        rpcNamespace: namespace,
         error: { code: 'HANDLER_ERROR', message },
       }
       this.trySendEnvelope(this.ws, response)
@@ -962,7 +964,7 @@ export class WsRpcClient implements RpcClient {
       return this.classifyErrorKindFromCloseCode(closeCode)
     }
     if (normalized === 'WS_ERROR') return 'network'
-    if (normalized === 'CHANNEL_NOT_FOUND' || normalized === 'HANDLER_ERROR') return 'server'
+    if (normalized === 'NAMESPACE_NOT_FOUND' || normalized === 'HANDLER_ERROR') return 'server'
 
     return 'unknown'
   }

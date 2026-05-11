@@ -50,7 +50,7 @@ function writeTinyPng(): string {
 function baseMsg(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
   return {
     platform: 'telegram',
-    channelId: 'chat-1',
+    messagingChannelId: 'chat-1',
     messageId: '1',
     senderId: 'user-1',
     text: 'hello',
@@ -80,7 +80,7 @@ function makeFakeAdapter(): PlatformAdapter {
     isConnected: () => true,
     onMessage: () => {},
     onButtonPress: () => {},
-    sendText: mock(async () => ({ platform: 'telegram', channelId: 'chat-1', messageId: 'm' })),
+    sendText: mock(async () => ({ platform: 'telegram', messagingChannelId: 'chat-1', messageId: 'm' })),
     editMessage: noop,
     sendButtons: noop,
     sendTyping: async () => {},
@@ -190,7 +190,7 @@ describe('Router', () => {
     const { router, sessionManager, commands } = makeRouter()
     await router.route(
       makeFakeAdapter(),
-      baseMsg({ channelId: 'unbound-channel', text: '/help' }),
+      baseMsg({ messagingChannelId: 'unbound-channel', text: '/help' }),
     )
     expect(sessionManager.sendMessage).not.toHaveBeenCalled()
     expect(commands.handle).toHaveBeenCalledTimes(1)

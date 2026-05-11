@@ -1,15 +1,15 @@
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
 
 export const GUI_HANDLED_CHANNELS = [
-  RPC_CHANNELS.remote.TEST_CONNECTION,
-  RPC_CHANNELS.window.OPEN_WORKSPACE,
-  RPC_CHANNELS.window.OPEN_SESSION_IN_NEW_WINDOW,
-  RPC_CHANNELS.window.CLOSE,
-  RPC_CHANNELS.window.CONFIRM_CLOSE,
-  RPC_CHANNELS.window.CANCEL_CLOSE,
-  RPC_CHANNELS.window.SET_TRAFFIC_LIGHTS,
+  RPC_NAMESPACES.remote.TEST_CONNECTION,
+  RPC_NAMESPACES.window.OPEN_WORKSPACE,
+  RPC_NAMESPACES.window.OPEN_SESSION_IN_NEW_WINDOW,
+  RPC_NAMESPACES.window.CLOSE,
+  RPC_NAMESPACES.window.CONFIRM_CLOSE,
+  RPC_NAMESPACES.window.CANCEL_CLOSE,
+  RPC_NAMESPACES.window.SET_TRAFFIC_LIGHTS,
 ] as const
 
 /**
@@ -58,7 +58,7 @@ export function registerWorkspaceGuiHandlers(server: RpcServer, deps: HandlerDep
   // Test connection to a remote Craft Agent Server.
   // Pure discovery — returns list of existing workspaces or needsWorkspace flag.
   // Workspace creation is handled separately via invokeOnServer → server:createWorkspace.
-  server.handle(RPC_CHANNELS.remote.TEST_CONNECTION, async (_ctx, url: string, token: string) => {
+  server.handle(RPC_NAMESPACES.remote.TEST_CONNECTION, async (_ctx, url: string, token: string) => {
     const { client, error } = await connectToRemote(url, token)
     if (!client) return { ok: false, error }
 
@@ -66,8 +66,8 @@ export function registerWorkspaceGuiHandlers(server: RpcServer, deps: HandlerDep
     const serverVersion = client.getServerVersion() ?? undefined
 
     try {
-      console.log(`[TEST_CONNECTION] invoking ${RPC_CHANNELS.server.GET_WORKSPACES} on remote server...`)
-      const workspaces = await client.invoke(RPC_CHANNELS.server.GET_WORKSPACES) as Array<{ id: string; name: string }>
+      console.log(`[TEST_CONNECTION] invoking ${RPC_NAMESPACES.server.GET_WORKSPACES} on remote server...`)
+      const workspaces = await client.invoke(RPC_NAMESPACES.server.GET_WORKSPACES) as Array<{ id: string; name: string }>
       console.log(`[TEST_CONNECTION] remote returned ${workspaces?.length ?? 'null'} workspaces:`, JSON.stringify(workspaces?.map(w => ({ id: w.id, name: w.name }))))
 
       if (workspaces.length === 0) {
@@ -94,13 +94,13 @@ export function registerWorkspaceGuiHandlers(server: RpcServer, deps: HandlerDep
   })
 
   // Open workspace in new window (or focus existing)
-  server.handle(RPC_CHANNELS.window.OPEN_WORKSPACE, async (_ctx, workspaceId: string) => {
+  server.handle(RPC_NAMESPACES.window.OPEN_WORKSPACE, async (_ctx, workspaceId: string) => {
     if (!windowManager) return
     windowManager.focusOrCreateWindow(workspaceId)
   })
 
   // Open a session in a new window
-  server.handle(RPC_CHANNELS.window.OPEN_SESSION_IN_NEW_WINDOW, async (_ctx, workspaceId: string, sessionId: string) => {
+  server.handle(RPC_NAMESPACES.window.OPEN_SESSION_IN_NEW_WINDOW, async (_ctx, workspaceId: string, sessionId: string) => {
     if (!windowManager) return
     const deepLink = `craftagents://allSessions/session/${sessionId}`
     windowManager.createWindow({
@@ -111,25 +111,25 @@ export function registerWorkspaceGuiHandlers(server: RpcServer, deps: HandlerDep
   })
 
   // Close the calling window (triggers close event which may be intercepted)
-  server.handle(RPC_CHANNELS.window.CLOSE, (ctx) => {
+  server.handle(RPC_NAMESPACES.window.CLOSE, (ctx) => {
     if (!windowManager) return
     windowManager.closeWindow(ctx.webContentsId!)
   })
 
   // Confirm close - force close the window (bypasses interception).
-  server.handle(RPC_CHANNELS.window.CONFIRM_CLOSE, (ctx) => {
+  server.handle(RPC_NAMESPACES.window.CONFIRM_CLOSE, (ctx) => {
     if (!windowManager) return
     windowManager.forceCloseWindow(ctx.webContentsId!)
   })
 
   // Cancel close - renderer handled the request (closed a modal/panel).
-  server.handle(RPC_CHANNELS.window.CANCEL_CLOSE, (ctx) => {
+  server.handle(RPC_NAMESPACES.window.CANCEL_CLOSE, (ctx) => {
     if (!windowManager) return
     windowManager.cancelPendingClose(ctx.webContentsId!)
   })
 
   // Show/hide macOS traffic light buttons (for fullscreen overlays)
-  server.handle(RPC_CHANNELS.window.SET_TRAFFIC_LIGHTS, (ctx, visible: boolean) => {
+  server.handle(RPC_NAMESPACES.window.SET_TRAFFIC_LIGHTS, (ctx, visible: boolean) => {
     if (!windowManager) return
     windowManager.setTrafficLightsVisible(ctx.webContentsId!, visible)
   })

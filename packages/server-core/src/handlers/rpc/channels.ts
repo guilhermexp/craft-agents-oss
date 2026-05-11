@@ -1,25 +1,25 @@
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { createChannelOrchestrator, type ChannelOrchestrator } from '../../channels/channel-orchestrator'
 import { isTerminalKanbanStatus, listKanbanTasksByIds, listKanbanTasksCreatedSince } from '../../channels/hermes-kanban'
-import type { ChannelConfig } from '@craft-agent/shared/channels'
+import type { WarRoomChannel } from '@craft-agent/shared/channels'
 
 export const HANDLED_CHANNELS = [
-  RPC_CHANNELS.channels.LIST,
-  RPC_CHANNELS.channels.CREATE,
-  RPC_CHANNELS.channels.UPDATE,
-  RPC_CHANNELS.channels.DELETE,
-  RPC_CHANNELS.channels.LIST_MESSAGES,
-  RPC_CHANNELS.channels.SEND_MESSAGE,
+  RPC_NAMESPACES.channels.LIST,
+  RPC_NAMESPACES.channels.CREATE,
+  RPC_NAMESPACES.channels.UPDATE,
+  RPC_NAMESPACES.channels.DELETE,
+  RPC_NAMESPACES.channels.LIST_MESSAGES,
+  RPC_NAMESPACES.channels.SEND_MESSAGE,
 ] as const
 
 const orchestrators = new Map<string, ChannelOrchestrator>()
 const watchedKanbanTasks = new Map<string, {
   workspaceId: string
   workspaceRootPath: string
-  channel: ChannelConfig
+  channel: WarRoomChannel
   taskIds: Set<string>
   deps: HandlerDeps
   server: RpcServer
@@ -67,13 +67,13 @@ function getOrchestrator(deps: HandlerDeps, workspaceId: string, channelId: stri
   return orchestrator
 }
 
-function channelKanbanAssignees(channel: ChannelConfig): Set<string> {
+function channelKanbanAssignees(channel: WarRoomChannel): Set<string> {
   return new Set((channel.participants ?? [])
     .filter(participant => participant.llmConnection === 'hermes')
     .map(participant => participant.hermesProfile ?? participant.id))
 }
 
-function participantIdForKanbanAssignee(channel: ChannelConfig, assignee: string | null): string | null {
+function participantIdForKanbanAssignee(channel: WarRoomChannel, assignee: string | null): string | null {
   if (!assignee) return null
   const participant = (channel.participants ?? []).find(item => (
     item.id === assignee || (item.llmConnection === 'hermes' && item.hermesProfile === assignee)
@@ -84,7 +84,7 @@ function participantIdForKanbanAssignee(channel: ChannelConfig, assignee: string
 function watchKanbanTasks(input: {
   workspaceId: string
   workspaceRootPath: string
-  channel: ChannelConfig
+  channel: WarRoomChannel
   taskIds: string[]
   deps: HandlerDeps
   server: RpcServer
@@ -163,12 +163,12 @@ async function pollWatchedKanbanTasks(): Promise<void> {
       })
     }
 
-    pushTyped(watched.server, RPC_CHANNELS.channels.MESSAGES_CHANGED, { to: 'workspace', workspaceId: watched.workspaceId }, watched.workspaceId, watched.channel.id)
+    pushTyped(watched.server, RPC_NAMESPACES.channels.MESSAGES_CHANGED, { to: 'workspace', workspaceId: watched.workspaceId }, watched.workspaceId, watched.channel.id)
   }
 }
 
 export function registerChannelsHandlers(server: RpcServer, deps: HandlerDeps): void {
-  server.handle(RPC_CHANNELS.channels.LIST, async (_ctx, workspaceId: string) => {
+  server.handle(RPC_NAMESPACES.channels.LIST, async (_ctx, workspaceId: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
@@ -176,29 +176,29 @@ export function registerChannelsHandlers(server: RpcServer, deps: HandlerDeps): 
     return listChannels(workspace.rootPath)
   })
 
-  server.handle(RPC_CHANNELS.channels.CREATE, async (_ctx, workspaceId: string, input: import('@craft-agent/shared/channels').CreateChannelInput) => {
+  server.handle(RPC_NAMESPACES.channels.CREATE, async (_ctx, workspaceId: string, input: import('@craft-agent/shared/channels').CreateWarRoomChannelInput) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
     const { createChannel } = await import('@craft-agent/shared/channels/crud')
     const channel = createChannel(workspace.rootPath, input)
-    pushTyped(server, RPC_CHANNELS.channels.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
-    pushTyped(server, RPC_CHANNELS.labels.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
+    pushTyped(server, RPC_NAMESPACES.channels.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
+    pushTyped(server, RPC_NAMESPACES.labels.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
     return channel
   })
 
-  server.handle(RPC_CHANNELS.channels.UPDATE, async (_ctx, workspaceId: string, channelId: string, updates: import('@craft-agent/shared/channels').UpdateChannelInput) => {
+  server.handle(RPC_NAMESPACES.channels.UPDATE, async (_ctx, workspaceId: string, channelId: string, updates: import('@craft-agent/shared/channels').UpdateWarRoomChannelInput) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
     const { updateChannel } = await import('@craft-agent/shared/channels/crud')
     const channel = updateChannel(workspace.rootPath, channelId, updates)
-    pushTyped(server, RPC_CHANNELS.channels.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
-    pushTyped(server, RPC_CHANNELS.labels.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
+    pushTyped(server, RPC_NAMESPACES.channels.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
+    pushTyped(server, RPC_NAMESPACES.labels.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
     return channel
   })
 
-  server.handle(RPC_CHANNELS.channels.DELETE, async (
+  server.handle(RPC_NAMESPACES.channels.DELETE, async (
     _ctx,
     workspaceId: string,
     channelId: string,
@@ -209,14 +209,14 @@ export function registerChannelsHandlers(server: RpcServer, deps: HandlerDeps): 
 
     const { deleteChannel } = await import('@craft-agent/shared/channels/crud')
     const result = deleteChannel(workspace.rootPath, channelId, options)
-    pushTyped(server, RPC_CHANNELS.channels.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
+    pushTyped(server, RPC_NAMESPACES.channels.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
     if (result.labelDeleted) {
-      pushTyped(server, RPC_CHANNELS.labels.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
+      pushTyped(server, RPC_NAMESPACES.labels.CHANGED, { to: 'workspace', workspaceId }, workspaceId)
     }
     return result
   })
 
-  server.handle(RPC_CHANNELS.channels.LIST_MESSAGES, async (_ctx, workspaceId: string, channelId: string) => {
+  server.handle(RPC_NAMESPACES.channels.LIST_MESSAGES, async (_ctx, workspaceId: string, channelId: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
@@ -228,7 +228,7 @@ export function registerChannelsHandlers(server: RpcServer, deps: HandlerDeps): 
     return listChannelMessages(workspace.rootPath, channelId)
   })
 
-  server.handle(RPC_CHANNELS.channels.SEND_MESSAGE, async (
+  server.handle(RPC_NAMESPACES.channels.SEND_MESSAGE, async (
     _ctx,
     workspaceId: string,
     input: {
@@ -295,7 +295,7 @@ export function registerChannelsHandlers(server: RpcServer, deps: HandlerDeps): 
       })
     }
 
-    pushTyped(server, RPC_CHANNELS.channels.MESSAGES_CHANGED, { to: 'workspace', workspaceId }, workspaceId, channel.id)
+    pushTyped(server, RPC_NAMESPACES.channels.MESSAGES_CHANGED, { to: 'workspace', workspaceId }, workspaceId, channel.id)
 
     return {
       message,

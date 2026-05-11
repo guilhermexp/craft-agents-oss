@@ -14,7 +14,7 @@
 
 import { existsSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import type { PushTarget } from '@craft-agent/shared/protocol'
 import type { CredentialManager } from '@craft-agent/shared/credentials'
 import type {
@@ -33,7 +33,7 @@ import { MessageAdapterRegistry } from './adapter-registry'
 import type { SessionEvent } from './renderer'
 import type { EventSinkFn } from './event-fanout'
 import type {
-  ChannelBinding,
+  ExternalMessagingChannelBinding,
   MessagingLogger,
   MessagingPlatformRuntimeInfo,
   PlatformType,
@@ -535,7 +535,7 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
     if (!state) return
 
     this.opts.publishEvent?.(
-      RPC_CHANNELS.messaging.WA_UI_EVENT,
+      RPC_NAMESPACES.messaging.WA_UI_EVENT,
       { to: 'workspace', workspaceId },
       { workspaceId, event },
     )
@@ -596,7 +596,7 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
   // -------------------------------------------------------------------------
 
   onSessionEvent: EventSinkFn = (channel: string, target: PushTarget, ...args: unknown[]) => {
-    if (channel !== RPC_CHANNELS.sessions.EVENT) return
+    if (channel !== RPC_NAMESPACES.sessions.EVENT) return
 
     const event = args[0] as SessionEvent | undefined
     if (!event?.sessionId) return
@@ -751,7 +751,7 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
 
   private emitBindingChanged(workspaceId: string): void {
     this.opts.publishEvent?.(
-      RPC_CHANNELS.messaging.BINDING_CHANGED,
+      RPC_NAMESPACES.messaging.BINDING_CHANGED,
       { to: 'workspace', workspaceId },
       workspaceId,
     )
@@ -763,7 +763,7 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
     status: MessagingPlatformRuntimeInfo,
   ): void {
     this.opts.publishEvent?.(
-      RPC_CHANNELS.messaging.PLATFORM_STATUS,
+      RPC_NAMESPACES.messaging.PLATFORM_STATUS,
       { to: 'workspace', workspaceId },
       workspaceId,
       platform,
@@ -790,13 +790,13 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function toBindingInfo(b: ChannelBinding): MessagingBindingInfo {
+function toBindingInfo(b: ExternalMessagingChannelBinding): MessagingBindingInfo {
   return {
     id: b.id,
     workspaceId: b.workspaceId,
     sessionId: b.sessionId,
     platform: b.platform,
-    channelId: b.channelId,
+    messagingChannelId: b.messagingChannelId,
     channelName: b.channelName,
     enabled: b.enabled,
     createdAt: b.createdAt,

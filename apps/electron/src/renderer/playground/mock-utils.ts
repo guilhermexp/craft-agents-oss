@@ -591,11 +591,11 @@ export const mockSources: LoadedSource[] = [
   },
   {
     config: {
-      id: 'local-files-1',
-      slug: 'local-files',
+      id: 'filesystem-files-1',
+      slug: 'filesystem-files',
       name: 'Local Files',
       provider: 'filesystem',
-      type: 'local',
+      type: 'filesystem',
       enabled: true,
       local: {
         path: '/Users/demo/projects',
@@ -604,7 +604,7 @@ export const mockSources: LoadedSource[] = [
       updatedAt: Date.now(),
     },
     guide: null,
-    folderPath: '/mock/sources/local-files',
+    folderPath: '/mock/sources/filesystem-files',
     workspaceRootPath: '/mock/workspaces/playground-workspace',
     workspaceId: 'playground-workspace',
   },

@@ -179,7 +179,7 @@ export function SendResourceToWorkspaceDialog({
       setSelectedWorkspaceId(null)
       onTransferComplete?.()
     } catch (error: any) {
-      const isUnsupported = error?.code === 'CHANNEL_NOT_FOUND' ||
+      const isUnsupported = error?.code === 'NAMESPACE_NOT_FOUND' ||
         (error?.message ?? '').includes('No handler for')
       const message = isUnsupported
         ? `${targetName} is running an older version that doesn't support resource import. Update the remote server and try again.`

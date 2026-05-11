@@ -1,16 +1,16 @@
 ## 1. Catalogação
 
-- [ ] Catalogar todas as ocorrências de "channel" no monorepo
-- [ ] Mapear cada ocorrência ao contexto (war room, RPC, source, messaging)
-- [ ] Definir nomes finais (tabela na design.md)
+- [x] Catalogar todas as ocorrências de "channel" no monorepo
+- [x] Mapear cada ocorrência ao contexto (war room, RPC, source, messaging)
+- [x] Definir nomes finais (tabela na design.md)
 
 ## 2. Refactor
 
-- [ ] Aplicar renames via LSP, um contexto por vez
-- [ ] Adicionar opaque types para IDs
-- [ ] Atualizar especs afetadas
-- [ ] Atualizar docs (AGENTS.md, README.md)
+- [x] Aplicar renames via LSP, um contexto por vez
+- [x] Adicionar opaque types para IDs
+- [x] Atualizar especs afetadas
+- [x] Atualizar docs (AGENTS.md, README.md)
 
 ## 3. Validação
 
-- [ ] Rodar suíte de tests
+- [x] Rodar suíte de tests

@@ -13,7 +13,7 @@ import type {
   SlackOAuthAuthRequest,
   MicrosoftOAuthAuthRequest,
   GoogleService,
-  SlackService,
+  SlackServiceScope,
   MicrosoftService,
 } from '../types.ts';
 import { successResponse, errorResponse } from '../response.ts';
@@ -260,7 +260,7 @@ export async function handleSlackOAuthTrigger(
   }
 
   // Determine service from config
-  let service: SlackService | undefined;
+  let service: SlackServiceScope | undefined;
   if (source.api?.slackService) {
     service = source.api.slackService;
   } else if (ctx.inferSlackService) {

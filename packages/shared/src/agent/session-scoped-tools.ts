@@ -49,7 +49,7 @@ export type {
   SlackOAuthAuthRequest,
   MicrosoftOAuthAuthRequest,
   GoogleService,
-  SlackService,
+  SlackServiceScope,
   MicrosoftService,
 } from '@craft-agent/session-tools-core';
 

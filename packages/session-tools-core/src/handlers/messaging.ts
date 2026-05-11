@@ -1,9 +1,9 @@
 /**
- * Messaging session tools — list bindings and unbind channels.
+ * Messaging session tools — list and unbind external messaging channels.
  *
  * NOTE: Binding is done via pairing codes (chat-side or UI-side),
- * not via arbitrary channelId from the agent. This prevents the agent
- * from binding sessions to channels it shouldn't have access to.
+ * not via arbitrary external IDs from the agent. This prevents the agent
+ * from binding sessions to destinations it shouldn't have access to.
  */
 
 import type { SessionToolContext } from '../context.ts';
@@ -35,7 +35,7 @@ export async function handleListMessagingChannels(
     }
 
     const lines = bindings.map((b) =>
-      `- ${b.platform}: ${b.channelName || b.channelId} (${b.enabled ? 'active' : 'disabled'})`,
+      `- ${b.platform}: ${b.channelName || b.messagingChannelId} (${b.enabled ? 'active' : 'disabled'})`,
     );
 
     return successResponse(

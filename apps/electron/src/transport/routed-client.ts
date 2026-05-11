@@ -13,7 +13,7 @@
 import type { WsRpcClient, TransportConnectionState } from './client'
 import type { RpcClient } from '@craft-agent/server-core/transport'
 import type { RemoteServerConfig } from '@craft-agent/core/types'
-import { isLocalOnly, RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { isLocalOnly, RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -115,7 +115,7 @@ export class RoutedClient implements RpcClient {
     const result = await target.invoke(channel, ...translatedArgs)
 
     // Intercept SWITCH_WORKSPACE response to swap workspace client
-    if (channel === RPC_CHANNELS.window.SWITCH_WORKSPACE) {
+    if (channel === RPC_NAMESPACES.window.SWITCH_WORKSPACE) {
       this.handleWorkspaceSwitch(result as WorkspaceSwitchResult)
     }
 
@@ -230,12 +230,21 @@ export class RoutedClient implements RpcClient {
     // stale recovery logic to refresh sessions that changed while no client
     // was watching this workspace.
     if (newClient !== this.localClient) {
-      const unsub = newClient.onConnectionStateChanged((state) => {
+      let unsub: (() => void) | undefined
+      let shouldUnsubscribe = false
+      unsub = newClient.onConnectionStateChanged((state) => {
         if (state.status === 'connected') {
-          unsub()
-          newClient.emitReconnected(true)
+          if (unsub) {
+            unsub()
+          } else {
+            shouldUnsubscribe = true
+          }
+          if (typeof newClient.emitReconnected === 'function') {
+            newClient.emitReconnected(true)
+          }
         }
       })
+      if (shouldUnsubscribe) unsub()
     }
   }
 

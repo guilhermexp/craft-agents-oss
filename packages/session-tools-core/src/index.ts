@@ -14,7 +14,7 @@ export type {
 
   // Service types
   GoogleService,
-  SlackService,
+  SlackServiceScope,
   MicrosoftService,
 
   // Auth request types

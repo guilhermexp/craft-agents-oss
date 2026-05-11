@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'path'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { getPreferencesPath, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getWorkspaceByNameOrId, getDefaultThinkingLevel, setDefaultThinkingLevel } from '@craft-agent/shared/config'
 import { isValidThinkingLevel, normalizeThinkingLevel, THINKING_LEVEL_IDS } from '@craft-agent/shared/agent/thinking-levels'
 
@@ -12,37 +12,37 @@ import { requestClientOpenFileDialog } from '@craft-agent/server-core/transport'
 import { isValidWorkingDirectory } from '../../utils/path-validation'
 
 export const HANDLED_CHANNELS = [
-  RPC_CHANNELS.workspace.SETTINGS_GET,
-  RPC_CHANNELS.workspace.SETTINGS_UPDATE,
-  RPC_CHANNELS.preferences.READ,
-  RPC_CHANNELS.preferences.WRITE,
-  RPC_CHANNELS.drafts.GET,
-  RPC_CHANNELS.drafts.SET,
-  RPC_CHANNELS.drafts.DELETE,
-  RPC_CHANNELS.drafts.GET_ALL,
-  RPC_CHANNELS.input.GET_AUTO_CAPITALISATION,
-  RPC_CHANNELS.input.SET_AUTO_CAPITALISATION,
-  RPC_CHANNELS.input.GET_SEND_MESSAGE_KEY,
-  RPC_CHANNELS.input.SET_SEND_MESSAGE_KEY,
-  RPC_CHANNELS.input.GET_SPELL_CHECK,
-  RPC_CHANNELS.input.SET_SPELL_CHECK,
-  RPC_CHANNELS.power.GET_KEEP_AWAKE,
-  RPC_CHANNELS.appearance.GET_RICH_TOOL_DESCRIPTIONS,
-  RPC_CHANNELS.appearance.SET_RICH_TOOL_DESCRIPTIONS,
-  RPC_CHANNELS.appearance.GET_AUTO_EXPAND_ACTIVITIES,
-  RPC_CHANNELS.appearance.SET_AUTO_EXPAND_ACTIVITIES,
-  RPC_CHANNELS.caching.GET_EXTENDED_PROMPT_CACHE,
-  RPC_CHANNELS.caching.SET_EXTENDED_PROMPT_CACHE,
-  RPC_CHANNELS.caching.GET_ENABLE_1M_CONTEXT,
-  RPC_CHANNELS.caching.SET_ENABLE_1M_CONTEXT,
-  RPC_CHANNELS.sessions.GET_MODEL,
-  RPC_CHANNELS.sessions.SET_MODEL,
-  RPC_CHANNELS.settings.GET_DEFAULT_THINKING_LEVEL,
-  RPC_CHANNELS.settings.SET_DEFAULT_THINKING_LEVEL,
-  RPC_CHANNELS.tools.GET_BROWSER_TOOL_ENABLED,
-  RPC_CHANNELS.tools.SET_BROWSER_TOOL_ENABLED,
-  RPC_CHANNELS.settings.GET_NETWORK_PROXY,
-  RPC_CHANNELS.dialog.OPEN_FOLDER,
+  RPC_NAMESPACES.workspace.SETTINGS_GET,
+  RPC_NAMESPACES.workspace.SETTINGS_UPDATE,
+  RPC_NAMESPACES.preferences.READ,
+  RPC_NAMESPACES.preferences.WRITE,
+  RPC_NAMESPACES.drafts.GET,
+  RPC_NAMESPACES.drafts.SET,
+  RPC_NAMESPACES.drafts.DELETE,
+  RPC_NAMESPACES.drafts.GET_ALL,
+  RPC_NAMESPACES.input.GET_AUTO_CAPITALISATION,
+  RPC_NAMESPACES.input.SET_AUTO_CAPITALISATION,
+  RPC_NAMESPACES.input.GET_SEND_MESSAGE_KEY,
+  RPC_NAMESPACES.input.SET_SEND_MESSAGE_KEY,
+  RPC_NAMESPACES.input.GET_SPELL_CHECK,
+  RPC_NAMESPACES.input.SET_SPELL_CHECK,
+  RPC_NAMESPACES.power.GET_KEEP_AWAKE,
+  RPC_NAMESPACES.appearance.GET_RICH_TOOL_DESCRIPTIONS,
+  RPC_NAMESPACES.appearance.SET_RICH_TOOL_DESCRIPTIONS,
+  RPC_NAMESPACES.appearance.GET_AUTO_EXPAND_ACTIVITIES,
+  RPC_NAMESPACES.appearance.SET_AUTO_EXPAND_ACTIVITIES,
+  RPC_NAMESPACES.caching.GET_EXTENDED_PROMPT_CACHE,
+  RPC_NAMESPACES.caching.SET_EXTENDED_PROMPT_CACHE,
+  RPC_NAMESPACES.caching.GET_ENABLE_1M_CONTEXT,
+  RPC_NAMESPACES.caching.SET_ENABLE_1M_CONTEXT,
+  RPC_NAMESPACES.sessions.GET_MODEL,
+  RPC_NAMESPACES.sessions.SET_MODEL,
+  RPC_NAMESPACES.settings.GET_DEFAULT_THINKING_LEVEL,
+  RPC_NAMESPACES.settings.SET_DEFAULT_THINKING_LEVEL,
+  RPC_NAMESPACES.tools.GET_BROWSER_TOOL_ENABLED,
+  RPC_NAMESPACES.tools.SET_BROWSER_TOOL_ENABLED,
+  RPC_NAMESPACES.settings.GET_NETWORK_PROXY,
+  RPC_NAMESPACES.dialog.OPEN_FOLDER,
 ] as const
 
 export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): void {
@@ -50,11 +50,11 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   // Settings - Default Thinking Level (App-Level)
   // ============================================================
 
-  server.handle(RPC_CHANNELS.settings.GET_DEFAULT_THINKING_LEVEL, async () => {
+  server.handle(RPC_NAMESPACES.settings.GET_DEFAULT_THINKING_LEVEL, async () => {
     return getDefaultThinkingLevel()
   })
 
-  server.handle(RPC_CHANNELS.settings.SET_DEFAULT_THINKING_LEVEL, async (_ctx, level: string) => {
+  server.handle(RPC_NAMESPACES.settings.SET_DEFAULT_THINKING_LEVEL, async (_ctx, level: string) => {
     if (!isValidThinkingLevel(level)) {
       throw new Error(`Invalid thinking level: ${level}. Valid values: ${VALID_THINKING_LEVELS_LIST}`)
     }
@@ -70,19 +70,19 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   // ============================================================
 
   // Get session-specific model
-  server.handle(RPC_CHANNELS.sessions.GET_MODEL, async (_ctx, sessionId: string, _workspaceId: string): Promise<string | null> => {
+  server.handle(RPC_NAMESPACES.sessions.GET_MODEL, async (_ctx, sessionId: string, _workspaceId: string): Promise<string | null> => {
     const session = await deps.sessionManager.getSession(sessionId)
     return session?.model ?? null
   })
 
   // Set session-specific model (and optionally connection)
-  server.handle(RPC_CHANNELS.sessions.SET_MODEL, async (_ctx, sessionId: string, workspaceId: string, model: string | null, connection?: string) => {
+  server.handle(RPC_NAMESPACES.sessions.SET_MODEL, async (_ctx, sessionId: string, workspaceId: string, model: string | null, connection?: string) => {
     await deps.sessionManager.updateSessionModel(sessionId, workspaceId, model, connection)
     deps.platform.logger.info(`Session ${sessionId} model updated to: ${model}${connection ? ` (connection: ${connection})` : ''}`)
   })
 
   // Open native folder dialog for selecting working directory (routed to client)
-  server.handle(RPC_CHANNELS.dialog.OPEN_FOLDER, async (ctx) => {
+  server.handle(RPC_NAMESPACES.dialog.OPEN_FOLDER, async (ctx) => {
     const result = await requestClientOpenFileDialog(server, ctx.clientId, {
       properties: ['openDirectory', 'createDirectory'],
       title: 'Select Working Directory',
@@ -95,7 +95,7 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   // ============================================================
 
   // Get workspace settings (model, permission mode, working directory, credential strategy)
-  server.handle(RPC_CHANNELS.workspace.SETTINGS_GET, async (_ctx, workspaceId: string) => {
+  server.handle(RPC_NAMESPACES.workspace.SETTINGS_GET, async (_ctx, workspaceId: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) {
       deps.platform.logger.error(`Workspace not found: ${workspaceId}`)
@@ -120,7 +120,7 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // Update a workspace setting
-  server.handle(RPC_CHANNELS.workspace.SETTINGS_UPDATE, async (_ctx, workspaceId: string, key: string, value: unknown) => {
+  server.handle(RPC_NAMESPACES.workspace.SETTINGS_UPDATE, async (_ctx, workspaceId: string, key: string, value: unknown) => {
     const workspace = getWorkspaceOrThrow(workspaceId)
     const normalizedValue = key === 'workingDirectory' && typeof value === 'string'
       ? value.trim()
@@ -176,7 +176,7 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   // ============================================================
 
   // Read user preferences file
-  server.handle(RPC_CHANNELS.preferences.READ, async () => {
+  server.handle(RPC_NAMESPACES.preferences.READ, async () => {
     const path = getPreferencesPath()
     if (!existsSync(path)) {
       return { content: '{}', exists: false, path }
@@ -185,7 +185,7 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   })
 
   // Write user preferences file (validates JSON before saving)
-  server.handle(RPC_CHANNELS.preferences.WRITE, async (_, content: string) => {
+  server.handle(RPC_NAMESPACES.preferences.WRITE, async (_, content: string) => {
     try {
       JSON.parse(content) // Validate JSON
       const path = getPreferencesPath()
@@ -202,22 +202,22 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   // ============================================================
 
   // Get draft for a session (text + attachment refs)
-  server.handle(RPC_CHANNELS.drafts.GET, async (_ctx, sessionId: string) => {
+  server.handle(RPC_NAMESPACES.drafts.GET, async (_ctx, sessionId: string) => {
     return getSessionDraft(sessionId)
   })
 
   // Set draft for a session (empty drafts are cleared)
-  server.handle(RPC_CHANNELS.drafts.SET, async (_ctx, sessionId: string, draft: import('@craft-agent/shared/config').SessionDraft) => {
+  server.handle(RPC_NAMESPACES.drafts.SET, async (_ctx, sessionId: string, draft: import('@craft-agent/shared/config').SessionDraft) => {
     setSessionDraft(sessionId, draft)
   })
 
   // Delete draft for a session
-  server.handle(RPC_CHANNELS.drafts.DELETE, async (_ctx, sessionId: string) => {
+  server.handle(RPC_NAMESPACES.drafts.DELETE, async (_ctx, sessionId: string) => {
     deleteSessionDraft(sessionId)
   })
 
   // Get all drafts (for loading on app start)
-  server.handle(RPC_CHANNELS.drafts.GET_ALL, async () => {
+  server.handle(RPC_NAMESPACES.drafts.GET_ALL, async () => {
     return getAllSessionDrafts()
   })
 
@@ -226,37 +226,37 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   // ============================================================
 
   // Get auto-capitalisation setting
-  server.handle(RPC_CHANNELS.input.GET_AUTO_CAPITALISATION, async () => {
+  server.handle(RPC_NAMESPACES.input.GET_AUTO_CAPITALISATION, async () => {
     const { getAutoCapitalisation } = await import('@craft-agent/shared/config/storage')
     return getAutoCapitalisation()
   })
 
   // Set auto-capitalisation setting
-  server.handle(RPC_CHANNELS.input.SET_AUTO_CAPITALISATION, async (_ctx, enabled: boolean) => {
+  server.handle(RPC_NAMESPACES.input.SET_AUTO_CAPITALISATION, async (_ctx, enabled: boolean) => {
     const { setAutoCapitalisation } = await import('@craft-agent/shared/config/storage')
     setAutoCapitalisation(enabled)
   })
 
   // Get send message key setting
-  server.handle(RPC_CHANNELS.input.GET_SEND_MESSAGE_KEY, async () => {
+  server.handle(RPC_NAMESPACES.input.GET_SEND_MESSAGE_KEY, async () => {
     const { getSendMessageKey } = await import('@craft-agent/shared/config/storage')
     return getSendMessageKey()
   })
 
   // Set send message key setting
-  server.handle(RPC_CHANNELS.input.SET_SEND_MESSAGE_KEY, async (_ctx, key: 'enter' | 'cmd-enter') => {
+  server.handle(RPC_NAMESPACES.input.SET_SEND_MESSAGE_KEY, async (_ctx, key: 'enter' | 'cmd-enter') => {
     const { setSendMessageKey } = await import('@craft-agent/shared/config/storage')
     setSendMessageKey(key)
   })
 
   // Get spell check setting
-  server.handle(RPC_CHANNELS.input.GET_SPELL_CHECK, async () => {
+  server.handle(RPC_NAMESPACES.input.GET_SPELL_CHECK, async () => {
     const { getSpellCheck } = await import('@craft-agent/shared/config/storage')
     return getSpellCheck()
   })
 
   // Set spell check setting
-  server.handle(RPC_CHANNELS.input.SET_SPELL_CHECK, async (_ctx, enabled: boolean) => {
+  server.handle(RPC_NAMESPACES.input.SET_SPELL_CHECK, async (_ctx, enabled: boolean) => {
     const { setSpellCheck } = await import('@craft-agent/shared/config/storage')
     setSpellCheck(enabled)
   })
@@ -266,7 +266,7 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   // ============================================================
 
   // Get keep awake while running setting
-  server.handle(RPC_CHANNELS.power.GET_KEEP_AWAKE, async () => {
+  server.handle(RPC_NAMESPACES.power.GET_KEEP_AWAKE, async () => {
     const { getKeepAwakeWhileRunning } = await import('@craft-agent/shared/config/storage')
     return getKeepAwakeWhileRunning()
   })
@@ -276,13 +276,13 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   // ============================================================
 
   // Get rich tool descriptions setting
-  server.handle(RPC_CHANNELS.appearance.GET_RICH_TOOL_DESCRIPTIONS, async () => {
+  server.handle(RPC_NAMESPACES.appearance.GET_RICH_TOOL_DESCRIPTIONS, async () => {
     const { getRichToolDescriptions } = await import('@craft-agent/shared/config/storage')
     return getRichToolDescriptions()
   })
 
   // Set rich tool descriptions setting
-  server.handle(RPC_CHANNELS.appearance.SET_RICH_TOOL_DESCRIPTIONS, async (_ctx, enabled: boolean) => {
+  server.handle(RPC_NAMESPACES.appearance.SET_RICH_TOOL_DESCRIPTIONS, async (_ctx, enabled: boolean) => {
     const { setRichToolDescriptions } = await import('@craft-agent/shared/config/storage')
     setRichToolDescriptions(enabled)
   })
@@ -292,37 +292,37 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   // ============================================================
 
   // Get extended prompt cache (1h TTL) setting
-  server.handle(RPC_CHANNELS.caching.GET_EXTENDED_PROMPT_CACHE, async () => {
+  server.handle(RPC_NAMESPACES.caching.GET_EXTENDED_PROMPT_CACHE, async () => {
     const { getExtendedPromptCache } = await import('@craft-agent/shared/config/storage')
     return getExtendedPromptCache()
   })
 
   // Set extended prompt cache (1h TTL) setting
-  server.handle(RPC_CHANNELS.caching.SET_EXTENDED_PROMPT_CACHE, async (_ctx, enabled: boolean) => {
+  server.handle(RPC_NAMESPACES.caching.SET_EXTENDED_PROMPT_CACHE, async (_ctx, enabled: boolean) => {
     const { setExtendedPromptCache } = await import('@craft-agent/shared/config/storage')
     setExtendedPromptCache(enabled)
   })
 
   // Get 1M context window setting
-  server.handle(RPC_CHANNELS.caching.GET_ENABLE_1M_CONTEXT, async () => {
+  server.handle(RPC_NAMESPACES.caching.GET_ENABLE_1M_CONTEXT, async () => {
     const { getEnable1MContext } = await import('@craft-agent/shared/config/storage')
     return getEnable1MContext()
   })
 
   // Set 1M context window setting
-  server.handle(RPC_CHANNELS.caching.SET_ENABLE_1M_CONTEXT, async (_ctx, enabled: boolean) => {
+  server.handle(RPC_NAMESPACES.caching.SET_ENABLE_1M_CONTEXT, async (_ctx, enabled: boolean) => {
     const { setEnable1MContext } = await import('@craft-agent/shared/config/storage')
     setEnable1MContext(enabled)
   })
 
   // Get auto-expand chat activities setting
-  server.handle(RPC_CHANNELS.appearance.GET_AUTO_EXPAND_ACTIVITIES, async () => {
+  server.handle(RPC_NAMESPACES.appearance.GET_AUTO_EXPAND_ACTIVITIES, async () => {
     const { getAutoExpandActivities } = await import('@craft-agent/shared/config/storage')
     return getAutoExpandActivities()
   })
 
   // Set auto-expand chat activities setting
-  server.handle(RPC_CHANNELS.appearance.SET_AUTO_EXPAND_ACTIVITIES, async (_ctx, enabled: boolean) => {
+  server.handle(RPC_NAMESPACES.appearance.SET_AUTO_EXPAND_ACTIVITIES, async (_ctx, enabled: boolean) => {
     const { setAutoExpandActivities } = await import('@craft-agent/shared/config/storage')
     setAutoExpandActivities(enabled)
   })
@@ -331,12 +331,12 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   // Tools Settings
   // ============================================================
 
-  server.handle(RPC_CHANNELS.tools.GET_BROWSER_TOOL_ENABLED, async () => {
+  server.handle(RPC_NAMESPACES.tools.GET_BROWSER_TOOL_ENABLED, async () => {
     const { getBrowserToolEnabled } = await import('@craft-agent/shared/config/storage')
     return getBrowserToolEnabled()
   })
 
-  server.handle(RPC_CHANNELS.tools.SET_BROWSER_TOOL_ENABLED, async (_ctx, enabled: boolean) => {
+  server.handle(RPC_NAMESPACES.tools.SET_BROWSER_TOOL_ENABLED, async (_ctx, enabled: boolean) => {
     const { setBrowserToolEnabled } = await import('@craft-agent/shared/config/storage')
     setBrowserToolEnabled(enabled)
   })
@@ -346,7 +346,7 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   // ============================================================
 
   // Get network proxy settings
-  server.handle(RPC_CHANNELS.settings.GET_NETWORK_PROXY, async () => {
+  server.handle(RPC_NAMESPACES.settings.GET_NETWORK_PROXY, async () => {
     const { getNetworkProxySettings } = await import('@craft-agent/shared/config/storage')
     return getNetworkProxySettings()
   })

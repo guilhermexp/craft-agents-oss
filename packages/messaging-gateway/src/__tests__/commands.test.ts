@@ -53,16 +53,16 @@ function makeAdapter(platform: 'telegram' | 'whatsapp', inlineButtons: boolean):
     onButtonPress() {},
     async sendText(_channelId: string, text: string): Promise<SentMessage> {
       sent.push(text)
-      return { platform, channelId: 'chan-1', messageId: String(sent.length) }
+      return { platform, messagingChannelId: 'chan-1', messageId: String(sent.length) }
     },
     async editMessage() {},
     async sendButtons(_channelId: string, text: string): Promise<SentMessage> {
       sent.push(text)
-      return { platform, channelId: 'chan-1', messageId: String(sent.length) }
+      return { platform, messagingChannelId: 'chan-1', messageId: String(sent.length) }
     },
     async sendTyping() {},
     async sendFile(): Promise<SentMessage> {
-      return { platform, channelId: 'chan-1', messageId: String(sent.length + 1) }
+      return { platform, messagingChannelId: 'chan-1', messageId: String(sent.length + 1) }
     },
   }
 }
@@ -70,7 +70,7 @@ function makeAdapter(platform: 'telegram' | 'whatsapp', inlineButtons: boolean):
 function makeMessage(text: string): IncomingMessage {
   return {
     platform: 'whatsapp',
-    channelId: 'chan-1',
+    messagingChannelId: 'chan-1',
     messageId: 'm1',
     senderId: 'u1',
     senderName: 'Alice',
@@ -104,7 +104,7 @@ describe('Commands', () => {
 
     await commands.handleCommand(adapter, makeMessage('/bind 1'))
 
-    expect(store.findByChannel('whatsapp', 'chan-1')?.sessionId).toBe('sess-2')
+    expect(store.findByMessagingChannel('whatsapp', 'chan-1')?.sessionId).toBe('sess-2')
     expect(adapter.sent.at(-1)).toContain('Newest')
   })
 

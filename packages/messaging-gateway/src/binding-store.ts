@@ -18,8 +18,8 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { ChannelBinding, MessagingLogger, PlatformType } from './types'
-import { normalizeBindingConfig } from './types'
+import type { ExternalMessagingChannelBinding, MessagingLogger, PlatformType } from './types'
+import { messagingChannelId, normalizeBindingConfig } from './types'
 
 const NOOP_LOGGER: MessagingLogger = {
   info: () => {},
@@ -29,7 +29,7 @@ const NOOP_LOGGER: MessagingLogger = {
 }
 
 export class BindingStore {
-  private bindings: ChannelBinding[] = []
+  private bindings: ExternalMessagingChannelBinding[] = []
   private readonly filePath: string
   private readonly dirPath: string
   private readonly log: MessagingLogger
@@ -57,17 +57,18 @@ export class BindingStore {
   // Query
   // -------------------------------------------------------------------------
 
-  findByChannel(platform: PlatformType, channelId: string): ChannelBinding | undefined {
+  findByMessagingChannel(platform: PlatformType, channelId: string): ExternalMessagingChannelBinding | undefined {
+    const targetChannelId = messagingChannelId(channelId)
     return this.bindings.find(
-      (b) => b.platform === platform && b.channelId === channelId && b.enabled,
+      (b) => b.platform === platform && b.messagingChannelId === targetChannelId && b.enabled,
     )
   }
 
-  findBySession(sessionId: string): ChannelBinding[] {
+  findBySession(sessionId: string): ExternalMessagingChannelBinding[] {
     return this.bindings.filter((b) => b.sessionId === sessionId && b.enabled)
   }
 
-  getAll(): ChannelBinding[] {
+  getAll(): ExternalMessagingChannelBinding[] {
     return [...this.bindings]
   }
 
@@ -81,19 +82,19 @@ export class BindingStore {
     platform: PlatformType,
     channelId: string,
     channelName?: string,
-    config?: Partial<ChannelBinding['config']>,
-  ): ChannelBinding {
+    config?: Partial<ExternalMessagingChannelBinding['config']>,
+  ): ExternalMessagingChannelBinding {
     // One channel → one session: evict any existing binding for the channel.
     this.bindings = this.bindings.filter(
-      (b) => !(b.platform === platform && b.channelId === channelId),
+      (b) => !(b.platform === platform && b.messagingChannelId === channelId),
     )
 
-    const binding: ChannelBinding = {
+    const binding: ExternalMessagingChannelBinding = {
       id: randomUUID(),
       workspaceId,
       sessionId,
       platform,
-      channelId,
+      messagingChannelId: messagingChannelId(channelId),
       channelName,
       enabled: true,
       createdAt: Date.now(),
@@ -107,7 +108,7 @@ export class BindingStore {
       workspaceId,
       sessionId,
       platform,
-      channelId,
+      messagingChannelId: messagingChannelId(channelId),
       bindingId: binding.id,
       channelName,
     })
@@ -117,14 +118,14 @@ export class BindingStore {
   unbind(platform: PlatformType, channelId: string): boolean {
     const before = this.bindings.length
     this.bindings = this.bindings.filter(
-      (b) => !(b.platform === platform && b.channelId === channelId),
+      (b) => !(b.platform === platform && b.messagingChannelId === channelId),
     )
     if (this.bindings.length !== before) {
       this.save()
       this.log.info('binding removed by channel', {
         event: 'binding_removed',
         platform,
-        channelId,
+        messagingChannelId: messagingChannelId(channelId),
       })
       return true
     }
@@ -142,7 +143,7 @@ export class BindingStore {
       workspaceId: binding.workspaceId,
       sessionId: binding.sessionId,
       platform: binding.platform,
-      channelId: binding.channelId,
+      messagingChannelId: binding.messagingChannelId,
     })
     return true
   }
@@ -239,9 +240,21 @@ export class BindingStore {
 // Migration helpers
 // ---------------------------------------------------------------------------
 
-function normalizeBinding(raw: ChannelBinding): ChannelBinding {
+type PersistedExternalMessagingBinding = ExternalMessagingChannelBinding & {
+  channelId?: string
+  config?: Partial<ExternalMessagingChannelBinding['config']> & {
+    approvalChannel?: ExternalMessagingChannelBinding['config']['approvalSurface']
+  }
+}
+
+function normalizeBinding(raw: PersistedExternalMessagingBinding): ExternalMessagingChannelBinding {
+  const legacyConfig = raw.config?.approvalChannel !== undefined
+    ? { ...raw.config, approvalSurface: raw.config.approvalChannel }
+    : raw.config
+  const channelId = raw.messagingChannelId ?? raw.channelId ?? ''
   return {
     ...raw,
-    config: normalizeBindingConfig(raw.platform, raw.config ?? {}),
+    messagingChannelId: messagingChannelId(channelId),
+    config: normalizeBindingConfig(raw.platform, legacyConfig ?? {}),
   }
 }

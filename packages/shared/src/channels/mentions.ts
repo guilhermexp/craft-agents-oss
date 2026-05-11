@@ -1,10 +1,10 @@
-import type { ChannelParticipant } from './types.ts';
+import type { WarRoomParticipant } from './types.ts';
 
 const MENTION_PATTERN = /(?:^|[^a-zA-Z0-9_])@([a-z0-9][a-z0-9-]{1,39})\b/gi;
 
 export interface ResolveChannelMentionsInput {
   text: string;
-  participants: ChannelParticipant[];
+  participants: WarRoomParticipant[];
   explicitMentionedParticipantIds?: string[];
   allowAll?: boolean;
 }

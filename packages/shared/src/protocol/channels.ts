@@ -3,7 +3,7 @@
  * Wire-format strings (values) are the stable API contract.
  * Key paths are internal and may be reorganized freely.
  */
-export const RPC_CHANNELS = {
+export const RPC_NAMESPACES = {
   remote: {
     TEST_CONNECTION: 'remote:testConnection',
   },
@@ -469,15 +469,15 @@ export const RPC_CHANNELS = {
   },
 } as const
 
-// IPC_CHANNELS compat alias removed — all consumers now use RPC_CHANNELS
+// IPC_CHANNELS compat alias removed — all consumers now use RPC_NAMESPACES
 
 /**
- * Flatten all channel string values from the nested RPC_CHANNELS object.
+ * Flatten all channel string values from the nested RPC_NAMESPACES object.
  * Used by the exhaustive routing test to ensure every channel is classified.
  */
-export function getAllChannelValues(): string[] {
+export function getAllNamespaceValues(): string[] {
   const values: string[] = []
-  for (const namespace of Object.values(RPC_CHANNELS)) {
+  for (const namespace of Object.values(RPC_NAMESPACES)) {
     for (const channel of Object.values(namespace)) {
       values.push(channel)
     }

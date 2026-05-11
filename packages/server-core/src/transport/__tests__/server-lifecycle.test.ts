@@ -188,7 +188,7 @@ describe('WsRpcServer lifecycle', () => {
     ws.send(JSON.stringify({
       id: reqId,
       type: 'request',
-      channel: 'test:slow',
+      rpcNamespace: 'test:slow',
     }))
 
     // Should receive error response (but this will take 60s — skip in normal runs)

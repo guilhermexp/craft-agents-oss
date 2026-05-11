@@ -15,7 +15,7 @@ import { PlanTokenRegistry } from '../plan-tokens'
 import {
   DEFAULT_BINDING_CONFIG,
   type AdapterCapabilities,
-  type ChannelBinding,
+  type ExternalMessagingChannelBinding,
   type PlatformAdapter,
   type PlatformType,
   type SentMessage,
@@ -24,7 +24,7 @@ import {
 
 interface Call {
   kind: 'sendText' | 'sendButtons' | 'sendFile' | 'clearButtons'
-  channelId: string
+  messagingChannelId: string
   messageId?: string
   text?: string
   buttons?: InlineButton[]
@@ -56,36 +56,36 @@ function makeAdapter(platform: PlatformType = 'telegram'): PlatformAdapter & { c
     },
     onMessage() {},
     onButtonPress() {},
-    async sendText(channelId, text) {
+    async sendText(messagingChannelId, text) {
       const messageId = String(nextId++)
-      calls.push({ kind: 'sendText', channelId, messageId, text })
-      return { platform, channelId, messageId } as SentMessage
+      calls.push({ kind: 'sendText', messagingChannelId, messageId, text })
+      return { platform, messagingChannelId, messageId } as SentMessage
     },
     async editMessage() {},
-    async sendButtons(channelId, text, buttons) {
+    async sendButtons(messagingChannelId, text, buttons) {
       const messageId = String(nextId++)
-      calls.push({ kind: 'sendButtons', channelId, messageId, text, buttons })
-      return { platform, channelId, messageId } as SentMessage
+      calls.push({ kind: 'sendButtons', messagingChannelId, messageId, text, buttons })
+      return { platform, messagingChannelId, messageId } as SentMessage
     },
     async sendTyping() {},
-    async sendFile(channelId, file, fileName) {
+    async sendFile(messagingChannelId, file, fileName) {
       const messageId = String(nextId++)
-      calls.push({ kind: 'sendFile', channelId, messageId, fileName, fileSize: file.length })
-      return { platform, channelId, messageId } as SentMessage
+      calls.push({ kind: 'sendFile', messagingChannelId, messageId, fileName, fileSize: file.length })
+      return { platform, messagingChannelId, messageId } as SentMessage
     },
-    async clearButtons(channelId, messageId) {
-      calls.push({ kind: 'clearButtons', channelId, messageId })
+    async clearButtons(messagingChannelId, messageId) {
+      calls.push({ kind: 'clearButtons', messagingChannelId, messageId })
     },
   }
 }
 
-function makeBinding(platform: PlatformType, id = 'bind-1'): ChannelBinding {
+function makeBinding(platform: PlatformType, id = 'bind-1'): ExternalMessagingChannelBinding {
   return {
     id,
     workspaceId: 'ws-1',
     sessionId: 'sess-1',
     platform,
-    channelId: 'chan-1',
+    messagingChannelId: 'chan-1',
     enabled: true,
     createdAt: Date.now(),
     config: { ...DEFAULT_BINDING_CONFIG },

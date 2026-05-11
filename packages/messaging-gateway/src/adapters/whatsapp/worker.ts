@@ -21,6 +21,7 @@ import {
   parseFrames,
   type WorkerCommand,
   type WorkerEvent,
+  whatsAppChannelId,
 } from './protocol'
 import { bareJid, classifyInbound, rememberSentId } from './filter'
 
@@ -163,11 +164,11 @@ function reconnectDelayMs(attempts: number): number {
  * target channel is the self-JID. Idempotent: if the text already starts
  * with the prefix (e.g. relay/edit paths that re-send), leave it alone.
  */
-function applyPrefixIfSelfChat(state: SessionState, channelId: string, text: string): string {
+function applyPrefixIfSelfChat(state: SessionState, whatsAppChannelId: string, text: string): string {
   if (!state.selfChatMode) return text
   const selfJid = bareJid(state.sock.user?.id)
   const selfLid = bareJid(state.sock.user?.lid)
-  const bareChannel = bareJid(channelId)
+  const bareChannel = bareJid(whatsAppChannelId)
   if (!bareChannel) return text
   const isSelfChat =
     (selfJid !== null && bareChannel === selfJid) ||
@@ -387,10 +388,10 @@ async function startSession(
           continue
         }
         const key = msg.key as { remoteJid?: string; id?: string }
-        log(`upsert emit: channelId=${key.remoteJid} textLen=${decision.text.length}`)
+        log(`upsert emit: whatsAppChannelId=${key.remoteJid} textLen=${decision.text.length}`)
         emit({
           type: 'incoming',
-          channelId: key.remoteJid!,
+          whatsAppChannelId: whatsAppChannelId(key.remoteJid!),
           messageId: key.id!,
           senderId: key.remoteJid!,
           senderName: (msg.pushName as string | undefined) ?? undefined,
@@ -455,8 +456,8 @@ async function handleCommand(cmd: WorkerCommand): Promise<void> {
         return
       }
       try {
-        const text = applyPrefixIfSelfChat(session, cmd.channelId, cmd.text)
-        const res = await session.sock.sendMessage(cmd.channelId, { text })
+        const text = applyPrefixIfSelfChat(session, cmd.whatsAppChannelId, cmd.text)
+        const res = await session.sock.sendMessage(cmd.whatsAppChannelId, { text })
         if (res?.key?.id) rememberSentId(session.sentIds, res.key.id)
         emit({ type: 'send_result', id: cmd.id, ok: true, messageId: res?.key?.id })
       } catch (err) {
@@ -477,9 +478,9 @@ async function handleCommand(cmd: WorkerCommand): Promise<void> {
       try {
         const buf = Buffer.from(cmd.dataBase64, 'base64')
         const caption = cmd.caption !== undefined
-          ? applyPrefixIfSelfChat(session, cmd.channelId, cmd.caption)
+          ? applyPrefixIfSelfChat(session, cmd.whatsAppChannelId, cmd.caption)
           : undefined
-        const res = await session.sock.sendMessage(cmd.channelId, {
+        const res = await session.sock.sendMessage(cmd.whatsAppChannelId, {
           document: buf,
           fileName: cmd.filename,
           mimetype: cmd.mimeType ?? 'application/octet-stream',

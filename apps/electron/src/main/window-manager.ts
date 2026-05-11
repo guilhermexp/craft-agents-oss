@@ -3,7 +3,7 @@ import { windowLog } from './logger'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { release } from 'os'
-import { RPC_CHANNELS, type WindowCloseRequestSource } from '../shared/types'
+import { RPC_NAMESPACES, type WindowCloseRequestSource } from '../shared/types'
 import type { SavedWindow } from './window-state'
 
 // Vite dev server URL for hot reload
@@ -292,7 +292,7 @@ export class WindowManager {
           if (target && (target.view || target.action)) {
             // Wait a bit for React to mount and register IPC listeners
             setTimeout(() => {
-              this.pushToWindow(window, RPC_CHANNELS.deeplink.NAVIGATE, {
+              this.pushToWindow(window, RPC_NAMESPACES.deeplink.NAVIGATE, {
                 view: target.view,
                 action: target.action,
                 actionParams: target.actionParams,
@@ -305,16 +305,16 @@ export class WindowManager {
 
     // Listen for system theme changes and notify this window's renderer
     const themeHandler = () => {
-      this.pushToWindow(window, RPC_CHANNELS.theme.SYSTEM_CHANGED, nativeTheme.shouldUseDarkColors)
+      this.pushToWindow(window, RPC_NAMESPACES.theme.SYSTEM_CHANGED, nativeTheme.shouldUseDarkColors)
     }
     nativeTheme.on('updated', themeHandler)
 
     // Handle focus/blur to broadcast window focus state
     window.on('focus', () => {
-      this.pushToWindow(window, RPC_CHANNELS.window.FOCUS_STATE, true)
+      this.pushToWindow(window, RPC_NAMESPACES.window.FOCUS_STATE, true)
     })
     window.on('blur', () => {
-      this.pushToWindow(window, RPC_CHANNELS.window.FOCUS_STATE, false)
+      this.pushToWindow(window, RPC_NAMESPACES.window.FOCUS_STATE, false)
     })
 
     // Detect Cmd/Ctrl+W before close events so renderer can distinguish close source.
@@ -366,7 +366,7 @@ export class WindowManager {
         }
 
         // Send close request to renderer - it will either close a modal/panel or confirm close.
-        this.pushToWindow(window, RPC_CHANNELS.window.CLOSE_REQUESTED, { source })
+        this.pushToWindow(window, RPC_NAMESPACES.window.CLOSE_REQUESTED, { source })
 
         // Fallback timeout: if IPC fails (e.g., on Hyprland/Wayland), force close after 3s.
         // Reset timeout on each attempt so active users closing modals aren't interrupted.

@@ -2,7 +2,7 @@ import { resolve } from 'path'
 import { join } from 'path'
 import { homedir } from 'os'
 import { execSync } from 'child_process'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId, getGitBashPath, setGitBashPath, clearGitBashPath } from '@craft-agent/shared/config'
 import { isSafeExternalUrl } from '@craft-agent/shared/utils/url-safety'
 import { isUsableGitBashPath, validateGitBashPath } from '@craft-agent/server-core/services'
@@ -17,20 +17,20 @@ import {
 } from '@craft-agent/server-core/transport'
 
 export const CORE_HANDLED_CHANNELS = [
-  RPC_CHANNELS.theme.GET_SYSTEM_PREFERENCE,
-  RPC_CHANNELS.system.VERSIONS,
-  RPC_CHANNELS.system.HOME_DIR,
-  RPC_CHANNELS.system.IS_DEBUG_MODE,
-  RPC_CHANNELS.debug.LOG,
-  RPC_CHANNELS.shell.OPEN_URL,
-  RPC_CHANNELS.shell.OPEN_FILE,
-  RPC_CHANNELS.shell.SHOW_IN_FOLDER,
-  RPC_CHANNELS.releaseNotes.GET,
-  RPC_CHANNELS.releaseNotes.GET_LATEST_VERSION,
-  RPC_CHANNELS.git.GET_BRANCH,
-  RPC_CHANNELS.gitbash.CHECK,
-  RPC_CHANNELS.gitbash.BROWSE,
-  RPC_CHANNELS.gitbash.SET_PATH,
+  RPC_NAMESPACES.theme.GET_SYSTEM_PREFERENCE,
+  RPC_NAMESPACES.system.VERSIONS,
+  RPC_NAMESPACES.system.HOME_DIR,
+  RPC_NAMESPACES.system.IS_DEBUG_MODE,
+  RPC_NAMESPACES.debug.LOG,
+  RPC_NAMESPACES.shell.OPEN_URL,
+  RPC_NAMESPACES.shell.OPEN_FILE,
+  RPC_NAMESPACES.shell.SHOW_IN_FOLDER,
+  RPC_NAMESPACES.releaseNotes.GET,
+  RPC_NAMESPACES.releaseNotes.GET_LATEST_VERSION,
+  RPC_NAMESPACES.git.GET_BRANCH,
+  RPC_NAMESPACES.gitbash.CHECK,
+  RPC_NAMESPACES.gitbash.BROWSE,
+  RPC_NAMESPACES.gitbash.SET_PATH,
 ] as const
 
 interface ParsedInternalDeepLink {
@@ -145,12 +145,12 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
   const windowManager = deps.windowManager
 
   // Get system theme preference (dark = true, light = false)
-  server.handle(RPC_CHANNELS.theme.GET_SYSTEM_PREFERENCE, async () => {
+  server.handle(RPC_NAMESPACES.theme.GET_SYSTEM_PREFERENCE, async () => {
     return deps.platform.systemDarkMode?.() ?? false
   })
 
   // Get runtime versions (previously handled locally in preload via process.versions)
-  server.handle(RPC_CHANNELS.system.VERSIONS, async () => {
+  server.handle(RPC_NAMESPACES.system.VERSIONS, async () => {
     return {
       node: process.versions.node,
       chrome: process.versions.chrome ?? undefined,
@@ -159,28 +159,28 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
   })
 
   // Get user's home directory
-  server.handle(RPC_CHANNELS.system.HOME_DIR, async () => {
+  server.handle(RPC_NAMESPACES.system.HOME_DIR, async () => {
     return homedir()
   })
 
   // Check if running in debug mode (from source)
-  server.handle(RPC_CHANNELS.system.IS_DEBUG_MODE, async () => {
+  server.handle(RPC_NAMESPACES.system.IS_DEBUG_MODE, async () => {
     return !deps.platform.isPackaged
   })
 
   // Release notes
-  server.handle(RPC_CHANNELS.releaseNotes.GET, async () => {
+  server.handle(RPC_NAMESPACES.releaseNotes.GET, async () => {
     const { getCombinedReleaseNotes } = require('@craft-agent/shared/release-notes') as typeof import('@craft-agent/shared/release-notes')
     return getCombinedReleaseNotes()
   })
 
-  server.handle(RPC_CHANNELS.releaseNotes.GET_LATEST_VERSION, async () => {
+  server.handle(RPC_NAMESPACES.releaseNotes.GET_LATEST_VERSION, async () => {
     const { getLatestReleaseVersion } = require('@craft-agent/shared/release-notes') as typeof import('@craft-agent/shared/release-notes')
     return getLatestReleaseVersion()
   })
 
   // Get git branch for a directory (returns null if not a git repo or git unavailable)
-  server.handle(RPC_CHANNELS.git.GET_BRANCH, async (_ctx, dirPath: string) => {
+  server.handle(RPC_NAMESPACES.git.GET_BRANCH, async (_ctx, dirPath: string) => {
     try {
       const branch = execSync('git rev-parse --abbrev-ref HEAD', {
         cwd: dirPath,
@@ -195,7 +195,7 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
   })
 
   // Git Bash detection and configuration (Windows only)
-  server.handle(RPC_CHANNELS.gitbash.CHECK, async () => {
+  server.handle(RPC_NAMESPACES.gitbash.CHECK, async () => {
     const platform = process.platform as 'win32' | 'darwin' | 'linux'
 
     if (platform !== 'win32') {
@@ -246,7 +246,7 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
     return { found: false, path: null, platform }
   })
 
-  server.handle(RPC_CHANNELS.gitbash.BROWSE, async (ctx) => {
+  server.handle(RPC_NAMESPACES.gitbash.BROWSE, async (ctx) => {
     const result = await requestClientOpenFileDialog(server, ctx.clientId, {
       title: 'Select bash.exe',
       filters: [{ name: 'Executable', extensions: ['exe'] }],
@@ -261,7 +261,7 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
     return result.filePaths[0]
   })
 
-  server.handle(RPC_CHANNELS.gitbash.SET_PATH, async (_ctx, bashPath: string) => {
+  server.handle(RPC_NAMESPACES.gitbash.SET_PATH, async (_ctx, bashPath: string) => {
     const validation = await validateGitBashPath(bashPath)
     if (!validation.valid) {
       return { success: false, error: validation.error }
@@ -273,12 +273,12 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
   })
 
   // Debug logging from renderer -> main log file (fire-and-forget, no response)
-  server.handle(RPC_CHANNELS.debug.LOG, async (_ctx, ...args: unknown[]) => {
+  server.handle(RPC_NAMESPACES.debug.LOG, async (_ctx, ...args: unknown[]) => {
     deps.platform.logger.info('[renderer]', ...args)
   })
 
   // Shell operations - open URL in external browser (or handle craftagents:// internally)
-  server.handle(RPC_CHANNELS.shell.OPEN_URL, async (ctx, url: string) => {
+  server.handle(RPC_NAMESPACES.shell.OPEN_URL, async (ctx, url: string) => {
     deps.platform.logger.info('[OPEN_URL] Received request:', url)
     try {
       const parsed = new URL(url)
@@ -297,7 +297,7 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
             : { to: 'client' as const, clientId: ctx.clientId }
 
           deps.platform.logger.info('[OPEN_URL] Routing craftagents:// URL internally via deeplink:navigate')
-          server.push(RPC_CHANNELS.deeplink.NAVIGATE, target, deepLink.navigation)
+          server.push(RPC_NAMESPACES.deeplink.NAVIGATE, target, deepLink.navigation)
           return
         }
 
@@ -328,7 +328,7 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
     }
   })
 
-  server.handle(RPC_CHANNELS.shell.OPEN_FILE, async (ctx, path: string) => {
+  server.handle(RPC_NAMESPACES.shell.OPEN_FILE, async (ctx, path: string) => {
     assertLocalWorkspace(ctx, 'Open file')
     try {
       // Expand ~ before resolve() — resolve() treats ~ as a literal path component
@@ -344,7 +344,7 @@ export function registerSystemCoreHandlers(server: RpcServer, deps: HandlerDeps)
     }
   })
 
-  server.handle(RPC_CHANNELS.shell.SHOW_IN_FOLDER, async (ctx, path: string) => {
+  server.handle(RPC_NAMESPACES.shell.SHOW_IN_FOLDER, async (ctx, path: string) => {
     assertLocalWorkspace(ctx, 'Show in folder')
     try {
       const expanded = path.startsWith('~') ? path.replace(/^~/, homedir()) : path

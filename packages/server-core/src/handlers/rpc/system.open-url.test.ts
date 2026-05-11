@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { CLIENT_OPEN_EXTERNAL } from '@craft-agent/server-core/transport'
 import type { RpcServer, HandlerFn, RequestContext } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
@@ -47,7 +47,7 @@ function createTestHarness(overrides?: { workspaceId?: string | null }) {
 
   registerSystemCoreHandlers(server, deps)
 
-  const openUrl = handlers.get(RPC_CHANNELS.shell.OPEN_URL)
+  const openUrl = handlers.get(RPC_NAMESPACES.shell.OPEN_URL)
   if (!openUrl) {
     throw new Error('OPEN_URL handler not registered')
   }
@@ -70,7 +70,7 @@ describe('registerSystemCoreHandlers OPEN_URL', () => {
     expect(invokeClientCalls).toHaveLength(0)
     expect(pushCalls).toHaveLength(1)
     expect(pushCalls[0]).toEqual({
-      channel: RPC_CHANNELS.deeplink.NAVIGATE,
+      channel: RPC_NAMESPACES.deeplink.NAVIGATE,
       target: { to: 'client', clientId: 'client-1' },
       args: [{ action: 'new-session', actionParams: { input: 'sg', send: 'true' } }],
     })
@@ -84,7 +84,7 @@ describe('registerSystemCoreHandlers OPEN_URL', () => {
     expect(invokeClientCalls).toHaveLength(0)
     expect(pushCalls).toHaveLength(1)
     expect(pushCalls[0]).toEqual({
-      channel: RPC_CHANNELS.deeplink.NAVIGATE,
+      channel: RPC_NAMESPACES.deeplink.NAVIGATE,
       target: { to: 'workspace', workspaceId: 'ws-2' },
       args: [{ action: 'new-session', actionParams: { input: 'hello' } }],
     })

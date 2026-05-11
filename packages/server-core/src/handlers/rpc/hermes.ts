@@ -7,7 +7,7 @@ import { execFile as execFileCb } from 'node:child_process'
 import net from 'node:net'
 
 import {
-  RPC_CHANNELS,
+  RPC_NAMESPACES,
   type HermesActiveProfileResult,
   type HermesDashboardResult,
   type HermesDetectionResult,
@@ -899,27 +899,27 @@ function runUpdateScript(scriptPath: string): Promise<HermesUpdateResult> {
 }
 
 export const HANDLED_CHANNELS = [
-  RPC_CHANNELS.hermes.DETECT_INSTALLATION,
-  RPC_CHANNELS.hermes.GET_RUNTIME_DETAILS,
-  RPC_CHANNELS.hermes.START_DASHBOARD,
-  RPC_CHANNELS.hermes.UPDATE_RUNTIME,
-  RPC_CHANNELS.hermes.LIST_LOGS,
-  RPC_CHANNELS.hermes.READ_LOG,
-  RPC_CHANNELS.hermes.LIST_HOME_FILES,
-  RPC_CHANNELS.hermes.LIST_SKILLS,
-  RPC_CHANNELS.hermes.OPEN_PATH,
-  RPC_CHANNELS.hermes.GET_API_CONFIG,
-  RPC_CHANNELS.hermes.PATCH_API_CONFIG,
-  RPC_CHANNELS.hermes.GET_PROVIDER_MODELS,
-  RPC_CHANNELS.hermes.LIST_PROFILES,
-  RPC_CHANNELS.hermes.GET_ACTIVE_PROFILE,
-  RPC_CHANNELS.hermes.SET_ACTIVE_PROFILE,
-  RPC_CHANNELS.hermes.CREATE_PROFILE,
-  RPC_CHANNELS.hermes.RENAME_PROFILE,
-  RPC_CHANNELS.hermes.DELETE_PROFILE,
-  RPC_CHANNELS.hermes.GET_PROFILE_SETUP_COMMAND,
-  RPC_CHANNELS.hermes.GET_PROFILE_SOUL,
-  RPC_CHANNELS.hermes.UPDATE_PROFILE_SOUL,
+  RPC_NAMESPACES.hermes.DETECT_INSTALLATION,
+  RPC_NAMESPACES.hermes.GET_RUNTIME_DETAILS,
+  RPC_NAMESPACES.hermes.START_DASHBOARD,
+  RPC_NAMESPACES.hermes.UPDATE_RUNTIME,
+  RPC_NAMESPACES.hermes.LIST_LOGS,
+  RPC_NAMESPACES.hermes.READ_LOG,
+  RPC_NAMESPACES.hermes.LIST_HOME_FILES,
+  RPC_NAMESPACES.hermes.LIST_SKILLS,
+  RPC_NAMESPACES.hermes.OPEN_PATH,
+  RPC_NAMESPACES.hermes.GET_API_CONFIG,
+  RPC_NAMESPACES.hermes.PATCH_API_CONFIG,
+  RPC_NAMESPACES.hermes.GET_PROVIDER_MODELS,
+  RPC_NAMESPACES.hermes.LIST_PROFILES,
+  RPC_NAMESPACES.hermes.GET_ACTIVE_PROFILE,
+  RPC_NAMESPACES.hermes.SET_ACTIVE_PROFILE,
+  RPC_NAMESPACES.hermes.CREATE_PROFILE,
+  RPC_NAMESPACES.hermes.RENAME_PROFILE,
+  RPC_NAMESPACES.hermes.DELETE_PROFILE,
+  RPC_NAMESPACES.hermes.GET_PROFILE_SETUP_COMMAND,
+  RPC_NAMESPACES.hermes.GET_PROFILE_SOUL,
+  RPC_NAMESPACES.hermes.UPDATE_PROFILE_SOUL,
 ] as const
 
 /**
@@ -989,11 +989,11 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
   startHermesAuthJsonWatcher(deps)
   let gatewayRestartTimer: ReturnType<typeof setTimeout> | null = null
 
-  server.handle(RPC_CHANNELS.hermes.DETECT_INSTALLATION, async (): Promise<HermesDetectionResult> => {
+  server.handle(RPC_NAMESPACES.hermes.DETECT_INSTALLATION, async (): Promise<HermesDetectionResult> => {
     return buildDetectionResult(deps)
   })
 
-  server.handle(RPC_CHANNELS.hermes.GET_RUNTIME_DETAILS, async (): Promise<HermesRuntimeDetailsResult> => {
+  server.handle(RPC_NAMESPACES.hermes.GET_RUNTIME_DETAILS, async (): Promise<HermesRuntimeDetailsResult> => {
     const runtime = normalizeHermesRuntimeConfig()
     const detection = await buildDetectionResult(deps)
     const agentRoot = process.env.CRAFT_HERMES_AGENT_ROOT?.trim() || undefined
@@ -1174,11 +1174,11 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }, 1000)
   }
 
-  server.handle(RPC_CHANNELS.hermes.START_DASHBOARD, async (): Promise<HermesDashboardResult> => {
+  server.handle(RPC_NAMESPACES.hermes.START_DASHBOARD, async (): Promise<HermesDashboardResult> => {
     return ensureDashboardRunning()
   })
 
-  server.handle(RPC_CHANNELS.hermes.GET_API_CONFIG, async () => {
+  server.handle(RPC_NAMESPACES.hermes.GET_API_CONFIG, async () => {
     try {
       const [config, modelInfo, modelOptions] = await Promise.all([
         fetchDashboardJson('/api/config'),
@@ -1210,7 +1210,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.PATCH_API_CONFIG, async (
+  server.handle(RPC_NAMESPACES.hermes.PATCH_API_CONFIG, async (
     _ctx,
     body: { config?: Record<string, unknown>; env?: Record<string, string> },
   ) => {
@@ -1246,7 +1246,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.GET_PROVIDER_MODELS, async (_ctx, provider: string) => {
+  server.handle(RPC_NAMESPACES.hermes.GET_PROVIDER_MODELS, async (_ctx, provider: string) => {
     try {
       const data = await fetchDashboardJson('/api/model/options') as {
         providers?: Array<{ slug?: string; models?: string[] }>
@@ -1266,7 +1266,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.LIST_PROFILES, async (): Promise<HermesListProfilesResult> => {
+  server.handle(RPC_NAMESPACES.hermes.LIST_PROFILES, async (): Promise<HermesListProfilesResult> => {
     try {
       return normalizeHermesProfilesPayload(await fetchDashboardJson('/api/profiles'))
     } catch (error) {
@@ -1274,11 +1274,11 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.GET_ACTIVE_PROFILE, async (): Promise<HermesActiveProfileResult> => {
+  server.handle(RPC_NAMESPACES.hermes.GET_ACTIVE_PROFILE, async (): Promise<HermesActiveProfileResult> => {
     return { success: true, name: getActiveHermesProfile() }
   })
 
-  server.handle(RPC_CHANNELS.hermes.SET_ACTIVE_PROFILE, async (
+  server.handle(RPC_NAMESPACES.hermes.SET_ACTIVE_PROFILE, async (
     _ctx,
     name: string,
   ): Promise<HermesActiveProfileResult> => {
@@ -1303,7 +1303,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.CREATE_PROFILE, async (
+  server.handle(RPC_NAMESPACES.hermes.CREATE_PROFILE, async (
     _ctx,
     body: { name: string; cloneFromDefault: boolean },
   ): Promise<HermesProfileMutationResult> => {
@@ -1326,7 +1326,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.RENAME_PROFILE, async (
+  server.handle(RPC_NAMESPACES.hermes.RENAME_PROFILE, async (
     _ctx,
     name: string,
     newName: string,
@@ -1349,7 +1349,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.DELETE_PROFILE, async (
+  server.handle(RPC_NAMESPACES.hermes.DELETE_PROFILE, async (
     _ctx,
     name: string,
   ): Promise<HermesProfileMutationResult> => {
@@ -1368,7 +1368,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.GET_PROFILE_SETUP_COMMAND, async (
+  server.handle(RPC_NAMESPACES.hermes.GET_PROFILE_SETUP_COMMAND, async (
     _ctx,
     name: string,
   ): Promise<HermesProfileSetupCommandResult> => {
@@ -1380,7 +1380,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.GET_PROFILE_SOUL, async (
+  server.handle(RPC_NAMESPACES.hermes.GET_PROFILE_SOUL, async (
     _ctx,
     name: string,
   ): Promise<HermesProfileSoulResult> => {
@@ -1396,7 +1396,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.UPDATE_PROFILE_SOUL, async (
+  server.handle(RPC_NAMESPACES.hermes.UPDATE_PROFILE_SOUL, async (
     _ctx,
     name: string,
     content: string,
@@ -1413,7 +1413,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.LIST_ENV, async (): Promise<HermesListEnvResult> => {
+  server.handle(RPC_NAMESPACES.hermes.LIST_ENV, async (): Promise<HermesListEnvResult> => {
     try {
       const runtime = normalizeHermesRuntimeConfig()
       const raw = await fetchDashboardJson('/api/env') as Record<string, {
@@ -1452,7 +1452,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.SET_ENV, async (
+  server.handle(RPC_NAMESPACES.hermes.SET_ENV, async (
     _ctx,
     body: { key: string; value: string },
   ): Promise<HermesEnvMutationResult> => {
@@ -1469,7 +1469,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.DELETE_ENV, async (
+  server.handle(RPC_NAMESPACES.hermes.DELETE_ENV, async (
     _ctx,
     key: string,
   ): Promise<HermesEnvMutationResult> => {
@@ -1486,7 +1486,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.UPDATE_RUNTIME, async (): Promise<HermesUpdateResult> => {
+  server.handle(RPC_NAMESPACES.hermes.UPDATE_RUNTIME, async (): Promise<HermesUpdateResult> => {
     if (deps.platform.isPackaged) {
       return {
         success: false,
@@ -1508,7 +1508,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     return runUpdateScript(scriptPath)
   })
 
-  server.handle(RPC_CHANNELS.hermes.LIST_LOGS, async (): Promise<HermesListLogsResult> => {
+  server.handle(RPC_NAMESPACES.hermes.LIST_LOGS, async (): Promise<HermesListLogsResult> => {
     try {
       return await listHermesLogs(normalizeHermesRuntimeConfig())
     } catch (error) {
@@ -1516,7 +1516,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.READ_LOG, async (_ctx, name: string): Promise<HermesReadLogResult> => {
+  server.handle(RPC_NAMESPACES.hermes.READ_LOG, async (_ctx, name: string): Promise<HermesReadLogResult> => {
     const runtime = normalizeHermesRuntimeConfig()
     const logsPath = join(runtime.hermesHome, 'logs')
     try {
@@ -1535,7 +1535,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.LIST_HOME_FILES, async (_ctx, target?: string): Promise<HermesListHomeFilesResult> => {
+  server.handle(RPC_NAMESPACES.hermes.LIST_HOME_FILES, async (_ctx, target?: string): Promise<HermesListHomeFilesResult> => {
     const runtime = normalizeHermesRuntimeConfig()
     try {
       return {
@@ -1548,7 +1548,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.LIST_SKILLS, async (): Promise<HermesListSkillsResult> => {
+  server.handle(RPC_NAMESPACES.hermes.LIST_SKILLS, async (): Promise<HermesListSkillsResult> => {
     try {
       return await listHermesSkills(normalizeHermesRuntimeConfig())
     } catch (error) {
@@ -1556,7 +1556,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
     }
   })
 
-  server.handle(RPC_CHANNELS.hermes.OPEN_PATH, async (_ctx, target?: string): Promise<HermesOpenPathResult> => {
+  server.handle(RPC_NAMESPACES.hermes.OPEN_PATH, async (_ctx, target?: string): Promise<HermesOpenPathResult> => {
     const runtime = normalizeHermesRuntimeConfig()
     try {
       const candidatePath = resolveInside(runtime.hermesHome, target || '.')

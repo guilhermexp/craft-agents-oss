@@ -12,7 +12,7 @@
  * This avoids stale translations from module-level i18n.t() calls.
  */
 
-import { RPC_CHANNELS } from './types'
+import { RPC_NAMESPACES } from './types'
 import { FEATURE_FLAGS } from '@craft-agent/shared/feature-flags'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ export const EDIT_MENU: MenuSection = {
       icon: 'Undo2',
       shortcutDisplayMac: '⌘Z',
       shortcutDisplayOther: 'Ctrl+Z',
-      ipcChannel: RPC_CHANNELS.menu.UNDO,
+      ipcChannel: RPC_NAMESPACES.menu.UNDO,
     },
     {
       type: 'role',
@@ -81,7 +81,7 @@ export const EDIT_MENU: MenuSection = {
       icon: 'Redo2',
       shortcutDisplayMac: '⌘⇧Z',
       shortcutDisplayOther: 'Ctrl+Shift+Z',
-      ipcChannel: RPC_CHANNELS.menu.REDO,
+      ipcChannel: RPC_NAMESPACES.menu.REDO,
     },
     { type: 'separator' },
     {
@@ -91,7 +91,7 @@ export const EDIT_MENU: MenuSection = {
       icon: 'Scissors',
       shortcutDisplayMac: '⌘X',
       shortcutDisplayOther: 'Ctrl+X',
-      ipcChannel: RPC_CHANNELS.menu.CUT,
+      ipcChannel: RPC_NAMESPACES.menu.CUT,
     },
     {
       type: 'role',
@@ -100,7 +100,7 @@ export const EDIT_MENU: MenuSection = {
       icon: 'Copy',
       shortcutDisplayMac: '⌘C',
       shortcutDisplayOther: 'Ctrl+C',
-      ipcChannel: RPC_CHANNELS.menu.COPY,
+      ipcChannel: RPC_NAMESPACES.menu.COPY,
     },
     {
       type: 'role',
@@ -109,7 +109,7 @@ export const EDIT_MENU: MenuSection = {
       icon: 'ClipboardPaste',
       shortcutDisplayMac: '⌘V',
       shortcutDisplayOther: 'Ctrl+V',
-      ipcChannel: RPC_CHANNELS.menu.PASTE,
+      ipcChannel: RPC_NAMESPACES.menu.PASTE,
     },
     { type: 'separator' },
     {
@@ -119,7 +119,7 @@ export const EDIT_MENU: MenuSection = {
       icon: 'TextSelect',
       shortcutDisplayMac: '⌘A',
       shortcutDisplayOther: 'Ctrl+A',
-      ipcChannel: RPC_CHANNELS.menu.SELECT_ALL,
+      ipcChannel: RPC_NAMESPACES.menu.SELECT_ALL,
     },
   ],
 }
@@ -136,7 +136,7 @@ export const VIEW_MENU: MenuSection = {
       icon: 'ZoomIn',
       shortcutDisplayMac: '⌘+',
       shortcutDisplayOther: 'Ctrl++',
-      ipcChannel: RPC_CHANNELS.menu.ZOOM_IN,
+      ipcChannel: RPC_NAMESPACES.menu.ZOOM_IN,
     },
     {
       type: 'role',
@@ -145,7 +145,7 @@ export const VIEW_MENU: MenuSection = {
       icon: 'ZoomOut',
       shortcutDisplayMac: '⌘-',
       shortcutDisplayOther: 'Ctrl+-',
-      ipcChannel: RPC_CHANNELS.menu.ZOOM_OUT,
+      ipcChannel: RPC_NAMESPACES.menu.ZOOM_OUT,
     },
     {
       type: 'role',
@@ -154,7 +154,7 @@ export const VIEW_MENU: MenuSection = {
       icon: 'RotateCcw',
       shortcutDisplayMac: '⌘0',
       shortcutDisplayOther: 'Ctrl+0',
-      ipcChannel: RPC_CHANNELS.menu.ZOOM_RESET,
+      ipcChannel: RPC_NAMESPACES.menu.ZOOM_RESET,
     },
     { type: 'separator' },
     {
@@ -165,7 +165,7 @@ export const VIEW_MENU: MenuSection = {
       shortcut: 'CmdOrCtrl+.',
       shortcutDisplayMac: '⌘.',
       shortcutDisplayOther: 'Ctrl+.',
-      ipcChannel: RPC_CHANNELS.menu.TOGGLE_FOCUS_MODE,
+      ipcChannel: RPC_NAMESPACES.menu.TOGGLE_FOCUS_MODE,
       icon: 'Focus',
     },
     {
@@ -176,7 +176,7 @@ export const VIEW_MENU: MenuSection = {
       shortcut: 'CmdOrCtrl+B',
       shortcutDisplayMac: '⌘B',
       shortcutDisplayOther: 'Ctrl+B',
-      ipcChannel: RPC_CHANNELS.menu.TOGGLE_SIDEBAR,
+      ipcChannel: RPC_NAMESPACES.menu.TOGGLE_SIDEBAR,
       icon: 'PanelLeft',
     },
   ],
@@ -194,14 +194,14 @@ export const WINDOW_MENU: MenuSection = {
       icon: 'Minimize2',
       shortcutDisplayMac: '⌘M',
       shortcutDisplayOther: '',
-      ipcChannel: RPC_CHANNELS.menu.MINIMIZE,
+      ipcChannel: RPC_NAMESPACES.menu.MINIMIZE,
     },
     {
       type: 'role',
       role: 'zoom',
       labelKey: 'menu.maximize',
       icon: 'Maximize2',
-      ipcChannel: RPC_CHANNELS.menu.MAXIMIZE,
+      ipcChannel: RPC_NAMESPACES.menu.MAXIMIZE,
     },
   ],
 }
