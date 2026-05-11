@@ -2,7 +2,7 @@
  * WhatsApp worker build script.
  *
  * Bundles the Baileys-backed WhatsApp subprocess into a single CJS file at
- * packages/messaging-whatsapp-worker/dist/worker.cjs.
+ * packages/messaging-gateway/dist/whatsapp-worker.cjs.
  *
  * Baileys is bundled INTO the output (not marked external) so the packaged
  * app ships a self-contained worker — users don't have to install anything.
@@ -43,10 +43,10 @@ function resolveGitSha(cwd: string): string {
 }
 
 const ROOT_DIR = join(import.meta.dir, "..");
-const WORKER_DIR = join(ROOT_DIR, "packages/messaging-whatsapp-worker");
-const SOURCE = join(WORKER_DIR, "src/worker.ts");
+const WORKER_DIR = join(ROOT_DIR, "packages/messaging-gateway");
+const SOURCE = join(WORKER_DIR, "src/adapters/whatsapp/worker.ts");
 const DIST_DIR = join(WORKER_DIR, "dist");
-const OUTPUT = join(DIST_DIR, "worker.cjs");
+const OUTPUT = join(DIST_DIR, "whatsapp-worker.cjs");
 
 async function verifyJsFile(filePath: string): Promise<{ valid: boolean; error?: string }> {
   if (!existsSync(filePath)) return { valid: false, error: "File does not exist" };

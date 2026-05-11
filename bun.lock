@@ -231,21 +231,10 @@
       "version": "0.8.12",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
-        "@craft-agent/messaging-whatsapp-worker": "workspace:*",
         "@craft-agent/server-core": "workspace:*",
         "@craft-agent/shared": "workspace:*",
-        "grammy": "^1.35.0",
-      },
-      "devDependencies": {
-        "@types/node": "^22.0.0",
-        "typescript": "^5.8.2",
-      },
-    },
-    "packages/messaging-whatsapp-worker": {
-      "name": "@craft-agent/messaging-whatsapp-worker",
-      "version": "0.8.12",
-      "dependencies": {
         "@whiskeysockets/baileys": "^6.7.0",
+        "grammy": "^1.35.0",
       },
       "devDependencies": {
         "@types/node": "^22.0.0",
@@ -622,8 +611,6 @@
     "@craft-agent/electron": ["@craft-agent/electron@workspace:apps/electron"],
 
     "@craft-agent/messaging-gateway": ["@craft-agent/messaging-gateway@workspace:packages/messaging-gateway"],
-
-    "@craft-agent/messaging-whatsapp-worker": ["@craft-agent/messaging-whatsapp-worker@workspace:packages/messaging-whatsapp-worker"],
 
     "@craft-agent/pi-agent-server": ["@craft-agent/pi-agent-server@workspace:packages/pi-agent-server"],
 
@@ -3597,10 +3584,6 @@
 
     "@craft-agent/messaging-gateway/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
-    "@craft-agent/messaging-whatsapp-worker/@types/node": ["@types/node@22.19.17", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-wGdMcf+vPYM6jikpS/qhg6WiqSV/OhG+jeeHT/KlVqxYfD40iYJf9/AE1uQxVWFvU7MipKRkRv8NSHiCGgPr8Q=="],
-
-    "@craft-agent/messaging-whatsapp-worker/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
-
     "@craft-agent/pi-agent-server/@types/node": ["@types/node@22.19.17", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-wGdMcf+vPYM6jikpS/qhg6WiqSV/OhG+jeeHT/KlVqxYfD40iYJf9/AE1uQxVWFvU7MipKRkRv8NSHiCGgPr8Q=="],
 
     "@craft-agent/server/@types/node": ["@types/node@22.19.17", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-wGdMcf+vPYM6jikpS/qhg6WiqSV/OhG+jeeHT/KlVqxYfD40iYJf9/AE1uQxVWFvU7MipKRkRv8NSHiCGgPr8Q=="],
@@ -4004,8 +3987,6 @@
     "@craft-agent/cli/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 
     "@craft-agent/messaging-gateway/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
-
-    "@craft-agent/messaging-whatsapp-worker/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 
     "@craft-agent/pi-agent-server/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 

@@ -556,12 +556,12 @@ export function buildMcpServers(config: BuildConfig): void {
 
 /**
  * Build the WhatsApp worker subprocess (Baileys + Node runtime bundle).
- * Output ships as an extraResource at resources/messaging-whatsapp-worker/worker.cjs
+ * Output ships as an extraResource at resources/messaging-gateway/whatsapp-worker.cjs
  * and is spawned by WhatsAppAdapter. See electron-builder.yml `extraResources`.
  */
 export function buildWhatsAppWorker(config: BuildConfig): void {
   const { rootDir } = config;
-  const workerOut = join(rootDir, 'packages', 'messaging-whatsapp-worker', 'dist', 'worker.cjs');
+  const workerOut = join(rootDir, 'packages', 'messaging-gateway', 'dist', 'whatsapp-worker.cjs');
 
   console.log('Building WhatsApp worker...');
 

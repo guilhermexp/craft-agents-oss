@@ -16,7 +16,7 @@
     "@craft-agent/core": "workspace:*",
     "@craft-agent/shared": "workspace:*",
     "@craft-agent/server-core": "workspace:*",
-    "@craft-agent/messaging-whatsapp-worker": "workspace:*",
+    "@whiskeysockets/baileys": "^6.7.0",
     "grammy": "^1.35.0"
   },
   "devDependencies": {

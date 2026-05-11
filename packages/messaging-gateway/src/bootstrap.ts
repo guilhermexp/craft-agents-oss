@@ -34,7 +34,7 @@ export interface MessagingBootstrapOptions {
   getLegacyMessagingDir?: (workspaceId: string) => string | undefined
   logger?: MessagingLogger
   whatsapp: {
-    /** Absolute path to the bundled worker.cjs. */
+    /** Absolute path to the bundled WhatsApp worker. */
     workerEntry: string
     /**
      * Node binary to spawn. Required for hosts that don't run on Node themselves

@@ -6,7 +6,7 @@ import {
   rememberSentId,
   MAX_SENT_IDS,
   type ClassifyContext,
-} from '../filter'
+} from './filter'
 
 // ---------------------------------------------------------------------------
 // Helpers

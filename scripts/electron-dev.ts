@@ -231,7 +231,7 @@ function copyResources(): void {
   }
 }
 
-// Build the WhatsApp worker bundle (dist/worker.cjs). Runs the canonical
+// Build the WhatsApp worker bundle (dist/whatsapp-worker.cjs). Runs the canonical
 // `scripts/build-wa-worker.ts` as a subprocess so the dev path stays in
 // sync with the packaged/CI build. Cheap (~70ms) so we always rebuild.
 async function buildWaWorker(): Promise<void> {

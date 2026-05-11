@@ -21,7 +21,7 @@
  *   CRAFT_WEBUI_PASSWORD       — optional shorter password for web login (falls back to CRAFT_SERVER_TOKEN)
  *   CRAFT_WEBUI_SECURE_COOKIE  — optional true/false override for the session cookie Secure flag
  *   CRAFT_WEBUI_WS_URL         — optional browser-facing ws:// or wss:// URL returned by /api/config
- *   CRAFT_MESSAGING_WA_WORKER  — absolute path to worker.cjs (default: packages/messaging-whatsapp-worker/dist/worker.cjs)
+ *   CRAFT_MESSAGING_WA_WORKER  — absolute path to whatsapp-worker.cjs (default: packages/messaging-gateway/dist/whatsapp-worker.cjs)
  *   CRAFT_MESSAGING_NODE_BIN   — Node binary used to spawn the WhatsApp worker (default: node)
  */
 
@@ -157,7 +157,7 @@ if (webuiEnabled && serverToken) {
 // pass an explicit `nodeBin` (Electron defaults nodeBin to process.execPath
 // which is correct there but wrong under Bun).
 const waWorkerEntry = process.env.CRAFT_MESSAGING_WA_WORKER
-  ?? join(bundledAssetsRoot, 'packages', 'messaging-whatsapp-worker', 'dist', 'worker.cjs')
+  ?? join(bundledAssetsRoot, 'packages', 'messaging-gateway', 'dist', 'whatsapp-worker.cjs')
 const waNodeBin = process.env.CRAFT_MESSAGING_NODE_BIN ?? 'node'
 
 // Built inside createHandlerDeps (needs sessionManager), populated with the WS

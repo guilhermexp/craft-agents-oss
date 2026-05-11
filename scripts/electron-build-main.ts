@@ -18,9 +18,9 @@ const SESSION_SERVER_OUTPUT = join(SESSION_SERVER_DIR, "dist/index.js");
 const PI_AGENT_SERVER_DIR = join(ROOT_DIR, "packages/pi-agent-server");
 const PI_AGENT_SERVER_OUTPUT = join(PI_AGENT_SERVER_DIR, "dist/index.js");
 const MAIN_PROCESS_EXTERNALS = ["electron", "better-sqlite3", "bun:sqlite"];
-const WA_WORKER_DIR = join(ROOT_DIR, "packages/messaging-whatsapp-worker");
-const WA_WORKER_SOURCE = join(WA_WORKER_DIR, "src/worker.ts");
-const WA_WORKER_OUTPUT = join(WA_WORKER_DIR, "dist/worker.cjs");
+const WA_WORKER_DIR = join(ROOT_DIR, "packages/messaging-gateway");
+const WA_WORKER_SOURCE = join(WA_WORKER_DIR, "src/adapters/whatsapp/worker.ts");
+const WA_WORKER_OUTPUT = join(WA_WORKER_DIR, "dist/whatsapp-worker.cjs");
 
 // Load .env file if it exists
 function loadEnvFile(): void {
