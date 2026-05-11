@@ -1,0 +1,9 @@
+- [ ] Análise: anotar linhas por responsabilidade no `SessionManager.ts`.
+- [ ] Extrair `SessionMessageStore` para persistência append-only, lazy load, flush e truncamento explícito.
+- [ ] Extrair `SessionArtifactRenderer` para Mermaid/SVG assíncrono e rate-limited.
+- [ ] Extrair `SessionEventPublisher` para eventos RPC, broadcasts e batching de deltas.
+- [ ] Extrair `SessionLifecycleManager` para create, send, branch, rollback, cancel, delete e transfer.
+- [ ] Refatorar `SessionManager.ts` como aggregate fino que compõe os submódulos.
+- [ ] Atualizar RPC handler `sessions.ts` para delegar artefatos, watcher e comandos ao aggregate/submódulos.
+- [ ] Cobrir cada submódulo com testes isolados e fakes/mocks dos outros domínios.
+- [ ] Atualizar spec `session-management`.

@@ -1,0 +1,7 @@
+- [ ] Identificar todos os call sites que tocam BrowserView Hermes
+- [ ] Criar módulo `apps/electron/src/main/hermes-dashboard-host/` (ou similar)
+- [ ] Mover criação/destruição da BrowserView pro novo módulo
+- [ ] Mover deep-link policy e auth handoff
+- [ ] Atualizar RPC handler `hermes.ts` pra delegar ao dashboard-host
+- [ ] Smoke test do dashboard mount + auth
+- [ ] Atualizar doc `apps/electron/docs/hermes-embed.md`
