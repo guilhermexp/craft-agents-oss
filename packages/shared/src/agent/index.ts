@@ -150,6 +150,18 @@ export {
   AbortReason as BackendAbortReason,
 } from './backend/index.ts';
 
+// Export native runtime boundary for Claude/Pi. Hermes stays on hermes-embed.
+export {
+  createNativeAgentRuntime,
+  getAvailableNativeAgentProviders,
+  initializeNativeAgentHostRuntime,
+  isNativeAgentProvider,
+  spawnNativeAgent,
+  type NativeAgentProvider,
+  type NativeAgentRuntime,
+  type NativeAgentSpawnConfig,
+} from './native/index.ts';
+
 // Export core utilities for shared agent logic
 export * from './core/index.ts';
 

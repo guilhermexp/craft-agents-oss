@@ -59,6 +59,10 @@ function isBundledHermesRequired(): boolean {
 export function normalizeHermesRuntimeConfig(runtime: HermesRuntimeConfig = {}): NormalizedHermesRuntimeConfig {
   const defaults = resolveDefaultHermesPaths(homedir())
 
+  // A config de runtime Hermes e resolvida aqui, fora de agent/native.
+  // Codigo nativo Claude/Pi nao deve inspecionar nem mutar HERMES_HOME,
+  // paths de dashboard ou config ACP.
+
   // Bundled runtime (resolved in apps/electron/src/main/handlers/hermes-runtime.ts).
   // CRAFT_HERMES_PYTHON points at the venv's python binary; CRAFT_HERMES_ARGS
   // is the JSON-encoded argv (`["-m", "acp_adapter"]`). Passed via env vars so

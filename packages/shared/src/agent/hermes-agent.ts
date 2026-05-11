@@ -178,6 +178,8 @@ export class HermesAgent extends BaseAgent {
   private pendingAcpPermissions = new Map<string, PendingAcpPermission>()
 
   constructor(config: BackendConfig) {
+    // Hermes ignora agent/native de proposito: e uma integracao ACP/MCP
+    // embedded com HERMES_HOME app-scoped, nao runtime nativo Claude/Pi.
     super(config, config.model || '', 200_000)
     this._supportsBranching = false
     this.hermesSessionId = config.session?.sdkSessionId || null

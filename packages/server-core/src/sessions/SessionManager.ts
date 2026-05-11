@@ -14,6 +14,8 @@ import {
   createBackendFromResolvedContext,
   cleanupSourceRuntimeArtifacts,
   providerTypeToAgentProvider,
+  isNativeAgentProvider,
+  spawnNativeAgent,
   type AgentBackend,
   type BackendHostRuntimeContext,
   type PostInitResult,
@@ -833,6 +835,53 @@ async function resolveToolDisplayMeta(
 
 /** Agent type - unified backend interface for all providers */
 type AgentInstance = AgentBackend
+
+function createSessionBackendFromResolvedContext(
+  args: Parameters<typeof createBackendFromResolvedContext>[0],
+): AgentBackend {
+  if (isNativeAgentProvider(args.context.provider)) {
+    return spawnNativeAgent({
+      context: {
+        ...args.context,
+        provider: args.context.provider,
+      },
+      coreConfig: args.coreConfig,
+      hostRuntime: args.hostRuntime,
+      providerOptions: args.providerOptions,
+    })
+  }
+
+  return createBackendFromResolvedContext(args)
+}
+
+function createSessionBackendFromConnection(
+  connectionSlug: string,
+  baseConfig: Parameters<typeof createBackendFromConnection>[1],
+  hostRuntime: BackendHostRuntimeContext,
+  providerOptions?: Parameters<typeof createBackendFromConnection>[3],
+): AgentBackend {
+  const connection = getLlmConnection(connectionSlug)
+  if (connection) {
+    const provider = providerTypeToAgentProvider(connection.providerType)
+    if (isNativeAgentProvider(provider)) {
+      const context = resolveBackendContext({
+        sessionConnectionSlug: connectionSlug,
+        managedModel: baseConfig.model,
+      })
+      return spawnNativeAgent({
+        context: {
+          ...context,
+          provider,
+        },
+        coreConfig: baseConfig,
+        hostRuntime,
+        providerOptions,
+      })
+    }
+  }
+
+  return createBackendFromConnection(connectionSlug, baseConfig, hostRuntime, providerOptions)
+}
 
 interface ManagedSession {
   id: string
@@ -3004,7 +3053,7 @@ export class SessionManager implements ISessionManager {
       // Construct backend via factory
       // ============================================================
 
-      managed.agent = createBackendFromResolvedContext({
+      managed.agent = createSessionBackendFromResolvedContext({
         context: backendContext,
         hostRuntime: buildBackendHostRuntimeContext(),
         coreConfig: {
@@ -4744,7 +4793,7 @@ export class SessionManager implements ISessionManager {
         const connection = getLlmConnection(managed.llmConnection)
         const resolvedMiniModel = connection ? (getMiniModel(connection) ?? connection.defaultModel) : undefined
 
-        agent = createBackendFromConnection(managed.llmConnection, {
+        agent = createSessionBackendFromConnection(managed.llmConnection, {
           workspace: managed.workspace,
           miniModel: resolvedMiniModel,
           session: {
@@ -6410,7 +6459,7 @@ export class SessionManager implements ISessionManager {
       try {
         const connection = getLlmConnection(managed.llmConnection)
 
-        agent = createBackendFromConnection(managed.llmConnection, {
+        agent = createSessionBackendFromConnection(managed.llmConnection, {
           workspace: managed.workspace,
           miniModel: connection ? (getMiniModel(connection) ?? connection.defaultModel) : undefined,
           session: {
@@ -7262,7 +7311,7 @@ export class SessionManager implements ISessionManager {
       ...(miniModel ? { ANTHROPIC_DEFAULT_HAIKU_MODEL: miniModel } : {}),
     }
 
-    const agent = createBackendFromResolvedContext({
+    const agent = createSessionBackendFromResolvedContext({
       context: backendContext,
       hostRuntime: buildBackendHostRuntimeContext(),
       coreConfig: {

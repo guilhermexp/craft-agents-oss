@@ -1,10 +1,9 @@
 /**
- * Agent Factory
+ * Agent Backend Compatibility Factory
  *
  * Creates the appropriate AI agent based on configuration.
- * Supports two agents:
- * - ClaudeAgent (Anthropic) - Default, using @anthropic-ai/claude-agent-sdk
- * - PiAgent (Pi) - Using @mariozechner/pi-ai SDK
+ * Native agents (Claude/Pi) are owned by ../native; Hermes remains an external
+ * embedded ACP integration.
  *
  * All agents implement AgentBackend directly.
  *
@@ -23,9 +22,7 @@ import type {
   CoreBackendConfig,
   BackendHostRuntimeContext,
 } from './types.ts';
-import { ClaudeAgent } from '../claude-agent.ts';
 import { HermesAgent } from '../hermes-agent.ts';
-import { PiAgent } from '../pi-agent.ts';
 import {
   getLlmConnection,
   getDefaultLlmConnection,
@@ -58,24 +55,28 @@ import {
   resolveBackendHostTooling as resolveHostToolingPaths,
   resolveBackendRuntimePaths,
 } from './internal/runtime-resolver.ts';
-import { anthropicDriver } from './internal/drivers/anthropic.ts';
 import { hermesDriver } from './internal/drivers/hermes.ts';
-import { piDriver } from './internal/drivers/pi.ts';
 import {
-  ensureDefaultClaudeConfigValid,
-  type ClaudeConfigManager,
-} from '../native/claude-config-manager.ts';
+  getAvailableNativeAgentProviders,
+  initializeNativeAgentHostRuntime,
+  isNativeAgentProvider,
+  resolveNativeDriverRuntime,
+  spawnNativeAgent,
+} from '../native/index.ts';
+import type { ClaudeConfigManager } from '../native/claude-config-manager.ts';
 
-const DRIVER_REGISTRY: Record<AgentProvider, ProviderDriver> = {
-  anthropic: anthropicDriver,
+const EXTERNAL_DRIVER_REGISTRY: Partial<Record<AgentProvider, ProviderDriver>> = {
   hermes: hermesDriver,
-  pi: piDriver,
 };
 
 function getProviderDriver(provider: AgentProvider): ProviderDriver {
-  const driver = DRIVER_REGISTRY[provider];
+  if (isNativeAgentProvider(provider)) {
+    throw new Error(`Provider '${provider}' is owned by the native agent runtime`);
+  }
+
+  const driver = EXTERNAL_DRIVER_REGISTRY[provider];
   if (!driver) {
-    throw new Error(`No backend driver registered for provider: ${provider}`);
+    throw new Error(`No external backend driver registered for provider: ${provider}`);
   }
   return driver;
 }
@@ -84,6 +85,10 @@ function resolveDriverRuntime(
   provider: AgentProvider,
   hostRuntime: BackendHostRuntimeContext,
 ) {
+  if (isNativeAgentProvider(provider)) {
+    return resolveNativeDriverRuntime(provider, hostRuntime);
+  }
+
   const driver = getProviderDriver(provider);
   const resolvedPaths = resolveBackendRuntimePaths(hostRuntime);
   return { driver, resolvedPaths };
@@ -139,13 +144,21 @@ export function detectProvider(authType: string): AgentProvider {
 export function createBackend(config: BackendConfig): AgentBackend {
   switch (config.provider) {
     case 'anthropic':
-      // ClaudeAgent implements AgentBackend directly
-      return new ClaudeAgent(config);
-
     case 'pi':
-      // PiAgent implements AgentBackend directly
-      // Auth is API key based via Pi's AuthStorage
-      return new PiAgent(config);
+      return spawnNativeAgent({
+        context: {
+          connection: null,
+          provider: config.provider,
+          authType: config.authType,
+          resolvedModel: config.model ?? resolveModelForProvider(config.provider, config.model, null),
+          capabilities: BACKEND_CAPABILITIES[config.provider],
+        },
+        coreConfig: config,
+        hostRuntime: {
+          appRootPath: process.cwd(),
+          isPackaged: false,
+        },
+      });
 
     case 'hermes':
       return new HermesAgent(config);
@@ -162,8 +175,9 @@ export function createBackend(config: BackendConfig): AgentBackend {
 export const createAgent = createBackend;
 
 /**
- * Create backend from a pre-resolved context and provider-agnostic core config.
- * Provider-specific runtime resolution happens via internal driver registry.
+ * @deprecated Prefer spawnNativeAgent for native providers and HermesAgent for
+ * Hermes embedded integration. This compat layer keeps existing callers stable
+ * while classifying native vs external runtime families.
  */
 export function createBackendFromResolvedContext(args: {
   context: ResolvedBackendContext;
@@ -172,6 +186,18 @@ export function createBackendFromResolvedContext(args: {
   providerOptions?: BackendProviderOptions;
 }): AgentBackend {
   const { context, coreConfig, hostRuntime, providerOptions } = args;
+  if (isNativeAgentProvider(context.provider)) {
+    return spawnNativeAgent({
+      context: {
+        ...context,
+        provider: context.provider,
+      },
+      coreConfig,
+      hostRuntime,
+      providerOptions,
+    });
+  }
+
   const { driver, resolvedPaths } = resolveDriverRuntime(context.provider, hostRuntime);
 
   const buildArgs = {
@@ -209,12 +235,7 @@ export async function initializeBackendHostRuntime(args: {
 }): Promise<void> {
   const { hostRuntime, claudeConfigManager } = args;
 
-  await (claudeConfigManager?.ensureValid() ?? ensureDefaultClaudeConfigValid());
-
-  for (const provider of getAvailableProviders()) {
-    const { driver, resolvedPaths } = resolveDriverRuntime(provider, hostRuntime);
-    driver.initializeHostRuntime?.({ hostRuntime, resolvedPaths });
-  }
+  await initializeNativeAgentHostRuntime({ hostRuntime, claudeConfigManager });
 }
 
 /**
@@ -234,7 +255,7 @@ export function resolveBackendHostTooling(args: {
  * @returns Array of provider identifiers that have working implementations
  */
 export function getAvailableProviders(): AgentProvider[] {
-  return ['anthropic', 'pi', 'hermes'];
+  return [...getAvailableNativeAgentProviders(), 'hermes'];
 }
 
 /**

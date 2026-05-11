@@ -80,6 +80,15 @@ export {
   validateConnection,
 } from './factory.ts';
 
+export {
+  isNativeAgentProvider,
+  initializeNativeAgentHostRuntime,
+  spawnNativeAgent,
+  type NativeAgentProvider,
+  type NativeAgentRuntime,
+  type NativeAgentSpawnConfig,
+} from '../native/index.ts';
+
 // Shared infrastructure
 export { BaseEventAdapter } from './base-event-adapter.ts';
 export { EventQueue } from './event-queue.ts';

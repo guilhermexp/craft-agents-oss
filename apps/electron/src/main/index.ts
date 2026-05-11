@@ -100,8 +100,7 @@ import { ensureDefaultPermissions } from '@craft-agent/shared/agent/permissions-
 import { ensureHermesSeedSkills } from '@craft-agent/shared/hermes/seed'
 import { ensureToolIcons, ensurePresetThemes } from '@craft-agent/shared/config'
 import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
-import { initializeBackendHostRuntime } from '@craft-agent/shared/agent/backend'
-import { setPowerShellValidatorRoot } from '@craft-agent/shared/agent'
+import { initializeNativeAgentHostRuntime, setPowerShellValidatorRoot } from '@craft-agent/shared/agent'
 import { handleDeepLink } from './deep-link'
 import { BrowserPaneManager } from './browser-pane-manager'
 import { OAuthFlowStore } from '@craft-agent/shared/auth'
@@ -396,8 +395,9 @@ app.whenReady().then(async () => {
   // (docs, permissions, themes, tool-icons resolve via getBundledAssetsDir)
   setBundledAssetsRoot(__dirname)
 
-  // Initialize backend runtime bootstrapping (Codex vendor root, Claude SDK runtime paths).
-  await initializeBackendHostRuntime({
+  // Inicializa o bootstrap do runtime nativo Claude/Pi. O ambiente Hermes
+  // e publicado separadamente por publishHermesRuntimeEnv().
+  await initializeNativeAgentHostRuntime({
     hostRuntime: {
       appRootPath: app.isPackaged ? app.getAppPath() : process.cwd(),
       resourcesPath: process.resourcesPath,

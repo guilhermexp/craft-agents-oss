@@ -53,6 +53,13 @@ The integration contract is documented in
 
 Hermes must stay isolated from other Craft agents:
 
+- Claude e Pi sao os unicos membros do runtime nativo de agentes em
+  `packages/shared/src/agent/native/`. Mudancas de factory Claude/Pi,
+  resolucao de modelo, roteamento de credenciais e Pi computer-use pertencem
+  a esse modulo.
+- Hermes nao deve ser registrado no runtime nativo. Roteie sessoes Hermes por
+  `HermesAgent` + `packages/shared/src/hermes/acp-config.ts` +
+  `session.mcpServers`, seguindo o contrato `hermes-embed`.
 - Hermes is a separate Python/ACP backend, not the Claude SDK backend and not
   the Pi SDK backend. Do not share runtime assumptions, model fallback logic,
   session state, or tool registry shortcuts across those backends.

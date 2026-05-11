@@ -40,6 +40,13 @@ automatically. A Hermes upgrade is therefore either:
 There is no hand-merging into a fork, and no other Craft agent backend shares
 Hermes' Python runtime, config, sessions, or tool registry.
 
+Claude e Pi agora pertencem a fronteira do runtime nativo de agentes em
+`packages/shared/src/agent/native/`. Hermes fica explicitamente fora desse
+runtime: codigo nativo nao deve registrar driver Hermes, resolver paths do
+dashboard, normalizar config Hermes ou tocar `HERMES_HOME`. Sessoes Hermes
+entram por `HermesAgent`, `acp-config.ts`, auth bridge Hermes e ACP
+`session.mcpServers`.
+
 ## Pinning and updating
 
 | Action | Command |
