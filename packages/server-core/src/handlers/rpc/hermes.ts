@@ -40,20 +40,400 @@ import type { Logger } from '../../runtime/platform'
 
 const execFile = promisify(execFileCb)
 
-let dashboardProcess: ChildProcess | null = null
-let dashboardUrl: string | null = null
-let dashboardPort: number | null = null
-let dashboardStartPromise: Promise<HermesDashboardResult> | null = null
-let dashboardSessionToken: string | null = null
-let dashboardSessionTokenUrl: string | null = null
-let updateMarkerMonitor: ReturnType<typeof setInterval> | null = null
-let updateMarkerMonitorPath: string | null = null
-let updateMarkerLastMtime = 0
-let authJsonWatcher: FSWatcher | null = null
-let authJsonWatcherPath: string | null = null
-let authJsonSyncInFlight = false
-let authJsonLastSyncedAccessToken: string | null = null
-let authJsonDebounceTimer: ReturnType<typeof setTimeout> | null = null
+class HermesRuntimeManager {
+  private dashboardProcess: ChildProcess | null = null
+  private dashboardUrl: string | null = null
+  private dashboardPort: number | null = null
+  private dashboardStartPromise: Promise<HermesDashboardResult> | null = null
+  private dashboardSessionToken: string | null = null
+  private dashboardSessionTokenUrl: string | null = null
+  private updateMarkerMonitor: ReturnType<typeof setInterval> | null = null
+  private updateMarkerMonitorPath: string | null = null
+  private updateMarkerLastMtime = 0
+  private authJsonWatcher: FSWatcher | null = null
+  private authJsonWatcherPath: string | null = null
+  private authJsonSyncInFlight = false
+  private authJsonLastSyncedAccessToken: string | null = null
+  private authJsonDebounceTimer: ReturnType<typeof setTimeout> | null = null
+  private gatewayRestartTimer: ReturnType<typeof setTimeout> | null = null
+
+  async shutdownDashboard(timeoutMs = 3000): Promise<void> {
+    const child = this.dashboardProcess
+    if (!child || child.pid == null || child.exitCode !== null || child.killed) {
+      this.clearDashboardState()
+      return
+    }
+
+    const exited = new Promise<void>((resolveExit) => {
+      child.once('exit', () => resolveExit())
+    })
+
+    if (process.platform === 'win32') {
+      try {
+        await execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'])
+      } catch {
+        try { child.kill('SIGKILL') } catch { /* already gone */ }
+      }
+    } else {
+      try { process.kill(-child.pid, 'SIGTERM') }
+      catch { try { child.kill('SIGTERM') } catch { /* already gone */ } }
+    }
+
+    await Promise.race([
+      exited,
+      new Promise<void>((resolveTimeout) => setTimeout(resolveTimeout, timeoutMs)),
+    ])
+
+    if (child.exitCode === null && !child.killed) {
+      try {
+        if (process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL')
+        else child.kill('SIGKILL')
+      } catch { /* already gone */ }
+    }
+    this.clearDashboardState()
+  }
+
+  async runUpdateScript(scriptPath: string): Promise<HermesUpdateResult> {
+    return new Promise((resolveResult) => {
+      const command = process.platform === 'win32' ? 'powershell' : 'bash'
+      const args = process.platform === 'win32'
+        ? ['-ExecutionPolicy', 'Bypass', '-File', scriptPath]
+        : [scriptPath]
+      const child = spawn(command, args, {
+        cwd: process.cwd(),
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+
+      let output = ''
+      const append = (chunk: unknown) => {
+        output += String(chunk)
+        if (output.length > 80_000) output = output.slice(-80_000)
+      }
+      child.stdout?.on('data', append)
+      child.stderr?.on('data', append)
+
+      const timeout = setTimeout(() => {
+        child.kill()
+        resolveResult({ success: false, status: 'failed', command: `${command} ${args.join(' ')}`, output, error: 'Hermes update timed out' })
+      }, 10 * 60_000)
+
+      child.once('error', (error) => {
+        clearTimeout(timeout)
+        resolveResult({ success: false, status: 'failed', command: `${command} ${args.join(' ')}`, output, error: error.message })
+      })
+      child.once('exit', (code) => {
+        clearTimeout(timeout)
+        resolveResult({
+          success: code === 0,
+          status: code === 0 ? 'updated' : 'failed',
+          command: `${command} ${args.join(' ')}`,
+          output,
+          error: code === 0 ? undefined : `Hermes update exited with code ${code}`,
+          needsRestart: code === 0,
+        })
+      })
+    })
+  }
+
+  startAuthJsonWatcher(deps: HandlerDeps): void {
+    const runtime = normalizeHermesRuntimeConfig()
+    const authPath = join(runtime.hermesHome, 'auth.json')
+
+    if (this.authJsonWatcher && this.authJsonWatcherPath === authPath) return
+
+    this.authJsonWatcher?.close()
+    this.authJsonWatcher = null
+
+    if (!existsSync(runtime.hermesHome)) return
+
+    try {
+      this.authJsonWatcher = fsWatch(runtime.hermesHome, (_event, filename) => {
+        if (!filename || basename(String(filename)) !== 'auth.json') return
+        if (this.authJsonDebounceTimer) clearTimeout(this.authJsonDebounceTimer)
+        this.authJsonDebounceTimer = setTimeout(() => {
+          void this.syncCodexTokensFromHermes(deps, runtime.hermesHome)
+        }, 250)
+      })
+      this.authJsonWatcherPath = authPath
+
+      const initial = readHermesCodexTokens(runtime.hermesHome)
+      if (initial) this.authJsonLastSyncedAccessToken = initial.accessToken
+    } catch (error) {
+      deps.platform.logger?.warn?.(
+        `[Hermes] Failed to watch auth.json: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+  }
+
+  async ensureDashboardRunning(deps: HandlerDeps): Promise<HermesDashboardResult> {
+    if (this.dashboardProcess && this.dashboardProcess.exitCode === null && !this.dashboardProcess.killed && this.dashboardUrl && this.dashboardPort) {
+      this.startUpdateMarkerMonitor(deps, normalizeHermesRuntimeConfig())
+      return {
+        success: true,
+        url: this.dashboardUrl,
+        port: this.dashboardPort,
+        pid: this.dashboardProcess.pid,
+      }
+    }
+
+    if (this.dashboardStartPromise) {
+      return this.dashboardStartPromise
+    }
+
+    this.dashboardStartPromise = (async () => {
+      const runtime = normalizeHermesRuntimeConfig()
+      const resolvedCommand = await resolveHermesBinary(runtime.command)
+      if (!resolvedCommand) {
+        return { success: false, error: `Hermes runtime not found: ${runtime.command}` }
+      }
+
+      const port = await findFreePort()
+      const { command, args } = buildDashboardCommand(runtime, port)
+      this.startUpdateMarkerMonitor(deps, runtime)
+      const env = buildHermesDashboardEnv(deps, runtime)
+      try {
+        const seed = await seedHermesAuthFromCraft({
+          hermesHome: runtime.hermesHome,
+          connectionSlug: undefined,
+        })
+        Object.assign(env, seed.env)
+        if (seed.seededProviders.length > 0) {
+          deps.platform.logger.info('[Hermes] Seeded dashboard provider auth from Craft credentials', {
+            providers: seed.seededProviders,
+          })
+        }
+      } catch (error) {
+        deps.platform.logger.warn('[Hermes] Failed to seed dashboard provider auth from Craft credentials', error)
+      }
+      const child = spawn(command, args, {
+        env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: process.platform !== 'win32',
+      })
+
+      let output = ''
+      const appendOutput = (chunk: unknown) => {
+        output += String(chunk)
+        if (output.length > 20_000) output = output.slice(-20_000)
+        deps.platform.logger.debug(`[Hermes dashboard] ${String(chunk).trim()}`)
+      }
+      child.stderr?.on('data', appendOutput)
+      child.stdout?.on('data', appendOutput)
+      child.once('exit', (code, signal) => {
+        deps.platform.logger?.info?.('[Hermes] Dashboard exited', { code, signal })
+        if (this.dashboardProcess === child) {
+          this.dashboardProcess = null
+          this.dashboardUrl = null
+          this.dashboardPort = null
+          this.dashboardStartPromise = null
+          this.dashboardSessionToken = null
+          this.dashboardSessionTokenUrl = null
+        }
+      })
+
+      try {
+        await Promise.race([
+          waitForPort(port),
+          new Promise<never>((_resolve, reject) => {
+            child.once('error', reject)
+            child.once('exit', (code) => reject(new Error(output.trim() || `Hermes dashboard exited with code ${code}`)))
+          }),
+        ])
+      } catch (err) {
+        if (!child.killed) child.kill()
+        this.dashboardStartPromise = null
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        }
+      }
+
+      if (child.exitCode !== null) {
+        this.dashboardStartPromise = null
+        return {
+          success: false,
+          error: output.trim() || `Hermes dashboard exited with code ${child.exitCode}`,
+        }
+      }
+
+      this.dashboardProcess = child
+      this.dashboardPort = port
+      this.dashboardUrl = `http://127.0.0.1:${port}`
+
+      return {
+        success: true,
+        url: this.dashboardUrl,
+        port,
+        pid: child.pid,
+      }
+    })()
+
+    return this.dashboardStartPromise
+  }
+
+  async fetchDashboardJson(deps: HandlerDeps, path: string, init?: RequestInit): Promise<unknown> {
+    const ready = await this.ensureDashboardRunning(deps)
+    if (!ready.success || !ready.url) {
+      throw new Error(ready.error || 'Hermes dashboard unavailable')
+    }
+    const headers = new Headers(init?.headers)
+    if (path.startsWith('/api/')) {
+      headers.set('X-Hermes-Session-Token', await this.getDashboardSessionToken(ready.url))
+    }
+    const response = await fetch(`${ready.url}${path}`, { ...init, headers })
+    const text = await response.text()
+    if (!response.ok) {
+      if (response.status === 401 && this.dashboardSessionTokenUrl === ready.url) {
+        this.dashboardSessionToken = null
+        this.dashboardSessionTokenUrl = null
+      }
+      throw new Error(`HTTP ${response.status}: ${text || response.statusText}`)
+    }
+    if (!text) return null
+    try {
+      return JSON.parse(text)
+    } catch {
+      return text
+    }
+  }
+
+  scheduleGatewayRestartForEnv(deps: HandlerDeps, key: string): void {
+    if (!HERMES_GATEWAY_ENV_KEYS.has(key)) return
+    if (this.gatewayRestartTimer) clearTimeout(this.gatewayRestartTimer)
+    this.gatewayRestartTimer = setTimeout(() => {
+      this.gatewayRestartTimer = null
+      void this.fetchDashboardJson(deps, '/api/gateway/restart', { method: 'POST' })
+        .catch((error) => {
+          deps.platform.logger?.warn?.('[Hermes] Failed to restart gateway after env change', {
+            key,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        })
+    }, 1000)
+  }
+
+  getDashboardUrl(): string | undefined {
+    return this.dashboardUrl ?? undefined
+  }
+
+  private async syncCodexTokensFromHermes(deps: HandlerDeps, hermesHome: string): Promise<void> {
+    if (this.authJsonSyncInFlight) return
+    this.authJsonSyncInFlight = true
+    try {
+      const tokens = readHermesCodexTokens(hermesHome)
+      if (!tokens) return
+      if (tokens.accessToken === this.authJsonLastSyncedAccessToken) return
+
+      const manager = getCredentialManager()
+      await manager.setLlmOAuth('chatgpt-plus', {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        idToken: tokens.idToken,
+      })
+      this.authJsonLastSyncedAccessToken = tokens.accessToken
+      deps.platform.logger?.info?.('[Hermes] Synced refreshed Codex tokens back to Craft credential store')
+    } catch (error) {
+      deps.platform.logger?.warn?.(
+        `[Hermes] auth.json sync failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    } finally {
+      this.authJsonSyncInFlight = false
+    }
+  }
+
+  private startUpdateMarkerMonitor(deps: HandlerDeps, runtime: NormalizedHermesRuntimeConfig): void {
+    if (!isBundledRuntime(runtime)) return
+
+    const markerPath = getHermesUpdateMarkerPath(runtime)
+    if (this.updateMarkerMonitor && this.updateMarkerMonitorPath === markerPath) return
+    if (this.updateMarkerMonitor) clearInterval(this.updateMarkerMonitor)
+
+    this.updateMarkerMonitorPath = markerPath
+    try {
+      this.updateMarkerLastMtime = existsSync(markerPath) ? statSync(markerPath).mtimeMs : 0
+    } catch {
+      this.updateMarkerLastMtime = 0
+    }
+
+    this.updateMarkerMonitor = setInterval(async () => {
+      try {
+        if (!existsSync(markerPath)) return
+        const info = await lstat(markerPath)
+        if (info.mtimeMs <= this.updateMarkerLastMtime) return
+        this.updateMarkerLastMtime = info.mtimeMs
+
+        const marker = parseHermesUpdateMarker(await readFile(markerPath, 'utf-8'))
+        if (!marker) return
+
+        deps.platform.logger.info('[Hermes] Dashboard update finished', {
+          success: marker.success,
+          exitCode: marker.exit_code,
+          logPath: marker.log_path,
+        })
+
+        if (marker.success && marker.needs_restart) {
+          await deps.platform.showNotification?.(
+            'Hermes atualizado',
+            'Reinicie o Craft para usar o runtime Hermes atualizado.',
+          )
+        }
+      } catch (error) {
+        deps.platform.logger.warn('[Hermes] Failed to read dashboard update marker', error)
+      }
+    }, 1_500)
+    this.updateMarkerMonitor.unref?.()
+  }
+
+  private async getDashboardSessionToken(baseUrl: string): Promise<string> {
+    if (this.dashboardSessionToken && this.dashboardSessionTokenUrl === baseUrl) {
+      return this.dashboardSessionToken
+    }
+
+    const response = await fetch(baseUrl)
+    const html = await response.text()
+    if (!response.ok) {
+      throw new Error(`Hermes dashboard token unavailable: HTTP ${response.status}`)
+    }
+
+    const token = extractDashboardSessionToken(html)
+    if (!token) {
+      throw new Error('Hermes dashboard session token not found')
+    }
+
+    this.dashboardSessionToken = token
+    this.dashboardSessionTokenUrl = baseUrl
+    return token
+  }
+
+  private clearDashboardState(): void {
+    this.dashboardProcess = null
+    this.dashboardUrl = null
+    this.dashboardPort = null
+    this.dashboardStartPromise = null
+    this.dashboardSessionToken = null
+    this.dashboardSessionTokenUrl = null
+    if (this.gatewayRestartTimer) {
+      clearTimeout(this.gatewayRestartTimer)
+      this.gatewayRestartTimer = null
+    }
+    if (this.updateMarkerMonitor) {
+      clearInterval(this.updateMarkerMonitor)
+      this.updateMarkerMonitor = null
+      this.updateMarkerMonitorPath = null
+      this.updateMarkerLastMtime = 0
+    }
+    if (this.authJsonDebounceTimer) {
+      clearTimeout(this.authJsonDebounceTimer)
+      this.authJsonDebounceTimer = null
+    }
+    this.authJsonWatcher?.close()
+    this.authJsonWatcher = null
+    this.authJsonWatcherPath = null
+  }
+}
+
+const hermesRuntimeManager = new HermesRuntimeManager()
 
 function parseEnvFile(content: string): Record<string, string> {
   const env: Record<string, string> = {}
@@ -130,35 +510,7 @@ async function preserveDashboardMainModelBaseUrl(
  * process group. SIGTERM first, SIGKILL after `timeoutMs`.
  */
 export async function shutdownHermesDashboard(timeoutMs = 3000): Promise<void> {
-  const child = dashboardProcess
-  if (!child || child.pid == null || child.exitCode !== null || child.killed) return
-
-  const exited = new Promise<void>((resolveExit) => {
-    child.once('exit', () => resolveExit())
-  })
-
-  if (process.platform === 'win32') {
-    try {
-      await execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'])
-    } catch {
-      try { child.kill('SIGKILL') } catch { /* already gone */ }
-    }
-  } else {
-    try { process.kill(-child.pid, 'SIGTERM') }
-    catch { try { child.kill('SIGTERM') } catch { /* already gone */ } }
-  }
-
-  await Promise.race([
-    exited,
-    new Promise<void>((resolveTimeout) => setTimeout(resolveTimeout, timeoutMs)),
-  ])
-
-  if (child.exitCode === null && !child.killed) {
-    try {
-      if (process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL')
-      else child.kill('SIGKILL')
-    } catch { /* already gone */ }
-  }
+  await hermesRuntimeManager.shutdownDashboard(timeoutMs)
 }
 
 /**
@@ -347,49 +699,6 @@ function parseHermesUpdateMarker(raw: string): HermesUpdateMarker | null {
   }
 }
 
-function startHermesUpdateMarkerMonitor(deps: HandlerDeps, runtime: NormalizedHermesRuntimeConfig): void {
-  if (!isBundledRuntime(runtime)) return
-
-  const markerPath = getHermesUpdateMarkerPath(runtime)
-  if (updateMarkerMonitor && updateMarkerMonitorPath === markerPath) return
-  if (updateMarkerMonitor) clearInterval(updateMarkerMonitor)
-
-  updateMarkerMonitorPath = markerPath
-  try {
-    updateMarkerLastMtime = existsSync(markerPath) ? statSync(markerPath).mtimeMs : 0
-  } catch {
-    updateMarkerLastMtime = 0
-  }
-
-  updateMarkerMonitor = setInterval(async () => {
-    try {
-      if (!existsSync(markerPath)) return
-      const info = await lstat(markerPath)
-      if (info.mtimeMs <= updateMarkerLastMtime) return
-      updateMarkerLastMtime = info.mtimeMs
-
-      const marker = parseHermesUpdateMarker(await readFile(markerPath, 'utf-8'))
-      if (!marker) return
-
-      deps.platform.logger.info('[Hermes] Dashboard update finished', {
-        success: marker.success,
-        exitCode: marker.exit_code,
-        logPath: marker.log_path,
-      })
-
-      if (marker.success && marker.needs_restart) {
-        await deps.platform.showNotification?.(
-          'Hermes atualizado',
-          'Reinicie o Craft para usar o runtime Hermes atualizado.',
-        )
-      }
-    } catch (error) {
-      deps.platform.logger.warn('[Hermes] Failed to read dashboard update marker', error)
-    }
-  }, 1_500)
-  updateMarkerMonitor.unref?.()
-}
-
 async function resolveHermesVersion(runtime: NormalizedHermesRuntimeConfig): Promise<string | undefined> {
   try {
     if (isBundledRuntime(runtime)) {
@@ -484,27 +793,6 @@ function redactHermesEnvValue(key: string, value: string): string {
   return `${value.slice(0, 4)}...${value.slice(-4)}`
 }
 
-async function getDashboardSessionToken(baseUrl: string): Promise<string> {
-  if (dashboardSessionToken && dashboardSessionTokenUrl === baseUrl) {
-    return dashboardSessionToken
-  }
-
-  const response = await fetch(baseUrl)
-  const html = await response.text()
-  if (!response.ok) {
-    throw new Error(`Hermes dashboard token unavailable: HTTP ${response.status}`)
-  }
-
-  const token = extractDashboardSessionToken(html)
-  if (!token) {
-    throw new Error('Hermes dashboard session token not found')
-  }
-
-  dashboardSessionToken = token
-  dashboardSessionTokenUrl = baseUrl
-  return token
-}
-
 async function buildDetectionResult(deps?: HandlerDeps): Promise<HermesDetectionResult> {
   const runtime = normalizeHermesRuntimeConfig()
   const resolvedCommand = await resolveHermesBinary(runtime.command)
@@ -558,7 +846,7 @@ async function buildDetectionResult(deps?: HandlerDeps): Promise<HermesDetection
     defaultProvider: configSnapshot.defaultProvider,
     fallbackModel: configSnapshot.fallbackModel,
     fallbackProviders: configSnapshot.fallbackProviders,
-    dashboardUrl: dashboardUrl ?? undefined,
+    dashboardUrl: hermesRuntimeManager.getDashboardUrl(),
   }
 }
 
@@ -855,49 +1143,6 @@ function resolveUpdateScript(deps: HandlerDeps): string {
   return candidates.find(candidate => existsSync(candidate)) ?? candidates[0]!
 }
 
-function runUpdateScript(scriptPath: string): Promise<HermesUpdateResult> {
-  return new Promise((resolveResult) => {
-    const command = process.platform === 'win32' ? 'powershell' : 'bash'
-    const args = process.platform === 'win32'
-      ? ['-ExecutionPolicy', 'Bypass', '-File', scriptPath]
-      : [scriptPath]
-    const child = spawn(command, args, {
-      cwd: process.cwd(),
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-
-    let output = ''
-    const append = (chunk: unknown) => {
-      output += String(chunk)
-      if (output.length > 80_000) output = output.slice(-80_000)
-    }
-    child.stdout?.on('data', append)
-    child.stderr?.on('data', append)
-
-    const timeout = setTimeout(() => {
-      child.kill()
-      resolveResult({ success: false, status: 'failed', command: `${command} ${args.join(' ')}`, output, error: 'Hermes update timed out' })
-    }, 10 * 60_000)
-
-    child.once('error', (error) => {
-      clearTimeout(timeout)
-      resolveResult({ success: false, status: 'failed', command: `${command} ${args.join(' ')}`, output, error: error.message })
-    })
-    child.once('exit', (code) => {
-      clearTimeout(timeout)
-      resolveResult({
-        success: code === 0,
-        status: code === 0 ? 'updated' : 'failed',
-        command: `${command} ${args.join(' ')}`,
-        output,
-        error: code === 0 ? undefined : `Hermes update exited with code ${code}`,
-        needsRestart: code === 0,
-      })
-    })
-  })
-}
-
 export const HANDLED_CHANNELS = [
   RPC_NAMESPACES.hermes.DETECT_INSTALLATION,
   RPC_NAMESPACES.hermes.GET_RUNTIME_DETAILS,
@@ -922,72 +1167,8 @@ export const HANDLED_CHANNELS = [
   RPC_NAMESPACES.hermes.UPDATE_PROFILE_SOUL,
 ] as const
 
-/**
- * Sync Codex tokens from <HERMES_HOME>/auth.json back into Craft's credential
- * store. Called when the watcher fires after a Hermes-side refresh, so the
- * next Craft session uses the rotated tokens instead of stale ones.
- */
-async function syncCodexTokensFromHermes(deps: HandlerDeps, hermesHome: string): Promise<void> {
-  if (authJsonSyncInFlight) return
-  authJsonSyncInFlight = true
-  try {
-    const tokens = readHermesCodexTokens(hermesHome)
-    if (!tokens) return
-    if (tokens.accessToken === authJsonLastSyncedAccessToken) return
-
-    const manager = getCredentialManager()
-    await manager.setLlmOAuth('chatgpt-plus', {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      idToken: tokens.idToken,
-    })
-    authJsonLastSyncedAccessToken = tokens.accessToken
-    deps.platform.logger?.info?.('[Hermes] Synced refreshed Codex tokens back to Craft credential store')
-  } catch (error) {
-    deps.platform.logger?.warn?.(
-      `[Hermes] auth.json sync failed: ${error instanceof Error ? error.message : String(error)}`,
-    )
-  } finally {
-    authJsonSyncInFlight = false
-  }
-}
-
-function startHermesAuthJsonWatcher(deps: HandlerDeps): void {
-  const runtime = normalizeHermesRuntimeConfig()
-  const authPath = join(runtime.hermesHome, 'auth.json')
-
-  if (authJsonWatcher && authJsonWatcherPath === authPath) return
-
-  authJsonWatcher?.close()
-  authJsonWatcher = null
-
-  if (!existsSync(runtime.hermesHome)) return
-
-  try {
-    // Watch the directory (file may not exist yet) and filter on the basename.
-    authJsonWatcher = fsWatch(runtime.hermesHome, (_event, filename) => {
-      if (!filename || basename(String(filename)) !== 'auth.json') return
-      if (authJsonDebounceTimer) clearTimeout(authJsonDebounceTimer)
-      authJsonDebounceTimer = setTimeout(() => {
-        void syncCodexTokensFromHermes(deps, runtime.hermesHome)
-      }, 250)
-    })
-    authJsonWatcherPath = authPath
-
-    // Prime the cache so the first watcher hit only fires when tokens actually
-    // change (avoids a redundant write right after seeding).
-    const initial = readHermesCodexTokens(runtime.hermesHome)
-    if (initial) authJsonLastSyncedAccessToken = initial.accessToken
-  } catch (error) {
-    deps.platform.logger?.warn?.(
-      `[Hermes] Failed to watch auth.json: ${error instanceof Error ? error.message : String(error)}`,
-    )
-  }
-}
-
 export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): void {
-  startHermesAuthJsonWatcher(deps)
-  let gatewayRestartTimer: ReturnType<typeof setTimeout> | null = null
+  hermesRuntimeManager.startAuthJsonWatcher(deps)
 
   server.handle(RPC_NAMESPACES.hermes.DETECT_INSTALLATION, async (): Promise<HermesDetectionResult> => {
     return buildDetectionResult(deps)
@@ -1025,154 +1206,9 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
       pluginNames: await listPluginNames(agentRoot),
     }
   })
-  async function ensureDashboardRunning(): Promise<HermesDashboardResult> {
-    if (dashboardProcess && dashboardProcess.exitCode === null && !dashboardProcess.killed && dashboardUrl && dashboardPort) {
-      startHermesUpdateMarkerMonitor(deps, normalizeHermesRuntimeConfig())
-      return {
-        success: true,
-        url: dashboardUrl,
-        port: dashboardPort,
-        pid: dashboardProcess.pid,
-      }
-    }
-
-    if (dashboardStartPromise) {
-      return dashboardStartPromise
-    }
-
-    dashboardStartPromise = (async () => {
-      const runtime = normalizeHermesRuntimeConfig()
-      const resolvedCommand = await resolveHermesBinary(runtime.command)
-      if (!resolvedCommand) {
-        return { success: false, error: `Hermes runtime not found: ${runtime.command}` }
-      }
-
-      const port = await findFreePort()
-      const { command, args } = buildDashboardCommand(runtime, port)
-      startHermesUpdateMarkerMonitor(deps, runtime)
-      const env = buildHermesDashboardEnv(deps, runtime)
-      try {
-        const seed = await seedHermesAuthFromCraft({
-          hermesHome: runtime.hermesHome,
-          connectionSlug: undefined,
-        })
-        Object.assign(env, seed.env)
-        if (seed.seededProviders.length > 0) {
-          deps.platform.logger.info('[Hermes] Seeded dashboard provider auth from Craft credentials', {
-            providers: seed.seededProviders,
-          })
-        }
-      } catch (error) {
-        deps.platform.logger.warn('[Hermes] Failed to seed dashboard provider auth from Craft credentials', error)
-      }
-      const child = spawn(command, args, {
-        env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        // POSIX only: give the dashboard its own process group so we can signal
-        // the entire tree (the dashboard forks a uvicorn worker) on shutdown.
-        detached: process.platform !== 'win32',
-      })
-
-      let output = ''
-      const appendOutput = (chunk: unknown) => {
-        output += String(chunk)
-        if (output.length > 20_000) output = output.slice(-20_000)
-        deps.platform.logger.debug(`[Hermes dashboard] ${String(chunk).trim()}`)
-      }
-      child.stderr?.on('data', appendOutput)
-      child.stdout?.on('data', appendOutput)
-      child.once('exit', (code, signal) => {
-        deps.platform.logger?.info?.('[Hermes] Dashboard exited', { code, signal })
-        if (dashboardProcess === child) {
-          dashboardProcess = null
-          dashboardUrl = null
-          dashboardPort = null
-          dashboardStartPromise = null
-          dashboardSessionToken = null
-          dashboardSessionTokenUrl = null
-        }
-      })
-
-      try {
-        await Promise.race([
-          waitForPort(port),
-          new Promise<never>((_resolve, reject) => {
-            child.once('error', reject)
-            child.once('exit', (code) => reject(new Error(output.trim() || `Hermes dashboard exited with code ${code}`)))
-          }),
-        ])
-      } catch (err) {
-        if (!child.killed) child.kill()
-        dashboardStartPromise = null
-        return {
-          success: false,
-          error: err instanceof Error ? err.message : String(err),
-        }
-      }
-
-      if (child.exitCode !== null) {
-        dashboardStartPromise = null
-        return {
-          success: false,
-          error: output.trim() || `Hermes dashboard exited with code ${child.exitCode}`,
-        }
-      }
-
-      dashboardProcess = child
-      dashboardPort = port
-      dashboardUrl = `http://127.0.0.1:${port}`
-
-      return {
-        success: true,
-        url: dashboardUrl,
-        port,
-        pid: child.pid,
-      }
-    })()
-
-    return dashboardStartPromise
-  }
-
-  async function fetchDashboardJson(path: string, init?: RequestInit): Promise<unknown> {
-    const ready = await ensureDashboardRunning()
-    if (!ready.success || !ready.url) {
-      throw new Error(ready.error || 'Hermes dashboard unavailable')
-    }
-    const headers = new Headers(init?.headers)
-    if (path.startsWith('/api/')) {
-      headers.set('X-Hermes-Session-Token', await getDashboardSessionToken(ready.url))
-    }
-    const response = await fetch(`${ready.url}${path}`, { ...init, headers })
-    const text = await response.text()
-    if (!response.ok) {
-      if (response.status === 401 && dashboardSessionTokenUrl === ready.url) {
-        dashboardSessionToken = null
-        dashboardSessionTokenUrl = null
-      }
-      throw new Error(`HTTP ${response.status}: ${text || response.statusText}`)
-    }
-    if (!text) return null
-    try {
-      return JSON.parse(text)
-    } catch {
-      return text
-    }
-  }
-
-  function scheduleGatewayRestartForEnv(key: string): void {
-    if (!HERMES_GATEWAY_ENV_KEYS.has(key)) return
-    if (gatewayRestartTimer) clearTimeout(gatewayRestartTimer)
-    gatewayRestartTimer = setTimeout(() => {
-      gatewayRestartTimer = null
-      void fetchDashboardJson('/api/gateway/restart', { method: 'POST' })
-        .catch((error) => {
-          deps.platform.logger?.warn?.('[Hermes] Failed to restart gateway after env change', {
-            key,
-            error: error instanceof Error ? error.message : String(error),
-          })
-        })
-    }, 1000)
-  }
+  const ensureDashboardRunning = () => hermesRuntimeManager.ensureDashboardRunning(deps)
+  const fetchDashboardJson = (path: string, init?: RequestInit) => hermesRuntimeManager.fetchDashboardJson(deps, path, init)
+  const scheduleGatewayRestartForEnv = (key: string) => hermesRuntimeManager.scheduleGatewayRestartForEnv(deps, key)
 
   server.handle(RPC_NAMESPACES.hermes.START_DASHBOARD, async (): Promise<HermesDashboardResult> => {
     if (deps.hermesDashboardHost) {
@@ -1508,7 +1544,7 @@ export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): vo
       }
     }
 
-    return runUpdateScript(scriptPath)
+    return hermesRuntimeManager.runUpdateScript(scriptPath)
   })
 
   server.handle(RPC_NAMESPACES.hermes.LIST_LOGS, async (): Promise<HermesListLogsResult> => {

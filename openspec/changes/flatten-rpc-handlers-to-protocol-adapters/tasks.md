@@ -1,6 +1,0 @@
-- [ ] Inventariar state local em cada RPC handler.
-- [ ] Mapear destino de cada state no manager correspondente.
-- [ ] Migrar state, um handler por vez.
-- [ ] Atualizar testes com manager mockado nos handler tests.
-- [ ] Validar que push events ainda chegam aos clients.
-- [ ] Atualizar specs afetadas.

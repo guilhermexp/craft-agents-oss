@@ -78,7 +78,8 @@ import {
   cleanupHermesDashboardOrphans,
   shutdownHermesDashboard,
 } from '@craft-agent/server-core/handlers/rpc/hermes'
-import { registerCoreRpcHandlers, cleanupSessionFileWatchForClient } from '@craft-agent/server-core/handlers/rpc'
+import { registerCoreRpcHandlers } from '@craft-agent/server-core/handlers/rpc'
+import { transferManager } from '@craft-agent/server-core/services'
 import type { PlatformServices } from '../runtime/platform'
 import { createElectronPlatform } from './platform'
 import type { HandlerDeps } from './handlers/handler-deps'
@@ -746,7 +747,8 @@ app.whenReady().then(async () => {
           for (const [wcId, cId] of clientMap) {
             if (cId === clientId) { clientMap.delete(wcId); break }
           }
-          cleanupSessionFileWatchForClient(clientId)
+          instance.sessionManager.cleanupClientSessionState(clientId)
+          void transferManager.cleanupClientTransfers(clientId)
         },
       })
 

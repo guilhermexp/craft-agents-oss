@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs'
+import { mkdtempSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { RPC_NAMESPACES } from '../../../shared/types'
-import { registerSessionsHandlers, cleanupSessionFileWatchForClient } from '@craft-agent/server-core/handlers/rpc'
+import { registerSessionsHandlers } from '@craft-agent/server-core/handlers/rpc'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -20,6 +20,7 @@ describe('sessions file watchers', () => {
   let tempRoot = ''
   let sessionDirA = ''
   let sessionDirB = ''
+  let deps: HandlerDeps
 
   beforeEach(() => {
     handlers.clear()
@@ -43,13 +44,48 @@ describe('sessions file watchers', () => {
       },
     }
 
-    const deps: HandlerDeps = {
+    const snapshot = (dir: string) => new Map(
+      readdirSync(dir)
+        .filter(name => name !== 'session.jsonl' && !name.startsWith('.'))
+        .map(name => [name, statSync(join(dir, name)).mtimeMs])
+    )
+    const watcherState = new Map<string, { interval: ReturnType<typeof setInterval>; timer: ReturnType<typeof setTimeout> | null; files: Map<string, number> }>()
+    const unwatch = (clientId: string) => {
+      const state = watcherState.get(clientId)
+      if (!state) return
+      if (state.timer) clearTimeout(state.timer)
+      clearInterval(state.interval)
+      watcherState.delete(clientId)
+    }
+
+    deps = {
       sessionManager: {
         getSessionPath: (sessionId: string) => {
           if (sessionId === 'session-a') return sessionDirA
           if (sessionId === 'session-b') return sessionDirB
           return null
         },
+        watchSessionFilesForClient: async (clientId: string, sessionId: string) => {
+          unwatch(clientId)
+          const sessionPath = sessionId === 'session-a' ? sessionDirA : sessionDirB
+          const state = {
+            interval: setInterval(() => {
+              const next = snapshot(sessionPath)
+              const changed = next.size !== state.files.size || [...next].some(([name, mtime]) => state.files.get(name) !== mtime)
+              state.files = next
+              if (!changed) return
+              if (state.timer) clearTimeout(state.timer)
+              state.timer = setTimeout(() => {
+                server.push(RPC_NAMESPACES.sessions.FILES_CHANGED, { to: 'client', clientId }, sessionId)
+              }, 100)
+            }, 50),
+            timer: null as ReturnType<typeof setTimeout> | null,
+            files: snapshot(sessionPath),
+          }
+          watcherState.set(clientId, state)
+        },
+        unwatchSessionFilesForClient: unwatch,
+        cleanupClientSessionState: unwatch,
       } as unknown as HandlerDeps['sessionManager'],
       platform: {
         appRootPath: '',
@@ -82,8 +118,8 @@ describe('sessions file watchers', () => {
   })
 
   afterEach(() => {
-    cleanupSessionFileWatchForClient('client-a')
-    cleanupSessionFileWatchForClient('client-b')
+    deps.sessionManager.cleanupClientSessionState('client-a')
+    deps.sessionManager.cleanupClientSessionState('client-b')
     if (tempRoot) {
       rmSync(tempRoot, { recursive: true, force: true })
     }
@@ -130,7 +166,7 @@ describe('sessions file watchers', () => {
     await watch!({ clientId: 'client-a' }, 'session-a')
     await wait(50)
 
-    cleanupSessionFileWatchForClient('client-a')
+    deps.sessionManager.cleanupClientSessionState('client-a')
     pushed.length = 0
 
     writeFileSync(join(sessionDirA, 'after-cleanup.txt'), `x-${Date.now()}`)

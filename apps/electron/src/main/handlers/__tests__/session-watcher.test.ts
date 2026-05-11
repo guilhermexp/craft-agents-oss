@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test'
-import { mkdtempSync, writeFileSync, rmSync } from 'fs'
+import { mkdtempSync, writeFileSync, rmSync, readdirSync, statSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import type { RpcServer, RequestContext } from '@craft-agent/server-core/transport'
@@ -63,11 +63,47 @@ function createTestHarness(sessionPaths: Map<string, string>) {
     async invokeClient() {},
   }
 
+  const snapshot = (dir: string) => new Map(
+    readdirSync(dir)
+      .filter(name => name !== 'session.jsonl' && !name.startsWith('.'))
+      .map(name => [name, statSync(join(dir, name)).mtimeMs])
+  )
+  const watcherState = new Map<string, { interval: ReturnType<typeof setInterval>; timer: ReturnType<typeof setTimeout> | null; files: Map<string, number> }>()
+  const unwatch = (clientId: string) => {
+    const state = watcherState.get(clientId)
+    if (!state) return
+    if (state.timer) clearTimeout(state.timer)
+    clearInterval(state.interval)
+    watcherState.delete(clientId)
+  }
+
   const deps: HandlerDeps = {
     sessionManager: {
       getSessionPath: (sessionId: string) => sessionPaths.get(sessionId) ?? null,
       waitForInit: async () => {},
       getSessions: () => [],
+      watchSessionFilesForClient: async (clientId: string, sessionId: string) => {
+        unwatch(clientId)
+        const sessionPath = sessionPaths.get(sessionId)
+        if (!sessionPath) return
+        const state = {
+          interval: setInterval(() => {
+            const next = snapshot(sessionPath)
+            const changed = next.size !== state.files.size || [...next].some(([name, mtime]) => state.files.get(name) !== mtime)
+            state.files = next
+            if (!changed) return
+            if (state.timer) clearTimeout(state.timer)
+            state.timer = setTimeout(() => {
+              server.push(RPC_NAMESPACES.sessions.FILES_CHANGED, { to: 'client', clientId }, sessionId)
+            }, 100)
+          }, 50),
+          timer: null as ReturnType<typeof setTimeout> | null,
+          files: snapshot(sessionPath),
+        }
+        watcherState.set(clientId, state)
+      },
+      unwatchSessionFilesForClient: unwatch,
+      cleanupClientSessionState: unwatch,
     } as unknown as HandlerDeps['sessionManager'],
     platform: {
       appRootPath: '',
@@ -108,7 +144,7 @@ describe('session file watcher isolation', () => {
     const sessionPaths = new Map([['s1', dir1], ['s2', dir2]])
     const { server, deps, handlers, pushCalls } = createTestHarness(sessionPaths)
 
-    const { registerSessionsHandlers, cleanupSessionFileWatchForClient } = await import('@craft-agent/server-core/handlers/rpc')
+    const { registerSessionsHandlers } = await import('@craft-agent/server-core/handlers/rpc')
     registerSessionsHandlers(server, deps)
 
     const watchHandler = handlers.get(RPC_NAMESPACES.sessions.WATCH_FILES)!
@@ -149,10 +185,10 @@ describe('session file watcher isolation', () => {
     expect(clientBAfter.length).toBeGreaterThanOrEqual(1)
 
     // Disconnect cleanup for client B
-    cleanupSessionFileWatchForClient('client-b')
+    deps.sessionManager.cleanupClientSessionState('client-b')
 
     // Double cleanup is a no-op (doesn't throw)
-    cleanupSessionFileWatchForClient('client-b')
+    deps.sessionManager.cleanupClientSessionState('client-b')
   })
 
   it('cleans up previous watcher when same client watches a different session', async () => {
@@ -161,7 +197,7 @@ describe('session file watcher isolation', () => {
     const sessionPaths = new Map([['s1', dir1], ['s2', dir2]])
     const { server, deps, handlers, pushCalls } = createTestHarness(sessionPaths)
 
-    const { registerSessionsHandlers, cleanupSessionFileWatchForClient } = await import('@craft-agent/server-core/handlers/rpc')
+    const { registerSessionsHandlers } = await import('@craft-agent/server-core/handlers/rpc')
     registerSessionsHandlers(server, deps)
 
     const watchHandler = handlers.get(RPC_NAMESPACES.sessions.WATCH_FILES)!
@@ -190,7 +226,7 @@ describe('session file watcher isolation', () => {
     )
     expect(s2Pushes.length).toBeGreaterThanOrEqual(1)
 
-    cleanupSessionFileWatchForClient('client-a')
+    deps.sessionManager.cleanupClientSessionState('client-a')
   })
 
   it('ignores internal session.jsonl and hidden files', async () => {
@@ -198,7 +234,7 @@ describe('session file watcher isolation', () => {
     const sessionPaths = new Map([['s1', dir]])
     const { server, deps, handlers, pushCalls } = createTestHarness(sessionPaths)
 
-    const { registerSessionsHandlers, cleanupSessionFileWatchForClient } = await import('@craft-agent/server-core/handlers/rpc')
+    const { registerSessionsHandlers } = await import('@craft-agent/server-core/handlers/rpc')
     registerSessionsHandlers(server, deps)
 
     const watchHandler = handlers.get(RPC_NAMESPACES.sessions.WATCH_FILES)!
@@ -217,6 +253,6 @@ describe('session file watcher isolation', () => {
 
     expect(pushCalls.length).toBeGreaterThanOrEqual(1)
 
-    cleanupSessionFileWatchForClient('client-a')
+    deps.sessionManager.cleanupClientSessionState('client-a')
   })
 })

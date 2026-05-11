@@ -1,25 +1,17 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, unlink, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
-import { RPC_NAMESPACES, type FileAttachment, type SendMessageOptions, type SessionEvent } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES, type FileAttachment, type SendMessageOptions } from '@craft-agent/shared/protocol'
 import type { StoredAttachment } from '@craft-agent/core/types'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { perf } from '@craft-agent/shared/utils'
 import { isValidThinkingLevel, THINKING_LEVEL_IDS } from '@craft-agent/shared/agent/thinking-levels'
 
 const VALID_THINKING_LEVELS_LIST = THINKING_LEVEL_IDS.map(id => `'${id}'`).join(', ')
-import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
+import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { setTransferableHandler } from './transfer'
 
-interface ClientSessionWatchState {
-  watcher: import('fs').FSWatcher
-  sessionId: string
-  debounceTimer: ReturnType<typeof setTimeout> | null
-}
-
-// Per-client session file watcher state (supports concurrent windows/clients safely)
-const clientSessionWatches = new Map<string, ClientSessionWatchState>()
 const MERMAID_FENCE_RE = /```[ \t]*mermaid[^\n]*\n([\s\S]*?)```/gi
 const MAX_MERMAID_ARTIFACTS_PER_SESSION = 50
 const MERMAID_SVG_COLORS = {
@@ -32,23 +24,6 @@ const MERMAID_SVG_COLORS = {
   border: '#3f3f46',
   faint: '#71717a',
 } as const
-
-/**
- * Clean up session file watcher for a client.
- * Called from main process disconnect hooks to prevent watcher leaks.
- */
-export function cleanupSessionFileWatchForClient(clientId: string): void {
-  const state = clientSessionWatches.get(clientId)
-  if (!state) return
-
-  if (state.debounceTimer) {
-    clearTimeout(state.debounceTimer)
-    state.debounceTimer = null
-  }
-
-  state.watcher.close()
-  clientSessionWatches.delete(clientId)
-}
 
 function extractMermaidBlocksFromMarkdown(content: string): string[] {
   const blocks: string[] = []
@@ -330,26 +305,7 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // The IPC handler returns immediately, and results come through SESSION_EVENT channel.
   // attachments: FileAttachment[] for Claude (has content), storedAttachments: StoredAttachment[] for persistence (has thumbnailBase64)
   server.handle(RPC_NAMESPACES.sessions.SEND_MESSAGE, async (ctx, sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachment[], options?: SendMessageOptions) => {
-    // Capture the caller's clientId for error routing
-    const callerClientId = ctx.clientId
-
-    // Start processing in background, errors are sent via event stream
-    sessionManager.sendMessage(sessionId, message, attachments, storedAttachments, options).catch(err => {
-      log.error('Error in sendMessage:', err)
-      // Send error to the calling client
-      pushTyped(server, RPC_NAMESPACES.sessions.EVENT, { to: 'client', clientId: callerClientId }, {
-        type: 'error',
-        sessionId,
-        error: err instanceof Error ? err.message : 'Unknown error'
-      } as SessionEvent)
-      // Also send complete event to clear processing state
-      pushTyped(server, RPC_NAMESPACES.sessions.EVENT, { to: 'client', clientId: callerClientId }, {
-        type: 'complete',
-        sessionId
-      } as SessionEvent)
-    })
-    // Return immediately - streaming results come via SESSION_EVENT
-    return { started: true }
+    return sessionManager.sendMessageFromClient(ctx.clientId, sessionId, message, attachments, storedAttachments, options)
   })
 
   // Cancel processing
@@ -554,46 +510,12 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
 
   // Start watching a session directory for file changes (per client)
   server.handle(RPC_NAMESPACES.sessions.WATCH_FILES, async (ctx, sessionId: string) => {
-    const clientId = ctx.clientId
-    cleanupSessionFileWatchForClient(clientId)
-
-    const sessionPath = sessionManager.getSessionPath(sessionId)
-    if (!sessionPath) return
-
-    try {
-      const { watch } = await import('fs')
-
-      const state: ClientSessionWatchState = {
-        watcher: null as unknown as import('fs').FSWatcher,
-        sessionId,
-        debounceTimer: null,
-      }
-
-      state.watcher = watch(sessionPath, { recursive: true }, (_eventType, filename) => {
-        // Ignore internal files and hidden files
-        if (filename && (filename.includes('session.jsonl') || filename.startsWith('.'))) {
-          return
-        }
-
-        // Debounce: wait 100ms before notifying to batch rapid changes
-        if (state.debounceTimer) {
-          clearTimeout(state.debounceTimer)
-        }
-
-        state.debounceTimer = setTimeout(() => {
-          pushTyped(server, RPC_NAMESPACES.sessions.FILES_CHANGED, { to: 'client', clientId }, state.sessionId)
-        }, 100)
-      })
-
-      clientSessionWatches.set(clientId, state)
-    } catch (error) {
-      log.error('Failed to start session file watcher:', error)
-    }
+    return sessionManager.watchSessionFilesForClient(ctx.clientId, sessionId)
   })
 
   // Stop watching session files for the calling client
   server.handle(RPC_NAMESPACES.sessions.UNWATCH_FILES, async (ctx) => {
-    cleanupSessionFileWatchForClient(ctx.clientId)
+    sessionManager.unwatchSessionFilesForClient(ctx.clientId)
   })
 
   // Get session notes (reads notes.md from session directory)

@@ -87,6 +87,14 @@ export interface ISessionManager {
     options?: SendMessageOptions,
     existingMessageId?: string,
   ): Promise<void>
+  sendMessageFromClient(
+    clientId: string,
+    sessionId: string,
+    message: string,
+    attachments?: FileAttachment[],
+    storedAttachments?: StoredAttachment[],
+    options?: SendMessageOptions,
+  ): { started: true }
   cancelProcessing(sessionId: string, silent?: boolean): Promise<void>
   killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
   getTaskOutput(taskId: string): Promise<string | null>
@@ -186,6 +194,9 @@ export interface ISessionManager {
   // ---------------------------------------------------------------------------
 
   getSessionPath(sessionId: string): string | null
+  watchSessionFilesForClient(clientId: string, sessionId: string): Promise<void>
+  unwatchSessionFilesForClient(clientId: string): void
+  cleanupClientSessionState(clientId: string): void
   refreshTitle(sessionId: string): Promise<{ success: boolean; title?: string; error?: string }>
   refreshBadge(): void
   getUnreadSummary(): UnreadSummary

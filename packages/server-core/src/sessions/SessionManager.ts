@@ -3,7 +3,7 @@ import type { ISessionManager, IBrowserPaneManager } from '@craft-agent/server-c
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
 import { createScopedLogger, CONSOLE_LOGGER, type PlatformServices, type Logger } from '@craft-agent/server-core/runtime'
 import { basename, dirname, join } from 'path'
-import { existsSync } from 'fs'
+import { existsSync, watch as fsWatch, type FSWatcher } from 'fs'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { randomUUID } from 'node:crypto'
 import { type AgentEvent, setPermissionMode, hydratePreviousPermissionMode, getPermissionModeDiagnostics, type PermissionMode, unregisterSessionScopedToolCallbacks, mergeSessionScopedToolCallbacks, AbortReason, type AuthRequest, type AuthResult, type CredentialAuthRequest, type BrowserPaneFns, generateConversationSummary } from '@craft-agent/shared/agent'
@@ -1128,6 +1128,12 @@ interface PendingDelta {
   turnId?: string
 }
 
+interface ClientSessionWatchState {
+  watcher: FSWatcher
+  sessionId: string
+  debounceTimer: ReturnType<typeof setTimeout> | null
+}
+
 export class SessionManager implements ISessionManager {
   private sessions: Map<string, ManagedSession> = new Map()
   // Delta batching for performance - reduces IPC events from 50+/sec to ~20/sec
@@ -1135,6 +1141,7 @@ export class SessionManager implements ISessionManager {
   private deltaFlushTimers: Map<string, NodeJS.Timeout> = new Map()
   // Config watchers for live updates (sources, etc.) - one per workspace
   private configWatchers: Map<string, ConfigWatcher> = new Map()
+  private clientSessionWatches = new Map<string, ClientSessionWatchState>()
   // Automation systems for workspace event automations - one per workspace (includes scheduler, diffing, and handlers)
   private automationSystems: Map<string, AutomationSystem> = new Map()
   // Pending credential request resolvers (keyed by requestId)
@@ -1199,6 +1206,80 @@ export class SessionManager implements ISessionManager {
   setBrowserPaneManager(bpm: IBrowserPaneManager): void {
     this.browserPaneManager = bpm
     bpm.setSessionPathResolver((sessionId) => this.getSessionPath(sessionId))
+  }
+
+  sendMessageFromClient(
+    clientId: string,
+    sessionId: string,
+    message: string,
+    attachments?: FileAttachment[],
+    storedAttachments?: StoredAttachment[],
+    options?: SendMessageOptions,
+  ): { started: true } {
+    this.sendMessage(sessionId, message, attachments, storedAttachments, options).catch(err => {
+      sessionLog.error('Error in sendMessage:', err)
+      if (!this.eventSink) return
+      this.eventSink(RPC_NAMESPACES.sessions.EVENT, { to: 'client', clientId }, {
+        type: 'error',
+        sessionId,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      } as SessionEvent)
+      this.eventSink(RPC_NAMESPACES.sessions.EVENT, { to: 'client', clientId }, {
+        type: 'complete',
+        sessionId,
+      } as SessionEvent)
+    })
+    return { started: true }
+  }
+
+  async watchSessionFilesForClient(clientId: string, sessionId: string): Promise<void> {
+    this.unwatchSessionFilesForClient(clientId)
+
+    const sessionPath = this.getSessionPath(sessionId)
+    if (!sessionPath) return
+
+    try {
+      const state: ClientSessionWatchState = {
+        watcher: null as unknown as FSWatcher,
+        sessionId,
+        debounceTimer: null,
+      }
+
+      state.watcher = fsWatch(sessionPath, { recursive: true }, (_eventType, filename) => {
+        if (filename && (String(filename).includes('session.jsonl') || String(filename).startsWith('.'))) {
+          return
+        }
+
+        if (state.debounceTimer) {
+          clearTimeout(state.debounceTimer)
+        }
+
+        state.debounceTimer = setTimeout(() => {
+          this.eventSink?.(RPC_NAMESPACES.sessions.FILES_CHANGED, { to: 'client', clientId }, state.sessionId)
+        }, 100)
+      })
+
+      this.clientSessionWatches.set(clientId, state)
+    } catch (error) {
+      sessionLog.error('Failed to start session file watcher:', error)
+    }
+  }
+
+  unwatchSessionFilesForClient(clientId: string): void {
+    const state = this.clientSessionWatches.get(clientId)
+    if (!state) return
+
+    if (state.debounceTimer) {
+      clearTimeout(state.debounceTimer)
+      state.debounceTimer = null
+    }
+
+    state.watcher.close()
+    this.clientSessionWatches.delete(clientId)
+  }
+
+  cleanupClientSessionState(clientId: string): void {
+    this.unwatchSessionFilesForClient(clientId)
   }
 
   /** Returns a strictly increasing timestamp (ms). When Date.now() collides with
@@ -7538,6 +7619,10 @@ export class SessionManager implements ISessionManager {
       sessionLog.info(`Stopped config watcher for ${path}`)
     }
     this.configWatchers.clear()
+
+    for (const clientId of this.clientSessionWatches.keys()) {
+      this.unwatchSessionFilesForClient(clientId)
+    }
 
     // Dispose all AutomationSystems (includes scheduler, handlers, and event loggers)
     for (const [workspacePath, automationSystem] of this.automationSystems) {

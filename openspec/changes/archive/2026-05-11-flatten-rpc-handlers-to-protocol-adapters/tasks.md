@@ -1,0 +1,7 @@
+- [x] Inventariar state local em cada RPC handler.
+- [x] Mapear destino de cada state no manager correspondente.
+- [x] Migrar state, um handler por vez.
+- [x] Atualizar testes com manager mockado nos handler tests.
+- [x] Validar que push events ainda chegam aos clients.
+- [x] Atualizar specs afetadas.
+- [ ] (out-of-scope) Corrigir falha preexistente de typecheck em `packages/server-core/src/channels/channel-orchestrator.test.ts:27` (`string` vs `WarRoomChannelId`).
