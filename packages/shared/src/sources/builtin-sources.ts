@@ -5,9 +5,10 @@
  * These sources are not shown in the sources list UI but are available
  * for the agent to use.
  *
- * NOTE: craft-agents-docs is now an always-available MCP server configured
- * directly in craft-agent.ts, not a source. This file is kept for backwards
- * compatibility but returns empty results.
+ * NOTE: craft-agents-docs is public Craft Agents documentation configured
+ * directly in craft-agent.ts, not a source of user-owned Craft product
+ * documents. This file is kept for backwards compatibility but returns empty
+ * results.
  */
 
 import type { LoadedSource, FolderSourceConfig } from './types.ts';

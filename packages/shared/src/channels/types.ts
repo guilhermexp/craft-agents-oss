@@ -1,4 +1,5 @@
 import type { PermissionMode } from '../agent/mode-types.ts';
+import type { CraftBridgeChannelContext } from '../craft-bridge/context.ts';
 import type { EntityColor } from '../colors/types.ts';
 import type { Opaque } from '../opaque.ts';
 
@@ -19,6 +20,7 @@ export interface WarRoomChannel {
   workingDirectory?: string;
   participants?: WarRoomParticipant[];
   routing?: WarRoomRoutingConfig;
+  craftBridgeContext?: CraftBridgeChannelContext;
 }
 
 export interface WorkspaceWarRoomChannelsConfig {
@@ -52,6 +54,7 @@ export interface CreateWarRoomChannelInput {
   workingDirectory?: string;
   participants?: WarRoomParticipant[];
   routing?: WarRoomRoutingConfig;
+  craftBridgeContext?: CraftBridgeChannelContext;
 }
 
 export interface UpdateWarRoomChannelInput {
@@ -63,4 +66,5 @@ export interface UpdateWarRoomChannelInput {
   workingDirectory?: string;
   participants?: WarRoomParticipant[];
   routing?: WarRoomRoutingConfig;
+  craftBridgeContext?: CraftBridgeChannelContext;
 }

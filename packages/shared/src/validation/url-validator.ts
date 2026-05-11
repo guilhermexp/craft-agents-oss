@@ -12,6 +12,7 @@ import { getDefaultSummarizationModel } from '../config/models.ts';
 import { debug } from '../utils/debug.ts';
 import { parseError, parseSDKErrorText, type AgentError } from '../agent/errors.ts';
 import { getLastApiError } from '../interceptor-common.ts';
+import { validateCraftProductMcpEndpoint } from '../craft-bridge/endpoint.ts';
 
 export interface UrlValidationResult {
   valid: boolean;
@@ -63,6 +64,11 @@ export async function validateMcpUrl(
   oauthToken?: string,
 ): Promise<UrlValidationResult> {
   debug('[url-validator] Validating URL:', url);
+
+  const bridgeValidation = validateCraftProductMcpEndpoint(url);
+  if (!bridgeValidation.valid) {
+    return bridgeValidation;
+  }
 
   try {
     const options: Options = {

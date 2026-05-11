@@ -18,6 +18,7 @@
  *   - auth: OAuth, token management, auth state
  *   - clients: Craft API client
  *   - config: Storage, models, preferences
+ *   - craft-bridge: Craft product MCP integration boundary
  *   - credentials: Encrypted credential storage
  *   - mcp: MCP client, connection validation
  *   - prompts: System prompt generation

@@ -97,6 +97,11 @@ export {
   isBuiltinSource,
 } from './builtin-sources.ts';
 
+export {
+  isCraftProductMcpSource,
+  isCraftAgentsDocsSource,
+} from '../craft-bridge/index.ts';
+
 // API Tools (types)
 export type { SummarizeCallback } from './api-tools.ts';
 

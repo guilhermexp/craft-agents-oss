@@ -164,6 +164,16 @@ function buildChannelWorkPacket(input: {
     lines.push('');
   }
 
+  if (input.channel.craftBridgeContext) {
+    lines.push('Craft document context:');
+    lines.push(`- provider: ${input.channel.craftBridgeContext.provider}`);
+    lines.push(`- source: ${input.channel.craftBridgeContext.sourceSlug}`);
+    if (input.channel.craftBridgeContext.description) {
+      lines.push(`- description: ${input.channel.craftBridgeContext.description}`);
+    }
+    lines.push('');
+  }
+
   lines.push('Current user message:');
   lines.push(input.text);
   lines.push('');
@@ -215,6 +225,16 @@ function buildOrchestratorPacket(input: {
     lines.push('Recent channel context:');
     for (const message of input.recentMessages.slice(-30)) {
       lines.push(`- ${message.authorId}: ${message.text}`);
+    }
+    lines.push('');
+  }
+
+  if (input.channel.craftBridgeContext) {
+    lines.push('Craft document context:');
+    lines.push(`- provider: ${input.channel.craftBridgeContext.provider}`);
+    lines.push(`- source: ${input.channel.craftBridgeContext.sourceSlug}`);
+    if (input.channel.craftBridgeContext.description) {
+      lines.push(`- description: ${input.channel.craftBridgeContext.description}`);
     }
     lines.push('');
   }

@@ -214,4 +214,40 @@ describe('ChannelOrchestrator', () => {
     expect(runtime.sent).toHaveLength(1);
     expect(runtime.sent[0]?.message).toContain('organize isso no canal');
   });
+
+  it('adds Craft product context only when supplied by craft-bridge', async () => {
+    const runtime = createRuntime();
+    const orchestrator = createChannelOrchestrator({ runtime });
+
+    await orchestrator.sendMessage({
+      channel: {
+        ...channel,
+        craftBridgeContext: {
+          provider: 'craft-bridge',
+          sourceSlug: 'craft-product-docs',
+          description: 'Workspace product docs',
+        },
+      },
+      text: '@hermes-lead use o contexto Craft',
+      authorId: 'human',
+    });
+
+    expect(runtime.sent[0]?.message).toContain('Craft document context:');
+    expect(runtime.sent[0]?.message).toContain('- provider: craft-bridge');
+    expect(runtime.sent[0]?.message).toContain('- source: craft-product-docs');
+  });
+
+  it('keeps generic War Room routing when no Craft Bridge context is present', async () => {
+    const runtime = createRuntime();
+    const orchestrator = createChannelOrchestrator({ runtime });
+
+    await orchestrator.sendMessage({
+      channel,
+      text: '@hermes-lead siga o fluxo normal',
+      authorId: 'human',
+    });
+
+    expect(runtime.sent[0]?.message).toContain('Channel: Architecture');
+    expect(runtime.sent[0]?.message).not.toContain('Craft document context:');
+  });
 });

@@ -61,6 +61,11 @@ import {
 } from '../auth/generic-oauth.ts';
 import { debug } from '../utils/debug.ts';
 import { markSourceAuthenticated, loadSourceConfig, saveSourceConfig } from './storage.ts';
+import {
+  createCraftBridgeOAuthClient,
+  prepareCraftBridgeMcpOAuth,
+  sourceUsesCraftBridgeAuth,
+} from '../craft-bridge/index.ts';
 
 /**
  * Result of authentication attempt
@@ -498,7 +503,9 @@ export class SourceCredentialManager {
         if (!source.config.mcp?.url) {
           throw new Error('MCP URL not configured');
         }
-        prepared = await prepareMcpOAuth(source.config.mcp.url, { callbackPort, callbackUrl: providerCallbackUrl });
+        prepared = sourceUsesCraftBridgeAuth(source)
+          ? await prepareCraftBridgeMcpOAuth(source, { callbackPort, callbackUrl: providerCallbackUrl })
+          : await prepareMcpOAuth(source.config.mcp.url, { callbackPort, callbackUrl: providerCallbackUrl });
         break;
       }
     }
@@ -625,11 +632,13 @@ export class SourceCredentialManager {
     }
 
     try {
-      const oauth = new CraftOAuth(
-        { mcpUrl: source.config.mcp.url },
-        callbacks,
-        sessionContext
-      );
+      const oauth = sourceUsesCraftBridgeAuth(source)
+        ? createCraftBridgeOAuthClient(source, callbacks, sessionContext)
+        : new CraftOAuth(
+            { mcpUrl: source.config.mcp.url },
+            callbacks,
+            sessionContext
+          );
 
       const { tokens, clientId } = await oauth.authenticate();
 
@@ -1210,13 +1219,21 @@ export class SourceCredentialManager {
         return null;
       }
 
-      const oauth = new CraftOAuth(
-        { mcpUrl: source.config.mcp.url },
-        {
-          onStatus: () => {},
-          onError: () => {},
-        }
-      );
+      const oauth = sourceUsesCraftBridgeAuth(source)
+        ? createCraftBridgeOAuthClient(
+            source,
+            {
+              onStatus: () => {},
+              onError: () => {},
+            },
+          )
+        : new CraftOAuth(
+            { mcpUrl: source.config.mcp.url },
+            {
+              onStatus: () => {},
+              onError: () => {},
+            }
+          );
 
       const tokens = await oauth.refreshAccessToken(cred.refreshToken!, cred.clientId);
 
