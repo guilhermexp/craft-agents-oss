@@ -61,6 +61,10 @@ import {
 import { anthropicDriver } from './internal/drivers/anthropic.ts';
 import { hermesDriver } from './internal/drivers/hermes.ts';
 import { piDriver } from './internal/drivers/pi.ts';
+import {
+  ensureDefaultClaudeConfigValid,
+  type ClaudeConfigManager,
+} from '../native/claude-config-manager.ts';
 
 const DRIVER_REGISTRY: Record<AgentProvider, ProviderDriver> = {
   anthropic: anthropicDriver,
@@ -199,10 +203,13 @@ export function createBackendFromResolvedContext(args: {
  * Keeps runtime/bootstrap details (Codex vendor root, Claude SDK executable/interceptor)
  * behind backend internals.
  */
-export function initializeBackendHostRuntime(args: {
+export async function initializeBackendHostRuntime(args: {
   hostRuntime: BackendHostRuntimeContext;
-}): void {
-  const { hostRuntime } = args;
+  claudeConfigManager?: Pick<ClaudeConfigManager, 'ensureValid'>;
+}): Promise<void> {
+  const { hostRuntime, claudeConfigManager } = args;
+
+  await (claudeConfigManager?.ensureValid() ?? ensureDefaultClaudeConfigValid());
 
   for (const provider of getAvailableProviders()) {
     const { driver, resolvedPaths } = resolveDriverRuntime(provider, hostRuntime);

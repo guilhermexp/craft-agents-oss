@@ -394,7 +394,7 @@ app.whenReady().then(async () => {
   setBundledAssetsRoot(__dirname)
 
   // Initialize backend runtime bootstrapping (Codex vendor root, Claude SDK runtime paths).
-  initializeBackendHostRuntime({
+  await initializeBackendHostRuntime({
     hostRuntime: {
       appRootPath: app.isPackaged ? app.getAppPath() : process.cwd(),
       resourcesPath: process.resourcesPath,

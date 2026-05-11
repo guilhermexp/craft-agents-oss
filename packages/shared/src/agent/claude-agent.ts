@@ -1,5 +1,6 @@
 import { query, createSdkMcpServer, tool, AbortError, type Query, type SDKUserMessage, type SDKAssistantMessageError, type Options } from '@anthropic-ai/claude-agent-sdk';
-import { getDefaultOptions, resetClaudeConfigCheck } from './options.ts';
+import { getDefaultOptions } from './options.ts';
+import { ensureDefaultClaudeConfigValid } from './native/claude-config-manager.ts';
 // Local type for SDK user message content blocks (text, image, document)
 // Replaces import from @anthropic-ai/sdk/resources — keeps SDK as agent-only dependency
 type ContentBlockParam =
@@ -1768,9 +1769,7 @@ This is a branched conversation. All prior messages in this conversation are par
 
         if (isConfigCorruption && !_isRetry) {
           debug('[ClaudeAgent] Detected .claude.json corruption, repairing and retrying...');
-          // Reset the once-per-process guard so ensureClaudeConfig() runs again
-          // on the retry — it will repair the file before the next subprocess spawn
-          resetClaudeConfigCheck();
+          await ensureDefaultClaudeConfigValid();
           yield { type: 'info', message: 'Repairing configuration file...' };
           yield* this.chat(userMessage, attachments, { isRetry: true });
           return;

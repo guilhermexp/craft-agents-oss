@@ -269,24 +269,26 @@ describe('isValidProviderAuthCombination', () => {
 });
 
 describe('phase4 backend abstraction APIs', () => {
-  it('initializeBackendHostRuntime bootstraps without throwing in dev runtime', () => {
-    expect(() => initializeBackendHostRuntime({
+  it('initializeBackendHostRuntime bootstraps without throwing in dev runtime', async () => {
+    await expect(initializeBackendHostRuntime({
       hostRuntime: {
         appRootPath: process.cwd(),
         isPackaged: false,
       },
-    })).not.toThrow();
+      claudeConfigManager: { ensureValid: async () => {} },
+    })).resolves.toBeUndefined();
   });
 
   // Skip: resolveClaudeCliPath finds the CLI via node_modules traversal even from dist/, so this
   // only fails in a truly isolated packaged environment, not in the dev monorepo.
-  it.skip('initializeBackendHostRuntime throws for dist-style host root in dev', () => {
-    expect(() => initializeBackendHostRuntime({
+  it.skip('initializeBackendHostRuntime throws for dist-style host root in dev', async () => {
+    await expect(initializeBackendHostRuntime({
       hostRuntime: {
         appRootPath: join(process.cwd(), 'apps', 'electron', 'dist'),
         isPackaged: false,
       },
-    })).toThrow('Claude Code SDK not found');
+      claudeConfigManager: { ensureValid: async () => {} },
+    })).rejects.toThrow('Claude Code SDK not found');
   });
 
   it('resolveSetupTestConnectionHint maps provider/baseUrl/piAuthProvider correctly', () => {
