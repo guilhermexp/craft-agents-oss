@@ -13,7 +13,7 @@ function Command({
     <CommandPrimitive
       data-slot="command"
       className={cn(
-        'flex h-full w-full flex-col overflow-hidden rounded-md bg-background text-foreground',
+        'flex size-full flex-col overflow-hidden rounded-md bg-background text-foreground',
         className
       )}
       {...props}
@@ -42,7 +42,7 @@ function CommandInput({
 }: React.ComponentProps<typeof CommandPrimitive.Input>) {
   return (
     <div className="flex items-center border-b px-3" data-slot="command-input-wrapper">
-      <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+      <Search className="mr-2 size-4 shrink-0 opacity-50" />
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(

@@ -253,7 +253,7 @@ function BrowserToolbarApp() {
       className={inviteButtonClassName}
       title={inviteButtonTitle}
     >
-      <Sparkles className="h-3.5 w-3.5" />
+      <Sparkles className="size-3.5" />
       {inviteState === 'starting'
         ? 'Chamando...'
         : inviteState === 'sent'
@@ -315,7 +315,7 @@ function BrowserToolbarApp() {
             <DropdownMenu open={windowMenuOpen} onOpenChange={setWindowMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <HeaderIconButton
-                  icon={<X className="h-3.5 w-3.5" />}
+                  icon={<X className="size-3.5" />}
                   aria-label="Browser window options"
                   className={themeColor ? '' : 'bg-background shadow-minimal hover:bg-foreground/5'}
                   style={themeColor ? { color: 'var(--tb-fg)' } : undefined}
@@ -332,7 +332,7 @@ function BrowserToolbarApp() {
               >
                 {detectedMeetUrl && (
                   <StyledDropdownMenuItem onSelect={handleInviteHermes}>
-                    <Sparkles className="h-3.5 w-3.5" />
+                    <Sparkles className="size-3.5" />
                     {inviteState === 'starting'
                       ? 'Chamando Hermes...'
                       : inviteState === 'sent'
@@ -343,11 +343,11 @@ function BrowserToolbarApp() {
                   </StyledDropdownMenuItem>
                 )}
                 <StyledDropdownMenuItem onSelect={handleHideWindow}>
-                  <EyeOff className="h-3.5 w-3.5" />
+                  <EyeOff className="size-3.5" />
                   Hide Window
                 </StyledDropdownMenuItem>
                 <StyledDropdownMenuItem variant="destructive" onSelect={handleCloseWindowEntirely}>
-                  <XCircle className="h-3.5 w-3.5" />
+                  <XCircle className="size-3.5" />
                   Close Window Entirely
                 </StyledDropdownMenuItem>
               </StyledDropdownMenuContent>

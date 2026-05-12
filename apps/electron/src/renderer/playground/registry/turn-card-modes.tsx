@@ -236,12 +236,12 @@ function TurnCardModesDemo({
         >
           {hasPlaybackStarted ? (
             <>
-              <RotateCcw className="w-3.5 h-3.5" />
+              <RotateCcw className="size-3.5" />
               Reset
             </>
           ) : (
             <>
-              <Play className="w-3.5 h-3.5" />
+              <Play className="size-3.5" />
               Play
             </>
           )}

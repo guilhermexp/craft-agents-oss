@@ -110,7 +110,7 @@ export function getStateIcon(
   states: SessionStatus[]
 ): React.ReactNode {
   const state = states.find(s => s.id === stateId)
-  return state?.icon ?? <span className="h-3.5 w-3.5">●</span>
+  return state?.icon ?? <span className="size-3.5">●</span>
 }
 
 /**

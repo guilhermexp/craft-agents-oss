@@ -24,7 +24,7 @@ export function AutomationTestPanel({ result, className }: AutomationTestPanelPr
   if (result.state === 'running') {
     return (
       <div className={cn('flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground', className)}>
-        <Loader2 className="h-4 w-4 animate-spin" />
+        <Loader2 className="size-4 animate-spin" />
         <span>{t('automations.testRunning')}</span>
       </div>
     )
@@ -33,7 +33,7 @@ export function AutomationTestPanel({ result, className }: AutomationTestPanelPr
   // Success state
   if (result.state === 'success') {
     return (
-      <Info_Alert variant="success" icon={<CheckCircle2 className="h-4 w-4" />} className={className}>
+      <Info_Alert variant="success" icon={<CheckCircle2 className="size-4" />} className={className}>
         <Info_Alert.Title>
           {t('automations.testPassed')}
           {result.duration != null && (
@@ -49,7 +49,7 @@ export function AutomationTestPanel({ result, className }: AutomationTestPanelPr
   // Error state
   if (result.state === 'error') {
     return (
-      <Info_Alert variant="error" icon={<XCircle className="h-4 w-4" />} className={className}>
+      <Info_Alert variant="error" icon={<XCircle className="size-4" />} className={className}>
         <Info_Alert.Title>{t('automations.testFailed')}</Info_Alert.Title>
         {result.stderr && (
           <Info_Alert.Description>

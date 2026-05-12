@@ -125,7 +125,7 @@ function filterSessionFilesForPanel(entries: SessionFile[], parentName?: string)
  * Get icon for file based on name/type (14x14px matching sidebar)
  */
 function getFileIcon(file: SessionFile, isExpanded?: boolean) {
-  const iconClass = "h-3.5 w-3.5 text-muted-foreground"
+  const iconClass = "size-3.5 text-muted-foreground"
 
   if (file.type === 'directory') {
     return isExpanded
@@ -254,7 +254,7 @@ const FileThumbnail = memo(function FileThumbnail({ file }: { file: SessionFile 
           onLoad={() => setLoaded(true)}
           onError={() => setFailed(true)}
           className={cn(
-            'absolute inset-0 h-full w-full rounded-[2px] object-cover transition-opacity duration-200',
+            'absolute inset-0 size-full rounded-[2px] object-cover transition-opacity duration-200',
             loaded ? 'opacity-100' : 'opacity-0'
           )}
         />
@@ -339,7 +339,7 @@ function FileTreeItem({
       title={`${file.path}\n${file.type === 'file' ? formatFileSize(file.size) : 'Directory'}\n\nClick to ${hasChildren ? 'expand' : 'reveal'}, double-click to open`}
     >
       {/* Icon container with hover-revealed chevron for expandable items */}
-      <span className="relative h-3.5 w-3.5 shrink-0 flex items-center justify-center">
+      <span className="relative size-3.5 shrink-0 flex items-center justify-center">
         {hasChildren ? (
           <>
             {/* Main icon - hidden on hover */}
@@ -353,7 +353,7 @@ function FileTreeItem({
             >
               <ChevronRight
                 className={cn(
-                  "h-3.5 w-3.5 text-muted-foreground transition-transform duration-200",
+                  "size-3.5 text-muted-foreground transition-transform duration-200",
                   isExpanded && "rotate-90"
                 )}
               />
@@ -384,7 +384,7 @@ function FileTreeItem({
           {/* Open — files only (folders just show "Show in file manager") */}
           {file.type !== 'directory' && (
             <StyledContextMenuItem onSelect={() => onFileClick(file)}>
-              <ExternalLink className="h-3.5 w-3.5" />
+              <ExternalLink className="size-3.5" />
               {t("chat.openFile")}
             </StyledContextMenuItem>
           )}
@@ -392,7 +392,7 @@ function FileTreeItem({
           <StyledContextMenuItem
             onSelect={() => onRevealInFileManager(file.path)}
           >
-            <FolderOpen className="h-3.5 w-3.5" />
+            <FolderOpen className="size-3.5" />
             {t("chat.showInFileManager", { fileManager: fileManagerName })}
           </StyledContextMenuItem>
         </StyledContextMenuContent>

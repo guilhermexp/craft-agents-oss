@@ -191,14 +191,14 @@ export default function PreferencesPage() {
         className="flex items-center gap-1 text-xs h-7 px-2 rounded-md bg-foreground/5 hover:bg-foreground/10 text-muted-foreground"
         title={`Show in ${getFileManagerName()}`}
       >
-        <ExternalLink className="h-3 w-3" />
+        <ExternalLink className="size-3" />
       </button>
       <div className={`flex items-center gap-1.5 transition-opacity ${isDirty ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
         <button
           onClick={handleRevert}
           className="flex items-center gap-1 text-xs h-7 px-2 rounded-md bg-foreground/5 hover:bg-foreground/10 text-muted-foreground"
         >
-          <RotateCcw className="h-3 w-3" />
+          <RotateCcw className="size-3" />
           {t("common.revert")}
         </button>
         <Button
@@ -209,11 +209,11 @@ export default function PreferencesPage() {
           className="text-xs h-7 px-2"
         >
           {isSaving ? (
-            <Spinner className="h-3.5 w-3.5 mr-1" />
+            <Spinner className="size-3.5 mr-1" />
           ) : saveSuccess ? (
-            <Check className="h-3.5 w-3.5 mr-1 text-success" />
+            <Check className="size-3.5 mr-1 text-success" />
           ) : (
-            <Save className="h-3.5 w-3.5 mr-1" />
+            <Save className="size-3.5 mr-1" />
           )}
           {t("common.save")}
         </Button>

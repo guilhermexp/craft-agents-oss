@@ -161,9 +161,9 @@ export function MarkdownJsonBlock({ code, className }: MarkdownJsonBlockProps) {
             aria-label="Copy JSON"
           >
             {copied ? (
-              <Check className="w-3.5 h-3.5 text-success" />
+              <Check className="size-3.5 text-success" />
             ) : (
-              <Copy className="w-3.5 h-3.5" />
+              <Copy className="size-3.5" />
             )}
           </button>
         </div>

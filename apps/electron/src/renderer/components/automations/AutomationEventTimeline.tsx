@@ -82,7 +82,7 @@ function CopyButton({ details }: { details: import('./types').WebhookDetails }) 
       onClick={handleCopy}
       title={t('automations.copyPayload')}
     >
-      <Icon className="h-3 w-3" />
+      <Icon className="size-3" />
     </button>
   )
 }
@@ -129,7 +129,7 @@ export function AutomationEventTimeline({ entries, className, onReplay }: Automa
               tabIndex={isWebhook ? 0 : undefined}
             >
               {/* Status icon */}
-              <StatusIcon className={cn('h-3.5 w-3.5 shrink-0', config.classes)} />
+              <StatusIcon className={cn('size-3.5 shrink-0', config.classes)} />
 
               {/* Time */}
               <span className="text-xs text-muted-foreground w-16 shrink-0 tabular-nums">
@@ -164,7 +164,7 @@ export function AutomationEventTimeline({ entries, className, onReplay }: Automa
               {/* Expand chevron for webhook entries */}
               {isWebhook && (
                 <ChevronDown className={cn(
-                  'h-3 w-3 shrink-0 text-foreground/40 transition-transform duration-150',
+                  'size-3 shrink-0 text-foreground/40 transition-transform duration-150',
                   isExpanded && 'rotate-180',
                 )} />
               )}

@@ -47,7 +47,7 @@ export function AttachmentPreview({ attachments, onRemove, disabled, loadingCoun
 
 function LoadingBubble() {
   return (
-    <div className="h-16 w-16 rounded-[8px] bg-background shadow-minimal flex items-center justify-center shrink-0">
+    <div className="size-16 rounded-[8px] bg-background shadow-minimal flex items-center justify-center shrink-0">
       <Spinner className="text-muted-foreground" />
     </div>
   )
@@ -80,25 +80,25 @@ function AttachmentBubble({ attachment, onRemove, disabled }: AttachmentBubblePr
           onClick={onRemove}
           className={cn(
             "absolute -top-1.5 -right-1.5 z-10",
-            "h-5 w-5 rounded-full",
+            "size-5 rounded-full",
             "bg-muted-foreground/90 text-background",
             "flex items-center justify-center",
             "opacity-0 group-hover:opacity-100 transition-opacity",
             "hover:bg-muted-foreground"
           )}
         >
-          <X className="h-3 w-3" />
+          <X className="size-3" />
         </button>
       )}
 
       <div className="h-16 flex items-center gap-2.5 rounded-[8px] bg-foreground/5 pl-1.5 pr-3 min-w-0 max-w-[420px]">
         {isImage ? (
-          <div className="h-12 w-12 rounded-[6px] overflow-hidden bg-background shadow-minimal flex items-center justify-center shrink-0">
+          <div className="size-12 rounded-[6px] overflow-hidden bg-background shadow-minimal flex items-center justify-center shrink-0">
             {imageSrc ? (
-              <img src={imageSrc} alt={attachment.name} className="h-full w-full object-cover" />
+              <img src={imageSrc} alt={attachment.name} className="size-full object-cover" />
             ) : (
-              <div className="h-full w-full flex items-center justify-center">
-                <ImageIcon className="h-5 w-5 text-muted-foreground" />
+              <div className="size-full flex items-center justify-center">
+                <ImageIcon className="size-5 text-muted-foreground" />
               </div>
             )}
           </div>
@@ -108,10 +108,10 @@ function AttachmentBubble({ attachment, onRemove, disabled }: AttachmentBubblePr
               <img
                 src={`data:image/png;base64,${attachment.thumbnailBase64}`}
                 alt={attachment.name}
-                className="h-full w-full object-cover object-top"
+                className="size-full object-cover object-top"
               />
             ) : (
-              <FileTypeIcon type={attachment.type} mimeType={attachment.mimeType} className="h-5 w-5" />
+              <FileTypeIcon type={attachment.type} mimeType={attachment.mimeType} className="size-5" />
             )}
           </div>
         )}

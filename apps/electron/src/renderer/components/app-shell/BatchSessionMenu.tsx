@@ -185,7 +185,7 @@ export function BatchSessionMenu({ onSendToWorkspace }: BatchSessionMenuProps = 
               {statusIcon}
             </span>
           ) : (
-            <span className="h-3.5 w-3.5" />
+            <span className="size-3.5" />
           )}
           <span className="flex-1">{t("sessionMenu.status")}</span>
         </SubTrigger>
@@ -203,7 +203,7 @@ export function BatchSessionMenu({ onSendToWorkspace }: BatchSessionMenuProps = 
       {labels.length > 0 && (
         <Sub>
           <SubTrigger className="pr-2">
-            <Tag className="h-3.5 w-3.5" />
+            <Tag className="size-3.5" />
             <span className="flex-1">{t("sidebar.labels")}</span>
           </SubTrigger>
           <SubContent>
@@ -220,26 +220,26 @@ export function BatchSessionMenu({ onSendToWorkspace }: BatchSessionMenuProps = 
       {/* Flag/Unflag */}
       {allFlagged ? (
         <MenuItem onClick={handleBatchUnflag}>
-          <FlagOff className="h-3.5 w-3.5" />
+          <FlagOff className="size-3.5" />
           <span className="flex-1">{t("sessionMenu.unflagAll")}</span>
         </MenuItem>
       ) : (
         <MenuItem onClick={handleBatchFlag}>
-          <Flag className="h-3.5 w-3.5 text-info" />
+          <Flag className="size-3.5 text-info" />
           <span className="flex-1">{t("sessionMenu.flagAll")}</span>
         </MenuItem>
       )}
 
       {/* Archive */}
       <MenuItem onClick={handleBatchArchive}>
-        <Archive className="h-3.5 w-3.5" />
+        <Archive className="size-3.5" />
         <span className="flex-1">{t("sessionMenu.archive")}</span>
       </MenuItem>
 
       {/* Send to Workspace */}
       {hasRemoteWorkspaces && (
         <MenuItem onClick={handleSendToWorkspace}>
-          <Send className="h-3.5 w-3.5" />
+          <Send className="size-3.5" />
           <span className="flex-1">{t("sessionMenu.sendToWorkspace")}</span>
         </MenuItem>
       )}
@@ -248,7 +248,7 @@ export function BatchSessionMenu({ onSendToWorkspace }: BatchSessionMenuProps = 
 
       {/* Delete */}
       <MenuItem onClick={handleBatchDelete} variant="destructive">
-        <Trash2 className="h-3.5 w-3.5" />
+        <Trash2 className="size-3.5" />
         <span className="flex-1">{t("common.delete")}</span>
       </MenuItem>
     </>

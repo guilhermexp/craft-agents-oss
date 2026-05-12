@@ -59,7 +59,7 @@ export function HermesSkillsConfig({
 
         <div className="flex items-center gap-2">
           <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl bg-muted/40 border border-border/40">
-            <Search className="h-3.5 w-3.5 text-muted-foreground" />
+            <Search className="size-3.5 text-muted-foreground" />
             <input
               type="text"
               value={query}
@@ -69,7 +69,7 @@ export function HermesSkillsConfig({
             />
           </div>
           <Button variant="outline" size="sm" onClick={onOpenFolder}>
-            <FolderOpen className="h-3.5 w-3.5 mr-1.5" /> Pasta
+            <FolderOpen className="size-3.5 mr-1.5" /> Pasta
           </Button>
         </div>
 
@@ -118,11 +118,11 @@ function SkillCard({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="relative shrink-0">
-          <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center text-sm font-bold text-foreground/80">
+          <div className="size-9 rounded-lg bg-muted flex items-center justify-center text-sm font-bold text-foreground/80">
             {initial}
           </div>
           {skill.installed && (
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 absolute -bottom-0.5 -right-0.5 bg-background rounded-full" />
+            <CheckCircle2 className="size-3.5 text-emerald-500 absolute -bottom-0.5 -right-0.5 bg-background rounded-full" />
           )}
         </div>
         <span className="shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-500">

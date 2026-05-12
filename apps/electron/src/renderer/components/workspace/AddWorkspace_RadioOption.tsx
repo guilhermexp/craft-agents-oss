@@ -46,13 +46,13 @@ export function AddWorkspace_RadioOption({
         className="sr-only"
       />
       <div className={cn(
-        "h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0",
+        "size-4 rounded-full border-2 flex items-center justify-center shrink-0",
         checked
           ? "border-accent"
           : "border-foreground/30"
       )}>
         {checked && (
-          <div className="h-2 w-2 rounded-full bg-accent" />
+          <div className="size-2 rounded-full bg-accent" />
         )}
       </div>
       <div className="flex-1 min-w-0">

@@ -59,7 +59,7 @@ export function TurnCardActionsMenu({
             }
           }}
         >
-          <MoreHorizontal className="w-3 h-3" />
+          <MoreHorizontal className="size-3" />
         </div>
       }
     >

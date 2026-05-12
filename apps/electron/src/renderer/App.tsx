@@ -767,9 +767,11 @@ export default function App() {
             // Add suffix to indicate the source was activated
             const messageWithSuffix = `${effect.originalMessage}\n\n[${effect.sourceSlug} activated]`
             // Use setTimeout to ensure the previous turn has fully completed
-            setTimeout(() => {
+            const retryTimeout = setTimeout(() => {
+              autoRetryTimeoutsRef.current.delete(retryTimeout)
               window.electronAPI.sendMessage(effect.sessionId, messageWithSuffix)
             }, 100)
+            autoRetryTimeoutsRef.current.add(retryTimeout)
             break
           }
           case 'restore_input': {
@@ -944,7 +946,13 @@ export default function App() {
       store.set(sessionMetaMapAtom, newMetaMap)
     })
 
-    return cleanup
+    return () => {
+      cleanup()
+      for (const timeout of autoRetryTimeoutsRef.current) {
+        clearTimeout(timeout)
+      }
+      autoRetryTimeoutsRef.current.clear()
+    }
   }, [
     processAgentEvent,
     trackSessionActivity,
@@ -963,6 +971,15 @@ export default function App() {
   // Transport reconnect recovery — refresh session metadata plus active/processing
   // session content after stale reconnects.
   useEffect(() => {
+    const reconnectTimeouts = new Set<ReturnType<typeof setTimeout>>()
+    const waitForReconnectRetry = (delay: number) => new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        reconnectTimeouts.delete(timer)
+        resolve()
+      }, delay)
+      reconnectTimeouts.add(timer)
+    })
+
     const cleanup = window.electronAPI.onReconnected(async (isStale: boolean) => {
       if (!isStale) {
         // Server replayed buffered events — we're caught up, nothing to do
@@ -987,7 +1004,7 @@ export default function App() {
           // or it may still be lazily loading session messages.
           for (const delay of [2000, 4000]) {
             console.warn(`[App] Retrying session refresh for ${sessionId} after ${delay}ms (${refreshResult})`)
-            await new Promise(r => setTimeout(r, delay))
+            await waitForReconnectRetry(delay)
             refreshResult = await refreshSessionFromServer(sessionId)
             if (refreshResult === 'refreshed') break
           }
@@ -1008,7 +1025,13 @@ export default function App() {
 
     })
 
-    return cleanup
+    return () => {
+      cleanup()
+      for (const timeout of reconnectTimeouts) {
+        clearTimeout(timeout)
+      }
+      reconnectTimeouts.clear()
+    }
   }, [store, sessionSelection.selected, refreshSessionFromServer, refreshSessionListMetadataFromServer])
 
   // Listen for menu bar events
@@ -1311,6 +1334,7 @@ export default function App() {
 
   // Handle input draft changes per session with debounced persistence
   const draftSaveTimeoutRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const autoRetryTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
 
   // Cleanup draft save timers on unmount to prevent memory leaks
   useEffect(() => {

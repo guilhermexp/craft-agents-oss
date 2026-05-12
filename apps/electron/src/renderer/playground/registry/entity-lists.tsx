@@ -25,10 +25,10 @@ import type { SessionMeta } from '@/atoms/sessions'
 function MockAvatar({ icon: Icon, color, label }: { icon: React.ComponentType<{ className?: string }>; color: string; label: string }) {
   return (
     <div
-      className="w-5 h-5 rounded-[4px] ring-1 ring-border/30 shrink-0 flex items-center justify-center bg-muted"
+      className="size-5 rounded-[4px] ring-1 ring-border/30 shrink-0 flex items-center justify-center bg-muted"
       title={label}
     >
-      <Icon className={cn("w-3 h-3", color)} />
+      <Icon className={cn("size-3", color)} />
     </div>
   )
 }
@@ -65,9 +65,9 @@ interface MockSessionStatus {
 }
 
 const mockStatuses: MockSessionStatus[] = [
-  { id: 'todo', label: 'Todo', color: 'var(--muted-foreground)', icon: <Circle className="h-3.5 w-3.5" strokeWidth={1.5} /> },
-  { id: 'in-progress', label: 'In Progress', color: 'var(--info)', icon: <Circle className="h-3.5 w-3.5" strokeWidth={1.5} /> },
-  { id: 'done', label: 'Done', color: 'var(--success)', icon: <Circle className="h-3.5 w-3.5" strokeWidth={1.5} /> },
+  { id: 'todo', label: 'Todo', color: 'var(--muted-foreground)', icon: <Circle className="size-3.5" strokeWidth={1.5} /> },
+  { id: 'in-progress', label: 'In Progress', color: 'var(--info)', icon: <Circle className="size-3.5" strokeWidth={1.5} /> },
+  { id: 'done', label: 'Done', color: 'var(--success)', icon: <Circle className="size-3.5" strokeWidth={1.5} /> },
 ]
 
 const sampleSessions: (SessionMeta & { _status: MockSessionStatus })[] = [
@@ -268,7 +268,7 @@ function SessionEntityListPreview({
             <EntityRow
               icon={
                 <div
-                  className="w-4 h-4 flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"
+                  className="size-4 flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"
                   style={{ color: session._status.color }}
                 >
                   {session._status.icon}
@@ -290,8 +290,8 @@ function SessionEntityListPreview({
                     style={{ maskImage: 'linear-gradient(to right, black calc(100% - 16px), transparent 100%)', WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 16px), transparent 100%)' }}
                   >
                     {session.isFlagged && (
-                      <span className="shrink-0 h-[18px] w-[18px] flex items-center justify-center rounded bg-foreground/5">
-                        <Flag className="h-[10px] w-[10px] text-info fill-info" />
+                      <span className="shrink-0 size-[18px] flex items-center justify-center rounded bg-foreground/5">
+                        <Flag className="size-[10px] text-info fill-info" />
                       </span>
                     )}
                     {session.labels?.map((label, i) => (
@@ -414,7 +414,7 @@ function SkillEntityListPreview({
           <EntityRow
             icon={
               skill.icon ? (
-                <div className="w-5 h-5 rounded-[4px] ring-1 ring-border/30 shrink-0 flex items-center justify-center bg-muted text-sm leading-none">
+                <div className="size-5 rounded-[4px] ring-1 ring-border/30 shrink-0 flex items-center justify-center bg-muted text-sm leading-none">
                   {skill.icon}
                 </div>
               ) : (
@@ -493,7 +493,7 @@ function MixedEntityListPreview({
         return (
           <EntityRow
             icon={
-              <div className="w-4 h-4 flex items-center justify-center [&>svg]:w-full [&>svg]:h-full" style={{ color: session._status.color }}>
+              <div className="size-4 flex items-center justify-center [&>svg]:w-full [&>svg]:h-full" style={{ color: session._status.color }}>
                 {session._status.icon}
               </div>
             }
@@ -502,8 +502,8 @@ function MixedEntityListPreview({
               <>
                 {session.hasUnread && <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-accent text-white">New</span>}
                 {session.isFlagged && (
-                  <span className="shrink-0 h-[18px] w-[18px] flex items-center justify-center rounded bg-foreground/5">
-                    <Flag className="h-[10px] w-[10px] text-info fill-info" />
+                  <span className="shrink-0 size-[18px] flex items-center justify-center rounded bg-foreground/5">
+                    <Flag className="size-[10px] text-info fill-info" />
                   </span>
                 )}
               </>
@@ -542,7 +542,7 @@ function MixedEntityListPreview({
           <EntityRow
             icon={
               skill.icon ? (
-                <div className="w-5 h-5 rounded-[4px] ring-1 ring-border/30 shrink-0 flex items-center justify-center bg-muted text-sm leading-none">
+                <div className="size-5 rounded-[4px] ring-1 ring-border/30 shrink-0 flex items-center justify-center bg-muted text-sm leading-none">
                   {skill.icon}
                 </div>
               ) : (
@@ -673,7 +673,7 @@ function InteractiveEntityListPreview({
           <EntityRow
             {...rowProps}
             icon={
-              <div className="w-4 h-4 flex items-center justify-center [&>svg]:w-full [&>svg]:h-full" style={{ color: item.status.color }}>
+              <div className="size-4 flex items-center justify-center [&>svg]:w-full [&>svg]:h-full" style={{ color: item.status.color }}>
                 {item.status.icon}
               </div>
             }
@@ -682,8 +682,8 @@ function InteractiveEntityListPreview({
               <>
                 {item.hasUnread && <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-accent text-white">New</span>}
                 {item.isFlagged && (
-                  <span className="shrink-0 h-[18px] w-[18px] flex items-center justify-center rounded bg-foreground/5">
-                    <Flag className="h-[10px] w-[10px] text-info fill-info" />
+                  <span className="shrink-0 size-[18px] flex items-center justify-center rounded bg-foreground/5">
+                    <Flag className="size-[10px] text-info fill-info" />
                   </span>
                 )}
               </>
@@ -720,7 +720,7 @@ function InteractiveEntityListPreview({
             {...rowProps}
             icon={
               item.emoji ? (
-                <div className="w-5 h-5 rounded-[4px] ring-1 ring-border/30 shrink-0 flex items-center justify-center bg-muted text-sm leading-none">
+                <div className="size-5 rounded-[4px] ring-1 ring-border/30 shrink-0 flex items-center justify-center bg-muted text-sm leading-none">
                   {item.emoji}
                 </div>
               ) : (
@@ -771,7 +771,7 @@ function InteractiveEntityListPreview({
           header={enableSearch ? (
             <div className="px-3 py-2 border-b border-border">
               <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-foreground/40" />
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-foreground/40" />
                 <input
                   className="w-full h-8 pl-8 pr-3 text-sm bg-foreground/3 rounded-md border border-transparent focus:border-border focus:outline-none placeholder:text-foreground/30"
                   placeholder="Search entities..."

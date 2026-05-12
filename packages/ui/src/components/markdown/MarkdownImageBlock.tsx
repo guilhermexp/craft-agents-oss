@@ -236,7 +236,7 @@ export function MarkdownImageBlock({ code, className, onCreateRegionAnnotation: 
             )}
             title={t('common.viewFullscreen')}
           >
-            <Maximize2 className="w-3.5 h-3.5" />
+            <Maximize2 className="size-3.5" />
           </button>
           {hasMultiple && stackItems.length > 0 && (
             <ImageCardStack

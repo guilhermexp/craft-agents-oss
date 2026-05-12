@@ -83,7 +83,7 @@ export function CollapsibleSection({
             hasContent && isExpanded && 'opacity-0 group-hover:opacity-100'
           )}
         >
-          <ChevronRight className="h-3 w-3 text-muted-foreground" />
+          <ChevronRight className="size-3 text-muted-foreground" />
         </motion.div>
 
         {/* Heading content */}

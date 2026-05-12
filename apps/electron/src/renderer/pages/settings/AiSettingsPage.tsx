@@ -119,7 +119,7 @@ function CredentialHealthBanner({ issues, onReauthenticate }: CredentialHealthBa
   return (
     <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 mb-6">
       <div className="flex items-start gap-3">
-        <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+        <AlertTriangle className="size-5 text-amber-500 flex-shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
           <h4 className="text-sm font-medium text-amber-700 dark:text-amber-400">
             {t("settings.ai.credentialIssue")}
@@ -283,28 +283,28 @@ function ConnectionRow({ connection, isLastConnection, onRenameClick, onDelete, 
             className="p-1.5 rounded-md hover:bg-foreground/[0.05] data-[state=open]:bg-foreground/[0.05] transition-colors"
             data-state={menuOpen ? 'open' : 'closed'}
           >
-            <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+            <MoreHorizontal className="size-4 text-muted-foreground" />
           </button>
         </DropdownMenuTrigger>
         <StyledDropdownMenuContent align="end">
           <StyledDropdownMenuItem onClick={() => runAfterMenuClose(onRenameClick)}>
-            <Pencil className="h-3.5 w-3.5" />
+            <Pencil className="size-3.5" />
             <span>{t("common.rename")}</span>
           </StyledDropdownMenuItem>
           {!connection.isDefault && (
             <StyledDropdownMenuItem onClick={onSetDefault}>
-              <Star className="h-3.5 w-3.5" />
+              <Star className="size-3.5" />
               <span>{t("settings.ai.setAsDefault")}</span>
             </StyledDropdownMenuItem>
           )}
           {connection.authType === 'oauth' ? (
             <StyledDropdownMenuItem onClick={() => runAfterMenuClose(onReauthenticate)}>
-              <RefreshCcw className="h-3.5 w-3.5" />
+              <RefreshCcw className="size-3.5" />
               <span>{t("settings.ai.reAuthenticate")}</span>
             </StyledDropdownMenuItem>
           ) : !isHermesConnection ? (
             <StyledDropdownMenuItem onClick={() => runAfterMenuClose(onEdit)}>
-              <Settings2 className="h-3.5 w-3.5" />
+              <Settings2 className="size-3.5" />
               <span>{t("common.edit")}</span>
             </StyledDropdownMenuItem>
           ) : null}
@@ -312,7 +312,7 @@ function ConnectionRow({ connection, isLastConnection, onRenameClick, onDelete, 
             onClick={onValidate}
             disabled={validationState === 'validating'}
           >
-            <CheckCircle2 className="h-3.5 w-3.5" />
+            <CheckCircle2 className="size-3.5" />
             <span>{t("settings.ai.validateConnection")}</span>
           </StyledDropdownMenuItem>
           <StyledDropdownMenuSeparator />
@@ -321,7 +321,7 @@ function ConnectionRow({ connection, isLastConnection, onRenameClick, onDelete, 
             variant="destructive"
             disabled={isLastConnection}
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="size-3.5" />
             <span>{t("common.delete")}</span>
           </StyledDropdownMenuItem>
         </StyledDropdownMenuContent>
@@ -458,12 +458,12 @@ function WorkspaceOverrideCard({ workspace, llmConnections, onSettingsChange }: 
         <div className="flex items-center gap-3">
           <div
             className={cn(
-              'w-6 h-6 rounded-full overflow-hidden bg-foreground/5 flex items-center justify-center',
+              'size-6 rounded-full overflow-hidden bg-foreground/5 flex items-center justify-center',
               'ring-1 ring-border/50'
             )}
           >
             {iconUrl ? (
-              <img src={iconUrl} alt="" className="w-full h-full object-cover" />
+              <img src={iconUrl} alt="" className="size-full object-cover" />
             ) : (
               <span className="text-xs font-medium text-muted-foreground">
                 {workspace.name?.charAt(0)?.toUpperCase() || 'W'}
@@ -478,9 +478,9 @@ function WorkspaceOverrideCard({ workspace, llmConnections, onSettingsChange }: 
           </div>
         </div>
         {isExpanded ? (
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          <ChevronDown className="size-4 text-muted-foreground" />
         ) : (
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          <ChevronRight className="size-4 text-muted-foreground" />
         )}
       </button>
 
@@ -1058,7 +1058,7 @@ export default function AiSettingsPage() {
                     className="p-1.5 rounded-[6px] transition-all bg-background shadow-minimal text-muted-foreground/50 hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     title={t("common.closeEsc")}
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <X className="size-3.5" />
                   </button>
                 </div>
               </FullscreenOverlayBase>

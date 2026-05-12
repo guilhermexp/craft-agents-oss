@@ -54,9 +54,9 @@ export function AutomationMenu({
       {onToggleEnabled && (
         <MenuItem onClick={onToggleEnabled}>
           {enabled ? (
-            <PowerOff className="h-3.5 w-3.5" />
+            <PowerOff className="size-3.5" />
           ) : (
-            <Power className="h-3.5 w-3.5" />
+            <Power className="size-3.5" />
           )}
           <span className="flex-1">{enabled ? t('automations.menuDisable') : t('automations.menuEnable')}</span>
         </MenuItem>
@@ -65,7 +65,7 @@ export function AutomationMenu({
       {/* Test Automation */}
       {onTest && (
         <MenuItem onClick={onTest}>
-          <Play className="h-3.5 w-3.5" />
+          <Play className="size-3.5" />
           <span className="flex-1">{t('automations.runTest')}</span>
         </MenuItem>
       )}
@@ -73,7 +73,7 @@ export function AutomationMenu({
       {/* Duplicate */}
       {onDuplicate && (
         <MenuItem onClick={onDuplicate}>
-          <Copy className="h-3.5 w-3.5" />
+          <Copy className="size-3.5" />
           <span className="flex-1">{t('automations.menuDuplicate')}</span>
         </MenuItem>
       )}
@@ -81,7 +81,7 @@ export function AutomationMenu({
       {/* Send to another workspace */}
       {onSendToWorkspace && (
         <MenuItem onClick={onSendToWorkspace}>
-          <Send className="h-3.5 w-3.5" />
+          <Send className="size-3.5" />
           <span className="flex-1">Send to Workspace</span>
         </MenuItem>
       )}
@@ -89,7 +89,7 @@ export function AutomationMenu({
       {/* Edit automations.json */}
       {onEditJson && (
         <MenuItem onClick={onEditJson}>
-          <FileCode className="h-3.5 w-3.5" />
+          <FileCode className="size-3.5" />
           <span className="flex-1">{t('automations.menuEditConfiguration')}</span>
         </MenuItem>
       )}
@@ -99,7 +99,7 @@ export function AutomationMenu({
       {/* Delete */}
       {onDelete && (
         <MenuItem onClick={onDelete} variant="destructive">
-          <Trash2 className="h-3.5 w-3.5" />
+          <Trash2 className="size-3.5" />
           <span className="flex-1">{t('automations.menuDelete')}</span>
         </MenuItem>
       )}

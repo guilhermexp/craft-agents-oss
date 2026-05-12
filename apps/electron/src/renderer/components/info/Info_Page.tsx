@@ -82,7 +82,7 @@ function Info_PageRoot({
       <div className={cn('h-full flex flex-col', className)}>
         {header}
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground p-4">
-          <AlertCircle className="h-10 w-10 text-destructive" />
+          <AlertCircle className="size-10 text-destructive" />
           <p className="text-sm font-medium">{t('common.errorLoadingContent')}</p>
           <p className="text-xs text-center max-w-md">{error}</p>
         </div>
@@ -118,7 +118,7 @@ function Info_PageHeader({ className, ...props }: Info_PageHeaderProps) {
 function Info_PageHero({ avatar, title, tagline, className }: Info_PageHeroProps) {
   return (
     <div className={cn('flex items-start gap-3', className)}>
-      <div className="h-[32px] w-[32px] shrink-0 mt-[2px] rounded-[4px] ring-1 ring-border/30 overflow-hidden">
+      <div className="size-[32px] shrink-0 mt-[2px] rounded-[4px] ring-1 ring-border/30 overflow-hidden">
         {avatar}
       </div>
       <div className="flex-1 min-w-0">

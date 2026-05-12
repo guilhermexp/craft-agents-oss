@@ -56,7 +56,7 @@ export function BrowserProfilePicker({
         <DialogHeader>
           <DialogTitle>Quem está usando o navegador?</DialogTitle>
           <DialogDescription>
-            Cada perfil tem cookies, sessões e armazenamento próprios — perfeito
+            Cada perfil tem cookies, sessões e armazenamento próprios, perfeito
             para separar contas pessoais e de trabalho.
           </DialogDescription>
         </DialogHeader>
@@ -226,8 +226,9 @@ function ProfileCreateForm({ onSubmit, onCancel }: ProfileCreateFormProps) {
           {(name.trim().charAt(0) || '?').toUpperCase()}
         </div>
         <div className="flex-1">
-          <label className="text-xs text-muted-foreground">Nome do perfil</label>
+          <label htmlFor="browser-profile-name" className="text-xs text-muted-foreground">Nome do perfil</label>
           <Input
+            id="browser-profile-name"
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}

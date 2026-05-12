@@ -95,7 +95,7 @@ function SlashCommandDemo() {
               className="gap-2"
               onClick={() => setButtonMenuOpen(!buttonMenuOpen)}
             >
-              <SquareSlash className="h-4 w-4" />
+              <SquareSlash className="size-4" />
               Commands
             </Button>
             {buttonMenuOpen && (

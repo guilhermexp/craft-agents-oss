@@ -60,7 +60,7 @@ export function AutomationActionRow({ action, index, className }: AutomationActi
         <span className="text-xs text-muted-foreground tabular-nums w-4 text-right">
           {index + 1}.
         </span>
-        <ActionTypeIcon type={action.type} className="h-3.5 w-3.5" />
+        <ActionTypeIcon type={action.type} className="size-3.5" />
       </div>
 
       {/* Content */}

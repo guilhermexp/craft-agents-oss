@@ -53,8 +53,8 @@ async function resolveUniqueSlug(baseName: string): Promise<{ slug: string; path
  * AddWorkspaceStep_ConnectRemote - Connect to a remote Craft Agent Server
  *
  * Two paths:
- * 1. Connect to existing workspace — select from dropdown, no name needed, auto-resolve local slug
- * 2. Create new workspace — type a name, creates on server, then connects
+ * 1. Connect to existing workspace: select from dropdown, no name needed, auto-resolve local slug
+ * 2. Create new workspace: type a name, creates on server, then connects
  */
 export function AddWorkspaceStep_ConnectRemote({
   onBack,
@@ -196,7 +196,7 @@ export function AddWorkspaceStep_ConnectRemote({
           isCreating && "opacity-50 cursor-not-allowed"
         )}
       >
-        <ArrowLeft className="h-4 w-4" />
+        <ArrowLeft className="size-4" />
         Back
       </button>
 
@@ -210,11 +210,12 @@ export function AddWorkspaceStep_ConnectRemote({
       <div className="mt-6 w-full space-y-5">
         {/* Server URL */}
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-foreground">
+          <label htmlFor="remote-server-url" className="block text-sm font-medium text-foreground">
             Server URL
           </label>
           <div className="bg-background shadow-minimal rounded-lg">
             <Input
+              id="remote-server-url"
               value={serverUrl}
               onChange={(e) => setServerUrl(e.target.value)}
               placeholder="ws://192.168.1.100:9100"
@@ -227,11 +228,12 @@ export function AddWorkspaceStep_ConnectRemote({
 
         {/* Token */}
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-foreground">
+          <label htmlFor="remote-server-token" className="block text-sm font-medium text-foreground">
             Token
           </label>
           <div className="bg-background shadow-minimal rounded-lg">
             <Input
+              id="remote-server-token"
               type="password"
               value={token}
               onChange={(e) => setToken(e.target.value)}
@@ -252,19 +254,19 @@ export function AddWorkspaceStep_ConnectRemote({
           </AddWorkspaceSecondaryButton>
           {testState === 'ok' && !isFreshServer && (
             <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-              <CheckCircle className="h-3.5 w-3.5" />
-              Connected{serverVersion ? ` — v${serverVersion}` : ''}
+              <CheckCircle className="size-3.5" />
+              Connected{serverVersion ? `, v${serverVersion}` : ''}
             </span>
           )}
           {testState === 'ok' && isFreshServer && (
             <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-              <CheckCircle className="h-3.5 w-3.5" />
-              Connected{serverVersion ? ` — v${serverVersion}` : ''} — no workspaces yet
+              <CheckCircle className="size-3.5" />
+              Connected{serverVersion ? `, v${serverVersion}` : ''}: no workspaces yet
             </span>
           )}
           {testState === 'error' && (
             <span className="flex items-center gap-1 text-xs text-destructive">
-              <XCircle className="h-3.5 w-3.5" />
+              <XCircle className="size-3.5" />
               {testError || 'Failed'}
             </span>
           )}
@@ -273,7 +275,7 @@ export function AddWorkspaceStep_ConnectRemote({
         {/* Old server warning */}
         {testState === 'ok' && !serverVersion && (
           <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-xs text-yellow-700 dark:text-yellow-400">
-            <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            <XCircle className="size-3.5 shrink-0 mt-0.5" />
             <span>{t("workspace.olderServerWarning")}</span>
           </div>
         )}
@@ -284,7 +286,7 @@ export function AddWorkspaceStep_ConnectRemote({
         {/* Workspace selector — pick existing or create new (hidden in reconnect mode) */}
         {!isReconnectMode && testState === 'ok' && remoteWorkspaces.length > 0 && !isCreateNew && (
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-foreground">
+            <label htmlFor="remote-workspace-select" className="block text-sm font-medium text-foreground">
               Workspace
             </label>
             <div className="bg-background shadow-minimal rounded-lg">
@@ -293,7 +295,7 @@ export function AddWorkspaceStep_ConnectRemote({
                 onValueChange={setSelectedValue}
                 disabled={isCreating}
               >
-                <SelectTrigger className="border-0 bg-transparent shadow-none">
+                <SelectTrigger id="remote-workspace-select" className="border-0 bg-transparent shadow-none">
                   <SelectValue placeholder={t("workspace.selectWorkspacePlaceholder")} />
                 </SelectTrigger>
                 <SelectContent container={selectPortalRef.current}>
@@ -311,7 +313,7 @@ export function AddWorkspaceStep_ConnectRemote({
               disabled={isCreating}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
-              <Plus className="h-3 w-3" />
+              <Plus className="size-3" />
               Create new workspace on server
             </button>
           </div>
@@ -320,11 +322,12 @@ export function AddWorkspaceStep_ConnectRemote({
         {/* New workspace name — shown for fresh servers or "Create new" selection (hidden in reconnect mode) */}
         {!isReconnectMode && testState === 'ok' && showCreateMode && (
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-foreground">
+            <label htmlFor="remote-workspace-name" className="block text-sm font-medium text-foreground">
               Workspace name
             </label>
             <div className="bg-background shadow-minimal rounded-lg">
               <Input
+                id="remote-workspace-name"
                 value={newWorkspaceName}
                 onChange={(e) => setNewWorkspaceName(e.target.value)}
                 placeholder={t("workspace.myRemoteWorkspace")}
@@ -345,7 +348,7 @@ export function AddWorkspaceStep_ConnectRemote({
                 disabled={isCreating}
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
-                <ArrowLeft className="h-3 w-3" />
+                <ArrowLeft className="size-3" />
                 Use existing workspace
               </button>
             )}

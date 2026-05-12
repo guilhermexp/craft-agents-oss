@@ -660,8 +660,6 @@ export function Island({
     }
   }, [activeView, onActiveViewSizeChange, isTransitionSettling])
 
-  if (!activeView) return null
-
   const FALLBACK_HIDDEN_SCALE = clampScale(cfg.entryStartScale)
   const isPreShowWarmup = shouldMorph && isVisible && !isMorphWarmReady
   const directionalOffset = React.useMemo(
@@ -686,7 +684,7 @@ export function Island({
   const shouldAnimateFromHiddenOnMount = shouldMorph || hasEntryTranslation || hasEntryScale || hasReplayEntryRequest
   const shouldUseConfiguredStartScale = transitionConfig?.entryStartScale != null
 
-  const hiddenPose = {
+  const hiddenPose = React.useMemo(() => ({
     opacity: 0,
     x: (hasUsableMorphDelta ? (morphDelta?.x ?? 0) : 0) + directionalOffset.x,
     y: (hasUsableMorphDelta ? (morphDelta?.y ?? 0) : 0) + directionalOffset.y,
@@ -696,7 +694,17 @@ export function Island({
     scaleY: (hasUsableMorphDelta && !shouldUseConfiguredStartScale)
       ? (morphDelta?.scaleY ?? FALLBACK_HIDDEN_SCALE)
       : FALLBACK_HIDDEN_SCALE,
-  }
+  }), [
+    FALLBACK_HIDDEN_SCALE,
+    directionalOffset.x,
+    directionalOffset.y,
+    hasUsableMorphDelta,
+    morphDelta?.scaleX,
+    morphDelta?.scaleY,
+    morphDelta?.x,
+    morphDelta?.y,
+    shouldUseConfiguredStartScale,
+  ])
 
   const visiblePose = {
     opacity: 1,
@@ -747,6 +755,8 @@ export function Island({
       : layoutTransition),
     [isPreShowWarmup, layoutTransition]
   )
+
+  if (!activeView) return null
 
   return (
     <IslandAnimationContext.Provider value={cfg}>

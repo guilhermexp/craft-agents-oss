@@ -169,7 +169,7 @@ export function SettingsRadioCard({
         {/* Radio circle */}
         <div
           className={cn(
-            'w-4 h-4 rounded-full border-[1.5px] mt-[3px] shrink-0',
+            'size-4 rounded-full border-[1.5px] mt-[3px] shrink-0',
             'grid place-items-center transition-colors',
             isSelected
               ? 'border-foreground bg-foreground'
@@ -177,7 +177,7 @@ export function SettingsRadioCard({
           )}
         >
           {isSelected && (
-            <div className="w-2 h-2 rounded-full bg-background" />
+            <div className="size-2 rounded-full bg-background" />
           )}
         </div>
 
@@ -274,7 +274,7 @@ export function SettingsRadioOption({
       {/* Radio circle */}
       <div
         className={cn(
-          'w-4 h-4 rounded-full border-[1.5px] shrink-0',
+          'size-4 rounded-full border-[1.5px] shrink-0',
           'grid place-items-center transition-colors',
           isSelected
             ? 'border-foreground bg-foreground'
@@ -282,7 +282,7 @@ export function SettingsRadioOption({
         )}
       >
         {isSelected && (
-          <div className="w-2 h-2 rounded-full bg-background" />
+          <div className="size-2 rounded-full bg-background" />
         )}
       </div>
 

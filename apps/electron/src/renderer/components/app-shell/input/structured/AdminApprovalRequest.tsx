@@ -55,7 +55,7 @@ export function AdminApprovalRequest({
       <div className="p-4 space-y-3 flex-1 min-h-0 flex flex-col">
         <div className="space-y-2 pb-1">
           <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-            <ShieldAlert className="h-3.5 w-3.5 text-info" />
+            <ShieldAlert className="size-3.5 text-info" />
             <span>{t('chat.adminApprovalRequired')}</span>
           </div>
           <div className="text-xs leading-[18px] text-muted-foreground">
@@ -84,7 +84,7 @@ export function AdminApprovalRequest({
           className="h-7 gap-1.5 cursor-pointer"
           onClick={handleApprove}
         >
-          <Check className="h-3.5 w-3.5" />
+          <Check className="size-3.5" />
           Approve
         </Button>
 
@@ -94,7 +94,7 @@ export function AdminApprovalRequest({
           className="h-7 gap-1.5 text-destructive hover:text-destructive border border-dashed border-destructive/50 hover:bg-destructive/10 hover:border-destructive/70 active:bg-destructive/20"
           onClick={onCancel}
         >
-          <X className="h-3.5 w-3.5" />
+          <X className="size-3.5" />
           Cancel
         </Button>
 

@@ -194,7 +194,7 @@ export function ServerDirectoryBrowser({
           className="flex-1 font-mono text-xs"
         />
         <Button variant="outline" size="sm" onClick={handlePathSubmit} disabled={loading}>
-          Go
+          Navigate
         </Button>
       </div>
 
@@ -222,7 +222,7 @@ export function ServerDirectoryBrowser({
           {loading && (
             <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground">
               <Spinner className="text-sm" />
-              Loading...
+              Loading…
             </div>
           )}
 

@@ -95,7 +95,7 @@ export function MultiSelectPanel({
     >
       {/* Selection count */}
       <div className="flex flex-col items-center gap-2">
-        <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center">
+        <div className="size-16 rounded-full bg-accent/10 flex items-center justify-center">
           <span className="text-2xl font-semibold text-accent">{count}</span>
         </div>
         <h2 className="text-lg font-medium text-foreground">
@@ -130,7 +130,7 @@ export function MultiSelectPanel({
                 size="sm"
                 className="gap-2 bg-background shadow-minimal hover:bg-foreground/[0.03]"
               >
-                <CheckCircle2 className="w-4 h-4" />
+                <CheckCircle2 className="size-4" />
                 {t('multiSelect.changeStatus')}
               </Button>
             </DropdownMenuTrigger>
@@ -152,7 +152,7 @@ export function MultiSelectPanel({
                 size="sm"
                 className="gap-2 bg-background shadow-minimal hover:bg-foreground/[0.03]"
               >
-                <Tag className="w-4 h-4" />
+                <Tag className="size-4" />
                 {t('multiSelect.setLabels')}
               </Button>
             </DropdownMenuTrigger>
@@ -179,7 +179,7 @@ export function MultiSelectPanel({
             onClick={onSendToWorkspace}
             className="gap-2 bg-background shadow-minimal hover:bg-foreground/[0.03]"
           >
-            <Send className="w-4 h-4" />
+            <Send className="size-4" />
             {t('sessionMenu.sendToWorkspace')}
           </Button>
         )}
@@ -190,7 +190,7 @@ export function MultiSelectPanel({
             onClick={onArchive}
             className="gap-2 bg-background shadow-minimal hover:bg-foreground/[0.03]"
           >
-            <Archive className="w-4 h-4" />
+            <Archive className="size-4" />
             {t('sessionMenu.archive')}
           </Button>
         )}

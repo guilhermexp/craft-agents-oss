@@ -197,7 +197,7 @@ export function HermesMessengersConfig() {
 
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Carregando status…
+              <Loader2 className="size-4 animate-spin" /> Carregando status…
             </div>
           ) : (
             <div className="grid gap-2 md:grid-cols-2">
@@ -215,12 +215,12 @@ export function HermesMessengersConfig() {
                       alt=""
                       width={32}
                       height={32}
-                      className="h-8 w-8 rounded-lg flex-shrink-0"
+                      className="size-8 rounded-lg flex-shrink-0"
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className="text-sm font-medium leading-5 truncate">{m.name}</span>
-                        {configured && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />}
+                        {configured && <CheckCircle2 className="size-3.5 text-emerald-500 flex-shrink-0" />}
                       </div>
                       <div className="text-[11px] text-muted-foreground leading-4 mt-0.5 line-clamp-2">
                         {m.description}
@@ -313,7 +313,7 @@ function MessengerModal({
       <DialogContent className="max-w-md p-0 gap-0">
         <DialogHeader className="p-4 border-b border-border/60">
           <DialogTitle className="flex items-center gap-2.5 text-sm font-semibold">
-            <img src={entry.icon} alt="" className="h-7 w-7 rounded-md" />
+            <img src={entry.icon} alt="" className="size-7 rounded-md" />
             {entry.name}
           </DialogTitle>
         </DialogHeader>
@@ -382,7 +382,7 @@ function MessengerModal({
             Fechar
           </Button>
           <Button size="sm" onClick={handleSave} disabled={saving}>
-            {saving && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+            {saving && <Loader2 className="size-3.5 mr-1.5 animate-spin" />}
             Salvar
           </Button>
         </div>
@@ -455,7 +455,7 @@ function AllowlistEditor({
                 className="text-muted-foreground hover:text-destructive"
                 aria-label={`Remover ${id}`}
               >
-                <X className="h-3 w-3" />
+                <X className="size-3" />
               </button>
             </span>
           ))}

@@ -78,7 +78,7 @@ function SettingsItemRow({ item, isSelected, isFirst, onSelect }: SettingsItemRo
         <div className="absolute left-[20px] top-[14px] z-10">
           <Icon
             className={cn(
-              'w-4 h-4 shrink-0',
+              'size-4 shrink-0',
               isSelected ? 'text-foreground' : 'text-muted-foreground'
             )}
           />
@@ -124,13 +124,13 @@ function SettingsItemRow({ item, isSelected, isFirst, onSelect }: SettingsItemRo
             <DropdownMenu modal={true} onOpenChange={setMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <div className="p-1.5 hover:bg-foreground/10 data-[state=open]:bg-foreground/10 cursor-pointer">
-                  <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                  <MoreHorizontal className="size-4 text-muted-foreground" />
                 </div>
               </DropdownMenuTrigger>
               <StyledDropdownMenuContent align="end">
                 <DropdownMenuProvider>
                   <StyledDropdownMenuItem onClick={handleOpenInNewWindow}>
-                    <AppWindow className="h-3.5 w-3.5" />
+                    <AppWindow className="size-3.5" />
                     <span className="flex-1">{t("sessionMenu.openInNewWindow")}</span>
                   </StyledDropdownMenuItem>
                 </DropdownMenuProvider>

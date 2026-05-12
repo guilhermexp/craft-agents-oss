@@ -128,7 +128,7 @@ export function InlineExecution({
       <div className={cn("space-y-3", className)}>
         {/* Header with checkmark */}
         <div className="flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-success" />
+          <CheckCircle2 className="size-4 text-success" />
           <span className={cn("text-foreground font-medium", SIZE_CONFIG.fontSize)}>
             {t('common.done')}
           </span>
@@ -151,7 +151,7 @@ export function InlineExecution({
               SIZE_CONFIG.fontSize
             )}
           >
-            <CheckCircle2 className="w-3 h-3" />
+            <CheckCircle2 className="size-3" />
             {t('common.done')}
           </button>
         </div>
@@ -164,7 +164,7 @@ export function InlineExecution({
     <div className={cn("space-y-3", className)}>
       {/* Header with error icon */}
       <div className="flex items-center gap-2">
-        <XCircle className="w-4 h-4 text-destructive" />
+        <XCircle className="size-4 text-destructive" />
         <span className={cn("text-foreground font-medium", SIZE_CONFIG.fontSize)}>
           {t('common.failed')}
         </span>
@@ -187,7 +187,7 @@ export function InlineExecution({
             SIZE_CONFIG.fontSize
           )}
         >
-          <X className="w-3 h-3" />
+          <X className="size-3" />
           {t('common.dismiss')}
         </button>
         {onRetry && (

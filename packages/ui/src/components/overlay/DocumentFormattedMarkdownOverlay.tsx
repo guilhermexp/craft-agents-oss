@@ -98,7 +98,7 @@ export function DocumentFormattedMarkdownOverlay({
           {/* Plan header (variant="plan" only) */}
           {variant === 'plan' && (
             <div className="px-4 py-2 border-b border-border/30 flex items-center gap-2 bg-success/5 rounded-t-[16px]">
-              <ListTodo className="w-3 h-3 text-success" />
+              <ListTodo className="size-3 text-success" />
               <span className="text-[13px] font-medium text-success">Plan</span>
             </div>
           )}

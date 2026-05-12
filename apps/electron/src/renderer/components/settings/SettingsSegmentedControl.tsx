@@ -77,7 +77,7 @@ export function SettingsSegmentedControl<T extends string = string>({
             {option.icon && (
               <span
                 className={cn(
-                  'w-4 h-4',
+                  'size-4',
                   isSelected ? 'text-foreground' : 'text-muted-foreground'
                 )}
               >
@@ -154,7 +154,7 @@ export function SettingsSegmentedControlCard<T extends string = string>({
             {/* Radio indicator */}
             <div
               className={cn(
-                'w-[16px] h-[16px] rounded-full border-2 shrink-0',
+                'size-[16px] rounded-full border-2 shrink-0',
                 'flex items-center justify-center transition-colors',
                 isSelected
                   ? 'border-foreground bg-foreground'
@@ -162,7 +162,7 @@ export function SettingsSegmentedControlCard<T extends string = string>({
               )}
             >
               {isSelected && (
-                <div className="w-[6px] h-[6px] rounded-full bg-background" />
+                <div className="size-[6px] rounded-full bg-background" />
               )}
             </div>
 

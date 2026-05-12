@@ -79,7 +79,7 @@ export const MetadataBadge = React.forwardRef<HTMLButtonElement, MetadataBadgePr
         )}
 
         {showChevron && (
-          <ChevronDown className="h-3 w-3 opacity-40 ml-1 shrink-0" />
+          <ChevronDown className="size-3 opacity-40 ml-1 shrink-0" />
         )}
       </button>
     )

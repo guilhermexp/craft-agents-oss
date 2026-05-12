@@ -155,7 +155,7 @@ export default function HermesSettingsPage() {
         <div className="px-5 py-7 max-w-4xl mx-auto space-y-5">
           <Tabs defaultValue="runtime" className="space-y-5">
             <div className="sticky top-0 z-10 bg-background/80 backdrop-blur rounded-xl px-2 pb-2 pt-1.5">
-              <TabsList className="h-auto w-auto justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0">
+              <TabsList className="size-auto justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0">
                 <TabsTrigger className="h-9 rounded-lg data-[state=active]:shadow-none" value="runtime">Runtime Hermes</TabsTrigger>
                 <TabsTrigger className="h-9 rounded-lg data-[state=active]:shadow-none" value="provider">Provider & Modelo</TabsTrigger>
                 <TabsTrigger className="h-9 rounded-lg data-[state=active]:shadow-none" value="profiles">Profiles</TabsTrigger>
@@ -207,10 +207,10 @@ export default function HermesSettingsPage() {
                 </SettingsCard>
                 <div className="flex flex-wrap gap-2 pt-2">
                   <Button size="sm" onClick={openDashboard} disabled={isOpeningDashboard}>
-                    <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> Abrir Dashboard Hermes
+                    <ExternalLink className="size-3.5 mr-1.5" /> Abrir Dashboard Hermes
                   </Button>
                   <Button size="sm" variant="ghost" onClick={loadHermes}>
-                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Recarregar
+                    <RefreshCw className="size-3.5 mr-1.5" /> Recarregar
                   </Button>
                 </div>
               </SettingsSection>
@@ -259,7 +259,7 @@ export default function HermesSettingsPage() {
                       </div>
                       <div className="flex flex-wrap items-center gap-1">
                         {(runtime?.fallbackProviders ?? []).length === 0 ? (
-                          <span className="text-xs text-muted-foreground">vazio — sem fallback configurado</span>
+                          <span className="text-xs text-muted-foreground">vazio, sem fallback configurado</span>
                         ) : (
                           runtime!.fallbackProviders!.map((provider, idx) => (
                             <span key={`${provider}-${idx}`} className="flex items-center gap-1">

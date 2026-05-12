@@ -49,20 +49,20 @@ export function HeaderMenu({ route, children, helpFeature }: HeaderMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <HeaderIconButton icon={<MoreHorizontal className="h-4 w-4" />} />
+        <HeaderIconButton icon={<MoreHorizontal className="size-4" />} />
       </DropdownMenuTrigger>
       <StyledDropdownMenuContent align="end">
         {children}
         {children && <StyledDropdownMenuSeparator />}
         <StyledDropdownMenuItem onClick={handleOpenInNewWindow}>
-          <AppWindow className="h-3.5 w-3.5" />
+          <AppWindow className="size-3.5" />
           <span className="flex-1">{t("sessionMenu.openInNewWindow")}</span>
         </StyledDropdownMenuItem>
         {helpFeature && (
           <>
             <StyledDropdownMenuSeparator />
             <StyledDropdownMenuItem onClick={handleLearnMore}>
-              <ExternalLink className="h-3.5 w-3.5" />
+              <ExternalLink className="size-3.5" />
               <span className="flex-1">{t("common.learnMore")}</span>
             </StyledDropdownMenuItem>
           </>

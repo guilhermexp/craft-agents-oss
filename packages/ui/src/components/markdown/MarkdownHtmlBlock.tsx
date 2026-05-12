@@ -166,7 +166,7 @@ export function MarkdownHtmlBlock({ code, className }: MarkdownHtmlBlockProps) {
       <div className={cn('relative group rounded-[8px] overflow-hidden border bg-muted/10', className)}>
         {/* Header */}
         <div className="px-3 py-2 bg-muted/50 border-b flex items-center gap-2">
-          <Globe className="w-3.5 h-3.5 text-muted-foreground/50" />
+          <Globe className="size-3.5 text-muted-foreground/50" />
           <span className="text-[12px] text-muted-foreground font-medium flex-1">
             {spec.title || t('preview.htmlPreview')}
           </span>
@@ -183,7 +183,7 @@ export function MarkdownHtmlBlock({ code, className }: MarkdownHtmlBlockProps) {
               )}
               title={t('common.viewFullscreen')}
             >
-              <Maximize2 className="w-3.5 h-3.5" />
+              <Maximize2 className="size-3.5" />
             </button>
           </div>
         </div>

@@ -82,7 +82,7 @@ function InputErrorFallback({
     <div className="rounded-[12px] border border-destructive/20 bg-background px-4 py-4 shadow-minimal">
       <div className="flex items-start gap-3">
         <div className="mt-0.5 rounded-full bg-destructive/10 p-2 text-destructive">
-          <AlertCircle className="h-4 w-4" />
+          <AlertCircle className="size-4" />
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-foreground">{t('chat.inputFailedTitle')}</p>
@@ -91,11 +91,11 @@ function InputErrorFallback({
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button type="button" size="sm" variant="secondary" onClick={onRetry}>
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className="size-4" />
               {t('common.retry')}
             </Button>
             <Button type="button" size="sm" variant="outline" onClick={onClearDraft}>
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="size-4" />
               {t('chat.clearDraft')}
             </Button>
             <Button type="button" size="sm" variant="ghost" onClick={() => window.location.reload()}>

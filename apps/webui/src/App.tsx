@@ -25,7 +25,7 @@ function LoadingScreen() {
 
   return (
     <div className="flex flex-col items-center justify-center h-screen font-sans text-foreground/50 gap-3">
-      <div className="animate-spin w-6 h-6 border-2 border-current border-t-transparent rounded-full" />
+      <div className="animate-spin size-6 border-2 border-current border-t-transparent rounded-full" />
       <p className="text-[13px]">{t("webui.connectingToServer")}</p>
     </div>
   )

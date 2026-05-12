@@ -55,7 +55,7 @@ export function WorkspacePicker({ onSelectWorkspace }: WorkspacePickerProps) {
     return (
       <div className="flex h-screen items-center justify-center bg-sidebar px-4">
         <AddWorkspaceContainer>
-          <Spinner className="h-6 w-6" />
+          <Spinner className="size-6" />
           <p className="mt-3 text-sm text-muted-foreground">{t("workspace.loadingWorkspaces")}</p>
         </AddWorkspaceContainer>
       </div>
@@ -83,7 +83,7 @@ export function WorkspacePicker({ onSelectWorkspace }: WorkspacePickerProps) {
                 onClick={() => onSelectWorkspace(ws.id)}
                 className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors hover:bg-foreground/5"
               >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent text-xs font-semibold uppercase">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent text-xs font-semibold uppercase">
                   {ws.name.charAt(0)}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -115,7 +115,7 @@ export function WorkspacePicker({ onSelectWorkspace }: WorkspacePickerProps) {
             loadingText={t("workspace.creating")}
             className="bg-accent hover:bg-accent/90 text-white"
           >
-            <Plus className="mr-1.5 h-4 w-4" />
+            <Plus className="mr-1.5 size-4" />
             {t("workspace.createWorkspace")}
           </AddWorkspacePrimaryButton>
         </div>

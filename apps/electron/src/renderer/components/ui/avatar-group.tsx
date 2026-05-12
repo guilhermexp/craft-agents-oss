@@ -26,7 +26,7 @@ export function AvatarGroup({ children, max = 3, className }: AvatarGroupProps) 
         </div>
       ))}
       {overflow > 0 && (
-        <div className="flex items-center justify-center h-4 w-4 rounded-full bg-muted text-[9px] font-medium text-muted-foreground ring-1 ring-background">
+        <div className="flex items-center justify-center size-4 rounded-full bg-muted text-[9px] font-medium text-muted-foreground ring-1 ring-background">
           +{overflow}
         </div>
       )}

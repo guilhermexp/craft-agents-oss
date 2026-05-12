@@ -195,18 +195,18 @@ export function WorkspaceSwitcher({
               <CrossfadeAvatar
                 src={selectedWorkspace ? workspaceIconMap.get(selectedWorkspace.id) : undefined}
                 alt={selectedWorkspace?.name}
-                className="h-4 w-4 mr-1.5 rounded-full ring-1 ring-border/50"
+                className="size-4 mr-1.5 rounded-full ring-1 ring-border/50"
                 fallbackClassName="bg-muted text-[10px] rounded-full"
                 fallback={selectedWorkspace?.name?.charAt(0) || 'W'}
               />
               <span className="truncate min-w-0 flex-1 text-left">{selectedWorkspace?.name || 'Workspace'}</span>
               {selectedWorkspace?.remoteServer && (
                 isRemoteDisconnected(selectedWorkspace.id)
-                  ? <CloudOff className="h-3 w-3 text-destructive shrink-0" />
-                  : <Cloud className="h-3 w-3 opacity-60 shrink-0" />
+                  ? <CloudOff className="size-3 text-destructive shrink-0" />
+                  : <Cloud className="size-3 opacity-60 shrink-0" />
               )}
-              <ChevronDown className="h-3 w-3 opacity-60 shrink-0" />
-              {hasUnreadInOtherWorkspaces && <span className="h-2 w-2 rounded-full bg-accent shrink-0" />}
+              <ChevronDown className="size-3 opacity-60 shrink-0" />
+              {hasUnreadInOtherWorkspaces && <span className="size-2 rounded-full bg-accent shrink-0" />}
             </button>
           ) : (
             <button
@@ -214,14 +214,14 @@ export function WorkspaceSwitcher({
                 "flex items-center gap-1 w-full min-w-0 justify-start px-2 py-1.5 rounded-md",
                 "text-foreground hover:bg-foreground/5 data-[state=open]:bg-foreground/5 transition-colors duration-150",
                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                isCollapsed && "h-9 w-9 shrink-0 justify-center p-0"
+                isCollapsed && "size-9 shrink-0 justify-center p-0"
               )}
               aria-label="Select workspace"
             >
               <CrossfadeAvatar
                 src={selectedWorkspace ? workspaceIconMap.get(selectedWorkspace.id) : undefined}
                 alt={selectedWorkspace?.name}
-                className="h-4 w-4 rounded-full ring-1 ring-border/50"
+                className="size-4 rounded-full ring-1 ring-border/50"
                 fallbackClassName="bg-foreground text-background text-[10px] rounded-full"
                 fallback={selectedWorkspace?.name?.charAt(0) || 'W'}
               />
@@ -232,10 +232,10 @@ export function WorkspaceSwitcher({
                   </FadingText>
                   {selectedWorkspace?.remoteServer && (
                     isRemoteDisconnected(selectedWorkspace.id)
-                      ? <CloudOff className="h-3 w-3 text-destructive shrink-0" />
-                      : <Cloud className="h-3 w-3 text-muted-foreground shrink-0" />
+                      ? <CloudOff className="size-3 text-destructive shrink-0" />
+                      : <Cloud className="size-3 text-muted-foreground shrink-0" />
                   )}
-                  <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
+                  <ChevronDown className="size-3 opacity-50 shrink-0" />
                 </>
               )}
             </button>
@@ -273,17 +273,17 @@ export function WorkspaceSwitcher({
                   <CrossfadeAvatar
                     src={workspaceIconMap.get(workspace.id)}
                     alt={workspace.name}
-                    className="h-5 w-5 rounded-full ring-1 ring-border/50"
+                    className="size-5 rounded-full ring-1 ring-border/50"
                     fallbackClassName="bg-muted text-xs rounded-full"
                     fallback={workspace.name.charAt(0)}
                   />
                   <span className="truncate">{workspace.name}</span>
                   {workspace.remoteServer && (
                     disconnected
-                      ? <span title={getDisconnectTooltip(workspace.id)} className="shrink-0"><CloudOff className="h-3.5 w-3.5 text-destructive" /></span>
-                      : <Cloud className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      ? <span title={getDisconnectTooltip(workspace.id)} className="shrink-0"><CloudOff className="size-3.5 text-destructive" /></span>
+                      : <Cloud className="size-3.5 text-muted-foreground shrink-0" />
                   )}
-                  {workspaceUnreadMap?.[workspace.id] && <span className="h-2 w-2 rounded-full bg-accent shrink-0" />}
+                  {workspaceUnreadMap?.[workspace.id] && <span className="size-2 rounded-full bg-accent shrink-0" />}
                 </div>
                 <div className="flex items-center gap-1">
                   {/* Action buttons - only visible on hover for non-active workspaces */}
@@ -296,7 +296,7 @@ export function WorkspaceSwitcher({
                       }}
                       title={t("workspace.removeWorkspace")}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Trash2 className="size-3.5" />
                     </button>
                   )}
                   {activeWorkspaceId !== workspace.id && !disconnected && (
@@ -308,11 +308,11 @@ export function WorkspaceSwitcher({
                       }}
                       title={t("sidebarMenu.openInNewWindow")}
                     >
-                      <ExternalLink className="h-3.5 w-3.5" />
+                      <ExternalLink className="size-3.5" />
                     </button>
                   )}
                   {activeWorkspaceId === workspace.id && (
-                    <Check className="h-3.5 w-3.5" />
+                    <Check className="size-3.5" />
                   )}
                 </div>
               </StyledDropdownMenuItem>
@@ -325,7 +325,7 @@ export function WorkspaceSwitcher({
             onClick={handleNewWorkspace}
             className="font-sans"
           >
-            <FolderPlus className="h-4 w-4" />
+            <FolderPlus className="size-4" />
             {t("workspace.addWorkspace")}
           </StyledDropdownMenuItem>
         </StyledDropdownMenuContent>

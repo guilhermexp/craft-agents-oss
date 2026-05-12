@@ -125,7 +125,7 @@ export function WhatsAppConnectDialog({ open, onOpenChange, onConnected }: Whats
           )}
 
           {phase.kind === 'connected' && (
-            <StatusRow icon={<Check className="h-4 w-4 text-emerald-500" />}>
+            <StatusRow icon={<Check className="size-4 text-emerald-500" />}>
               {phase.name
                 ? t('dialog.whatsapp.connectedAs', { name: phase.name })
                 : t('dialog.whatsapp.connected')}

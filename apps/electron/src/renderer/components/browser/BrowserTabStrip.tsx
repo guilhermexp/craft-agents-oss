@@ -220,7 +220,7 @@ export function BrowserTabStrip({
           disabled={!canUseLiveWindowActions}
           onSelect={() => focusBrowserWindow(instance)}
         >
-          <Icons.Monitor className="h-3.5 w-3.5" />
+          <Icons.Monitor className="size-3.5" />
           Show Browser Window
         </StyledDropdownMenuItem>
 
@@ -228,7 +228,7 @@ export function BrowserTabStrip({
           disabled={!canOpenSession}
           onSelect={() => openSessionUsingWindow(instance)}
         >
-          <Icons.PanelRightOpen className="h-3.5 w-3.5" />
+          <Icons.PanelRightOpen className="size-3.5" />
           {openSessionLabel}
         </StyledDropdownMenuItem>
 
@@ -239,7 +239,7 @@ export function BrowserTabStrip({
           disabled={!canUseLiveWindowActions}
           onSelect={() => terminateBrowserWindow(instance)}
         >
-          <Icons.XCircle className="h-3.5 w-3.5" />
+          <Icons.XCircle className="size-3.5" />
           Terminate Browser
         </StyledDropdownMenuItem>
       </>
@@ -288,7 +288,7 @@ export function BrowserTabStrip({
                     {instance.isLoading ? (
                       <Spinner className="text-[10px]" />
                     ) : (
-                      <Icons.Globe className="h-3.5 w-3.5" />
+                      <Icons.Globe className="size-3.5" />
                     )}
                     <span className="truncate">{displayLabel}</span>
                   </StyledDropdownMenuSubTrigger>

@@ -87,7 +87,7 @@ export function SimpleDropdownItem({
       )}
     >
       {icon && (
-        <span className="w-3.5 h-3.5 flex items-center justify-center shrink-0 [&>svg]:w-3.5 [&>svg]:h-3.5">
+        <span className="size-3.5 flex items-center justify-center shrink-0 [&>svg]:w-3.5 [&>svg]:h-3.5">
           {icon}
         </span>
       )}

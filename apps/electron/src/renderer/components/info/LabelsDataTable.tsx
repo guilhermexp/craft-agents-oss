@@ -61,7 +61,7 @@ function ExpandableNameCell({ row }: { row: Row<LabelConfig> }) {
         >
           <ChevronRight
             className={cn(
-              'w-3 h-3 text-muted-foreground transition-transform duration-150',
+              'size-3 text-muted-foreground transition-transform duration-150',
               isExpanded && 'rotate-90'
             )}
           />
@@ -110,7 +110,7 @@ function getColumns(t: TranslationFn): ColumnDef<LabelConfig>[] {
               {t(`sidebar.labelValueType.${row.original.valueType}`)}
             </Info_Badge>
           ) : (
-            <span className="text-muted-foreground/50 text-sm">—</span>
+            <span className="text-muted-foreground/50 text-sm">None</span>
           )}
         </div>
       ),
@@ -153,7 +153,7 @@ export function LabelsDataTable({
       )}
       title={t("table.viewFullscreen")}
     >
-      <Maximize2 className="w-3.5 h-3.5" />
+      <Maximize2 className="size-3.5" />
     </button>
   ) : undefined
 

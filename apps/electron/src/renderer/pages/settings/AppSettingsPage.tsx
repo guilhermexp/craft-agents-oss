@@ -318,7 +318,7 @@ export default function AppSettingsPage() {
                       </span>
                       {isElectron && updateChecker.isDownloading && updateChecker.updateInfo?.latestVersion && (
                         <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                          <Spinner className="w-3 h-3" />
+                          <Spinner className="size-3" />
                           <span>{t("settings.about.downloading", { version: updateChecker.updateInfo.latestVersion, percent: updateChecker.downloadProgress })}</span>
                         </div>
                       )}

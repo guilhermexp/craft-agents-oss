@@ -88,6 +88,7 @@ export default function PreferencesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [preferencesPath, setPreferencesPath] = useState<string | null>(null)
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const initialLoadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isInitialLoadRef = useRef(true)
   const formStateRef = useRef(formState)
   const lastSavedRef = useRef<string | null>(null)
@@ -112,12 +113,20 @@ export default function PreferencesPage() {
       } finally {
         setIsLoading(false)
         // Mark initial load as complete after a short delay
-        setTimeout(() => {
+        initialLoadTimeoutRef.current = setTimeout(() => {
           isInitialLoadRef.current = false
+          initialLoadTimeoutRef.current = null
         }, 100)
       }
     }
     load()
+
+    return () => {
+      if (initialLoadTimeoutRef.current) {
+        clearTimeout(initialLoadTimeoutRef.current)
+        initialLoadTimeoutRef.current = null
+      }
+    }
   }, [])
 
   // Auto-save with debouncing

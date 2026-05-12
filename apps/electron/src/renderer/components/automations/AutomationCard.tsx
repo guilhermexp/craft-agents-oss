@@ -48,9 +48,9 @@ export function AutomationCard({
       >
         {/* Expand chevron */}
         {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <ChevronDown className="size-3.5 text-muted-foreground shrink-0" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <ChevronRight className="size-3.5 text-muted-foreground shrink-0" />
         )}
 
         {/* Avatar */}

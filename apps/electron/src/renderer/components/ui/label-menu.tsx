@@ -211,7 +211,7 @@ export function InlineLabelMenu({
             className={cn(MENU_ITEM_STYLE, MENU_ITEM_SELECTED)}
           >
             <div className="shrink-0 text-muted-foreground">
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="size-3.5" />
             </div>
             <span className="text-[13px]">Add New Label</span>
           </div>
@@ -245,7 +245,7 @@ export function InlineLabelMenu({
                     >
                       {/* State icon with resolved color */}
                       <span
-                        className="shrink-0 flex items-center w-4 h-4 [&>svg]:w-full [&>svg]:h-full [&>img]:w-full [&>img]:h-full [&>span]:text-sm"
+                        className="shrink-0 flex items-center size-4 [&>svg]:w-full [&>svg]:h-full [&>img]:w-full [&>img]:h-full [&>span]:text-sm"
                         style={getStatusIconStyle(state)}
                       >
                         {state.icon}
@@ -253,7 +253,7 @@ export function InlineLabelMenu({
                       <div className="flex-1 min-w-0 truncate">{state.label}</div>
                       {/* Checkmark on active state */}
                       {isActive && (
-                        <Check className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <Check className="size-3.5 shrink-0 text-muted-foreground" />
                       )}
                     </div>
                   )

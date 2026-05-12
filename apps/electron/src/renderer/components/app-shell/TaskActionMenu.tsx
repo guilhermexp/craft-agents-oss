@@ -153,7 +153,7 @@ export function TaskActionMenu({ task, sessionId, onKillTask, onInsertMessage, o
           </span>
 
           {/* Dropdown indicator */}
-          <ChevronDown className="h-3.5 w-3.5 opacity-60 ml-auto" />
+          <ChevronDown className="size-3.5 opacity-60 ml-auto" />
         </button>
       </DropdownMenuTrigger>
       <StyledDropdownMenuContent align="start" sideOffset={4}>

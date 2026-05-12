@@ -61,10 +61,10 @@ function InlineBadge({ badge }: { badge: ContentBadge }) {
         <img
           src={badge.iconDataUrl}
           alt=""
-          className="h-[12px] w-[12px] rounded-[2px] shrink-0"
+          className="size-[12px] rounded-[2px] shrink-0"
         />
       ) : (
-        <span className="h-[12px] w-[12px] rounded-[2px] bg-foreground/5 flex items-center justify-center text-foreground/50 shrink-0 text-[8px]">
+        <span className="size-[12px] rounded-[2px] bg-foreground/5 flex items-center justify-center text-foreground/50 shrink-0 text-[8px]">
           {badge.type === 'skill' ? SKILL_ICON_TEXT : badge.type === 'context' ? CONTEXT_ICON_TEXT : SOURCE_ICON_TEXT}
         </span>
       )}
@@ -83,7 +83,7 @@ function CommandBadge({ badge }: { badge: ContentBadge }) {
       className="inline-flex items-center gap-1 h-[22px] px-1.5 mx-0.5 rounded-[5px] bg-background shadow-minimal text-[12px] align-middle"
       style={{ verticalAlign: 'middle', transform: 'translateY(-1px)' }}
     >
-      <span className="h-[12px] w-[12px] rounded-[2px] bg-foreground/5 flex items-center justify-center text-foreground/50 shrink-0 text-[10px] font-medium">
+      <span className="size-[12px] rounded-[2px] bg-foreground/5 flex items-center justify-center text-foreground/50 shrink-0 text-[10px] font-medium">
         {COMMAND_ICON_TEXT}
       </span>
       <span className="truncate max-w-[200px]">{badge.label}</span>
@@ -106,7 +106,7 @@ function ContextBadge({ badge }: { badge: ContentBadge }) {
       style={{ verticalAlign: 'middle', transform: 'translateY(-1px)' }}
       title={t('chat.contextBadge')}
     >
-      <span className="h-[12px] w-[12px] rounded-[2px] bg-foreground/5 flex items-center justify-center text-foreground/50 shrink-0 text-[8px]">
+      <span className="size-[12px] rounded-[2px] bg-foreground/5 flex items-center justify-center text-foreground/50 shrink-0 text-[8px]">
         {CONTEXT_ICON_TEXT}
       </span>
       <span className="truncate max-w-[200px] text-muted-foreground">{displayLabel}</span>
@@ -380,16 +380,16 @@ export function UserMessageBubble({
               >
                 {isImage ? (
                   /* IMAGE: Square thumbnail only */
-                  <div className="h-14 w-14 rounded-[8px] overflow-hidden bg-background shadow-minimal">
+                  <div className="size-14 rounded-[8px] overflow-hidden bg-background shadow-minimal">
                     {hasThumbnail ? (
                       <img
                         src={`data:image/png;base64,${att.thumbnailBase64}`}
                         alt={att.name}
-                        className="h-full w-full object-cover"
+                        className="size-full object-cover"
                       />
                     ) : (
-                      <div className="h-full w-full flex items-center justify-center">
-                        <FileTypeIcon type={att.type} mimeType={att.mimeType} className="h-5 w-5" />
+                      <div className="size-full flex items-center justify-center">
+                        <FileTypeIcon type={att.type} mimeType={att.mimeType} className="size-5" />
                       </div>
                     )}
                   </div>
@@ -401,10 +401,10 @@ export function UserMessageBubble({
                         <img
                           src={`data:image/png;base64,${att.thumbnailBase64}`}
                           alt={att.name}
-                          className="h-full w-full object-cover object-top"
+                          className="size-full object-cover object-top"
                         />
                       ) : (
-                        <FileTypeIcon type={att.type} mimeType={att.mimeType} className="h-5 w-5" />
+                        <FileTypeIcon type={att.type} mimeType={att.mimeType} className="size-5" />
                       )}
                     </div>
                     <div className="flex flex-col min-w-0 max-w-[120px]">

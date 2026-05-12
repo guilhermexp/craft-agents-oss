@@ -49,20 +49,20 @@ export function ShareMenuItems({ sessionId, sharedUrl, menu }: ShareMenuItemsPro
   return (
     <>
       <MenuItem onClick={handleOpenInBrowser}>
-        <Globe className="h-3.5 w-3.5" />
+        <Globe className="size-3.5" />
         <span className="flex-1">{t("sessionMenu.openInBrowser")}</span>
       </MenuItem>
       <MenuItem onClick={handleCopyLink}>
-        <Copy className="h-3.5 w-3.5" />
+        <Copy className="size-3.5" />
         <span className="flex-1">{t("sessionMenu.copyLink")}</span>
       </MenuItem>
       <MenuItem onClick={handleUpdateShare}>
-        <RefreshCw className="h-3.5 w-3.5" />
+        <RefreshCw className="size-3.5" />
         <span className="flex-1">{t("sessionMenu.updateShare")}</span>
       </MenuItem>
       <Separator />
       <MenuItem onClick={handleRevokeShare} variant="destructive">
-        <Link2Off className="h-3.5 w-3.5" />
+        <Link2Off className="size-3.5" />
         <span className="flex-1">{t("sessionMenu.stopSharing")}</span>
       </MenuItem>
     </>
@@ -176,7 +176,7 @@ export function LabelMenuItems({
                   <LabelIcon label={label} size="sm" hasChildren />
                   <span className="flex-1">{label.name}</span>
                   <span className="w-3.5 ml-4">
-                    {isApplied && <Check className="h-3.5 w-3.5 text-foreground" />}
+                    {isApplied && <Check className="size-3.5 text-foreground" />}
                   </span>
                 </MenuItem>
                 <Separator />
@@ -197,7 +197,7 @@ export function LabelMenuItems({
             <LabelIcon label={label} size="sm" />
             <span className="flex-1">{label.name}</span>
             <span className="w-3.5 ml-4">
-              {isApplied && <Check className="h-3.5 w-3.5 text-foreground" />}
+              {isApplied && <Check className="size-3.5 text-foreground" />}
             </span>
           </MenuItem>
         )

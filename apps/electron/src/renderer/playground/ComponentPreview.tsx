@@ -176,7 +176,7 @@ export function ComponentPreview({ component, props }: ComponentPreviewProps) {
           {/* Corner resize handle */}
           <div
             onMouseDown={(e) => handleMouseDown(e, 'corner')}
-            className="absolute -bottom-1 -right-1 w-3 h-3 cursor-nwse-resize hover:bg-foreground/30 active:bg-foreground/40 transition-colors rounded-br"
+            className="absolute -bottom-1 -right-1 size-3 cursor-nwse-resize hover:bg-foreground/30 active:bg-foreground/40 transition-colors rounded-br"
           />
         </div>
       </div>

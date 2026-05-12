@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable react-hooks/rules-of-hooks, react-doctor/no-eval */
 var __create = Object.create;
 var __getProtoOf = Object.getPrototypeOf;
 var __defProp = Object.defineProperty;

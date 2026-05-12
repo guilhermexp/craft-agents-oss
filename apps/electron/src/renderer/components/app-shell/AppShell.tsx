@@ -197,7 +197,7 @@ function FilterModeBadge({ mode }: { mode: FilterMode }) {
   return (
     <span
       className={cn(
-        "flex items-center justify-center h-5 w-5 rounded-[4px] -mr-1",
+        "flex items-center justify-center size-5 rounded-[4px] -mr-1",
         mode === 'include'
           ? "bg-background text-foreground shadow-minimal"
           : "bg-destructive/10 text-destructive shadow-tinted",
@@ -231,21 +231,21 @@ function FilterModeSubMenuItems({
         onClick={(e) => { e.preventDefault(); onChangeMode('include') }}
         className={cn(mode === 'include' && "bg-foreground/[0.03]")}
       >
-        <Check className="h-3.5 w-3.5 shrink-0" />
+        <Check className="size-3.5 shrink-0" />
         <span className="flex-1">{t("filter.include")}</span>
       </StyledDropdownMenuItem>
       <StyledDropdownMenuItem
         onClick={(e) => { e.preventDefault(); onChangeMode('exclude') }}
         className={cn(mode === 'exclude' && "bg-foreground/[0.03]")}
       >
-        <X className="h-3.5 w-3.5 shrink-0" />
+        <X className="size-3.5 shrink-0" />
         <span className="flex-1">{t("filter.exclude")}</span>
       </StyledDropdownMenuItem>
       <StyledDropdownMenuSeparator />
       <StyledDropdownMenuItem
         onClick={(e) => { e.preventDefault(); onRemove() }}
       >
-        <Trash2 className="h-3.5 w-3.5 shrink-0" />
+        <Trash2 className="size-3.5 shrink-0" />
         <span className="flex-1">{t("common.clear")}</span>
       </StyledDropdownMenuItem>
     </>
@@ -283,7 +283,7 @@ function FilterMenuRow({
         </span>
       ) : (
         <span
-          className={cn("h-3.5 w-3.5 flex items-center justify-center shrink-0", iconClassName)}
+          className={cn("size-3.5 flex items-center justify-center shrink-0", iconClassName)}
           style={iconStyle}
         >
           {icon}
@@ -369,7 +369,7 @@ function FilterLabelItems({
                   icon={<LabelIcon label={label} size="lg" hasChildren />}
                   label={label.name}
                   accessory={
-                    showIndicator ? <Check className="h-3 w-3 text-muted-foreground" /> : undefined
+                    showIndicator ? <Check className="size-3 text-muted-foreground" /> : undefined
                   }
                 />
               </StyledDropdownMenuSubTrigger>
@@ -414,7 +414,7 @@ function FilterLabelItems({
                         <FilterMenuRow
                           icon={<LabelIcon label={label} size="lg" hasChildren />}
                           label={label.name}
-                          accessory={isPinned ? <Check className="h-3 w-3 text-muted-foreground" /> : undefined}
+                          accessory={isPinned ? <Check className="size-3 text-muted-foreground" /> : undefined}
                         />
                       </StyledDropdownMenuItem>
                     </AltExcludeTooltip>
@@ -466,7 +466,7 @@ function FilterLabelItems({
               <FilterMenuRow
                 icon={<LabelIcon label={label} size="lg" />}
                 label={label.name}
-                accessory={isPinned ? <Check className="h-3 w-3 text-muted-foreground" /> : undefined}
+                accessory={isPinned ? <Check className="size-3 text-muted-foreground" /> : undefined}
               />
             </StyledDropdownMenuItem>
           </AltExcludeTooltip>
@@ -2386,7 +2386,7 @@ function AppShellContent({
             size="sm"
             hasChildren={hasChildren}
           />
-        ) : <Tag className="h-3.5 w-3.5" />,
+        ) : <Tag className="size-3.5" />,
         variant: isActive ? "default" : "ghost",
         compact: true, // Reduced height for label items (many labels expected)
         // All labels navigate on click — parent and leaf alike
@@ -2472,7 +2472,7 @@ function AppShellContent({
                               className="w-full justify-start gap-2 py-[7px] px-2 text-[13px] font-normal rounded-[6px] shadow-minimal bg-background"
                               data-tutorial="new-chat-button"
                             >
-                              <SquarePenRounded className="h-3.5 w-3.5 shrink-0" />
+                              <SquarePenRounded className="size-3.5 shrink-0" />
                               {t("session.newSession")}
                             </Button>
                           </ContextMenuTrigger>
@@ -2552,7 +2552,7 @@ function AppShellContent({
                           id: "nav:flagged",
                           title: t("sidebar.flagged"),
                           label: String(flaggedCount),
-                          icon: <Flag className="h-3.5 w-3.5" />,
+                          icon: <Flag className="size-3.5" />,
                           variant: (sessionFilter?.kind === 'flagged' ? "default" : "ghost") as "default" | "ghost",
                           onClick: handleFlaggedClick,
                         },
@@ -2598,7 +2598,7 @@ function AppShellContent({
                           id: `nav:channel:${channel.id}`,
                           title: channel.name,
                           label: channelCounts[channel.id] > 0 ? String(channelCounts[channel.id]) : undefined,
-                          icon: <Hash className="h-3.5 w-3.5" />,
+                          icon: <Hash className="size-3.5" />,
                           variant: (sessionFilter?.kind === 'label' && sessionFilter.labelId === channel.labelId ? "default" : "ghost") as "default" | "ghost",
                           compact: true,
                           onClick: () => handleChannelClick(channel),
@@ -2670,7 +2670,7 @@ function AppShellContent({
                           id: "nav:sources:mcp",
                           title: t("sidebar.mcps"),
                           label: String(sourceTypeCounts.mcp),
-                          icon: <McpIcon className="h-3.5 w-3.5" />,
+                          icon: <McpIcon className="size-3.5" />,
                           variant: (sourceFilter?.kind === 'type' && sourceFilter.sourceType === 'mcp') ? "default" : "ghost",
                           onClick: handleSourcesMcpClick,
                           contextMenu: {
@@ -2773,8 +2773,8 @@ function AppShellContent({
                       title: t("sidebar.whatsNew"),
                       icon: hasUnseenReleaseNotes ? (
                         <span className="relative">
-                          <Cake className="h-3.5 w-3.5" />
-                          <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-accent" />
+                          <Cake className="size-3.5" />
+                          <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-accent" />
                         </span>
                       ) : Cake,
                       variant: "ghost" as const,
@@ -2803,7 +2803,7 @@ function AppShellContent({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span className="text-muted-foreground/50 cursor-default flex items-center titlebar-no-drag">
-                      <Info className="h-3 w-3" />
+                      <Info className="size-3" />
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-[220px]">
@@ -2820,7 +2820,7 @@ function AppShellContent({
                     <DropdownMenu onOpenChange={(open) => { if (!open) { setFilterDropdownQuery(''); setFilterAltHeld(false) } }}>
                       <DropdownMenuTrigger asChild>
                         <HeaderIconButton
-                          icon={<ListFilter className="h-4 w-4" />}
+                          icon={<ListFilter className="size-4" />}
                           className={(listFilter.size > 0 || labelFilter.size > 0) ? "bg-accent/5 text-accent rounded-[8px] shadow-tinted" : "rounded-[8px]"}
                           style={(listFilter.size > 0 || labelFilter.size > 0) ? { '--shadow-color': 'var(--accent-rgb)' } as React.CSSProperties : undefined}
                         />
@@ -2947,9 +2947,9 @@ function AppShellContent({
                                 {pinnedFilters.pinnedFlagged && (
                                   <StyledDropdownMenuItem disabled>
                                     <FilterMenuRow
-                                      icon={<Flag className="h-3.5 w-3.5" />}
+                                      icon={<Flag className="size-3.5" />}
                                       label={t("sidebar.flagged")}
-                                      accessory={<Check className="h-3 w-3 text-muted-foreground" />}
+                                      accessory={<Check className="size-3 text-muted-foreground" />}
                                     />
                                   </StyledDropdownMenuItem>
                                 )}
@@ -2963,7 +2963,7 @@ function AppShellContent({
                                       <FilterMenuRow
                                         icon={state.icon}
                                         label={state.label}
-                                        accessory={<Check className="h-3 w-3 text-muted-foreground" />}
+                                        accessory={<Check className="size-3 text-muted-foreground" />}
                                         iconStyle={state.iconColorable ? { color: state.resolvedColor } : undefined}
                                         noIconContainer
                                       />
@@ -2980,7 +2980,7 @@ function AppShellContent({
                                       <FilterMenuRow
                                         icon={<LabelIcon label={label} size="lg" />}
                                         label={label.name}
-                                        accessory={<Check className="h-3 w-3 text-muted-foreground" />}
+                                        accessory={<Check className="size-3 text-muted-foreground" />}
                                       />
                                     </StyledDropdownMenuItem>
                                   )
@@ -3056,7 +3056,7 @@ function AppShellContent({
                             {/* Statuses submenu - hierarchical with toggle selection */}
                             <DropdownMenuSub>
                               <StyledDropdownMenuSubTrigger>
-                                <Inbox className="h-3.5 w-3.5" />
+                                <Inbox className="size-3.5" />
                                 <span className="flex-1">{t("sidebar.statuses")}</span>
                               </StyledDropdownMenuSubTrigger>
                               <StyledDropdownMenuSubContent minWidth="min-w-[180px]">
@@ -3115,7 +3115,7 @@ function AppShellContent({
                                         <FilterMenuRow
                                           icon={state.icon}
                                           label={state.label}
-                                          accessory={isPinned ? <Check className="h-3 w-3 text-muted-foreground" /> : null}
+                                          accessory={isPinned ? <Check className="size-3 text-muted-foreground" /> : null}
                                           iconStyle={applyColor ? { color: state.resolvedColor } : undefined}
                                           noIconContainer
                                         />
@@ -3129,7 +3129,7 @@ function AppShellContent({
                             {/* Labels submenu - hierarchical tree with recursive submenus */}
                             <DropdownMenuSub>
                               <StyledDropdownMenuSubTrigger>
-                                <Tag className="h-3.5 w-3.5" />
+                                <Tag className="size-3.5" />
                                 <span className="flex-1">{t("sidebar.labels")}</span>
                               </StyledDropdownMenuSubTrigger>
                               <StyledDropdownMenuSubContent minWidth="min-w-[180px]">
@@ -3155,19 +3155,19 @@ function AppShellContent({
                                 <StyledDropdownMenuSeparator />
                                 <DropdownMenuSub>
                                   <StyledDropdownMenuSubTrigger>
-                                    <Layers className="h-3.5 w-3.5" />
+                                    <Layers className="size-3.5" />
                                     <span className="flex-1">{t("sidebar.group")}</span>
                                   </StyledDropdownMenuSubTrigger>
                                   <StyledDropdownMenuSubContent minWidth="min-w-[140px]">
                                     <StyledDropdownMenuItem onClick={() => setChatGroupingMode('date')}>
-                                      <Calendar className="h-3.5 w-3.5" />
+                                      <Calendar className="size-3.5" />
                                       <span className="flex-1">{t("sidebar.groupByDate")}</span>
-                                      {chatGroupingMode === 'date' && <Check className="h-3 w-3 text-muted-foreground" />}
+                                      {chatGroupingMode === 'date' && <Check className="size-3 text-muted-foreground" />}
                                     </StyledDropdownMenuItem>
                                     <StyledDropdownMenuItem onClick={() => setChatGroupingMode('status')}>
-                                      <Inbox className="h-3.5 w-3.5" />
+                                      <Inbox className="size-3.5" />
                                       <span className="flex-1">{t("sidebar.groupByStatus")}</span>
-                                      {chatGroupingMode === 'status' && <Check className="h-3 w-3 text-muted-foreground" />}
+                                      {chatGroupingMode === 'status' && <Check className="size-3 text-muted-foreground" />}
                                     </StyledDropdownMenuItem>
                                   </StyledDropdownMenuSubContent>
                                 </DropdownMenuSub>
@@ -3180,7 +3180,7 @@ function AppShellContent({
                                 setSearchActive(true)
                               }}
                             >
-                              <Search className="h-3.5 w-3.5" />
+                              <Search className="size-3.5" />
                               <span className="flex-1">{t("sidebar.search")}</span>
                             </StyledDropdownMenuItem>
                           </>
@@ -3270,7 +3270,7 @@ function AppShellContent({
                                             <FilterMenuRow
                                               icon={state.icon}
                                               label={state.label}
-                                              accessory={isPinned ? <Check className="h-3 w-3 text-muted-foreground" /> : null}
+                                              accessory={isPinned ? <Check className="size-3 text-muted-foreground" /> : null}
                                               iconStyle={applyColor ? { color: state.resolvedColor } : undefined}
                                               noIconContainer
                                             />
@@ -3360,7 +3360,7 @@ function AppShellContent({
                                             <FilterMenuRow
                                               icon={<LabelIcon label={item.config} size="lg" />}
                                               label={labelDisplay}
-                                              accessory={isPinned ? <Check className="h-3 w-3 text-muted-foreground" /> : null}
+                                              accessory={isPinned ? <Check className="size-3 text-muted-foreground" /> : null}
                                             />
                                           </div>
                                         </AltExcludeTooltip>
@@ -3380,7 +3380,7 @@ function AppShellContent({
                     <EditPopover
                       trigger={
                         <HeaderIconButton
-                          icon={<Plus className="h-4 w-4" />}
+                          icon={<Plus className="size-4" />}
                           tooltip={t("sidebarMenu.addSource")}
                           data-tutorial="add-source-button"
                         />
@@ -3396,7 +3396,7 @@ function AppShellContent({
                     <EditPopover
                       trigger={
                         <HeaderIconButton
-                          icon={<Plus className="h-4 w-4" />}
+                          icon={<Plus className="size-4" />}
                           tooltip={t("sidebarMenu.addSkill")}
                           data-tutorial="add-skill-button"
                         />
@@ -3409,7 +3409,7 @@ function AppShellContent({
                     <EditPopover
                       trigger={
                         <HeaderIconButton
-                          icon={<Plus className="h-4 w-4" />}
+                          icon={<Plus className="size-4" />}
                           tooltip={t("sidebarMenu.addAutomation")}
                         />
                       }
@@ -3550,7 +3550,7 @@ function AppShellContent({
                 title={t("chat.sessionInfo")}
                 actions={(
                   <PanelHeaderCenterButton
-                    icon={<X className="h-4 w-4" />}
+                    icon={<X className="size-4" />}
                     tooltip={t("common.close")}
                     onClick={() => updateRightSidebar(undefined)}
                   />
@@ -3685,7 +3685,7 @@ function AppShellContent({
             modal={true}
             trigger={
               <div
-                className="fixed w-0 h-0 pointer-events-none"
+                className="fixed size-0 pointer-events-none"
                 style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
                 aria-hidden="true"
               />
@@ -3705,7 +3705,7 @@ function AppShellContent({
             modal={true}
             trigger={
               <div
-                className="fixed w-0 h-0 pointer-events-none"
+                className="fixed size-0 pointer-events-none"
                 style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
                 aria-hidden="true"
               />
@@ -3741,7 +3741,7 @@ function AppShellContent({
             modal={true}
             trigger={
               <div
-                className="fixed w-0 h-0 pointer-events-none"
+                className="fixed size-0 pointer-events-none"
                 style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
                 aria-hidden="true"
               />
@@ -3761,7 +3761,7 @@ function AppShellContent({
             modal={true}
             trigger={
               <div
-                className="fixed w-0 h-0 pointer-events-none"
+                className="fixed size-0 pointer-events-none"
                 style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
                 aria-hidden="true"
               />
@@ -3785,7 +3785,7 @@ function AppShellContent({
               modal={true}
               trigger={
                 <div
-                  className="fixed w-0 h-0 pointer-events-none"
+                  className="fixed size-0 pointer-events-none"
                   style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
                   aria-hidden="true"
                 />
@@ -3802,7 +3802,7 @@ function AppShellContent({
             modal={true}
             trigger={
               <div
-                className="fixed w-0 h-0 pointer-events-none"
+                className="fixed size-0 pointer-events-none"
                 style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
                 aria-hidden="true"
               />
@@ -3818,7 +3818,7 @@ function AppShellContent({
             modal={true}
             trigger={
               <div
-                className="fixed w-0 h-0 pointer-events-none"
+                className="fixed size-0 pointer-events-none"
                 style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
                 aria-hidden="true"
               />
@@ -3834,7 +3834,7 @@ function AppShellContent({
             modal={true}
             trigger={
               <div
-                className="fixed w-0 h-0 pointer-events-none"
+                className="fixed size-0 pointer-events-none"
                 style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
                 aria-hidden="true"
               />

@@ -219,7 +219,7 @@ function TiptapCodeBlockView({ node, updateAttributes }: TiptapCodeBlockViewProp
               className="tiptap-code-block-language-trigger"
             >
               <span className="tiptap-code-block-language-label">{languageLabel}</span>
-              <ChevronDown className="w-3 h-3" />
+              <ChevronDown className="size-3" />
             </TiptapHoverActionButton>
           )}
         >
@@ -254,7 +254,7 @@ function TiptapCodeBlockView({ node, updateAttributes }: TiptapCodeBlockViewProp
                   >
                     <span className="flex w-full items-center justify-between gap-2">
                       <span>{option.label}</span>
-                      {isActive ? <Check className="w-3.5 h-3.5 shrink-0" /> : <span className="w-3.5 h-3.5 shrink-0" />}
+                      {isActive ? <Check className="size-3.5 shrink-0" /> : <span className="size-3.5 shrink-0" />}
                     </span>
                   </SimpleDropdownItem>
                 )
@@ -268,7 +268,7 @@ function TiptapCodeBlockView({ node, updateAttributes }: TiptapCodeBlockViewProp
           aria-label={t("common.copyCode")}
           onClick={handleCopy}
         >
-          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
         </TiptapHoverActionButton>
       </TiptapHoverActions>
 

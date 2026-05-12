@@ -46,7 +46,7 @@ function AuthCardHeader({
   return (
     <div className="flex gap-3">
       {/* Icon aligned to first line of text (optional) */}
-      {Icon && <Icon className={cn('h-4 w-4 shrink-0 mt-0.5', iconClassName)} />}
+      {Icon && <Icon className={cn('size-4 shrink-0 mt-0.5', iconClassName)} />}
       <div className="flex-1 min-w-0">
         {/* Title inherits container text color */}
         <div className="text-sm font-medium leading-5">
@@ -109,7 +109,7 @@ function AuthCardActions({ primary, secondary, hint }: AuthCardActionsProps) {
         {primary.loading ? (
           <Spinner className="text-[10px]" />
         ) : PrimaryIcon ? (
-          <PrimaryIcon className="h-3.5 w-3.5" />
+          <PrimaryIcon className="size-3.5" />
         ) : null}
         {primary.label}
       </Button>
@@ -121,7 +121,7 @@ function AuthCardActions({ primary, secondary, hint }: AuthCardActionsProps) {
           onClick={secondary.onClick}
           disabled={secondary.disabled}
         >
-          {SecondaryIcon && <SecondaryIcon className="h-3.5 w-3.5" />}
+          {SecondaryIcon && <SecondaryIcon className="size-3.5" />}
           {secondary.label}
         </Button>
       )}
@@ -446,7 +446,7 @@ export function AuthRequestCard({ message, onRespondToCredential, sessionId, isI
                 {usernameLabel}
               </Label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                 <Input
                   id={`auth-username-${authRequestId}`}
                   name="username"
@@ -468,7 +468,7 @@ export function AuthRequestCard({ message, onRespondToCredential, sessionId, isI
                 {passwordLabel}
               </Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                 <Input
                   id={`auth-password-${authRequestId}`}
                   name="password"
@@ -487,7 +487,7 @@ export function AuthRequestCard({ message, onRespondToCredential, sessionId, isI
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                   tabIndex={-1}
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
               </div>
             </div>
@@ -501,7 +501,7 @@ export function AuthRequestCard({ message, onRespondToCredential, sessionId, isI
                   {headerName}
                 </Label>
                 <div className="relative">
-                  <Key className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Key className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                   <Input
                     id={`auth-header-${authRequestId}-${index}`}
                     name={headerName}
@@ -524,7 +524,7 @@ export function AuthRequestCard({ message, onRespondToCredential, sessionId, isI
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                     tabIndex={-1}
                   >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                   </button>
                 </div>
               </div>
@@ -542,7 +542,7 @@ export function AuthRequestCard({ message, onRespondToCredential, sessionId, isI
               )}
             </Label>
             <div className="relative">
-              <Key className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Key className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
                 id={`auth-value-${authRequestId}`}
                 name="credential"
@@ -562,7 +562,7 @@ export function AuthRequestCard({ message, onRespondToCredential, sessionId, isI
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                 tabIndex={-1}
               >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
               </button>
             </div>
           </div>

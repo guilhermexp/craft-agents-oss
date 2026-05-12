@@ -630,7 +630,7 @@ export function ApiKeyInput({
           {bedrockAuthMethod === 'environment' && (
             <div className="rounded-md bg-foreground-2 p-3">
               <p className="text-xs text-foreground/50">
-                Uses your existing AWS credential chain — <code className="text-foreground/70">~/.aws/credentials</code>, <code className="text-foreground/70">AWS_PROFILE</code>, IAM roles, SSO sessions, and environment variables.
+                Uses your existing AWS credential chain: <code className="text-foreground/70">~/.aws/credentials</code>, <code className="text-foreground/70">AWS_PROFILE</code>, IAM roles, SSO sessions, and environment variables.
               </p>
             </div>
           )}

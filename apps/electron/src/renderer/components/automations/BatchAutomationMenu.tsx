@@ -97,9 +97,9 @@ export function BatchAutomationMenu() {
       {/* Enable/Disable All */}
       <MenuItem onClick={handleBatchToggle}>
         {allEnabled ? (
-          <PowerOff className="h-3.5 w-3.5" />
+          <PowerOff className="size-3.5" />
         ) : (
-          <Power className="h-3.5 w-3.5" />
+          <Power className="size-3.5" />
         )}
         <span className="flex-1">{allEnabled ? t('automations.menuDisableAll') : t('automations.menuEnableAll')}</span>
       </MenuItem>
@@ -109,7 +109,7 @@ export function BatchAutomationMenu() {
       {/* Delete */}
       {activeWorkspaceId && (
         <MenuItem onClick={handleBatchDelete} variant="destructive">
-          <Trash2 className="h-3.5 w-3.5" />
+          <Trash2 className="size-3.5" />
           <span className="flex-1">{t('automations.menuDelete')}</span>
         </MenuItem>
       )}

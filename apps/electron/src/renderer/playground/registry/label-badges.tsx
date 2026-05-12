@@ -81,7 +81,7 @@ function LabelBadgeRowPlayground({ showValues, labelCount }: LabelBadgeRowPlaygr
       />
       {/* Simulated input area */}
       <div className="px-5 py-4 min-h-[80px] text-foreground/30 text-[14px]">
-        Message...
+        Message…
       </div>
       {/* Simulated bottom bar */}
       <div className="border-t border-border/50 px-3 py-2 flex items-center">

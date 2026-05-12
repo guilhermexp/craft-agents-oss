@@ -54,8 +54,8 @@ export function TableExportDropdown({ columns, rows, filename }: TableExportDrop
           )}
           title={t('table.exportTable')}
         >
-          <Copy className="w-4 h-4" />
-          <ChevronDown className="w-3 h-3" />
+          <Copy className="size-4" />
+          <ChevronDown className="size-3" />
         </button>
       </DropdownMenuTrigger>
       <StyledDropdownMenuContent sideOffset={6} align="end" style={{ zIndex: 'var(--z-floating-menu, 400)' }}>

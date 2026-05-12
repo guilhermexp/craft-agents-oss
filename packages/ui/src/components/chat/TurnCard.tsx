@@ -197,7 +197,7 @@ export const SIZE_CONFIG = {
   /** Base font size class for all text */
   fontSize: 'text-[13px]',
   /** Icon size class (width and height) */
-  iconSize: 'w-3 h-3',
+  iconSize: 'size-3',
   /** Spinner text size class */
   spinnerSize: 'text-[10px]',
   /** Small spinner for header */
@@ -1849,7 +1849,7 @@ export function ResponseCard({
 
       setAnnotationOverlay({ rects: geometry.rects, chips: geometry.chips })
 
-      if (process.env.NODE_ENV !== 'production' && geometry.unresolved.length > 0) {
+      if (window.location.hostname === 'localhost' && geometry.unresolved.length > 0) {
         console.debug('[annotations] unresolved annotations', {
           count: geometry.unresolved.length,
           ids: geometry.unresolved.map(item => item.annotation.id),
@@ -2448,7 +2448,7 @@ export function ResponseCard({
             )}
             title={t('common.viewFullscreen')}
           >
-            <Maximize2 className="w-3.5 h-3.5" />
+            <Maximize2 className="size-3.5" />
           </button>
           )}
 
@@ -2625,7 +2625,7 @@ export function ResponseCard({
           <div className={cn("px-4 py-2 border-t border-border/30 flex items-center bg-muted/20", SIZE_CONFIG.fontSize)}>
             <div className="flex items-center gap-2 text-muted-foreground">
               <Spinner className={SIZE_CONFIG.spinnerSize} />
-              <span>Streaming...</span>
+              <span>Streaming…</span>
             </div>
           </div>
         )}

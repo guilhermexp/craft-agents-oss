@@ -171,12 +171,12 @@ export function HermesLogsConfig({
           </label>
           <Button variant="outline" size="sm" onClick={() => void loadLog()} disabled={loading}>
             {loading
-              ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-              : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+              ? <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+              : <RefreshCw className="size-3.5 mr-1.5" />}
             Refresh
           </Button>
           <Button variant="ghost" size="sm" onClick={onOpenFolder}>
-            <FolderOpen className="h-3.5 w-3.5 mr-1.5" /> Pasta
+            <FolderOpen className="size-3.5 mr-1.5" /> Pasta
           </Button>
         </div>
 

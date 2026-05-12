@@ -346,7 +346,7 @@ export function MultiDiffPreviewOverlay({
                           className="flex items-start gap-3 px-4 py-3 rounded-[8px] bg-[color-mix(in_oklab,var(--destructive)_5%,var(--background))] shadow-tinted"
                           style={{ '--shadow-color': 'var(--destructive-rgb)' } as React.CSSProperties}
                         >
-                          <X className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                          <X className="size-4 text-destructive shrink-0 mt-0.5" />
                           <div className="flex-1 min-w-0">
                             <div className="text-xs font-semibold text-destructive/70 mb-0.5">
                               {change.toolType} Failed

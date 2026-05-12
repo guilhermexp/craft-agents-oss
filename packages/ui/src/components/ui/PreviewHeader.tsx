@@ -85,7 +85,7 @@ export function PreviewHeaderBadge({
         className={cn(baseClasses, 'min-w-0 cursor-pointer group')}
         title={title || label}
       >
-        {Icon && <Icon className="w-3.5 h-3.5 shrink-0" />}
+        {Icon && <Icon className="size-3.5 shrink-0" />}
         <span className="truncate group-hover:underline">{label}</span>
       </button>
     )
@@ -93,7 +93,7 @@ export function PreviewHeaderBadge({
 
   return (
     <div className={cn(baseClasses, shrinkable ? 'min-w-0' : 'shrink-0')} title={title || label}>
-      {Icon && <Icon className="w-3.5 h-3.5 shrink-0" />}
+      {Icon && <Icon className="size-3.5 shrink-0" />}
       <span className="truncate">{label}</span>
     </div>
   )
@@ -160,7 +160,7 @@ export function PreviewHeader({
             )}
             title={t('common.closeEsc')}
           >
-            <X className="w-4 h-4" />
+            <X className="size-4" />
           </button>
         )}
       </div>

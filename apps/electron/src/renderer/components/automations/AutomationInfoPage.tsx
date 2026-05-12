@@ -95,7 +95,7 @@ export function AutomationInfoPage({
 
         {/* Disabled warning */}
         {!automation.enabled && (
-          <Info_Alert variant="warning" icon={<PauseCircle className="h-4 w-4" />}>
+          <Info_Alert variant="warning" icon={<PauseCircle className="size-4" />}>
             <Info_Alert.Title>{t('automations.pausedTitle')}</Info_Alert.Title>
             <Info_Alert.Description>
               {t('automations.pausedDescription')}

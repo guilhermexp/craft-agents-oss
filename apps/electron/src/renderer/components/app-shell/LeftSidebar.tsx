@@ -164,7 +164,7 @@ const itemVariants: Variants = {
  *
  * Styling matches agent items in the sidebar for consistency:
  * - py-[7px] px-2 text-[13px] rounded-md
- * - Icon: h-3.5 w-3.5
+ * - Icon: size-3.5
  *
  * Link variants:
  * - "default": Highlighted style (used for active/selected items)
@@ -566,7 +566,7 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
         )}
       >
         {/* Icon container with hover toggle for expandable items */}
-        <span className="relative h-3.5 w-3.5 shrink-0 flex items-center justify-center">
+        <span className="relative size-3.5 shrink-0 flex items-center justify-center">
           {link.expandable && !isOverlay ? (
             <>
               {/* Main icon - hidden on hover */}
@@ -584,7 +584,7 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
               >
                 <ChevronRight
                   className={cn(
-                    "h-3.5 w-3.5 text-muted-foreground transition-transform duration-200",
+                    "size-3.5 text-muted-foreground transition-transform duration-200",
                     link.expanded && "rotate-90"
                   )}
                 />
@@ -631,7 +631,7 @@ function renderIcon(link: LinkItem) {
     const Icon = link.icon as React.ComponentType<{ className?: string; style?: React.CSSProperties }>
     return (
       <Icon
-        className="h-3.5 w-3.5 shrink-0"
+        className="size-3.5 shrink-0"
         style={colorStyle}
       />
     )
@@ -648,7 +648,7 @@ function renderIcon(link: LinkItem) {
     : iconElement
   return (
     <span
-      className="h-3.5 w-3.5 shrink-0 flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"
+      className="size-3.5 shrink-0 flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"
       style={colorStyle}
     >
       {bareIcon}

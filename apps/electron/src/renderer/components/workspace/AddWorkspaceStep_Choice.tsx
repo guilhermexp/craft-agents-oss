@@ -32,7 +32,7 @@ function ChoiceCard({ icon, title, description, onClick, variant = 'secondary' }
       )}
     >
       <div className={cn(
-        "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+        "flex size-10 shrink-0 items-center justify-center rounded-lg",
         variant === 'primary'
           ? "bg-accent/10 text-accent"
           : "bg-foreground/5 text-foreground/70"
@@ -70,7 +70,7 @@ export function AddWorkspaceStep_Choice({
 
       <div className="mt-8 w-full space-y-3">
         <ChoiceCard
-          icon={<FolderPlus className="h-5 w-5" />}
+          icon={<FolderPlus className="size-5" />}
           title={t("workspace.createNew")}
           description={t("workspace.createNewDesc")}
           onClick={onCreateNew}
@@ -78,14 +78,14 @@ export function AddWorkspaceStep_Choice({
         />
 
         <ChoiceCard
-          icon={<FolderOpen className="h-5 w-5" />}
+          icon={<FolderOpen className="size-5" />}
           title={t("workspace.openFolder")}
           description={t("workspace.openFolderDesc")}
           onClick={onOpenFolder}
         />
 
         <ChoiceCard
-          icon={<Cloud className="h-5 w-5" />}
+          icon={<Cloud className="size-5" />}
           title={t("workspace.connectRemote")}
           description={t("workspace.connectRemoteDesc")}
           onClick={onConnectRemote}

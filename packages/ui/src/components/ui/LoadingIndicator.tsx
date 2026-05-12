@@ -118,7 +118,7 @@ export function LoadingIndicator({
       {animated ? (
         <Spinner className={spinnerClassName} />
       ) : (
-        <span className="inline-flex items-center justify-center w-[1em] h-[1em]">●</span>
+        <span className="inline-flex items-center justify-center size-[1em]">●</span>
       )}
 
       {/* Label */}

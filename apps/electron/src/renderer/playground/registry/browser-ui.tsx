@@ -347,7 +347,7 @@ function BrowserTraceSidebarSample({ scenario, runState, sidebarWidth, hdrEffect
               />
             </motion.div>
             <motion.div
-              className="absolute h-10 w-10 rounded-full border-2 border-cyan-400/65 z-30 [will-change:transform,opacity]"
+              className="absolute size-10 rounded-full border-2 border-cyan-400/65 z-30 [will-change:transform,opacity]"
               style={{ transform: 'translateZ(0)' }}
               initial={{ x: 213, y: 173, opacity: 0.75, scale: 0.55 }}
               animate={{ x: [213, 293, 423, 323, 213], y: [173, 253, 233, 343, 173], opacity: [0.68, 0.16, 0.68, 0.16, 0.68], scale: [0.6, 1.5, 0.6, 1.5, 0.6] }}
@@ -426,7 +426,7 @@ function BrowserFramePlayground({
           className="border-b-0"
         />
         <div className="h-[calc(100%-48px)] bg-foreground-2">
-          <div className="relative h-full w-full bg-background overflow-hidden">
+          <div className="relative size-full bg-background overflow-hidden">
             <BrowserMockPageSurface
               className="absolute inset-0 p-6"
               mode={surfaceMode}
@@ -511,7 +511,7 @@ function BrowserEmptyStatePlayground({
 }) {
   return (
     <div className="w-full h-[700px] rounded-xl border border-border overflow-hidden bg-background shadow-sm flex">
-      <div className="relative h-full w-full bg-foreground-2 overflow-hidden">
+      <div className="relative size-full bg-foreground-2 overflow-hidden">
         <BrowserMockPageSurface
           className="absolute inset-0 p-8"
           mode="empty-state"

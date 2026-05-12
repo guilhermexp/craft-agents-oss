@@ -146,7 +146,7 @@ const inputContainerSampleStatuses: SessionStatus[] = [
     id: 'todo',
     label: 'Todo',
     resolvedColor: 'var(--muted-foreground)',
-    icon: <Circle className="h-3.5 w-3.5" strokeWidth={1.5} />,
+    icon: <Circle className="size-3.5" strokeWidth={1.5} />,
     iconColorable: true,
     category: 'open',
   },
@@ -154,7 +154,7 @@ const inputContainerSampleStatuses: SessionStatus[] = [
     id: 'in-progress',
     label: 'In Progress',
     resolvedColor: 'var(--info)',
-    icon: <Circle className="h-3.5 w-3.5" strokeWidth={1.5} />,
+    icon: <Circle className="size-3.5" strokeWidth={1.5} />,
     iconColorable: true,
     category: 'open',
   },
@@ -162,7 +162,7 @@ const inputContainerSampleStatuses: SessionStatus[] = [
     id: 'done',
     label: 'Done',
     resolvedColor: 'var(--success)',
-    icon: <Circle className="h-3.5 w-3.5" strokeWidth={1.5} />,
+    icon: <Circle className="size-3.5" strokeWidth={1.5} />,
     iconColorable: true,
     category: 'closed',
   },
@@ -730,7 +730,7 @@ function InputContainerPlayground({
   return (
     <ModalProvider>
     <AppShellProvider value={playgroundAppShellContext as any}>
-      <div className="w-full h-full flex flex-col bg-background">
+      <div className="size-full flex flex-col bg-background">
         <div className="flex-1" />
 
         <ChatInputZone
@@ -808,7 +808,7 @@ function ActiveTasksBarContext({ tasks = sampleBackgroundTasks }: ActiveTasksBar
         {/* Assistant message */}
         <div className="flex justify-start">
           <div className="max-w-[80%] rounded-2xl bg-muted px-4 py-2">
-            <p className="text-sm">I'll explore the codebase and analyze the API endpoints. Let me start by running a background task to search for API route definitions...</p>
+            <p className="text-sm">I'll explore the codebase and analyze the API endpoints. Let me start by running a background task to search for API route definitions…</p>
           </div>
         </div>
       </div>
@@ -904,7 +904,7 @@ function PermissionInputToggle({ autoToggle = false, autoToggleInterval = 3000, 
           onClick={() => setShowPermission(true)}
           className="gap-1.5"
         >
-          <Sparkles className="h-3.5 w-3.5" />
+          <Sparkles className="size-3.5" />
           Show Permission
         </Button>
         <Button

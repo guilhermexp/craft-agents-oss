@@ -65,7 +65,7 @@ export function Info_Markdown({
             )}
             title={t("table.viewFullscreen")}
           >
-            <Maximize2 className="w-3.5 h-3.5" />
+            <Maximize2 className="size-3.5" />
           </button>
         )}
 

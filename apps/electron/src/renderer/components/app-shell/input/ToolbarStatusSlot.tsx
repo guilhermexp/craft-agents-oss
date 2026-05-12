@@ -154,23 +154,23 @@ function BrowserStatusBar({
       {/* Accent gradient loading line at top of banner */}
       <div className="absolute top-0 left-0 right-0 h-[2px] z-10 overflow-hidden">
         <div
-          className="h-full w-full animate-shimmer-loading"
+          className="size-full animate-shimmer-loading"
           style={{
             background: 'linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%)',
           }}
         />
       </div>
 
-      <span className={`shrink-0 flex items-center justify-center ${isDarkTheme ? 'h-4 w-4' : 'h-3.5 w-3.5'}`}>
+      <span className={`shrink-0 flex items-center justify-center ${isDarkTheme ? 'size-4' : 'size-3.5'}`}>
         {instance.isLoading ? (
           <Spinner className="text-[10px] leading-none" />
         ) : instance.favicon && !faviconFailed ? (
           isDarkTheme ? (
-            <span className="inline-flex h-4 w-4 items-center justify-center rounded-[5px] bg-white/90 p-[1px] leading-none">
+            <span className="inline-flex size-4 items-center justify-center rounded-[5px] bg-white/90 p-[1px] leading-none">
               <img
                 src={instance.favicon}
                 alt=""
-                className="h-3.5 w-3.5 aspect-square rounded-none object-cover block"
+                className="size-3.5 aspect-square rounded-none object-cover block"
                 onError={() => setFaviconFailed(true)}
               />
             </span>
@@ -178,12 +178,12 @@ function BrowserStatusBar({
             <img
               src={instance.favicon}
               alt=""
-              className="h-3.5 w-3.5 rounded-sm block"
+              className="size-3.5 rounded-sm block"
               onError={() => setFaviconFailed(true)}
             />
           )
         ) : (
-          <Globe className="h-3.5 w-3.5" />
+          <Globe className="size-3.5" />
         )}
       </span>
       <span className="text-sm font-medium truncate max-w-[200px]">

@@ -41,7 +41,7 @@ export function CopyButton({ content, title, className }: CopyButtonProps) {
     <button
       onClick={handleCopy}
       className={cn(
-        'flex items-center justify-center w-7 h-7 rounded-[6px] transition-colors shrink-0 select-none',
+        'flex items-center justify-center size-7 rounded-[6px] transition-colors shrink-0 select-none',
         copied
           ? 'text-success'
           : 'text-muted-foreground hover:text-foreground hover:bg-foreground/5',
@@ -50,7 +50,7 @@ export function CopyButton({ content, title, className }: CopyButtonProps) {
       )}
       title={copied ? t('common.copied') : resolvedTitle}
     >
-      {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
     </button>
   )
 }

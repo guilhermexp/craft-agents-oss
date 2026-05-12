@@ -145,6 +145,7 @@ export function ThemeProvider({
 
   // Track if we're receiving an external update to prevent echo broadcasts
   const isExternalUpdate = useRef(false)
+  const externalUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Load app-level colorTheme from config.json on mount (only if user hasn't overridden)
   useEffect(() => {
@@ -457,12 +458,22 @@ export function ThemeProvider({
         font: preferences.font as FontFamily,
         isUserOverride: true
       })
-      setTimeout(() => {
+      if (externalUpdateTimeoutRef.current) {
+        clearTimeout(externalUpdateTimeoutRef.current)
+      }
+      externalUpdateTimeoutRef.current = setTimeout(() => {
         isExternalUpdate.current = false
+        externalUpdateTimeoutRef.current = null
       }, 0)
     })
 
-    return cleanup
+    return () => {
+      cleanup()
+      if (externalUpdateTimeoutRef.current) {
+        clearTimeout(externalUpdateTimeoutRef.current)
+        externalUpdateTimeoutRef.current = null
+      }
+    }
   }, [])
 
   // === Setters with persistence and broadcast ===

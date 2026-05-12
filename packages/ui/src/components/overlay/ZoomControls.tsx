@@ -91,8 +91,8 @@ function ZoomDropdown({
               onClick={() => { onZoomToPreset(preset); setIsOpen(false) }}
               className="flex items-center gap-2 w-full px-2.5 py-1.5 text-left text-[13px] rounded-[4px] hover:bg-foreground/[0.05] transition-colors"
             >
-              <span className="w-3.5 h-3.5 flex items-center justify-center shrink-0">
-                {activePreset === preset && <Check className="w-3.5 h-3.5" />}
+              <span className="size-3.5 flex items-center justify-center shrink-0">
+                {activePreset === preset && <Check className="size-3.5" />}
               </span>
               <span className={activePreset === preset ? 'font-medium' : ''}>
                 {preset}%
@@ -142,7 +142,7 @@ export function ZoomControls({
           )}
           title={t('overlay.zoomOut')}
         >
-          <Minus className="w-3.5 h-3.5" />
+          <Minus className="size-3.5" />
         </button>
 
         <ZoomDropdown
@@ -163,7 +163,7 @@ export function ZoomControls({
           )}
           title={t('overlay.zoomIn')}
         >
-          <Plus className="w-3.5 h-3.5" />
+          <Plus className="size-3.5" />
         </button>
       </div>
 
@@ -173,7 +173,7 @@ export function ZoomControls({
         className={resetBtnClass}
         title={t('overlay.zoomReset')}
       >
-        <RotateCcw className="w-3.5 h-3.5" />
+        <RotateCcw className="size-3.5" />
       </button>
     </div>
   )

@@ -196,7 +196,7 @@ export function PlaygroundApp() {
       {/* Header */}
       <header className="h-12 shrink-0 flex items-center justify-between px-4 border-b border-border bg-background">
         <div className="flex items-center gap-3">
-          <CraftAgentsSymbol className="h-5 w-5" />
+          <CraftAgentsSymbol className="size-5" />
           <h1 className="font-semibold text-foreground font-sans">
             Design System Playground
           </h1>
@@ -225,7 +225,7 @@ export function PlaygroundApp() {
             )}
             title={variantsSidebarOpen ? 'Hide variants' : 'Show variants'}
           >
-            <PanelRight className="w-4 h-4" />
+            <PanelRight className="size-4" />
           </button>
         </div>
       </header>

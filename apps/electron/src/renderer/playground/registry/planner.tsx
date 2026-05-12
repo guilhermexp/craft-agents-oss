@@ -769,13 +769,13 @@ function PlannerBoard() {
   }, [projectHeadings, quickAdd])
 
   return (
-    <div className="w-full h-full flex relative" style={{ gap: 6, padding: 4 }}>
+    <div className="size-full flex relative" style={{ gap: 6, padding: 4 }}>
       <aside
         className="p-3 shrink-0 overflow-hidden"
         style={{ width: sidebarWidth }}
       >
           <div className="mb-3 flex items-center gap-2 px-2 py-1">
-            <ListTodo className="h-4 w-4 text-foreground/60" />
+            <ListTodo className="size-4 text-foreground/60" />
             <span className="text-sm font-semibold">Planner</span>
           </div>
 
@@ -862,10 +862,10 @@ function PlannerBoard() {
                                 data-no-dnd="true"
                                 onPointerDown={(e) => e.stopPropagation()}
                                 onClick={(e) => e.stopPropagation()}
-                                className="h-6 w-6 inline-flex items-center justify-center rounded-[6px] hover:bg-foreground/5 data-[state=open]:bg-foreground/5"
+                                className="size-6 inline-flex items-center justify-center rounded-[6px] hover:bg-foreground/5 data-[state=open]:bg-foreground/5"
                                 aria-label={`Open ${heading.title} menu`}
                               >
-                                <MoreHorizontal className="h-4 w-4 text-foreground/45" />
+                                <MoreHorizontal className="size-4 text-foreground/45" />
                               </button>
                             </DropdownMenuTrigger>
                             <StyledDropdownMenuContent align="end" minWidth="min-w-44">
@@ -906,9 +906,9 @@ function PlannerBoard() {
                     >
                       <div className="flex items-center gap-2">
                         {task.state === 'done' ? (
-                          <CheckCircle2 className={cn('h-4 w-4', stateStyles[task.state])} />
+                          <CheckCircle2 className={cn('size-4', stateStyles[task.state])} />
                         ) : (
-                          <Circle className={cn('h-4 w-4', stateStyles[task.state])} />
+                          <Circle className={cn('size-4', stateStyles[task.state])} />
                         )}
                         <span className={cn('min-w-0 flex-1 truncate text-sm', task.state === 'done' && 'line-through text-foreground/45')}>
                           {task.title}
@@ -946,14 +946,14 @@ function PlannerBoard() {
                   <MetadataBadge
                     interactive={false}
                     icon={selectedTask.state === 'done'
-                      ? <CheckCircle2 className={cn('h-3.5 w-3.5', stateStyles[selectedTask.state])} />
-                      : <Circle className={cn('h-3.5 w-3.5', stateStyles[selectedTask.state])} />}
+                      ? <CheckCircle2 className={cn('size-3.5', stateStyles[selectedTask.state])} />
+                      : <Circle className={cn('size-3.5', stateStyles[selectedTask.state])} />}
                     label={stateLabels[selectedTask.state]}
                   />
 
                   <MetadataBadge
                     interactive={false}
-                    icon={<CalendarDays className="h-3.5 w-3.5 text-foreground/55" />}
+                    icon={<CalendarDays className="size-3.5 text-foreground/55" />}
                     label="Due"
                     value={selectedTask.due}
                   />
@@ -968,7 +968,7 @@ function PlannerBoard() {
 
                   <MetadataBadge
                     interactive={false}
-                    icon={<Link2 className="h-3.5 w-3.5 text-foreground/55" />}
+                    icon={<Link2 className="size-3.5 text-foreground/55" />}
                     label="Sessions"
                     value={String(selectedLinks.length)}
                   />
@@ -1002,11 +1002,11 @@ function PlannerBoard() {
                         <div key={link.id} className="rounded-lg border border-border/60 p-2.5 bg-foreground/[0.01]">
                           <div className="mb-1 flex items-center justify-between gap-2">
                             <div className="min-w-0 flex items-center gap-1.5">
-                              <Link2 className="h-3.5 w-3.5 text-foreground/45" />
+                              <Link2 className="size-3.5 text-foreground/45" />
                               <span className="truncate text-xs font-medium">{snap.title}</span>
                             </div>
                             <span className={cn('inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px]', meta.cls)}>
-                              <Icon className="h-3 w-3" />
+                              <Icon className="size-3" />
                               {meta.label}
                             </span>
                           </div>
@@ -1026,8 +1026,8 @@ function PlannerBoard() {
                 <div className="space-y-3">
                   {selectedEvents.map(ev => (
                     <div key={ev.id} className="flex items-start gap-2.5">
-                      <div className="mt-0.5 h-5 w-5 rounded-full bg-foreground/8 flex items-center justify-center shrink-0">
-                        <History className="h-3 w-3 text-foreground/45" />
+                      <div className="mt-0.5 size-5 rounded-full bg-foreground/8 flex items-center justify-center shrink-0">
+                        <History className="size-3 text-foreground/45" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="text-xs text-foreground/75">{ev.payloadSummary}</div>
@@ -1102,7 +1102,7 @@ function PlannerSyncStatePalette() {
   return (
     <div className="w-[820px] rounded-[14px] border border-border bg-background p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-        <CalendarDays className="h-4 w-4 text-foreground/60" />
+        <CalendarDays className="size-4 text-foreground/60" />
         Sync States (task_session_links_local)
       </div>
       <div className="grid grid-cols-2 gap-2.5">
@@ -1112,7 +1112,7 @@ function PlannerSyncStatePalette() {
           return (
             <div key={state} className="rounded-[10px] border border-border/60 bg-foreground/[0.015] p-3">
               <div className="mb-1.5 flex items-center gap-1.5 text-sm font-medium">
-                <Icon className={cn('h-4 w-4', meta.cls.split(' ')[0])} />
+                <Icon className={cn('size-4', meta.cls.split(' ')[0])} />
                 {meta.label}
               </div>
               <div className="text-xs text-foreground/60">

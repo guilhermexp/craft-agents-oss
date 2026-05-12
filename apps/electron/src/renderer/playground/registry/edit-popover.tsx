@@ -216,7 +216,7 @@ function CompactChatPreview({
               isDragging && "cursor-grabbing"
             )}
           >
-            <GripHorizontal className="w-4 h-4 text-muted-foreground/50" />
+            <GripHorizontal className="size-4 text-muted-foreground/50" />
           </div>
 
           {/* Content - compact ChatDisplay */}
@@ -236,7 +236,7 @@ function CompactChatPreview({
           {/* Bottom-right resize handle - invisible hit area */}
           <div
             onMouseDown={handleResizeStart}
-            className="absolute -bottom-2 -right-2 w-6 h-6 cursor-nwse-resize"
+            className="absolute -bottom-2 -right-2 size-6 cursor-nwse-resize"
           />
         </div>
       </EscapeInterruptProvider>
@@ -323,7 +323,7 @@ function EditPopoverPreview({
             <EditPopover
               trigger={
                 <Button variant="outline" size="sm">
-                  <Pencil className="w-4 h-4 mr-2" />
+                  <Pencil className="size-4 mr-2" />
                   {triggerLabel}
                 </Button>
               }

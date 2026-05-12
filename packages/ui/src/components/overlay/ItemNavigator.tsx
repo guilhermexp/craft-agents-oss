@@ -59,7 +59,7 @@ export function ItemNavigator({ items, activeIndex, onSelect, size = 'sm' }: Ite
         )}
         title={t('overlay.previousItem')}
       >
-        <ChevronLeft className={size === 'md' ? 'w-4 h-4' : 'w-3.5 h-3.5'} />
+        <ChevronLeft className={size === 'md' ? 'size-4' : 'size-3.5'} />
       </button>
 
       <DropdownMenu>
@@ -85,7 +85,7 @@ export function ItemNavigator({ items, activeIndex, onSelect, size = 'sm' }: Ite
               <span className="flex-1 truncate">
                 {item.label || `Item ${idx + 1}`}
               </span>
-              {idx === activeIndex && <Check className="w-3.5 h-3.5 text-accent" />}
+              {idx === activeIndex && <Check className="size-3.5 text-accent" />}
             </StyledDropdownMenuItem>
           ))}
         </StyledDropdownMenuContent>
@@ -102,7 +102,7 @@ export function ItemNavigator({ items, activeIndex, onSelect, size = 'sm' }: Ite
         )}
         title={t('overlay.nextItem')}
       >
-        <ChevronRight className={size === 'md' ? 'w-4 h-4' : 'w-3.5 h-3.5'} />
+        <ChevronRight className={size === 'md' ? 'size-4' : 'size-3.5'} />
       </button>
     </div>
   )

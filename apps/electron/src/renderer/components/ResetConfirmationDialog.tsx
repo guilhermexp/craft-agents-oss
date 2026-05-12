@@ -62,7 +62,7 @@ export function ResetConfirmationDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-destructive">
-            <AlertTriangle className="h-5 w-5" />
+            <AlertTriangle className="size-5" />
             {t("dialog.reset.title")}
           </DialogTitle>
           <DialogDescription className="text-left pt-2">

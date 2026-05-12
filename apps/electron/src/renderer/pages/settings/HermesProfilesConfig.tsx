@@ -197,7 +197,7 @@ export function HermesProfilesConfig() {
 
           <div className="grid gap-3 rounded-md border border-border/60 p-3">
             <div className="flex items-center gap-2 text-sm font-medium">
-              <Plus className="h-4 w-4" /> Novo profile
+              <Plus className="size-4" /> Novo profile
             </div>
             <SettingsRow label="Nome" description="Letras minúsculas, dígitos, _ e -. Até 64 caracteres.">
               <input
@@ -220,14 +220,14 @@ export function HermesProfilesConfig() {
             </label>
             <div>
               <Button size="sm" onClick={createProfile} disabled={isCreating}>
-                <Plus className="h-3.5 w-3.5 mr-1.5" /> {isCreating ? 'Criando...' : 'Criar'}
+                <Plus className="size-3.5 mr-1.5" /> {isCreating ? 'Criando...' : 'Criar'}
               </Button>
             </div>
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm font-medium">
-              <Users className="h-4 w-4" /> Profiles ({profiles.length})
+              <Users className="size-4" /> Profiles ({profiles.length})
               <span className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase text-emerald-600 dark:text-emerald-400">
                 ativo: {activeProfile}
               </span>
@@ -282,13 +282,13 @@ export function HermesProfilesConfig() {
                           {isRenaming ? (
                             <>
                               <Button size="sm" variant="ghost" className="h-7 px-2" onClick={submitRename}>
-                                <Save className="h-3.5 w-3.5" />
+                                <Save className="size-3.5" />
                               </Button>
                               <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => {
                                 setRenamingFrom(null)
                                 setRenameTo('')
                               }}>
-                                <X className="h-3.5 w-3.5" />
+                                <X className="size-3.5" />
                               </Button>
                             </>
                           ) : (
@@ -301,25 +301,25 @@ export function HermesProfilesConfig() {
                                 disabled={profile.isActive || settingActive === profile.name}
                                 onClick={() => setActiveProfile(profile)}
                               >
-                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                <CheckCircle2 className="size-3.5" />
                               </Button>
                               <Button size="sm" variant="ghost" className="h-7 px-2" title="Editar SOUL.md" onClick={() => toggleSoulEditor(profile.name)}>
-                                {isEditingSoul ? <ChevronDown className="h-3.5 w-3.5" /> : <span className="text-xs font-bold">S</span>}
+                                {isEditingSoul ? <ChevronDown className="size-3.5" /> : <span className="text-xs font-bold">S</span>}
                               </Button>
                               <Button size="sm" variant="ghost" className="h-7 px-2" title="Copiar comando de setup" onClick={() => copySetupCommand(profile.name)}>
-                                <Copy className="h-3.5 w-3.5" />
+                                <Copy className="size-3.5" />
                               </Button>
                               {!profile.isDefault && (
                                 <Button size="sm" variant="ghost" className="h-7 px-2" title="Renomear" onClick={() => {
                                   setRenamingFrom(profile.name)
                                   setRenameTo(profile.name)
                                 }}>
-                                  <Pencil className="h-3.5 w-3.5" />
+                                  <Pencil className="size-3.5" />
                                 </Button>
                               )}
                               {!profile.isDefault && (
                                 <Button size="sm" variant="ghost" className="h-7 px-2" title="Deletar" onClick={() => deleteProfile(profile)}>
-                                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                                  <Trash2 className="size-3.5 text-destructive" />
                                 </Button>
                               )}
                             </>
@@ -337,7 +337,7 @@ export function HermesProfilesConfig() {
                             onChange={(event) => setSoulText(event.target.value)}
                           />
                           <Button size="sm" onClick={() => saveSoul(profile.name)} disabled={isSavingSoul}>
-                            <Save className="h-3.5 w-3.5 mr-1.5" /> {isSavingSoul ? 'Salvando...' : 'Salvar SOUL.md'}
+                            <Save className="size-3.5 mr-1.5" /> {isSavingSoul ? 'Salvando...' : 'Salvar SOUL.md'}
                           </Button>
                         </div>
                       )}

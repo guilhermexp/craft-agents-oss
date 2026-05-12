@@ -242,7 +242,7 @@ export function IslandFollowUpContentView({
                       title={t('chat.moreSubmitActions')}
                       className="h-8 w-6 border-l border-border/40 inline-flex items-center justify-center text-foreground/70 hover:text-foreground hover:bg-foreground/2 data-[state=open]:bg-foreground/2 data-[state=open]:text-foreground disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-foreground/70"
                     >
-                      <ChevronDown className="h-3 w-3" />
+                      <ChevronDown className="size-3" />
                     </button>
                   </DropdownMenuTrigger>
 
@@ -261,7 +261,7 @@ export function IslandFollowUpContentView({
                         onSubmitAndSend?.(value)
                       }}
                     >
-                      <Send className="h-3.5 w-3.5" />
+                      <Send className="size-3.5" />
                       {submitAndSendLabel}
                     </StyledDropdownMenuItem>
                   </StyledDropdownMenuContent>

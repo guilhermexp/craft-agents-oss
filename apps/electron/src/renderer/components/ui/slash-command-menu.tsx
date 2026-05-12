@@ -77,7 +77,7 @@ function PermissionModeIcon({ mode, className }: PermissionModeIconProps) {
 // ============================================================================
 
 // Icon size constant
-const MENU_ICON_SIZE = 'h-3.5 w-3.5'
+const MENU_ICON_SIZE = 'size-3.5'
 
 // Generate permission mode commands from centralized config
 const permissionModeCommands: SlashCommand[] = PERMISSION_MODE_ORDER.map(mode => {
@@ -172,8 +172,8 @@ function CommandItemContent({ command, isActive }: { command: SlashCommand; isAc
       <div className="shrink-0 text-muted-foreground">{command.icon}</div>
       <div className="flex-1 min-w-0">{label}</div>
       {isActive && (
-        <div className="shrink-0 h-4 w-4 rounded-full bg-current flex items-center justify-center">
-          <Check className="h-2.5 w-2.5 text-white dark:text-black" strokeWidth={3} />
+        <div className="shrink-0 size-4 rounded-full bg-current flex items-center justify-center">
+          <Check className="size-2.5 text-white dark:text-black" strokeWidth={3} />
         </div>
       )}
     </>

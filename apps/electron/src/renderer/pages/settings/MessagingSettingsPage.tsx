@@ -235,14 +235,14 @@ function PlatformRow({ platform, workspaceId }: { platform: Platform; workspaceI
                   data-state={menuOpen ? 'open' : 'closed'}
                   aria-label={t('common.more', { defaultValue: 'More' })}
                 >
-                  <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                  <MoreHorizontal className="size-4 text-muted-foreground" />
                 </button>
               </DropdownMenuTrigger>
               <StyledDropdownMenuContent align="end">
                 {platform === 'telegram' ? (
                   <>
                     <StyledDropdownMenuItem onClick={() => runAfterMenuClose(handleReconfigure)}>
-                      <Settings2 className="h-3.5 w-3.5" />
+                      <Settings2 className="size-3.5" />
                       <span>
                         {t('settings.messaging.telegram.reconfigure', {
                           defaultValue: 'Reconfigure',
@@ -251,23 +251,23 @@ function PlatformRow({ platform, workspaceId }: { platform: Platform; workspaceI
                     </StyledDropdownMenuItem>
                     <StyledDropdownMenuSeparator />
                     <StyledDropdownMenuItem onClick={handleDisconnect} variant="destructive">
-                      <PowerOff className="h-3.5 w-3.5" />
+                      <PowerOff className="size-3.5" />
                       <span>{t('settings.messaging.telegram.disconnect')}</span>
                     </StyledDropdownMenuItem>
                   </>
                 ) : (
                   <>
                     <StyledDropdownMenuItem onClick={() => runAfterMenuClose(handleConnect)}>
-                      <RefreshCcw className="h-3.5 w-3.5" />
+                      <RefreshCcw className="size-3.5" />
                       <span>{t('settings.messaging.whatsapp.reconnect')}</span>
                     </StyledDropdownMenuItem>
                     <StyledDropdownMenuItem onClick={handleDisconnect}>
-                      <PowerOff className="h-3.5 w-3.5" />
+                      <PowerOff className="size-3.5" />
                       <span>{t('settings.messaging.whatsapp.disable')}</span>
                     </StyledDropdownMenuItem>
                     <StyledDropdownMenuSeparator />
                     <StyledDropdownMenuItem onClick={handleForget} variant="destructive">
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Trash2 className="size-3.5" />
                       <span>{t('settings.messaging.whatsapp.forget')}</span>
                     </StyledDropdownMenuItem>
                   </>
@@ -276,7 +276,7 @@ function PlatformRow({ platform, workspaceId }: { platform: Platform; workspaceI
             </DropdownMenu>
           ) : (
             <Button variant="outline" size="sm" onClick={handleConnect}>
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="size-3.5" />
               {t('common.connect', { defaultValue: 'Connect' })}
             </Button>
           )}
@@ -305,7 +305,7 @@ function PlatformRow({ platform, workspaceId }: { platform: Platform; workspaceI
                         size="sm"
                         onClick={() => navigateToSession(binding.sessionId)}
                       >
-                        <ArrowUpRight className="h-3.5 w-3.5" />
+                        <ArrowUpRight className="size-3.5" />
                         {t('settings.messaging.bindings.openSession')}
                       </Button>
                       <Button

@@ -59,16 +59,16 @@ export const BrowserTabBadge = forwardRef<HTMLButtonElement, BrowserTabBadgeProp
       aria-label={`${displayLabel} actions`}
       {...buttonProps}
     >
-      <span className={`shrink-0 flex items-center justify-center ${isDarkThemeColor ? 'h-3.5 w-3.5' : 'h-3 w-3'}`}>
+      <span className={`shrink-0 flex items-center justify-center ${isDarkThemeColor ? 'size-3.5' : 'size-3'}`}>
         {instance.isLoading ? (
           <Spinner className="text-[9px] leading-none" />
         ) : instance.favicon && !faviconFailed ? (
           isDarkThemeColor ? (
-            <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-[4px] bg-white/90 p-[1px] leading-none">
+            <span className="inline-flex size-3.5 items-center justify-center rounded-[4px] bg-white/90 p-[1px] leading-none">
               <img
                 src={instance.favicon}
                 alt=""
-                className="h-3 w-3 aspect-square rounded-none object-cover block"
+                className="size-3 aspect-square rounded-none object-cover block"
                 onError={() => setFaviconFailed(true)}
               />
             </span>
@@ -76,19 +76,19 @@ export const BrowserTabBadge = forwardRef<HTMLButtonElement, BrowserTabBadgeProp
             <img
               src={instance.favicon}
               alt=""
-              className="h-3 w-3 rounded-sm block"
+              className="size-3 rounded-sm block"
               onError={() => setFaviconFailed(true)}
             />
           )
         ) : (
-          <Icons.Globe className="h-3 w-3" />
+          <Icons.Globe className="size-3" />
         )}
       </span>
 
       <span className="truncate ml-0.5 leading-[12px]">{displayLabel}</span>
 
-      <span className="shrink-0 h-3 w-3 flex items-center justify-center opacity-55 group-hover:opacity-90 transition-opacity">
-        <Icons.ChevronDown className="h-2.5 w-2.5" />
+      <span className="shrink-0 size-3 flex items-center justify-center opacity-55 group-hover:opacity-90 transition-opacity">
+        <Icons.ChevronDown className="size-2.5" />
       </span>
     </button>
   )

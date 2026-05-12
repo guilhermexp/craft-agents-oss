@@ -16,9 +16,9 @@ function CraftAgentLogo({ className }: { className?: string }) {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <g transform="translate(3.4502, 3)" fill="currentColor">
+      <g transform="translate(3.45, 3)" fill="currentColor">
         <path
-          d="M3.17890888,3.6 L3.17890888,0 L16,0 L16,3.6 L3.17890888,3.6 Z M9.642,7.2 L9.64218223,10.8 L0,10.8 L0,3.6 L16,3.6 L16,7.2 L9.642,7.2 Z M3.17890888,18 L3.178,14.4 L0,14.4 L0,10.8 L16,10.8 L16,18 L3.17890888,18 Z"
+          d="M3.18,3.6 L3.18,0 L16,0 L16,3.6 L3.18,3.6 Z M9.64,7.2 L9.64,10.8 L0,10.8 L0,3.6 L16,3.6 L16,7.2 L9.64,7.2 Z M3.18,18 L3.18,14.4 L0,14.4 L0,10.8 L16,10.8 L16,18 L3.18,18 Z"
           fillRule="nonzero"
         />
       </g>
@@ -44,7 +44,7 @@ export function Header({ hasSession, sessionTitle, isDark, onToggleTheme, onClea
         className="hover:opacity-80 transition-opacity"
         title="Craft Agent"
       >
-        <CraftAgentLogo className="w-6 h-6 text-[#9570BE]" />
+        <CraftAgentLogo className="size-6 text-[#9570BE]" />
       </a>
 
       {/* Session title - centered */}
@@ -64,7 +64,7 @@ export function Header({ hasSession, sessionTitle, isDark, onToggleTheme, onClea
             className="p-1.5 rounded-md bg-background shadow-minimal text-foreground/40 hover:text-foreground/70 transition-colors"
             title={t('viewer.clearSession')}
           >
-            <X className="w-4 h-4" />
+            <X className="size-4" />
           </button>
         )}
 
@@ -74,7 +74,7 @@ export function Header({ hasSession, sessionTitle, isDark, onToggleTheme, onClea
           className="p-1.5 rounded-md bg-background shadow-minimal text-foreground/40 hover:text-foreground/70 transition-colors"
           title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
         >
-          {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </button>
       </div>
     </header>

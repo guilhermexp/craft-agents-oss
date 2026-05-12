@@ -111,7 +111,7 @@ export function SidebarMenu({
   if (type === 'newSession') {
     return (
       <MenuItem onClick={() => window.electronAPI.openUrl('craftagents://action/new-session?window=focused')}>
-        <AppWindow className="h-3.5 w-3.5" />
+        <AppWindow className="size-3.5" />
         <span className="flex-1">{t("sidebarMenu.openInNewWindow")}</span>
       </MenuItem>
     )
@@ -124,14 +124,14 @@ export function SidebarMenu({
         {type === 'allSessions' && onMarkAllRead && (
           <>
             <MenuItem onClick={onMarkAllRead}>
-              <CheckCheck className="h-3.5 w-3.5" />
+              <CheckCheck className="size-3.5" />
               <span className="flex-1">{t("sidebarMenu.markAllRead")}</span>
             </MenuItem>
             <Separator />
           </>
         )}
         <MenuItem onClick={onConfigureStatuses}>
-          <Settings2 className="h-3.5 w-3.5" />
+          <Settings2 className="size-3.5" />
           <span className="flex-1">{t("sidebarMenu.configureStatuses")}</span>
         </MenuItem>
       </>
@@ -146,13 +146,13 @@ export function SidebarMenu({
       <>
         {onAddLabel && (
           <MenuItem onClick={() => onAddLabel(labelId)}>
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="size-3.5" />
             <span className="flex-1">{t("sidebarMenu.addNewLabel")}</span>
           </MenuItem>
         )}
         {onConfigureLabels && (
           <MenuItem onClick={() => onConfigureLabels(labelId)}>
-            <Settings2 className="h-3.5 w-3.5" />
+            <Settings2 className="size-3.5" />
             <span className="flex-1">{t("sidebarMenu.editLabels")}</span>
           </MenuItem>
         )}
@@ -160,7 +160,7 @@ export function SidebarMenu({
           <>
             <Separator />
             <MenuItem onClick={() => onDeleteLabel(labelId)}>
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="size-3.5" />
               <span className="flex-1">{t("sidebarMenu.deleteLabel")}</span>
             </MenuItem>
           </>
@@ -174,19 +174,19 @@ export function SidebarMenu({
       <>
         {onAddChannel && (
           <MenuItem onClick={onAddChannel}>
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="size-3.5" />
             <span className="flex-1">{t("sidebarMenu.addChannel")}</span>
           </MenuItem>
         )}
         {channelId && onNewChannelThread && (
           <MenuItem onClick={() => onNewChannelThread(channelId)}>
-            <AppWindow className="h-3.5 w-3.5" />
+            <AppWindow className="size-3.5" />
             <span className="flex-1">{t("sidebarMenu.newThreadInChannel")}</span>
           </MenuItem>
         )}
         {onConfigureChannels && (
           <MenuItem onClick={onConfigureChannels}>
-            <Settings2 className="h-3.5 w-3.5" />
+            <Settings2 className="size-3.5" />
             <span className="flex-1">{t("sidebarMenu.editChannels")}</span>
           </MenuItem>
         )}
@@ -194,12 +194,12 @@ export function SidebarMenu({
           <>
             <Separator />
             <MenuItem onClick={() => onDeleteChannel(channelId)}>
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="size-3.5" />
               <span className="flex-1">{t("sidebarMenu.deleteChannel")}</span>
             </MenuItem>
             {onDeleteChannelWithLabel && (
               <MenuItem onClick={() => onDeleteChannelWithLabel(channelId)}>
-                <Trash2 className="h-3.5 w-3.5" />
+                <Trash2 className="size-3.5" />
                 <span className="flex-1">{t("sidebarMenu.deleteChannelWithLabel")}</span>
               </MenuItem>
             )}
@@ -215,7 +215,7 @@ export function SidebarMenu({
       <>
         {onConfigureViews && (
           <MenuItem onClick={onConfigureViews}>
-            <Settings2 className="h-3.5 w-3.5" />
+            <Settings2 className="size-3.5" />
             <span className="flex-1">{t("sidebarMenu.editViews")}</span>
           </MenuItem>
         )}
@@ -223,7 +223,7 @@ export function SidebarMenu({
           <>
             <Separator />
             <MenuItem onClick={() => onDeleteView(viewId)}>
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="size-3.5" />
               <span className="flex-1">{t("sidebarMenu.deleteView")}</span>
             </MenuItem>
           </>
@@ -252,13 +252,13 @@ export function SidebarMenu({
       <>
         {onAddSource && (
           <MenuItem onClick={onAddSource}>
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="size-3.5" />
             <span className="flex-1">{t("sidebarMenu.addSource")}</span>
           </MenuItem>
         )}
         <Separator />
         <MenuItem onClick={() => window.electronAPI.openUrl(getDocUrl(docFeature))}>
-          <ExternalLink className="h-3.5 w-3.5" />
+          <ExternalLink className="size-3.5" />
           <span className="flex-1">{learnMoreLabel}</span>
         </MenuItem>
       </>
@@ -269,7 +269,7 @@ export function SidebarMenu({
   if (type === 'skills' && onAddSkill) {
     return (
       <MenuItem onClick={onAddSkill}>
-        <Plus className="h-3.5 w-3.5" />
+        <Plus className="size-3.5" />
         <span className="flex-1">{t("sidebarMenu.addSkill")}</span>
       </MenuItem>
     )
@@ -281,13 +281,13 @@ export function SidebarMenu({
       <>
         {onAddAutomation && (
           <MenuItem onClick={onAddAutomation}>
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="size-3.5" />
             <span className="flex-1">{t("sidebarMenu.addAutomation")}</span>
           </MenuItem>
         )}
         <Separator />
         <MenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('automations'))}>
-          <ExternalLink className="h-3.5 w-3.5" />
+          <ExternalLink className="size-3.5" />
           <span className="flex-1">{t("sidebarMenu.learnMoreAutomations")}</span>
         </MenuItem>
       </>

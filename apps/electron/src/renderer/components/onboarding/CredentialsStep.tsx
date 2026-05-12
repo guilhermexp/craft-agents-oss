@@ -5,7 +5,7 @@
  * with StepFormLayout for the onboarding wizard context.
  */
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Check, ExternalLink } from "lucide-react"
 import type { ApiSetupMethod } from "./APISetupStep"
@@ -68,24 +68,45 @@ export function CredentialsStep({
 
   // Copilot device code clipboard handling
   const [copiedCode, setCopiedCode] = useState(false)
+  const copiedCodeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const scheduleCopiedCodeReset = useCallback(() => {
+    if (copiedCodeTimeoutRef.current) {
+      clearTimeout(copiedCodeTimeoutRef.current)
+    }
+
+    copiedCodeTimeoutRef.current = setTimeout(() => {
+      setCopiedCode(false)
+      copiedCodeTimeoutRef.current = null
+    }, 2000)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (copiedCodeTimeoutRef.current) {
+        clearTimeout(copiedCodeTimeoutRef.current)
+        copiedCodeTimeoutRef.current = null
+      }
+    }
+  }, [])
 
   // Auto-copy device code to clipboard when it appears
   useEffect(() => {
     if (copilotDeviceCode?.userCode) {
       navigator.clipboard.writeText(copilotDeviceCode.userCode).then(() => {
         setCopiedCode(true)
-        setTimeout(() => setCopiedCode(false), 2000)
+        scheduleCopiedCodeReset()
       }).catch(() => {
         // Clipboard write failed, user can still click to copy
       })
     }
-  }, [copilotDeviceCode?.userCode])
+  }, [copilotDeviceCode?.userCode, scheduleCopiedCodeReset])
 
   const handleCopyCode = () => {
     if (copilotDeviceCode?.userCode) {
       navigator.clipboard.writeText(copilotDeviceCode.userCode).then(() => {
         setCopiedCode(true)
-        setTimeout(() => setCopiedCode(false), 2000)
+        scheduleCopiedCodeReset()
       })
     }
   }

@@ -135,7 +135,7 @@ export function TelegramConnectDialog({
 
             {test.state === 'success' && (
               <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
-                <Check className="h-3.5 w-3.5" />
+                <Check className="size-3.5" />
                 {t('settings.messaging.telegram.validBot', {
                   username: test.botUsername ?? test.botName ?? 'bot',
                 })}
@@ -143,7 +143,7 @@ export function TelegramConnectDialog({
             )}
             {test.state === 'error' && (
               <span className="inline-flex items-center gap-1 text-xs text-destructive">
-                <X className="h-3.5 w-3.5" />
+                <X className="size-3.5" />
                 {test.error}
               </span>
             )}

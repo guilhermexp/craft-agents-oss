@@ -65,20 +65,20 @@ export function SkillMenu({
     <>
       {/* Open in New Window */}
       <MenuItem onClick={onOpenInNewWindow}>
-        <AppWindow className="h-3.5 w-3.5" />
+        <AppWindow className="size-3.5" />
         <span className="flex-1">{t("sidebarMenu.openInNewWindow")}</span>
       </MenuItem>
 
       {/* Show in file manager */}
       <MenuItem onClick={onShowInFinder} disabled={!canShowInFinder}>
-        <FolderOpen className="h-3.5 w-3.5" />
+        <FolderOpen className="size-3.5" />
         <span className="flex-1">{t("sessionMenu.showInFileManager", { fileManager: getFileManagerName() })}</span>
       </MenuItem>
 
       {/* Send to another workspace */}
       {onSendToWorkspace && (
         <MenuItem onClick={onSendToWorkspace}>
-          <Send className="h-3.5 w-3.5" />
+          <Send className="size-3.5" />
           <span className="flex-1">{t("sessionMenu.sendToWorkspace")}</span>
         </MenuItem>
       )}
@@ -87,7 +87,7 @@ export function SkillMenu({
 
       {/* Delete */}
       <MenuItem onClick={canDelete ? onDelete : undefined} variant="destructive" disabled={!canDelete}>
-        <Trash2 className="h-3.5 w-3.5" />
+        <Trash2 className="size-3.5" />
         <span className="flex-1">{deleteLabel || t("sidebarMenu.deleteSkill")}</span>
       </MenuItem>
     </>

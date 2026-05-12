@@ -202,7 +202,7 @@ export function SendResourceToWorkspaceDialog({
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Send className="h-4 w-4" />
+            <Send className="size-4" />
             Send to Workspace
           </DialogTitle>
           <DialogDescription>
@@ -240,22 +240,22 @@ export function SendResourceToWorkspaceDialog({
                   <CrossfadeAvatar
                     src={workspaceIconMap.get(workspace.id)}
                     alt={workspace.name}
-                    className="h-5 w-5 rounded-full ring-1 ring-border/50 shrink-0"
+                    className="size-5 rounded-full ring-1 ring-border/50 shrink-0"
                     fallbackClassName="bg-muted text-[10px] rounded-full"
                     fallback={workspace.name?.charAt(0) || 'W'}
                   />
                   <span className="flex-1 truncate">{workspace.name}</span>
                   {isRemote ? (
                     isDisconnected ? (
-                      <CloudOff className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
+                      <CloudOff className="size-3.5 text-muted-foreground/50 shrink-0" />
                     ) : (
                       <Cloud className={cn(
-                        'h-3.5 w-3.5 shrink-0',
+                        'size-3.5 shrink-0',
                         isChecking ? 'text-muted-foreground/30 animate-pulse' : 'text-muted-foreground',
                       )} />
                     )
                   ) : (
-                    <Monitor className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
+                    <Monitor className="size-3.5 text-muted-foreground/50 shrink-0" />
                   )}
                 </button>
               )

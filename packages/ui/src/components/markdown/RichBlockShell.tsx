@@ -30,7 +30,7 @@ export function RichBlockShell({ children, onEdit, editTitle = 'Edit block', cla
             title={editTitle}
             aria-label={editTitle}
           >
-            <Pencil className="w-3.5 h-3.5" />
+            <Pencil className="size-3.5" />
           </TiptapHoverActionButton>
         </TiptapHoverActions>
       )}

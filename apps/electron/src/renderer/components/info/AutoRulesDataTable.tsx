@@ -137,7 +137,7 @@ function getColumns(t: TranslationFn): ColumnDef<AutoRuleRow>[] {
               {row.original.rule.valueTemplate}
             </Info_Badge>
           ) : (
-            <span className="text-muted-foreground/50 text-sm">—</span>
+            <span className="text-muted-foreground/50 text-sm">None</span>
           )}
         </div>
       ),
@@ -212,7 +212,7 @@ export function AutoRulesDataTable({
       )}
       title={t("table.viewFullscreen")}
     >
-      <Maximize2 className="w-3.5 h-3.5" />
+      <Maximize2 className="size-3.5" />
     </button>
   ) : undefined
 

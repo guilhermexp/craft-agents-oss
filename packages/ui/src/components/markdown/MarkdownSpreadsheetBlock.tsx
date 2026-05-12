@@ -59,7 +59,7 @@ interface SpreadsheetSpec {
 // ── Cell formatting ──────────────────────────────────────────────────────────
 
 function formatCell(value: unknown, type?: ColumnDef['type']): React.ReactNode {
-  if (value === null || value === undefined) return <span className="text-muted-foreground/40">—</span>
+  if (value === null || value === undefined) return <span className="text-muted-foreground/40">None</span>
   switch (type) {
     case 'currency': {
       const num = typeof value === 'number' ? value : Number(value)
@@ -315,7 +315,7 @@ export function MarkdownSpreadsheetBlock({ code, className }: MarkdownSpreadshee
           )}
           title={t('common.viewFullscreen')}
         >
-          <Maximize2 className="w-3.5 h-3.5" />
+          <Maximize2 className="size-3.5" />
         </button>
 
         {/* Header */}

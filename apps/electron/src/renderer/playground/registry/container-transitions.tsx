@@ -268,7 +268,7 @@ function ToolbarToConfirmTransitionDemo({ initialView = 'compact' }: ToolbarToCo
                         'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring'
                       )}
                     >
-                      <CornerDownRight className="h-3.5 w-3.5" />
+                      <CornerDownRight className="size-3.5" />
                       <span>Follow up</span>
                     </button>
 
@@ -281,7 +281,7 @@ function ToolbarToConfirmTransitionDemo({ initialView = 'compact' }: ToolbarToCo
                         'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring'
                       )}
                     >
-                      <MessageCircleMore className="h-3.5 w-3.5" />
+                      <MessageCircleMore className="size-3.5" />
                       <span>Ask inline</span>
                     </button>
                   </div>
@@ -307,17 +307,17 @@ function ToolbarToConfirmTransitionDemo({ initialView = 'compact' }: ToolbarToCo
                       <button
                         type="button"
                         onClick={navigation.pop}
-                        className="h-7 w-7 inline-flex items-center justify-center rounded-[6px] text-foreground/70 hover:bg-foreground/5 hover:text-foreground"
+                        className="size-7 inline-flex items-center justify-center rounded-[6px] text-foreground/70 hover:bg-foreground/5 hover:text-foreground"
                         aria-label="Back"
                       >
-                        <X className="h-3.5 w-3.5" />
+                        <X className="size-3.5" />
                       </button>
                     </div>
 
                     <div className="rounded-[8px] border border-border/70 bg-foreground/3 px-3 py-2">
                       <div className="text-[11px] uppercase tracking-wide text-foreground/50 mb-1">Selection preview</div>
                       <div className="text-xs text-foreground/75 line-clamp-2">
-                        “...requestAnimationFrame + intersectsNode checks with diff-style add/remove...”
+                        “…requestAnimationFrame + intersectsNode checks with diff-style add/remove…”
                       </div>
                     </div>
 
@@ -376,7 +376,7 @@ function ToolbarToConfirmTransitionDemo({ initialView = 'compact' }: ToolbarToCo
                         onClick={() => onConfirm('Ask inline', note)}
                         className="h-8 px-3 rounded-[8px] text-sm bg-foreground text-background inline-flex items-center gap-1.5"
                       >
-                        <Check className="h-3.5 w-3.5" />
+                        <Check className="size-3.5" />
                         Ask
                       </button>
                     </div>

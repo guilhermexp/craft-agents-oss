@@ -96,7 +96,7 @@ export function PairingCodeDialog({
                   className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-accent"
                   title={t('common.copy')}
                 >
-                  <Copy className="h-3.5 w-3.5" />
+                  <Copy className="size-3.5" />
                 </button>
               </div>
 
@@ -117,7 +117,7 @@ export function PairingCodeDialog({
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
                 >
-                  <ExternalLink className="h-3.5 w-3.5" />
+                  <ExternalLink className="size-3.5" />
                   t.me/{botUsername}
                 </a>
               )}

@@ -369,7 +369,7 @@ function ProcessingIndicator({ startTime, statusMessage }: ProcessingIndicatorPr
   return (
     <div className="flex items-center gap-2 px-3 py-1 -mb-1 text-[13px] text-muted-foreground">
       {/* Spinner in same location as TurnCard chevron */}
-      <div className="w-3 h-3 flex items-center justify-center shrink-0">
+      <div className="size-3 flex items-center justify-center shrink-0">
         <Spinner className="text-[10px]" />
       </div>
       {/* Label with crossfade animation on content change only */}
@@ -2188,7 +2188,7 @@ function ErrorMessage({
               onClick={() => setDetailsOpen(!detailsOpen)}
               className="flex items-center gap-1 text-xs text-destructive/70 hover:text-destructive transition-colors"
             >
-              {detailsOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+              {detailsOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
               <span>{detailsOpen ? t('chat.hideTechnicalDetails') : t('chat.showTechnicalDetails')}</span>
             </button>
 
@@ -2251,7 +2251,7 @@ function MessageBubble({
               className="absolute top-2 right-2 p-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-foreground/5"
               title={t("sidebarMenu.openInNewWindow")}
             >
-              <ExternalLink className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+              <ExternalLink className="size-4 text-muted-foreground hover:text-foreground" />
             </button>
           )}
           {/* Use StreamingMarkdown for block-level memoization during streaming */}
@@ -2294,7 +2294,7 @@ function MessageBubble({
     return (
       <div className="flex items-center gap-2 px-3 py-1 -mb-1 text-[13px] text-muted-foreground">
         {/* Spinner in same location as TurnCard chevron */}
-        <div className="w-3 h-3 flex items-center justify-center shrink-0">
+        <div className="size-3 flex items-center justify-center shrink-0">
           <Spinner className="text-[10px]" />
         </div>
         <InlineMessageMarkdown
@@ -2335,8 +2335,8 @@ function MessageBubble({
 
     return (
       <div className={cn('flex items-center gap-2 px-3 py-1 text-[13px] select-none', config.className)}>
-        <div className="w-3 h-3 flex items-center justify-center shrink-0">
-          <Icon className="w-3 h-3" />
+        <div className="size-3 flex items-center justify-center shrink-0">
+          <Icon className="size-3" />
         </div>
         <InlineMessageMarkdown
           content={message.content}

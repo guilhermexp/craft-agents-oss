@@ -97,7 +97,7 @@ export function CompactPermissionModeSelector({
           )}
           style={{ '--shadow-color': style.shadowVar } as React.CSSProperties}
         >
-          <ModeIcon mode={optimisticMode} className="h-3.5 w-3.5" />
+          <ModeIcon mode={optimisticMode} className="size-3.5" />
           <span>{config.shortName}</span>
         </button>
       </DrawerTrigger>
@@ -122,14 +122,14 @@ export function CompactPermissionModeSelector({
                   onClick={() => handleSelect(mode)}
                 >
                   <span className={cn("shrink-0", PERMISSION_MODE_CONFIG[mode].colorClass.text)}>
-                    <ModeIcon mode={mode} className="h-5 w-5" />
+                    <ModeIcon mode={mode} className="size-5" />
                   </span>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium">{modeConfig.displayName}</div>
                     <div className="text-xs text-muted-foreground">{modeConfig.description}</div>
                   </div>
                   {isSelected && (
-                    <Check className="h-4 w-4 shrink-0 text-foreground/60" />
+                    <Check className="size-4 shrink-0 text-foreground/60" />
                   )}
                 </button>
               </DrawerClose>

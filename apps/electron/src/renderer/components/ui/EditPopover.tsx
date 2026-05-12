@@ -1060,7 +1060,7 @@ export function EditPopover({
             {/* Container */}
             <div
               ref={popoverRef}
-              className="relative bg-foreground-2 overflow-hidden w-full h-full shadow-modal-small"
+              className="relative bg-foreground-2 overflow-hidden size-full shadow-modal-small"
               style={{
                 transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
                 borderRadius: 16,
@@ -1074,7 +1074,7 @@ export function EditPopover({
                   isDragging && "cursor-grabbing"
                 )}
               >
-                <GripHorizontal className="w-4 h-4 text-muted-foreground/30" />
+                <GripHorizontal className="size-4 text-muted-foreground/30" />
               </div>
 
               {/* Content area - always uses compact ChatDisplay */}
@@ -1100,7 +1100,7 @@ export function EditPopover({
             {/* Bottom-right resize handle - outside overflow-hidden container */}
             <div
               onMouseDown={handleResizeStart}
-              className="absolute -bottom-2 -right-2 w-6 h-6 cursor-nwse-resize pointer-events-auto z-50"
+              className="absolute -bottom-2 -right-2 size-6 cursor-nwse-resize pointer-events-auto z-50"
               style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}
             />
           </PopoverContent>

@@ -110,7 +110,7 @@ export function AddWorkspaceStep_CreateNew({
           isCreating && "opacity-50 cursor-not-allowed"
         )}
       >
-        <ArrowLeft className="h-4 w-4" />
+        <ArrowLeft className="size-4" />
         {t("common.back")}
       </button>
 

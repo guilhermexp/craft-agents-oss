@@ -75,7 +75,7 @@ export function SessionUpload({ onSessionLoad }: SessionUploadProps) {
     }
   }, [parseSessionFile])
 
-  const handleClick = useCallback(() => {
+  const openFilePicker = useCallback(() => {
     fileInputRef.current?.click()
   }, [])
 
@@ -101,8 +101,9 @@ export function SessionUpload({ onSessionLoad }: SessionUploadProps) {
 
   return (
     <div className="w-full max-w-xl">
-      <div
-        onClick={handleClick}
+      <button
+        type="button"
+        onClick={openFilePicker}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -121,9 +122,9 @@ export function SessionUpload({ onSessionLoad }: SessionUploadProps) {
           ${isDragging ? 'bg-accent/10 text-accent' : 'bg-foreground/5 text-foreground/50'}
         `}>
           {isDragging ? (
-            <FileJson className="w-8 h-8" />
+            <FileJson className="size-8" />
           ) : (
-            <Upload className="w-8 h-8" />
+            <Upload className="size-8" />
           )}
         </div>
 
@@ -136,18 +137,19 @@ export function SessionUpload({ onSessionLoad }: SessionUploadProps) {
           </p>
         </div>
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".json"
-          onChange={handleFileSelect}
-          className="hidden"
-        />
-      </div>
+      </button>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json"
+        onChange={handleFileSelect}
+        className="hidden"
+      />
 
       {error && (
         <div className="mt-4 flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
-          <AlertCircle className="w-4 h-4 shrink-0" />
+          <AlertCircle className="size-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}

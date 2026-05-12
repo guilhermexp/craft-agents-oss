@@ -100,7 +100,7 @@ function MeetingOption({ checked, onChange, icon, title, description }: MeetingO
     >
       <span
         className={cn(
-          'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors',
+          'flex size-8 shrink-0 items-center justify-center rounded-lg border transition-colors',
           checked
             ? 'border-foreground/15 bg-background/80 text-foreground'
             : 'border-border/60 bg-background/40 text-muted-foreground group-hover:text-foreground/80'
@@ -120,7 +120,7 @@ function MeetingOption({ checked, onChange, icon, title, description }: MeetingO
 function ProcessStep({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
   return (
     <div className="flex gap-3">
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-background/60 text-muted-foreground">
+      <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-background/60 text-muted-foreground">
         {icon}
       </div>
       <div className="min-w-0">
@@ -270,7 +270,7 @@ export function MeetingsPage() {
         <header className="flex flex-col gap-4 border-b border-border/60 pb-6 md:flex-row md:items-end md:justify-between">
           <div className="max-w-2xl space-y-2">
             <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-foreground/[0.035] px-2.5 py-1 text-xs text-muted-foreground">
-              <Video className="h-3.5 w-3.5" />
+              <Video className="size-3.5" />
               <span>{t('meetings.eyebrow')}</span>
             </div>
             <div className="space-y-1">
@@ -280,7 +280,7 @@ export function MeetingsPage() {
           </div>
           <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-card/40 p-3 text-xs text-muted-foreground md:min-w-[270px]">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-foreground/70" />
+              <CheckCircle2 className="size-4 text-foreground/70" />
               <span>{t('meetings.apiReady')}</span>
             </div>
             <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-3">
@@ -293,7 +293,7 @@ export function MeetingsPage() {
                 disabled={isAuthenticating}
                 onClick={handleGoogleAuth}
               >
-                {isAuthenticating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="h-3.5 w-3.5" />}
+                {isAuthenticating ? <Loader2 className="size-3.5 animate-spin" /> : <ExternalLink className="size-3.5" />}
                 {t('meetings.authGoogle')}
               </Button>
             </div>
@@ -318,7 +318,7 @@ export function MeetingsPage() {
                     className="h-11 flex-1 border-border/70 bg-background/70 text-sm shadow-none focus-visible:ring-foreground/10"
                   />
                   <Button type="submit" disabled={!canJoin} className="h-11 shrink-0 gap-2 px-4">
-                    {isJoining ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+                    {isJoining ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
                     {t('meetings.join')}
                   </Button>
                 </div>
@@ -332,7 +332,7 @@ export function MeetingsPage() {
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 space-y-1">
                       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                        <Sparkles className="h-4 w-4" />
+                        <Sparkles className="size-4" />
                         <span>{t('meetings.detectedTitle')}</span>
                       </div>
                       <p className="text-xs leading-5 text-muted-foreground">{t('meetings.detectedDescription')}</p>
@@ -358,7 +358,7 @@ export function MeetingsPage() {
                         onClick={handleApproveDetectedMeeting}
                         disabled={isJoining}
                       >
-                        {isJoining ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="h-3.5 w-3.5" />}
+                        {isJoining ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}
                         {t('meetings.detectedApprove')}
                       </Button>
                     </div>
@@ -375,21 +375,21 @@ export function MeetingsPage() {
                   <MeetingOption
                     checked={transcriptionEnabled}
                     onChange={setTranscriptionEnabled}
-                    icon={<MessageSquareText className="h-4 w-4" />}
+                    icon={<MessageSquareText className="size-4" />}
                     title={t('meetings.transcription')}
                     description={t('meetings.transcriptionDescription')}
                   />
                   <MeetingOption
                     checked={summaryEnabled}
                     onChange={setSummaryEnabled}
-                    icon={<Sparkles className="h-4 w-4" />}
+                    icon={<Sparkles className="size-4" />}
                     title={t('meetings.summary')}
                     description={t('meetings.summaryDescription')}
                   />
                   <MeetingOption
                     checked={followUpEnabled}
                     onChange={setFollowUpEnabled}
-                    icon={<ClipboardList className="h-4 w-4" />}
+                    icon={<ClipboardList className="size-4" />}
                     title={t('meetings.followUp')}
                     description={t('meetings.followUpDescription')}
                   />
@@ -406,24 +406,24 @@ export function MeetingsPage() {
               </div>
               <div className="space-y-4">
                 <ProcessStep
-                  icon={<Video className="h-3.5 w-3.5" />}
+                  icon={<Video className="size-3.5" />}
                   title={t('meetings.flowOpenTitle')}
                   description={t('meetings.flowOpenDescription')}
                 />
                 <ProcessStep
-                  icon={<MessageSquareText className="h-3.5 w-3.5" />}
+                  icon={<MessageSquareText className="size-3.5" />}
                   title={t('meetings.flowCaptureTitle')}
                   description={t('meetings.flowCaptureDescription')}
                 />
                 <ProcessStep
-                  icon={<FileText className="h-3.5 w-3.5" />}
+                  icon={<FileText className="size-3.5" />}
                   title={t('meetings.flowNotesTitle')}
                   description={t('meetings.flowNotesDescription')}
                 />
               </div>
               <div className="rounded-xl border border-border/60 bg-background/45 p-3">
                 <div className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
-                  <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-foreground/70" />
+                  <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-foreground/70" />
                   <span>{t('meetings.privacyNote')}</span>
                 </div>
               </div>

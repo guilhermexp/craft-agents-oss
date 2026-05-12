@@ -109,7 +109,7 @@ export const FreeFormInputContextBadge = React.forwardRef<HTMLButtonElement, Fre
 
         {/* Optional chevron - only in expanded state */}
         {isExpanded && showChevron && (
-          <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
+          <ChevronDown className="size-3 opacity-50 shrink-0" />
         )}
       </button>
     )

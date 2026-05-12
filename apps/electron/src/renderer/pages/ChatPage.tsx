@@ -555,25 +555,25 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
         {sharedUrl ? (
           <>
             <StyledDropdownMenuItem onClick={handleOpenInBrowser}>
-              <Globe className="h-3.5 w-3.5" />
+              <Globe className="size-3.5" />
               <span className="flex-1">{t('sessionMenu.openInBrowser')}</span>
             </StyledDropdownMenuItem>
             <StyledDropdownMenuItem onClick={handleCopyLink}>
-              <Copy className="h-3.5 w-3.5" />
+              <Copy className="size-3.5" />
               <span className="flex-1">{t('sessionMenu.copyLink')}</span>
             </StyledDropdownMenuItem>
             <StyledDropdownMenuItem onClick={handleUpdateShare}>
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw className="size-3.5" />
               <span className="flex-1">{t('sessionMenu.updateShare')}</span>
             </StyledDropdownMenuItem>
             <StyledDropdownMenuSeparator />
             <StyledDropdownMenuItem onClick={handleRevokeShare} variant="destructive">
-              <Link2Off className="h-3.5 w-3.5" />
+              <Link2Off className="size-3.5" />
               <span className="flex-1">{t('sessionMenu.stopSharing')}</span>
             </StyledDropdownMenuItem>
             <StyledDropdownMenuSeparator />
             <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl('https://agents.craft.do/docs/go-further/sharing')}>
-              <Info className="h-3.5 w-3.5" />
+              <Info className="size-3.5" />
               <span className="flex-1">{t('chat.learnMore')}</span>
             </StyledDropdownMenuItem>
           </>
@@ -587,7 +587,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
             </StyledDropdownMenuItem>
             <StyledDropdownMenuSeparator />
             <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl('https://agents.craft.do/docs/go-further/sharing')}>
-              <Info className="h-3.5 w-3.5" />
+              <Info className="size-3.5" />
               <span className="flex-1">{t('chat.learnMore')}</span>
             </StyledDropdownMenuItem>
           </>
@@ -606,7 +606,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
         presentation="drawer"
         trigger={(
           <PanelHeaderCenterButton
-            icon={<Info className="h-4 w-4" />}
+            icon={<Info className="size-4" />}
             aria-label={t("chat.sessionInfo")}
             className={HEADER_ICON_ONLY_BUTTON_CLASS}
           />
@@ -622,7 +622,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
     return (
       <PanelHeaderCenterButton
-        icon={<PanelRightRounded className="h-4 w-4" />}
+        icon={<PanelRightRounded className="size-4" />}
         tooltip={t("chat.sessionInfo")}
         aria-pressed={isOpen}
         onClick={() => updateRightSidebar(isOpen ? undefined : { type: 'session-info' })}
@@ -637,13 +637,13 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     return (
       <div className="flex items-center gap-1">
         <PanelHeaderCenterButton
-          icon={<RefreshCw className="h-4 w-4" />}
+          icon={<RefreshCw className="size-4" />}
           tooltip={t('sessionMenu.regenerateTitle')}
           onClick={() => void handleRefreshTitle()}
           className={HEADER_ICON_ONLY_BUTTON_CLASS}
         />
         <PanelHeaderCenterButton
-          icon={<Trash2 className="h-4 w-4" />}
+          icon={<Trash2 className="size-4" />}
           tooltip={t('common.delete')}
           onClick={handleDelete}
           className={`${HEADER_ICON_ONLY_BUTTON_CLASS} text-destructive hover:text-destructive opacity-75 hover:opacity-100`}
@@ -801,7 +801,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
       <div className="h-full flex flex-col">
         <PanelHeader  title={t('chat.session')} leadingAction={leadingAction} rightSidebarButton={rightSidebarButton} />
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
-          <AlertCircle className="h-10 w-10" />
+          <AlertCircle className="size-10" />
           <p className="text-sm">{t('chat.sessionNoLongerExists')}</p>
         </div>
       </div>

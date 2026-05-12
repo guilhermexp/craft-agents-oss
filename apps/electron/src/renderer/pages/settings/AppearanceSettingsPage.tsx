@@ -61,7 +61,7 @@ const getToolIconColumns = (t: (key: string) => string): ColumnDef<ToolIconMappi
         <img
           src={row.original.iconDataUrl}
           alt={row.original.displayName}
-          className="w-5 h-5 object-contain"
+          className="size-5 object-contain"
         />
       </div>
     ),
@@ -529,9 +529,9 @@ export default function AppearanceSettingsPage() {
                       value={mode}
                       onValueChange={setMode}
                       options={[
-                        { value: 'system', label: t("settings.appearance.system"), icon: <Monitor className="w-4 h-4" /> },
-                        { value: 'light', label: t("settings.appearance.light"), icon: <Sun className="w-4 h-4" /> },
-                        { value: 'dark', label: t("settings.appearance.dark"), icon: <Moon className="w-4 h-4" /> },
+                        { value: 'system', label: t("settings.appearance.system"), icon: <Monitor className="size-4" /> },
+                        { value: 'light', label: t("settings.appearance.light"), icon: <Sun className="size-4" /> },
+                        { value: 'dark', label: t("settings.appearance.dark"), icon: <Moon className="size-4" /> },
                       ]}
                     />
                   </SettingsRow>
@@ -586,11 +586,11 @@ export default function AppearanceSettingsPage() {
                             <img
                               src={scenicBackgroundPreview}
                               alt=""
-                              className="w-full h-full object-cover"
+                              className="size-full object-cover"
                             />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                              <ImageIcon className="w-5 h-5" />
+                            <div className="size-full flex items-center justify-center text-muted-foreground">
+                              <ImageIcon className="size-5" />
                             </div>
                           )}
                         </div>
@@ -606,7 +606,7 @@ export default function AppearanceSettingsPage() {
                                 type="color"
                                 value={accentColor}
                                 onChange={(event) => void handleThemeColorChange('accent', event.target.value)}
-                                className="h-7 w-7 rounded-full border-0 bg-transparent p-0"
+                                className="size-7 rounded-full border-0 bg-transparent p-0"
                               />
                               <span className="text-xs font-mono text-foreground">{accentColor}</span>
                             </div>
@@ -620,7 +620,7 @@ export default function AppearanceSettingsPage() {
                                 type="color"
                                 value={backgroundColor}
                                 onChange={(event) => void handleThemeColorChange('background', event.target.value)}
-                                className="h-7 w-7 rounded-full border-0 bg-transparent p-0"
+                                className="size-7 rounded-full border-0 bg-transparent p-0"
                               />
                               <span className="text-xs font-mono text-foreground">{backgroundColor}</span>
                             </div>
@@ -634,7 +634,7 @@ export default function AppearanceSettingsPage() {
                                 type="color"
                                 value={foregroundColor}
                                 onChange={(event) => void handleThemeColorChange('foreground', event.target.value)}
-                                className="h-7 w-7 rounded-full border-0 bg-transparent p-0"
+                                className="size-7 rounded-full border-0 bg-transparent p-0"
                               />
                               <span className="text-xs font-mono text-foreground">{foregroundColor}</span>
                             </div>
@@ -787,10 +787,10 @@ export default function AppearanceSettingsPage() {
                                 <img
                                   src={workspaceIconMap.get(workspace.id)}
                                   alt=""
-                                  className="w-4 h-4 rounded object-cover"
+                                  className="size-4 rounded object-cover"
                                 />
                               ) : (
-                                <div className="w-4 h-4 rounded bg-foreground/10" />
+                                <div className="size-4 rounded bg-foreground/10" />
                               )}
                               <span>{workspace.name}</span>
                             </div>

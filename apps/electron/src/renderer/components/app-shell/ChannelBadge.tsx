@@ -91,7 +91,7 @@ function SingleChannelBadge({ channel, ariaLabel }: SingleChannelBadgeProps) {
             }
       }
     >
-      <Hash className="h-3 w-3 shrink-0" aria-hidden="true" />
+      <Hash className="size-3 shrink-0" aria-hidden="true" />
       <span className="truncate min-w-0">{channel.name}</span>
     </button>
   )

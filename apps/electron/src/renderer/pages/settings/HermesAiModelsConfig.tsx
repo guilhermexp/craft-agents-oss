@@ -288,7 +288,7 @@ export function HermesAiModelsConfig() {
         <SettingsCardContent className="space-y-4">
           {loadingConfig ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Carregando configuração do Hermes…
+              <Loader2 className="size-4 animate-spin" /> Carregando configuração do Hermes…
             </div>
           ) : (
             <>
@@ -362,7 +362,7 @@ export function HermesAiModelsConfig() {
 
               <div className="flex items-center gap-2 pt-1">
                 <Button size="sm" onClick={handleSaveProvider} disabled={savingProvider || !provider}>
-                  {savingProvider ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
+                  {savingProvider ? <Loader2 className="size-3.5 mr-1.5 animate-spin" /> : <Save className="size-3.5 mr-1.5" />}
                   {isCurrentProvider ? 'Atualizar provider' : 'Ativar provider'}
                 </Button>
               </div>
@@ -415,7 +415,7 @@ function StatusBar({
       <Cell
         label="Provider"
         value={providerDef?.name ?? '—'}
-        leading={providerDef && <img src={providerDef.icon} alt="" className="h-4 w-4" />}
+        leading={providerDef && <img src={providerDef.icon} alt="" className="size-4" />}
       />
       <Cell label="Model" value={modelLabel} mono />
       <Cell
@@ -473,14 +473,14 @@ function ProviderField({
           >
             {selected ? (
               <>
-                <img src={selected.icon} alt="" className="h-5 w-5" />
+                <img src={selected.icon} alt="" className="size-5" />
                 <span className="text-sm font-medium truncate">{selected.name}</span>
                 <ProviderBadge provider={selected} />
               </>
             ) : (
               <span className="text-sm text-muted-foreground">Selecione…</span>
             )}
-            <ChevronDown className="h-4 w-4 text-muted-foreground ml-auto" />
+            <ChevronDown className="size-4 text-muted-foreground ml-auto" />
           </button>
         </PopoverTrigger>
         <PopoverContent
@@ -498,7 +498,7 @@ function ProviderField({
                   selected?.id === p.id ? 'bg-muted/40' : ''
                 }`}
               >
-                <img src={p.icon} alt="" className="h-5 w-5" />
+                <img src={p.icon} alt="" className="size-5" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm font-medium truncate">{p.name}</span>
@@ -506,7 +506,7 @@ function ProviderField({
                   </div>
                   <div className="text-[10px] text-muted-foreground truncate">{p.description}</div>
                 </div>
-                {selected?.id === p.id && <Check className="h-3.5 w-3.5 text-primary" />}
+                {selected?.id === p.id && <Check className="size-3.5 text-primary" />}
               </button>
             ))}
           </div>
@@ -551,7 +551,7 @@ function ModelField({
             <span className={`text-sm flex-1 text-left truncate ${selectedModel ? 'font-mono text-xs' : 'text-muted-foreground'}`}>
               {loading ? 'Carregando…' : selectedModel || (models.length === 0 ? 'Sem modelos' : 'Selecione…')}
             </span>
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            <ChevronDown className="size-4 text-muted-foreground" />
           </button>
         </PopoverTrigger>
         <PopoverContent
@@ -560,7 +560,7 @@ function ModelField({
           style={{ width: 'var(--radix-popover-trigger-width)' }}
         >
           <div className="flex items-center gap-2 px-2 py-1.5 border-b border-border/40 mb-1">
-            <Search className="h-3.5 w-3.5 text-muted-foreground" />
+            <Search className="size-3.5 text-muted-foreground" />
             <input
               type="text"
               value={query}
@@ -584,7 +584,7 @@ function ModelField({
                   }`}
                 >
                   <span className="flex-1 truncate">{m}</span>
-                  {selectedModel === m && <Check className="h-3.5 w-3.5 text-primary" />}
+                  {selectedModel === m && <Check className="size-3.5 text-primary" />}
                 </button>
               ))
             )}

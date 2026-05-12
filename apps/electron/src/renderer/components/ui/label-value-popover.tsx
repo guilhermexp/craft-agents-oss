@@ -221,13 +221,13 @@ export function LabelValuePopover({
                       type="button"
                       aria-label="Select date"
                       className={cn(
-                        'flex items-center justify-center w-7 h-7 rounded-[5px]',
+                        'flex items-center justify-center size-7 rounded-[5px]',
                         'hover:bg-foreground/5 transition-colors cursor-pointer',
                         'outline-none',
                         calendarOpen && 'bg-foreground/5'
                       )}
                     >
-                      <CalendarDays className="w-3.5 h-3.5 text-foreground/50" />
+                      <CalendarDays className="size-3.5 text-foreground/50" />
                     </button>
                   </PopoverTrigger>
                   <PopoverContent
@@ -300,7 +300,7 @@ export function LabelValuePopover({
               'transition-colors cursor-pointer outline-none'
             )}
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 className="size-3.5" />
             <span>{t('common.remove')}</span>
           </button>
         </div>

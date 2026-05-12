@@ -359,7 +359,7 @@ function StateBadge({
           showChevron
           icon={(
             <span
-              className="shrink-0 flex items-center w-3.5 h-3.5 [&>svg]:w-full [&>svg]:h-full [&>img]:w-full [&>img]:h-full [&>span]:text-xs"
+              className="shrink-0 flex items-center size-3.5 [&>svg]:w-full [&>svg]:h-full [&>img]:w-full [&>img]:h-full [&>span]:text-xs"
               style={applyColor ? { color: state.resolvedColor } : undefined}
             >
               {state.icon}
@@ -411,7 +411,7 @@ function FilesPopoverButton({ sessionId, sessionFolderPath }: { sessionId?: stri
             "text-foreground/80",
           )}
         >
-          <Info className="h-3.5 w-3.5 shrink-0" />
+          <Info className="size-3.5 shrink-0" />
           <span className="whitespace-nowrap">{t("common.info")}</span>
         </button>
       )}
@@ -483,9 +483,9 @@ function PermissionModeDropdown({ permissionMode, onPermissionModeChange, sessio
           )}
           style={{ '--shadow-color': currentStyle.shadowVar } as React.CSSProperties}
         >
-          <PermissionModeIcon mode={optimisticMode} className="h-3.5 w-3.5" />
+          <PermissionModeIcon mode={optimisticMode} className="size-3.5" />
           <span>{t(`mode.${optimisticMode}`)}</span>
-          <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+          <ChevronDown className="size-3.5 opacity-60" />
         </button>
       </PopoverTrigger>
       <PopoverContent

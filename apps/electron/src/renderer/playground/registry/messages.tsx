@@ -30,7 +30,7 @@ function AssistantMessage({ content }: { content: string }) {
           className="absolute top-2 right-2 p-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-foreground/5"
           title="Open in new window"
         >
-          <ExternalLink className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+          <ExternalLink className="size-4 text-muted-foreground hover:text-foreground" />
         </button>
         <CollapsibleMarkdownProvider>
           <Markdown
@@ -50,7 +50,7 @@ function AssistantMessage({ content }: { content: string }) {
 function StatusMessage({ content }: { content: string }) {
   return (
     <div className="flex items-center gap-2 px-3 py-1 text-[13px] text-muted-foreground">
-      <div className="w-3 h-3 flex items-center justify-center shrink-0">
+      <div className="size-3 flex items-center justify-center shrink-0">
         <Spinner className="text-[10px]" />
       </div>
       <span>{content}</span>
@@ -180,7 +180,7 @@ function ProcessingIndicator({ cycleMs = 10000, counting = true, elapsed: initia
   return (
     <div className="flex items-center gap-2 px-3 py-1 text-[13px] text-muted-foreground">
       {/* Spinner */}
-      <div className="w-3 h-3 flex items-center justify-center shrink-0">
+      <div className="size-3 flex items-center justify-center shrink-0">
         <Spinner className="text-[10px]" />
       </div>
       {/* Label container */}

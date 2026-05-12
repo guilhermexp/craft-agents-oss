@@ -185,7 +185,7 @@ export default function ServerSettingsPage() {
 
             {needsRestart && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/10 border border-warning/20 text-xs text-warning">
-                <RotateCw className="h-3.5 w-3.5 shrink-0" />
+                <RotateCw className="size-3.5 shrink-0" />
                 <span className="flex-1">{t("settings.server.restartRequired")}</span>
                 <Button
                   variant="outline"
@@ -217,8 +217,8 @@ export default function ServerSettingsPage() {
                         <code className="text-xs font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded">
                           {status.url}
                         </code>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleCopy(status.url, 'URL')}>
-                          <Copy className="h-3 w-3" />
+                        <Button variant="ghost" size="sm" className="size-6 p-0" onClick={() => handleCopy(status.url, 'URL')}>
+                          <Copy className="size-3" />
                         </Button>
                       </div>
                     </SettingsRow>
@@ -228,11 +228,11 @@ export default function ServerSettingsPage() {
                         <code className="text-xs font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded max-w-[180px] truncate">
                           {tokenVisible ? status.token : '••••••••••••••••'}
                         </code>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setTokenVisible(v => !v)}>
-                          {tokenVisible ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                        <Button variant="ghost" size="sm" className="size-6 p-0" onClick={() => setTokenVisible(v => !v)}>
+                          {tokenVisible ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
                         </Button>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleCopy(status.token, 'Token')}>
-                          <Copy className="h-3 w-3" />
+                        <Button variant="ghost" size="sm" className="size-6 p-0" onClick={() => handleCopy(status.token, 'Token')}>
+                          <Copy className="size-3" />
                         </Button>
                       </div>
                     </SettingsRow>
@@ -264,7 +264,7 @@ export default function ServerSettingsPage() {
 
               {form.enabled && !hasTls && (
                 <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-warning/10 border border-warning/20 text-xs text-warning">
-                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <AlertTriangle className="size-3.5 shrink-0 mt-0.5" />
                   <span>
                     {status?.insecureWarning
                       ? t("settings.server.insecureWarning")

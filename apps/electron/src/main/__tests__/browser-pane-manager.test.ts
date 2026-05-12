@@ -56,7 +56,7 @@ function createMockWebContents() {
       }
       return img
     }),
-    executeJavaScript: mock(async (expr: string) => eval(expr)),
+    executeJavaScript: mock(async (_expr: string) => undefined),
     focus: mock(() => {}),
     setWindowOpenHandler: mock((_handler: any) => {}),
     send: mock((_channel: string, _payload?: unknown) => {}),

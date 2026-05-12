@@ -53,7 +53,7 @@ function TextFormattingMenu({ editor }: { editor: Editor }) {
         isActive={editor.isActive('bold')}
         title={t('editor.bold')}
       >
-        <Bold className="w-3.5 h-3.5" />
+        <Bold className="size-3.5" />
       </BubbleButton>
 
       <BubbleButton
@@ -61,7 +61,7 @@ function TextFormattingMenu({ editor }: { editor: Editor }) {
         isActive={editor.isActive('italic')}
         title={t('editor.italic')}
       >
-        <Italic className="w-3.5 h-3.5" />
+        <Italic className="size-3.5" />
       </BubbleButton>
 
       <BubbleButton
@@ -69,7 +69,7 @@ function TextFormattingMenu({ editor }: { editor: Editor }) {
         isActive={editor.isActive('strike')}
         title={t('editor.strikethrough')}
       >
-        <Strikethrough className="w-3.5 h-3.5" />
+        <Strikethrough className="size-3.5" />
       </BubbleButton>
 
       <BubbleButton
@@ -77,7 +77,7 @@ function TextFormattingMenu({ editor }: { editor: Editor }) {
         isActive={editor.isActive('code')}
         title={t('editor.code')}
       >
-        <Code className="w-3.5 h-3.5" />
+        <Code className="size-3.5" />
       </BubbleButton>
 
       <BubbleButton
@@ -99,7 +99,7 @@ function TextFormattingMenu({ editor }: { editor: Editor }) {
         }}
         title={t('editor.math')}
       >
-        <Sigma className="w-3.5 h-3.5" />
+        <Sigma className="size-3.5" />
       </BubbleButton>
     </div>
   )
@@ -285,7 +285,7 @@ function RichBlockEditMenu({ editor }: { editor: Editor }) {
           className="tiptap-bubble-done-btn"
           onClick={commitEdit}
         >
-          Done
+          Save edit
         </button>
       </div>
       <div className="tiptap-bubble-textarea-shell">

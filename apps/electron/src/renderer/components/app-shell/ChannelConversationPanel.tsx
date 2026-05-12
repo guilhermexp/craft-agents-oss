@@ -101,8 +101,8 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
   return (
     <div className="flex h-full flex-col bg-background">
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border/60 px-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-md border border-border/70 bg-muted/40">
-          <Hash className="h-4 w-4 text-muted-foreground" />
+        <div className="flex size-8 items-center justify-center rounded-md border border-border/70 bg-muted/40">
+          <Hash className="size-4 text-muted-foreground" />
         </div>
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-foreground">{channel.name}</h1>
@@ -112,12 +112,12 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
 
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {isLoading ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Carregando canal...</div>
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Carregando canal…</div>
         ) : messages.length === 0 ? (
           <div className="flex h-full items-center justify-center text-center">
             <div className="max-w-sm">
-              <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-md border border-border/70 bg-muted/30">
-                <Hash className="h-5 w-5 text-muted-foreground" />
+              <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-md border border-border/70 bg-muted/30">
+                <Hash className="size-5 text-muted-foreground" />
               </div>
               <p className="text-sm font-medium text-foreground">Nenhuma mensagem no canal</p>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -146,8 +146,8 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
             ))}
             {isSending ? (
               <div className="flex items-center gap-2 rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Hermes está processando a mensagem do canal...
+                <Loader2 className="size-3.5 animate-spin" />
+                Hermes está processando a mensagem do canal…
               </div>
             ) : null}
             <div ref={messagesEndRef} />
@@ -179,10 +179,10 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
                 type="button"
                 disabled={!canSend}
                 onClick={() => { void sendMessage() }}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Enviar mensagem para o canal"
               >
-                {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {isSending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
               </button>
             </div>
           </div>

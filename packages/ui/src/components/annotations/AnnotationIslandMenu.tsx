@@ -123,7 +123,7 @@ export function AnnotationIslandMenu({
                 'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring'
               )}
             >
-              <CornerDownRight className="h-3.5 w-3.5" />
+              <CornerDownRight className="size-3.5" />
               <span>{t('chat.followUp')}</span>
             </button>
           </div>

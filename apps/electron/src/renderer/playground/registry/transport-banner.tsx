@@ -15,11 +15,11 @@ function MockTopBar() {
     <div className="absolute top-0 left-0 right-0 h-[48px] z-[50] flex items-center justify-between px-3 border-b border-border/30 bg-background/80 backdrop-blur-sm">
       <span className="text-xs text-muted-foreground">Mock TopBar</span>
       <div className="flex items-center gap-1" style={{ paddingRight: 12 }}>
-        <button className="h-[26px] w-[26px] flex items-center justify-center rounded-lg hover:bg-foreground/5">
-          <Plus className="h-4 w-4 text-foreground/50" strokeWidth={1.5} />
+        <button className="size-[26px] flex items-center justify-center rounded-lg hover:bg-foreground/5">
+          <Plus className="size-4 text-foreground/50" strokeWidth={1.5} />
         </button>
-        <button className="h-[26px] w-[26px] flex items-center justify-center rounded-lg hover:bg-foreground/5">
-          <HelpCircle className="h-4 w-4 text-foreground/50" strokeWidth={1.5} />
+        <button className="size-[26px] flex items-center justify-center rounded-lg hover:bg-foreground/5">
+          <HelpCircle className="size-4 text-foreground/50" strokeWidth={1.5} />
         </button>
       </div>
     </div>

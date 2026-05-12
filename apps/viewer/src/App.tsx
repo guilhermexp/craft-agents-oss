@@ -208,7 +208,7 @@ export function App() {
       {isLoading ? (
         <div className="flex-1 flex items-center justify-center p-8">
           <div className="text-center text-muted-foreground">
-            <div className="animate-pulse">Loading session...</div>
+            <div className="animate-pulse">Loading session…</div>
           </div>
         </div>
       ) : error ? (

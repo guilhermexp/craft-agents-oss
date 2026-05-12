@@ -235,7 +235,7 @@ export function CronBuilder({
         />
         {validationError && (
           <div className="flex items-center gap-1.5 text-xs text-destructive">
-            <AlertCircle className="h-3 w-3" />
+            <AlertCircle className="size-3" />
             {validationError}
           </div>
         )}
@@ -245,7 +245,7 @@ export function CronBuilder({
       <div className="bg-background shadow-minimal rounded-[8px] p-4 space-y-3">
         {/* Human-readable description */}
         <div className="flex items-center gap-2">
-          <Clock className="h-4 w-4 text-muted-foreground" />
+          <Clock className="size-4 text-muted-foreground" />
           <span className="text-sm font-medium">{description}</span>
         </div>
 

@@ -75,7 +75,7 @@ type SortDir = 'asc' | 'desc' | null
 // ── Cell formatting ──────────────────────────────────────────────────────────
 
 function formatCell(value: unknown, type?: ColumnDef['type']): React.ReactNode {
-  if (value === null || value === undefined) return <span className="text-muted-foreground/40">—</span>
+  if (value === null || value === undefined) return <span className="text-muted-foreground/40">None</span>
   switch (type) {
     case 'currency': {
       const num = typeof value === 'number' ? value : Number(value)
@@ -120,7 +120,7 @@ function colAlign(type?: ColumnDef['type'], explicit?: string): string {
 
 function SortIcon({ dir }: { dir: SortDir }) {
   return (
-    <svg className={cn('w-3 h-3 shrink-0', dir ? 'opacity-60' : 'opacity-20')} viewBox="0 0 16 16" fill="currentColor">
+    <svg className={cn('size-3 shrink-0', dir ? 'opacity-60' : 'opacity-20')} viewBox="0 0 16 16" fill="currentColor">
       {dir === 'asc' ? (
         <path d="M8 3l4 5H4l4-5z" />
       ) : dir === 'desc' ? (
@@ -523,7 +523,7 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
               >
                 <td colSpan={parsed.columns.length} className="py-2 px-3 bg-foreground/[0.03] border-b border-foreground/[0.06]">
                   <span className="inline-flex items-center gap-2 text-[12px] font-medium text-muted-foreground">
-                    <ChevronRight className={cn('w-3 h-3 transition-transform', !collapsedGroups.has(group.value) && 'rotate-90')} />
+                    <ChevronRight className={cn('size-3 transition-transform', !collapsedGroups.has(group.value) && 'rotate-90')} />
                     {groupColumnLabel}: {group.value}
                     <span className="text-muted-foreground/50">({group.rows.length})</span>
                   </span>
@@ -560,7 +560,7 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
           )}
           title={t('table.tableControls')}
         >
-          <ListFilter className="w-3.5 h-3.5" />
+          <ListFilter className="size-3.5" />
         </button>
       </DropdownMenuTrigger>
       <StyledDropdownMenuContent sideOffset={6} align="end" className="min-w-36" style={{ zIndex: 'var(--z-floating-menu, 400)' }}>
@@ -569,7 +569,7 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
           <StyledDropdownMenuSubTrigger>
             <ArrowUpDown />
             <span className="flex-1">{t('table.sortBy')}</span>
-            {sortKey && sortDir && <Check className="w-3 h-3 text-accent" />}
+            {sortKey && sortDir && <Check className="size-3 text-accent" />}
           </StyledDropdownMenuSubTrigger>
           <StyledDropdownMenuSubContent style={{ zIndex: 'calc(var(--z-floating-menu, 400) + 1)' }}>
             {parsed.columns.map((col) => {
@@ -591,7 +591,7 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
           <StyledDropdownMenuSubTrigger>
             <Group />
             <span className="flex-1">{t('table.groupBy')}</span>
-            {groupKey && <Check className="w-3 h-3 text-accent" />}
+            {groupKey && <Check className="size-3 text-accent" />}
           </StyledDropdownMenuSubTrigger>
           <StyledDropdownMenuSubContent style={{ zIndex: 'calc(var(--z-floating-menu, 400) + 1)' }}>
             {parsed.columns.map((col) => {
@@ -604,7 +604,7 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
                   <DropdownMenuSub key={`group-${col.key}`}>
                     <StyledDropdownMenuSubTrigger>
                       <span className={cn('flex-1', isActive && 'text-accent font-medium')}>{col.label}</span>
-                      {isActive && <Check className="w-3 h-3 text-accent" />}
+                      {isActive && <Check className="size-3 text-accent" />}
                     </StyledDropdownMenuSubTrigger>
                     <StyledDropdownMenuSubContent style={{ zIndex: 'calc(var(--z-floating-menu, 400) + 2)' }}>
                       {opts.map((opt) => {
@@ -624,7 +624,7 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
                             }}
                           >
                             <span className={cn('flex-1', optActive && 'text-accent font-medium')}>{opt.label}</span>
-                            {optActive && <Check className="w-3.5 h-3.5 text-accent" />}
+                            {optActive && <Check className="size-3.5 text-accent" />}
                           </StyledDropdownMenuItem>
                         )
                       })}
@@ -649,7 +649,7 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
                   }}
                 >
                   <span className={cn('flex-1', isActive && 'text-accent font-medium')}>{col.label}</span>
-                  {isActive && <Check className="w-3.5 h-3.5 text-accent" />}
+                  {isActive && <Check className="size-3.5 text-accent" />}
                 </StyledDropdownMenuItem>
               )
             })}
@@ -688,7 +688,7 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
           )}
           title={t('common.viewFullscreen')}
         >
-          <Maximize2 className="w-3.5 h-3.5" />
+          <Maximize2 className="size-3.5" />
         </button>
 
         {/* Header */}

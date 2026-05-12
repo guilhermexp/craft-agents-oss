@@ -212,7 +212,7 @@ export function WorkspaceCreationScreen({
             )}
             aria-label="Close"
           >
-            <X className="h-4 w-4" />
+            <X className="size-4" />
           </motion.button>
         </header>
 

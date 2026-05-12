@@ -925,9 +925,11 @@ export function FreeFormInput({
   React.useEffect(() => {
     if (!consumePendingFocusForSession(sessionId)) return
 
-    setTimeout(() => {
+    const focusTimer = setTimeout(() => {
       richInputRef.current?.focus()
     }, 0)
+
+    return () => clearTimeout(focusTimer)
   }, [sessionId, richInputRef])
 
   // Get the next available number for a pasted file prefix (e.g., pasted-image-1, pasted-image-2)
@@ -1666,7 +1668,7 @@ export function FreeFormInput({
             Match the AppShell pattern (which already uses spread). */}
         {addLabelEditConfig && (
           <EditPopover
-            trigger={<span className="absolute top-0 left-0 w-0 h-0 overflow-hidden" />}
+            trigger={<span className="absolute top-0 left-0 size-0 overflow-hidden" />}
             open={addLabelPopoverOpen}
             onOpenChange={setAddLabelPopoverOpen}
             {...addLabelEditConfig}
@@ -1830,7 +1832,7 @@ export function FreeFormInput({
             />
           )}
           <FreeFormInputContextBadge
-            icon={<Paperclip className="h-4 w-4" />}
+            icon={<Paperclip className="size-4" />}
             label={attachments.length > 0
               ? t("chat.filesCount", { count: attachments.length })
               : t("chat.attach")
@@ -1848,7 +1850,7 @@ export function FreeFormInput({
                 buttonRef={sourceButtonRef}
                 icon={
                   optimisticSourceSlugs.length === 0 ? (
-                    <DatabaseZap className="h-4 w-4" />
+                    <DatabaseZap className="size-4" />
                   ) : (
                     <div className="flex items-center -ml-0.5">
                       {(() => {
@@ -1860,7 +1862,7 @@ export function FreeFormInput({
                             {displaySources.map((source, index) => (
                               <div
                                 key={source.config.slug}
-                                className={cn("relative h-5 w-5 rounded-[4px] bg-background shadow-minimal flex items-center justify-center", index > 0 && "-ml-1")}
+                                className={cn("relative size-5 rounded-[4px] bg-background shadow-minimal flex items-center justify-center", index > 0 && "-ml-1")}
                                 style={{ zIndex: index + 1 }}
                               >
                                 <SourceAvatar source={source} size="xs" />
@@ -1868,7 +1870,7 @@ export function FreeFormInput({
                             ))}
                             {remainingCount > 0 && (
                               <div
-                                className="-ml-1 h-5 w-5 rounded-[4px] bg-background shadow-minimal flex items-center justify-center text-[8px] font-medium text-muted-foreground"
+                                className="-ml-1 size-5 rounded-[4px] bg-background shadow-minimal flex items-center justify-center text-[8px] font-medium text-muted-foreground"
                                 style={{ zIndex: displaySources.length + 1 }}
                               >
                                 +{remainingCount}
@@ -1931,7 +1933,7 @@ export function FreeFormInput({
           <div className="flex items-center gap-1 min-w-32 shrink overflow-hidden">
           {/* 1. Attach Files Badge */}
           <FreeFormInputContextBadge
-            icon={<Paperclip className="h-4 w-4" />}
+            icon={<Paperclip className="size-4" />}
             label={attachments.length > 0
               ? t("chat.filesCount", { count: attachments.length })
               : t("chat.attachFiles")
@@ -1951,7 +1953,7 @@ export function FreeFormInput({
                 buttonRef={sourceButtonRef}
                 icon={
                   optimisticSourceSlugs.length === 0 ? (
-                    <DatabaseZap className="h-4 w-4" />
+                    <DatabaseZap className="size-4" />
                   ) : (
                     <div className="flex items-center -ml-0.5">
                       {(() => {
@@ -1963,7 +1965,7 @@ export function FreeFormInput({
                             {displaySources.map((source, index) => (
                               <div
                                 key={source.config.slug}
-                                className={cn("relative h-5 w-5 rounded-[4px] bg-background shadow-minimal flex items-center justify-center", index > 0 && "-ml-1")}
+                                className={cn("relative size-5 rounded-[4px] bg-background shadow-minimal flex items-center justify-center", index > 0 && "-ml-1")}
                                 style={{ zIndex: index + 1 }}
                               >
                                 <SourceAvatar source={source} size="xs" />
@@ -1971,7 +1973,7 @@ export function FreeFormInput({
                             ))}
                             {remainingCount > 0 && (
                               <div
-                                className="-ml-1 h-5 w-5 rounded-[4px] bg-background shadow-minimal flex items-center justify-center text-[8px] font-medium text-muted-foreground"
+                                className="-ml-1 size-5 rounded-[4px] bg-background shadow-minimal flex items-center justify-center text-[8px] font-medium text-muted-foreground"
                                 style={{ zIndex: displaySources.length + 1 }}
                               >
                                 +{remainingCount}
@@ -2056,7 +2058,7 @@ export function FreeFormInput({
 	                          <ConnectionIcon connection={effectiveConnectionDetails} size={14} showTooltip />
 	                        )}
 	                        <span className="max-w-[160px] truncate">{hermesProfileSelectorLabel}</span>
-	                        {changingHermesProfile ? <Spinner className="h-3 w-3" /> : <ChevronDown className="h-3 w-3 opacity-60" />}
+	                        {changingHermesProfile ? <Spinner className="size-3" /> : <ChevronDown className="size-3 opacity-60" />}
 	                      </button>
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
@@ -2067,7 +2069,7 @@ export function FreeFormInput({
                 <StyledDropdownMenuContent side="top" align="end" sideOffset={8} className="min-w-[240px] max-h-[300px] overflow-y-auto">
                   {hermesProfilesLoading ? (
                     <StyledDropdownMenuItem disabled>
-                      <Spinner className="h-3.5 w-3.5" />
+                      <Spinner className="size-3.5" />
                       Loading profiles…
                     </StyledDropdownMenuItem>
                   ) : hermesProfiles.length === 0 ? (
@@ -2088,7 +2090,7 @@ export function FreeFormInput({
                           onSelect={() => void handleHermesProfileSelect(profile.name)}
                           className="min-w-0 items-start py-2"
                         >
-                          {isChanging ? <Spinner className="mt-0.5 h-3.5 w-3.5" /> : <Check className={cn("mt-0.5 h-3.5 w-3.5", isSelected ? "opacity-100" : "opacity-0")} />}
+                          {isChanging ? <Spinner className="mt-0.5 size-3.5" /> : <Check className={cn("mt-0.5 size-3.5", isSelected ? "opacity-100" : "opacity-0")} />}
                           <span className="min-w-0 flex-1">
                             <span className={cn("block truncate text-[13px]", isSelected && "font-medium text-accent")}>{profile.name}</span>
                             <span className="block max-w-[190px] truncate text-[11px] text-muted-foreground">{modelText}</span>
@@ -2116,14 +2118,14 @@ export function FreeFormInput({
                   >
                     {connectionUnavailable ? (
                       <>
-                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                        <AlertCircle className="size-3.5 shrink-0" />
                         {t('common.unavailable')}
                       </>
 	                    ) : (
 	                      <>
 	                        {!isHermesConnection && effectiveConnectionDetails && llmConnections.length > 1 && storage.get(storage.KEYS.showConnectionIcons, true) && <ConnectionIcon connection={effectiveConnectionDetails} size={14} showTooltip />}
 	                        {currentModelDisplayName}
-	                        {!connectionDefaultModel && <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />}
+	                        {!connectionDefaultModel && <ChevronDown className="size-3 opacity-50 shrink-0" />}
 	                      </>
                     )}
                   </button>
@@ -2137,7 +2139,7 @@ export function FreeFormInput({
               {/* Connection unavailable message */}
               {connectionUnavailable ? (
                 <div className="flex flex-col items-center justify-center py-6 px-4 text-center">
-                  <AlertCircle className="h-8 w-8 text-destructive mb-2" />
+                  <AlertCircle className="size-8 text-destructive mb-2" />
                   <div className="font-medium text-sm mb-1">{t('chat.connectionUnavailable')}</div>
                   <div className="text-xs text-muted-foreground">
                     {t('chat.connectionUnavailableDescription')}
@@ -2152,7 +2154,7 @@ export function FreeFormInput({
                     <div className="font-medium text-sm">{stripPiPrefixForDisplay(connectionDefaultModel)}</div>
                     <div className="text-xs text-muted-foreground">{t('chat.connectionDefault')}</div>
                   </div>
-                  <Check className="h-3 w-3 text-foreground shrink-0 ml-3" />
+                  <Check className="size-3 text-foreground shrink-0 ml-3" />
                 </StyledDropdownMenuItem>
               ) : isEmptySession && llmConnections.length > 1 ? (
                 /* Hierarchical view: Provider → Connection → Models (for new sessions with multiple connections) */
@@ -2178,7 +2180,7 @@ export function FreeFormInput({
                               <div className="font-medium text-sm flex items-center gap-1.5">
                                 <ConnectionIcon connection={conn} size={14} />
                                 {conn.name}
-                                {isCurrentConnection && <Check className="h-3 w-3 text-foreground" />}
+                                {isCurrentConnection && <Check className="size-3 text-foreground" />}
                               </div>
                               {!isAuthenticated && (
                                 <div className="text-xs text-muted-foreground">{t('settings.ai.notAuthenticated')}</div>
@@ -2207,7 +2209,7 @@ export function FreeFormInput({
                                   >
                                     <div className="font-medium text-sm">{modelName}</div>
                                     {isSelectedModel && (
-                                      <Check className="h-3 w-3 text-foreground shrink-0 ml-3" />
+                                      <Check className="size-3 text-foreground shrink-0 ml-3" />
                                     )}
                                   </StyledDropdownMenuItem>
                                 )
@@ -2254,7 +2256,7 @@ export function FreeFormInput({
                           )}
                         </div>
                         {isSelected && (
-                          <Check className="h-3 w-3 text-foreground shrink-0 ml-3" />
+                          <Check className="size-3 text-foreground shrink-0 ml-3" />
                         )}
                       </StyledDropdownMenuItem>
                     )
@@ -2289,7 +2291,7 @@ export function FreeFormInput({
                               <div className="text-xs text-muted-foreground">{t(descriptionKey)}</div>
                             </div>
                             {isSelected && (
-                              <Check className="h-3 w-3 text-foreground shrink-0 ml-3" />
+                              <Check className="size-3 text-foreground shrink-0 ml-3" />
                             )}
                           </StyledDropdownMenuItem>
                         )
@@ -2308,7 +2310,7 @@ export function FreeFormInput({
                       <span>{t('chat.context')}</span>
                       <span className="flex items-center gap-1.5">
                         {contextStatus.isCompacting && (
-                          <Spinner className="h-3 w-3" />
+                          <Spinner className="size-3" />
                         )}
                         {t('chat.tokensUsed', { displayCount: formatTokenCount(contextStatus.inputTokens) })}
                       </span>
@@ -2378,21 +2380,21 @@ export function FreeFormInput({
               size="icon"
               variant="secondary"
               aria-label={t('chat.stopResponse')}
-              className="send-btn h-7 w-7 rounded-full shrink-0 hover:bg-foreground/15 active:bg-foreground/20 ml-2"
+              className="send-btn size-7 rounded-full shrink-0 hover:bg-foreground/15 active:bg-foreground/20 ml-2"
               onClick={() => handleStop(false)}
             >
-              <Square className="h-3 w-3 fill-current" />
+              <Square className="size-3 fill-current" />
             </Button>
           ) : (
             <Button
               type="submit"
               size="icon"
               aria-label={t('shortcuts.sendMessage')}
-              className="send-btn h-7 w-7 rounded-full shrink-0 ml-2"
+              className="send-btn size-7 rounded-full shrink-0 ml-2"
               disabled={!hasContent || disabled || disableSend}
               data-tutorial="send-button"
             >
-              <ArrowUp className="h-4 w-4" />
+              <ArrowUp className="size-4" />
             </Button>
           )}
           </div>
@@ -2540,7 +2542,7 @@ function WorkingDirectoryBadge({
       <PopoverTrigger asChild>
         <span className="shrink min-w-0 overflow-hidden">
           <FreeFormInputContextBadge
-            icon={<Icon_Home className="h-4 w-4" />}
+            icon={<Icon_Home className="size-4" />}
             label={folderName}
             isExpanded={isEmptySession}
             hasSelection={hasFolder}
@@ -2581,12 +2583,12 @@ function WorkingDirectoryBadge({
                 className={cn(MENU_ITEM_STYLE, 'pointer-events-none bg-foreground/5')}
                 disabled
               >
-                <Icon_Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <Icon_Folder className="size-4 shrink-0 text-muted-foreground" />
                 <span className="flex-1 min-w-0 truncate">
                   <span>{folderName}</span>
                   <span className="text-muted-foreground ml-1.5">{formatPathForDisplay(workingDirectory, homeDir)}</span>
                 </span>
-                <Check className="h-4 w-4 shrink-0" />
+                <Check className="size-4 shrink-0" />
               </CommandPrimitive.Item>
             )}
 
@@ -2605,7 +2607,7 @@ function WorkingDirectoryBadge({
                   onSelect={() => handleSelectRecent(path)}
                   className={cn(MENU_ITEM_STYLE, 'group/item data-[selected=true]:bg-foreground/5')}
                 >
-                  <Icon_Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <Icon_Folder className="size-4 shrink-0 text-muted-foreground" />
                   <span className="flex-1 min-w-0 truncate">
                     <span>{recentFolderName}</span>
                     <span className="text-muted-foreground ml-1.5">{formatPathForDisplay(path, homeDir)}</span>
@@ -2613,9 +2615,9 @@ function WorkingDirectoryBadge({
                   <button
                     type="button"
                     onClick={(e) => handleRemoveRecent(e, path)}
-                    className="shrink-0 h-3 w-3 rounded-[3px] flex items-center justify-center opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-all"
+                    className="shrink-0 size-3 rounded-[3px] flex items-center justify-center opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-all"
                   >
-                    <X className="h-3 w-3" />
+                    <X className="size-3" />
                   </button>
                 </CommandPrimitive.Item>
               )

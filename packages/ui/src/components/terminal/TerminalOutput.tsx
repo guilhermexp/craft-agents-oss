@@ -90,14 +90,14 @@ export function TerminalOutput({
 
   return (
     <div
-      className={cn('h-full w-full overflow-auto px-5 py-4 font-mono text-sm', className)}
+      className={cn('size-full overflow-auto px-5 py-4 font-mono text-sm', className)}
       style={{ fontFamily: '"JetBrains Mono", monospace' }}
     >
       {/* Command section */}
       <div className="mb-4">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2 text-xs" style={{ color: mutedColor }}>
-            <Terminal className="w-3 h-3" />
+            <Terminal className="size-3" />
             <span>Command</span>
           </div>
           <button
@@ -109,9 +109,9 @@ export function TerminalOutput({
             title={copied === 'command' ? t('common.copied') : t('terminal.copyCommand')}
           >
             {copied === 'command' ? (
-              <Check className="h-3.5 w-3.5 text-green-500" />
+              <Check className="size-3.5 text-green-500" />
             ) : (
-              <Copy className="h-3.5 w-3.5" style={{ color: mutedColor }} />
+              <Copy className="size-3.5" style={{ color: mutedColor }} />
             )}
           </button>
         </div>
@@ -124,7 +124,7 @@ export function TerminalOutput({
       <div>
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2 text-xs" style={{ color: mutedColor }}>
-            <Terminal className="w-3 h-3" />
+            <Terminal className="size-3" />
             <span>{t('terminal.output')}</span>
             {exitCode !== undefined && (
               <span
@@ -147,9 +147,9 @@ export function TerminalOutput({
             title={copied === 'output' ? t('common.copied') : t('terminal.copyOutput')}
           >
             {copied === 'output' ? (
-              <Check className="h-3.5 w-3.5 text-green-500" />
+              <Check className="size-3.5 text-green-500" />
             ) : (
-              <Copy className="h-3.5 w-3.5" style={{ color: mutedColor }} />
+              <Copy className="size-3.5" style={{ color: mutedColor }} />
             )}
           </button>
         </div>
