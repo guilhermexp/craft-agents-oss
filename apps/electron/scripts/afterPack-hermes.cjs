@@ -42,9 +42,14 @@ function findFirstAppBundle(dir) {
 function selectSigningIdentity() {
   const explicit =
     (process.env.CSC_NAME && String(process.env.CSC_NAME).trim()) ||
+    (process.env.APPLE_SIGNING_IDENTITY && String(process.env.APPLE_SIGNING_IDENTITY).trim()) ||
     (process.env.SIGN_IDENTITY && String(process.env.SIGN_IDENTITY).trim()) ||
     (process.env.CODESIGN_IDENTITY && String(process.env.CODESIGN_IDENTITY).trim());
   if (explicit) return explicit;
+
+  if (String(process.env.CSC_IDENTITY_AUTO_DISCOVERY || '').toLowerCase() === 'false') {
+    return null;
+  }
 
   let out;
   try {

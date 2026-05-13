@@ -163,6 +163,7 @@ const waNodeBin = process.env.CRAFT_MESSAGING_NODE_BIN ?? 'node'
 // Built inside createHandlerDeps (needs sessionManager), populated with the WS
 // publisher after bootstrapServer resolves.
 let messagingHandle: MessagingBootstrapHandle | null = null
+let activeSessionManager: SessionManager | null = null
 
 const instance = await (async () => {
   try {
@@ -211,7 +212,10 @@ const instance = await (async () => {
           oauthIdToken: oauth?.idToken,
         }
       }),
-      createSessionManager: () => new SessionManager(),
+      createSessionManager: () => {
+        activeSessionManager = new SessionManager()
+        return activeSessionManager
+      },
       createHandlerDeps: ({ sessionManager, platform, oauthFlowStore }) => {
         messagingHandle = createMessagingBootstrap({
           sessionManager,
@@ -253,7 +257,7 @@ const instance = await (async () => {
         }
       },
       cleanupClientResources: (clientId) => {
-        sessionManager.cleanupClientSessionState(clientId)
+        activeSessionManager?.cleanupClientSessionState(clientId)
         void transferManager.cleanupClientTransfers(clientId)
       },
     })

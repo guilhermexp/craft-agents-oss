@@ -157,8 +157,15 @@ bun run electron:build
 echo "Packaging app with electron-builder..."
 cd "$ELECTRON_DIR"
 
-# Set up environment for electron-builder
-export CSC_IDENTITY_AUTO_DISCOVERY=true
+# Set up environment for electron-builder. Local builds should not grab an
+# arbitrary keychain identity and block on a password prompt; signing is enabled
+# only when explicitly configured.
+if [ -n "$APPLE_SIGNING_IDENTITY" ] || [ -n "$CSC_NAME" ] || [ -n "$CSC_LINK" ]; then
+    export CSC_IDENTITY_AUTO_DISCOVERY=true
+else
+    export CSC_IDENTITY_AUTO_DISCOVERY=false
+    echo "No signing identity configured; building unsigned local DMG"
+fi
 
 # Build electron-builder arguments
 BUILDER_ARGS="--mac --${ARCH}"
