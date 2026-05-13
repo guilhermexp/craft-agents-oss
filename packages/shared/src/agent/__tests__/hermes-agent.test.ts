@@ -6,7 +6,10 @@
  * chat finally block) and assert on observable side-effects: provider
  * teardown, pendingProviderRestart flag, and mcpPool.sync calls.
  */
-import { describe, it, expect, beforeEach } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { ACPProvider } from '@mcpc-tech/acp-ai-provider'
 import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
 
@@ -15,6 +18,9 @@ import { createMockBackendConfig, createMockSession, createMockWorkspace } from 
 import type { BackendConfig, SdkMcpServerConfig } from '../backend/types.ts'
 import type { NormalizedHermesRuntimeConfig } from '../../hermes/acp-config.ts'
 import { warRoomChannelId } from '../../channels/types.ts'
+import { saveChannelsConfig } from '../../channels/storage.ts'
+import { saveLabelConfig } from '../../labels/storage.ts'
+import { createSession } from '../../sessions/storage.ts'
 
 type FakeProvider = {
   cleanup: () => void
@@ -68,6 +74,9 @@ class TestableHermesAgent extends HermesAgent {
   installAcpPermissionHandlerForTest(provider: ACPProvider): void {
     ;(this as unknown as HermesAgentPermissionInstaller).installAcpPermissionHandler(provider)
   }
+  buildCraftSessionContextForTest(message: string): string | null {
+    return (this as unknown as { buildCraftSessionContextForTurn: (message: string) => string | null }).buildCraftSessionContextForTurn(message)
+  }
 }
 
 
@@ -112,6 +121,51 @@ describe('buildCraftSessionContextPrompt', () => {
 
     expect(prompt).toContain('Session labels: Client X (client-x)')
     expect(prompt).toContain('No matching War Room channel metadata was found')
+  })
+})
+
+
+
+describe('HermesAgent Craft session context refresh', () => {
+  const tempDirs: string[] = []
+
+  afterEach(() => {
+    for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('refreshes labels from disk instead of using the stale session snapshot', async () => {
+    const workspaceRoot = mkdtempSync(join(process.env.HOME!, '.craft-hermes-context-refresh-'))
+    tempDirs.push(workspaceRoot)
+    saveLabelConfig(workspaceRoot, {
+      version: 1,
+      labels: [{ id: 'channel-clients', name: 'Clients' }],
+    })
+    saveChannelsConfig(workspaceRoot, {
+      version: 1,
+      channels: [{
+        id: warRoomChannelId('clients'),
+        name: 'Clients',
+        description: 'Canal dedicado para tratar de assuntos relacionados a clientes',
+        labelId: 'channel-clients',
+      }],
+    })
+    const diskSession = await createSession(workspaceRoot, {
+      name: 'Eae baum?',
+      labels: ['channel-clients'],
+      llmConnection: 'hermes',
+    })
+    const staleSession = { ...diskSession, labels: undefined }
+    const agent = new TestableHermesAgent(createHermesConfig({
+      workspace: createMockWorkspace({ id: 'workspace-1', name: 'Code - Workspace', rootPath: `~/${workspaceRoot.slice(process.env.HOME!.length + 1)}` }),
+      session: staleSession,
+    }))
+
+    const prompt = agent.buildCraftSessionContextForTest('Veja nao ta funcionando direito ainda nao ne?')
+
+    expect(prompt).toContain('Session labels: Clients (channel-clients)')
+    expect(prompt).toContain('Active Craft channel context:')
+    expect(prompt).toContain('#Clients')
+    expect(prompt).toContain('Canal dedicado para tratar de assuntos relacionados a clientes')
   })
 })
 

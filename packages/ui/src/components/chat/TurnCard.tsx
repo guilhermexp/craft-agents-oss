@@ -912,7 +912,7 @@ function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, 
         <TreeViewConnector depth={depth} isLastChild={isLastChild} />
         <div
           className={cn(
-            "group/row flex items-center gap-2 py-0.5 text-foreground/75 flex-1 min-w-0",
+            "group/row flex items-start gap-2 py-0.5 text-foreground/75 flex-1 min-w-0",
             SIZE_CONFIG.fontSize
           )}
           onClick={onOpenDetails && isComplete ? onOpenDetails : undefined}
@@ -924,7 +924,7 @@ function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, 
           ) : (
             <MessageCircleDashed className={cn(SIZE_CONFIG.iconSize, "shrink-0")} />
           )}
-          <span className={cn("truncate flex-1", onOpenDetails && isComplete && "group-hover/row:underline")}>{displayContent}</span>
+          <span className={cn("flex-1 min-w-0 whitespace-normal break-words leading-relaxed", onOpenDetails && isComplete && "group-hover/row:underline")}>{displayContent}</span>
           {/* Open details button */}
           {onOpenDetails && isComplete && (
             <div

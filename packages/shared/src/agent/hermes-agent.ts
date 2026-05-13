@@ -20,6 +20,8 @@ import { seedHermesAuthFromCraft } from '../hermes/auth-bridge.ts'
 import { CraftSessionToolsMcpServer } from '../mcp/session-tools-server.ts'
 import { HermesEventAdapter } from './backend/hermes/event-adapter.ts'
 import { clearPlanFileState, mergeSessionScopedToolCallbacks, unregisterSessionScopedToolCallbacks } from './session-scoped-tools.ts'
+import { loadSession } from '../sessions/storage.ts'
+import { expandPath } from '../utils/paths.ts'
 import { loadChannelsConfig } from '../channels/storage.ts'
 import type { WarRoomChannel } from '../channels/types.ts'
 import { loadLabelConfig } from '../labels/storage.ts'
@@ -531,9 +533,25 @@ export class HermesAgent extends BaseAgent {
     this.providerRuntimeHome = null
   }
 
+  private getWorkspaceRootForContext(): string {
+    return expandPath(this.config.workspace.rootPath)
+  }
+
+  private getCurrentSessionForContext(): BackendConfig['session'] {
+    const session = this.config.session
+    if (!session?.id) return session
+    try {
+      const loaded = loadSession(this.getWorkspaceRootForContext(), session.id)
+      return loaded ?? session
+    } catch (err) {
+      this.onDebug?.(`[hermes-craft-context] failed to refresh session metadata (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+      return session
+    }
+  }
+
   private getWorkspaceLabelsForContext(): LabelConfig[] {
     try {
-      return flattenLabels(loadLabelConfig(this.config.workspace.rootPath).labels)
+      return flattenLabels(loadLabelConfig(this.getWorkspaceRootForContext()).labels)
     } catch (err) {
       this.onDebug?.(`[hermes-craft-context] failed to load labels (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
       return []
@@ -542,7 +560,7 @@ export class HermesAgent extends BaseAgent {
 
   private getWorkspaceChannelsForContext(): WarRoomChannel[] {
     try {
-      return loadChannelsConfig(this.config.workspace.rootPath).channels
+      return loadChannelsConfig(this.getWorkspaceRootForContext()).channels
     } catch (err) {
       this.onDebug?.(`[hermes-craft-context] failed to load channels (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
       return []
@@ -557,7 +575,7 @@ export class HermesAgent extends BaseAgent {
 
     return buildCraftSessionContextPrompt({
       workspace: this.config.workspace,
-      session: this.config.session,
+      session: this.getCurrentSessionForContext(),
       labels: this.getWorkspaceLabelsForContext(),
       channels: this.getWorkspaceChannelsForContext(),
     })
