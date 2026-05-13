@@ -20,6 +20,12 @@ import { seedHermesAuthFromCraft } from '../hermes/auth-bridge.ts'
 import { CraftSessionToolsMcpServer } from '../mcp/session-tools-server.ts'
 import { HermesEventAdapter } from './backend/hermes/event-adapter.ts'
 import { clearPlanFileState, mergeSessionScopedToolCallbacks, unregisterSessionScopedToolCallbacks } from './session-scoped-tools.ts'
+import { loadChannelsConfig } from '../channels/storage.ts'
+import type { WarRoomChannel } from '../channels/types.ts'
+import { loadLabelConfig } from '../labels/storage.ts'
+import { flattenLabels } from '../labels/tree.ts'
+import { parseLabelEntry } from '../labels/values.ts'
+import type { LabelConfig } from '../labels/types.ts'
 
 type StreamToolPart = {
   type: 'tool-call' | 'tool-result'
@@ -50,6 +56,118 @@ type AcpProviderInternalShape = {
 type PendingAcpPermission = {
   resolve: (response: RequestPermissionResponse) => void
   options: PermissionOption[]
+}
+
+type CraftSessionLabelContext = {
+  id: string
+  name?: string
+  raw: string
+}
+
+type BuildCraftSessionContextPromptInput = {
+  workspace: Workspace
+  session?: BackendConfig['session']
+  channels?: WarRoomChannel[]
+  labels?: LabelConfig[]
+}
+
+function normalizeContextToken(value: string | undefined): string {
+  return (value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function escapeContextLine(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+function resolveSessionLabelContext(
+  sessionLabels: string[] | undefined,
+  workspaceLabels: LabelConfig[] | undefined,
+): CraftSessionLabelContext[] {
+  if (!sessionLabels?.length) return []
+
+  const labelById = new Map((workspaceLabels ?? []).map(label => [label.id, label]))
+  return sessionLabels.map(raw => {
+    const parsed = parseLabelEntry(raw)
+    const label = labelById.get(parsed.id)
+    return {
+      id: parsed.id,
+      name: label?.name,
+      raw,
+    }
+  })
+}
+
+function resolveActiveChannels(
+  sessionLabels: CraftSessionLabelContext[],
+  channels: WarRoomChannel[] | undefined,
+): WarRoomChannel[] {
+  if (!sessionLabels.length || !channels?.length) return []
+
+  const labelIds = new Set(sessionLabels.map(label => label.id))
+  const labelNames = new Set(sessionLabels.map(label => normalizeContextToken(label.name ?? label.id)))
+  return channels.filter(channel => {
+    const channelId = String(channel.id)
+    const channelName = normalizeContextToken(channel.name)
+    return labelIds.has(channel.labelId)
+      || labelIds.has(channelId)
+      || labelIds.has(channelName)
+      || labelNames.has(channelName)
+  })
+}
+
+export function buildCraftSessionContextPrompt(input: BuildCraftSessionContextPromptInput): string | null {
+  const session = input.session
+  const sessionLabels = resolveSessionLabelContext(session?.labels, input.labels)
+  const activeChannels = resolveActiveChannels(sessionLabels, input.channels)
+
+  const lines: string[] = [
+    '<<craft-session-context hidden-from-user>>',
+    'This metadata comes from the Craft desktop workspace. Use it to understand the current client/project/channel, but do not quote this block unless the user asks about context.',
+    `Workspace: ${escapeContextLine(input.workspace.name || input.workspace.id)}`,
+    `Workspace ID: ${escapeContextLine(input.workspace.id)}`,
+  ]
+
+  if (session) {
+    lines.push(`Craft session ID: ${escapeContextLine(session.id)}`)
+    if (session.name) lines.push(`Craft session title: ${escapeContextLine(session.name)}`)
+    if (session.sessionStatus) lines.push(`Craft session status: ${escapeContextLine(session.sessionStatus)}`)
+    if (session.workingDirectory) lines.push(`Working directory: ${escapeContextLine(session.workingDirectory)}`)
+  }
+
+  if (sessionLabels.length > 0) {
+    lines.push(`Session labels: ${sessionLabels.map(label => label.name ? `${label.name} (${label.id})` : label.id).join(', ')}`)
+  }
+
+  if (activeChannels.length > 0) {
+    lines.push('Active Craft channel context:')
+    for (const channel of activeChannels) {
+      lines.push(`- #${escapeContextLine(channel.name)} (id: ${escapeContextLine(String(channel.id))}, labelId: ${escapeContextLine(channel.labelId)})`)
+      if (channel.description) lines.push(`  description: ${escapeContextLine(channel.description)}`)
+      if (channel.workingDirectory) lines.push(`  workingDirectory: ${escapeContextLine(channel.workingDirectory)}`)
+      if (channel.defaultSourceSlugs?.length) lines.push(`  defaultSources: ${channel.defaultSourceSlugs.map(escapeContextLine).join(', ')}`)
+      if (channel.craftBridgeContext) {
+        lines.push(`  craftBridge: ${channel.craftBridgeContext.provider}/${channel.craftBridgeContext.sourceSlug}`)
+        if (channel.craftBridgeContext.description) {
+          lines.push(`  craftBridgeDescription: ${escapeContextLine(channel.craftBridgeContext.description)}`)
+        }
+      }
+    }
+    lines.push('Context rule: if the user says "aqui", "esse cliente", "esse projeto", or similar, assume the active Craft channel/client above unless they contradict it.')
+    lines.push('Privacy rule: do not mix data, assumptions, or tasks from other channels/clients into this channel.')
+  } else if (sessionLabels.length > 0) {
+    lines.push('No matching War Room channel metadata was found for these labels; treat the labels as the best available project/client context.')
+  }
+
+  lines.push('<<end-craft-session-context>>')
+
+  if (lines.length <= 5 && sessionLabels.length === 0) return null
+  return lines.join('\n')
 }
 
 export function extractHermesTextDelta(part: StreamTextDeltaPart): string {
@@ -413,6 +531,43 @@ export class HermesAgent extends BaseAgent {
     this.providerRuntimeHome = null
   }
 
+  private getWorkspaceLabelsForContext(): LabelConfig[] {
+    try {
+      return flattenLabels(loadLabelConfig(this.config.workspace.rootPath).labels)
+    } catch (err) {
+      this.onDebug?.(`[hermes-craft-context] failed to load labels (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+      return []
+    }
+  }
+
+  private getWorkspaceChannelsForContext(): WarRoomChannel[] {
+    try {
+      return loadChannelsConfig(this.config.workspace.rootPath).channels
+    } catch (err) {
+      this.onDebug?.(`[hermes-craft-context] failed to load channels (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+      return []
+    }
+  }
+
+  private buildCraftSessionContextForTurn(message: string): string | null {
+    // Channel orchestrator packets already include a richer purpose-built block.
+    if (message.includes('<<craft-channel-orchestrator') || message.includes('<<craft-channel-task-update')) {
+      return null
+    }
+
+    return buildCraftSessionContextPrompt({
+      workspace: this.config.workspace,
+      session: this.config.session,
+      labels: this.getWorkspaceLabelsForContext(),
+      channels: this.getWorkspaceChannelsForContext(),
+    })
+  }
+
+  private applyCraftSessionContext(message: string): string {
+    const context = this.buildCraftSessionContextForTurn(message)
+    return context ? `${context}\n\n${message}` : message
+  }
+
   protected async *chatImpl(
     message: string,
     attachments?: FileAttachment[],
@@ -449,7 +604,7 @@ export class HermesAgent extends BaseAgent {
       messages: [
         {
           role: 'user',
-          content: [{ type: 'text', text: `${message}${attachmentHint}` }],
+          content: [{ type: 'text', text: `${this.applyCraftSessionContext(message)}${attachmentHint}` }],
         },
       ],
     })

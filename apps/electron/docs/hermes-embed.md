@@ -123,7 +123,7 @@ When syncing Craft upstream, preserve these Craft-side integration points:
 
 | Craft file | Craft-required behavior |
 | ---------- | ----------------------- |
-| `packages/shared/src/agent/hermes-agent.ts` | Hermes gets both `craft-sources` and `craft-session` MCP endpoints through ACP; source changes do not kill an active stream; model/session changes do not silently drop MCP config. Before each subprocess spawn, calls `seedHermesAuthFromCraft` so embedded Hermes inherits the user's already-authenticated Craft OAuth/API-key credentials. ACP permission requests from Hermes are bridged into Craft's native `permission_request` event so the renderer shows the same approval UI and desktop notification used by Claude/Pi. |
+| `packages/shared/src/agent/hermes-agent.ts` | Hermes gets both `craft-sources` and `craft-session` MCP endpoints through ACP; source changes do not kill an active stream; model/session changes do not silently drop MCP config. Normal Hermes turns are prefixed with a hidden Craft session context envelope containing workspace, session labels, matching War Room channel metadata, and privacy rules so a session opened under `#client` starts with the right client/project context even outside the War Room orchestrator path. Before each subprocess spawn, calls `seedHermesAuthFromCraft` so embedded Hermes inherits the user's already-authenticated Craft OAuth/API-key credentials. ACP permission requests from Hermes are bridged into Craft's native `permission_request` event so the renderer shows the same approval UI and desktop notification used by Claude/Pi. |
 | `packages/shared/src/hermes/acp-config.ts` | Bundled runtime env (`CRAFT_HERMES_PYTHON`, `CRAFT_HERMES_ARGS`, `CRAFT_HERMES_HOME`) is treated as one coherent ACP command/config unit. In packaged builds, `CRAFT_HERMES_REQUIRE_BUNDLED=1` must fail closed instead of falling back to a system `hermes`. |
 | `packages/shared/src/hermes/auth-bridge.ts` | One-way seed (Craft → Hermes) at spawn: Craft Credential Manager / LLM connections are the source of truth. Claude OAuth → `CLAUDE_CODE_OAUTH_TOKEN`; ChatGPT Plus/Codex OAuth → `<HERMES_HOME>/auth.json` `providers["openai-codex"].tokens`; API-key connections → provider env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GOOGLE_API_KEY`/`GEMINI_API_KEY`, `XAI_API_KEY`, etc.) for the Hermes subprocess/dashboard. No separate Hermes `.env` secret store is required for the embedded app. |
 | `packages/shared/src/mcp/session-tools-server.ts` | Craft-native tools exposed to Hermes include browser, delegation/session, LLM, auth/config helpers, metadata, and automation; callbacks stay session-scoped. |
@@ -715,6 +715,15 @@ Hermes normally prefixes MCP tools as `mcp_<server>_<tool>`; the embedded fork
 special-cases `craft-session` and `craft-sources` so these tools pass through
 the same permission, prerequisite, logging, and UI paths as Pi/Claude tools
 instead of looking like unrelated external MCP tools.
+
+Hermes normal session turns also receive a hidden `<<craft-session-context>>`
+block before the user's text. This is separate from the richer War Room
+`<<craft-channel-orchestrator>>` packet: the normal-session envelope resolves
+session labels against workspace labels and War Room channel `labelId`/name/id,
+then injects the active channel/client, session status, working directory,
+source hints, and a privacy boundary. This prevents a chat visually opened in a
+client channel (for example `#certfacil`) from starting as a contextless Hermes
+conversation.
 
 Hermes tool approvals are intentionally handled by Craft's UI. The Hermes ACP
 server emits `session/request_permission`; `HermesAgent` converts that to the

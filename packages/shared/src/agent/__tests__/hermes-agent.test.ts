@@ -10,10 +10,11 @@ import { describe, it, expect, beforeEach } from 'bun:test'
 import type { ACPProvider } from '@mcpc-tech/acp-ai-provider'
 import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
 
-import { HermesAgent, extractHermesTextDelta, resolveHermesModelId } from '../hermes-agent.ts'
-import { createMockBackendConfig, createMockSession } from './test-utils.ts'
+import { HermesAgent, buildCraftSessionContextPrompt, extractHermesTextDelta, resolveHermesModelId } from '../hermes-agent.ts'
+import { createMockBackendConfig, createMockSession, createMockWorkspace } from './test-utils.ts'
 import type { BackendConfig, SdkMcpServerConfig } from '../backend/types.ts'
 import type { NormalizedHermesRuntimeConfig } from '../../hermes/acp-config.ts'
+import { warRoomChannelId } from '../../channels/types.ts'
 
 type FakeProvider = {
   cleanup: () => void
@@ -68,6 +69,51 @@ class TestableHermesAgent extends HermesAgent {
     ;(this as unknown as HermesAgentPermissionInstaller).installAcpPermissionHandler(provider)
   }
 }
+
+
+
+describe('buildCraftSessionContextPrompt', () => {
+  it('injects matching Craft channel metadata from session labels', () => {
+    const prompt = buildCraftSessionContextPrompt({
+      workspace: createMockWorkspace({ id: 'workspace-1', name: 'Client Workspace' }),
+      session: createMockSession({
+        id: 'session-1',
+        name: 'Eae baum?',
+        labels: ['certfacil'],
+        sessionStatus: 'todo',
+      }),
+      labels: [{ id: 'certfacil', name: 'Cert Fácil' }],
+      channels: [{
+        id: warRoomChannelId('channel-certfacil'),
+        name: 'certfacil',
+        description: 'Cliente Cert Fácil — certificados digitais',
+        labelId: 'channel-certfacil',
+        workingDirectory: '/work/certfacil',
+      }],
+    })
+
+    expect(prompt).toContain('<<craft-session-context hidden-from-user>>')
+    expect(prompt).toContain('Workspace: Client Workspace')
+    expect(prompt).toContain('Craft session title: Eae baum?')
+    expect(prompt).toContain('Session labels: Cert Fácil (certfacil)')
+    expect(prompt).toContain('Active Craft channel context:')
+    expect(prompt).toContain('#certfacil')
+    expect(prompt).toContain('description: Cliente Cert Fácil')
+    expect(prompt).toContain('Privacy rule: do not mix data')
+  })
+
+  it('falls back to labels when no War Room channel matches', () => {
+    const prompt = buildCraftSessionContextPrompt({
+      workspace: createMockWorkspace(),
+      session: createMockSession({ labels: ['client-x'] }),
+      labels: [{ id: 'client-x', name: 'Client X' }],
+      channels: [],
+    })
+
+    expect(prompt).toContain('Session labels: Client X (client-x)')
+    expect(prompt).toContain('No matching War Room channel metadata was found')
+  })
+})
 
 describe('extractHermesTextDelta', () => {
   it('reads AI SDK text-delta parts with text field', () => {

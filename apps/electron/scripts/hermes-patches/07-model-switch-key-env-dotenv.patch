@@ -1,8 +1,8 @@
 diff --git a/hermes_cli/model_switch.py b/hermes_cli/model_switch.py
-index b6cf6344..f5876ef3 100644
+index fec1f33d..5fa56d99 100644
 --- a/hermes_cli/model_switch.py
 +++ b/hermes_cli/model_switch.py
-@@ -1511,7 +1511,12 @@ def list_authenticated_providers(
+@@ -1522,7 +1522,12 @@ def list_authenticated_providers(
              api_key = str(ep_cfg.get("api_key", "") or "").strip()
              if not api_key:
                  key_env = str(ep_cfg.get("key_env", "") or "").strip()
@@ -15,8 +15,8 @@ index b6cf6344..f5876ef3 100644
 +                        api_key = os.environ.get(key_env, "").strip()
              discover = ep_cfg.get("discover_models", True)
              if isinstance(discover, str):
-                 discover = discover.lower() not in ("false", "no", "0")
-@@ -1578,6 +1583,14 @@ def list_authenticated_providers(
+                 discover = discover.lower() not in {"false", "no", "0"}
+@@ -1589,6 +1594,14 @@ def list_authenticated_providers(
              if not raw_name or not api_url:
                  continue
              api_key = (entry.get("api_key") or "").strip()
