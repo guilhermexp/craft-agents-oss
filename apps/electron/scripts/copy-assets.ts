@@ -67,7 +67,7 @@ copyBundledSubprocessResources({
   uploadScript: false,
   rootDir,
   electronDir,
-}, join(electronDir, distResourcesDir));
+}, distResourcesDir);
 
 // Copy PowerShell parser script (for Windows command validation in Explore mode)
 // Source: packages/shared/src/agent/powershell-parser.ps1
