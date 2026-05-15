@@ -11,7 +11,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useBrowserProfiles } from '@/hooks/useBrowserProfiles'
-import { DEFAULT_BROWSER_PROFILE_ID, type BrowserProfile } from '@craft-agent/shared/config/types'
+import { DEFAULT_BROWSER_PROFILE_ID, type BrowserProfile, type BrowserProfileKind } from '@craft-agent/shared/config/types'
+import type { BrowserProfileInput } from '@craft-agent/shared/config/browser-profiles'
 import { cn } from '@/lib/utils'
 
 const COLORS = [
@@ -145,9 +146,16 @@ function ProfileGrid({ profiles, onPick, onCreateClick, onRename, onDelete }: Pr
                 className="h-7 text-xs text-center"
               />
             ) : (
-              <div className="text-sm text-center truncate w-full" title={p.name}>
-                {p.name}
-              </div>
+              <>
+                <div className="text-sm text-center truncate w-full" title={p.name}>
+                  {p.name}
+                </div>
+                {(p.clientName || p.kind === 'client') && (
+                  <div className="max-w-full truncate rounded-full bg-foreground/5 px-2 py-0.5 text-[10px] text-muted-foreground" title={p.clientName ?? p.kind}>
+                    {p.clientName ?? 'Cliente'}
+                  </div>
+                )}
+              </>
             )}
             <div className="absolute top-1 right-1 hidden group-hover:flex gap-1">
               <button
@@ -196,13 +204,16 @@ function ProfileGrid({ profiles, onPick, onCreateClick, onRename, onDelete }: Pr
 }
 
 interface ProfileCreateFormProps {
-  onSubmit: (input: { name: string; color: string }) => Promise<void>
+  onSubmit: (input: BrowserProfileInput) => Promise<void>
   onCancel: () => void
 }
 
 function ProfileCreateForm({ onSubmit, onCancel }: ProfileCreateFormProps) {
   const [name, setName] = useState('')
   const [color, setColor] = useState<string>(COLORS[0])
+  const [kind, setKind] = useState<BrowserProfileKind>('personal')
+  const [clientName, setClientName] = useState('')
+  const [domainHintsText, setDomainHintsText] = useState('')
   const [busy, setBusy] = useState(false)
   const valid = useMemo(() => name.trim().length > 0, [name])
 
@@ -210,7 +221,16 @@ function ProfileCreateForm({ onSubmit, onCancel }: ProfileCreateFormProps) {
     if (!valid || busy) return
     setBusy(true)
     try {
-      await onSubmit({ name: name.trim(), color })
+      await onSubmit({
+        name: name.trim(),
+        color,
+        kind,
+        clientName: clientName.trim() || undefined,
+        domainHints: domainHintsText
+          .split(/[\n,]/)
+          .map((value) => value.trim())
+          .filter(Boolean),
+      })
     } finally {
       setBusy(false)
     }
@@ -235,9 +255,46 @@ function ProfileCreateForm({ onSubmit, onCancel }: ProfileCreateFormProps) {
             onKeyDown={(e) => {
               if (e.key === 'Enter') void handleSubmit()
             }}
-            placeholder="Ex.: Trabalho, Pessoal"
+            placeholder="Ex.: Guilherme pessoal, Cliente ACME"
           />
         </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label htmlFor="browser-profile-kind" className="text-xs text-muted-foreground">Tipo</label>
+          <select
+            id="browser-profile-kind"
+            value={kind}
+            onChange={(e) => setKind(e.target.value as BrowserProfileKind)}
+            className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="personal">Pessoal</option>
+            <option value="client">Cliente</option>
+            <option value="bot">Bot/automação</option>
+            <option value="test">Teste</option>
+          </select>
+        </div>
+        <div>
+          <label htmlFor="browser-profile-client" className="text-xs text-muted-foreground">Cliente/conta</label>
+          <Input
+            id="browser-profile-client"
+            value={clientName}
+            onChange={(e) => setClientName(e.target.value)}
+            placeholder="Ex.: ACME, Google bot"
+          />
+        </div>
+      </div>
+      <div>
+        <label htmlFor="browser-profile-domains" className="text-xs text-muted-foreground">Domínios sugeridos</label>
+        <Input
+          id="browser-profile-domains"
+          value={domainHintsText}
+          onChange={(e) => setDomainHintsText(e.target.value)}
+          placeholder="Ex.: admin.cliente.com, accounts.google.com"
+        />
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Use vírgula para separar. O Craft pode sugerir este perfil nesses sites.
+        </p>
       </div>
       <div>
         <div className="text-xs text-muted-foreground mb-2">Cor do avatar</div>

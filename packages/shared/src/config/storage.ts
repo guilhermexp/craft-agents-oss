@@ -3005,28 +3005,22 @@ import {
   type BrowserProfileSettings,
   DEFAULT_BROWSER_PROFILE_ID,
 } from './types.ts';
-
-const DEFAULT_PROFILE: BrowserProfile = {
-  id: DEFAULT_BROWSER_PROFILE_ID,
-  name: 'Default',
-  color: '#22c55e',
-  createdAt: 0, // sentinel: assigned on first read
-};
+import {
+  normalizeBrowserProfileSettings,
+} from './browser-profiles.ts';
 
 function makeDefaultBrowserProfileSettings(): BrowserProfileSettings {
-  return {
-    profiles: [{ ...DEFAULT_PROFILE, createdAt: Date.now() }],
-    lastUsedProfileId: DEFAULT_BROWSER_PROFILE_ID,
-    alwaysAsk: false,
-  };
+  return normalizeBrowserProfileSettings(null);
 }
 
-function ensureDefaultProfile(settings: BrowserProfileSettings): BrowserProfileSettings {
-  const hasDefault = settings.profiles.some(p => p.id === DEFAULT_BROWSER_PROFILE_ID);
-  if (hasDefault) return settings;
+function normalizeAndDetectProfileSettings(settings: Partial<BrowserProfileSettings> | null | undefined): {
+  settings: BrowserProfileSettings;
+  changed: boolean;
+} {
+  const normalized = normalizeBrowserProfileSettings(settings);
   return {
-    ...settings,
-    profiles: [{ ...DEFAULT_PROFILE, createdAt: Date.now() }, ...settings.profiles],
+    settings: normalized,
+    changed: JSON.stringify(normalized) !== JSON.stringify(settings ?? null),
   };
 }
 
@@ -3045,8 +3039,8 @@ export function getBrowserProfileSettings(): BrowserProfileSettings {
     return seeded;
   }
 
-  const ensured = ensureDefaultProfile(config.browserProfileSettings);
-  if (ensured !== config.browserProfileSettings) {
+  const { settings: ensured, changed } = normalizeAndDetectProfileSettings(config.browserProfileSettings);
+  if (changed) {
     config.browserProfileSettings = ensured;
     saveConfig(config);
   }
@@ -3061,7 +3055,7 @@ export function setBrowserProfiles(profiles: BrowserProfile[]): void {
   const config = loadStoredConfig();
   if (!config) return;
   const current = config.browserProfileSettings ?? makeDefaultBrowserProfileSettings();
-  config.browserProfileSettings = ensureDefaultProfile({
+  config.browserProfileSettings = normalizeBrowserProfileSettings({
     ...current,
     profiles,
   });
@@ -3077,7 +3071,7 @@ export function setLastUsedBrowserProfileId(id: string): void {
   if (!config) return;
   const current = config.browserProfileSettings ?? makeDefaultBrowserProfileSettings();
   const exists = current.profiles.some(p => p.id === id);
-  config.browserProfileSettings = ensureDefaultProfile({
+  config.browserProfileSettings = normalizeBrowserProfileSettings({
     ...current,
     lastUsedProfileId: exists ? id : DEFAULT_BROWSER_PROFILE_ID,
   });
@@ -3092,7 +3086,7 @@ export function setBrowserPickerAlwaysAsk(alwaysAsk: boolean): void {
   const config = loadStoredConfig();
   if (!config) return;
   const current = config.browserProfileSettings ?? makeDefaultBrowserProfileSettings();
-  config.browserProfileSettings = ensureDefaultProfile({
+  config.browserProfileSettings = normalizeBrowserProfileSettings({
     ...current,
     alwaysAsk,
   });

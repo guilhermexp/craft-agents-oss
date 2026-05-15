@@ -28,6 +28,8 @@ export interface NetworkProxySettings {
  * The default profile uses the legacy partition string ('persist:browser-pane')
  * so existing cookies survive without migration.
  */
+export type BrowserProfileKind = 'personal' | 'client' | 'bot' | 'test';
+
 export interface BrowserProfile {
   id: string;
   name: string;
@@ -35,6 +37,14 @@ export interface BrowserProfile {
   color: string;
   /** Optional custom avatar (data URL or absolute file path). */
   avatar?: string;
+  /** Product identity for this browser context: personal, client, bot, or test. */
+  kind?: BrowserProfileKind;
+  /** Optional client/account label shown in profile management surfaces. */
+  clientName?: string;
+  /** Human note explaining what this logged-in browser context is for. */
+  description?: string;
+  /** Hostname hints (e.g. cliente.com.br) used to suggest this profile for URLs. */
+  domainHints?: string[];
   createdAt: number;
   lastUsedAt?: number;
 }

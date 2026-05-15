@@ -161,7 +161,7 @@ server.listen(port, '127.0.0.1')
   it('falls back to app-scoped custom provider config when Hermes returns no models', async () => {
     const modelServer = http.createServer((req, res) => {
       if (req.url === '/v1/models') {
-        expect(req.headers.authorization).toBe('Bearer cliproxy-secret')
+        expect(req.headers.authorization).toBe('Bearer custom-provider-secret')
         res.setHeader('content-type', 'application/json')
         res.end(JSON.stringify({ data: [{ id: 'claude-sonnet-4-6' }, { id: 'gemini-2.5-pro' }] }))
         return
@@ -184,13 +184,13 @@ server.listen(port, '127.0.0.1')
 
     await writeFile(join(home, 'config.yaml'), [
       'providers:',
-      '  cliproxy:',
+      '  custom-openai:',
       `    base_url: http://127.0.0.1:${modelAddress.port}/v1`,
-      '    key_env: CLIPROXY_API_KEY',
+      '    key_env: CUSTOM_OPENAI_API_KEY',
       '    models:',
       '      configured-fallback: {}',
     ].join('\n'))
-    await writeFile(join(home, '.env'), 'CLIPROXY_API_KEY=cliproxy-secret\n')
+    await writeFile(join(home, '.env'), 'CUSTOM_OPENAI_API_KEY=custom-provider-secret\n')
 
     await writeFile(fakeHermes, `#!/usr/bin/env node
 const http = require('node:http')
@@ -210,7 +210,7 @@ const server = http.createServer((req, res) => {
   }
   if (req.url === '/api/model/options') {
     res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ providers: [{ slug: 'cliproxy', models: [] }] }))
+    res.end(JSON.stringify({ providers: [{ slug: 'custom-openai', models: [] }] }))
     setTimeout(() => server.close(() => process.exit(0)), 100)
     return
   }
@@ -226,7 +226,7 @@ server.listen(port, '127.0.0.1')
       const getProviderModels = handlers.get(RPC_NAMESPACES.hermes.GET_PROVIDER_MODELS)
       expect(getProviderModels).toBeDefined()
 
-      const result = await getProviderModels!(ctx, 'cliproxy')
+      const result = await getProviderModels!(ctx, 'custom-openai')
 
       expect(result.success).toBe(true)
       expect(result.data.models).toEqual([{ id: 'claude-sonnet-4-6' }, { id: 'gemini-2.5-pro' }])
@@ -298,18 +298,18 @@ server.listen(port, '127.0.0.1')
 
     const result = await patchApiConfig!(ctx, {
       config: {
-        provider: 'cliproxy',
+        provider: 'custom-openai',
         model: 'claude-sonnet-4-6',
-        base_url: 'http://127.0.0.1:8317/v1',
+        base_url: 'https://custom-provider.example/v1',
       },
     })
 
     expect(result.success).toBe(true)
     const captured = JSON.parse(await readFile(capturedConfig, 'utf-8')) as { yaml_text: string }
-    expect(captured.yaml_text).toContain('provider: cliproxy')
+    expect(captured.yaml_text).toContain('provider: custom-openai')
     expect(captured.yaml_text).toContain('default: claude-sonnet-4-6')
     expect(captured.yaml_text).toContain('api_mode: chat_completions')
-    expect(captured.yaml_text).toContain('base_url: http://127.0.0.1:8317/v1')
+    expect(captured.yaml_text).toContain('base_url: https://custom-provider.example/v1')
   })
 
   it('lists Hermes home files without exposing secrets or expanding operational directories', async () => {

@@ -49,6 +49,7 @@ export type {
 // Auth types for onboarding
 import type { AuthState, SetupNeeds } from '@craft-agent/shared/auth/types';
 import type { AuthType, BrowserProfile, BrowserProfileSettings } from '@craft-agent/shared/config/types';
+import type { BrowserProfileInput } from '@craft-agent/shared/config/browser-profiles';
 export type { AuthState, SetupNeeds, AuthType };
 
 // Credential health types
@@ -698,8 +699,9 @@ export interface ElectronAPI {
     listProfiles(): Promise<BrowserProfile[]>
     getProfileSettings(): Promise<BrowserProfileSettings>
     setProfileSettings(partial: { alwaysAsk?: boolean; lastUsedProfileId?: string }): Promise<BrowserProfileSettings>
-    createProfile(input: { name: string; color: string; avatar?: string }): Promise<BrowserProfile>
+    createProfile(input: BrowserProfileInput): Promise<BrowserProfile>
     renameProfile(payload: { id: string; name: string }): Promise<BrowserProfile>
+    switchProfile(payload: { instanceId: string; profileId: string }): Promise<string | null>
     deleteProfile(id: string): Promise<void>
     onProfilesChanged(callback: (settings: BrowserProfileSettings) => void): () => void
     onPickerRequested(callback: (data: { instanceId: string }) => void): () => void

@@ -82,9 +82,9 @@ Three-tier monorepo: thin clients (Electron / CLI / WebUI / Viewer) → server (
 - `packages/messaging-gateway` and `packages/messaging-whatsapp-worker` — messaging transport plus a WhatsApp worker bundled via `build-wa-worker.ts`.
 - `packages/ui` — shared React components.
 
-### Two agent backends
+### Agent backends (Claude, Pi, Hermes)
 
-The `CraftAgent` abstraction routes between two SDKs depending on the LLM connection:
+The `CraftAgent` abstraction routes between three backends depending on the LLM connection:
 
 - **Claude backend** — `@anthropic-ai/claude-agent-sdk`. Handles Anthropic API key, Claude Max/Pro OAuth, and any third-party endpoint surfaced through the “Claude / Anthropic API Key” connection (OpenRouter, Vercel AI Gateway, Ollama, custom).
 - **Pi backend** — `@mariozechner/pi-coding-agent` driven by `packages/pi-agent-server`. Handles Google AI Studio, ChatGPT Plus (Codex OAuth), GitHub Copilot OAuth, and OpenAI API key.
@@ -121,6 +121,10 @@ Renderer ↔ main and client ↔ server share a typed channel map. `bun run lint
 ### Internationalization
 
 i18n key parity is enforced (`scripts/check-i18n-parity.ts`). When adding a key in one locale, add it in all. `lint:i18n:staged` runs in pre-commit on staged locale files.
+
+### Spec-driven changes
+
+Non-trivial changes are tracked in `openspec/` (`changes/` for in-flight proposals, `specs/` for frozen specs). Use the `opsx:propose` / `opsx:apply` / `opsx:archive` skills when work follows this flow.
 
 ## Conventions specific to this repo
 

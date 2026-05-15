@@ -127,6 +127,10 @@ import {
   type BrowserProfileSettings,
 } from '@craft-agent/shared/config/types'
 import {
+  sanitizeBrowserProfileInput,
+  type BrowserProfileInput,
+} from '@craft-agent/shared/config/browser-profiles'
+import {
   getBrowserProfiles,
   setBrowserProfiles,
   getBrowserProfileSettings,
@@ -701,25 +705,20 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return settings
   }
 
-  createProfile(input: { name: string; color: string; avatar?: string }): BrowserProfile {
-    const name = input.name?.trim()
-    if (!name) {
-      throw new Error('Profile name is required')
-    }
+  createProfile(input: BrowserProfileInput): BrowserProfile {
+    const sanitized = sanitizeBrowserProfileInput(input)
     const profiles = getBrowserProfiles()
     const id = randomUUID().slice(0, 8)
     const profile: BrowserProfile = {
       id,
-      name,
-      color: input.color || '#22c55e',
-      avatar: input.avatar,
+      ...sanitized,
       createdAt: Date.now(),
     }
     setBrowserProfiles([...profiles, profile])
     void applyProxyToProfilePartition(getProfilePartition(id)).catch(error => {
       mainLog.warn(`[browser-pane] proxy apply failed for new profile ${id}: ${error instanceof Error ? error.message : String(error)}`)
     })
-    mainLog.info(`[browser-pane] Created profile id=${id} name="${name}"`)
+    mainLog.info(`[browser-pane] Created profile id=${id} name="${profile.name}"`)
     this.profilesChangeCallback?.(getBrowserProfileSettings())
     return profile
   }
@@ -1913,8 +1912,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       // AX snapshot can fail transiently during navigation; ignore
     }
 
-    const detected = signals.length > 0
-    const isCloudflare = signals.some(s =>
+    // A sparse accessibility tree is useful supporting context, but it is not
+    // enough by itself to call a page a security challenge. Legitimate pages
+    // such as example.com can have only one link and otherwise static text.
+    const decisiveSignals = signals.filter(s => !s.startsWith('ax:near-empty('))
+    const detected = decisiveSignals.length > 0
+    const isCloudflare = decisiveSignals.some(s =>
       s.includes('cf-') || s.includes('challenge') || s.includes('turnstile') || s === 'title:just-a-moment'
     )
     const provider = detected ? (isCloudflare ? 'cloudflare' : 'unknown') : 'none'
@@ -2484,8 +2487,20 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       canGoBack: instance.canGoBack,
       canGoForward: instance.canGoForward,
       themeColor: instance.themeColor,
-      profile: profile ? { id: profile.id, name: profile.name, color: profile.color } : null,
-      availableProfiles: allProfiles.map(p => ({ id: p.id, name: p.name, color: p.color })),
+      profile: profile ? {
+        id: profile.id,
+        name: profile.name,
+        color: profile.color,
+        kind: profile.kind,
+        clientName: profile.clientName,
+      } : null,
+      availableProfiles: allProfiles.map(p => ({
+        id: p.id,
+        name: p.name,
+        color: p.color,
+        kind: p.kind,
+        clientName: p.clientName,
+      })),
     }
     instance.toolbarView.webContents.send(TOOLBAR_CHANNELS.STATE_UPDATE, state)
   }

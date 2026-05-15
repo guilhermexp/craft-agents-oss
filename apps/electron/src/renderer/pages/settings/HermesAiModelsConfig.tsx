@@ -49,16 +49,6 @@ const PROVIDERS: ProviderDef[] = [
     popular: true,
   },
   {
-    id: 'cliproxy',
-    name: 'CLIProxy',
-    description: 'Local proxy — Claude/Gemini/Codex',
-    icon: claudeIcon,
-    authType: 'custom',
-    placeholder: 'http://127.0.0.1:8317/v1',
-    helpText: 'Usa o CLIProxyAPI local configurado no Hermes. Os modelos são carregados dinamicamente de /v1/models.',
-    recommended: true,
-  },
-  {
     id: 'anthropic',
     name: 'Anthropic',
     description: 'API key required',

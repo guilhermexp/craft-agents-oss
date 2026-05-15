@@ -57,22 +57,22 @@ custom_providers:
   it('extracts new-style provider maps with model lists and key env names', () => {
     const snapshot = parseHermesConfigSnapshot(`
 providers:
-  cliproxy:
-    base_url: http://127.0.0.1:8317/v1
-    key_env: CLIPROXY_API_KEY
+  custom-openai:
+    base_url: https://custom-provider.example/v1
+    key_env: CUSTOM_OPENAI_API_KEY
     default_model: claude-sonnet-4-6
     models:
       claude-sonnet-4-6: {}
       gemini-2.5-pro: {}
 `)
 
-    expect(snapshot.providers).toEqual(['cliproxy'])
+    expect(snapshot.providers).toEqual(['custom-openai'])
     expect(snapshot.customProviders).toEqual([{
-      name: 'cliproxy',
-      baseUrl: 'http://127.0.0.1:8317/v1',
+      name: 'custom-openai',
+      baseUrl: 'https://custom-provider.example/v1',
       model: 'claude-sonnet-4-6',
       models: ['claude-sonnet-4-6', 'gemini-2.5-pro'],
-      keyEnv: 'CLIPROXY_API_KEY',
+      keyEnv: 'CUSTOM_OPENAI_API_KEY',
     }])
   })
 
@@ -105,7 +105,7 @@ custom_providers:
     const snapshot = parseHermesConfigSnapshot([
       'model:',
       '  provider: anthropic',
-      '  default: claude-opus-4-7',
+      '  default: gpt-5',
       'providers:',
       '  - anthropic',
       'fallback_providers:',
@@ -114,7 +114,7 @@ custom_providers:
     ].join('\n'))
 
     expect(snapshot.defaultProvider).toBe('anthropic')
-    expect(snapshot.defaultModel).toBe('claude-opus-4-7')
+    expect(snapshot.defaultModel).toBe('gpt-5')
     expect(snapshot.fallbackProviders).toEqual(['openai-codex', 'google'])
   })
 })
@@ -129,18 +129,18 @@ model:
 fallback_providers:
   - openai-codex
 `, {
-      provider: 'cliproxy',
+      provider: 'custom-openai',
       model: 'claude-sonnet-4-6',
-      baseUrl: ' http://127.0.0.1:8317/v1 ',
+      baseUrl: ' https://custom-provider.example/v1 ',
     })
 
     const parsed = parseDocument(updated).toJSON() as Record<string, unknown>
     expect(parsed).toEqual({
       model: {
-        provider: 'cliproxy',
+        provider: 'custom-openai',
         default: 'claude-sonnet-4-6',
         api_mode: 'chat_completions',
-        base_url: 'http://127.0.0.1:8317/v1',
+        base_url: 'https://custom-provider.example/v1',
       },
       fallback_providers: ['openai-codex'],
     })

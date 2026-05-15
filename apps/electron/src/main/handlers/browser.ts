@@ -1,4 +1,5 @@
 import { RPC_NAMESPACES, type BrowserPaneCreateOptions, type BrowserEmptyStateLaunchPayload } from '../../shared/types'
+import type { BrowserProfileInput } from '@craft-agent/shared/config/browser-profiles'
 import type { BrowserScreenshotOptions } from '../browser-pane-manager'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
@@ -25,6 +26,7 @@ export const HANDLED_CHANNELS = [
   RPC_NAMESPACES.browserPane.CREATE_PROFILE,
   RPC_NAMESPACES.browserPane.DELETE_PROFILE,
   RPC_NAMESPACES.browserPane.RENAME_PROFILE,
+  RPC_NAMESPACES.browserPane.SWITCH_PROFILE,
   RPC_NAMESPACES.browserPane.GET_PROFILE_SETTINGS,
   RPC_NAMESPACES.browserPane.SET_PROFILE_SETTINGS,
 ] as const
@@ -199,7 +201,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
 
   server.handle(
     RPC_NAMESPACES.browserPane.CREATE_PROFILE,
-    (_ctx, input: { name: string; color: string; avatar?: string }) => {
+    (_ctx, input: BrowserProfileInput) => {
       try {
         return browserPaneManager.createProfile(input)
       } catch (err) {
@@ -216,6 +218,18 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
         return browserPaneManager.renameProfile(payload.id, payload.name)
       } catch (err) {
         platform.logger.error('[browser-pane] renameProfile failed:', err)
+        throw err
+      }
+    },
+  )
+
+  server.handle(
+    RPC_NAMESPACES.browserPane.SWITCH_PROFILE,
+    (_ctx, payload: { instanceId: string; profileId: string }) => {
+      try {
+        return browserPaneManager.switchProfile(payload.instanceId, payload.profileId)
+      } catch (err) {
+        platform.logger.error('[browser-pane] switchProfile failed:', err)
         throw err
       }
     },

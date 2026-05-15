@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import type { BrowserProfile, BrowserProfileSettings } from '@craft-agent/shared/config/types'
+import type { BrowserProfileInput } from '@craft-agent/shared/config/browser-profiles'
 
 export interface UseBrowserProfilesResult {
   profiles: BrowserProfile[]
@@ -16,7 +17,7 @@ export interface UseBrowserProfilesResult {
   isLoading: boolean
   error: string | null
   refresh: () => Promise<void>
-  createProfile: (input: { name: string; color: string; avatar?: string }) => Promise<BrowserProfile>
+  createProfile: (input: BrowserProfileInput) => Promise<BrowserProfile>
   renameProfile: (id: string, name: string) => Promise<BrowserProfile>
   deleteProfile: (id: string) => Promise<void>
   setAlwaysAsk: (alwaysAsk: boolean) => Promise<void>
@@ -55,7 +56,7 @@ export function useBrowserProfiles(): UseBrowserProfilesResult {
   }, [refresh])
 
   const createProfile = useCallback(
-    async (input: { name: string; color: string; avatar?: string }) => {
+    async (input: BrowserProfileInput) => {
       return window.electronAPI.browserPane.createProfile(input)
     },
     [],

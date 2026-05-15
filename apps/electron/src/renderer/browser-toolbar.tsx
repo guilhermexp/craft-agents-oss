@@ -34,6 +34,8 @@ interface ToolbarProfile {
   id: string
   name: string
   color: string
+  kind?: 'personal' | 'client' | 'bot' | 'test'
+  clientName?: string
 }
 
 interface ToolbarState {
@@ -386,12 +388,20 @@ function ProfileMenu({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label={`Perfil: ${current.name}`}
-          title={`Perfil: ${current.name}`}
-          className="size-6 rounded-full flex items-center justify-center text-white text-[10px] font-semibold transition hover:ring-2 hover:ring-foreground/30"
-          style={{ backgroundColor: current.color }}
+          aria-label={`Perfil do navegador: ${current.name}`}
+          title={`Perfil do navegador: ${current.name}${current.clientName ? ` • ${current.clientName}` : ''}`}
+          className="flex h-7 max-w-[190px] items-center gap-1.5 rounded-full border border-border/70 bg-background/85 px-2 text-xs font-medium shadow-minimal transition hover:bg-foreground/5 hover:ring-2 hover:ring-foreground/20"
         >
-          {(current.name?.trim().charAt(0) || '?').toUpperCase()}
+          <span
+            className="size-3 rounded-full shrink-0"
+            style={{ backgroundColor: current.color }}
+          />
+          <span className="truncate">{current.name}</span>
+          {current.kind === 'client' && (
+            <span className="rounded-full bg-blue-500/12 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-blue-600 dark:text-blue-300">
+              cliente
+            </span>
+          )}
         </button>
       </DropdownMenuTrigger>
       <StyledDropdownMenuContent

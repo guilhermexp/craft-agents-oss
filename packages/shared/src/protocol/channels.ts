@@ -413,6 +413,7 @@ export const RPC_NAMESPACES = {
     CREATE_PROFILE: 'browser-pane:create-profile',
     DELETE_PROFILE: 'browser-pane:delete-profile',
     RENAME_PROFILE: 'browser-pane:rename-profile',
+    SWITCH_PROFILE: 'browser-pane:switch-profile',
     GET_PROFILE_SETTINGS: 'browser-pane:get-profile-settings',
     SET_PROFILE_SETTINGS: 'browser-pane:set-profile-settings',
     PROFILES_CHANGED: 'browser-pane:profiles-changed',

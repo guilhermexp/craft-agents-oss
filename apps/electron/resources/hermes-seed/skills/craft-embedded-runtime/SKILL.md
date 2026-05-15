@@ -14,7 +14,7 @@ tags:
 
 Use this skill whenever the task involves Hermes running inside Craft Agents Electron, especially on a new user's computer, a packaged DMG/NSIS/AppImage, native Craft tools/MCPs, internal browser access, channels/War Room, meetings/Google Meet, or release validation.
 
-This skill is intentionally repository-bundled seed knowledge. It must not depend on Guilherme's local `HERMES_HOME`, local memories, local profiles, local API keys, or local CLIProxyAPI process.
+This skill is intentionally repository-bundled seed knowledge. It must not depend on Guilherme's local `HERMES_HOME`, local memories, local profiles, local API keys, or local proxy process.
 
 ## Mental model
 
@@ -182,7 +182,7 @@ Do not bridge the meeting organizer's cookies as bot identity. Avoid printing co
 
 For release users, do not assume Guilherme's local providers exist.
 
-In particular, a local OpenAI-compatible proxy such as CLIProxyAPI on `127.0.0.1:8317` is developer-specific. A packaged Craft install should:
+In particular, developer-only local OpenAI-compatible proxy processes are machine-specific. A packaged Craft install should:
 
 - default to providers configured through Craft Credential Manager / LLM Connections;
 - detect local proxy providers before offering them as active defaults;

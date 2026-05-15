@@ -3971,11 +3971,7 @@ function AppShellContent({
             // Picker was opened from an existing browser window — keep the
             // user inside that window by switching its profile in place.
             try {
-              await window.electronAPI.browserPane.create({
-                profileId,
-                show: true,
-              })
-              await window.electronAPI.browserPane.destroy(instanceId)
+              await window.electronAPI.browserPane.switchProfile({ instanceId, profileId })
             } catch (err) {
               console.error('[Chat] Failed to switch profile:', err)
             }
