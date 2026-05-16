@@ -13,10 +13,68 @@ import { getWorkspaceOrThrow, buildBackendHostRuntimeContext } from '@craft-agen
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { CLIENT_OPEN_EXTERNAL } from '@craft-agent/server-core/transport'
+import { normalizeHermesRuntimeConfig } from '@craft-agent/shared/hermes/acp-config'
+import { parseHermesConfigSnapshot } from '@craft-agent/shared/hermes/runtime-config'
 
 // Local OAuth state
 let copilotOAuthAbort: AbortController | null = null
+
+type HermesLiveModelMetadata = {
+  provider?: string
+  model?: string
+}
+
+export async function readHermesLiveModelMetadata(): Promise<HermesLiveModelMetadata | null> {
+  const configPath = process.env.CRAFT_HERMES_CONFIG_PATH?.trim()
+    || normalizeHermesRuntimeConfig().configPath
+
+  try {
+    const snapshot = parseHermesConfigSnapshot(await readFile(configPath, 'utf-8'))
+    if (!snapshot.defaultModel && !snapshot.defaultProvider) return null
+    return {
+      provider: snapshot.defaultProvider,
+      model: snapshot.defaultModel,
+    }
+  } catch {
+    return null
+  }
+}
+
+function hermesLiveModelName(model: string, provider?: string): string {
+  return provider ? `${model} via Hermes (${provider})` : `${model} via Hermes`
+}
+
+export function applyHermesLiveModelMetadata<T extends LlmConnection>(
+  connection: T,
+  metadata: HermesLiveModelMetadata | null,
+): T {
+  if (connection.providerType !== 'hermes' || !metadata?.model) return connection
+
+  return {
+    ...connection,
+    defaultModel: metadata.model,
+    models: [{
+      id: metadata.model,
+      name: hermesLiveModelName(metadata.model, metadata.provider),
+      shortName: metadata.model,
+      description: metadata.provider
+        ? `Modelo ativo no Hermes (${metadata.provider})`
+        : 'Modelo ativo no Hermes',
+      provider: 'hermes',
+      contextWindow: 256000,
+      supportsThinking: true,
+    }],
+  }
+}
+
+async function getHermesSyncedConnections(): Promise<LlmConnection[]> {
+  const connections = getLlmConnections()
+  if (!connections.some(conn => conn.providerType === 'hermes')) return connections
+  const metadata = await readHermesLiveModelMetadata()
+  return connections.map(conn => applyHermesLiveModelMetadata(conn, metadata))
+}
 
 export const HANDLED_CHANNELS = [
   RPC_NAMESPACES.llmConnections.LIST,
@@ -385,12 +443,12 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
 
   // List all LLM connections (includes built-in and custom)
   server.handle(RPC_NAMESPACES.llmConnections.LIST, async (): Promise<LlmConnection[]> => {
-    return getLlmConnections()
+    return getHermesSyncedConnections()
   })
 
   // List all LLM connections with authentication status
   server.handle(RPC_NAMESPACES.llmConnections.LIST_WITH_STATUS, async (): Promise<LlmConnectionWithStatus[]> => {
-    const connections = getLlmConnections()
+    const connections = await getHermesSyncedConnections()
     const credentialManager = getCredentialManager()
     const defaultSlug = getDefaultLlmConnection()
 
@@ -407,7 +465,9 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
 
   // Get a specific LLM connection by slug
   server.handle(RPC_NAMESPACES.llmConnections.GET, async (_ctx, slug: string): Promise<LlmConnection | null> => {
-    return getLlmConnection(slug)
+    const connection = getLlmConnection(slug)
+    if (!connection || connection.providerType !== 'hermes') return connection
+    return applyHermesLiveModelMetadata(connection, await readHermesLiveModelMetadata())
   })
 
   // Get stored API key for an LLM connection (masked — for edit form display only)
