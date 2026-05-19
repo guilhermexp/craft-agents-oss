@@ -52,6 +52,8 @@ Use descriptive branch names:
 4. Commit your changes with clear, descriptive messages
 5. Push to your fork and create a pull request
 
+For desktop release steps, see [RELEASING.md](RELEASING.md).
+
 ### Code Style
 
 - We use TypeScript throughout the codebase
