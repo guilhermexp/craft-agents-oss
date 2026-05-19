@@ -1,0 +1,9 @@
+# Force LF line endings for patch files
+# Windows runners convert LF->CRLF by default which corrupts git apply
+apps/electron/scripts/hermes-patches/*.patch text eol=lf
+
+# Force LF for PowerShell scripts that interact with binaries reading text mode
+apps/electron/scripts/*.ps1 text eol=lf
+
+# Shell scripts must keep LF
+*.sh text eol=lf
