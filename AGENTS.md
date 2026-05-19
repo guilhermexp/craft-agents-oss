@@ -204,3 +204,7 @@ for Craft fork-sync and Hermes integration contracts. The parent `../CLAUDE.md`
 is SelfHosting infra-oriented and contains environment-specific server notes,
 so keep Craft/Hermes integration instructions in this repo-local `AGENTS.md`
 and `apps/electron/docs/hermes-embed.md`.
+
+<!-- OPENSPEC:START -->
+@/openspec/AGENTS.md
+<!-- OPENSPEC:END -->
