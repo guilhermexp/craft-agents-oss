@@ -69,6 +69,7 @@
       },
       "devDependencies": {
         "@aws-sdk/client-s3": "^3.1030.0",
+        "@craft-agent/session-tools-core": "workspace:*",
         "@electron/packager": "^19.1.0",
         "@rollup/rollup-win32-arm64-msvc": "^4.60.1",
         "@sentry/vite-plugin": "^5.2.0",
@@ -132,7 +133,7 @@
     },
     "apps/electron": {
       "name": "@craft-agent/electron",
-      "version": "0.8.13-rc.6",
+      "version": "0.8.13-rc.9",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
         "@craft-agent/messaging-gateway": "workspace:*",
@@ -332,6 +333,7 @@
       },
       "devDependencies": {
         "@types/node": "^22.0.0",
+        "@types/ws": "^8.18.1",
         "typescript": "^6.0.2",
       },
     },

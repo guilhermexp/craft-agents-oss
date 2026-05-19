@@ -51,7 +51,8 @@
     "xmldom": "^0.6.0"
   },
   "devDependencies": {
-    "typescript": "^6.0.2",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^6.0.2"
   }
 }

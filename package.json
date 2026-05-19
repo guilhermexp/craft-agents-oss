@@ -102,6 +102,7 @@
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1030.0",
+    "@craft-agent/session-tools-core": "workspace:*",
     "@electron/packager": "^19.1.0",
     "@rollup/rollup-win32-arm64-msvc": "^4.60.1",
     "@sentry/vite-plugin": "^5.2.0",
