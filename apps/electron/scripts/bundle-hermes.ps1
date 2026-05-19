@@ -143,7 +143,13 @@ Write-Host "Python copied" -ForegroundColor Green
 
 # 3. Create venv
 Write-Host "Creating venv..." -ForegroundColor Cyan
-$BundledPython = Join-Path $VendorDir "python/python.exe"
+# Find python.exe inside the copied vendor python dir (uv on Windows may nest it under cpython-*/install/)
+$BundledPython = Get-ChildItem -Path (Join-Path $VendorDir "python") -Filter "python.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+if (-not $BundledPython) {
+    Write-Host "Bundled python.exe not found under $VendorDir/python" -ForegroundColor Red
+    exit 1
+}
+Write-Host "Bundled Python: $BundledPython"
 & $BundledPython -m venv (Join-Path $VendorDir "hermes-venv")
 
 $VenvPython = Join-Path $VendorDir "hermes-venv/Scripts/python.exe"
