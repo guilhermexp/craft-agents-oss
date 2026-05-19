@@ -240,8 +240,8 @@ if (Test-Path $PyvenvCfg) {
 
 # 10. Smoke test
 Write-Host "Smoke test..." -ForegroundColor Cyan
-& $VenvPython -c "import sys; print('  Python', sys.version.split()[0], 'OK')"
-& $VenvPython -c "import acp_adapter; print('  acp_adapter import OK')"
+& $VenvPython -c 'import sys; print("  Python", sys.version.split()[0], "OK")'
+& $VenvPython -c 'import acp_adapter; print("  acp_adapter import OK")'
 
 Write-Host ""
 Write-Host "Hermes bundle built at $VendorDir" -ForegroundColor Green
