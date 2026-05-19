@@ -132,7 +132,7 @@
     },
     "apps/electron": {
       "name": "@craft-agent/electron",
-      "version": "0.8.12",
+      "version": "0.8.13-rc.1",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
         "@craft-agent/messaging-gateway": "workspace:*",
@@ -171,6 +171,7 @@
         "sharp": "0.34.5",
         "sonner": "^2.0.7",
         "strip-markdown": "^6.0.0",
+        "undici": "^7",
         "unist-util-visit": "^5.0.0",
         "vaul": "^1.1.2",
         "ws": "^8.19.0",
