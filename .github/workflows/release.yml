@@ -41,15 +41,17 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Setup Node 22
-        uses: actions/setup-node@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          node-version: "22"
+          version: 9
+          run_install: false
 
-      - name: Install dependencies (npm, hoisted layout for electron-builder)
+      - name: Install dependencies (pnpm with shamefully-hoist for electron-builder)
         run: |
           rm -f bun.lock
-          npm install --no-audit --no-fund --legacy-peer-deps
+          pnpm install --no-frozen-lockfile --shamefully-hoist --ignore-scripts
+          pnpm rebuild
 
       - name: Build artifacts
         env:
