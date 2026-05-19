@@ -132,7 +132,7 @@
     },
     "apps/electron": {
       "name": "@craft-agent/electron",
-      "version": "0.8.13-rc.2",
+      "version": "0.8.13-rc.3",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
         "@craft-agent/messaging-gateway": "workspace:*",
@@ -386,6 +386,7 @@
       "version": "0.8.12",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
+        "@craft-agent/shared": "workspace:*",
         "@paper-design/shaders-react": "^0.0.69",
         "@types/mdast": "^4.0.0",
         "@uiw/react-json-view": "^2.0.0-alpha.40",
