@@ -1,5 +1,5 @@
-# ===========================================================================
-# Hermes Agent — pre-build bundling script (Windows)
+﻿# ===========================================================================
+# Hermes Agent - pre-build bundling script (Windows)
 #
 # Treats Hermes upstream as a pinned dependency, matching bundle-hermes.sh:
 #   1. Reads apps/electron/scripts/hermes-version.txt, or $env:HERMES_VERSION.
@@ -60,7 +60,7 @@ function Ensure-HermesCacheClone {
 
     $dirty = git -C $CacheSrc status --porcelain
     if ($dirty) {
-        Write-Host "Cache had local edits — re-cloning fresh" -ForegroundColor Yellow
+        Write-Host "Cache had local edits - re-cloning fresh" -ForegroundColor Yellow
         Remove-Item -Recurse -Force $CacheSrc
         git clone --filter=blob:none $HermesRemoteUrl $CacheSrc
     }
@@ -108,7 +108,7 @@ if ($ApplyPatches -and (Test-Path $PatchesDir)) {
 }
 
 Write-Host ""
-Write-Host "Hermes Bundle (Craft Agents) — Windows" -ForegroundColor Cyan
+Write-Host "Hermes Bundle (Craft Agents) - Windows" -ForegroundColor Cyan
 Write-Host "  Pin:        $HermesPin -> $HermesResolvedSha"
 Write-Host "  Hermes src: $HermesSrc"
 Write-Host "  Output:     $VendorDir"
