@@ -325,6 +325,13 @@ function getElectronEnv(): Record<string, string> {
   };
 }
 
+async function waitForProcessExit(proc: Subprocess, timeoutMs: number): Promise<boolean> {
+  return Promise.race([
+    proc.exited.then(() => true),
+    Bun.sleep(timeoutMs).then(() => false),
+  ]);
+}
+
 // Run a one-shot esbuild using the JavaScript API
 async function runEsbuild(
   entryPoint: string,
@@ -641,8 +648,25 @@ async function main(): Promise<void> {
   console.log("👀 Watching browser toolbar preload...");
 
   // Handle cleanup on exit
+  let cleanupStarted = false;
   const cleanup = async () => {
+    if (cleanupStarted) return;
+    cleanupStarted = true;
+
     console.log("\n🛑 Shutting down...");
+
+    try {
+      electronProc.kill();
+      const electronExited = await waitForProcessExit(electronProc, 7000);
+      if (!electronExited) {
+        console.warn("⚠️  Electron did not exit gracefully, forcing shutdown");
+        electronProc.kill(9);
+        await waitForProcessExit(electronProc, 1000);
+      }
+    } catch {
+      // Process may already be dead
+    }
+
     // Dispose esbuild contexts
     for (const ctx of esbuildContexts) {
       try {
@@ -651,10 +675,12 @@ async function main(): Promise<void> {
         // Context may already be disposed
       }
     }
-    // Kill subprocesses
+    // Kill remaining subprocesses
     for (const proc of processes) {
+      if (proc === electronProc) continue;
       try {
         proc.kill();
+        await waitForProcessExit(proc, 2000);
       } catch {
         // Process may already be dead
       }

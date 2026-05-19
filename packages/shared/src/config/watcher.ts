@@ -2,14 +2,16 @@
  * Config File Watcher
  *
  * Watches configuration files for changes and triggers callbacks.
- * Uses recursive directory watching for simplicity and reliability.
+ * Uses scoped directory watching for workspace-owned config surfaces. Avoid
+ * watching arbitrary project roots recursively because workspaces can point at
+ * large source checkouts with node_modules, .git, build output, etc.
  *
  * Watched paths:
  * - ~/.craft-agent/config.json - Main app configuration
  * - ~/.craft-agent/preferences.json - User preferences
  * - ~/.craft-agent/theme.json - App-level theme overrides
  * - ~/.craft-agent/themes/*.json - Preset theme files (app-level)
- * - ~/.craft-agent/workspaces/{slug}/ - Workspace directory (recursive)
+ * - ~/.craft-agent/workspaces/{slug}/ - Workspace root config files
  *   - sources/{slug}/config.json, guide.md, permissions.json
  *   - skills/{slug}/SKILL.md, icon.*
  *   - sessions/{id}/session.jsonl (header metadata only)
@@ -41,7 +43,7 @@ import {
   downloadSourceIcon,
 } from '../sources/storage.ts';
 import { permissionsConfigCache, getAppPermissionsDir } from '../agent/permissions-config.ts';
-import { getWorkspacePath, getWorkspaceSourcesPath, getWorkspaceSkillsPath } from '../workspaces/storage.ts';
+import { getWorkspacePath, getWorkspaceSourcesPath, getWorkspaceSessionsPath, getWorkspaceSkillsPath } from '../workspaces/storage.ts';
 import type { LoadedSkill } from '../skills/types.ts';
 import { loadSkill, loadAllSkills, invalidateSkillsCache, skillNeedsIconDownload, downloadSkillIcon } from '../skills/storage.ts';
 import {
@@ -84,6 +86,27 @@ const DEBOUNCE_MS = 100;
 // Longer debounce for session metadata on Windows where fs.watch() fires
 // aggressively for atomic writes (unlink + rename = 2+ events)
 const SESSION_META_DEBOUNCE_MS = platform() === 'win32' ? 300 : DEBOUNCE_MS;
+
+const IGNORED_WORKSPACE_WATCH_SEGMENTS = new Set([
+  '.git',
+  '.hg',
+  '.next',
+  '.svn',
+  '.turbo',
+  '.vite',
+  'build',
+  'coverage',
+  'dist',
+  'node_modules',
+  'out',
+]);
+
+export function _isIgnoredWorkspaceWatchPathForTest(relativePath: string): boolean {
+  const [firstSegment] = relativePath
+    .replace(/\\/g, '/')
+    .split('/');
+  return !!firstSegment && IGNORED_WORKSPACE_WATCH_SEGMENTS.has(firstSegment);
+}
 
 // ============================================================
 // Types
@@ -197,7 +220,7 @@ export function loadPreferences(): UserPreferences | null {
 
 /**
  * Watches config files and triggers callbacks on changes.
- * Uses recursive directory watching for workspace files.
+ * Uses scoped directory watching for workspace files.
  */
 export class ConfigWatcher {
   private workspaceId: string;
@@ -217,7 +240,10 @@ export class ConfigWatcher {
   // Computed paths
   private workspaceDir: string;
   private sourcesDir: string;
+  private sessionsDir: string;
   private skillsDir: string;
+  private labelsDir: string;
+  private statusesDir: string;
 
   constructor(workspaceIdOrPath: string, callbacks: ConfigWatcherCallbacks) {
     this.callbacks = callbacks;
@@ -233,7 +259,10 @@ export class ConfigWatcher {
       this.workspaceDir = getWorkspacePath(workspaceIdOrPath);
     }
     this.sourcesDir = getWorkspaceSourcesPath(this.workspaceDir);
+    this.sessionsDir = getWorkspaceSessionsPath(this.workspaceDir);
     this.skillsDir = getWorkspaceSkillsPath(this.workspaceDir);
+    this.labelsDir = join(this.workspaceDir, 'labels');
+    this.statusesDir = join(this.workspaceDir, 'statuses');
   }
 
   /**
@@ -274,7 +303,8 @@ export class ConfigWatcher {
     this.watchGlobalConfigs();
     span.mark('watchGlobalConfigs');
 
-    // Watch workspace directory recursively
+    // Watch workspace-owned config paths without recursively watching arbitrary
+    // project roots.
     this.watchWorkspaceDir();
     span.mark('watchWorkspaceDir');
 
@@ -388,24 +418,62 @@ export class ConfigWatcher {
     }
   }
 
-  /**
-   * Watch workspace directory recursively
-   */
   private watchWorkspaceDir(): void {
-    debug('[ConfigWatcher] Setting up workspace watcher for:', this.workspaceDir);
+    debug('[ConfigWatcher] Setting up scoped workspace watchers for:', this.workspaceDir);
+
+    this.watchWorkspaceRoot();
+    this.watchWorkspaceSubdir('sources', this.sourcesDir);
+    this.watchWorkspaceSubdir('skills', this.skillsDir);
+    this.watchWorkspaceSubdir('sessions', this.sessionsDir);
+    this.watchWorkspaceSubdir('labels', this.labelsDir);
+    this.watchWorkspaceSubdir('statuses', this.statusesDir);
+
+    debug('[ConfigWatcher] Watching scoped workspace config paths:', this.workspaceDir);
+  }
+
+  /**
+   * Watch root-level workspace config files only.
+   */
+  private watchWorkspaceRoot(): void {
     try {
-      const watcher = watch(this.workspaceDir, { recursive: true }, (eventType, filename) => {
+      const watcher = watch(this.workspaceDir, (eventType, filename) => {
         if (!filename) return;
 
-        // Normalize path separators
         const normalizedPath = filename.replace(/\\/g, '/');
+        if (normalizedPath.includes('/')) return;
         this.handleWorkspaceFileChange(normalizedPath, eventType);
       });
 
       this.watchers.push(watcher);
-      debug('[ConfigWatcher] Watching workspace recursively:', this.workspaceDir);
+      debug('[ConfigWatcher] Watching workspace root configs:', this.workspaceDir);
     } catch (error) {
-      debug('[ConfigWatcher] Error watching workspace directory:', error);
+      debug('[ConfigWatcher] Error watching workspace root directory:', error);
+    }
+  }
+
+  /**
+   * Watch a workspace-owned subdirectory recursively.
+   */
+  private watchWorkspaceSubdir(prefix: 'sources' | 'skills' | 'sessions' | 'labels' | 'statuses', dir: string): void {
+    try {
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+
+      const watcher = watch(dir, { recursive: true }, (eventType, filename) => {
+        if (!filename) {
+          this.handleWorkspaceFileChange(prefix, eventType);
+          return;
+        }
+
+        const normalizedPath = filename.replace(/\\/g, '/');
+        this.handleWorkspaceFileChange(`${prefix}/${normalizedPath}`, eventType);
+      });
+
+      this.watchers.push(watcher);
+      debug(`[ConfigWatcher] Watching workspace ${prefix}:`, dir);
+    } catch (error) {
+      debug(`[ConfigWatcher] Error watching workspace ${prefix}:`, error);
     }
   }
 
@@ -413,6 +481,10 @@ export class ConfigWatcher {
    * Handle a file change within the workspace directory
    */
   private handleWorkspaceFileChange(relativePath: string, eventType: string): void {
+    if (_isIgnoredWorkspaceWatchPathForTest(relativePath)) {
+      return;
+    }
+
     const parts = relativePath.split('/');
 
     // Workspace-level permissions.json

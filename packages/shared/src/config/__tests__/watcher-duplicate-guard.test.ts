@@ -6,7 +6,7 @@
  * event loop on Linux due to duplicate recursive fs.watch calls.
  */
 import { describe, it, expect, beforeEach } from 'bun:test';
-import { _getActiveWatchers } from '../watcher.ts';
+import { _getActiveWatchers, _isIgnoredWorkspaceWatchPathForTest } from '../watcher.ts';
 
 describe('ConfigWatcher duplicate guard', () => {
   beforeEach(() => {
@@ -28,5 +28,14 @@ describe('ConfigWatcher duplicate guard', () => {
     // Note: we can't guarantee emptiness if other tests start watchers,
     // but we can verify the type and that the getter works.
     expect(typeof watchers.size).toBe('number');
+  });
+
+  it('ignores heavyweight project directories if workspace file events reach the watcher', () => {
+    expect(_isIgnoredWorkspaceWatchPathForTest('node_modules/react/index.js')).toBe(true);
+    expect(_isIgnoredWorkspaceWatchPathForTest('.git/index')).toBe(true);
+    expect(_isIgnoredWorkspaceWatchPathForTest('.next/cache/webpack')).toBe(true);
+    expect(_isIgnoredWorkspaceWatchPathForTest('sessions/session-a/session.jsonl')).toBe(false);
+    expect(_isIgnoredWorkspaceWatchPathForTest('sources/build/config.json')).toBe(false);
+    expect(_isIgnoredWorkspaceWatchPathForTest('skills/build-check/SKILL.md')).toBe(false);
   });
 });
