@@ -3,10 +3,11 @@
 This repo is a Craft fork. Treat Craft upstream sync and Hermes runtime
 updates as separate concerns. Hermes is consumed as a pinned upstream
 dependency plus Craft overlay patches, not as a hand-merged sibling fork.
-In local development the Hermes pin may intentionally be `upstream/main` so the
-Dashboard **Update Hermes** action follows NousResearch upstream automatically;
-when that breaks an overlay, refresh the patch instead of switching to a user
-fork or another Craft agent backend.
+For day-to-day/dashboard updates the Hermes pin should be a concrete known-good
+tag or SHA so the `(pin + overlay patches)` pair is reproducible. Use floating
+refs like `upstream/main` only during an explicit Hermes bump/overlay-refresh
+session; after validation, persist the resolved known-good tag/SHA instead of
+leaving the dashboard pointed at a moving branch.
 
 ## Upstream inputs
 

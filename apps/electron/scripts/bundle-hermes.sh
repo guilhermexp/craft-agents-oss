@@ -21,7 +21,7 @@
 #
 # Env vars:
 #   HERMES_VERSION       upstream tag/branch/SHA to bundle.
-#                        Default: contents of hermes-version.txt → upstream/main
+#                        Default: contents of hermes-version.txt
 #   HERMES_SRC           override clone dir; if set and exists, used as-is.
 #                        Otherwise the cache dir is used.
 #   HERMES_PYTHON_VER    Python version to bundle (default: 3.13)
@@ -65,7 +65,9 @@ case "$OS" in
 esac
 
 # --------------------------------------------------------------------------
-# Resolve pin (HERMES_VERSION env > hermes-version.txt > "upstream/main")
+# Resolve pin (HERMES_VERSION env > hermes-version.txt > "upstream/main" fallback)
+# Keep hermes-version.txt pinned to a concrete known-good SHA/tag for normal
+# dashboard rebuilds. Floating refs are for explicit bump/overlay-refresh work.
 # --------------------------------------------------------------------------
 
 resolve_pin() {

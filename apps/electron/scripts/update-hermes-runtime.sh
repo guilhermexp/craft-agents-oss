@@ -4,7 +4,7 @@
 # SDK-style update: Hermes upstream is treated as a pinned dependency. Click
 # "Update Hermes" in the dashboard runs this script, which:
 #
-#   1. Resolves the new pin (HERMES_VERSION env, or default = "upstream/main").
+#   1. Resolves the pin (HERMES_VERSION env, or hermes-version.txt).
 #   2. Optionally writes that pin into apps/electron/scripts/hermes-version.txt
 #      so subsequent rebuilds reproduce the same version.
 #   3. Delegates to bundle-hermes.sh, which clones/fetches upstream into a
@@ -39,7 +39,9 @@ if [ ! -f "$BUNDLE_SCRIPT" ]; then
 fi
 
 # Resolve effective pin for this run. Bundle script reads the same chain, but
-# we resolve here so we can log it and (optionally) persist it.
+# we resolve here so we can log it and (optionally) persist it. Keep the pin
+# file on a concrete known-good tag/SHA for daily dashboard use; floating refs
+# like upstream/main are only for explicit bump/overlay-refresh sessions.
 if [ -n "${HERMES_VERSION:-}" ]; then
   RUN_PIN="$HERMES_VERSION"
 elif [ -f "$PIN_FILE" ]; then

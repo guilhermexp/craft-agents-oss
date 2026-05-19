@@ -1,3 +1,6 @@
 # Hermes upstream pin. One line, no quotes. Can be a tag, branch, or commit SHA.
-# Bundle/update scripts read this. Click-Update bumps it via HERMES_VERSION env.
-upstream/main
+# Keep this pinned to a concrete SHA for day-to-day/dashboard updates so Craft
+# overlay patches remain reproducible. To intentionally bump Hermes, run:
+# HERMES_VERSION=<new-tag-or-sha> HERMES_PERSIST_PIN=1 bash apps/electron/scripts/update-hermes-runtime.sh
+# Avoid using floating refs like upstream/main except during explicit overlay refresh work.
+a19eb54727a82e79bd09932a550046a135a074e1
