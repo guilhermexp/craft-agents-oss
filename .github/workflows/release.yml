@@ -42,7 +42,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile --linker=hoisted
+        run: bun install --frozen-lockfile
 
       - name: Build artifacts
         env:
