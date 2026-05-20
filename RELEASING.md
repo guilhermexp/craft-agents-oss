@@ -1,30 +1,57 @@
 # Releasing
 
+## Branch strategy
+
+- **`main`** — active development. PRs land here.
+- **`production`** — release branch. Only stable, tagged commits live here.
+- Tags `v*` are pushed **only from `production`**. The Release workflow triggers off the tag and produces installers.
+
 ## Quick release
 
-1. Run `npm version patch` from the repository root. Use `minor` or `major` when the release scope requires it.
-2. Confirm the version is aligned in both `package.json` and `apps/electron/package.json`.
-3. Push the release commit and tag with `git push --follow-tags`.
-4. Wait for the tag-triggered Release workflow to finish.
-5. Review the GitHub Release draft and attached artifacts.
-6. Click "Publish release" in GitHub when the draft is correct.
+From `main` (development):
+
+```bash
+git checkout production
+git merge main          # or cherry-pick the commits you want to ship
+```
+
+Then bump versions and tag (still on `production`):
+
+```bash
+# Edit package.json (root) and apps/electron/package.json to the same new version (e.g. 0.8.13)
+git add package.json apps/electron/package.json
+git commit -m "Bump version to 0.8.13"
+git tag v0.8.13
+git push origin production --follow-tags
+```
+
+After the workflow finishes:
+
+1. Open the GitHub Release draft and inspect the artifacts (DMG, ZIP, EXE, `latest*.yml`).
+2. Click **Publish release** to flip from draft to public.
+
+Installed apps auto-update through `electron-updater` because `electron-builder.yml` publishes to `provider: github` on this repo. As soon as a Release leaves draft state, every running install will pick up the update on the next check.
 
 ## Prerelease (rc)
 
-Use an rc version to test the workflow without publishing a final release:
+To test a release without promoting it as latest:
 
 ```bash
-npm version 0.8.13-rc.1
-git push --follow-tags
+git checkout production
+# Edit to e.g. 0.8.13-rc.1
+git add package.json apps/electron/package.json
+git commit -m "Bump version to 0.8.13-rc.1"
+git tag v0.8.13-rc.1
+git push origin production --follow-tags
 ```
 
-Tags containing `-rc` are uploaded as GitHub prereleases.
+Tags containing `-rc` are uploaded as GitHub prereleases. `electron-updater` will not pick up prereleases by default — only the production build does, when the release is marked latest.
 
 ## Signing status
 
-Current CI release builds are unsigned. macOS Gatekeeper and Windows SmartScreen warnings are expected until signing is added.
+CI builds are currently unsigned. macOS Gatekeeper and Windows SmartScreen warnings are expected until signing is added.
 
-Follow-up OpenSpec changes:
+Follow-up OpenSpec changes (planned, not implemented):
 
 - `release-signing-macos`
 - `release-signing-windows`
@@ -37,8 +64,11 @@ To run the macOS CI build path locally:
 CSC_IDENTITY_AUTO_DISCOVERY=false bun run electron:dist:mac
 ```
 
-To delete a broken release draft:
+To delete a broken release:
 
 ```bash
 gh release delete <tag>
+git push origin :refs/tags/<tag>
 ```
+
+To force the auto-update check from the app, open the menu → Check for updates.

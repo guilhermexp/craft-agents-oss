@@ -87,6 +87,8 @@ jobs:
         with:
           draft: true
           prerelease: ${{ contains(github.ref_name, '-rc') }}
-          files: apps/electron/release/Craft-Agents-*.{dmg,zip,exe,yml}
+          files: |
+            apps/electron/release/Craft-Agents-*.{dmg,zip,exe}
+            apps/electron/release/latest*.yml
           fail_on_unmatched_files: false
           token: ${{ secrets.GITHUB_TOKEN }}
