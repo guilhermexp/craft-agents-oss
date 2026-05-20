@@ -77,18 +77,8 @@ jobs:
           esac
           ls -la apps/electron/vendor/bun/
 
-      - name: Build artifacts
+      - name: Build artifacts (electron-builder also uploads to GitHub release because publish.provider = github)
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bun run electron:dist:${{ matrix.target }}
-
-      - name: Upload to release draft
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          prerelease: ${{ contains(github.ref_name, '-rc') }}
-          files: |
-            apps/electron/release/Craft-Agents-*.{dmg,zip,exe}
-            apps/electron/release/latest*.yml
-          fail_on_unmatched_files: false
-          token: ${{ secrets.GITHUB_TOKEN }}
