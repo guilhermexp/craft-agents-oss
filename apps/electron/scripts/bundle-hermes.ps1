@@ -137,16 +137,21 @@ Write-Host "Installing Python $PythonVer via uv..." -ForegroundColor Cyan
 & uv python install $PythonVer | Out-Null
 
 $PythonExe = (& uv python find $PythonVer).Trim()
-$PythonDir = Split-Path -Parent (Split-Path -Parent $PythonExe)
-Copy-Item -Recurse -Force "$PythonDir/*" (Join-Path $VendorDir "python")
-Write-Host "Python copied" -ForegroundColor Green
+# uv on Windows lays out as <root>\cpython-<ver>\install\python.exe
+# We want the final bundle at <VendorDir>\python\python.exe (no intermediate install\ dir),
+# because the Electron app resolves the executable at vendor\hermes\python\python.exe directly.
+# Copy the contents of the directory that DIRECTLY contains python.exe.
+$PythonInstallDir = Split-Path -Parent $PythonExe
+$VendorPythonDir = Join-Path $VendorDir "python"
+Copy-Item -Recurse -Force "$PythonInstallDir/*" $VendorPythonDir
+Write-Host "Python copied (flattened layout)" -ForegroundColor Green
 
 # 3. Create venv
 Write-Host "Creating venv..." -ForegroundColor Cyan
-# Find python.exe inside the copied vendor python dir (uv on Windows may nest it under cpython-*/install/)
-$BundledPython = Get-ChildItem -Path (Join-Path $VendorDir "python") -Filter "python.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-if (-not $BundledPython) {
-    Write-Host "Bundled python.exe not found under $VendorDir/python" -ForegroundColor Red
+$BundledPython = Join-Path $VendorPythonDir "python.exe"
+if (-not (Test-Path $BundledPython)) {
+    Write-Host "Bundled python.exe not found at $BundledPython" -ForegroundColor Red
+    Get-ChildItem -Path $VendorPythonDir -Recurse -Depth 2 | ForEach-Object { Write-Host "  $($_.FullName)" }
     exit 1
 }
 Write-Host "Bundled Python: $BundledPython"
