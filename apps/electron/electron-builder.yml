@@ -23,11 +23,7 @@ files:
   - resources/pi-agent-server/**/*
   # Note: Bundled assets (docs, themes, permissions, tool-icons) are in resources/
   # and copied to dist/resources/ by build:copy. They're included via dist/**/* above.
-  # Include network interceptor for API error capture and MCP schema injection
-  - packages/shared/src/unified-network-interceptor.ts
-  - packages/shared/src/interceptor-common.ts
-  - packages/shared/src/feature-flags.ts
-  - packages/shared/src/interceptor-request-utils.ts
+  # Network interceptor files moved to extraResources per platform (paths not resolvable from apps/electron/ cwd)
   # Include CLI tool Python scripts (platform-independent)
   - resources/scripts/**/*
   # Include CLI tool shell wrappers (platform-independent, both Unix and Windows)
@@ -109,6 +105,15 @@ mac:
         - "!vendor/ripgrep/arm64-linux/**"
         - "!vendor/ripgrep/x64-linux/**"
         - "!vendor/ripgrep/x64-win32/**"
+    # Network interceptor source files (resolved from workspace root because apps/electron/packages/* doesn't exist)
+    - from: ../../packages/shared/src/unified-network-interceptor.ts
+      to: app/packages/shared/src/unified-network-interceptor.ts
+    - from: ../../packages/shared/src/interceptor-common.ts
+      to: app/packages/shared/src/interceptor-common.ts
+    - from: ../../packages/shared/src/feature-flags.ts
+      to: app/packages/shared/src/feature-flags.ts
+    - from: ../../packages/shared/src/interceptor-request-utils.ts
+      to: app/packages/shared/src/interceptor-request-utils.ts
     # WhatsApp worker subprocess (self-contained; Baileys bundled in).
     - from: ../../packages/messaging-gateway/dist/whatsapp-worker.cjs
       to: messaging-gateway/whatsapp-worker.cjs
@@ -189,6 +194,15 @@ win:
         - "!vendor/ripgrep/x64-darwin/**"
         - "!vendor/ripgrep/arm64-linux/**"
         - "!vendor/ripgrep/x64-linux/**"
+    # Network interceptor source files (resolved from workspace root because apps/electron/packages/* doesn't exist)
+    - from: ../../packages/shared/src/unified-network-interceptor.ts
+      to: app/packages/shared/src/unified-network-interceptor.ts
+    - from: ../../packages/shared/src/interceptor-common.ts
+      to: app/packages/shared/src/interceptor-common.ts
+    - from: ../../packages/shared/src/feature-flags.ts
+      to: app/packages/shared/src/feature-flags.ts
+    - from: ../../packages/shared/src/interceptor-request-utils.ts
+      to: app/packages/shared/src/interceptor-request-utils.ts
     - from: vendor/bun/bun.exe
       to: vendor/bun/bun.exe
     - from: vendor/codex/win32-x64
@@ -232,6 +246,15 @@ linux:
         - "!vendor/ripgrep/arm64-darwin/**"
         - "!vendor/ripgrep/x64-darwin/**"
         - "!vendor/ripgrep/x64-win32/**"
+    # Network interceptor source files (resolved from workspace root because apps/electron/packages/* doesn't exist)
+    - from: ../../packages/shared/src/unified-network-interceptor.ts
+      to: app/packages/shared/src/unified-network-interceptor.ts
+    - from: ../../packages/shared/src/interceptor-common.ts
+      to: app/packages/shared/src/interceptor-common.ts
+    - from: ../../packages/shared/src/feature-flags.ts
+      to: app/packages/shared/src/feature-flags.ts
+    - from: ../../packages/shared/src/interceptor-request-utils.ts
+      to: app/packages/shared/src/interceptor-request-utils.ts
     # WhatsApp worker subprocess (self-contained; Baileys bundled in).
     - from: ../../packages/messaging-gateway/dist/whatsapp-worker.cjs
       to: messaging-gateway/whatsapp-worker.cjs

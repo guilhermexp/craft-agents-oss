@@ -54,6 +54,29 @@ jobs:
           pnpm install --no-frozen-lockfile --shamefully-hoist --ignore-scripts
           pnpm rebuild
 
+      - name: Download bun runtime for packaging
+        shell: bash
+        run: |
+          BUN_VERSION="1.3.10"
+          mkdir -p apps/electron/vendor/bun
+          case "${{ matrix.os }}" in
+            macos-14)
+              curl -fL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-darwin-aarch64.zip" -o /tmp/bun.zip
+              unzip -j -o /tmp/bun.zip 'bun-darwin-aarch64/bun' -d apps/electron/vendor/bun/
+              chmod +x apps/electron/vendor/bun/bun
+              ;;
+            macos-13)
+              curl -fL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-darwin-x64.zip" -o /tmp/bun.zip
+              unzip -j -o /tmp/bun.zip 'bun-darwin-x64/bun' -d apps/electron/vendor/bun/
+              chmod +x apps/electron/vendor/bun/bun
+              ;;
+            windows-latest)
+              curl -fL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-windows-x64.zip" -o /tmp/bun.zip
+              unzip -j -o /tmp/bun.zip 'bun-windows-x64/bun.exe' -d apps/electron/vendor/bun/
+              ;;
+          esac
+          ls -la apps/electron/vendor/bun/
+
       - name: Build artifacts
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
