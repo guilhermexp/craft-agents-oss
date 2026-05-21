@@ -684,6 +684,10 @@ export class HermesAgent extends BaseAgent {
 
       yield completionUsage ?? { type: 'complete' }
     } catch (error) {
+      const aborted = this.abortController?.signal.aborted === true
+      for (const event of adapter.drainPendingTools(aborted ? 'turn aborted' : 'turn failed')) {
+        yield event
+      }
       const message = error instanceof Error ? error.message : String(error)
       yield { type: 'error', message }
     } finally {

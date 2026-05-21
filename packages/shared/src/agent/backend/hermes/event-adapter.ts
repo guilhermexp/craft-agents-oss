@@ -230,6 +230,20 @@ export class HermesEventAdapter extends BaseEventAdapter {
     return usage ? [{ type: 'complete', usage }] : []
   }
 
+  /**
+   * Emit synthetic tool_result events for every tool_start whose result never
+   * arrived (e.g. the turn was aborted mid-flight). Without this, the renderer
+   * keeps spinning on those tool cards forever.
+   */
+  drainPendingTools(reason: string): AgentEvent[] {
+    const events: AgentEvent[] = []
+    for (const [id, toolName] of this.toolNames) {
+      events.push(this.createToolResult(id, toolName, `[aborted: ${reason}]`, true))
+    }
+    this.toolNames.clear()
+    return events
+  }
+
   private flushText(isIntermediate: boolean): AgentEvent | null {
     if (!this.textBuffer) return null
     if (!isIntermediate && this.hasEmittedFinalText) return null
