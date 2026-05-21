@@ -16,6 +16,7 @@ import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
 import { HermesAgent, buildCraftSessionContextPrompt, extractHermesTextDelta, resolveHermesModelId } from '../hermes-agent.ts'
 import { createMockBackendConfig, createMockSession, createMockWorkspace } from './test-utils.ts'
 import type { BackendConfig, SdkMcpServerConfig } from '../backend/types.ts'
+import { AbortReason } from '../backend/types.ts'
 import type { NormalizedHermesRuntimeConfig } from '../../hermes/acp-config.ts'
 import { warRoomChannelId } from '../../channels/types.ts'
 import { saveChannelsConfig } from '../../channels/storage.ts'
@@ -210,6 +211,36 @@ describe('resolveHermesModelId', () => {
     // which routed e.g. a Codex pick into Anthropic and burned the wrong
     // provider's quota. The user pick wins.
     expect(resolveHermesModelId('claude-opus-4-7', models)).toBe('claude-opus-4-7')
+  })
+})
+
+
+describe('HermesAgent interrupt provider lifecycle', () => {
+  it('tears down the ACP provider on forceAbort so the next turn cannot hit a stale running backend session', () => {
+    const agent = new TestableHermesAgent(createHermesConfig())
+    const provider = makeFakeProvider()
+    agent.setProviderForTest(provider)
+    agent.setStreamingForTest(true)
+
+    agent.forceAbort(AbortReason.UserStop)
+
+    expect(provider.cleanupCount).toBe(1)
+    expect(agent.getProviderForTest()).toBeNull()
+    expect(agent.isProcessing()).toBe(false)
+    expect(agent.getPendingRestartForTest()).toBe(false)
+  })
+
+  it('also resets the ACP provider when redirect fallback aborts a Hermes turn', () => {
+    const agent = new TestableHermesAgent(createHermesConfig())
+    const provider = makeFakeProvider()
+    agent.setProviderForTest(provider)
+    agent.setStreamingForTest(true)
+
+    expect(agent.redirect('nova instrução enquanto processa')).toBe(false)
+
+    expect(provider.cleanupCount).toBe(1)
+    expect(agent.getProviderForTest()).toBeNull()
+    expect(agent.isProcessing()).toBe(false)
   })
 })
 
