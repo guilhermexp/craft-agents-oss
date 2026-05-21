@@ -50,6 +50,8 @@ export const CHANNEL_MAP = {
   createWorkspace: invoke(RPC_NAMESPACES.workspaces.CREATE),
   checkWorkspaceSlug: invoke(RPC_NAMESPACES.workspaces.CHECK_SLUG),
   updateWorkspaceRemoteServer: invoke(RPC_NAMESPACES.workspaces.UPDATE_REMOTE),
+  getDefaultWorkspaceId: invoke(RPC_NAMESPACES.workspaces.GET_DEFAULT),
+  setDefaultWorkspace: invoke(RPC_NAMESPACES.workspaces.SET_DEFAULT),
   testRemoteConnection: invoke(RPC_NAMESPACES.remote.TEST_CONNECTION),
 
   // Server-level workspace operations (REMOTE_ELIGIBLE)

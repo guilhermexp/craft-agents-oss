@@ -57,6 +57,9 @@ export interface StoredConfig {
 
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
+  // Workspace to open on app launch, overriding saved window state and the
+  // "first workspace" fallback. Null/undefined keeps the previous behaviour.
+  defaultWorkspaceId?: string | null;
   activeSessionId: string | null;  // Currently active session (primary scope)
   // Notifications
   notificationsEnabled?: boolean;  // Desktop notifications for task completion (default: true)
@@ -704,6 +707,31 @@ export function setActiveWorkspace(workspaceId: string): void {
 }
 
 /**
+ * Return the workspace pinned as default-on-launch, or null if none/invalid.
+ */
+export function getDefaultWorkspaceId(): string | null {
+  const config = loadStoredConfig();
+  if (!config?.defaultWorkspaceId) return null;
+  const exists = config.workspaces.some(w => w.id === config.defaultWorkspaceId);
+  return exists ? config.defaultWorkspaceId : null;
+}
+
+/**
+ * Pin a workspace as the one to open on app launch. Pass null to clear.
+ */
+export function setDefaultWorkspace(workspaceId: string | null): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+
+  if (workspaceId !== null && !config.workspaces.some(w => w.id === workspaceId)) {
+    return;
+  }
+
+  config.defaultWorkspaceId = workspaceId;
+  saveConfig(config);
+}
+
+/**
  * Atomically switch to a workspace and load/create a session.
  * This prevents race conditions by doing both operations together.
  *
@@ -833,6 +861,11 @@ export async function removeWorkspace(workspaceId: string): Promise<boolean> {
   // If we removed the active workspace, switch to first available
   if (config.activeWorkspaceId === workspaceId) {
     config.activeWorkspaceId = config.workspaces[0]?.id || null;
+  }
+
+  // Clear default pin if it pointed at the removed workspace.
+  if (config.defaultWorkspaceId === workspaceId) {
+    config.defaultWorkspaceId = null;
   }
 
   saveConfig(config);
