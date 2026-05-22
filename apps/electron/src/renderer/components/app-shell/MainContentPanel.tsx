@@ -316,7 +316,10 @@ export function MainContentPanel({
   if (isMeetingsNavigation(navState)) {
     return wrapWithStoplight(
       <Panel variant="grow" className={className}>
-        <MeetingsPage />
+        <MeetingsPage
+          workspaceId={activeWorkspaceId ?? null}
+          selectedMeetingId={navState.details?.meetingId ?? null}
+        />
       </Panel>
     )
   }

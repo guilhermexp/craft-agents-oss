@@ -107,6 +107,20 @@ describe('session tool filtering helpers', () => {
     expect(() => validateSessionToolOutput(def, { content: [{ type: 'text' }] })).toThrow();
   });
 
+  it('declares the channel_dispatch v1 contract', () => {
+    const def = SESSION_TOOL_DEFS.find(tool => tool.name === 'channel_dispatch');
+    expect(def).toBeDefined();
+    if (!def) return;
+
+    expect(def.apiVersion).toBe('v1');
+    expect(def.safeMode).toBe('block');
+    expect(validateSessionToolInput(def, { participantId: 'reviewer', message: 'review this' })).toEqual({
+      participantId: 'reviewer',
+      message: 'review this',
+    });
+    expect(() => validateSessionToolInput(def, { participantId: 'reviewer' })).toThrow();
+  });
+
   it('safe-mode helper sets classify expected tools', () => {
     const allowed = getSessionSafeAllowedToolNames();
     const blocked = getSessionSafeBlockedToolNames();

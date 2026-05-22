@@ -22,11 +22,29 @@ const CHANNELS = {
   THEME_COLOR: 'browser-toolbar:theme-color',
   REQUEST_PROFILE_MANAGEMENT: 'browser-toolbar:request-profile-management',
   SWITCH_PROFILE: 'browser-toolbar:switch-profile',
+  MEETINGS_RESOLVE_WORKSPACE: 'meetings:resolve-workspace',
   MEETINGS_START: 'meetings:start',
+  RECORDING_PREPARE: 'meetings:recording:prepare',
+  RECORDING_APPEND: 'meetings:recording:append',
+  RECORDING_FINALIZE: 'meetings:recording:finalize',
+  RECORDING_ABORT: 'meetings:recording:abort',
 } as const
 
-// Instance ID is passed via query parameter by BrowserPaneManager
-const instanceId = new URLSearchParams(location.search).get('instanceId') || ''
+// Instance/workspace IDs are passed via query parameters by BrowserPaneManager.
+// Older toolbar windows may not have workspaceId in the URL, so keep a
+// best-effort sync IPC fallback before invoking workspace-scoped handlers.
+const toolbarParams = new URLSearchParams(location.search)
+const instanceId = toolbarParams.get('instanceId') || ''
+const workspaceId = toolbarParams.get('workspaceId') || safeSendSyncString('__get-workspace-id')
+
+function safeSendSyncString(channel: string): string {
+  try {
+    const value = ipcRenderer.sendSync(channel)
+    return typeof value === 'string' ? value : ''
+  } catch {
+    return ''
+  }
+}
 
 contextBridge.exposeInMainWorld('browserToolbar', {
   instanceId,
@@ -40,20 +58,19 @@ contextBridge.exposeInMainWorld('browserToolbar', {
   closeWindowEntirely: () => ipcRenderer.invoke(CHANNELS.DESTROY, instanceId),
   requestProfileManagement: () => ipcRenderer.invoke(CHANNELS.REQUEST_PROFILE_MANAGEMENT, instanceId),
   switchProfile: (profileId: string) => ipcRenderer.invoke(CHANNELS.SWITCH_PROFILE, instanceId, profileId),
-  inviteHermesToMeet: (payload: { urlOrCode: string; profileId?: string }) => {
-    console.info('[browser-toolbar] inviteHermesToMeet clicked', {
-      instanceId,
+  inviteHermesToMeet: async (payload: { urlOrCode: string; profileId?: string; workspaceId?: string }) => {
+    const resolvedWorkspaceId = (payload.workspaceId || workspaceId).trim()
+      || await ipcRenderer.invoke(CHANNELS.MEETINGS_RESOLVE_WORKSPACE, instanceId)
+    const startPayload = {
       urlOrCode: payload.urlOrCode,
       profileId: payload.profileId,
-    })
-    return ipcRenderer.invoke(CHANNELS.MEETINGS_START, {
-      ...payload,
       browserInstanceId: instanceId,
       title: 'Google Meet',
       transcribe: true,
       summarizeOnEnd: true,
       followUpOnEnd: false,
-    })
+    }
+    return ipcRenderer.invoke(CHANNELS.MEETINGS_START, resolvedWorkspaceId, startPayload)
   },
   onStateUpdate: (callback: (state: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state)
@@ -70,4 +87,24 @@ contextBridge.exposeInMainWorld('browserToolbar', {
     ipcRenderer.on(CHANNELS.FORCE_CLOSE_MENU, handler)
     return () => { ipcRenderer.removeListener(CHANNELS.FORCE_CLOSE_MENU, handler) }
   },
+  /**
+   * Audio recording lifecycle for the browser pane.
+   * Returns { recordingId, sourceId } so the toolbar renderer can call
+   * navigator.mediaDevices.getUserMedia with chromeMediaSourceId.
+   */
+  prepareRecording: async (payload: { urlOrCode: string; workspaceId?: string }) => {
+    const resolvedWorkspaceId = (payload.workspaceId || workspaceId).trim()
+      || await ipcRenderer.invoke(CHANNELS.MEETINGS_RESOLVE_WORKSPACE, instanceId)
+    return ipcRenderer.invoke(CHANNELS.RECORDING_PREPARE, {
+      workspaceId: resolvedWorkspaceId,
+      browserInstanceId: instanceId,
+      urlOrCode: payload.urlOrCode,
+    }) as Promise<{ recordingId: string; sourceId: string; outputPath: string }>
+  },
+  appendRecordingChunk: (recordingId: string, chunk: ArrayBuffer) =>
+    ipcRenderer.invoke(CHANNELS.RECORDING_APPEND, recordingId, chunk),
+  finalizeRecording: (recordingId: string, mimeType: string) =>
+    ipcRenderer.invoke(CHANNELS.RECORDING_FINALIZE, recordingId, mimeType) as Promise<{ outputPath: string }>,
+  abortRecording: (recordingId: string) =>
+    ipcRenderer.invoke(CHANNELS.RECORDING_ABORT, recordingId),
 })

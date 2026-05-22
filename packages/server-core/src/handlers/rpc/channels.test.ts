@@ -5,8 +5,11 @@ import { join } from 'path'
 
 import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { createChannel } from '@craft-agent/shared/channels/crud'
+import { listChannelDispatches } from '@craft-agent/shared/channels/dispatches'
 import { listChannelMessages } from '@craft-agent/shared/channels/messages'
 import { saveLabelConfig } from '@craft-agent/shared/labels/storage'
+import { unregisterSessionScopedToolCallbacks } from '@craft-agent/shared/agent'
+import { getSessionScopedToolCallbacks } from '@craft-agent/shared/agent/session-scoped-tools'
 import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -89,9 +92,11 @@ beforeEach(() => {
   workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-channel-rpc-test-'))
   process.env.CRAFT_HERMES_HOME = join(workspaceRoot, 'hermes-home')
   saveLabelConfig(workspaceRoot, { version: 1, labels: [] })
+  for (const sessionId of ['session-1', 'session-2', 'session-3']) unregisterSessionScopedToolCallbacks(sessionId)
 })
 
 afterEach(() => {
+  for (const sessionId of ['session-1', 'session-2', 'session-3']) unregisterSessionScopedToolCallbacks(sessionId)
   if (previousCraftHermesHome === undefined) {
     delete process.env.CRAFT_HERMES_HOME
   } else {
@@ -147,6 +152,24 @@ describe('registerChannelsHandlers messages', () => {
     expect(listChannelMessages(workspaceRoot, 'architecture')[0]?.tagged).toEqual(['hermes-lead', 'pi-reviewer'])
     expect(listChannelMessages(workspaceRoot, 'architecture').map(message => message.authorType)).toEqual(['user', 'agent', 'agent'])
     expect(pushed.some(event => event.channel === RPC_NAMESPACES.channels.MESSAGES_CHANGED)).toBe(true)
+    expect(listChannelDispatches(workspaceRoot, 'architecture').map(dispatch => ({
+      participantId: dispatch.participantId,
+      status: dispatch.status,
+      sourceMessageId: dispatch.sourceMessageId,
+    }))).toEqual([
+      { participantId: 'hermes-lead', status: 'completed', sourceMessageId: result.message.id },
+      { participantId: 'pi-reviewer', status: 'completed', sourceMessageId: result.message.id },
+    ])
+
+    const listDispatches = handlers.get(RPC_NAMESPACES.channels.LIST_DISPATCHES)
+    const dispatches = await listDispatches!(ctx, 'ws-1', 'architecture')
+    expect(dispatches.map((dispatch: { participantId: string; status: string }) => ({
+      participantId: dispatch.participantId,
+      status: dispatch.status,
+    }))).toEqual([
+      { participantId: 'hermes-lead', status: 'completed' },
+      { participantId: 'pi-reviewer', status: 'completed' },
+    ])
   })
 
   it('routes untagged channel messages through the configured Hermes orchestrator', async () => {
@@ -192,6 +215,47 @@ describe('registerChannelsHandlers messages', () => {
     }))).toEqual([
       { authorType: 'user', authorId: 'human', text: 'cria plano e pede revisão do server-ops' },
       { authorType: 'agent', authorId: 'lead', text: 'assistant response for session-1' },
+    ])
+  })
+
+  it('exposes channel_dispatch on channel participant sessions and routes to the requested participant', async () => {
+    createChannel(workspaceRoot, {
+      name: 'War Room',
+      participants: [
+        { id: 'lead', displayName: 'Lead', llmConnection: 'hermes', hermesProfile: 'lead' },
+        { id: 'pi-reviewer', displayName: 'Pi Reviewer', llmConnection: 'pi-copilot', model: 'auto' },
+      ],
+      routing: {
+        mode: 'orchestrator',
+      },
+    })
+
+    const { handlers, ctx, sentMessages } = createHarness()
+    await handlers.get(RPC_NAMESPACES.channels.SEND_MESSAGE)!(ctx, 'ws-1', {
+      channelId: 'war-room',
+      text: 'coordene uma revisão',
+    })
+
+    const callback = getSessionScopedToolCallbacks('session-1')?.channelDispatchFn
+    expect(callback).toBeDefined()
+    const result = await callback!({
+      participantId: 'pi-reviewer',
+      message: 'revise os riscos do plano',
+    })
+
+    expect(result.participantId).toBe('pi-reviewer')
+    expect(result.status).toBe('completed')
+    expect(sentMessages.map(item => item.sessionId)).toEqual(['session-1', 'session-2'])
+    expect(sentMessages[1]?.message).toContain('revise os riscos do plano')
+    expect(listChannelMessages(workspaceRoot, 'war-room').map(message => ({
+      authorType: message.authorType,
+      authorId: message.authorId,
+      tagged: message.tagged,
+    }))).toEqual([
+      { authorType: 'user', authorId: 'human', tagged: ['lead'] },
+      { authorType: 'agent', authorId: 'lead', tagged: [] },
+      { authorType: 'system', authorId: 'channel-dispatch', tagged: ['pi-reviewer'] },
+      { authorType: 'agent', authorId: 'pi-reviewer', tagged: [] },
     ])
   })
 

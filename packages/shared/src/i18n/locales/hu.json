@@ -456,6 +456,7 @@
   "meetings.detectedDismiss": "Kihagyás",
   "meetings.detectedTitle": "Értekezlet észlelve",
   "meetings.detectedToast": "Google Meet észlelve. Erősítsd meg Hermes meghívásához.",
+  "meetings.selectRecordingMarkdown": "Válassz egy felvételt a panelen a Markdown összefoglaló megtekintéséhez.",
   "menu.aboutCraftAgents": "A Craft Agents-ről",
   "menu.addPanelMenu": "Panel hozzáadása",
   "menu.allDocumentation": "Összes dokumentáció",

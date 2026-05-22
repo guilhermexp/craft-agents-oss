@@ -1,3 +1,3 @@
-export function shouldShowHazeScenicBackgroundControls(effectiveColorTheme: string): boolean {
-  return effectiveColorTheme === 'haze'
+export function shouldShowScenicBackgroundControls(themeMode: string | undefined): boolean {
+  return themeMode === 'scenic'
 }

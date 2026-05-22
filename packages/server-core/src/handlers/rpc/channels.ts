@@ -9,6 +9,7 @@ export const HANDLED_CHANNELS = [
   RPC_NAMESPACES.channels.UPDATE,
   RPC_NAMESPACES.channels.DELETE,
   RPC_NAMESPACES.channels.LIST_MESSAGES,
+  RPC_NAMESPACES.channels.LIST_DISPATCHES,
   RPC_NAMESPACES.channels.SEND_MESSAGE,
 ] as const
 
@@ -38,6 +39,10 @@ export function registerChannelsHandlers(server: RpcServer, deps: HandlerDeps): 
 
   server.handle(RPC_NAMESPACES.channels.LIST_MESSAGES, async (_ctx, workspaceId: string, channelId: string) => {
     return channelManager.listMessages(workspaceId, channelId)
+  })
+
+  server.handle(RPC_NAMESPACES.channels.LIST_DISPATCHES, async (_ctx, workspaceId: string, channelId: string) => {
+    return channelManager.listDispatches(workspaceId, channelId)
   })
 
   server.handle(RPC_NAMESPACES.channels.SEND_MESSAGE, async (

@@ -52,6 +52,7 @@
     "./channels/crud": "./src/channels/crud.ts",
     "./channels/mentions": "./src/channels/mentions.ts",
     "./channels/messages": "./src/channels/messages.ts",
+    "./channels/dispatches": "./src/channels/dispatches.ts",
     "./craft-bridge": "./src/craft-bridge/index.ts",
     "./views": "./src/views/index.ts",
     "./views/storage": "./src/views/storage.ts",

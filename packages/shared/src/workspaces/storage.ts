@@ -25,6 +25,7 @@ import { getDefaultLabelConfig, saveLabelConfig } from '../labels/storage.ts';
 import { loadConfigDefaults } from '../config/storage.ts';
 import { parsePermissionMode, PERMISSION_MODE_ORDER } from '../agent/mode-types.ts';
 import { normalizeThinkingLevel } from '../agent/thinking-levels.ts';
+import { extractWorkspaceSlugFromPath } from '../utils/workspace-slug.ts';
 import type {
   WorkspaceConfig,
   CreateWorkspaceInput,
@@ -86,6 +87,15 @@ export function getWorkspaceSessionsPath(rootPath: string): string {
  */
 export function getWorkspaceSkillsPath(rootPath: string): string {
   return join(rootPath, 'skills');
+}
+
+/**
+ * Get path to workspace meetings directory
+ * @param rootPath - Absolute path to the user's workspace root folder
+ */
+export function getWorkspaceMeetingsPath(rootPath: string): string {
+  const workspaceSlug = extractWorkspaceSlugFromPath(rootPath, 'workspace');
+  return join(CONFIG_DIR, 'workspaces', workspaceSlug, 'meetings');
 }
 
 // ============================================================
@@ -210,6 +220,12 @@ export function loadWorkspace(rootPath: string): LoadedWorkspace | null {
     mkdirSync(skillsPath, { recursive: true });
   }
 
+  // Ensure meetings directory exists (migration for existing workspaces)
+  const meetingsPath = getWorkspaceMeetingsPath(rootPath);
+  if (!existsSync(meetingsPath)) {
+    mkdirSync(meetingsPath, { recursive: true });
+  }
+
   return {
     config,
     sourceSlugs: listSubdirNames(getWorkspaceSourcesPath(rootPath)),
@@ -329,6 +345,7 @@ export function createWorkspaceAtPath(
   mkdirSync(getWorkspaceSourcesPath(rootPath), { recursive: true });
   mkdirSync(getWorkspaceSessionsPath(rootPath), { recursive: true });
   mkdirSync(getWorkspaceSkillsPath(rootPath), { recursive: true });
+  mkdirSync(getWorkspaceMeetingsPath(rootPath), { recursive: true });
 
   // Save config
   saveWorkspaceConfig(rootPath, config);
@@ -526,7 +543,7 @@ export function ensurePluginManifest(rootPath: string, workspaceName: string): v
     version: '1.0.0',
   };
 
-  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  atomicWriteFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 }
 
 export { CONFIG_DIR, DEFAULT_WORKSPACES_DIR };

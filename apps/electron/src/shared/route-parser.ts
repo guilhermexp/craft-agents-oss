@@ -159,7 +159,16 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
 
   // Meetings navigator
   if (first === 'meetings') {
-    return { navigator: 'meetings', details: null }
+    if (segments.length === 1) {
+      return { navigator: 'meetings', details: null }
+    }
+    if (segments.length === 3 && segments[1] === 'meeting' && segments[2]) {
+      return {
+        navigator: 'meetings',
+        details: { type: 'meeting', id: decodeURIComponent(segments[2]) },
+      }
+    }
+    return null
   }
 
   // Automations navigator - supports type filters (scheduled, event, agentic)
@@ -291,7 +300,8 @@ export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
   }
 
   if (parsed.navigator === 'meetings') {
-    return 'meetings'
+    if (!parsed.details) return 'meetings'
+    return `meetings/meeting/${encodeURIComponent(parsed.details.id)}`
   }
 
   // Sessions navigator
@@ -419,6 +429,9 @@ function convertCompoundToViewRoute(compound: ParsedCompoundRoute): ParsedRoute 
 
   // Meetings
   if (compound.navigator === 'meetings') {
+    if (compound.details) {
+      return { type: 'view', name: 'meeting-info', id: compound.details.id, params: {} }
+    }
     return { type: 'view', name: 'meetings', params: {} }
   }
 
@@ -557,7 +570,10 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
 
   // Meetings
   if (compound.navigator === 'meetings') {
-    return { navigator: 'meetings' }
+    return {
+      navigator: 'meetings',
+      details: compound.details ? { type: 'meeting', meetingId: compound.details.id } : null,
+    }
   }
 
   // Sessions
@@ -745,7 +761,7 @@ function navigationStateToCompoundRoute(state: NavigationState): ParsedCompoundR
   if (state.navigator === 'meetings') {
     return {
       navigator: 'meetings',
-      details: null,
+      details: state.details ? { type: 'meeting', id: state.details.meetingId } : null,
     }
   }
 

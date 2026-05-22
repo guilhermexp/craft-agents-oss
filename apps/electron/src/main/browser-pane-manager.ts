@@ -162,6 +162,7 @@ interface AgentControlLockState {
 interface BrowserInstance {
   id: string
   profileId: string
+  workspaceId: string | null
   window: BrowserWindow
   toolbarView: BrowserView
   pageView: BrowserView
@@ -211,6 +212,7 @@ export interface BrowserNavigationPolicy {
 
 interface CreateBrowserInstanceOptions {
   show?: boolean
+  workspaceId?: string | null
   ownerType?: 'session' | 'manual'
   ownerSessionId?: string
   /** Initial URL to load instead of the browser empty-state page. */
@@ -430,6 +432,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const shouldShow = options?.show ?? false
     const ownerType = options?.ownerType ?? 'manual'
     const ownerSessionId = ownerType === 'session' ? (options?.ownerSessionId ?? null) : null
+    const workspaceId = options?.workspaceId ?? this.resolveLaunchWorkspaceId()
     const profileId = this.resolveProfileId(options?.profileId)
     const partition = getProfilePartition(profileId)
 
@@ -517,6 +520,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const instance: BrowserInstance = {
       id: instanceId,
       profileId,
+      workspaceId,
       window,
       toolbarView,
       pageView,
@@ -582,7 +586,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     this.emitStateChange(instance)
     this.touchProfileLastUsed(profileId)
     mainLog.info(`[browser-pane] toolbar version: v4-react-chromeless`)
-    mainLog.info(`[browser-pane] Created instance: ${instanceId} (show=${shouldShow}, ownerType=${ownerType}, ownerSessionId=${ownerSessionId ?? 'none'}, profileId=${profileId})`)
+    mainLog.info(`[browser-pane] Created instance: ${instanceId} (show=${shouldShow}, ownerType=${ownerType}, ownerSessionId=${ownerSessionId ?? 'none'}, profileId=${profileId}, workspaceId=${workspaceId ?? 'none'})`)
 
     void this.loadToolbarPage(instance)
       .finally(() => {
@@ -768,6 +772,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const newId = this.createInstance(undefined, {
       show: true,
       profileId: resolvedTarget,
+      workspaceId: instance.workspaceId,
       ownerType,
       ownerSessionId: ownerSessionId ?? undefined,
     })
@@ -2401,7 +2406,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   private async loadToolbarPage(instance: BrowserInstance): Promise<void> {
-    const query = `instanceId=${encodeURIComponent(instance.id)}`
+    const queryParams = new URLSearchParams({ instanceId: instance.id })
+    if (instance.workspaceId) queryParams.set('workspaceId', instance.workspaceId)
+    const query = queryParams.toString()
     let lastError: unknown = null
 
     for (let attempt = 0; attempt <= TOOLBAR_LOAD_MAX_RETRIES; attempt++) {

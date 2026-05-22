@@ -233,9 +233,11 @@ import type {
   HermesProfileSoulResult,
   HermesListEnvResult,
   HermesEnvMutationResult,
+  MeetingTranscriptionConfig,
   MeetingRecord,
   MeetingStartInput,
   MeetingTranscriptResult,
+  SaveMeetingTranscriptionConfigInput,
 } from '@craft-agent/shared/protocol'
 
 export interface ElectronAPI {
@@ -551,6 +553,7 @@ export interface ElectronAPI {
   updateChannel(workspaceId: string, channelId: string, updates: import('@craft-agent/shared/channels').UpdateWarRoomChannelInput): Promise<import('@craft-agent/shared/channels').WarRoomChannel>
   deleteChannel(workspaceId: string, channelId: string, options?: import('@craft-agent/shared/channels').DeleteChannelOptions): Promise<import('@craft-agent/shared/channels').DeleteChannelResult>
   listChannelMessages(workspaceId: string, channelId: string): Promise<import('@craft-agent/shared/channels').ChannelMessage[]>
+  listChannelDispatches(workspaceId: string, channelId: string): Promise<import('@craft-agent/shared/channels').WarRoomDispatch[]>
   sendChannelMessage(workspaceId: string, input: {
     channelId: string
     text: string
@@ -561,6 +564,7 @@ export interface ElectronAPI {
     targetedParticipantIds: string[]
     unknownMentions: string[]
     failures: Array<{ participantId: string; message: string }>
+    dispatches: import('@craft-agent/shared/channels').WarRoomDispatch[]
   }>
   onChannelsChanged(callback: (workspaceId: string) => void): () => void
   onChannelMessagesChanged(callback: (workspaceId: string, channelId: string) => void): () => void
@@ -675,11 +679,13 @@ export interface ElectronAPI {
 
   // Meetings MVP (integrated browser-backed Google Meet)
   meetings: {
-    start(input: string | MeetingStartInput): Promise<MeetingRecord>
-    list(): Promise<MeetingRecord[]>
-    status(id: string): Promise<MeetingRecord | null>
-    stop(id: string): Promise<MeetingRecord>
-    transcript(id: string): Promise<MeetingTranscriptResult>
+    start(workspaceId: string, input: string | MeetingStartInput): Promise<MeetingRecord>
+    list(workspaceId: string): Promise<MeetingRecord[]>
+    status(workspaceId: string, id: string): Promise<MeetingRecord | null>
+    stop(workspaceId: string, id: string): Promise<MeetingRecord>
+    transcript(workspaceId: string, id: string): Promise<MeetingTranscriptResult>
+    getTranscriptionConfig(workspaceId: string): Promise<MeetingTranscriptionConfig>
+    saveTranscriptionConfig(workspaceId: string, input: SaveMeetingTranscriptionConfigInput): Promise<MeetingTranscriptionConfig>
   }
 
   // Browser pane management
@@ -884,6 +890,7 @@ export interface AutomationsNavigationState {
 
 export interface MeetingsNavigationState {
   navigator: 'meetings'
+  details: { type: 'meeting'; meetingId: string } | null
   rightSidebar?: RightSidebarPanel
 }
 
@@ -998,7 +1005,14 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
   }
 
   // Handle meetings
-  if (key === 'meetings') return { navigator: 'meetings' }
+  if (key === 'meetings') return { navigator: 'meetings', details: null }
+  if (key.startsWith('meetings/meeting/')) {
+    const meetingId = key.slice(17)
+    if (meetingId) {
+      return { navigator: 'meetings', details: { type: 'meeting', meetingId } }
+    }
+    return { navigator: 'meetings', details: null }
+  }
 
   // Handle settings
   if (key === 'settings') return { navigator: 'settings', subpage: 'app' }

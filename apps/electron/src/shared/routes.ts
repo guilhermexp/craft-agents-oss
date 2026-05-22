@@ -195,8 +195,11 @@ export const routes = {
     automationsAgentic: (automationId?: string) =>
       automationId ? `automations/agentic/automation/${automationId}` as const : 'automations/agentic' as const,
 
-    /** Meetings view (meetings navigator). */
-    meetings: () => 'meetings' as const,
+    /** Meetings view (meetings navigator). Pass a meeting id for a recording detail view. */
+    meetings: (meetingId?: string) => {
+      if (!meetingId) return 'meetings' as const
+      return `meetings/meeting/${encodeURIComponent(meetingId)}` as const
+    },
 
     /** Settings view (settings navigator) - uses SettingsSubpage from registry */
     settings: (subpage?: SettingsSubpage) =>

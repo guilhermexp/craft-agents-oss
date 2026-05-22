@@ -399,6 +399,7 @@
   "meetings.optionsHint": "Ajustável por chamada",
   "meetings.optionsTitle": "Automação da reunião",
   "meetings.privacyNote": "Confirme consentimento antes de gravar ou transcrever reuniões com clientes. O Craft não entra em chamadas sozinho sem um link.",
+  "meetings.selectRecordingMarkdown": "Selecione uma gravação no painel para ver o resumo em Markdown.",
   "meetings.subtitle": "Entre em chamadas do Google Meet sem sair do Craft. O navegador integrado mantém login, contexto e ações do agente no mesmo lugar.",
   "meetings.summary": "Resumo",
   "meetings.summaryDescription": "Criar notas automáticas ao final da chamada.",

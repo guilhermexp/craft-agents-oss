@@ -258,6 +258,8 @@ export const RPC_NAMESPACES = {
     STATUS: 'meetings:status',
     STOP: 'meetings:stop',
     TRANSCRIPT: 'meetings:transcript',
+    GET_TRANSCRIPTION_CONFIG: 'meetings:getTranscriptionConfig',
+    SAVE_TRANSCRIPTION_CONFIG: 'meetings:saveTranscriptionConfig',
   },
   dialog: {
     OPEN_FOLDER: 'dialog:openFolder',
@@ -324,6 +326,7 @@ export const RPC_NAMESPACES = {
     UPDATE: 'channels:update',
     DELETE: 'channels:delete',
     LIST_MESSAGES: 'channels:listMessages',
+    LIST_DISPATCHES: 'channels:listDispatches',
     SEND_MESSAGE: 'channels:sendMessage',
     CHANGED: 'channels:changed',
     MESSAGES_CHANGED: 'channels:messagesChanged',

@@ -1,5 +1,5 @@
 import type { PermissionMode } from '@craft-agent/shared/agent/mode-types';
-import type { WarRoomChannel, WarRoomParticipant } from '@craft-agent/shared/channels';
+import type { WarRoomChannel, WarRoomDispatch, WarRoomParticipant } from '@craft-agent/shared/channels';
 import { resolveChannelMentions } from '@craft-agent/shared/channels/mentions';
 import { getHermesKanbanHome } from './hermes-kanban';
 
@@ -21,6 +21,21 @@ export interface ChannelAgentRuntime {
 
 export interface ChannelOrchestratorDeps {
   runtime: ChannelAgentRuntime;
+  dispatchStore?: ChannelDispatchStore;
+}
+
+export interface ChannelDispatchStore {
+  create(input: {
+    channelId: string;
+    participantId: string;
+    sourceMessageId: string;
+    parentMessageId?: string;
+    sourceSessionId?: string;
+  }): WarRoomDispatch;
+  update(dispatchId: string, updates: {
+    status?: WarRoomDispatch['status'];
+    error?: string;
+  }): WarRoomDispatch;
 }
 
 export interface SendChannelMessageInput {
@@ -29,6 +44,9 @@ export interface SendChannelMessageInput {
   authorId: string;
   mentionedParticipantIds?: string[];
   recentMessages?: Array<{ authorId: string; text: string }>;
+  sourceMessageId?: string;
+  parentMessageId?: string;
+  sourceSessionId?: string;
 }
 
 export interface SendChannelMessageResult {
@@ -36,6 +54,7 @@ export interface SendChannelMessageResult {
   unknownMentions: string[];
   failures: Array<{ participantId: string; message: string }>;
   agentMessages: Array<{ participantId: string; sessionId: string; text: string }>;
+  dispatches: WarRoomDispatch[];
 }
 
 export interface ChannelTaskUpdate {
@@ -48,6 +67,15 @@ export interface ChannelTaskUpdate {
 
 export interface ChannelOrchestrator {
   sendMessage(input: SendChannelMessageInput): Promise<SendChannelMessageResult>;
+  dispatchToParticipant(input: {
+    channel: WarRoomChannel;
+    participantId: string;
+    text: string;
+    recentMessages?: Array<{ authorId: string; text: string }>;
+    sourceMessageId?: string;
+    parentMessageId?: string;
+    sourceSessionId?: string;
+  }): Promise<SendChannelMessageResult>;
   sendTaskUpdate(input: {
     channel: WarRoomChannel;
     tasks: ChannelTaskUpdate[];
@@ -72,7 +100,7 @@ function resolveLeadParticipant(channel: WarRoomChannel): WarRoomParticipant | u
     ?? participants[0];
 }
 
-function resolveTargets(
+export function resolveChannelTargets(
   channel: WarRoomChannel,
   text: string,
   explicitMentionedParticipantIds?: string[],
@@ -305,40 +333,117 @@ export function createChannelOrchestrator(deps: ChannelOrchestratorDeps): Channe
     return session.id;
   }
 
+  function createDispatches(input: {
+    channel: WarRoomChannel;
+    participants: WarRoomParticipant[];
+    sourceMessageId?: string;
+    parentMessageId?: string;
+    sourceSessionId?: string;
+  }): Map<string, WarRoomDispatch> {
+    const dispatches = new Map<string, WarRoomDispatch>();
+    if (!deps.dispatchStore || !input.sourceMessageId) return dispatches;
+
+    for (const participant of input.participants) {
+      const dispatch = deps.dispatchStore.create({
+        channelId: input.channel.id,
+        participantId: participant.id,
+        sourceMessageId: input.sourceMessageId,
+        parentMessageId: input.parentMessageId,
+        sourceSessionId: input.sourceSessionId,
+      });
+      dispatches.set(participant.id, dispatch);
+    }
+    return dispatches;
+  }
+
+  function updateDispatch(
+    dispatches: Map<string, WarRoomDispatch>,
+    participantId: string,
+    updates: Parameters<ChannelDispatchStore['update']>[1],
+  ): void {
+    const dispatch = dispatches.get(participantId);
+    if (!dispatch || !deps.dispatchStore) return;
+    dispatches.set(participantId, deps.dispatchStore.update(dispatch.id, updates));
+  }
+
+  async function dispatchParticipant(input: {
+    channel: WarRoomChannel;
+    participant: WarRoomParticipant;
+    text: string;
+    recentMessages?: Array<{ authorId: string; text: string }>;
+    dispatches: Map<string, WarRoomDispatch>;
+    mode?: ReturnType<typeof routingMode>;
+    mentionedParticipantIds?: string[];
+  }): Promise<{ participantId: string; sessionId: string; text?: string }> {
+    updateDispatch(input.dispatches, input.participant.id, { status: 'running' });
+    try {
+      const sessionId = await ensureParticipantSession(input.channel, input.participant);
+      const response = await deps.runtime.sendMessage({
+        sessionId,
+        message: input.mode === 'orchestrator'
+          ? buildOrchestratorPacket({
+              channel: input.channel,
+              orchestrator: input.participant,
+              text: input.text,
+              mentionedParticipantIds: input.mentionedParticipantIds,
+              recentMessages: input.recentMessages,
+            })
+          : buildChannelWorkPacket({
+              channel: input.channel,
+              participant: input.participant,
+              text: input.text,
+              recentMessages: input.recentMessages,
+            }),
+      });
+      updateDispatch(input.dispatches, input.participant.id, { status: 'completed' });
+      return {
+        participantId: input.participant.id,
+        sessionId,
+        text: response.assistantText?.trim(),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      updateDispatch(input.dispatches, input.participant.id, { status: 'failed', error: message });
+      throw error;
+    }
+  }
+
   return {
     async sendMessage(input) {
-      const targets = resolveTargets(input.channel, input.text, input.mentionedParticipantIds);
+      const targets = resolveChannelTargets(input.channel, input.text, input.mentionedParticipantIds);
       const failures: Array<{ participantId: string; message: string }> = [];
       const agentMessages: Array<{ participantId: string; sessionId: string; text: string }> = [];
       const mode = routingMode(input.channel);
+      const dispatches = createDispatches({
+        channel: input.channel,
+        participants: targets.participants,
+        sourceMessageId: input.sourceMessageId,
+        parentMessageId: input.parentMessageId,
+        sourceSessionId: input.sourceSessionId,
+      });
 
-      const results = await Promise.allSettled(targets.participants.map(async participant => {
-        const sessionId = await ensureParticipantSession(input.channel, participant);
-        const response = await deps.runtime.sendMessage({
-          sessionId,
-          message: mode === 'orchestrator'
-            ? buildOrchestratorPacket({
-                channel: input.channel,
-                orchestrator: participant,
-                text: input.text,
-                mentionedParticipantIds: input.mentionedParticipantIds,
-                recentMessages: input.recentMessages,
-              })
-            : buildChannelWorkPacket({
-                channel: input.channel,
-                participant,
-                text: input.text,
-                recentMessages: input.recentMessages,
-              }),
-        });
-        const assistantText = response.assistantText?.trim();
-        if (assistantText) {
-          agentMessages.push({ participantId: participant.id, sessionId, text: assistantText });
-        }
-      }));
+      const results = await Promise.allSettled(targets.participants.map(participant => (
+        dispatchParticipant({
+          channel: input.channel,
+          participant,
+          text: input.text,
+          recentMessages: input.recentMessages,
+          dispatches,
+          mode,
+          mentionedParticipantIds: input.mentionedParticipantIds,
+        })
+      )));
 
       results.forEach((result, index) => {
-        if (result.status === 'rejected') {
+        if (result.status === 'fulfilled') {
+          if (result.value.text) {
+            agentMessages.push({
+              participantId: result.value.participantId,
+              sessionId: result.value.sessionId,
+              text: result.value.text,
+            });
+          }
+        } else {
           const participant = targets.participants[index];
           if (!participant) return;
           const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
@@ -351,6 +456,63 @@ export function createChannelOrchestrator(deps: ChannelOrchestratorDeps): Channe
         unknownMentions: targets.unknownMentions,
         failures,
         agentMessages,
+        dispatches: targets.participants
+          .map(participant => dispatches.get(participant.id))
+          .filter((dispatch): dispatch is WarRoomDispatch => dispatch !== undefined),
+      };
+    },
+    async dispatchToParticipant(input) {
+      const participant = (input.channel.participants ?? []).find(item => item.id === input.participantId);
+      if (!participant) {
+        return {
+          targetedParticipantIds: [],
+          unknownMentions: [],
+          failures: [{ participantId: input.participantId, message: `Participant '${input.participantId}' not found in channel` }],
+          agentMessages: [],
+          dispatches: [],
+        };
+      }
+
+      const dispatches = createDispatches({
+        channel: input.channel,
+        participants: [participant],
+        sourceMessageId: input.sourceMessageId,
+        parentMessageId: input.parentMessageId,
+        sourceSessionId: input.sourceSessionId,
+      });
+      const failures: Array<{ participantId: string; message: string }> = [];
+      const agentMessages: Array<{ participantId: string; sessionId: string; text: string }> = [];
+
+      const result = await Promise.allSettled([
+        dispatchParticipant({
+          channel: input.channel,
+          participant,
+          text: input.text,
+          recentMessages: input.recentMessages,
+          dispatches,
+        }),
+      ]);
+
+      const settled = result[0];
+      if (settled?.status === 'fulfilled') {
+        if (settled.value.text) {
+          agentMessages.push({
+            participantId: settled.value.participantId,
+            sessionId: settled.value.sessionId,
+            text: settled.value.text,
+          });
+        }
+      } else if (settled?.status === 'rejected') {
+        const message = settled.reason instanceof Error ? settled.reason.message : String(settled.reason);
+        failures.push({ participantId: participant.id, message });
+      }
+
+      return {
+        targetedParticipantIds: [participant.id],
+        unknownMentions: [],
+        failures,
+        agentMessages,
+        dispatches: [dispatches.get(participant.id)].filter((dispatch): dispatch is WarRoomDispatch => dispatch !== undefined),
       };
     },
     async sendTaskUpdate(input) {
@@ -361,6 +523,7 @@ export function createChannelOrchestrator(deps: ChannelOrchestratorDeps): Channe
           unknownMentions: [],
           failures: [{ participantId: 'orchestrator', message: 'No orchestrator participant configured for channel' }],
           agentMessages: [],
+          dispatches: [],
         };
       }
 
@@ -391,6 +554,7 @@ export function createChannelOrchestrator(deps: ChannelOrchestratorDeps): Channe
         unknownMentions: [],
         failures,
         agentMessages,
+        dispatches: [],
       };
     },
   };

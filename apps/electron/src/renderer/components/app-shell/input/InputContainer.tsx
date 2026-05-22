@@ -31,6 +31,12 @@ const FALLBACK_HEIGHTS: Record<InputMode | string, number> = {
   admin_approval: 220,
 }
 
+const MAX_STRUCTURED_HEIGHTS: Record<string, number> = {
+  permission: 320,
+  credential: 280,
+  admin_approval: 340,
+}
+
 /**
  * InputContainer - Main orchestrator for FreeFormInput and StructuredInput
  *
@@ -141,9 +147,15 @@ export function InputContainer({
   }, [contentKey, mode])
 
   // Use appropriate height source based on mode
-  const targetHeight = mode === 'freeform'
+  const measuredTargetHeight = mode === 'freeform'
     ? freeformHeight
     : (structuredHeight ?? FALLBACK_HEIGHTS[structuredInput?.type ?? 'freeform'] ?? FALLBACK_HEIGHTS.freeform)
+  const targetHeight = mode === 'freeform'
+    ? measuredTargetHeight
+    : Math.min(
+      measuredTargetHeight,
+      MAX_STRUCTURED_HEIGHTS[structuredInput?.type ?? ''] ?? 320
+    )
 
   // Motion value for frame-synchronized height animation
   const heightMotionValue = useMotionValue(targetHeight)

@@ -33,7 +33,9 @@ export type CredentialType =
   | 'source_apikey'      // API keys
   | 'source_basic'       // Basic auth (base64 encoded user:pass)
   // Messaging gateway credentials (keyed by workspaceId + platform)
-  | 'messaging_bearer';  // Platform tokens (e.g., Telegram bot token)
+  | 'messaging_bearer'   // Platform tokens (e.g., Telegram bot token)
+  // Workspace meeting credentials (keyed by workspaceId + transcription provider)
+  | 'meeting_transcription_api_key'; // Deepgram/Groq transcription API key
 
 /** Valid credential types for validation */
 const VALID_CREDENTIAL_TYPES: readonly CredentialType[] = [
@@ -49,6 +51,7 @@ const VALID_CREDENTIAL_TYPES: readonly CredentialType[] = [
   'source_apikey',
   'source_basic',
   'messaging_bearer',
+  'meeting_transcription_api_key',
 ] as const;
 
 /** Check if a string is a valid CredentialType */
@@ -149,6 +152,16 @@ function isMessagingCredential(type: CredentialType): boolean {
   return (MESSAGING_CREDENTIAL_TYPES as readonly string[]).includes(type);
 }
 
+/** Meeting transcription credential types */
+const MEETING_TRANSCRIPTION_CREDENTIAL_TYPES = [
+  'meeting_transcription_api_key',
+] as const;
+
+/** Check if type is a meeting transcription credential */
+function isMeetingTranscriptionCredential(type: CredentialType): boolean {
+  return (MEETING_TRANSCRIPTION_CREDENTIAL_TYPES as readonly string[]).includes(type);
+}
+
 /** LLM connection credential types */
 const LLM_CREDENTIAL_TYPES = [
   'llm_api_key',
@@ -197,6 +210,14 @@ export function credentialIdToAccount(id: CredentialId): string {
   // Messaging-scoped format:
   // messaging_bearer::{workspaceId}::{platform}
   if (isMessagingCredential(id.type) && id.workspaceId && id.name) {
+    parts.push(id.workspaceId);
+    parts.push(id.name);
+    return parts.join(CREDENTIAL_DELIMITER);
+  }
+
+  // Meeting transcription-scoped format:
+  // meeting_transcription_api_key::{workspaceId}::{provider}
+  if (isMeetingTranscriptionCredential(id.type) && id.workspaceId && id.name) {
     parts.push(id.workspaceId);
     parts.push(id.name);
     return parts.join(CREDENTIAL_DELIMITER);
@@ -267,6 +288,12 @@ export function accountToCredentialId(account: string): CredentialId | null {
   // Messaging-scoped format:
   // messaging_bearer::{workspaceId}::{platform}
   if (isMessagingCredential(type) && parts.length === 3) {
+    return { type, workspaceId: parts[1], name: parts[2] };
+  }
+
+  // Meeting transcription-scoped format:
+  // meeting_transcription_api_key::{workspaceId}::{provider}
+  if (isMeetingTranscriptionCredential(type) && parts.length === 3) {
     return { type, workspaceId: parts[1], name: parts[2] };
   }
 

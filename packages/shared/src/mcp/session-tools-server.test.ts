@@ -37,6 +37,7 @@ describe('CraftSessionToolsMcpServer', () => {
     expect(toolNames).toContain('config_validate');
     expect(toolNames).toContain('call_llm');
     expect(toolNames).toContain('spawn_session');
+    expect(toolNames).toContain('channel_dispatch');
     expect(toolNames).toContain('get_session_info');
     expect(toolNames).toContain('meeting_tool');
   });
@@ -115,6 +116,37 @@ describe('CraftSessionToolsMcpServer', () => {
     expect(result.isError).toBeUndefined();
     expect(result.content[0]?.type).toBe('text');
     expect((result.content[0] as { text: string }).text).toContain('child-session');
+  });
+
+  it('returns a clear unavailable error when channel_dispatch is not registered', async () => {
+    const server = new CraftSessionToolsMcpServer({ sessionId, workspaceRootPath, workspaceId: 'ws-test' });
+
+    const result = await server.callTool('channel_dispatch', { participantId: 'reviewer', message: 'review this' });
+
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain('channel_dispatch is not available');
+  });
+
+  it('executes channel_dispatch through the session callback registry', async () => {
+    mergeSessionScopedToolCallbacks(sessionId, {
+      channelDispatchFn: async (request) => ({
+        dispatchId: 'dispatch-1',
+        channelId: request.channelId ?? 'architecture',
+        participantId: request.participantId,
+        status: 'completed',
+      }),
+    });
+    const server = new CraftSessionToolsMcpServer({ sessionId, workspaceRootPath, workspaceId: 'ws-test' });
+
+    const result = await server.callTool('channel_dispatch', { participantId: 'reviewer', message: 'review this' });
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toEqual({
+      dispatchId: 'dispatch-1',
+      channelId: 'architecture',
+      participantId: 'reviewer',
+      status: 'completed',
+    });
   });
 
   it('returns a clear unavailable error when meeting callbacks are not registered', async () => {

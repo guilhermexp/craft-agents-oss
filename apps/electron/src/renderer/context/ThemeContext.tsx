@@ -358,9 +358,6 @@ export function ThemeProvider({
     // Set scenic mode data attribute for CSS targeting
     if (isScenic) {
       root.dataset.scenic = 'true'
-      if (resolvedTheme.backgroundImage) {
-        root.style.setProperty('--background-image', `url("${resolvedTheme.backgroundImage}")`)
-      }
     } else {
       delete root.dataset.scenic
       root.style.removeProperty('--background-image')
@@ -378,6 +375,30 @@ export function ThemeProvider({
     }
 
   }, [presetTheme, resolvedMode, systemPreference, isScenic, resolvedTheme, isDarkFromMode, isDark])
+
+  // Inject scenic background image via dedicated <style> tag.
+  // Setting a 2MB+ data URL on a CSS custom property does not always invalidate
+  // the ::before pseudo-element paint in Chromium — replacing the rule's text
+  // forces the engine to re-resolve the url() and repaint.
+  useEffect(() => {
+    const styleId = 'craft-scenic-background'
+    let styleEl = document.getElementById(styleId) as HTMLStyleElement | null
+    if (!styleEl) {
+      styleEl = document.createElement('style')
+      styleEl.id = styleId
+      document.head.appendChild(styleEl)
+    }
+
+    const image = isScenic ? resolvedTheme.backgroundImage : null
+    if (!image) {
+      styleEl.textContent = ''
+      return
+    }
+
+    const escaped = image.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    const rule = `html[data-scenic]::before, html[data-scenic][data-theme-override]::before { background-image: url("${escaped}") !important; }`
+    styleEl.textContent = rule
+  }, [isScenic, resolvedTheme.backgroundImage])
 
   // Inject CSS variables
   useEffect(() => {

@@ -37,7 +37,7 @@ import { useWorkspaceIcons } from '@/hooks/useWorkspaceIcon'
 import { Info_DataTable, SortableHeader } from '@/components/info/Info_DataTable'
 import { Info_Badge } from '@/components/info/Info_Badge'
 import type { PresetTheme } from '@config/theme'
-import { shouldShowHazeScenicBackgroundControls } from './appearance-settings-helpers'
+import { shouldShowScenicBackgroundControls } from './appearance-settings-helpers'
 
 export const meta: DetailsPageMeta = {
   navigator: 'settings',
@@ -350,7 +350,7 @@ export default function AppearanceSettingsPage() {
     ? (appTheme?.backgroundImage ?? resolvedTheme.backgroundImage ?? null)
     : SOLID_SCENIC_BACKGROUNDS[scenicBackgroundType]
   const hasCustomScenicBackground = Boolean(appTheme?.backgroundImage) && scenicBackgroundType === 'image'
-  const showScenicBackgroundControls = shouldShowHazeScenicBackgroundControls(effectiveColorTheme)
+  const showScenicBackgroundControls = shouldShowScenicBackgroundControls(activePresetTheme?.mode ?? resolvedTheme.mode)
   const scenicBackgroundHelpText = scenicBackgroundType === 'image'
     ? hasCustomScenicBackground
       ? t('settings.appearance.customScenicBackgroundDesc', { defaultValue: 'Using a custom background image for this scenic theme.' })
@@ -392,7 +392,13 @@ export default function AppearanceSettingsPage() {
         return
       }
 
-      await setAppTheme(buildNextAppTheme(appTheme, { backgroundImage: selectedPath }))
+      const dataUrl = await window.electronAPI.readFileDataUrl(selectedPath)
+      if (!dataUrl) {
+        toast.error(t('settings.appearance.failedToSetBackgroundImage', { defaultValue: 'Failed to update background image.' }))
+        return
+      }
+
+      await setAppTheme(buildNextAppTheme(appTheme, { backgroundImage: dataUrl }))
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       toast.error(t('settings.appearance.failedToSetBackgroundImage', { defaultValue: 'Failed to update background image.' }), {

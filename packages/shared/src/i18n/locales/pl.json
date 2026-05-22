@@ -456,6 +456,7 @@
   "meetings.detectedDismiss": "Ignoruj",
   "meetings.detectedTitle": "Wykryto spotkanie",
   "meetings.detectedToast": "Wykryto Google Meet. Potwierdź, aby zaprosić Hermesa.",
+  "meetings.selectRecordingMarkdown": "Wybierz nagranie w panelu, aby zobaczyć podsumowanie w Markdown.",
   "menu.aboutCraftAgents": "O Craft Agents",
   "menu.addPanelMenu": "Dodaj panel",
   "menu.allDocumentation": "Cała dokumentacja",
