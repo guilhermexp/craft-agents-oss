@@ -1,0 +1,21 @@
+{
+  "name": "Vesper Blur",
+  "description": "Translucent dark theme based on Vesper by Rauno Freiberg, blurred variant by Taras Tereschenko.",
+  "author": "Taras Tereschenko (port by Craft Agent)",
+  "license": "MIT",
+  "mode": "scenic",
+  "backgroundImage": "https://images.pexels.com/photos/2693212/pexels-photo-2693212.png",
+  "supportedModes": [
+    "dark"
+  ],
+  "shikiTheme": {
+    "dark": "vesper"
+  },
+  "background": "rgba(16, 16, 16, 0.72)",
+  "foreground": "#FFFFFF",
+  "accent": "#FFC799",
+  "info": "#99FFE4",
+  "success": "#99FFE4",
+  "destructive": "#FF8080",
+  "popoverSolid": "#161616"
+}

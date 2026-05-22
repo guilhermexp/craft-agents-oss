@@ -132,6 +132,8 @@ export type {
   ListSessionsResult,
   ResolvedLabelsResult,
   ResolvedStatusResult,
+  ChannelDispatchRequest,
+  ChannelDispatchResult,
 } from './context.ts';
 
 export { createNodeFileSystem } from './context.ts';
@@ -165,6 +167,8 @@ export {
   handleRenderTemplate,
   // Send Developer Feedback
   handleSendDeveloperFeedback,
+  // Channel Dispatch
+  handleChannelDispatch,
 } from './handlers/index.ts';
 
 export type {
@@ -183,6 +187,7 @@ export type {
   ScriptSandboxArgs,
   RenderTemplateArgs,
   SendDeveloperFeedbackArgs,
+  ChannelDispatchArgs,
 } from './handlers/index.ts';
 
 // Tool definitions — single source of truth
@@ -207,6 +212,7 @@ export {
   BrowserToolSchema,
   // Developer feedback schema
   SendDeveloperFeedbackSchema,
+  ChannelDispatchSchema,
   // Descriptions
   TOOL_DESCRIPTIONS,
   // Registry

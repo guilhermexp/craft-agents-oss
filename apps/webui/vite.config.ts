@@ -49,8 +49,6 @@ export default defineConfig({
       'electron-log/renderer': resolve(__dirname, 'src/shims/electron-log.ts'),
       'electron-log/main': resolve(__dirname, 'src/shims/electron-log.ts'),
       'electron-log': resolve(__dirname, 'src/shims/electron-log.ts'),
-      '@sentry/electron/renderer': resolve(__dirname, 'src/shims/sentry-electron.ts'),
-      '@sentry/electron': resolve(__dirname, 'src/shims/sentry-electron.ts'),
       // Node.js 'ws' library → browser uses native WebSocket
       'ws': resolve(__dirname, 'src/shims/ws.ts'),
       // Node.js builtins → browser-safe shims (shared code imports these

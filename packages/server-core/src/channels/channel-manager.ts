@@ -1,10 +1,13 @@
 import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
-import type { WarRoomChannel } from '@craft-agent/shared/channels'
+import type { WarRoomChannel, WarRoomDispatch } from '@craft-agent/shared/channels'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handlers/handler-deps'
-import { createChannelOrchestrator, type ChannelOrchestrator } from './channel-orchestrator'
+import { createChannelOrchestrator, resolveChannelTargets, type ChannelOrchestrator } from './channel-orchestrator'
 import { isTerminalKanbanStatus, listKanbanTasksByIds, listKanbanTasksCreatedSince } from './hermes-kanban'
+import { createChannelDispatch, listChannelDispatches, updateChannelDispatch } from '@craft-agent/shared/channels/dispatches'
+import { mergeSessionScopedToolCallbacks } from '@craft-agent/shared/agent/session-scoped-tools'
+import type { ChannelDispatchRequest, ChannelDispatchResult } from '@craft-agent/session-tools-core'
 
 interface WatchedKanbanTasks {
   workspaceId: string
@@ -78,6 +81,17 @@ export class ChannelManager {
     return listChannelMessages(workspace.rootPath, channelId)
   }
 
+  async listDispatches(workspaceId: string, channelId: string): Promise<WarRoomDispatch[]> {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const { listChannels } = await import('@craft-agent/shared/channels/storage')
+    const channel = listChannels(workspace.rootPath).find(item => item.id === channelId)
+    if (!channel) throw new Error(`Channel '${channelId}' not found`)
+
+    return listChannelDispatches(workspace.rootPath, channelId)
+  }
+
   async sendMessage(
     workspaceId: string,
     input: {
@@ -91,6 +105,7 @@ export class ChannelManager {
     targetedParticipantIds: string[]
     unknownMentions: string[]
     failures: Array<{ participantId: string; message: string }>
+    dispatches: WarRoomDispatch[]
   }> {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
@@ -107,21 +122,22 @@ export class ChannelManager {
       authorId: message.authorId,
       text: message.text,
     }))
-    const turnStartUnix = Math.floor(Date.now() / 1000) - 1
-    const result = await this.getOrchestrator(workspaceId, channel.id).sendMessage({
-      channel,
-      text,
-      authorId: input.authorId ?? 'human',
-      mentionedParticipantIds: input.mentionedParticipantIds,
-      recentMessages,
-    })
-
+    const targets = resolveChannelTargets(channel, text, input.mentionedParticipantIds)
     const message = appendChannelMessage(workspace.rootPath, {
       channelId: channel.id,
       authorType: 'user',
       authorId: input.authorId ?? 'human',
       text,
-      tagged: result.targetedParticipantIds,
+      tagged: targets.participants.map(participant => participant.id),
+    })
+    const turnStartUnix = Math.floor(Date.now() / 1000) - 1
+    const result = await this.getOrchestrator(workspaceId, channel.id, workspace.rootPath).sendMessage({
+      channel,
+      text,
+      authorId: input.authorId ?? 'human',
+      mentionedParticipantIds: input.mentionedParticipantIds,
+      recentMessages,
+      sourceMessageId: message.id,
     })
 
     for (const agentMessage of result.agentMessages) {
@@ -154,6 +170,7 @@ export class ChannelManager {
       targetedParticipantIds: result.targetedParticipantIds,
       unknownMentions: result.unknownMentions,
       failures: result.failures,
+      dispatches: result.dispatches,
     }
   }
 
@@ -161,13 +178,98 @@ export class ChannelManager {
     return `${workspaceId}:${channelId}`
   }
 
-  private getOrchestrator(workspaceId: string, channelId: string): ChannelOrchestrator {
+  async dispatchFromSession(
+    workspaceId: string,
+    input: ChannelDispatchRequest & { sourceSessionId: string; inferredChannelId?: string },
+  ): Promise<ChannelDispatchResult> {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const channelId = input.channelId ?? input.inferredChannelId
+    if (!channelId) throw new Error('channel_dispatch requires channelId when the current session is not bound to a channel')
+    if (input.channelId && input.inferredChannelId && input.channelId !== input.inferredChannelId) {
+      throw new Error(`channel_dispatch can only target the current channel (${input.inferredChannelId}) from this session`)
+    }
+
+    const text = input.message.trim()
+    if (!text) throw new Error('channel_dispatch message is required')
+
+    const { listChannels } = await import('@craft-agent/shared/channels/storage')
+    const channel = listChannels(workspace.rootPath).find(item => item.id === channelId)
+    if (!channel) throw new Error(`Channel '${channelId}' not found`)
+
+    const participant = (channel.participants ?? []).find(item => item.id === input.participantId)
+    if (!participant) throw new Error(`Participant '${input.participantId}' not found in channel '${channelId}'`)
+
+    const { appendChannelMessage, listChannelMessages } = await import('@craft-agent/shared/channels/messages')
+    const recentMessages = listChannelMessages(workspace.rootPath, channel.id).map(message => ({
+      authorId: message.authorId,
+      text: message.text,
+    }))
+    const sourceMessage = appendChannelMessage(workspace.rootPath, {
+      channelId: channel.id,
+      authorType: 'system',
+      authorId: 'channel-dispatch',
+      text: `Dispatch to @${participant.id}:\n${text}`,
+      tagged: [participant.id],
+      sourceSessionId: input.sourceSessionId,
+      replyToMessageId: input.parentMessageId,
+    })
+
+    const result = await this.getOrchestrator(workspaceId, channel.id, workspace.rootPath).dispatchToParticipant({
+      channel,
+      participantId: participant.id,
+      text,
+      recentMessages,
+      sourceMessageId: sourceMessage.id,
+      parentMessageId: input.parentMessageId,
+      sourceSessionId: input.sourceSessionId,
+    })
+
+    for (const agentMessage of result.agentMessages) {
+      appendChannelMessage(workspace.rootPath, {
+        channelId: channel.id,
+        authorType: 'agent',
+        authorId: agentMessage.participantId,
+        text: agentMessage.text,
+        sourceSessionId: agentMessage.sessionId,
+        replyToMessageId: sourceMessage.id,
+      })
+    }
+
+    this.pushMessagesChanged(workspaceId, channel.id)
+
+    const dispatch = result.dispatches[0]
+    if (!dispatch) {
+      const failure = result.failures[0]
+      throw new Error(failure?.message ?? 'channel_dispatch did not create a dispatch')
+    }
+
+    return {
+      dispatchId: dispatch.id,
+      channelId: dispatch.channelId,
+      participantId: dispatch.participantId,
+      status: dispatch.status,
+      ...(dispatch.error ? { error: dispatch.error } : {}),
+    }
+  }
+
+  private getOrchestrator(workspaceId: string, channelId: string, workspaceRootPath: string): ChannelOrchestrator {
     const key = this.orchestratorKey(workspaceId, channelId)
     const existing = this.orchestrators.get(key)
     if (existing) return existing
 
     const deps = this.deps
+    const manager = this
     const orchestrator = createChannelOrchestrator({
+      dispatchStore: {
+        create(input) {
+          return createChannelDispatch(workspaceRootPath, input)
+        },
+        update(dispatchId, updates) {
+          return updateChannelDispatch(workspaceRootPath, channelId, dispatchId, updates)
+        },
+      },
       runtime: {
         async createSession(input) {
           const session = await deps.sessionManager.createSession(workspaceId, {
@@ -179,6 +281,13 @@ export class ChannelManager {
             enabledSourceSlugs: input.enabledSourceSlugs,
             permissionMode: input.permissionMode,
             workingDirectory: input.workingDirectory,
+          })
+          mergeSessionScopedToolCallbacks(session.id, {
+            channelDispatchFn: (request) => manager.dispatchFromSession(workspaceId, {
+              ...request,
+              sourceSessionId: session.id,
+              inferredChannelId: channelId,
+            }),
           })
           return { id: session.id }
         },
@@ -275,7 +384,7 @@ export class ChannelManager {
         text: message.text,
       }))
 
-      const result = await this.getOrchestrator(watched.workspaceId, watched.channel.id).sendTaskUpdate({
+      const result = await this.getOrchestrator(watched.workspaceId, watched.channel.id, watched.workspaceRootPath).sendTaskUpdate({
         channel: watched.channel,
         tasks: terminalTasks,
         recentMessages,

@@ -549,6 +549,7 @@ export interface ElectronAPI {
   updateChannel(workspaceId: string, channelId: string, updates: import('@craft-agent/shared/channels').UpdateWarRoomChannelInput): Promise<import('@craft-agent/shared/channels').WarRoomChannel>
   deleteChannel(workspaceId: string, channelId: string, options?: import('@craft-agent/shared/channels').DeleteChannelOptions): Promise<import('@craft-agent/shared/channels').DeleteChannelResult>
   listChannelMessages(workspaceId: string, channelId: string): Promise<import('@craft-agent/shared/channels').ChannelMessage[]>
+  listChannelDispatches(workspaceId: string, channelId: string): Promise<import('@craft-agent/shared/channels').WarRoomDispatch[]>
   sendChannelMessage(workspaceId: string, input: {
     channelId: string
     text: string
@@ -559,6 +560,7 @@ export interface ElectronAPI {
     targetedParticipantIds: string[]
     unknownMentions: string[]
     failures: Array<{ participantId: string; message: string }>
+    dispatches: import('@craft-agent/shared/channels').WarRoomDispatch[]
   }>
   onChannelsChanged(callback: (workspaceId: string) => void): () => void
   onChannelMessagesChanged(callback: (workspaceId: string, channelId: string) => void): () => void

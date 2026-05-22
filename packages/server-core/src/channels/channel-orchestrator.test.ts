@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { createChannelOrchestrator, type ChannelAgentRuntime } from './channel-orchestrator.ts';
+import { createChannelOrchestrator, type ChannelAgentRuntime, type ChannelDispatchStore } from './channel-orchestrator.ts';
 import { warRoomChannelId, type WarRoomChannel } from '@craft-agent/shared/channels';
 
 function createRuntime(): ChannelAgentRuntime & {
@@ -19,6 +19,51 @@ function createRuntime(): ChannelAgentRuntime & {
     async sendMessage(input) {
       sent.push(input);
       return { assistantText: `response from ${input.sessionId}` };
+    },
+  };
+}
+
+function createDispatchStore(): ChannelDispatchStore & {
+  created: Array<Parameters<ChannelDispatchStore['create']>[0]>;
+  updates: Array<{ dispatchId: string; updates: Parameters<ChannelDispatchStore['update']>[1] }>;
+} {
+  let next = 1;
+  const created: Array<Parameters<ChannelDispatchStore['create']>[0]> = [];
+  const updates: Array<{ dispatchId: string; updates: Parameters<ChannelDispatchStore['update']>[1] }> = [];
+  return {
+    created,
+    updates,
+    create(input) {
+      created.push(input);
+      const now = Date.now();
+      return {
+        id: `dispatch-${next++}`,
+        channelId: input.channelId,
+        participantId: input.participantId,
+        sourceMessageId: input.sourceMessageId,
+        parentMessageId: input.parentMessageId,
+        sourceSessionId: input.sourceSessionId,
+        status: 'queued',
+        createdAt: now,
+        updatedAt: now,
+      };
+    },
+    update(dispatchId, update) {
+      updates.push({ dispatchId, updates: update });
+      const original = created[Number(dispatchId.replace('dispatch-', '')) - 1]!;
+      const now = Date.now();
+      return {
+        id: dispatchId,
+        channelId: original.channelId,
+        participantId: original.participantId,
+        sourceMessageId: original.sourceMessageId,
+        parentMessageId: original.parentMessageId,
+        sourceSessionId: original.sourceSessionId,
+        status: update.status ?? 'queued',
+        error: update.error,
+        createdAt: now,
+        updatedAt: now,
+      };
     },
   };
 }
@@ -82,6 +127,85 @@ describe('ChannelOrchestrator', () => {
     expect(runtime.sent.map(item => item.sessionId)).toEqual(['session-1', 'session-2']);
     expect(runtime.sent[0]?.message).toContain('Channel: Architecture');
     expect(runtime.sent[0]?.message).toContain('@hermes-lead @pi-reviewer revisem o plano');
+  });
+
+  it('records dispatch status transitions for successful and failed participants', async () => {
+    const runtime = createRuntime();
+    runtime.sendMessage = async (input) => {
+      runtime.sent.push(input);
+      if (input.sessionId === 'session-2') throw new Error('pi unavailable');
+      return { assistantText: `response from ${input.sessionId}` };
+    };
+    const dispatchStore = createDispatchStore();
+    const orchestrator = createChannelOrchestrator({ runtime, dispatchStore });
+
+    const result = await orchestrator.sendMessage({
+      channel,
+      text: '@hermes-lead @pi-reviewer revisem o plano',
+      authorId: 'human',
+      sourceMessageId: 'message-1',
+      parentMessageId: 'parent-1',
+      sourceSessionId: 'source-session',
+    });
+
+    expect(result.targetedParticipantIds).toEqual(['hermes-lead', 'pi-reviewer']);
+    expect(result.failures).toEqual([{ participantId: 'pi-reviewer', message: 'pi unavailable' }]);
+    expect(dispatchStore.created.map(item => ({
+      channelId: item.channelId,
+      participantId: item.participantId,
+      sourceMessageId: item.sourceMessageId,
+      parentMessageId: item.parentMessageId,
+      sourceSessionId: item.sourceSessionId,
+    }))).toEqual([
+      {
+        channelId: 'architecture',
+        participantId: 'hermes-lead',
+        sourceMessageId: 'message-1',
+        parentMessageId: 'parent-1',
+        sourceSessionId: 'source-session',
+      },
+      {
+        channelId: 'architecture',
+        participantId: 'pi-reviewer',
+        sourceMessageId: 'message-1',
+        parentMessageId: 'parent-1',
+        sourceSessionId: 'source-session',
+      },
+    ]);
+    expect(dispatchStore.updates.map(item => [item.dispatchId, item.updates.status, item.updates.error])).toEqual([
+      ['dispatch-1', 'running', undefined],
+      ['dispatch-2', 'running', undefined],
+      ['dispatch-1', 'completed', undefined],
+      ['dispatch-2', 'failed', 'pi unavailable'],
+    ]);
+    expect(result.dispatches.map(dispatch => ({
+      id: dispatch.id,
+      participantId: dispatch.participantId,
+      status: dispatch.status,
+      error: dispatch.error,
+    }))).toEqual([
+      { id: 'dispatch-1', participantId: 'hermes-lead', status: 'completed', error: undefined },
+      { id: 'dispatch-2', participantId: 'pi-reviewer', status: 'failed', error: 'pi unavailable' },
+    ]);
+  });
+
+  it('dispatches direct channel tool work to a requested non-Hermes participant', async () => {
+    const runtime = createRuntime();
+    const dispatchStore = createDispatchStore();
+    const orchestrator = createChannelOrchestrator({ runtime, dispatchStore });
+
+    const result = await orchestrator.dispatchToParticipant({
+      channel,
+      participantId: 'pi-reviewer',
+      text: 'faça review deste plano',
+      sourceMessageId: 'message-2',
+      sourceSessionId: 'session-lead',
+    });
+
+    expect(result.targetedParticipantIds).toEqual(['pi-reviewer']);
+    expect(runtime.created[0]?.llmConnection).toBe('pi-copilot');
+    expect(runtime.sent[0]?.message).toContain('faça review deste plano');
+    expect(result.dispatches[0]?.status).toBe('completed');
   });
 
   it('dispatches multiple Hermes profiles as separate channel participants with shared transcript', async () => {

@@ -265,6 +265,12 @@ function getAcpToolCallCommand(request: RequestPermissionRequest): string | unde
   return undefined
 }
 
+function getAcpPermissionDescription(toolName: string, kind?: string): string {
+  if (/^approve edit:/i.test(toolName)) return 'Hermes wants approval to edit a file.'
+  if (kind === 'execute') return 'Hermes wants approval to run a command.'
+  return 'Hermes wants approval to run a protected action.'
+}
+
 function chooseAcpPermissionOption(
   options: PermissionOption[],
   allowed: boolean,
@@ -463,7 +469,7 @@ export class HermesAgent extends BaseAgent {
     const requestId = `hermes-acp-${Date.now()}-${Math.random().toString(36).slice(2)}`
     const command = getAcpToolCallCommand(request)
     const toolName = request.toolCall.title?.trim() || request.toolCall.kind || 'Hermes tool'
-    const description = command ? `Hermes wants to run: ${command}` : 'Hermes wants to run a protected action.'
+    const description = getAcpPermissionDescription(toolName, request.toolCall.kind ?? undefined)
 
     return await new Promise<RequestPermissionResponse>((resolve) => {
       this.pendingAcpPermissions.set(requestId, { resolve, options: request.options })

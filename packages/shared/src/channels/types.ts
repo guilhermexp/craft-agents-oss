@@ -45,6 +45,21 @@ export interface WarRoomRoutingConfig {
   allowAllMention?: boolean;
 }
 
+export type WarRoomDispatchStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface WarRoomDispatch {
+  id: string;
+  channelId: string;
+  participantId: string;
+  sourceMessageId: string;
+  parentMessageId?: string;
+  sourceSessionId?: string;
+  status: WarRoomDispatchStatus;
+  error?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface CreateWarRoomChannelInput {
   name: string;
   description?: string;

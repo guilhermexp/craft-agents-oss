@@ -85,6 +85,8 @@ export interface SessionScopedToolCallbacks {
   resolveStatusFn?: (status: string) => import('@craft-agent/session-tools-core').ResolvedStatusResult;
   /** Send a message to another session (inter-session messaging). */
   sendAgentMessageFn?: (sessionId: string, message: string, attachments?: Array<{ path: string; name?: string }>) => Promise<void>;
+  /** Dispatch work to a participant in the same War Room channel. */
+  channelDispatchFn?: (request: import('@craft-agent/session-tools-core').ChannelDispatchRequest) => Promise<import('@craft-agent/session-tools-core').ChannelDispatchResult>;
   /**
    * Activate a source in the running session (source_test auto-enable flow).
    * Wired by SessionManager to the per-session onSourceActivationRequest callback

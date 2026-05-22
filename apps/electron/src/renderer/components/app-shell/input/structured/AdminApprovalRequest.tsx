@@ -52,13 +52,13 @@ export function AdminApprovalRequest({
           : 'border border-info/30 rounded-[8px] shadow-middle'
       )}
     >
-      <div className="p-4 space-y-3 flex-1 min-h-0 flex flex-col">
+      <div className="p-4 space-y-3 flex-1 min-h-0 flex flex-col overflow-y-auto">
         <div className="space-y-2 pb-1">
           <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
             <ShieldAlert className="size-3.5 text-info" />
             <span>{t('chat.adminApprovalRequired')}</span>
           </div>
-          <div className="text-xs leading-[18px] text-muted-foreground">
+          <div className="max-h-24 overflow-y-auto pr-1 text-xs leading-[18px] text-muted-foreground break-words">
             Installing <span className="font-medium text-foreground">{request.appName}</span> needs your Mac admin approval.
             {request.requiresSystemPrompt ? " You’ll see your regular macOS password/Touch ID prompt." : ''}
             <br />
@@ -72,12 +72,12 @@ export function AdminApprovalRequest({
           </div>
         </div>
 
-        <div className="bg-foreground/5 rounded-md p-3 font-mono text-xs text-foreground/90 whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
+        <div className="bg-foreground/5 rounded-md p-3 font-mono text-xs text-foreground/90 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
           {request.command}
         </div>
       </div>
 
-      <div className="flex items-center gap-2 px-3 py-2 border-t border-border/50">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 py-2 border-t border-border/50">
         <Button
           size="sm"
           variant="default"
@@ -100,13 +100,13 @@ export function AdminApprovalRequest({
 
         <div className="flex-1" />
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <Switch
             checked={rememberChoice}
             onCheckedChange={setRememberChoice}
             aria-label={`Remember this exact command for ${rememberForMinutes} minutes`}
           />
-          <Label className="text-[11px] text-muted-foreground cursor-pointer" onClick={() => setRememberChoice(!rememberChoice)}>
+          <Label className="text-[11px] text-muted-foreground cursor-pointer whitespace-nowrap" onClick={() => setRememberChoice(!rememberChoice)}>
             Remember for {rememberForMinutes} min
           </Label>
         </div>

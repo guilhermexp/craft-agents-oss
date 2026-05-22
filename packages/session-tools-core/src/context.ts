@@ -356,6 +356,9 @@ export interface SessionToolContext {
   /** Send a message to another session. Injected by backend (SessionManager). */
   sendAgentMessage?(sessionId: string, message: string, attachments?: Array<{ path: string; name?: string }>): Promise<void>;
 
+  /** Dispatch work to another participant in the same War Room channel. Injected for channel-backed sessions. */
+  channelDispatch?(request: ChannelDispatchRequest): Promise<ChannelDispatchResult>;
+
   /**
    * Activate a source in the running session: add to enabledSourceSlugs,
    * build its MCP/API servers, apply to the agent.
@@ -453,6 +456,21 @@ export interface SessionInfo {
   llmConnection?: string;
   model?: string;
   isActive: boolean;
+}
+
+export interface ChannelDispatchRequest {
+  participantId: string;
+  message: string;
+  channelId?: string;
+  parentMessageId?: string;
+}
+
+export interface ChannelDispatchResult {
+  dispatchId: string;
+  channelId: string;
+  participantId: string;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  error?: string;
 }
 
 /** Compact session summary (returned by list_sessions). */

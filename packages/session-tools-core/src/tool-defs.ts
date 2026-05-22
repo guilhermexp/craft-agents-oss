@@ -41,6 +41,7 @@ import { handleListSessions } from './handlers/list-sessions.ts';
 import { handleMemoryStore } from './handlers/memory-store.ts';
 import { handleMemoryRecall } from './handlers/memory-recall.ts';
 import { handleSendAgentMessage } from './handlers/send-agent-message.ts';
+import { handleChannelDispatch } from './handlers/channel-dispatch.ts';
 import { handleListMessagingChannels, handleUnbindMessagingChannel } from './handlers/messaging.ts';
 
 // ============================================================
@@ -230,6 +231,13 @@ export const SendAgentMessageSchema = z.object({
     path: z.string().describe('Absolute file path on disk'),
     name: z.string().optional().describe('Display name (defaults to file basename)'),
   })).optional().describe('Files to include with the message'),
+});
+
+export const ChannelDispatchSchema = z.object({
+  participantId: z.string().describe('Channel participant id to dispatch work to, e.g. "reviewer"'),
+  message: z.string().describe('Task or message to route to the participant in the same channel'),
+  channelId: z.string().optional().describe('Channel id. Omit when the current session is already bound to a channel.'),
+  parentMessageId: z.string().optional().describe('Optional channel message id this dispatch should be linked to'),
 });
 
 export const ListMessagingChannelsSchema = z.object({
@@ -517,6 +525,12 @@ Use list_sessions to find session IDs, or use the sessionId returned by spawn_se
 
 The target session receives your message with a sender envelope containing your session ID, so it can use send_agent_message to reply.`,
 
+  channel_dispatch: `Dispatch work to another participant in the current War Room channel.
+
+Use this from a channel lead/orchestrator session when another configured channel participant should handle a task in the same shared room. The dispatch is recorded durably, the task is appended to the channel log, and the participant's Craft session receives the work.
+
+Provide participantId and message. Omit channelId when the current session was created by channel routing; include it only when the runtime cannot infer the current channel.`,
+
   list_messaging_channels: `List messaging channels (Telegram, WhatsApp) bound to a session.
 Shows which external chat apps are connected and can send/receive messages.`,
 
@@ -672,6 +686,7 @@ export const SESSION_TOOL_DEFS: SessionToolDef[] = [
   defineTool('memory_recall', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.memory_recall, inputSchema: MemoryRecallSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleMemoryRecall }),
   // Inter-session messaging
   defineTool('send_agent_message', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.send_agent_message, inputSchema: SendAgentMessageSchema, executionMode: 'registry', safeMode: 'block', handler: handleSendAgentMessage }),
+  defineTool('channel_dispatch', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.channel_dispatch, inputSchema: ChannelDispatchSchema, executionMode: 'registry', safeMode: 'block', handler: handleChannelDispatch }),
   // Messaging gateway tools
   defineTool('list_messaging_channels', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.list_messaging_channels, inputSchema: ListMessagingChannelsSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleListMessagingChannels }),
   defineTool('unbind_messaging_channel', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.unbind_messaging_channel, inputSchema: UnbindMessagingChannelSchema, executionMode: 'registry', safeMode: 'block', handler: handleUnbindMessagingChannel }),

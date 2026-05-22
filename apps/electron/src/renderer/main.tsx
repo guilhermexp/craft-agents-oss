@@ -1,8 +1,5 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { init as sentryInit } from '@sentry/electron/renderer'
-import * as Sentry from '@sentry/react'
-import { captureConsoleIntegration } from '@sentry/react'
 import { Provider as JotaiProvider, useAtomValue } from 'jotai'
 import App from './App'
 import { ThemeProvider } from './context/ThemeContext'
@@ -16,65 +13,8 @@ import './index.css'
 // Initialize i18n before any React rendering
 setupI18n([LanguageDetector, initReactI18next])
 
-// Known-harmless console messages that should NOT be sent to Sentry.
-// These are dev-mode noise or expected warnings that aren't actionable.
-const IGNORED_CONSOLE_PATTERNS = [
-  // React StrictMode dev warnings about non-boolean DOM attributes
-  'Received `true` for a non-boolean attribute',
-  'Received `false` for a non-boolean attribute',
-  // Duplicate Shiki theme registration (expected on HMR reload)
-  'theme name already registered',
-]
-
-// Initialize Sentry in the renderer process using the dual-init pattern.
-// Combines Electron IPC transport (sentryInit) with React error boundary support (sentryReactInit).
-// DSN and config are inherited from the main process init.
-//
-// captureConsoleIntegration promotes console.error calls into Sentry events,
-// giving Sentry the same rich context visible in DevTools without needing sourcemaps.
-//
-// NOTE: Source map upload is intentionally disabled — see main/index.ts for details.
-sentryInit(
-  {
-    integrations: [captureConsoleIntegration({ levels: ['error'] })],
-
-    beforeSend(event) {
-      // Drop events matching known-harmless console patterns to avoid Sentry quota waste
-      const message = event.message || event.exception?.values?.[0]?.value || ''
-      if (IGNORED_CONSOLE_PATTERNS.some((pattern) => message.includes(pattern))) {
-        return null
-      }
-
-      // Scrub sensitive data from breadcrumbs (mirrors main process scrubbing in main/index.ts)
-      if (event.breadcrumbs) {
-        for (const breadcrumb of event.breadcrumbs) {
-          if (breadcrumb.data) {
-            for (const key of Object.keys(breadcrumb.data)) {
-              const lowerKey = key.toLowerCase()
-              if (
-                lowerKey.includes('token') ||
-                lowerKey.includes('key') ||
-                lowerKey.includes('secret') ||
-                lowerKey.includes('password') ||
-                lowerKey.includes('credential') ||
-                lowerKey.includes('auth')
-              ) {
-                breadcrumb.data[key] = '[REDACTED]'
-              }
-            }
-          }
-        }
-      }
-
-      return event
-    },
-  },
-  Sentry.init,
-)
-
 /**
  * Minimal fallback UI shown when the entire React tree crashes.
- * Sentry.ErrorBoundary captures the error and sends it to Sentry automatically.
  */
 function CrashFallback() {
   return (
@@ -89,6 +29,23 @@ function CrashFallback() {
       </button>
     </div>
   )
+}
+
+class RootErrorBoundary extends React.Component<React.PropsWithChildren, { hasError: boolean }> {
+  state = { hasError: false }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('[RootErrorBoundary] React tree crashed:', error)
+  }
+
+  render() {
+    if (this.state.hasError) return <CrashFallback />
+    return this.props.children
+  }
 }
 
 /**
@@ -109,10 +66,10 @@ function Root() {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <Sentry.ErrorBoundary fallback={<CrashFallback />}>
+    <RootErrorBoundary>
       <JotaiProvider>
         <Root />
       </JotaiProvider>
-    </Sentry.ErrorBoundary>
+    </RootErrorBoundary>
   </React.StrictMode>
 )

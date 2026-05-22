@@ -275,6 +275,7 @@ export const CHANNEL_MAP = {
   updateChannel: invoke(RPC_NAMESPACES.channels.UPDATE),
   deleteChannel: invoke(RPC_NAMESPACES.channels.DELETE),
   listChannelMessages: invoke(RPC_NAMESPACES.channels.LIST_MESSAGES),
+  listChannelDispatches: invoke(RPC_NAMESPACES.channels.LIST_DISPATCHES),
   sendChannelMessage: invoke(RPC_NAMESPACES.channels.SEND_MESSAGE),
   onChannelsChanged: listener(RPC_NAMESPACES.channels.CHANGED),
   onChannelMessagesChanged: listener(RPC_NAMESPACES.channels.MESSAGES_CHANGED),

@@ -6,39 +6,32 @@
  */
 
 import { useCallback, useRef } from 'react'
-import * as Sentry from '@sentry/electron/renderer'
 import type { Session } from '../../shared/types'
 import { processEvent } from './processor'
 import type { SessionState, AgentEvent, Effect, StreamingState, ErrorEvent, TypedErrorEvent } from './types'
 import { createEmptySession } from './helpers'
 
 /**
- * Report agent error/typed_error events to Sentry as exceptions (not messages).
- * Using captureException gives proper stack traces and better error grouping in Sentry.
+ * Report agent error/typed_error events locally.
  * Called as a side effect after the pure processEvent function returns.
  * Keeps the event processor handlers pure while capturing every agent error shown in chat.
  */
 function captureAgentError(event: AgentEvent): void {
   if (event.type === 'error') {
     const errorEvent = event as ErrorEvent
-    Sentry.captureException(new Error(errorEvent.error), {
-      tags: { errorSource: 'agent' },
-      extra: { sessionId: event.sessionId },
+    console.error('[EventProcessor] Agent error:', {
+      sessionId: event.sessionId,
+      error: errorEvent.error,
     })
   } else if (event.type === 'typed_error') {
     const typedEvent = event as TypedErrorEvent
     const title = typedEvent.error.title ?? 'Agent Error'
-    Sentry.captureException(new Error(`${title}: ${typedEvent.error.message}`), {
-      tags: {
-        errorSource: 'agent',
-        errorCode: typedEvent.error.code ?? 'unknown',
-      },
-      extra: {
-        sessionId: event.sessionId,
-        // Include error metadata for debugging but omit details/originalError
-        // which may contain sensitive user content or file paths
-        canRetry: typedEvent.error.canRetry,
-      },
+    console.error('[EventProcessor] Typed agent error:', {
+      sessionId: event.sessionId,
+      title,
+      message: typedEvent.error.message,
+      errorCode: typedEvent.error.code ?? 'unknown',
+      canRetry: typedEvent.error.canRetry,
     })
   }
 }
@@ -96,7 +89,7 @@ export function useEventProcessor(): UseEventProcessorResult {
     // Process through pure function
     const result = processEvent(currentState, event)
 
-    // Side effect: capture error events to Sentry (outside the pure processor)
+    // Side effect: log error events outside the pure processor.
     if (event.type === 'error' || event.type === 'typed_error') {
       captureAgentError(event)
     }

@@ -12,6 +12,9 @@ Channels are not just labels or filtered chats. The intended model is:
 - Mentions such as `@research` or `@server-ops` route a user message to specific participants.
 - Lead/orchestrator modes route an untagged message to a lead Hermes participant that decides what to do.
 - Hermes can use Craft-native session tools through ACP/MCP and can delegate work through the Hermes Kanban board.
+- Channel lead/orchestrator sessions can use the Craft-native `channel_dispatch`
+  session tool to call another configured participant in the same channel,
+  including native agents such as Claude/Pi-style connections.
 - Worker results return to the same channel so the user sees the outcome in one place.
 
 Do not collapse this back into one private chat session. The channel log is the shared surface; individual agent sessions are implementation details.
@@ -23,6 +26,7 @@ Do not collapse this back into one private chat session. The channel log is the 
 | Shared channel types | `packages/shared/src/channels/types.ts` |
 | Mention resolution | `packages/shared/src/channels/mentions.ts` |
 | Channel CRUD/storage/messages | `packages/shared/src/channels/{crud,storage,messages}.ts` |
+| Channel dispatch storage | `packages/shared/src/channels/dispatches.ts` |
 | RPC contract | `packages/shared/src/protocol/channels.ts` |
 | RPC handlers and Kanban polling | `packages/server-core/src/handlers/rpc/channels.ts` |
 | Routing/orchestration packets | `packages/server-core/src/channels/channel-orchestrator.ts` |
@@ -65,12 +69,47 @@ Do **not** reintroduce a hard requirement that `leadParticipantId` must be set f
 
 Important: individual sessions do **not** share private history. The channel log is the shared memory. Keep passing recent channel context in orchestration packets.
 
+## Dispatch contract
+
+Each routed channel turn records durable per-participant dispatch state under
+workspace-local storage in `channels/dispatches/<channelId>.jsonl`. The latest
+record for each dispatch id is reconstructed from the append-only log. This is
+not a secrets store and must not contain unrelated global/session auth data.
+
+Dispatch entries use the `WarRoomDispatch` shape:
+
+- `id`
+- `channelId`
+- `participantId`
+- `sourceMessageId`
+- optional `parentMessageId`
+- optional `sourceSessionId`
+- `status`: `queued`, `running`, `completed`, `failed`, or `cancelled`
+- optional `error`
+- `createdAt`
+- `updatedAt`
+
+Dispatch listing must stay channel-scoped. Use the `channels:listDispatches`
+RPC to retrieve persisted dispatch status for one channel. Do not read or surface
+dispatches from another channel when rendering or debugging one room.
+
 ## Hermes / MCP contract
 
 Hermes inside Craft must use the embedded ACP bridge and session-scoped MCP servers. The critical expectation is:
 
 - Craft passes `craft-sources` and `craft-session` MCP endpoints through ACP `session.mcpServers`.
 - Hermes must see Craft-native tools such as `mcp__session__browser_tool`, `mcp__session__spawn_session`, `mcp__session__call_llm`, `SubmitPlan`, config tools, and skill tools when available.
+- Hermes must see `mcp__session__channel_dispatch` when its Craft session was
+  created by channel routing. The tool input is:
+  - `participantId`: required channel participant id;
+  - `message`: required task/message for that participant;
+  - `channelId`: optional, inferred from the current channel-bound session;
+  - `parentMessageId`: optional channel message id to link the dispatch to.
+- `channel_dispatch` appends a system dispatch marker to the same channel,
+  routes the work to the requested participant's Craft session, appends any
+  participant reply back into the channel, and returns dispatch id/status. It is
+  for same-channel participants only; it must not become a cross-channel or
+  global session router.
 - Do not make Craft-native tools global by writing them as a static Hermes `mcp.json` default.
 - Keep `HERMES_HOME` app-scoped through `normalizeHermesRuntimeConfig().hermesHome` unless a test deliberately overrides it.
 - Do not use the user's standalone `~/.hermes` for embedded Craft operation.
@@ -106,7 +145,12 @@ Rules:
 - show a loading/sending state while `SEND_MESSAGE` is in flight;
 - append/refresh channel messages after the RPC returns;
 - auto-scroll to the latest message;
-- show dispatch feedback: targeted agents, unknown mentions, and per-agent failures;
+- make configured participants visible as `@agent` chips in the channel header;
+- expose an inline participant editor for the first usable path, so empty channels
+  are not stuck behind raw `channels/config.json` edits;
+- show mention autocomplete when the composer has an active `@...` token;
+- show dispatch feedback: targeted agents, unknown mentions, per-agent failures,
+  and recent persisted dispatch status;
 - do not hide unknown mentions or failed agent dispatches silently.
 
 This is part of the Slack-like mental model: the user should feel they posted into a room and see who got pinged.

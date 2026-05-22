@@ -11,10 +11,6 @@ mock.module('electron', () => ({
   },
 }))
 
-mock.module('@sentry/electron/main', () => ({
-  captureException: () => {},
-}))
-
 mock.module('../logger', () => ({
   sessionLog: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
   isDebugMode: false,

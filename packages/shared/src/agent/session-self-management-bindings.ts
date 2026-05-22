@@ -85,6 +85,14 @@ export function attachSessionSelfManagementBindings(
     enumerable: true,
   });
 
+  Object.defineProperty(context, 'channelDispatch', {
+    get() {
+      return getSessionScopedToolCallbacks(sessionId)?.channelDispatchFn;
+    },
+    configurable: true,
+    enumerable: true,
+  });
+
   Object.defineProperty(context, 'activateSourceInSession', {
     get() {
       return getSessionScopedToolCallbacks(sessionId)?.activateSourceInSessionFn;
