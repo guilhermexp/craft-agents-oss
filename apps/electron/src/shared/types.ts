@@ -233,9 +233,11 @@ import type {
   HermesProfileSoulResult,
   HermesListEnvResult,
   HermesEnvMutationResult,
+  MeetingTranscriptionConfig,
   MeetingRecord,
   MeetingStartInput,
   MeetingTranscriptResult,
+  SaveMeetingTranscriptionConfigInput,
 } from '@craft-agent/shared/protocol'
 
 export interface ElectronAPI {
@@ -675,11 +677,13 @@ export interface ElectronAPI {
 
   // Meetings MVP (integrated browser-backed Google Meet)
   meetings: {
-    start(input: string | MeetingStartInput): Promise<MeetingRecord>
-    list(): Promise<MeetingRecord[]>
-    status(id: string): Promise<MeetingRecord | null>
-    stop(id: string): Promise<MeetingRecord>
-    transcript(id: string): Promise<MeetingTranscriptResult>
+    start(workspaceId: string, input: string | MeetingStartInput): Promise<MeetingRecord>
+    list(workspaceId: string): Promise<MeetingRecord[]>
+    status(workspaceId: string, id: string): Promise<MeetingRecord | null>
+    stop(workspaceId: string, id: string): Promise<MeetingRecord>
+    transcript(workspaceId: string, id: string): Promise<MeetingTranscriptResult>
+    getTranscriptionConfig(workspaceId: string): Promise<MeetingTranscriptionConfig>
+    saveTranscriptionConfig(workspaceId: string, input: SaveMeetingTranscriptionConfigInput): Promise<MeetingTranscriptionConfig>
   }
 
   // Browser pane management
@@ -884,6 +888,7 @@ export interface AutomationsNavigationState {
 
 export interface MeetingsNavigationState {
   navigator: 'meetings'
+  details: { type: 'meeting'; meetingId: string } | null
   rightSidebar?: RightSidebarPanel
 }
 
@@ -998,7 +1003,14 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
   }
 
   // Handle meetings
-  if (key === 'meetings') return { navigator: 'meetings' }
+  if (key === 'meetings') return { navigator: 'meetings', details: null }
+  if (key.startsWith('meetings/meeting/')) {
+    const meetingId = key.slice(17)
+    if (meetingId) {
+      return { navigator: 'meetings', details: { type: 'meeting', meetingId } }
+    }
+    return { navigator: 'meetings', details: null }
+  }
 
   // Handle settings
   if (key === 'settings') return { navigator: 'settings', subpage: 'app' }

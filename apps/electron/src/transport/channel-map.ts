@@ -383,6 +383,8 @@ export const CHANNEL_MAP = {
   'meetings.status': invoke(RPC_NAMESPACES.meetings.STATUS),
   'meetings.stop': invoke(RPC_NAMESPACES.meetings.STOP),
   'meetings.transcript': invoke(RPC_NAMESPACES.meetings.TRANSCRIPT),
+  'meetings.getTranscriptionConfig': invoke(RPC_NAMESPACES.meetings.GET_TRANSCRIPTION_CONFIG),
+  'meetings.saveTranscriptionConfig': invoke(RPC_NAMESPACES.meetings.SAVE_TRANSCRIPTION_CONFIG),
 
   // Browser pane management
   'browserPane.create': invoke(RPC_NAMESPACES.browserPane.CREATE),

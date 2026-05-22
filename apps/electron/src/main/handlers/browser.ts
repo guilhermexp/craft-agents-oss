@@ -35,9 +35,15 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
   const { browserPaneManager, windowManager, platform } = deps
   if (!browserPaneManager) return
 
-  server.handle(RPC_NAMESPACES.browserPane.CREATE, (_ctx, input?: string | BrowserPaneCreateOptions) => {
+  const resolveContextWorkspaceId = (ctx: { workspaceId?: string | null; webContentsId?: number | null }): string | null | undefined => {
+    return ctx.workspaceId
+      ?? (typeof ctx.webContentsId === 'number' ? windowManager?.getWorkspaceForWindow(ctx.webContentsId) : undefined)
+  }
+
+  server.handle(RPC_NAMESPACES.browserPane.CREATE, (ctx, input?: string | BrowserPaneCreateOptions) => {
+    const workspaceId = resolveContextWorkspaceId(ctx)
     if (typeof input === 'string') {
-      return browserPaneManager.createInstance(input)
+      return browserPaneManager.createInstance(input, { workspaceId })
     }
 
     if (input?.bindToSessionId) {
@@ -51,6 +57,7 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
       show: input?.show,
       url: input?.url,
       profileId: input?.profileId,
+      workspaceId,
     })
   })
 

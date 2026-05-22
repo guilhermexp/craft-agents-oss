@@ -17,5 +17,8 @@
   "info": "#99FFE4",
   "success": "#99FFE4",
   "destructive": "#FF8080",
-  "popoverSolid": "#161616"
+  "popoverSolid": "#161616",
+  "scenicBackgroundOpacity": 0.55,
+  "scenicBackgroundContrast": 1,
+  "scenicBackgroundBlur": 24
 }

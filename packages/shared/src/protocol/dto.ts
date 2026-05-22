@@ -31,10 +31,26 @@ export { generateMessageId } from '@craft-agent/core/types'
 // ---------------------------------------------------------------------------
 
 export type MeetingStatus = 'starting' | 'running' | 'stopped' | 'error'
+export type MeetingTranscriptionProvider = 'deepgram' | 'groq'
+
+export interface MeetingTranscriptionConfig {
+  provider: MeetingTranscriptionProvider
+  model: string
+  hasApiKey: boolean
+}
+
+export interface SaveMeetingTranscriptionConfigInput {
+  provider: MeetingTranscriptionProvider
+  model: string
+  /** Omit to preserve the current key. Empty string removes it. */
+  apiKey?: string
+}
 
 export interface MeetingStartInput {
   /** Google Meet URL or code (e.g. abc-defg-hij). */
   urlOrCode: string
+  /** Capture backend. "hermes" invites the Hermes Meet bot; "craft" records in Craft without an agent. */
+  captureMode?: 'hermes' | 'craft'
   /** Optional browser profile id used by the integrated BrowserView. */
   profileId?: string
   /** Existing Browser Pane instance already showing the meeting. */
@@ -43,6 +59,10 @@ export interface MeetingStartInput {
   title?: string
   /** Whether the native meeting flow should prepare transcript capture. */
   transcribe?: boolean
+  /** Automatic transcription backend for Craft-native recording. */
+  transcriptionProvider?: MeetingTranscriptionProvider
+  /** Provider model identifier, e.g. "nova-3" or "whisper-large-v3-turbo". */
+  transcriptionModel?: string
   /** Whether Craft should summarize the meeting after it ends. */
   summarizeOnEnd?: boolean
   /** Whether Craft should extract follow-up tasks after it ends. */
@@ -52,6 +72,7 @@ export interface MeetingStartInput {
 export interface MeetingRecord {
   id: string
   provider: 'google-meet'
+  captureMode?: 'hermes' | 'craft'
   status: MeetingStatus
   url: string
   code?: string
@@ -61,6 +82,9 @@ export interface MeetingRecord {
   updatedAt: number
   endedAt?: number
   error?: string
+  summaryMarkdown?: string
+  transcriptionProvider?: MeetingTranscriptionProvider
+  transcriptionModel?: string
 }
 
 export interface MeetingTranscriptSegment {
@@ -76,6 +100,7 @@ export interface MeetingTranscriptResult {
   meetingId: string
   status: 'placeholder' | 'capturing' | 'ready' | 'unavailable'
   transcript: MeetingTranscriptSegment[]
+  summaryMarkdown?: string
   message?: string
   updatedAt: number
 }
