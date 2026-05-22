@@ -61,6 +61,7 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
       setLoading(false)
       return
     }
+    setLoading(true)
     try {
       const next = await window.electronAPI.meetings.list(workspaceId)
       setRecords(next)

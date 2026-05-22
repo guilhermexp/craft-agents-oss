@@ -164,10 +164,14 @@ interface MeetingsPageProps {
   selectedMeetingId?: string | null
 }
 
-function buildFallbackSummary(record: MeetingRecord | null, transcript: MeetingTranscriptResult | null): string {
+function buildFallbackSummary(
+  record: MeetingRecord | null,
+  transcript: MeetingTranscriptResult | null,
+  emptyPlaceholder: string,
+): string {
   if (transcript?.summaryMarkdown) return transcript.summaryMarkdown
   if (record?.summaryMarkdown) return record.summaryMarkdown
-  if (!record) return 'Selecione uma gravacao no painel para ver o resumo em Markdown.'
+  if (!record) return emptyPlaceholder
 
   const origin = record.captureMode === 'craft' ? 'Craft interno' : 'Hermes'
   const status = record.status === 'running' ? 'em andamento' : record.status
@@ -304,7 +308,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
   }
 
   React.useEffect(() => {
-    if (!selectedMeetingId) {
+    if (!workspaceId || !selectedMeetingId) {
       setSelectedRecord(null)
       setSelectedTranscript(null)
       return
@@ -312,7 +316,6 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
 
     let cancelled = false
     const loadSelectedMeeting = async () => {
-      if (!workspaceId) return
       try {
         const [record, transcript] = await Promise.all([
           window.electronAPI.meetings.status(workspaceId, selectedMeetingId),
@@ -457,7 +460,11 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
     }
   }
 
-  const selectedSummaryMarkdown = buildFallbackSummary(selectedRecord, selectedTranscript)
+  const selectedSummaryMarkdown = buildFallbackSummary(
+    selectedRecord,
+    selectedTranscript,
+    t('meetings.selectRecordingMarkdown', { defaultValue: 'Select a recording in the panel to view the Markdown summary.' }),
+  )
 
   return (
     <div className="h-full overflow-auto overflow-x-hidden bg-background px-4 py-5 sm:px-5">

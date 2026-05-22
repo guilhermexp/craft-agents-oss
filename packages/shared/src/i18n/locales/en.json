@@ -485,6 +485,7 @@
   "meetings.optionsHint": "Configurable per call",
   "meetings.optionsTitle": "Meeting automation",
   "meetings.privacyNote": "Confirm consent before recording or transcribing client calls. Craft does not join meetings automatically without a link.",
+  "meetings.selectRecordingMarkdown": "Select a recording in the panel to view the Markdown summary.",
   "meetings.subtitle": "Join Google Meet calls without leaving Craft. The integrated browser keeps login, meeting context, and agent actions in one place.",
   "meetings.summary": "Summary",
   "meetings.summaryDescription": "Create automatic notes after the call.",

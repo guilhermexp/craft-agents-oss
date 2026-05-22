@@ -235,7 +235,7 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
   const mentionSuggestions = mentionQuery
     ? participants.filter(participant => (
       participant.id.toLowerCase().includes(mentionQuery.query)
-      || participant.displayName.toLowerCase().includes(mentionQuery.query)
+      || (participant.displayName ?? participant.id).toLowerCase().includes(mentionQuery.query)
     )).slice(0, 6)
     : []
   const recentDispatches = dispatches.slice(-6).reverse()
@@ -262,7 +262,7 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
                 <button
                   type="button"
                   onClick={() => { void removeParticipant(participant.id) }}
-                  className="ml-0.5 hidden rounded-full text-muted-foreground hover:text-destructive group-hover:inline-flex"
+                  className="ml-0.5 inline-flex rounded-full text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   aria-label={`Remover @${participant.id}`}
                 >
                   <X className="size-3" />
@@ -407,7 +407,7 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
                     className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted/50"
                   >
                     <span className="font-medium text-foreground">@{participant.id}</span>
-                    <span className="truncate pl-3 text-xs text-muted-foreground">{participant.displayName} · {participant.llmConnection}</span>
+                    <span className="truncate pl-3 text-xs text-muted-foreground">{participant.displayName ?? participant.id} · {participant.llmConnection}</span>
                   </button>
                 ))}
               </div>

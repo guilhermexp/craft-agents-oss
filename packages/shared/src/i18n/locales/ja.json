@@ -456,6 +456,7 @@
   "meetings.detectedDismiss": "無視",
   "meetings.detectedTitle": "会議を検出",
   "meetings.detectedToast": "Google Meet を検出しました。Hermes を招待するには確認してください。",
+  "meetings.selectRecordingMarkdown": "パネルで録音を選択すると、Markdown 形式の要約が表示されます。",
   "menu.aboutCraftAgents": "Craft Agentsについて",
   "menu.addPanelMenu": "パネルを追加",
   "menu.allDocumentation": "すべてのドキュメント",

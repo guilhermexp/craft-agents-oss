@@ -198,7 +198,7 @@ export const routes = {
     /** Meetings view (meetings navigator). Pass a meeting id for a recording detail view. */
     meetings: (meetingId?: string) => {
       if (!meetingId) return 'meetings' as const
-      return `meetings/meeting/${meetingId}` as const
+      return `meetings/meeting/${encodeURIComponent(meetingId)}` as const
     },
 
     /** Settings view (settings navigator) - uses SettingsSubpage from registry */

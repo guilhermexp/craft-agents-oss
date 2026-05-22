@@ -485,6 +485,7 @@
   "meetings.optionsHint": "每次通话可调整",
   "meetings.optionsTitle": "会议自动化",
   "meetings.privacyNote": "在录制或转录客户通话前请确认已获得同意。没有链接时 Craft 不会自动加入会议。",
+  "meetings.selectRecordingMarkdown": "在面板中选择一段录音，查看 Markdown 摘要。",
   "meetings.subtitle": "无需离开 Craft 即可加入 Google Meet。内置浏览器会把登录状态、会议上下文和代理操作保持在同一处。",
   "meetings.summary": "摘要",
   "meetings.summaryDescription": "通话结束后自动生成记录。",

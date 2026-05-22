@@ -27,4 +27,19 @@ describe('route-parser: meetings routes', () => {
     }
     expect(state.details).toEqual({ type: 'meeting', meetingId: 'meeting-1' })
   })
+
+  it('encodes and decodes IDs containing special characters', () => {
+    const idWithSpecials = 'meeting/with spaces?and#hash'
+    const built = routes.view.meetings(idWithSpecials)
+    expect(built).toBe(`meetings/meeting/${encodeURIComponent(idWithSpecials)}`)
+    const parsed = parseCompoundRoute(built)
+    expect(parsed!.details).toEqual({ type: 'meeting', id: idWithSpecials })
+  })
+
+  it('rejects malformed meetings paths', () => {
+    expect(parseCompoundRoute('meetings/extra')).toBeNull()
+    expect(parseCompoundRoute('meetings/meeting')).toBeNull()
+    expect(parseCompoundRoute('meetings/meeting/abc/extra')).toBeNull()
+    expect(parseCompoundRoute('meetings/not-meeting/abc')).toBeNull()
+  })
 })

@@ -159,13 +159,16 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
 
   // Meetings navigator
   if (first === 'meetings') {
-    if (segments[1] === 'meeting' && segments[2]) {
+    if (segments.length === 1) {
+      return { navigator: 'meetings', details: null }
+    }
+    if (segments.length === 3 && segments[1] === 'meeting' && segments[2]) {
       return {
         navigator: 'meetings',
-        details: { type: 'meeting', id: segments[2] },
+        details: { type: 'meeting', id: decodeURIComponent(segments[2]) },
       }
     }
-    return { navigator: 'meetings', details: null }
+    return null
   }
 
   // Automations navigator - supports type filters (scheduled, event, agentic)
@@ -298,7 +301,7 @@ export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
 
   if (parsed.navigator === 'meetings') {
     if (!parsed.details) return 'meetings'
-    return `meetings/meeting/${parsed.details.id}`
+    return `meetings/meeting/${encodeURIComponent(parsed.details.id)}`
   }
 
   // Sessions navigator

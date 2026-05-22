@@ -456,6 +456,7 @@
   "meetings.detectedDismiss": "Ignorieren",
   "meetings.detectedTitle": "Meeting erkannt",
   "meetings.detectedToast": "Google Meet erkannt. Bestätige, um Hermes einzuladen.",
+  "meetings.selectRecordingMarkdown": "Wähle eine Aufnahme im Bereich aus, um die Markdown-Zusammenfassung anzuzeigen.",
   "menu.aboutCraftAgents": "Über Craft Agents",
   "menu.addPanelMenu": "Panel hinzufügen",
   "menu.allDocumentation": "Gesamte Dokumentation",
