@@ -24,6 +24,10 @@ const CHANNELS = {
   SWITCH_PROFILE: 'browser-toolbar:switch-profile',
   MEETINGS_RESOLVE_WORKSPACE: 'meetings:resolve-workspace',
   MEETINGS_START: 'meetings:start',
+  RECORDING_PREPARE: 'meetings:recording:prepare',
+  RECORDING_APPEND: 'meetings:recording:append',
+  RECORDING_FINALIZE: 'meetings:recording:finalize',
+  RECORDING_ABORT: 'meetings:recording:abort',
 } as const
 
 // Instance/workspace IDs are passed via query parameters by BrowserPaneManager.
@@ -83,4 +87,24 @@ contextBridge.exposeInMainWorld('browserToolbar', {
     ipcRenderer.on(CHANNELS.FORCE_CLOSE_MENU, handler)
     return () => { ipcRenderer.removeListener(CHANNELS.FORCE_CLOSE_MENU, handler) }
   },
+  /**
+   * Audio recording lifecycle for the browser pane.
+   * Returns { recordingId, sourceId } so the toolbar renderer can call
+   * navigator.mediaDevices.getUserMedia with chromeMediaSourceId.
+   */
+  prepareRecording: async (payload: { urlOrCode: string; workspaceId?: string }) => {
+    const resolvedWorkspaceId = (payload.workspaceId || workspaceId).trim()
+      || await ipcRenderer.invoke(CHANNELS.MEETINGS_RESOLVE_WORKSPACE, instanceId)
+    return ipcRenderer.invoke(CHANNELS.RECORDING_PREPARE, {
+      workspaceId: resolvedWorkspaceId,
+      browserInstanceId: instanceId,
+      urlOrCode: payload.urlOrCode,
+    }) as Promise<{ recordingId: string; sourceId: string; outputPath: string }>
+  },
+  appendRecordingChunk: (recordingId: string, chunk: ArrayBuffer) =>
+    ipcRenderer.invoke(CHANNELS.RECORDING_APPEND, recordingId, chunk),
+  finalizeRecording: (recordingId: string, mimeType: string) =>
+    ipcRenderer.invoke(CHANNELS.RECORDING_FINALIZE, recordingId, mimeType) as Promise<{ outputPath: string }>,
+  abortRecording: (recordingId: string) =>
+    ipcRenderer.invoke(CHANNELS.RECORDING_ABORT, recordingId),
 })

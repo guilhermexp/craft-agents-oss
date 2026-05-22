@@ -2,14 +2,23 @@ import { RPC_NAMESPACES, type MeetingStartInput, type SaveMeetingTranscriptionCo
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
 import { MeetingService } from '../meetings/meeting-service'
+import { RecordingService } from '../meetings/recording-service'
 import { ipcMain } from 'electron'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 
 const MEETINGS_RESOLVE_WORKSPACE = 'meetings:resolve-workspace'
+const RECORDING_PREPARE = 'meetings:recording:prepare'
+const RECORDING_APPEND = 'meetings:recording:append'
+const RECORDING_FINALIZE = 'meetings:recording:finalize'
+const RECORDING_ABORT = 'meetings:recording:abort'
 
 export const HANDLED_CHANNELS = [
   RPC_NAMESPACES.meetings.START,
   MEETINGS_RESOLVE_WORKSPACE,
+  RECORDING_PREPARE,
+  RECORDING_APPEND,
+  RECORDING_FINALIZE,
+  RECORDING_ABORT,
   RPC_NAMESPACES.meetings.LIST,
   RPC_NAMESPACES.meetings.STATUS,
   RPC_NAMESPACES.meetings.STOP,
@@ -19,6 +28,7 @@ export const HANDLED_CHANNELS = [
 ] as const
 
 let meetingService: MeetingService | null = null
+let recordingService: RecordingService | null = null
 let meetingsIpcRegistered = false
 
 export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): void {
@@ -26,6 +36,7 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
   if (!browserPaneManager) return
 
   meetingService = meetingService ?? new MeetingService(browserPaneManager)
+  recordingService = recordingService ?? new RecordingService(browserPaneManager)
 
   const resolveWorkspaceRoot = (workspaceId: string | null | undefined): string => {
     if (!workspaceId) {
@@ -73,6 +84,36 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
         platform.logger.error('[meetings] toolbar start failed:', err)
         throw err
       }
+    })
+
+    ipcMain.handle(RECORDING_PREPARE, (_event, payload: { workspaceId?: string; browserInstanceId: string; urlOrCode?: string }) => {
+      try {
+        const workspaceId = payload.workspaceId
+          ?? resolveBrowserInstanceWorkspaceId(payload.browserInstanceId)
+        if (!workspaceId) {
+          throw new Error(`No workspace context for browser instance: ${payload.browserInstanceId}`)
+        }
+        return recordingService!.prepare({
+          workspaceId,
+          browserInstanceId: payload.browserInstanceId,
+          urlOrCode: payload.urlOrCode,
+        })
+      } catch (err) {
+        platform.logger.error('[meetings] recording prepare failed:', err)
+        throw err
+      }
+    })
+
+    ipcMain.handle(RECORDING_APPEND, (_event, recordingId: string, chunk: ArrayBuffer | Uint8Array) => {
+      recordingService!.append(recordingId, chunk)
+    })
+
+    ipcMain.handle(RECORDING_FINALIZE, async (_event, recordingId: string, mimeType: string) => {
+      return await recordingService!.finalize(recordingId, mimeType)
+    })
+
+    ipcMain.handle(RECORDING_ABORT, (_event, recordingId: string) => {
+      recordingService!.abort(recordingId)
     })
   }
 

@@ -10,7 +10,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import ReactDOM from 'react-dom/client'
 import { initReactI18next } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
-import { EyeOff, Sparkles, X, XCircle } from 'lucide-react'
+import { EyeOff, Mic, Sparkles, Square, X, XCircle } from 'lucide-react'
 import { BrowserControls } from '@craft-agent/ui'
 import { setupI18n } from '@craft-agent/shared/i18n'
 import { HeaderIconButton } from '@/components/ui/HeaderIconButton'
@@ -64,6 +64,10 @@ declare global {
       requestProfileManagement: () => Promise<void>
       switchProfile: (profileId: string) => Promise<string | null>
       inviteHermesToMeet: (payload: { urlOrCode: string; profileId?: string }) => Promise<{ status?: string; error?: string }>
+      prepareRecording: (payload: { urlOrCode: string; workspaceId?: string }) => Promise<{ recordingId: string; sourceId: string; outputPath: string }>
+      appendRecordingChunk: (recordingId: string, chunk: ArrayBuffer) => Promise<void>
+      finalizeRecording: (recordingId: string, mimeType: string) => Promise<{ outputPath: string }>
+      abortRecording: (recordingId: string) => Promise<void>
       onStateUpdate: (callback: (state: ToolbarState) => void) => () => void
       onThemeColor: (callback: (color: string | null) => void) => () => void
       onForceCloseMenu: (callback: (payload: { reason?: string }) => void) => () => void
@@ -107,6 +111,9 @@ function BrowserToolbarApp() {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const [inviteState, setInviteState] = useState<'idle' | 'starting' | 'sent' | 'error'>('idle')
   const [inviteError, setInviteError] = useState<string | null>(null)
+  const [recordingState, setRecordingState] = useState<'idle' | 'preparing' | 'recording' | 'stopping' | 'error'>('idle')
+  const [recordingError, setRecordingError] = useState<string | null>(null)
+  const recordingRef = useRef<{ id: string; recorder: MediaRecorder; stream: MediaStream; mimeType: string } | null>(null)
   const menuContentRef = useRef<HTMLDivElement | null>(null)
   const profileMenuContentRef = useRef<HTMLDivElement | null>(null)
   const anyMenuOpen = windowMenuOpen || profileMenuOpen
@@ -232,6 +239,101 @@ function BrowserToolbarApp() {
     }
   }, [api, detectedMeetUrl, inviteState, state.profile?.id])
 
+  const stopRecording = useCallback(async (mode: 'finalize' | 'abort') => {
+    const active = recordingRef.current
+    if (!active) return
+    recordingRef.current = null
+    setRecordingState('stopping')
+    try {
+      if (active.recorder.state !== 'inactive') {
+        await new Promise<void>((resolve) => {
+          active.recorder.onstop = () => resolve()
+          active.recorder.stop()
+        })
+      }
+      active.stream.getTracks().forEach((track) => track.stop())
+      if (mode === 'finalize') {
+        const result = await api?.finalizeRecording(active.id, active.mimeType)
+        console.info('[browser-toolbar] recording finalized', { recordingId: active.id, outputPath: result?.outputPath })
+      } else {
+        await api?.abortRecording(active.id)
+      }
+    } catch (error) {
+      console.error('[browser-toolbar] stop recording failed', error)
+    } finally {
+      setRecordingState('idle')
+      setRecordingError(null)
+    }
+  }, [api])
+
+  const handleToggleRecording = useCallback(async () => {
+    if (!api || !detectedMeetUrl) return
+    if (recordingState === 'recording') {
+      void stopRecording('finalize')
+      return
+    }
+    if (recordingState !== 'idle' && recordingState !== 'error') return
+
+    setRecordingState('preparing')
+    setRecordingError(null)
+    let prepared: { recordingId: string; sourceId: string; outputPath: string } | null = null
+    let stream: MediaStream | null = null
+    try {
+      prepared = await api.prepareRecording({ urlOrCode: detectedMeetUrl })
+      stream = await (navigator.mediaDevices as MediaDevices & { getUserMedia: (constraints: unknown) => Promise<MediaStream> }).getUserMedia({
+        audio: {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: prepared.sourceId,
+          },
+        },
+        video: false,
+      })
+      const mimeType = ['audio/webm;codecs=opus', 'audio/webm'].find((type) => MediaRecorder.isTypeSupported(type)) ?? 'audio/webm'
+      const recorder = new MediaRecorder(stream, { mimeType })
+      const recordingId = prepared.recordingId
+      recorder.ondataavailable = async (event) => {
+        if (event.data.size === 0) return
+        try {
+          const buffer = await event.data.arrayBuffer()
+          await api.appendRecordingChunk(recordingId, buffer)
+        } catch (error) {
+          console.error('[browser-toolbar] recording chunk append failed', error)
+        }
+      }
+      recorder.onerror = (event) => {
+        console.error('[browser-toolbar] recorder error', event)
+        setRecordingError('Recorder error')
+        setRecordingState('error')
+      }
+      recordingRef.current = { id: recordingId, recorder, stream, mimeType }
+      recorder.start(1000)
+      setRecordingState('recording')
+      console.info('[browser-toolbar] recording started', { recordingId, outputPath: prepared.outputPath })
+    } catch (error) {
+      console.error('[browser-toolbar] start recording failed', error)
+      const message = error instanceof Error ? error.message : String(error)
+      setRecordingError(message)
+      setRecordingState('error')
+      stream?.getTracks().forEach((track) => track.stop())
+      if (prepared) {
+        try { await api.abortRecording(prepared.recordingId) } catch { /* noop */ }
+      }
+    }
+  }, [api, detectedMeetUrl, recordingState, stopRecording])
+
+  useEffect(() => {
+    return () => {
+      const active = recordingRef.current
+      if (active) {
+        recordingRef.current = null
+        active.recorder.state !== 'inactive' && active.recorder.stop()
+        active.stream.getTracks().forEach((track) => track.stop())
+        void api?.abortRecording(active.id)
+      }
+    }
+  }, [api])
+
   const handleHideWindow = useCallback(() => {
     setWindowMenuOpen(false)
     void api?.hideWindow()
@@ -266,6 +368,40 @@ function BrowserToolbarApp() {
     </button>
   ) : null
 
+  const recordingButtonClassName = recordingState === 'recording'
+    ? 'titlebar-no-drag inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-red-500/50 bg-red-500/15 px-2.5 text-xs font-semibold text-red-700 shadow-minimal transition-colors hover:bg-red-500/25 dark:text-red-300'
+    : recordingState === 'error'
+      ? 'titlebar-no-drag inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 text-xs font-semibold text-destructive shadow-minimal transition-colors hover:bg-destructive/15'
+      : 'titlebar-no-drag inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border/70 bg-foreground/[0.04] px-2.5 text-xs font-semibold text-foreground shadow-minimal transition-colors hover:bg-foreground/[0.08] disabled:cursor-default disabled:opacity-70'
+
+  const recordingButton = detectedMeetUrl ? (
+    <button
+      type="button"
+      onClick={handleToggleRecording}
+      disabled={recordingState === 'preparing' || recordingState === 'stopping'}
+      className={recordingButtonClassName}
+      title={recordingError ?? (recordingState === 'recording' ? 'Parar gravação' : 'Gravar áudio da reunião')}
+    >
+      {recordingState === 'recording' ? <Square className="size-3.5" /> : <Mic className="size-3.5" />}
+      {recordingState === 'preparing'
+        ? 'Preparando...'
+        : recordingState === 'stopping'
+          ? 'Salvando...'
+          : recordingState === 'recording'
+            ? 'Gravando • Parar'
+            : recordingState === 'error'
+              ? 'Tentar de novo'
+              : 'Gravar'}
+    </button>
+  ) : null
+
+  const meetActionsContent = (hermesInviteButton || recordingButton) ? (
+    <div className="flex items-center gap-2">
+      {hermesInviteButton}
+      {recordingButton}
+    </div>
+  ) : null
+
   return (
     <>
       {/*
@@ -294,7 +430,7 @@ function BrowserToolbarApp() {
         onGoForward={handleGoForward}
         onReload={handleReload}
         onStop={handleStop}
-        leadingContent={hermesInviteButton}
+        leadingContent={meetActionsContent}
         trailingContent={(
           <div className="ml-2 flex items-center gap-1.5 titlebar-no-drag">
             {state.profile && (
