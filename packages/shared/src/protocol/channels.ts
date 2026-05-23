@@ -62,6 +62,8 @@ export const RPC_NAMESPACES = {
     CREATE: 'workspaces:create',
     CHECK_SLUG: 'workspaces:checkSlug',
     UPDATE_REMOTE: 'workspaces:updateRemote',
+    GET_DEFAULT: 'workspaces:getDefault',
+    SET_DEFAULT: 'workspaces:setDefault',
   },
   window: {
     GET_WORKSPACE: 'window:getWorkspace',

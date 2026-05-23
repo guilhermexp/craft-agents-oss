@@ -690,6 +690,10 @@ export class HermesAgent extends BaseAgent {
 
       yield completionUsage ?? { type: 'complete' }
     } catch (error) {
+      const aborted = this.abortController?.signal.aborted === true
+      for (const event of adapter.drainPendingTools(aborted ? 'turn aborted' : 'turn failed')) {
+        yield event
+      }
       const message = error instanceof Error ? error.message : String(error)
       yield { type: 'error', message }
     } finally {
@@ -709,14 +713,31 @@ export class HermesAgent extends BaseAgent {
     }
   }
 
-  async abort(_reason?: string): Promise<void> {
-    this.abortController?.abort()
-    this.isStreaming = false
+  private resetAcpProviderAfterInterrupt(reason: string): void {
+    const provider = this.provider
+    this.provider = null
+    this.providerRuntimeHome = null
+    this.pendingProviderRestart = false
+
+    if (!provider) return
+
+    try {
+      provider.cleanup()
+    } catch (error) {
+      this.onDebug?.(`[hermes-interrupt] failed to cleanup ACP provider after ${reason}: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
-  override forceAbort(_reason: AbortReason): void {
+  async abort(reason = 'abort'): Promise<void> {
     this.abortController?.abort()
     this.isStreaming = false
+    this.resetAcpProviderAfterInterrupt(reason)
+  }
+
+  override forceAbort(reason: AbortReason): void {
+    this.abortController?.abort(reason)
+    this.isStreaming = false
+    this.resetAcpProviderAfterInterrupt(reason)
   }
 
   override interruptForHandoff(reason: AbortReason): void {

@@ -36,7 +36,7 @@ import { setSearchPlatform, setImageProcessor } from '@craft-agent/server-core/s
 import { createApplicationMenu } from './menu'
 import { WindowManager } from './window-manager'
 import { loadWindowState, saveWindowState } from './window-state'
-import { getLlmConnection, getWorkspaces, getWorkspaceByNameOrId, loadStoredConfig, addWorkspace, saveConfig } from '@craft-agent/shared/config'
+import { getLlmConnection, getWorkspaces, getWorkspaceByNameOrId, loadStoredConfig, addWorkspace, saveConfig, getDefaultWorkspaceId } from '@craft-agent/shared/config'
 import { getDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
 import { initializeDocs } from '@craft-agent/shared/docs'
 import { initializeReleaseNotes } from '@craft-agent/shared/release-notes'
@@ -299,6 +299,14 @@ async function createInitialWindows(): Promise<void> {
   }
 
   const validWorkspaceIds = workspaces.map(ws => ws.id)
+
+  // Pinned default-on-launch wins over saved window state.
+  const pinnedDefaultId = getDefaultWorkspaceId()
+  if (pinnedDefaultId && validWorkspaceIds.includes(pinnedDefaultId)) {
+    windowManager.createWindow({ workspaceId: pinnedDefaultId })
+    mainLog.info(`Opened pinned default workspace: ${pinnedDefaultId}`)
+    return
+  }
 
   if (savedState?.windows.length) {
     // Restore windows from saved state

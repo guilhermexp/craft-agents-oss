@@ -23,6 +23,8 @@ export const LOCAL_ONLY_NAMESPACES = new Set<string>([
   RPC_NAMESPACES.workspaces.CREATE,
   RPC_NAMESPACES.workspaces.CHECK_SLUG,
   RPC_NAMESPACES.workspaces.UPDATE_REMOTE,
+  RPC_NAMESPACES.workspaces.GET_DEFAULT,
+  RPC_NAMESPACES.workspaces.SET_DEFAULT,
 
   // window — Electron window management
   RPC_NAMESPACES.window.GET_WORKSPACE,

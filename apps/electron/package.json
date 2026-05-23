@@ -1,6 +1,6 @@
 {
   "name": "@craft-agent/electron",
-  "version": "0.8.13-rc.19",
+  "version": "0.8.13-rc.21",
   "description": "Electron desktop app for Craft Agents",
   "main": "dist/main.cjs",
   "private": true,
@@ -79,6 +79,7 @@
     "lucide-react": "^1.8.0",
     "motion": "^12.23.26",
     "next-themes": "^0.4.6",
+    "node-pptx-parser": "^1.0.1",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-day-picker": "^9.13.0",

@@ -17,6 +17,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { execFileSync } = require('child_process');
 
 const afterPackHermes = require('./afterPack-hermes.cjs');
 
@@ -49,7 +50,44 @@ async function copyLiquidGlassIcon(context) {
   }
 }
 
+// With `asar: false`, electron-builder still injects ElectronAsarIntegrity into
+// Info.plist referencing Resources/default_app.asar — a file it does not ship.
+// Electron then aborts on launch with no stderr (integrity check fails).
+// Strip the key so the app boots.
+function stripAsarIntegrity(context) {
+  if (context.electronPlatformName !== 'darwin') return;
+
+  const productFilename = context.packager.appInfo.productFilename;
+  const infoPlist = path.join(
+    context.appOutDir,
+    `${productFilename}.app`,
+    'Contents',
+    'Info.plist',
+  );
+
+  if (!fs.existsSync(infoPlist)) {
+    console.log(`afterPack: Info.plist not found at ${infoPlist}`);
+    return;
+  }
+
+  try {
+    execFileSync(
+      '/usr/libexec/PlistBuddy',
+      ['-c', 'Delete :ElectronAsarIntegrity', infoPlist],
+      { stdio: 'pipe' },
+    );
+    console.log(`afterPack: stripped ElectronAsarIntegrity from ${infoPlist}`);
+  } catch (err) {
+    // Key absent → PlistBuddy exits non-zero. Safe to ignore.
+    const stderr = err.stderr ? err.stderr.toString() : '';
+    if (!stderr.includes('Does Not Exist')) {
+      console.log(`afterPack: PlistBuddy delete failed: ${stderr || err.message}`);
+    }
+  }
+}
+
 module.exports = async function afterPack(context) {
   await copyLiquidGlassIcon(context);
   await afterPackHermes(context);
+  stripAsarIntegrity(context);
 };

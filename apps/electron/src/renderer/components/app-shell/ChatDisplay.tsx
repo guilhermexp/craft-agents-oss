@@ -515,6 +515,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const internalTextareaRef = React.useRef<RichTextInputHandle>(null)
   const textareaRef = externalTextareaRef || internalTextareaRef
   const [sendMessageKey, setSendMessageKey] = useState<'enter' | 'cmd-enter'>('enter')
+  const [showJumpToLatest, setShowJumpToLatest] = React.useState(false)
   const [openAnnotationRequest, setOpenAnnotationRequest] = React.useState<{
     messageId: string
     annotationId: string
@@ -1094,7 +1095,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     const { scrollTop, scrollHeight, clientHeight } = viewport
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight
     // 20px threshold for "at bottom" detection
-    isStickToBottomRef.current = distanceFromBottom < 20
+    const isAtBottom = distanceFromBottom < 20
+    isStickToBottomRef.current = isAtBottom
+    setShowJumpToLatest(distanceFromBottom > 160)
 
     // Load more turns when scrolling near top (within 100px)
     if (scrollTop < 100) {
@@ -1137,6 +1140,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     // On session switch: reset UI state (scroll handled by ScrollOnMount)
     if (isSessionSwitch) {
       isStickToBottomRef.current = true
+      setShowJumpToLatest(false)
       setVisibleTurnCount(TURNS_PER_PAGE)
     }
 
@@ -1210,6 +1214,12 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     })
   }, [session?.id, messageCount, lastMessageId, lastMessageRole])
 
+  const scrollToLatestMessage = React.useCallback((behavior: ScrollBehavior = 'smooth') => {
+    isStickToBottomRef.current = true
+    setShowJumpToLatest(false)
+    messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' })
+  }, [])
+
   // Handle message submission from InputContainer
   // Backend handles interruption and queueing if currently processing
   const handleSubmit = (message: string, attachments?: FileAttachment[], skillSlugs?: string[]) => {
@@ -1259,7 +1269,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     // Immediately scroll to bottom after sending - use requestAnimationFrame
     // to ensure the DOM has updated with the new message
     requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      scrollToLatestMessage('smooth')
     })
   }
 
@@ -1850,6 +1860,25 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
               </div>
               </ScrollArea>
             </div>
+
+            {!compactMode && showJumpToLatest && (
+              <button
+                type="button"
+                aria-label="Ir para a última mensagem"
+                title="Ir para a última mensagem"
+                onClick={() => scrollToLatestMessage('smooth')}
+                className={cn(
+                  "absolute bottom-3 left-1/2 z-20 -translate-x-1/2",
+                  "inline-flex h-8 items-center gap-1.5 rounded-full border border-border/50",
+                  "bg-background/80 px-2.5 text-xs text-muted-foreground shadow-sm backdrop-blur-md",
+                  "transition-all hover:border-border hover:bg-background hover:text-foreground",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                )}
+              >
+                <ChevronDown className="size-3.5" />
+                <span>Última</span>
+              </button>
+            )}
           </div>
 
           {/* === INPUT CONTAINER: FreeForm or Structured Input === */}

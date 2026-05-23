@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
-import { getWorkspaceByNameOrId, addWorkspace, setActiveWorkspace, updateWorkspaceRemoteServer } from '@craft-agent/shared/config'
+import { getWorkspaceByNameOrId, addWorkspace, setActiveWorkspace, updateWorkspaceRemoteServer, getDefaultWorkspaceId, setDefaultWorkspace } from '@craft-agent/shared/config'
 import { perf } from '@craft-agent/shared/utils'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
@@ -13,6 +13,8 @@ export const CORE_HANDLED_CHANNELS = [
   RPC_NAMESPACES.workspaces.CREATE,
   RPC_NAMESPACES.workspaces.CHECK_SLUG,
   RPC_NAMESPACES.workspaces.UPDATE_REMOTE,
+  RPC_NAMESPACES.workspaces.GET_DEFAULT,
+  RPC_NAMESPACES.workspaces.SET_DEFAULT,
   RPC_NAMESPACES.window.GET_WORKSPACE,
   RPC_NAMESPACES.window.GET_MODE,
   RPC_NAMESPACES.window.SWITCH_WORKSPACE,
@@ -71,6 +73,18 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
   server.handle(RPC_NAMESPACES.workspaces.UPDATE_REMOTE, async (_ctx, workspaceId: string, remoteServer: { url: string; token: string; remoteWorkspaceId: string }) => {
     updateWorkspaceRemoteServer(workspaceId, remoteServer)
     deps.platform.logger.info(`Updated remote server for workspace ${workspaceId}: ${remoteServer.url}`)
+    return { success: true }
+  })
+
+  // Return the workspace pinned as default-on-launch, or null when none.
+  server.handle(RPC_NAMESPACES.workspaces.GET_DEFAULT, async () => {
+    return getDefaultWorkspaceId()
+  })
+
+  // Pin/unpin a workspace as default-on-launch.
+  server.handle(RPC_NAMESPACES.workspaces.SET_DEFAULT, async (_ctx, workspaceId: string | null) => {
+    setDefaultWorkspace(workspaceId)
+    deps.platform.logger.info(`Default workspace ${workspaceId ? `set to ${workspaceId}` : 'cleared'}`)
     return { success: true }
   })
 

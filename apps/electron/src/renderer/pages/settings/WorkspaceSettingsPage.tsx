@@ -66,6 +66,7 @@ export default function WorkspaceSettingsPage() {
   const [workingDirectory, setWorkingDirectory] = useState('')
   const [localMcpEnabled, setLocalMcpEnabled] = useState(true)
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(true)
+  const [isDefaultOnLaunch, setIsDefaultOnLaunch] = useState(false)
 
   // Default sources state
   const [availableSources, setAvailableSources] = useState<LoadedSource[]>([])
@@ -111,6 +112,14 @@ export default function WorkspaceSettingsPage() {
           if (healedSlugs.length !== savedSlugs.length) {
             window.electronAPI.updateWorkspaceSetting(activeWorkspaceId, 'enabledSourceSlugs', healedSlugs)
           }
+        }
+
+        // Load default-on-launch pin (global config, not per-workspace).
+        try {
+          const pinnedId = await window.electronAPI.getDefaultWorkspaceId()
+          setIsDefaultOnLaunch(pinnedId === activeWorkspaceId)
+        } catch (err) {
+          console.error('Failed to load default workspace pin:', err)
         }
 
         // Try to load workspace icon (check common extensions)
@@ -248,6 +257,23 @@ export default function WorkspaceSettingsPage() {
       await updateWorkspaceSetting('permissionMode', newMode)
     },
     [updateWorkspaceSetting]
+  )
+
+  const handleDefaultOnLaunchToggle = useCallback(
+    async (enabled: boolean) => {
+      if (!window.electronAPI || !activeWorkspaceId) return
+      setIsDefaultOnLaunch(enabled)
+      try {
+        await window.electronAPI.setDefaultWorkspace(enabled ? activeWorkspaceId : null)
+      } catch (err) {
+        setIsDefaultOnLaunch(!enabled)
+        const message = err instanceof Error ? err.message : 'Unknown error'
+        toast.error(t("settings.workspace.failedToSave", { setting: 'defaultWorkspace' }), {
+          description: message,
+        })
+      }
+    },
+    [activeWorkspaceId, t]
   )
 
   const handleWorkingDirectorySelected = useCallback(async (selectedPath: string) => {
@@ -408,6 +434,12 @@ export default function WorkspaceSettingsPage() {
                     )}
                   </div>
                 </SettingsRow>
+                <SettingsToggle
+                  label={t("settings.workspace.defaultOnLaunch", "Sempre iniciar neste workspace")}
+                  description={t("settings.workspace.defaultOnLaunchDesc", "Abre este workspace ao iniciar o app, ignorando o último focado.")}
+                  checked={isDefaultOnLaunch}
+                  onCheckedChange={handleDefaultOnLaunchToggle}
+                />
               </SettingsCard>
 
               <RenameDialog

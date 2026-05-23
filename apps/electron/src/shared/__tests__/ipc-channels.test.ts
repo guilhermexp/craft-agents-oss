@@ -280,6 +280,8 @@ const EXPECTED_CHANNELS: string[] = [
   'workspaces:checkSlug',
   'workspaces:create',
   'workspaces:get',
+  'workspaces:getDefault',
+  'workspaces:setDefault',
   'workspaces:updateRemote',
 ]
 
