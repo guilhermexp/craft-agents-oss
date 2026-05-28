@@ -1722,7 +1722,7 @@ export function isValidThemeFile(filePath: string): boolean {
 // Tool Icons Validators
 // ============================================================
 
-import { getToolIconsDir } from './storage.ts';
+import { getToolIconsDir } from './tool-icon-storage.ts';
 
 /**
  * Zod schema for a single tool icon entry in tool-icons.json.
