@@ -9,10 +9,11 @@
 import { join, parse as parsePath } from 'path'
 import { existsSync, mkdirSync } from 'fs'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
-import { BrowserView, BrowserWindow, app, ipcMain, nativeTheme, session, shell, type Session as ElectronSession } from 'electron'
+import { BrowserView, BrowserWindow, app, ipcMain, nativeTheme, session, shell, webContents, type Session as ElectronSession, type Streams } from 'electron'
 import { mainLog } from './logger'
 import type { WindowManager } from './window-manager'
 import { BrowserCDP, type AccessibilitySnapshot, type ElementGeometry } from './browser-cdp'
+import { BrowserVisualCapture } from './browser/browser-visual-capture'
 import {
   type BrowserEmptyStateLaunchPayload,
   type BrowserEmptyStateLaunchResult,
@@ -33,12 +34,6 @@ const MAX_NETWORK_LOG_ENTRIES = 500
 const MAX_DOWNLOAD_LOG_ENTRIES = 200
 const DEFAULT_WAIT_TIMEOUT_MS = 10_000
 const DEFAULT_WAIT_POLL_MS = 100
-const SCREENSHOT_HIDDEN_CAPTURE_ATTEMPTS = 3
-const SCREENSHOT_RETRY_DELAY_MS = 120
-const SCREENSHOT_RESCUE_PAINT_DELAY_MS = 180
-const SCREENSHOT_NETWORK_IDLE_TIMEOUT_MS = 1_000
-const SCREENSHOT_NETWORK_IDLE_MS = 300
-const SCREENSHOT_CAPTURE_TIMEOUT_MS = Number(process.env.CRAFT_BROWSER_SCREENSHOT_CAPTURE_TIMEOUT_MS ?? 8_000)
 const THEME_COLOR_SIGNAL_PREFIX = '__craft_theme_color__:'
 const THEME_COLOR_NULL_SENTINEL = '__NULL__'
 const THEME_OBSERVER_MIN_INTERVAL_MS = 120
@@ -159,7 +154,7 @@ interface AgentControlLockState {
   previousResizable: boolean
 }
 
-interface BrowserInstance {
+export interface BrowserInstance {
   id: string
   profileId: string
   workspaceId: string | null
@@ -377,6 +372,16 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private windowManager: WindowManager | null = null
   private sessionPathResolver: ((sessionId: string) => string | null) | null = null
 
+  /** Screenshot capture pipeline (full-page, region, recovery, encoding). */
+  private visualCapture = new BrowserVisualCapture({
+    requireAliveInstance: (id) => this.requireAliveInstance(id),
+    getInstance: (id) => this.instances.get(id),
+    emitStateChange: (instance) => this.emitStateChange(instance),
+    updateNativeOverlayState: (instance) => this.updateNativeOverlayState(instance),
+    waitFor: (id, args) => this.waitFor(id, args),
+    sleep: (ms) => this.sleep(ms),
+  })
+
   setWindowManager(windowManager: WindowManager): void {
     this.windowManager = windowManager
   }
@@ -445,10 +450,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     this.setupSessionPermissions(ses)
     this.setupSessionObservers(ses)
 
-    // Keep the native window chrome aligned with the OS theme, but keep web page
-    // surfaces light by default. Some external sites (notably Google Meet) render
-    // parts of their app transparent; using the dark app background behind the
-    // page makes those sites show dark text over a dark surface.
+    // Keep the native window chrome aligned with the OS theme, but force embedded
+    // pages into light color scheme via CDP emulation. Without this, sites like
+    // Google Meet pick up prefers-color-scheme:dark from Electron's nativeTheme
+    // and partially apply dark styles, creating a jarring two-theme appearance.
     const chromeBgColor = nativeTheme.shouldUseDarkColors ? '#2b292e' : '#fafafb'
     const pageBgColor = '#ffffff'
 
@@ -516,6 +521,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     overlayWcWithBg.setBackgroundColor?.('#00000000')
 
     const cdp = new BrowserCDP(pageView.webContents)
+    void cdp.setColorSchemeEmulation('light')
 
     const instance: BrowserInstance = {
       id: instanceId,
@@ -1234,450 +1240,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
   }
 
-  private suspendOverlayForCapture(instance: BrowserInstance): boolean {
-    const shouldSuspend = !!instance.agentControl?.active
-      && instance.nativeOverlayReady
-
-    if (!shouldSuspend) return false
-
-    instance.nativeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 })
-    return true
-  }
-
-  private restoreOverlayAfterCapture(instance: BrowserInstance, suspended: boolean): void {
-    if (!suspended) return
-    this.updateNativeOverlayState(instance)
-  }
-
   async screenshot(id: string, options?: BrowserScreenshotOptions): Promise<BrowserScreenshotResult> {
-    const instance = this.requireAliveInstance(id)
-
-    // Hide native agent overlay so it doesn't appear in captures
-    const suspendedOverlay = this.suspendOverlayForCapture(instance)
-
-    try {
-      // When annotating, force agent mode and gather refs from accessibility tree
-      const annotate = !!options?.annotate
-      const mode = (annotate || options?.mode === 'agent') ? 'agent' : 'raw'
-
-      if (mode === 'raw') {
-        const viewport = await instance.cdp.getViewportMetrics()
-        const captured = await this.capturePageWithRecovery(instance, {
-          mode,
-          errorPrefix: 'screenshot',
-          dpr: viewport.dpr,
-          format: options?.format,
-          jpegQuality: options?.jpegQuality,
-        })
-
-        return {
-          imageBuffer: captured.imageBuffer,
-          imageFormat: captured.imageFormat,
-          metadata: options?.includeMetadata
-            ? {
-              mode: 'raw',
-              warnings: captured.warnings.length > 0 ? captured.warnings : undefined,
-            }
-            : undefined,
-        }
-      }
-
-      const warnings: string[] = []
-      const geometries: ElementGeometry[] = []
-
-      const MAX_ANNOTATED_REFS = 100
-      let refs = options?.refs ?? []
-
-      if (annotate) {
-        try {
-          const snapshot = await instance.cdp.getAccessibilitySnapshot()
-          refs = snapshot.nodes.map((node) => node.ref).slice(0, MAX_ANNOTATED_REFS)
-          if (snapshot.nodes.length > MAX_ANNOTATED_REFS) {
-            warnings.push(`Annotation capped at ${MAX_ANNOTATED_REFS} of ${snapshot.nodes.length} elements`)
-          }
-        } catch (error) {
-          warnings.push(`Accessibility snapshot for annotation failed: ${error instanceof Error ? error.message : String(error)}`)
-          refs = []
-        }
-      }
-
-      const settled = await Promise.allSettled(
-        refs.map((ref) => instance.cdp.getElementGeometry(ref)),
-      )
-
-      for (let i = 0; i < settled.length; i++) {
-        const result = settled[i]!
-        if (result.status === 'fulfilled') {
-          geometries.push(result.value)
-        } else if (!annotate) {
-          const reason = result.reason instanceof Error ? result.reason.message : String(result.reason)
-          warnings.push(`Could not resolve ref ${refs[i]}: ${reason}`)
-        }
-      }
-
-      if (options?.includeLastAction && instance.lastAction?.geometry) {
-        geometries.push(instance.lastAction.geometry)
-      }
-
-      const metadataText = instance.lastAction
-        ? `${instance.lastAction.tool} • ${instance.lastAction.status} • ${new Date(instance.lastAction.timestamp).toISOString()}`
-        : `browser_screenshot • ${new Date().toISOString()}`
-
-      let annotationPartial = false
-
-      try {
-        if (geometries.length > 0 || options?.includeMetadata) {
-          await instance.cdp.renderTemporaryOverlay({
-            geometries,
-            includeMetadata: !!options?.includeMetadata,
-            metadataText,
-            includeClickPoints: true,
-          })
-        }
-      } catch (error) {
-        annotationPartial = true
-        warnings.push(`Annotation overlay failed: ${error instanceof Error ? error.message : String(error)}`)
-      }
-
-      try {
-        const viewport = await instance.cdp.getViewportMetrics()
-        const captured = await this.capturePageWithRecovery(instance, {
-          mode,
-          errorPrefix: 'screenshot',
-          dpr: viewport.dpr,
-          format: options?.format,
-          jpegQuality: options?.jpegQuality,
-        })
-
-        if (captured.warnings.length > 0) {
-          warnings.push(...captured.warnings)
-        }
-
-        return {
-          imageBuffer: captured.imageBuffer,
-          imageFormat: captured.imageFormat,
-          metadata: {
-            mode: 'agent',
-            viewport,
-            targets: geometries.map((g) => ({
-              ref: g.ref,
-              role: g.role,
-              name: g.name,
-              box: g.box,
-              clickPoint: g.clickPoint,
-            })),
-            action: instance.lastAction
-              ? {
-                tool: instance.lastAction.tool,
-                ref: instance.lastAction.ref,
-                status: instance.lastAction.status,
-                timestamp: instance.lastAction.timestamp,
-              }
-              : undefined,
-            annotationPartial,
-            warnings: warnings.length > 0 ? warnings : undefined,
-          },
-        }
-      } finally {
-        try {
-          await instance.cdp.clearTemporaryOverlay()
-        } catch {
-          // ignore cleanup errors
-        }
-      }
-    } finally {
-      this.restoreOverlayAfterCapture(instance, suspendedOverlay)
-    }
+    return this.visualCapture.screenshot(id, options)
   }
 
   async screenshotRegion(id: string, target: BrowserScreenshotRegionTarget): Promise<BrowserScreenshotResult> {
-    const instance = this.instances.get(id)
-    if (!instance) throw new Error(`Browser instance not found: ${id}`)
-
-    const hasCoords = [target.x, target.y, target.width, target.height].every((v) => typeof v === 'number')
-    const hasRef = typeof target.ref === 'string' && target.ref.length > 0
-    const hasSelector = typeof target.selector === 'string' && target.selector.length > 0
-
-    const modeCount = [hasCoords, hasRef, hasSelector].filter(Boolean).length
-    if (modeCount === 0) {
-      throw new Error('Region screenshot requires either coordinates, ref, or selector')
-    }
-    if (modeCount > 1) {
-      throw new Error('Region screenshot target is ambiguous. Provide only one of coordinates, ref, or selector')
-    }
-
-    const suspendedOverlay = this.suspendOverlayForCapture(instance)
-
-    try {
-      let box: { x: number; y: number; width: number; height: number }
-
-      if (hasRef) {
-        const geometry = await instance.cdp.getElementGeometry(String(target.ref))
-        box = { ...geometry.box }
-      } else if (hasSelector) {
-        const geometry = await instance.cdp.getElementGeometryBySelector(String(target.selector))
-        box = { ...geometry.box }
-      } else {
-        box = {
-          x: Number(target.x),
-          y: Number(target.y),
-          width: Number(target.width),
-          height: Number(target.height),
-        }
-      }
-
-      const padding = Math.max(0, Number(target.padding ?? 0))
-      box = {
-        x: box.x - padding,
-        y: box.y - padding,
-        width: box.width + padding * 2,
-        height: box.height + padding * 2,
-      }
-
-      const viewport = await instance.cdp.getViewportMetrics()
-
-      const clippedX = Math.max(0, Math.floor(box.x))
-      const clippedY = Math.max(0, Math.floor(box.y))
-      const maxWidth = Math.max(0, Math.floor(viewport.width - clippedX))
-      const maxHeight = Math.max(0, Math.floor(viewport.height - clippedY))
-      const clippedWidth = Math.min(Math.max(1, Math.floor(box.width)), maxWidth)
-      const clippedHeight = Math.min(Math.max(1, Math.floor(box.height)), maxHeight)
-
-      if (maxWidth <= 0 || maxHeight <= 0 || clippedWidth <= 0 || clippedHeight <= 0) {
-        throw new Error('Resolved screenshot region is outside the current viewport')
-      }
-
-      const captured = await this.capturePageWithRecovery(instance, {
-        mode: 'region',
-        errorPrefix: 'region screenshot',
-        rect: {
-          x: clippedX,
-          y: clippedY,
-          width: clippedWidth,
-          height: clippedHeight,
-        },
-        dpr: viewport.dpr,
-        format: target.format,
-        jpegQuality: target.jpegQuality,
-      })
-
-      return {
-        imageBuffer: captured.imageBuffer,
-        imageFormat: captured.imageFormat,
-        metadata: {
-          mode: 'raw',
-          viewport,
-          region: {
-            x: clippedX,
-            y: clippedY,
-            width: clippedWidth,
-            height: clippedHeight,
-          },
-          targetMode: hasRef ? 'ref' : hasSelector ? 'selector' : 'coords',
-          warnings: captured.warnings.length > 0 ? captured.warnings : undefined,
-        },
-      }
-    } finally {
-      this.restoreOverlayAfterCapture(instance, suspendedOverlay)
-    }
-  }
-
-  private async capturePageWithRecovery(
-    instance: BrowserInstance,
-    options: {
-      mode: 'raw' | 'agent' | 'region'
-      errorPrefix: 'screenshot' | 'region screenshot'
-      rect?: { x: number; y: number; width: number; height: number }
-      dpr?: number
-      format?: 'png' | 'jpeg'
-      jpegQuality?: number
-    },
-  ): Promise<{ imageBuffer: Buffer; imageFormat: 'png' | 'jpeg'; warnings: string[] }> {
-    let rescueUsed = false
-    let sawDisplaySurfaceUnavailable = false
-    const warnings: string[] = []
-    const imageOpts = { dpr: options.dpr, format: options.format, jpegQuality: options.jpegQuality }
-
-    for (let attempt = 1; attempt <= SCREENSHOT_HIDDEN_CAPTURE_ATTEMPTS; attempt += 1) {
-      let result: { buffer: Buffer; format: 'png' | 'jpeg' } | null = null
-      try {
-        result = await this.capturePageImage(instance, {
-          rect: options.rect,
-          useHiddenCaptureOptions: true,
-          ...imageOpts,
-        })
-      } catch (error) {
-        if (this.isDisplaySurfaceUnavailableError(error)) {
-          sawDisplaySurfaceUnavailable = true
-          mainLog.warn(
-            `[browser-pane] ${options.errorPrefix} display surface unavailable instance=${instance.id} mode=${options.mode} attempt=${attempt}/${SCREENSHOT_HIDDEN_CAPTURE_ATTEMPTS} visible=${instance.isVisible} url=${instance.currentUrl}`,
-          )
-        } else {
-          throw error
-        }
-      }
-
-      if (result) {
-        if (attempt > 1) {
-          warnings.push(`Capture recovered after ${attempt} hidden attempt${attempt === 1 ? '' : 's'}.`)
-        }
-        return { imageBuffer: result.buffer, imageFormat: result.format, warnings }
-      }
-
-      mainLog.warn(
-        `[browser-pane] ${options.errorPrefix} empty capture attempt instance=${instance.id} mode=${options.mode} attempt=${attempt}/${SCREENSHOT_HIDDEN_CAPTURE_ATTEMPTS} visible=${instance.isVisible} isLoading=${instance.isLoading} url=${instance.currentUrl}`,
-      )
-
-      if (attempt < SCREENSHOT_HIDDEN_CAPTURE_ATTEMPTS) {
-        await this.waitForScreenshotReadiness(instance.id)
-      }
-    }
-
-    const window = instance.window
-    const wasVisible = instance.isVisible
-
-    if (!window.isDestroyed()) {
-      try {
-        if (!wasVisible) {
-          if (window.isMinimized()) {
-            window.restore()
-          }
-          window.showInactive()
-          instance.isVisible = true
-          this.emitStateChange(instance)
-          rescueUsed = true
-          await this.sleep(SCREENSHOT_RESCUE_PAINT_DELAY_MS)
-          await this.waitForScreenshotReadiness(instance.id)
-        }
-
-        let rescueResult: { buffer: Buffer; format: 'png' | 'jpeg' } | null = null
-        try {
-          rescueResult = await this.capturePageImage(instance, {
-            rect: options.rect,
-            useHiddenCaptureOptions: false,
-            ...imageOpts,
-          })
-        } catch (error) {
-          if (this.isDisplaySurfaceUnavailableError(error)) {
-            sawDisplaySurfaceUnavailable = true
-            mainLog.warn(
-              `[browser-pane] ${options.errorPrefix} display surface unavailable during rescue instance=${instance.id} mode=${options.mode} visible=${instance.isVisible} url=${instance.currentUrl}`,
-            )
-          } else {
-            throw error
-          }
-        }
-
-        if (rescueResult) {
-          if (rescueUsed) {
-            warnings.push('Capture required temporary inactive reveal for rendering; browser visibility was restored immediately.')
-          }
-          return { imageBuffer: rescueResult.buffer, imageFormat: rescueResult.format, warnings }
-        }
-      } finally {
-        if (!wasVisible && !window.isDestroyed()) {
-          window.hide()
-          instance.isVisible = false
-          this.emitStateChange(instance)
-        }
-      }
-    }
-
-    mainLog.warn(
-      `[browser-pane] ${options.errorPrefix} capture failed after recovery instance=${instance.id} mode=${options.mode} visible=${instance.isVisible} isLoading=${instance.isLoading} url=${instance.currentUrl} rescueUsed=${rescueUsed}`,
-    )
-
-    if (sawDisplaySurfaceUnavailable) {
-      throw new Error(
-        `Failed to capture ${options.errorPrefix}: current display surface is unavailable. `
-        + `Try focusing the browser window first ("focus ${instance.id}" or "open --foreground") and retry.`
-      )
-    }
-
-    throw new Error(`Failed to capture ${options.errorPrefix}: empty image buffer`)
-  }
-
-  private isDisplaySurfaceUnavailableError(error: unknown): boolean {
-    if (!(error instanceof Error)) return false
-    return error.message.toLowerCase().includes('current display surface not available for capture')
-  }
-
-  private async capturePageImage(
-    instance: BrowserInstance,
-    options: {
-      rect?: { x: number; y: number; width: number; height: number }
-      useHiddenCaptureOptions: boolean
-      dpr?: number
-      format?: 'png' | 'jpeg'
-      jpegQuality?: number
-    },
-  ): Promise<{ buffer: Buffer; format: 'png' | 'jpeg' } | null> {
-    const captureOpts = options.useHiddenCaptureOptions
-      ? { stayHidden: true, stayAwake: true }
-      : undefined
-
-    let image = await this.withTimeout(
-      options.rect
-        ? instance.pageView.webContents.capturePage(options.rect, captureOpts)
-        : instance.pageView.webContents.capturePage(undefined, captureOpts),
-      SCREENSHOT_CAPTURE_TIMEOUT_MS,
-      `Timed out capturing screenshot after ${SCREENSHOT_CAPTURE_TIMEOUT_MS}ms`,
-    )
-
-    if (image.isEmpty()) {
-      return null
-    }
-
-    // Downscale from device pixels to CSS pixels so screenshot coordinates
-    // match click-at viewport coordinates (uses Skia Lanczos via 'best')
-    const dpr = options.dpr ?? 1
-    if (dpr > 1) {
-      const size = image.getSize()
-      image = image.resize({
-        width: Math.round(size.width / dpr),
-        height: Math.round(size.height / dpr),
-        quality: 'best',
-      })
-    }
-
-    const fmt = options.format ?? 'png'
-    const encoded = fmt === 'jpeg'
-      ? image.toJPEG(options.jpegQuality ?? 80)
-      : image.toPNG()
-
-    if (!encoded || encoded.length === 0) {
-      return null
-    }
-
-    return { buffer: encoded, format: fmt }
-  }
-
-  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-    let timeout: ReturnType<typeof setTimeout> | null = null
-    try {
-      return await Promise.race([
-        promise,
-        new Promise<never>((_resolve, reject) => {
-          timeout = setTimeout(() => reject(new Error(message)), timeoutMs)
-        }),
-      ])
-    } finally {
-      if (timeout) clearTimeout(timeout)
-    }
-  }
-
-  private async waitForScreenshotReadiness(instanceId: string): Promise<void> {
-    try {
-      await this.waitFor(instanceId, {
-        kind: 'network-idle',
-        timeoutMs: SCREENSHOT_NETWORK_IDLE_TIMEOUT_MS,
-        idleMs: SCREENSHOT_NETWORK_IDLE_MS,
-      })
-    } catch {
-      // network-idle can fail on continuously active pages; still proceed after bounded delay
-    }
-
-    await this.sleep(SCREENSHOT_RETRY_DELAY_MS)
+    return this.visualCapture.screenshotRegion(id, target)
   }
 
   getConsoleLogs(id: string, options?: BrowserConsoleOptions): BrowserConsoleEntry[] {
@@ -2509,7 +2077,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         clientName: p.clientName,
       })),
     }
-    instance.toolbarView.webContents.send(TOOLBAR_CHANNELS.STATE_UPDATE, state)
+    try {
+      instance.toolbarView.webContents.send(TOOLBAR_CHANNELS.STATE_UPDATE, state)
+    } catch (error) {
+      mainLog.warn(`[browser-pane] toolbar state send skipped id=${instance.id}: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   /** Register IPC handlers for toolbar actions. Call once at app startup. */
@@ -3104,6 +2676,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       'geolocation',
       'media',
       'speaker-selection',
+      'display-capture',
       'screen-wake-lock',
       'clipboard-read',
       'clipboard-sanitized-write',
@@ -3129,6 +2702,30 @@ export class BrowserPaneManager implements IBrowserPaneManager {
           this.logPermissionDecision('request', permission, details?.requestingOrigin ?? 'unknown')
         }
         callback(allowed)
+      })
+    }
+
+    if (typeof ses.setDisplayMediaRequestHandler === 'function') {
+      ses.setDisplayMediaRequestHandler((request, callback) => {
+        const requester = request.frame ? webContents.fromFrame(request.frame) : undefined
+        const instance = requester
+          ? Array.from(this.instances.values()).find((candidate) => candidate.toolbarView.webContents.id === requester.id)
+          : undefined
+
+        if (!instance || instance.pageView.webContents.isDestroyed()) {
+          mainLog.warn(`[browser-pane] display capture denied: no matching browser instance for origin=${request.securityOrigin}`)
+          callback({})
+          return
+        }
+
+        const targetFrame = instance.pageView.webContents.mainFrame
+        const streams: Streams = {}
+        if (request.videoRequested) streams.video = targetFrame
+        if (request.audioRequested) {
+          streams.audio = targetFrame
+          streams.enableLocalEcho = true
+        }
+        callback(streams)
       })
     }
   }
