@@ -9,6 +9,7 @@ interface ActiveRecording {
   id: string
   workspaceId: string
   browserInstanceId: string
+  meetingId?: string
   outputPath: string
   stream: WriteStream
   startedAt: number
@@ -18,17 +19,20 @@ interface ActiveRecording {
 export interface PrepareRecordingInput {
   workspaceId: string
   browserInstanceId: string
+  meetingId?: string
   urlOrCode?: string
 }
 
 export interface PrepareRecordingResult {
   recordingId: string
-  sourceId: string
+  meetingId?: string
   outputPath: string
 }
 
 export interface FinalizeRecordingResult {
   recordingId: string
+  meetingId?: string
+  workspaceId: string
   outputPath: string
   bytesWritten: number
   durationMs: number
@@ -44,7 +48,6 @@ export class RecordingService {
     if (!instance) {
       throw new Error(`browser instance not found: ${input.browserInstanceId}`)
     }
-    const sourceId = instance.window.getMediaSourceId()
     const workspaceRoot = getWorkspacePath(input.workspaceId)
     if (!workspaceRoot) {
       throw new Error(`workspace not found: ${input.workspaceId}`)
@@ -60,6 +63,7 @@ export class RecordingService {
       id,
       workspaceId: input.workspaceId,
       browserInstanceId: input.browserInstanceId,
+      meetingId: input.meetingId,
       outputPath,
       stream,
       startedAt: Date.now(),
@@ -67,7 +71,7 @@ export class RecordingService {
     })
 
     mainLog.info(`[recording] prepared id=${id} pane=${input.browserInstanceId} -> ${outputPath}`)
-    return { recordingId: id, sourceId, outputPath }
+    return { recordingId: id, meetingId: input.meetingId, outputPath }
   }
 
   append(recordingId: string, chunk: ArrayBuffer | Uint8Array): void {
@@ -93,6 +97,8 @@ export class RecordingService {
     mainLog.info(`[recording] finalized id=${recordingId} bytes=${recording.bytesWritten} duration=${durationMs}ms mime=${mimeType} -> ${recording.outputPath}`)
     return {
       recordingId,
+      meetingId: recording.meetingId,
+      workspaceId: recording.workspaceId,
       outputPath: recording.outputPath,
       bytesWritten: recording.bytesWritten,
       durationMs,

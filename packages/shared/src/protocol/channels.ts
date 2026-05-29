@@ -258,6 +258,9 @@ export const RPC_NAMESPACES = {
     TRANSCRIPT: 'meetings:transcript',
     GET_TRANSCRIPTION_CONFIG: 'meetings:getTranscriptionConfig',
     SAVE_TRANSCRIPTION_CONFIG: 'meetings:saveTranscriptionConfig',
+    ARCHIVE: 'meetings:archive',
+    UNARCHIVE: 'meetings:unarchive',
+    DELETE: 'meetings:delete',
   },
   dialog: {
     OPEN_FOLDER: 'dialog:openFolder',

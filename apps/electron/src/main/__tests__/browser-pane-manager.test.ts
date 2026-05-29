@@ -46,6 +46,7 @@ function createMockWebContents() {
     stop: mock(() => {}),
     setUserAgent: mock(() => {}),
     setBackgroundColor: mock(() => {}),
+    isDestroyed: mock(() => false),
     capturePage: mock(async () => {
       const img = {
         isEmpty: () => false,
@@ -139,6 +140,12 @@ mock.module('electron', () => ({
     isReady: () => false,
     whenReady: async () => {},
   },
+  webContents: {
+    fromFrame: mock(() => undefined),
+    fromId: mock(() => undefined),
+    getAllWebContents: mock(() => []),
+    getFocusedWebContents: mock(() => undefined),
+  },
   BrowserWindow: class MockBrowserWindow {
     webContents: any
     constructor(opts?: any) {
@@ -207,6 +214,7 @@ mock.module('../logger', () => {
 mock.module('../browser-cdp', () => ({
   BrowserCDP: class MockBrowserCDP {
     detach = mock(() => {})
+    setColorSchemeEmulation = mock(async () => {})
     getAccessibilitySnapshot = mock(async () => ({
       url: 'https://example.com',
       title: 'Example',

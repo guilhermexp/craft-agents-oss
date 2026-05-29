@@ -249,6 +249,9 @@ export const LOCAL_ONLY_NAMESPACES = new Set<string>([
   RPC_NAMESPACES.meetings.TRANSCRIPT,
   RPC_NAMESPACES.meetings.GET_TRANSCRIPTION_CONFIG,
   RPC_NAMESPACES.meetings.SAVE_TRANSCRIPTION_CONFIG,
+  RPC_NAMESPACES.meetings.ARCHIVE,
+  RPC_NAMESPACES.meetings.UNARCHIVE,
+  RPC_NAMESPACES.meetings.DELETE,
 ])
 
 // ---------------------------------------------------------------------------

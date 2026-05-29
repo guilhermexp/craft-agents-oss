@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertCircle, Bot, CalendarDays, Mic, Square } from 'lucide-react'
+import { AlertCircle, Archive, Bot, CalendarDays, Mic, Square, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -24,16 +24,16 @@ function formatMeetingDate(value: number): string {
   }).format(new Date(value))
 }
 
-function getStatusLabel(status: MeetingRecord['status']): string {
+function getStatusLabel(status: MeetingRecord['status'], t: (key: string) => string): string {
   switch (status) {
     case 'starting':
-      return 'Iniciando'
+      return t('meetings.statusStarting')
     case 'running':
-      return 'Gravando'
+      return t('meetings.statusRunning')
     case 'stopped':
-      return 'Finalizada'
+      return t('meetings.statusStopped')
     case 'error':
-      return 'Erro'
+      return t('meetings.statusError')
     default:
       return status
   }
@@ -45,8 +45,7 @@ function getCaptureLabel(record: MeetingRecord): string {
 
 function getTranscriptionLabel(record: MeetingRecord): string | null {
   if (!record.transcriptionProvider || !record.transcriptionModel) return null
-  const provider = record.transcriptionProvider === 'groq' ? 'Groq' : 'Deepgram'
-  return `${provider} ${record.transcriptionModel}`
+  return `Deepgram ${record.transcriptionModel}`
 }
 
 export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeeting }: MeetingsListPanelProps) {
@@ -54,6 +53,7 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
   const [records, setRecords] = React.useState<MeetingRecord[]>([])
   const [loading, setLoading] = React.useState(true)
   const [stoppingId, setStoppingId] = React.useState<string | null>(null)
+  const [actionId, setActionId] = React.useState<string | null>(null)
 
   const loadMeetings = React.useCallback(async () => {
     if (!workspaceId) {
@@ -104,6 +104,38 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
     }
   }
 
+  const handleArchive = async (record: MeetingRecord) => {
+    if (!workspaceId) return
+    if (!window.confirm(t('meetings.archiveConfirm'))) return
+    setActionId(`archive:${record.id}`)
+    try {
+      await window.electronAPI.meetings.archive(workspaceId, record.id)
+      window.dispatchEvent(new Event(MEETINGS_CHANGED_EVENT))
+      await loadMeetings()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('meetings.joinError')
+      toast.error(message)
+    } finally {
+      setActionId(null)
+    }
+  }
+
+  const handleDelete = async (record: MeetingRecord) => {
+    if (!workspaceId) return
+    if (!window.confirm(t('meetings.deleteConfirm'))) return
+    setActionId(`delete:${record.id}`)
+    try {
+      await window.electronAPI.meetings.deleteMeeting(workspaceId, record.id)
+      window.dispatchEvent(new Event(MEETINGS_CHANGED_EVENT))
+      await loadMeetings()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('meetings.joinError')
+      toast.error(message)
+    } finally {
+      setActionId(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex-1 px-4 py-6 text-center text-xs text-muted-foreground">
@@ -135,10 +167,16 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
           const CaptureIcon = record.captureMode === 'craft' ? Mic : Bot
           const transcriptionLabel = getTranscriptionLabel(record)
           return (
-            <button
+            <div
               key={record.id}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => onSelectMeeting(record)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                onSelectMeeting(record)
+              }}
               className={cn(
                 'group flex w-full min-w-0 flex-col gap-2 rounded-md px-2 py-2 text-left transition-colors',
                 selected ? 'bg-foreground/[0.065]' : 'hover:bg-foreground/[0.035]'
@@ -156,7 +194,7 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
                     {record.title || record.code || 'Google Meet'}
                   </span>
                   <span className="block truncate text-xs leading-5 text-muted-foreground">
-                    {formatMeetingDate(record.startedAt)} · {getCaptureLabel(record)} · {getStatusLabel(record.status)}
+                    {formatMeetingDate(record.startedAt)} · {getCaptureLabel(record)} · {getStatusLabel(record.status, t)}
                     {transcriptionLabel ? ` · ${transcriptionLabel}` : ''}
                   </span>
                 </span>
@@ -166,7 +204,7 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
                   {record.error}
                 </div>
               )}
-              {isLive && (
+              {isLive ? (
                 <div className="flex justify-end">
                   <Button
                     type="button"
@@ -183,8 +221,39 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
                     {t('meetings.stopRecording', 'Parar')}
                   </Button>
                 </div>
+              ) : (
+                <div className="flex justify-end gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 gap-1.5 px-2 text-xs opacity-90"
+                    disabled={actionId === `archive:${record.id}` || actionId === `delete:${record.id}`}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      void handleArchive(record)
+                    }}
+                  >
+                    <Archive className="size-3" />
+                    {t('meetings.archive')}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 gap-1.5 px-2 text-xs text-destructive opacity-90 hover:text-destructive"
+                    disabled={actionId === `archive:${record.id}` || actionId === `delete:${record.id}`}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      void handleDelete(record)
+                    }}
+                  >
+                    <Trash2 className="size-3" />
+                    {t('meetings.delete')}
+                  </Button>
+                </div>
               )}
-            </button>
+            </div>
           )
         })}
       </div>

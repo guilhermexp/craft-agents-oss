@@ -89,8 +89,8 @@ contextBridge.exposeInMainWorld('browserToolbar', {
   },
   /**
    * Audio recording lifecycle for the browser pane.
-   * Returns { recordingId, sourceId } so the toolbar renderer can call
-   * navigator.mediaDevices.getUserMedia with chromeMediaSourceId.
+   * The toolbar renderer records via getDisplayMedia; the main process display
+   * media handler grants the active Meet BrowserView frame.
    */
   prepareRecording: async (payload: { urlOrCode: string; workspaceId?: string }) => {
     const resolvedWorkspaceId = (payload.workspaceId || workspaceId).trim()
@@ -99,7 +99,7 @@ contextBridge.exposeInMainWorld('browserToolbar', {
       workspaceId: resolvedWorkspaceId,
       browserInstanceId: instanceId,
       urlOrCode: payload.urlOrCode,
-    }) as Promise<{ recordingId: string; sourceId: string; outputPath: string }>
+    }) as Promise<{ recordingId: string; meetingId?: string; outputPath: string }>
   },
   appendRecordingChunk: (recordingId: string, chunk: ArrayBuffer) =>
     ipcRenderer.invoke(CHANNELS.RECORDING_APPEND, recordingId, chunk),

@@ -95,6 +95,8 @@ export class BrowserCDP {
   private attached = false
   private detachListenerRegistered = false
   private idleDetachTimer: ReturnType<typeof setTimeout> | null = null
+  private persistAttach = false
+  private emulatedColorScheme: 'light' | 'dark' | null = null
   // Map from "@eN" refs to backend node IDs for the current snapshot.
   private refMap: Map<string, number> = new Map()
   // Map from "@eN" refs to semantic details captured during snapshot.
@@ -127,9 +129,18 @@ export class BrowserCDP {
         this.attached = false
       })
     }
+
+    if (this.emulatedColorScheme) {
+      try {
+        await this.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+          features: [{ name: 'prefers-color-scheme', value: this.emulatedColorScheme }],
+        })
+      } catch { /* best-effort */ }
+    }
   }
 
   private resetIdleDetachTimer(): void {
+    if (this.persistAttach) return
     if (this.idleDetachTimer) {
       clearTimeout(this.idleDetachTimer)
     }
@@ -152,6 +163,14 @@ export class BrowserCDP {
       } catch { /* ignore */ }
       this.attached = false
     }
+  }
+
+  async setColorSchemeEmulation(scheme: 'light' | 'dark'): Promise<void> {
+    this.persistAttach = true
+    this.emulatedColorScheme = scheme
+    await this.send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-color-scheme', value: scheme }],
+    })
   }
 
   private async send(method: string, params?: Record<string, unknown>): Promise<any> {

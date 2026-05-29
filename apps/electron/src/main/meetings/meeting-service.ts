@@ -3,7 +3,6 @@ import { dirname, join } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { randomUUID } from 'crypto'
-import { session } from 'electron'
 import type {
   MeetingRecord,
   MeetingTranscriptionConfig,
@@ -15,7 +14,6 @@ import type {
 } from '../../shared/types'
 import type { BrowserPaneManager } from '../browser-pane-manager'
 import { getHermesRuntimePaths } from '../handlers/hermes-runtime'
-import { getProfilePartition } from '../browser-profile-resolver'
 import { mainLog } from '../logger'
 import { getCredentialManager, type CredentialId } from '@craft-agent/shared/credentials'
 import { readJsonFileSync } from '@craft-agent/shared/utils/files'
@@ -29,7 +27,6 @@ const COMPACT_MEET_CODE_RE = /^[a-z]{10}$/i
 const DEFAULT_TRANSCRIPTION_PROVIDER: MeetingTranscriptionProvider = 'deepgram'
 const DEFAULT_TRANSCRIPTION_MODEL_BY_PROVIDER: Record<MeetingTranscriptionProvider, string> = {
   deepgram: 'nova-3',
-  groq: 'whisper-large-v3-turbo',
 }
 const DEFAULT_MEETING_TRANSCRIPTION_CONFIG: Omit<MeetingTranscriptionConfig, 'hasApiKey'> = {
   provider: DEFAULT_TRANSCRIPTION_PROVIDER,
@@ -77,6 +74,7 @@ interface HermesMeetPluginResult {
 
 export class MeetingService {
   private readonly workspaceStates = new Map<string, WorkspaceMeetingState>()
+  private readonly healthCheckTimers = new Map<string, ReturnType<typeof setInterval>>()
 
   constructor(private readonly browserPaneManager: BrowserPaneManager, private readonly storePathOverride?: string) {}
 
@@ -158,6 +156,7 @@ export class MeetingService {
       url: normalized.url,
       code: normalized.code,
       browserInstanceId,
+      ownsBrowserInstance: !existingBrowserInstance,
       title: payload?.title,
       startedAt: now,
       updatedAt: now,
@@ -165,6 +164,8 @@ export class MeetingService {
       error: undefined,
       transcriptionProvider,
       transcriptionModel,
+      summarizeOnEnd: payload.summarizeOnEnd,
+      followUpOnEnd: payload.followUpOnEnd,
       summaryMarkdown: createMeetingSummaryMarkdown({
         title: payload?.title,
         url: normalized.url,
@@ -223,6 +224,9 @@ export class MeetingService {
           startedAt: now,
         }),
       })
+      if (captureMode === 'hermes') {
+        this.startHealthCheck(state, id)
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       mainLog.error(`[meetings] start failed id=${id} url=${normalized.url}: ${message}`)
@@ -235,11 +239,13 @@ export class MeetingService {
     return this.getRequired(state, id)
   }
 
-  list(workspaceRootPath: string): MeetingRecord[] {
+  list(workspaceRootPath: string, options?: { includeArchived?: boolean }): MeetingRecord[] {
     const state = this.getWorkspaceState(workspaceRootPath)
     this.ensureLoaded(state)
     this.refreshLiveStatuses(state)
-    return [...state.records.values()].sort((a, b) => b.startedAt - a.startedAt)
+    const records = [...state.records.values()].sort((a, b) => b.startedAt - a.startedAt)
+    if (options?.includeArchived) return records
+    return records.filter((r) => !r.isArchived)
   }
 
   status(workspaceRootPath: string, id: string): MeetingRecord | null {
@@ -253,14 +259,17 @@ export class MeetingService {
     const state = this.getWorkspaceState(workspaceRootPath)
     this.ensureLoaded(state)
     const record = this.getRequired(state, id)
+    this.stopHealthCheck(id)
     if (record.status === 'stopped') {
       return record
     }
 
     try {
-      this.browserPaneManager.destroyInstance(record.browserInstanceId)
       if (record.captureMode !== 'craft') {
         void this.runHermesMeetPlugin('stop').catch(() => undefined)
+      }
+      if (record.ownsBrowserInstance) {
+        this.browserPaneManager.destroyInstance(record.browserInstanceId)
       }
       const endedAt = Date.now()
       this.updateRecord(state, id, {
@@ -285,7 +294,201 @@ export class MeetingService {
       })
     }
 
+    const finalRecord = this.getRequired(state, id)
+    if (finalRecord.status === 'stopped' && (finalRecord.summarizeOnEnd || finalRecord.followUpOnEnd)) {
+      mainLog.info(`[meetings] post-meeting processing deferred for ${id}: summarize=${finalRecord.summarizeOnEnd ?? false} followUp=${finalRecord.followUpOnEnd ?? false}. Awaiting transcript ready + LLM backend.`)
+    }
+
+    return finalRecord
+  }
+
+  archive(workspaceRootPath: string, id: string): MeetingRecord {
+    const state = this.getWorkspaceState(workspaceRootPath)
+    this.ensureLoaded(state)
+    this.getRequired(state, id)
+    this.updateRecord(state, id, { isArchived: true, archivedAt: Date.now() } as Partial<MeetingRecord>)
     return this.getRequired(state, id)
+  }
+
+  unarchive(workspaceRootPath: string, id: string): MeetingRecord {
+    const state = this.getWorkspaceState(workspaceRootPath)
+    this.ensureLoaded(state)
+    this.getRequired(state, id)
+    this.updateRecord(state, id, { isArchived: undefined, archivedAt: undefined } as Partial<MeetingRecord>)
+    return this.getRequired(state, id)
+  }
+
+  deleteMeeting(workspaceRootPath: string, id: string): void {
+    const state = this.getWorkspaceState(workspaceRootPath)
+    this.ensureLoaded(state)
+    const record = state.records.get(id)
+    if (!record) return
+    state.records.delete(id)
+    state.transcripts.delete(id)
+    this.persist(state)
+    // Remove transcript file
+    const transcriptPath = join(state.transcriptsDir, `${safeFileId(id)}.json`)
+    try { if (existsSync(transcriptPath)) unlinkSync(transcriptPath) } catch {}
+    // Remove summary file
+    const summaryPath = join(state.summariesDir, `${safeFileId(id)}.md`)
+    try { if (existsSync(summaryPath)) unlinkSync(summaryPath) } catch {}
+    // Remove recording file if stored
+    if (record.recording?.path) {
+      try { if (existsSync(record.recording.path)) unlinkSync(record.recording.path) } catch {}
+    }
+  }
+
+  async completeRecording(
+    workspaceId: string,
+    workspaceRootPath: string,
+    meetingId: string,
+    recording: { outputPath: string; bytesWritten: number; durationMs: number; mimeType?: string },
+  ): Promise<void> {
+    const state = this.getWorkspaceState(workspaceRootPath)
+    this.ensureLoaded(state)
+    const record = state.records.get(meetingId)
+    if (!record) return
+
+    const endedAt = Date.now()
+    const processingSummary = createMeetingSummaryMarkdown({
+      title: record.title,
+      url: record.url,
+      captureMode: record.captureMode ?? 'craft',
+      transcriptionProvider: record.transcriptionProvider,
+      transcriptionModel: record.transcriptionModel,
+      status: 'stopped',
+      startedAt: record.startedAt,
+      endedAt,
+      summaryBody: record.transcriptionProvider && record.transcriptionModel
+        ? 'Gravacao finalizada. O audio foi salvo e a transcricao esta em processamento.'
+        : 'Gravacao finalizada. O audio foi salvo, mas a transcricao automatica nao esta ativa para esta reuniao.',
+    })
+
+    this.updateRecord(state, meetingId, {
+      status: 'stopped',
+      endedAt,
+      recording: {
+        path: recording.outputPath,
+        mimeType: recording.mimeType,
+        bytesWritten: recording.bytesWritten,
+        durationMs: recording.durationMs,
+      },
+      summaryMarkdown: processingSummary,
+    } as Partial<MeetingRecord>)
+
+    if (record.transcriptionProvider && record.transcriptionModel) {
+      const transcript: MeetingTranscriptResult = {
+        meetingId,
+        status: 'capturing',
+        transcript: [],
+        summaryMarkdown: processingSummary,
+        message: 'Transcrevendo o audio gravado com Deepgram. O resultado aparecera aqui automaticamente.',
+        updatedAt: Date.now(),
+      }
+      state.transcripts.set(meetingId, transcript)
+      this.persistTranscript(state, transcript)
+      void this.transcribeRecording(workspaceId, workspaceRootPath, meetingId).catch((err) => {
+        mainLog.error(`[meetings] transcription failed for ${meetingId}: ${err instanceof Error ? err.message : String(err)}`)
+      })
+    }
+  }
+
+  async transcribeRecording(workspaceId: string, workspaceRootPath: string, meetingId: string): Promise<void> {
+    const state = this.getWorkspaceState(workspaceRootPath)
+    this.ensureLoaded(state)
+    const record = state.records.get(meetingId)
+    if (!record?.recording?.path || !record.transcriptionProvider || !record.transcriptionModel) return
+
+    const credentialId = getTranscriptionCredentialId(workspaceId, record.transcriptionProvider)
+    const credential = await getCredentialManager().get(credentialId)
+    if (!credential?.value) {
+      const summaryMarkdown = createMeetingSummaryMarkdown({
+        title: record.title,
+        url: record.url,
+        captureMode: record.captureMode ?? 'craft',
+        transcriptionProvider: record.transcriptionProvider,
+        transcriptionModel: record.transcriptionModel,
+        status: 'stopped',
+        startedAt: record.startedAt,
+        endedAt: record.endedAt,
+        summaryBody: 'Transcricao pausada: configure a chave da API de transcricao para processar o audio gravado.',
+      })
+      const unavailable: MeetingTranscriptResult = {
+        meetingId,
+        status: 'unavailable',
+        transcript: [],
+        message: 'Transcription API key not configured.',
+        summaryMarkdown,
+        updatedAt: Date.now(),
+      }
+      state.transcripts.set(meetingId, unavailable)
+      this.persistTranscript(state, unavailable)
+      this.updateRecord(state, meetingId, { summaryMarkdown })
+      return
+    }
+
+    try {
+      const { TranscriptionService } = await import('./transcription-service')
+      const service = new TranscriptionService()
+      const result = await service.transcribe({
+        filePath: record.recording.path,
+        model: record.transcriptionModel,
+        apiKey: credential.value,
+        mimeType: record.recording.mimeType,
+      })
+      const currentRecord = state.records.get(meetingId) ?? record
+      const message = result.segments.length > 0
+        ? `Transcricao concluida com ${result.segments.length} segmento${result.segments.length === 1 ? '' : 's'}. Abra a aba Transcricao para revisar o Markdown completo.`
+        : 'Transcricao concluida, mas nenhum trecho de fala foi detectado no audio gravado.'
+      const summaryMarkdown = createMeetingSummaryMarkdown({
+        title: currentRecord.title,
+        url: currentRecord.url,
+        captureMode: currentRecord.captureMode ?? 'craft',
+        transcriptionProvider: currentRecord.transcriptionProvider,
+        transcriptionModel: currentRecord.transcriptionModel,
+        status: 'stopped',
+        startedAt: currentRecord.startedAt,
+        endedAt: currentRecord.endedAt,
+        summaryBody: message,
+      })
+      const transcript: MeetingTranscriptResult = {
+        meetingId,
+        status: 'ready',
+        transcript: result.segments,
+        summaryMarkdown,
+        message,
+        updatedAt: Date.now(),
+      }
+      state.transcripts.set(meetingId, transcript)
+      this.persistTranscript(state, transcript)
+      this.updateRecord(state, meetingId, { summaryMarkdown })
+    } catch (error) {
+      const currentRecord = state.records.get(meetingId) ?? record
+      const message = error instanceof Error ? error.message : String(error)
+      const summaryMarkdown = createMeetingSummaryMarkdown({
+        title: currentRecord.title,
+        url: currentRecord.url,
+        captureMode: currentRecord.captureMode ?? 'craft',
+        transcriptionProvider: currentRecord.transcriptionProvider,
+        transcriptionModel: currentRecord.transcriptionModel,
+        status: 'stopped',
+        startedAt: currentRecord.startedAt,
+        endedAt: currentRecord.endedAt,
+        summaryBody: `Falha ao transcrever o audio gravado: ${message}`,
+      })
+      const unavailable: MeetingTranscriptResult = {
+        meetingId,
+        status: 'unavailable',
+        transcript: [],
+        summaryMarkdown,
+        message,
+        updatedAt: Date.now(),
+      }
+      state.transcripts.set(meetingId, unavailable)
+      this.persistTranscript(state, unavailable)
+      this.updateRecord(state, meetingId, { summaryMarkdown })
+      throw error
+    }
   }
 
   transcript(workspaceRootPath: string, id: string): MeetingTranscriptResult {
@@ -326,40 +529,52 @@ export class MeetingService {
     return lastStatus
   }
 
-  private async exportCraftGoogleSessionToHermesAuth(profileId?: string): Promise<void> {
-    const runtime = getHermesRuntimePaths()
-    if (!runtime) return
+  private startHealthCheck(state: WorkspaceMeetingState, meetingId: string): void {
+    if (this.healthCheckTimers.has(meetingId)) return
 
-    const partition = getProfilePartition(profileId)
-    const electronSession = session.fromPartition(partition)
-    const cookies = await electronSession.cookies.get({})
-    const googleCookies = cookies.filter((cookie) => isGoogleAuthCookieDomain(cookie.domain))
+    const timer = setInterval(async () => {
+      const record = state.records.get(meetingId)
+      if (!record || !['running', 'starting'].includes(record.status)) {
+        this.stopHealthCheck(meetingId)
+        return
+      }
+      if (record.captureMode !== 'hermes') {
+        this.stopHealthCheck(meetingId)
+        return
+      }
 
-    if (googleCookies.length === 0) {
-      return
-    }
+      try {
+        const status = await this.runHermesMeetPlugin('status', {}, { timeoutMs: 5_000 })
+        if (status.exited || status.error || status.leaveReason) {
+          mainLog.warn(`[meetings] health-check: bot exited for ${meetingId}: error=${status.error ?? 'none'} leaveReason=${status.leaveReason ?? 'none'}`)
+          this.updateRecord(state, meetingId, {
+            status: 'error',
+            error: status.error || status.leaveReason || 'Hermes bot exited unexpectedly',
+            endedAt: Date.now(),
+          })
+          this.stopHealthCheck(meetingId)
+        }
+      } catch (err) {
+        mainLog.warn(`[meetings] health-check failed for ${meetingId}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }, 30_000)
 
-    const authPath = join(runtime.hermesHome, 'workspace', 'meetings', 'auth.json')
-    mkdirSync(dirname(authPath), { recursive: true })
-
-    const storageState = {
-      cookies: googleCookies.map((cookie) => ({
-        name: cookie.name,
-        value: cookie.value,
-        domain: cookie.domain,
-        path: cookie.path || '/',
-        expires: typeof cookie.expirationDate === 'number' ? cookie.expirationDate : -1,
-        httpOnly: Boolean(cookie.httpOnly),
-        secure: Boolean(cookie.secure),
-        sameSite: toPlaywrightSameSite(cookie.sameSite),
-      })),
-      origins: [],
-    }
-
-    atomicWriteTextFileSync(authPath, JSON.stringify(storageState, null, 2), 0o600)
+    this.healthCheckTimers.set(meetingId, timer)
   }
 
-  private async runHermesMeetPlugin(command: 'start' | 'status' | 'transcript' | 'stop', payload: Record<string, unknown> = {}): Promise<HermesMeetPluginResult> {
+  private stopHealthCheck(meetingId: string): void {
+    const timer = this.healthCheckTimers.get(meetingId)
+    if (timer) {
+      clearInterval(timer)
+      this.healthCheckTimers.delete(meetingId)
+    }
+  }
+
+  private async runHermesMeetPlugin(
+    command: 'start' | 'status' | 'transcript' | 'stop',
+    payload: Record<string, unknown> = {},
+    options: { timeoutMs?: number } = {},
+  ): Promise<HermesMeetPluginResult> {
     const runtime = getHermesRuntimePaths()
     if (!runtime) {
       return { ok: false, error: 'Hermes runtime is not available. Rebuild/bundle Hermes before using meeting bots.' }
@@ -421,6 +636,7 @@ except Exception as exc:
         PATH: `${runtime.vendorBinDir}:${process.env.PATH ?? ''}`,
       },
       maxBuffer: 1024 * 1024,
+      timeout: options.timeoutMs,
     })
 
     try {
@@ -674,19 +890,6 @@ function normalizeMeetCode(value: string): string | null {
   return `${compact.slice(0, 3)}-${compact.slice(3, 7)}-${compact.slice(7)}`
 }
 
-function isGoogleAuthCookieDomain(domain: string | undefined): boolean {
-  const normalized = (domain ?? '').replace(/^\./, '').toLowerCase()
-  return normalized === 'google.com'
-    || normalized.endsWith('.google.com')
-    || normalized === 'meet.google.com'
-    || normalized === 'accounts.google.com'
-}
-
-function toPlaywrightSameSite(value: unknown): 'Strict' | 'Lax' | 'None' {
-  if (value === 'strict' || value === 'Strict') return 'Strict'
-  if (value === 'no_restriction' || value === 'none' || value === 'None') return 'None'
-  return 'Lax'
-}
 
 function createTranscriptPlaceholder(record: MeetingRecord): MeetingTranscriptResult {
   const captureMode = record.captureMode ?? 'hermes'
@@ -721,6 +924,7 @@ function createMeetingSummaryMarkdown(input: {
   status: MeetingStatus
   startedAt: number
   endedAt?: number
+  summaryBody?: string
 }): string {
   const title = input.title?.trim() || 'Google Meet'
   const owner = input.captureMode === 'craft' ? 'Craft interno' : 'Hermes'
@@ -740,7 +944,9 @@ function createMeetingSummaryMarkdown(input: {
     lines.push(`- Fim: ${new Date(input.endedAt).toLocaleString('pt-BR')}`)
   }
   lines.push('', '## Resumo', '')
-  if (input.captureMode === 'craft') {
+  if (input.summaryBody) {
+    lines.push(input.summaryBody)
+  } else if (input.captureMode === 'craft') {
     lines.push('Gravacao interna criada no Craft. A captura/transcricao nativa sera anexada aqui quando o recorder interno finalizar.')
   } else {
     lines.push('Reuniao registrada pelo fluxo Hermes. A transcricao capturada pelo bot sera usada aqui quando estiver disponivel.')
@@ -764,7 +970,7 @@ function formatMeetingStatus(status: MeetingStatus): string {
 }
 
 function isTranscriptionProvider(value: unknown): value is MeetingTranscriptionProvider {
-  return value === 'deepgram' || value === 'groq'
+  return value === 'deepgram'
 }
 
 function normalizeTranscriptionProvider(
@@ -787,7 +993,7 @@ function normalizeTranscriptionModel(value: unknown, provider: MeetingTranscript
 }
 
 function formatTranscriptionProvider(provider: MeetingTranscriptionProvider): string {
-  return provider === 'groq' ? 'Groq' : 'Deepgram'
+  return 'Deepgram'
 }
 
 function getTranscriptionCredentialId(workspaceId: string, provider: MeetingTranscriptionProvider): CredentialId {
@@ -855,5 +1061,11 @@ function sanitizeRecord(record: MeetingRecord): MeetingRecord | null {
     transcriptionModel: transcriptionProvider
       ? normalizeTranscriptionModel(record.transcriptionModel, transcriptionProvider)
       : undefined,
+    ownsBrowserInstance: record.ownsBrowserInstance === true ? true : undefined,
+    summarizeOnEnd: record.summarizeOnEnd === true ? true : undefined,
+    followUpOnEnd: record.followUpOnEnd === true ? true : undefined,
+    isArchived: record.isArchived === true ? true : undefined,
+    archivedAt: typeof record.archivedAt === 'number' ? record.archivedAt : undefined,
+    recording: record.recording && typeof record.recording.path === 'string' ? record.recording : undefined,
   }
 }

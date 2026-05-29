@@ -684,6 +684,9 @@ export interface ElectronAPI {
     transcript(workspaceId: string, id: string): Promise<MeetingTranscriptResult>
     getTranscriptionConfig(workspaceId: string): Promise<MeetingTranscriptionConfig>
     saveTranscriptionConfig(workspaceId: string, input: SaveMeetingTranscriptionConfigInput): Promise<MeetingTranscriptionConfig>
+    archive(workspaceId: string, id: string): Promise<MeetingRecord>
+    unarchive(workspaceId: string, id: string): Promise<MeetingRecord>
+    deleteMeeting(workspaceId: string, id: string): Promise<void>
   }
 
   // Browser pane management

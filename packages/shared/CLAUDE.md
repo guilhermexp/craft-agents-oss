@@ -7,7 +7,8 @@ Core business logic package for Craft Agent:
 - Permission modes and validation
 
 ## Key folders
-- `src/agent/` — `claude-agent.ts`, `pi-agent.ts`, `base-agent.ts`, tools, permissions
+- `src/agent/` — `claude-agent.ts`, `hermes-agent.ts`, `base-agent.ts`, tools, permissions. Backend adapters under `backend/{claude,pi,hermes}/`; Claude/Pi shared runtime under `native/`.
+- `src/channels/` — War Room channels (CRUD, dispatches, mentions, messages, storage)
 - `src/memory/` — persistent cross-session memory service (SQLite + FTS5, feature-flagged via `CRAFT_FEATURE_MEMORY`)
 - `src/sources/` — source storage/types/services
 - `src/sessions/` — session persistence/index
@@ -17,7 +18,10 @@ Core business logic package for Craft Agent:
 ## Commands
 From repo root:
 ```bash
-cd packages/shared && bun run tsc --noEmit
+cd packages/shared && bun run tsc --noEmit          # typecheck
+bun run test:shared:all                              # llm-connections + models-pi + config tests
+bun run test:shared:llm-connections                  # single focus
+bun run lint:tool-contracts                          # session-tool schema/contract drift
 ```
 
 ## Hard rules
@@ -56,40 +60,15 @@ All locale metadata lives in **`src/i18n/registry.ts`**. To add a new locale:
 
 ### Key naming convention
 
-Keys use **flat dot-notation** with a category prefix:
+Keys use **flat dot-notation** with a category prefix (`common.*`, `settings.*`, `chat.*`, `dialog.*`, `toast.*`, `errors.*`, etc.). See `en.json` for the full prefix catalog. Most common:
 
 | Prefix | Scope | Example |
 |--------|-------|---------|
-| `common.*` | Shared labels (Cancel, Save, Close, Edit, Loading...) | `common.cancel` |
-| `menu.*` | App menu items (File, Edit, View, Window) | `menu.toggleSidebar` |
-| `sidebar.*` | Left sidebar navigation items | `sidebar.allSessions` |
-| `sidebarMenu.*` | Sidebar context menu actions | `sidebarMenu.addSource` |
-| `sessionMenu.*` | Session context menu actions | `sessionMenu.archive` |
+| `common.*` | Shared labels (Cancel, Save, Close) | `common.cancel` |
 | `settings.*` | Settings pages — nested by page ID | `settings.ai.connections` |
 | `chat.*` | Chat input, session viewer, inline UI | `chat.attachFiles` |
-| `toast.*` | Toast/notification messages | `toast.failedToShare` |
-| `errors.*` | Error screens | `errors.sessionNotFound` |
-| `onboarding.*` | Onboarding flow — nested by step | `onboarding.welcome.title` |
 | `dialog.*` | Modal dialogs | `dialog.reset.title` |
-| `apiSetup.*` | API connection setup | `apiSetup.modelTier.best` |
-| `workspace.*` | Workspace creation/management | `workspace.createNew` |
-| `sourceInfo.*` | Source detail page | `sourceInfo.connection` |
-| `skillInfo.*` | Skill detail page | `skillInfo.metadata` |
-| `automations.*` | Automation list/detail/menus | `automations.runTest` |
-| `sourcesList.*` | Sources list panel | `sourcesList.noSourcesConfigured` |
-| `skillsList.*` | Skills list panel | `skillsList.addSkill` |
-| `editPopover.*` | EditPopover labels/placeholders | `editPopover.label.addSource` |
-| `status.*` | Session status names (by status ID) | `status.needs-review` |
-| `mode.*` | Permission mode names (by mode ID) | `mode.safe` |
-| `hints.*` | Empty state workflow suggestions | `hints.summarizeGmail` |
-| `table.*` | Data table column headers | `table.access` |
-| `time.*` | Relative time strings | `time.minutesAgo_other` |
-| `session.*` | Session list UI | `session.noSessionsYet` |
-| `shortcuts.*` | Keyboard shortcuts descriptions | `shortcuts.sendMessage` |
-| `sendToWorkspace.*` | Send to workspace dialog | `sendToWorkspace.title` |
-| `webui.*` | WebUI-specific strings | `webui.connectionFailed` |
-| `auth.*` | Auth banner/prompts | `auth.connectionRequired` |
-| `browser.*` | Browser empty state | `browser.readyTitle` |
+| `toast.*` | Toast/notification messages | `toast.failedToShare` |
 
 ### Rules
 

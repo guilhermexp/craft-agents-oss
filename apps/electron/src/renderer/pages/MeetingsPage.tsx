@@ -2,11 +2,13 @@ import * as React from 'react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
+  AlertCircle,
   ArrowRight,
   CheckCircle2,
   ClipboardList,
   ExternalLink,
   FileText,
+  HelpCircle,
   Loader2,
   MessageSquareText,
   Mic,
@@ -22,6 +24,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Markdown } from '@/components/markdown'
 import { MEETINGS_CHANGED_EVENT } from '@/components/app-shell/MeetingsListPanel'
 import { cn } from '@/lib/utils'
@@ -30,6 +33,8 @@ import type { BrowserInstanceInfo, MeetingRecord, MeetingStartInput, MeetingTran
 const GOOGLE_MEET_PREFIX = 'https://meet.google.com/'
 
 type MeetingTranscriptionProvider = NonNullable<MeetingStartInput['transcriptionProvider']>
+type MeetingDetailTab = 'summary' | 'transcript'
+type MeetingsSection = 'invite' | 'results'
 
 interface TranscriptionModelOption {
   id: string
@@ -41,14 +46,10 @@ const TRANSCRIPTION_MODELS: Record<MeetingTranscriptionProvider, TranscriptionMo
     { id: 'nova-3', label: 'Nova 3' },
     { id: 'nova-2', label: 'Nova 2' },
   ],
-  groq: [
-    { id: 'whisper-large-v3-turbo', label: 'Whisper Large v3 Turbo' },
-    { id: 'whisper-large-v3', label: 'Whisper Large v3' },
-  ],
 }
 
 function getTranscriptionProviderLabel(provider: MeetingTranscriptionProvider): string {
-  return provider === 'groq' ? 'Groq' : 'Deepgram'
+  return 'Deepgram'
 }
 
 function normalizeGoogleMeetInput(value: string): string | null {
@@ -159,6 +160,88 @@ function ProcessStep({ icon, title, description }: { icon: React.ReactNode; titl
   )
 }
 
+function ProcessingPipeline({
+  record,
+  transcript,
+  t,
+}: {
+  record: MeetingRecord | null
+  transcript: MeetingTranscriptResult | null
+  t: (key: string, options?: { defaultValue?: string }) => string
+}) {
+  if (!record) return null
+
+  const recordingDone = Boolean(record.recording?.path)
+  const transcriptionActive = transcript?.status === 'capturing'
+  const transcriptionDone = transcript?.status === 'ready'
+  const transcriptionUnavailable = transcript?.status === 'unavailable'
+  const waitingForRecording = record.status === 'running' || record.status === 'starting' || (!recordingDone && record.captureMode === 'craft')
+  const steps = [
+    {
+      key: 'recording',
+      title: t('meetings.pipelineRecording', { defaultValue: 'Gravação' }),
+      description: recordingDone
+        ? t('meetings.pipelineRecordingSaved', { defaultValue: 'Arquivo WebM salvo no workspace.' })
+        : waitingForRecording
+          ? t('meetings.pipelineRecordingActive', { defaultValue: 'Capturando a reunião no Craft.' })
+          : t('meetings.pipelineRecordingPending', { defaultValue: 'Aguardando o arquivo de gravação.' }),
+      state: recordingDone ? 'done' : waitingForRecording ? 'active' : 'pending',
+    },
+    {
+      key: 'transcription',
+      title: t('meetings.pipelineTranscription', { defaultValue: 'Transcrição' }),
+      description: transcriptionDone
+        ? t('meetings.pipelineTranscriptionDone', { defaultValue: 'Markdown da transcrição disponível.' })
+        : transcriptionActive
+          ? t('meetings.pipelineTranscriptionActive', { defaultValue: 'Enviando o áudio para transcrição.' })
+          : transcriptionUnavailable
+            ? transcript?.message || t('meetings.pipelineTranscriptionUnavailable', { defaultValue: 'Transcrição indisponível.' })
+            : t('meetings.pipelineTranscriptionPending', { defaultValue: 'Aguardando a gravação finalizar.' }),
+      state: transcriptionDone ? 'done' : transcriptionActive ? 'active' : transcriptionUnavailable ? 'error' : 'pending',
+    },
+    {
+      key: 'markdown',
+      title: t('meetings.pipelineMarkdown', { defaultValue: 'Markdown' }),
+      description: transcriptionDone
+        ? t('meetings.pipelineMarkdownDone', { defaultValue: 'Resumo e aba de transcrição foram atualizados.' })
+        : transcriptionUnavailable
+          ? t('meetings.pipelineMarkdownUnavailable', { defaultValue: 'Revise o erro antes de gerar entregáveis.' })
+          : t('meetings.pipelineMarkdownPending', { defaultValue: 'Será atualizado quando a transcrição terminar.' }),
+      state: transcriptionDone ? 'done' : transcriptionUnavailable ? 'error' : 'pending',
+    },
+  ] as const
+
+  return (
+    <div className="mb-3 grid gap-2 md:grid-cols-3">
+      {steps.map((step) => (
+        <div key={step.key} className="rounded-lg border border-border/60 bg-background/35 p-3">
+          <div className="flex items-center gap-2">
+            <span className={cn(
+              'flex size-6 shrink-0 items-center justify-center rounded-md border',
+              step.state === 'done' && 'border-success/25 bg-success/10 text-success',
+              step.state === 'active' && 'border-foreground/20 bg-foreground/[0.06] text-foreground',
+              step.state === 'error' && 'border-destructive/30 bg-destructive/10 text-destructive',
+              step.state === 'pending' && 'border-border/70 bg-background/45 text-muted-foreground'
+            )}>
+              {step.state === 'active' ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : step.state === 'done' ? (
+                <CheckCircle2 className="size-3.5" />
+              ) : step.state === 'error' ? (
+                <AlertCircle className="size-3.5" />
+              ) : (
+                <FileText className="size-3.5" />
+              )}
+            </span>
+            <span className="min-w-0 truncate text-xs font-medium text-foreground">{step.title}</span>
+          </div>
+          <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{step.description}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 interface MeetingsPageProps {
   workspaceId?: string | null
   selectedMeetingId?: string | null
@@ -173,8 +256,8 @@ function buildFallbackSummary(
   if (record?.summaryMarkdown) return record.summaryMarkdown
   if (!record) return emptyPlaceholder
 
-  const origin = record.captureMode === 'craft' ? 'Craft interno' : 'Hermes'
-  const status = record.status === 'running' ? 'em andamento' : record.status
+  const origin = record.captureMode === 'craft' ? 'Craft internal' : 'Hermes'
+  const status = record.status
   const lines = [
     `# ${record.title || 'Google Meet'}`,
     '',
@@ -189,9 +272,53 @@ function buildFallbackSummary(
     '',
     '## Resumo',
     '',
-    transcript?.message || 'Resumo ainda nao disponivel para esta gravacao.',
+    transcript?.message || 'Summary not yet available for this recording.',
   )
   return lines.join('\n')
+}
+
+function formatTranscriptTimestamp(value: number | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return '00:00'
+  const totalSeconds = Math.floor(value / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+function buildTranscriptMarkdown(
+  record: MeetingRecord | null,
+  transcript: MeetingTranscriptResult | null,
+  unavailableText: string,
+): string {
+  if (!record) return unavailableText
+
+  const lines = [
+    `# ${record.title || record.code || 'Google Meet'}`,
+    '',
+    `- Link: ${record.url}`,
+    `- Status: ${record.status}`,
+    `- Capture: ${record.captureMode === 'craft' ? 'Craft' : 'Hermes'}`,
+  ]
+
+  if (record.recording?.durationMs) {
+    lines.push(`- Duration: ${formatTranscriptTimestamp(record.recording.durationMs)}`)
+  }
+
+  lines.push('', '## Transcript', '')
+
+  if (!transcript || transcript.transcript.length === 0) {
+    lines.push(transcript?.message || unavailableText)
+    return lines.join('\n')
+  }
+
+  for (const segment of transcript.transcript) {
+    const speaker = segment.speaker?.trim() || 'Speaker'
+    const timestamp = formatTranscriptTimestamp(segment.startedAt ?? segment.timestamp)
+    lines.push(`**[${timestamp}] ${speaker}:** ${segment.text}`)
+    lines.push('')
+  }
+
+  return lines.join('\n').trimEnd()
 }
 
 export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPageProps) {
@@ -211,6 +338,9 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
   const [isCraftRecording, setIsCraftRecording] = useState(false)
   const [selectedRecord, setSelectedRecord] = useState<MeetingRecord | null>(null)
   const [selectedTranscript, setSelectedTranscript] = useState<MeetingTranscriptResult | null>(null)
+  const [selectedDetailTab, setSelectedDetailTab] = useState<MeetingDetailTab>('summary')
+  const [activeSection, setActiveSection] = useState<MeetingsSection>('invite')
+  const [howItWorksOpen, setHowItWorksOpen] = useState(false)
   const [detectedMeeting, setDetectedMeeting] = useState<{ url: string; instanceId: string; profileId?: string; title?: string } | null>(null)
   const promptedMeetUrlsRef = React.useRef<Set<string>>(new Set())
   const launchedMeetUrlsRef = React.useRef<Set<string>>(new Set())
@@ -219,7 +349,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
   const currentTranscriptionModels = TRANSCRIPTION_MODELS[transcriptionProvider]
 
   const handleTranscriptionProviderChange = (value: string) => {
-    const provider: MeetingTranscriptionProvider = value === 'groq' ? 'groq' : 'deepgram'
+    const provider: MeetingTranscriptionProvider = 'deepgram'
     setTranscriptionProvider(provider)
     setTranscriptionModel(TRANSCRIPTION_MODELS[provider][0]?.id ?? '')
     setHasTranscriptionApiKey(false)
@@ -244,7 +374,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
       })
       .catch((error) => {
         if (cancelled) return
-        const message = error instanceof Error ? error.message : 'Nao foi possivel carregar a configuracao de transcricao.'
+        const message = error instanceof Error ? error.message : t('meetings.configLoadError')
         toast.error(message)
       })
       .finally(() => {
@@ -258,7 +388,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
 
   const handleSaveTranscriptionSettings = async () => {
     if (!workspaceId) {
-      toast.error('Workspace ativo nao encontrado para salvar a configuracao.')
+      toast.error(t('meetings.noWorkspaceForConfig'))
       return
     }
 
@@ -274,9 +404,9 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
       setTranscriptionModel(config.model)
       setHasTranscriptionApiKey(config.hasApiKey)
       setTranscriptionApiKeyDraft('')
-      toast.success('Configuracao de transcricao salva.')
+      toast.success(t('meetings.configSaved'))
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Nao foi possivel salvar a configuracao de transcricao.'
+      const message = error instanceof Error ? error.message : t('meetings.configSaveError')
       toast.error(message)
     } finally {
       setIsSavingTranscriptionSettings(false)
@@ -308,6 +438,11 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
   }
 
   React.useEffect(() => {
+    setSelectedDetailTab('summary')
+    if (selectedMeetingId) setActiveSection('results')
+  }, [selectedMeetingId])
+
+  React.useEffect(() => {
     if (!workspaceId || !selectedMeetingId) {
       setSelectedRecord(null)
       setSelectedTranscript(null)
@@ -332,12 +467,13 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
     }
 
     void loadSelectedMeeting()
-    const timer = window.setInterval(() => {
-      void loadSelectedMeeting()
-    }, 5_000)
+    const handleChanged = () => { void loadSelectedMeeting() }
+    window.addEventListener(MEETINGS_CHANGED_EVENT, handleChanged)
+    const fallback = window.setInterval(() => { void loadSelectedMeeting() }, 1_500)
     return () => {
       cancelled = true
-      window.clearInterval(timer)
+      window.removeEventListener(MEETINGS_CHANGED_EVENT, handleChanged)
+      window.clearInterval(fallback)
     }
   }, [selectedMeetingId, t, workspaceId])
 
@@ -365,7 +501,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
         throw new Error(t('meetings.agentApiUnavailable'))
       }
       if (!workspaceId) {
-        throw new Error('Workspace ativo nao encontrado para salvar a gravacao.')
+        throw new Error(t('meetings.noWorkspaceForRecording'))
       }
 
       const result: MeetingRecord = await meetingsApi.start(workspaceId, request)
@@ -373,7 +509,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
       launchedMeetUrlsRef.current.add(meetingUrl)
       setDetectedMeeting((current) => current?.url === meetingUrl ? null : current)
       window.dispatchEvent(new Event(MEETINGS_CHANGED_EVENT))
-      toast.success(request.captureMode === 'craft' ? 'Gravacao interna iniciada no Craft.' : t('meetings.agentInvited'))
+      toast.success(request.captureMode === 'craft' ? t('meetings.craftRecordStarted') : t('meetings.agentInvited'))
     } catch (error) {
       const message = error instanceof Error ? error.message : t('meetings.joinError')
       toast.error(message)
@@ -465,15 +601,55 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
     selectedTranscript,
     t('meetings.selectRecordingMarkdown', { defaultValue: 'Select a recording in the panel to view the Markdown summary.' }),
   )
+  const selectedTranscriptMarkdown = buildTranscriptMarkdown(
+    selectedRecord,
+    selectedTranscript,
+    t('meetings.transcriptUnavailable'),
+  )
+  const selectedDetailMarkdown = selectedDetailTab === 'summary'
+    ? selectedSummaryMarkdown
+    : selectedTranscriptMarkdown
 
   return (
     <div className="h-full overflow-auto overflow-x-hidden bg-background px-4 py-5 sm:px-5">
       <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-5">
         <header className="grid min-w-0 gap-4 border-b border-border/50 pb-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] xl:items-end">
           <div className="min-w-0 space-y-3">
-            <div className="inline-flex items-center gap-2 rounded-md border border-border/70 bg-foreground/[0.025] px-2 py-1 text-xs text-muted-foreground">
-              <Video className="size-3.5" />
-              <span>{t('meetings.eyebrow')}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-2 rounded-md border border-border/70 bg-foreground/[0.025] px-2 py-1 text-xs text-muted-foreground">
+                <Video className="size-3.5" />
+                <span>{t('meetings.eyebrow')}</span>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1.5 px-2 text-xs"
+                onClick={() => setHowItWorksOpen(true)}
+              >
+                <HelpCircle className="size-3.5" />
+                {t('meetings.flowTitle')}
+              </Button>
+              <Button
+                type="button"
+                variant={activeSection === 'invite' ? 'secondary' : 'outline'}
+                size="sm"
+                className="h-7 gap-1.5 px-2 text-xs"
+                onClick={() => setActiveSection('invite')}
+              >
+                <Sparkles className="size-3.5" />
+                {t('meetings.inviteSection')}
+              </Button>
+              <Button
+                type="button"
+                variant={activeSection === 'results' ? 'secondary' : 'outline'}
+                size="sm"
+                className="h-7 gap-1.5 px-2 text-xs"
+                onClick={() => setActiveSection('results')}
+              >
+                <MessageSquareText className="size-3.5" />
+                {t('meetings.resultsSection')}
+              </Button>
             </div>
             <div className="space-y-1">
               <h1 className="text-[26px] font-semibold tracking-tight text-foreground">{t('meetings.title')}</h1>
@@ -504,209 +680,240 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
           </div>
         </header>
 
-        <form onSubmit={handleJoin} className="min-w-0 rounded-lg border border-border/70 bg-card/35 shadow-minimal">
-          <div className="grid min-w-0 gap-0 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
-            <section className="min-w-0 border-b border-border/60 p-4 sm:p-5 xl:border-b-0 xl:border-r">
-              <div className="space-y-5">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <label htmlFor="meeting-link" className="text-sm font-medium text-foreground">
-                      {t('meetings.inputLabel')}
-                    </label>
-                    <span className="hidden text-xs text-muted-foreground sm:inline">{t('meetings.inputHint')}</span>
-                  </div>
-                  <div className="grid min-w-0 gap-2 xl:grid-cols-[minmax(0,1fr)_auto_auto]">
-                    <Input
-                      id="meeting-link"
-                      value={meetingInput}
-                      onChange={(event) => setMeetingInput(event.target.value)}
-                      placeholder={t('meetings.inputPlaceholder')}
-                      autoFocus
-                      className="h-11 flex-1 border-border/70 bg-background/70 text-sm shadow-none focus-visible:ring-foreground/15"
-                    />
-                    <Button type="submit" disabled={!canJoin} className="h-11 w-full shrink-0 gap-2 px-4 xl:w-auto">
-                      {isJoining ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-                      {t('meetings.join')}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={!workspaceId || !normalizedUrl || isJoining || isCraftRecording}
-                      className="h-11 w-full shrink-0 gap-2 px-4 xl:w-auto"
-                      onClick={handleCraftRecord}
-                    >
-                      {isCraftRecording ? <Loader2 className="size-4 animate-spin" /> : <Mic className="size-4" />}
-                      Gravar no Craft
-                    </Button>
-                  </div>
-                  <p className="truncate text-xs text-muted-foreground/85">
-                    {normalizedUrl ? normalizedUrl : t('meetings.authDescription')}
-                  </p>
-                </div>
-
-                {detectedMeeting && (
-                  <div className="rounded-lg border border-foreground/15 bg-foreground/[0.04] p-3">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0 space-y-1">
-                        <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                          <Sparkles className="size-4" />
-                          <span>{t('meetings.detectedTitle')}</span>
-                        </div>
-                        <p className="truncate text-xs text-muted-foreground">{detectedMeeting.url}</p>
-                      </div>
-                      <div className="flex shrink-0 gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-8 px-2.5 text-xs"
-                          onClick={handleDismissDetectedMeeting}
-                          disabled={isJoining}
-                        >
-                          {t('meetings.detectedDismiss')}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-8 gap-1.5 px-2.5 text-xs"
-                          onClick={handleApproveDetectedMeeting}
-                          disabled={isJoining}
-                        >
-                          {isJoining ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}
-                          {t('meetings.detectedApprove')}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
+        <Dialog open={howItWorksOpen} onOpenChange={setHowItWorksOpen}>
+          <DialogContent className="sm:max-w-[760px]">
+            <DialogHeader>
+              <DialogTitle>{t('meetings.flowTitle')}</DialogTitle>
+              <DialogDescription>{t('meetings.flowDescription')}</DialogDescription>
+            </DialogHeader>
+            <div className="grid min-w-0 gap-4 md:grid-cols-3">
+              <ProcessStep
+                icon={<Video className="size-3.5" />}
+                title={t('meetings.flowOpenTitle')}
+                description={t('meetings.flowOpenDescription')}
+              />
+              <ProcessStep
+                icon={<MessageSquareText className="size-3.5" />}
+                title={t('meetings.flowCaptureTitle')}
+                description={t('meetings.flowCaptureDescription')}
+              />
+              <ProcessStep
+                icon={<FileText className="size-3.5" />}
+                title={t('meetings.flowNotesTitle')}
+                description={t('meetings.flowNotesDescription')}
+              />
+            </div>
+            <div className="rounded-lg border border-border/55 bg-background/35 p-3">
+              <div className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
+                <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-foreground/70" />
+                <span>{t('meetings.privacyNote')}</span>
               </div>
-            </section>
+            </div>
+          </DialogContent>
+        </Dialog>
 
-            <section className="min-w-0 p-4 sm:p-5">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-sm font-medium text-foreground">{t('meetings.optionsTitle')}</h2>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">{t('meetings.optionsHint')}</span>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="size-7 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
-                          aria-label="Configurar transcricao"
-                        >
-                          <Settings className="size-3.5" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent align="end" className="w-[320px] p-3">
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <div className="text-sm font-medium text-foreground">Transcricao</div>
-                              <div className="text-xs text-muted-foreground">
-                                {hasTranscriptionApiKey ? 'API key salva' : 'API key nao configurada'}
-                              </div>
-                            </div>
-                            {isLoadingTranscriptionSettings && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+        {activeSection === 'invite' ? (
+          <form onSubmit={handleJoin} className="min-w-0 rounded-lg border border-border/70 bg-card/35 shadow-minimal">
+            <div className="grid min-w-0 gap-0 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
+              <section className="min-w-0 border-b border-border/60 p-4 sm:p-5 xl:border-b-0 xl:border-r">
+                <div className="space-y-5">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <label htmlFor="meeting-link" className="text-sm font-medium text-foreground">
+                        {t('meetings.inputLabel')}
+                      </label>
+                      <span className="hidden text-xs text-muted-foreground sm:inline">{t('meetings.inputHint')}</span>
+                    </div>
+                    <div className="grid min-w-0 gap-2 xl:grid-cols-[minmax(0,1fr)_auto_auto]">
+                      <Input
+                        id="meeting-link"
+                        value={meetingInput}
+                        onChange={(event) => setMeetingInput(event.target.value)}
+                        placeholder={t('meetings.inputPlaceholder')}
+                        autoFocus
+                        className="h-11 flex-1 border-border/70 bg-background/70 text-sm shadow-none focus-visible:ring-foreground/15"
+                      />
+                      <Button type="submit" disabled={!canJoin} className="h-11 w-full shrink-0 gap-2 px-4 xl:w-auto">
+                        {isJoining ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
+                        {t('meetings.join')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={!workspaceId || !normalizedUrl || isJoining || isCraftRecording}
+                        className="h-11 w-full shrink-0 gap-2 px-4 xl:w-auto"
+                        onClick={handleCraftRecord}
+                      >
+                        {isCraftRecording ? <Loader2 className="size-4 animate-spin" /> : <Mic className="size-4" />}
+                        {t('meetings.craftRecordButton')}
+                      </Button>
+                    </div>
+                    <p className="truncate text-xs text-muted-foreground/85">
+                      {normalizedUrl ? normalizedUrl : t('meetings.authDescription')}
+                    </p>
+                  </div>
+
+                  {detectedMeeting && (
+                    <div className="rounded-lg border border-foreground/15 bg-foreground/[0.04] p-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                            <Sparkles className="size-4" />
+                            <span>{t('meetings.detectedTitle')}</span>
                           </div>
-                          <label className="block space-y-1.5">
-                            <span className="text-xs font-medium text-foreground">Motor</span>
-                            <Select
-                              value={transcriptionProvider}
-                              onValueChange={handleTranscriptionProviderChange}
-                              disabled={isLoadingTranscriptionSettings || isSavingTranscriptionSettings}
-                            >
-                              <SelectTrigger className="h-9 bg-background/65 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="deepgram">Deepgram</SelectItem>
-                                <SelectItem value="groq">Groq</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </label>
-                          <label className="block space-y-1.5">
-                            <span className="text-xs font-medium text-foreground">Modelo</span>
-                            <Select
-                              value={transcriptionModel}
-                              onValueChange={setTranscriptionModel}
-                              disabled={isLoadingTranscriptionSettings || isSavingTranscriptionSettings}
-                            >
-                              <SelectTrigger className="h-9 bg-background/65 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {currentTranscriptionModels.map((model) => (
-                                  <SelectItem key={model.id} value={model.id}>{model.label}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </label>
-                          <label className="block space-y-1.5">
-                            <span className="text-xs font-medium text-foreground">API key</span>
-                            <Input
-                              type="password"
-                              value={transcriptionApiKeyDraft}
-                              onChange={(event) => setTranscriptionApiKeyDraft(event.target.value)}
-                              placeholder={hasTranscriptionApiKey ? 'Chave ja salva' : 'Cole a chave do motor'}
-                              disabled={isLoadingTranscriptionSettings || isSavingTranscriptionSettings}
-                              className="h-9 bg-background/65 text-xs"
-                            />
-                          </label>
+                          <p className="truncate text-xs text-muted-foreground">{detectedMeeting.url}</p>
+                        </div>
+                        <div className="flex shrink-0 gap-2">
                           <Button
                             type="button"
                             size="sm"
-                            className="h-8 w-full gap-1.5 text-xs"
-                            disabled={isLoadingTranscriptionSettings || isSavingTranscriptionSettings}
-                            onClick={handleSaveTranscriptionSettings}
+                            variant="outline"
+                            className="h-8 px-2.5 text-xs"
+                            onClick={handleDismissDetectedMeeting}
+                            disabled={isJoining}
                           >
-                            {isSavingTranscriptionSettings ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
-                            Salvar
+                            {t('meetings.detectedDismiss')}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8 gap-1.5 px-2.5 text-xs"
+                            onClick={handleApproveDetectedMeeting}
+                            disabled={isJoining}
+                          >
+                            {isJoining ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}
+                            {t('meetings.detectedApprove')}
                           </Button>
                         </div>
-                      </PopoverContent>
-                    </Popover>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section className="min-w-0 p-4 sm:p-5">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-sm font-medium text-foreground">{t('meetings.optionsTitle')}</h2>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">{t('meetings.optionsHint')}</span>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-7 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+                            aria-label={t('meetings.configAriaLabel')}
+                          >
+                            <Settings className="size-3.5" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="end" className="w-[320px] p-3">
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="text-sm font-medium text-foreground">{t('meetings.configTitle')}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {hasTranscriptionApiKey ? t('meetings.configApiKeySaved') : t('meetings.configApiKeyNotSet')}
+                                </div>
+                              </div>
+                              {isLoadingTranscriptionSettings && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+                            </div>
+                            <label className="block space-y-1.5">
+                              <span className="text-xs font-medium text-foreground">{t('meetings.configModel')}</span>
+                              <Select
+                                value={transcriptionProvider}
+                                onValueChange={handleTranscriptionProviderChange}
+                                disabled={isLoadingTranscriptionSettings || isSavingTranscriptionSettings}
+                              >
+                                <SelectTrigger className="h-9 bg-background/65 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="deepgram">Deepgram</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </label>
+                            <label className="block space-y-1.5">
+                              <span className="text-xs font-medium text-foreground">{t('meetings.configModel')}</span>
+                              <Select
+                                value={transcriptionModel}
+                                onValueChange={setTranscriptionModel}
+                                disabled={isLoadingTranscriptionSettings || isSavingTranscriptionSettings}
+                              >
+                                <SelectTrigger className="h-9 bg-background/65 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {currentTranscriptionModels.map((model) => (
+                                    <SelectItem key={model.id} value={model.id}>{model.label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </label>
+                            <label className="block space-y-1.5">
+                              <span className="text-xs font-medium text-foreground">{t('meetings.configApiKeyLabel')}</span>
+                              <Input
+                                type="password"
+                                value={transcriptionApiKeyDraft}
+                                onChange={(event) => setTranscriptionApiKeyDraft(event.target.value)}
+                                placeholder={hasTranscriptionApiKey ? t('meetings.configApiKeyPlaceholderExists') : t('meetings.configApiKeyPlaceholderNew')}
+                                disabled={isLoadingTranscriptionSettings || isSavingTranscriptionSettings}
+                                className="h-9 bg-background/65 text-xs"
+                              />
+                            </label>
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-8 w-full gap-1.5 text-xs"
+                              disabled={isLoadingTranscriptionSettings || isSavingTranscriptionSettings}
+                              onClick={handleSaveTranscriptionSettings}
+                            >
+                              {isSavingTranscriptionSettings ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+                              {t('meetings.configSave')}
+                            </Button>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
+                  <div className="grid gap-2">
+                    <MeetingOption
+                      checked={transcriptionEnabled}
+                      onChange={setTranscriptionEnabled}
+                      icon={<MessageSquareText className="size-4" />}
+                      title={t('meetings.transcription')}
+                      description={t('meetings.transcriptionDescription')}
+                    />
+                    <MeetingOption
+                      checked={summaryEnabled}
+                      onChange={setSummaryEnabled}
+                      icon={<Sparkles className="size-4" />}
+                      title={t('meetings.summary')}
+                      description={t('meetings.summaryDescription')}
+                    />
+                    <MeetingOption
+                      checked={followUpEnabled}
+                      onChange={setFollowUpEnabled}
+                      icon={<ClipboardList className="size-4" />}
+                      title={t('meetings.followUp')}
+                      description={t('meetings.followUpDescription')}
+                    />
                   </div>
                 </div>
-                <div className="grid gap-2">
-                  <MeetingOption
-                    checked={transcriptionEnabled}
-                    onChange={setTranscriptionEnabled}
-                    icon={<MessageSquareText className="size-4" />}
-                    title={t('meetings.transcription')}
-                    description={t('meetings.transcriptionDescription')}
-                  />
-                  <MeetingOption
-                    checked={summaryEnabled}
-                    onChange={setSummaryEnabled}
-                    icon={<Sparkles className="size-4" />}
-                    title={t('meetings.summary')}
-                    description={t('meetings.summaryDescription')}
-                  />
-                  <MeetingOption
-                    checked={followUpEnabled}
-                    onChange={setFollowUpEnabled}
-                    icon={<ClipboardList className="size-4" />}
-                    title={t('meetings.followUp')}
-                    description={t('meetings.followUpDescription')}
-                  />
-                </div>
-              </div>
-            </section>
-          </div>
-        </form>
-
-        {selectedMeetingId && (
+              </section>
+            </div>
+          </form>
+        ) : selectedMeetingId ? (
           <section className="rounded-lg border border-border/70 bg-card/25 p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-medium text-foreground">
-                  {selectedRecord?.title || selectedRecord?.code || 'Resumo da reunião'}
+                  {selectedRecord?.title || selectedRecord?.code || t('meetings.selectedMeetingTitle')}
                 </h2>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {selectedRecord?.captureMode === 'craft' ? 'Gravacao interna do Craft' : 'Registro Hermes'}
+                  {selectedRecord?.captureMode === 'craft' ? t('meetings.captureModeCraft') : t('meetings.captureModeHermes')}
                   {selectedRecord?.transcriptionProvider && selectedRecord.transcriptionModel
                     ? ` · ${getTranscriptionProviderLabel(selectedRecord.transcriptionProvider)} ${selectedRecord.transcriptionModel}`
                     : ''}
@@ -718,43 +925,47 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
                 </span>
               )}
             </div>
-            <div className="max-h-[360px] overflow-y-auto rounded-lg border border-border/55 bg-background/35 p-3">
+            <ProcessingPipeline record={selectedRecord} transcript={selectedTranscript} t={t} />
+            <div className="mb-3 flex flex-wrap gap-2">
+              {([
+                ['summary', t('meetings.summary')],
+                ['transcript', t('meetings.transcription')],
+              ] as const).map(([tab, label]) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setSelectedDetailTab(tab)}
+                  className={cn(
+                    'h-8 rounded-full border px-3 text-xs font-medium transition-colors',
+                    selectedDetailTab === tab
+                      ? 'border-foreground bg-foreground text-background shadow-sm'
+                      : 'border-border/70 bg-background/55 text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="max-h-[520px] overflow-y-auto rounded-lg border border-border/55 bg-background/35 p-4">
               <Markdown mode="minimal" className="text-sm leading-6 text-foreground">
-                {selectedSummaryMarkdown}
+                {selectedDetailMarkdown}
               </Markdown>
             </div>
           </section>
-        )}
-
-        <section className="grid min-w-0 gap-4 rounded-lg border border-border/55 bg-card/20 p-4 2xl:grid-cols-[220px_minmax(0,1fr)_280px] 2xl:items-start">
-          <div>
-            <h2 className="text-sm font-medium text-foreground">{t('meetings.flowTitle')}</h2>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('meetings.flowDescription')}</p>
-          </div>
-          <div className="grid min-w-0 gap-4 xl:grid-cols-3">
-            <ProcessStep
-              icon={<Video className="size-3.5" />}
-              title={t('meetings.flowOpenTitle')}
-              description={t('meetings.flowOpenDescription')}
-            />
-            <ProcessStep
-              icon={<MessageSquareText className="size-3.5" />}
-              title={t('meetings.flowCaptureTitle')}
-              description={t('meetings.flowCaptureDescription')}
-            />
-            <ProcessStep
-              icon={<FileText className="size-3.5" />}
-              title={t('meetings.flowNotesTitle')}
-              description={t('meetings.flowNotesDescription')}
-            />
-          </div>
-          <div className="rounded-lg border border-border/55 bg-background/35 p-3">
-            <div className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
-              <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-foreground/70" />
-              <span>{t('meetings.privacyNote')}</span>
+        ) : (
+          <section className="rounded-lg border border-border/70 bg-card/25 p-6">
+            <div className="mx-auto flex max-w-md flex-col items-center gap-3 py-10 text-center">
+              <MessageSquareText className="size-8 text-muted-foreground" />
+              <div className="space-y-1">
+                <h2 className="text-sm font-medium text-foreground">{t('meetings.resultsEmptyTitle')}</h2>
+                <p className="text-sm leading-6 text-muted-foreground">{t('meetings.resultsEmptyDescription')}</p>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={() => setActiveSection('invite')}>
+                {t('meetings.inviteSection')}
+              </Button>
             </div>
-          </div>
-        </section>
+          </section>
+        )}
 
         {detectedMeeting && (
           <p className="sr-only">

@@ -38,6 +38,7 @@ bun run typecheck:all             # core, shared, server-core, server, session-t
 bun run typecheck:shared          # fast inner-loop typecheck
 bun run lint                      # ipc-sends + electron + shared + ui (eslint)
 bun run lint:i18n:parity          # checks i18n key parity across locales
+bun run lint:tool-contracts       # session-tool schema/contract drift
 bun run validate:dev              # typecheck:all + test:shared:all + test:doc-tools
 bun run validate:ci               # validate:dev + lint:i18n:parity
 ```
@@ -74,8 +75,8 @@ Three-tier monorepo: thin clients (Electron / CLI / WebUI / Viewer) → server (
 ### Packages
 
 - `packages/core` — pure shared types. No runtime deps. Imported everywhere.
-- `packages/shared` — agents, sessions, sources, credentials, config, prompts. The bulk of the product logic. Consumed by both server and electron renderer.
-- `packages/server-core` — RPC handler implementations (the `handlers/rpc/*.ts` modules). Pure logic, transport-agnostic.
+- `packages/shared` — agents, sessions, sources, credentials, config, prompts, channels. The bulk of the product logic. Consumed by both server and electron renderer. Agent code splits into `src/agent/backend/{claude,pi,hermes}/` (backend adapters) and `src/agent/native/` (Claude/Pi shared runtime).
+- `packages/server-core` — RPC handler implementations (the `handlers/rpc/*.ts` modules) and channel orchestrator (`src/channels/`). Pure logic, transport-agnostic.
 - `packages/server` — WebSocket transport, auth, process bootstrap. Hosts `server-core`.
 - `packages/session-mcp-server` and `packages/session-tools-core` — the in-process MCP server and tool implementations exposed to agents (browser, delegation, LLM, automation, metadata, auth/config). Built as a subprocess via `server:build:subprocess`.
 - `packages/pi-agent-server` — Pi SDK agent backend (Google AI Studio, ChatGPT Plus Codex, GitHub Copilot, OpenAI). Built as a subprocess.

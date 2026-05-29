@@ -35,7 +35,7 @@ export type CredentialType =
   // Messaging gateway credentials (keyed by workspaceId + platform)
   | 'messaging_bearer'   // Platform tokens (e.g., Telegram bot token)
   // Workspace meeting credentials (keyed by workspaceId + transcription provider)
-  | 'meeting_transcription_api_key'; // Deepgram/Groq transcription API key
+  | 'meeting_transcription_api_key'; // Meeting transcription API key
 
 /** Valid credential types for validation */
 const VALID_CREDENTIAL_TYPES: readonly CredentialType[] = [

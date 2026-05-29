@@ -367,6 +367,44 @@ function inferAudioMimeType(filePath: string): string {
   }
 }
 
+function PlainTextBlock({ code, onUrlClick, onFileClick }: {
+  code: string
+  onUrlClick?: (url: string) => void
+  onFileClick?: (path: string) => void
+}) {
+  const processed = React.useMemo(() => preprocessLinks(code), [code])
+  const components = React.useMemo<Partial<Components>>(() => ({
+    p: ({ children }) => <p className="my-2 leading-relaxed">{children}</p>,
+    a: ({ href, children }) => {
+      const fallbackText = React.Children.toArray(children)
+        .map((child) => (typeof child === 'string' ? child : ''))
+        .join('')
+        .trim()
+      const target = (href?.trim() || fallbackText)
+      const resolvedTarget = target ? resolveMarkdownLinkTarget(target) : null
+
+      const handleClick = (e: React.MouseEvent) => {
+        e.preventDefault()
+        if (!target) return
+        if (resolvedTarget?.kind === 'file' && onFileClick) {
+          onFileClick(resolvedTarget.path)
+        } else if (resolvedTarget?.kind === 'url' && onUrlClick) {
+          onUrlClick(resolvedTarget.url)
+        }
+      }
+
+      return (
+        <a href={href} onClick={handleClick} className="text-accent hover:underline cursor-pointer">
+          {children}
+        </a>
+      )
+    },
+    code: ({ children }) => <code className="bg-muted px-1 py-0.5 rounded text-sm">{children}</code>,
+  }), [onUrlClick, onFileClick])
+
+  return <ReactMarkdown components={components} remarkPlugins={[remarkGfm]}>{processed}</ReactMarkdown>
+}
+
 function createComponents(
   mode: RenderMode,
   onUrlClick?: (url: string) => void,
@@ -580,6 +618,10 @@ function createComponents(
               props.node?.position,
             )
           }
+          const lang = match?.[1]?.toLowerCase()
+          if (lang === 'txt' || lang === 'text' || lang === 'plaintext') {
+            return <PlainTextBlock code={code} onUrlClick={onUrlClick} onFileClick={onFileClick} />
+          }
           return wrapBlock(
             'code',
             code,
@@ -727,6 +769,10 @@ function createComponents(
             <MarkdownMermaidBlock code={code} className="my-2" showExpandButton={!isFirstBlock} />,
             props.node?.position,
           )
+        }
+        const lang = match?.[1]?.toLowerCase()
+        if (lang === 'txt' || lang === 'text' || lang === 'plaintext') {
+          return <div className="my-2 whitespace-pre-line">{code}</div>
         }
         return wrapBlock(
           'code',

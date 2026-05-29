@@ -31,7 +31,7 @@ export { generateMessageId } from '@craft-agent/core/types'
 // ---------------------------------------------------------------------------
 
 export type MeetingStatus = 'starting' | 'running' | 'stopped' | 'error'
-export type MeetingTranscriptionProvider = 'deepgram' | 'groq'
+export type MeetingTranscriptionProvider = 'deepgram'
 
 export interface MeetingTranscriptionConfig {
   provider: MeetingTranscriptionProvider
@@ -61,12 +61,19 @@ export interface MeetingStartInput {
   transcribe?: boolean
   /** Automatic transcription backend for Craft-native recording. */
   transcriptionProvider?: MeetingTranscriptionProvider
-  /** Provider model identifier, e.g. "nova-3" or "whisper-large-v3-turbo". */
+  /** Provider model identifier, e.g. "nova-3". */
   transcriptionModel?: string
   /** Whether Craft should summarize the meeting after it ends. */
   summarizeOnEnd?: boolean
   /** Whether Craft should extract follow-up tasks after it ends. */
   followUpOnEnd?: boolean
+}
+
+export interface MeetingRecordingMetadata {
+  path: string
+  mimeType?: string
+  bytesWritten?: number
+  durationMs?: number
 }
 
 export interface MeetingRecord {
@@ -77,6 +84,7 @@ export interface MeetingRecord {
   url: string
   code?: string
   browserInstanceId: string
+  ownsBrowserInstance?: boolean
   title?: string
   startedAt: number
   updatedAt: number
@@ -85,6 +93,11 @@ export interface MeetingRecord {
   summaryMarkdown?: string
   transcriptionProvider?: MeetingTranscriptionProvider
   transcriptionModel?: string
+  summarizeOnEnd?: boolean
+  followUpOnEnd?: boolean
+  isArchived?: boolean
+  archivedAt?: number
+  recording?: MeetingRecordingMetadata
 }
 
 export interface MeetingTranscriptSegment {

@@ -64,7 +64,7 @@ declare global {
       requestProfileManagement: () => Promise<void>
       switchProfile: (profileId: string) => Promise<string | null>
       inviteHermesToMeet: (payload: { urlOrCode: string; profileId?: string }) => Promise<{ status?: string; error?: string }>
-      prepareRecording: (payload: { urlOrCode: string; workspaceId?: string }) => Promise<{ recordingId: string; sourceId: string; outputPath: string }>
+      prepareRecording: (payload: { urlOrCode: string; workspaceId?: string }) => Promise<{ recordingId: string; meetingId?: string; outputPath: string }>
       appendRecordingChunk: (recordingId: string, chunk: ArrayBuffer) => Promise<void>
       finalizeRecording: (recordingId: string, mimeType: string) => Promise<{ outputPath: string }>
       abortRecording: (recordingId: string) => Promise<void>
@@ -113,13 +113,16 @@ function BrowserToolbarApp() {
   const [inviteError, setInviteError] = useState<string | null>(null)
   const [recordingState, setRecordingState] = useState<'idle' | 'preparing' | 'recording' | 'stopping' | 'error'>('idle')
   const [recordingError, setRecordingError] = useState<string | null>(null)
-  const recordingRef = useRef<{ id: string; recorder: MediaRecorder; stream: MediaStream; mimeType: string } | null>(null)
+  const [activeRecordingMeetUrl, setActiveRecordingMeetUrl] = useState<string | null>(null)
+  const recordingRef = useRef<{ id: string; recorder: MediaRecorder; stream: MediaStream; mimeType: string; pendingChunks: Set<Promise<void>> } | null>(null)
   const menuContentRef = useRef<HTMLDivElement | null>(null)
   const profileMenuContentRef = useRef<HTMLDivElement | null>(null)
   const anyMenuOpen = windowMenuOpen || profileMenuOpen
 
   const api = window.browserToolbar
   const detectedMeetUrl = extractGoogleMeetMeetingUrl(state.url) ?? extractGoogleMeetMeetingUrl(state.title)
+  const recordingMeetUrl = detectedMeetUrl ?? activeRecordingMeetUrl
+  const recordingActive = recordingState === 'preparing' || recordingState === 'recording' || recordingState === 'stopping'
 
   useEffect(() => {
     setInviteState('idle')
@@ -251,6 +254,9 @@ function BrowserToolbarApp() {
           active.recorder.stop()
         })
       }
+      while (active.pendingChunks.size > 0) {
+        await Promise.allSettled(Array.from(active.pendingChunks))
+      }
       active.stream.getTracks().forEach((track) => track.stop())
       if (mode === 'finalize') {
         const result = await api?.finalizeRecording(active.id, active.mimeType)
@@ -263,42 +269,50 @@ function BrowserToolbarApp() {
     } finally {
       setRecordingState('idle')
       setRecordingError(null)
+      setActiveRecordingMeetUrl(null)
     }
   }, [api])
 
   const handleToggleRecording = useCallback(async () => {
-    if (!api || !detectedMeetUrl) return
     if (recordingState === 'recording') {
       void stopRecording('finalize')
       return
     }
+    if (!api || !detectedMeetUrl) return
     if (recordingState !== 'idle' && recordingState !== 'error') return
 
     setRecordingState('preparing')
     setRecordingError(null)
-    let prepared: { recordingId: string; sourceId: string; outputPath: string } | null = null
+    setActiveRecordingMeetUrl(detectedMeetUrl)
+    let prepared: { recordingId: string; outputPath: string } | null = null
     let stream: MediaStream | null = null
     try {
       prepared = await api.prepareRecording({ urlOrCode: detectedMeetUrl })
-      stream = await (navigator.mediaDevices as MediaDevices & { getUserMedia: (constraints: unknown) => Promise<MediaStream> }).getUserMedia({
-        audio: {
-          mandatory: {
-            chromeMediaSource: 'desktop',
-            chromeMediaSourceId: prepared.sourceId,
-          },
-        },
-        video: false,
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true,
       })
-      const mimeType = ['audio/webm;codecs=opus', 'audio/webm'].find((type) => MediaRecorder.isTypeSupported(type)) ?? 'audio/webm'
+      const hasVideo = stream.getVideoTracks().length > 0
+      const mimeTypeCandidates = hasVideo
+        ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+        : ['audio/webm;codecs=opus', 'audio/webm']
+      const mimeType = mimeTypeCandidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? mimeTypeCandidates[mimeTypeCandidates.length - 1]!
       const recorder = new MediaRecorder(stream, { mimeType })
       const recordingId = prepared.recordingId
+      const pendingChunks = new Set<Promise<void>>()
       recorder.ondataavailable = async (event) => {
         if (event.data.size === 0) return
-        try {
+        const appendChunk = (async () => {
           const buffer = await event.data.arrayBuffer()
           await api.appendRecordingChunk(recordingId, buffer)
+        })()
+        pendingChunks.add(appendChunk)
+        try {
+          await appendChunk
         } catch (error) {
           console.error('[browser-toolbar] recording chunk append failed', error)
+        } finally {
+          pendingChunks.delete(appendChunk)
         }
       }
       recorder.onerror = (event) => {
@@ -306,7 +320,7 @@ function BrowserToolbarApp() {
         setRecordingError('Recorder error')
         setRecordingState('error')
       }
-      recordingRef.current = { id: recordingId, recorder, stream, mimeType }
+      recordingRef.current = { id: recordingId, recorder, stream, mimeType, pendingChunks }
       recorder.start(1000)
       setRecordingState('recording')
       console.info('[browser-toolbar] recording started', { recordingId, outputPath: prepared.outputPath })
@@ -315,6 +329,7 @@ function BrowserToolbarApp() {
       const message = error instanceof Error ? error.message : String(error)
       setRecordingError(message)
       setRecordingState('error')
+      setActiveRecordingMeetUrl(null)
       stream?.getTracks().forEach((track) => track.stop())
       if (prepared) {
         try { await api.abortRecording(prepared.recordingId) } catch { /* noop */ }
@@ -374,7 +389,7 @@ function BrowserToolbarApp() {
       ? 'titlebar-no-drag inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 text-xs font-semibold text-destructive shadow-minimal transition-colors hover:bg-destructive/15'
       : 'titlebar-no-drag inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border/70 bg-foreground/[0.04] px-2.5 text-xs font-semibold text-foreground shadow-minimal transition-colors hover:bg-foreground/[0.08] disabled:cursor-default disabled:opacity-70'
 
-  const recordingButton = detectedMeetUrl ? (
+  const recordingButton = recordingMeetUrl || recordingState !== 'idle' ? (
     <button
       type="button"
       onClick={handleToggleRecording}
@@ -492,7 +507,7 @@ function BrowserToolbarApp() {
             </DropdownMenu>
           </div>
         )}
-        themeColor={themeColor}
+        themeColor={recordingActive ? null : themeColor}
         urlBarClassName="max-w-[600px]"
         className="titlebar-drag-region bg-background"
       />

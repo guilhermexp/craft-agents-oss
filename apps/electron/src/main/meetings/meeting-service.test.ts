@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { BrowserPaneManager } from '../browser-pane-manager'
@@ -139,5 +139,63 @@ describe('MeetingService storage', () => {
       urlOrCode: 'abc-defg-hij',
       transcriptionProvider: 'bogus' as never,
     })).rejects.toThrow('Unsupported transcription provider')
+  })
+
+  it('archives records out of the default list and can unarchive them', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-archive-'))
+    tempDirs.push(workspaceRoot)
+
+    const service = new MeetingService(createBrowserPaneManager())
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+    })
+
+    service.archive(workspaceRoot, record.id)
+
+    expect(service.list(workspaceRoot).map(item => item.id)).toEqual([])
+    expect(service.list(workspaceRoot, { includeArchived: true }).map(item => item.id)).toEqual([record.id])
+
+    service.unarchive(workspaceRoot, record.id)
+
+    expect(service.list(workspaceRoot).map(item => item.id)).toEqual([record.id])
+  })
+
+  it('persists recording metadata and deleteMeeting removes record artifacts', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-delete-'))
+    tempDirs.push(workspaceRoot)
+
+    const service = new MeetingService(createBrowserPaneManager())
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+    })
+
+    const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
+    metadataDirs.push(dirname(meetingsDir))
+    const recordingPath = join(meetingsDir, 'recordings', `${record.id}.webm`)
+    mkdirSync(dirname(recordingPath), { recursive: true })
+    writeFileSync(recordingPath, 'audio')
+
+    await service.completeRecording('ws-test', workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      bytesWritten: 5,
+      durationMs: 1000,
+      mimeType: 'audio/webm',
+    })
+
+    expect(service.status(workspaceRoot, record.id)?.recording?.path).toBe(recordingPath)
+    expect(existsSync(join(meetingsDir, 'transcripts', `${record.id}.json`))).toBe(true)
+    expect(existsSync(join(meetingsDir, 'summaries', `${record.id}.md`))).toBe(true)
+    expect(existsSync(recordingPath)).toBe(true)
+
+    service.deleteMeeting(workspaceRoot, record.id)
+
+    expect(service.list(workspaceRoot, { includeArchived: true })).toEqual([])
+    expect(existsSync(join(meetingsDir, 'transcripts', `${record.id}.json`))).toBe(false)
+    expect(existsSync(join(meetingsDir, 'summaries', `${record.id}.md`))).toBe(false)
+    expect(existsSync(recordingPath)).toBe(false)
   })
 })

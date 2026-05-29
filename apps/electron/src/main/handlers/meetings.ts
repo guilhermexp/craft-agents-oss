@@ -25,6 +25,9 @@ export const HANDLED_CHANNELS = [
   RPC_NAMESPACES.meetings.TRANSCRIPT,
   RPC_NAMESPACES.meetings.GET_TRANSCRIPTION_CONFIG,
   RPC_NAMESPACES.meetings.SAVE_TRANSCRIPTION_CONFIG,
+  RPC_NAMESPACES.meetings.ARCHIVE,
+  RPC_NAMESPACES.meetings.UNARCHIVE,
+  RPC_NAMESPACES.meetings.DELETE,
 ] as const
 
 let meetingService: MeetingService | null = null
@@ -86,16 +89,30 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
       }
     })
 
-    ipcMain.handle(RECORDING_PREPARE, (_event, payload: { workspaceId?: string; browserInstanceId: string; urlOrCode?: string }) => {
+    ipcMain.handle(RECORDING_PREPARE, async (_event, payload: { workspaceId?: string; browserInstanceId: string; urlOrCode?: string }) => {
       try {
         const workspaceId = payload.workspaceId
           ?? resolveBrowserInstanceWorkspaceId(payload.browserInstanceId)
         if (!workspaceId) {
           throw new Error(`No workspace context for browser instance: ${payload.browserInstanceId}`)
         }
+        const workspaceRoot = resolveWorkspaceRoot(workspaceId)
+        const meeting = payload.urlOrCode
+          ? await meetingService!.start(workspaceRoot, {
+            urlOrCode: payload.urlOrCode,
+            captureMode: 'craft',
+            browserInstanceId: payload.browserInstanceId,
+            title: 'Google Meet',
+            transcribe: true,
+          })
+          : null
+        if (meeting?.status === 'error') {
+          throw new Error(meeting.error || 'Could not create meeting recording record')
+        }
         return recordingService!.prepare({
           workspaceId,
           browserInstanceId: payload.browserInstanceId,
+          meetingId: meeting?.id,
           urlOrCode: payload.urlOrCode,
         })
       } catch (err) {
@@ -109,11 +126,46 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
     })
 
     ipcMain.handle(RECORDING_FINALIZE, async (_event, recordingId: string, mimeType: string) => {
-      return await recordingService!.finalize(recordingId, mimeType)
+      const result = await recordingService!.finalize(recordingId, mimeType)
+      if (result.meetingId) {
+        void meetingService!.completeRecording(
+          result.workspaceId,
+          resolveWorkspaceRoot(result.workspaceId),
+          result.meetingId,
+          { outputPath: result.outputPath, bytesWritten: result.bytesWritten, durationMs: result.durationMs, mimeType },
+        ).catch((err) => {
+          platform.logger.error('[meetings] completeRecording failed:', err)
+        })
+      }
+      return result
     })
 
     ipcMain.handle(RECORDING_ABORT, (_event, recordingId: string) => {
       recordingService!.abort(recordingId)
+    })
+
+    ipcMain.handle(RPC_NAMESPACES.meetings.ARCHIVE, (_event, workspaceIdOrId: string, maybeId?: string) => {
+      const workspaceId = maybeId === undefined
+        ? windowManager?.getWorkspaceForWindow(_event.sender.id)
+        : workspaceIdOrId
+      const id = maybeId ?? workspaceIdOrId
+      return meetingService!.archive(resolveWorkspaceRoot(workspaceId), id)
+    })
+
+    ipcMain.handle(RPC_NAMESPACES.meetings.UNARCHIVE, (_event, workspaceIdOrId: string, maybeId?: string) => {
+      const workspaceId = maybeId === undefined
+        ? windowManager?.getWorkspaceForWindow(_event.sender.id)
+        : workspaceIdOrId
+      const id = maybeId ?? workspaceIdOrId
+      return meetingService!.unarchive(resolveWorkspaceRoot(workspaceId), id)
+    })
+
+    ipcMain.handle(RPC_NAMESPACES.meetings.DELETE, (_event, workspaceIdOrId: string, maybeId?: string) => {
+      const workspaceId = maybeId === undefined
+        ? windowManager?.getWorkspaceForWindow(_event.sender.id)
+        : workspaceIdOrId
+      const id = maybeId ?? workspaceIdOrId
+      meetingService!.deleteMeeting(resolveWorkspaceRoot(workspaceId), id)
     })
   }
 
@@ -193,5 +245,44 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
       throw new Error('Invalid meeting transcription settings payload')
     }
     return await meetingService!.saveTranscriptionConfig(workspaceId, resolveWorkspaceRoot(workspaceId), input)
+  })
+
+  server.handle(RPC_NAMESPACES.meetings.ARCHIVE, (ctx, workspaceIdOrId: string, maybeId?: string) => {
+    const workspaceId = maybeId === undefined
+      ? resolveContextWorkspaceId(ctx)
+      : workspaceIdOrId
+    const id = maybeId ?? workspaceIdOrId
+    try {
+      return meetingService!.archive(resolveWorkspaceRoot(workspaceId), id)
+    } catch (err) {
+      platform.logger.error(`[meetings] archive failed for ${id}:`, err)
+      throw err
+    }
+  })
+
+  server.handle(RPC_NAMESPACES.meetings.UNARCHIVE, (ctx, workspaceIdOrId: string, maybeId?: string) => {
+    const workspaceId = maybeId === undefined
+      ? resolveContextWorkspaceId(ctx)
+      : workspaceIdOrId
+    const id = maybeId ?? workspaceIdOrId
+    try {
+      return meetingService!.unarchive(resolveWorkspaceRoot(workspaceId), id)
+    } catch (err) {
+      platform.logger.error(`[meetings] unarchive failed for ${id}:`, err)
+      throw err
+    }
+  })
+
+  server.handle(RPC_NAMESPACES.meetings.DELETE, (ctx, workspaceIdOrId: string, maybeId?: string) => {
+    const workspaceId = maybeId === undefined
+      ? resolveContextWorkspaceId(ctx)
+      : workspaceIdOrId
+    const id = maybeId ?? workspaceIdOrId
+    try {
+      meetingService!.deleteMeeting(resolveWorkspaceRoot(workspaceId), id)
+    } catch (err) {
+      platform.logger.error(`[meetings] delete failed for ${id}:`, err)
+      throw err
+    }
   })
 }
