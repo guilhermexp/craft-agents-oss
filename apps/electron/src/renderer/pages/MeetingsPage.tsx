@@ -336,6 +336,9 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
   const [isJoining, setIsJoining] = useState(false)
   const [isAuthenticating, setIsAuthenticating] = useState(false)
   const [isCraftRecording, setIsCraftRecording] = useState(false)
+  // Locally-started meeting id — drives live status/feedback before the parent
+  // selects it (the parent's selectedMeetingId only updates from the list panel).
+  const [liveStartedId, setLiveStartedId] = useState<string | null>(null)
   const [selectedRecord, setSelectedRecord] = useState<MeetingRecord | null>(null)
   const [selectedTranscript, setSelectedTranscript] = useState<MeetingTranscriptResult | null>(null)
   const [selectedDetailTab, setSelectedDetailTab] = useState<MeetingDetailTab>('summary')
@@ -345,6 +348,9 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
   const promptedMeetUrlsRef = React.useRef<Set<string>>(new Set())
   const launchedMeetUrlsRef = React.useRef<Set<string>>(new Set())
   const normalizedUrl = useMemo(() => normalizeGoogleMeetInput(meetingInput), [meetingInput])
+  // Prefer the parent's explicit selection; fall back to a just-started meeting
+  // so recording/transcription feedback shows immediately after clicking record.
+  const effectiveMeetingId = selectedMeetingId ?? liveStartedId
   const canJoin = !!workspaceId && !!normalizedUrl && !isJoining
   const currentTranscriptionModels = TRANSCRIPTION_MODELS[transcriptionProvider]
 
@@ -439,11 +445,15 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
 
   React.useEffect(() => {
     setSelectedDetailTab('summary')
-    if (selectedMeetingId) setActiveSection('results')
+    if (selectedMeetingId) {
+      // Parent made an explicit selection — drop any local just-started override.
+      setLiveStartedId(null)
+      setActiveSection('results')
+    }
   }, [selectedMeetingId])
 
   React.useEffect(() => {
-    if (!workspaceId || !selectedMeetingId) {
+    if (!workspaceId || !effectiveMeetingId) {
       setSelectedRecord(null)
       setSelectedTranscript(null)
       return
@@ -453,8 +463,8 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
     const loadSelectedMeeting = async () => {
       try {
         const [record, transcript] = await Promise.all([
-          window.electronAPI.meetings.status(workspaceId, selectedMeetingId),
-          window.electronAPI.meetings.transcript(workspaceId, selectedMeetingId),
+          window.electronAPI.meetings.status(workspaceId, effectiveMeetingId),
+          window.electronAPI.meetings.transcript(workspaceId, effectiveMeetingId),
         ])
         if (cancelled) return
         setSelectedRecord(record)
@@ -475,7 +485,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
       window.removeEventListener(MEETINGS_CHANGED_EVENT, handleChanged)
       window.clearInterval(fallback)
     }
-  }, [selectedMeetingId, t, workspaceId])
+  }, [effectiveMeetingId, t, workspaceId])
 
   const startHermesForMeet = React.useCallback(async (
     meetingUrl: string,
@@ -508,6 +518,13 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
       if (result.status === 'error') throw new Error(result.error || t('meetings.joinError'))
       launchedMeetUrlsRef.current.add(meetingUrl)
       setDetectedMeeting((current) => current?.url === meetingUrl ? null : current)
+      // Surface the live recording immediately: select it locally, show its
+      // record, and switch to the results view so the ProcessingPipeline renders
+      // (recording → transcription feedback) without waiting for a list click.
+      setLiveStartedId(result.id)
+      setSelectedRecord(result)
+      setSelectedTranscript(null)
+      setActiveSection('results')
       window.dispatchEvent(new Event(MEETINGS_CHANGED_EVENT))
       toast.success(request.captureMode === 'craft' ? t('meetings.craftRecordStarted') : t('meetings.agentInvited'))
     } catch (error) {
@@ -905,7 +922,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
               </section>
             </div>
           </form>
-        ) : selectedMeetingId ? (
+        ) : effectiveMeetingId ? (
           <section className="rounded-lg border border-border/70 bg-card/25 p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="min-w-0">
