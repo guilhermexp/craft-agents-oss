@@ -85,7 +85,7 @@ import { storedToMessage, type Message, type StoredAttachment, type ToolDisplayM
 import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlAsync, getEmojiIcon, resetSummarizationClient, resolveToolIcon, readFileAttachment, selectSpreadMessages, normalizePath } from '@craft-agent/shared/utils'
 import { loadAllSkills, loadSkillBySlug, invalidateSkillsCache, type LoadedSkill } from '@craft-agent/shared/skills'
 import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
-import { getToolIconsDir, getMiniModel } from '@craft-agent/shared/config'
+import { getToolIconsDir, getMiniModel, isHermesProvider } from '@craft-agent/shared/config'
 import { getDefaultSummarizationModel } from '@craft-agent/shared/config/models'
 import type { SummarizeCallback } from '@craft-agent/shared/sources'
 import { type ThinkingLevel, DEFAULT_THINKING_LEVEL, normalizeThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
@@ -6352,40 +6352,89 @@ export class SessionManager implements ISessionManager {
   }
 
   /**
+   * Resolve the connection a Craft-internal mini task (title generation,
+   * etc.) should run on for a given session.
+   *
+   * For native sessions (Claude / Pi) this is just the session's own
+   * connection. For Hermes sessions we prefer a native runtime — Claude
+   * first, then Pi — because the Hermes ACP/codex backend is the chat-only
+   * path and shouldn't be driven for housekeeping. Falls back to the
+   * session's own (Hermes) connection when no native one is configured.
+   */
+  private resolveInternalTaskConnectionSlug(managed: ManagedSession): string | undefined {
+    const sessionSlug = managed.llmConnection
+    const sessionConn = sessionSlug ? getLlmConnection(sessionSlug) : undefined
+
+    if (!sessionConn || !isHermesProvider(sessionConn.providerType)) {
+      return sessionSlug ?? getDefaultLlmConnection() ?? undefined
+    }
+
+    const root = managed.workspace.rootPath
+    return (
+      this.findCompatibleLlmConnection(root, 'anthropic')
+      ?? this.findCompatibleLlmConnection(root, 'pi')
+      ?? this.findCompatibleLlmConnection(root, 'pi_compat')
+      ?? sessionSlug
+    )
+  }
+
+  /**
    * Generate an AI title for a session from the user's first message.
    * Uses the agent's generateTitle() method which handles provider-specific SDK calls.
    * If no agent exists, creates a temporary one using the session's connection.
+   *
+   * Title generation is a Craft-internal mini task, not part of the
+   * session's conversation. For Hermes sessions we deliberately route it
+   * through a native runtime (Claude / Pi) via a temporary agent instead of
+   * the session's HermesAgent: the Hermes ACP/codex path is chat-only and
+   * shouldn't be driven for housekeeping. Same rationale as skills edit,
+   * which always runs on a native mini agent.
    */
   private async generateTitle(managed: ManagedSession, userMessage: string): Promise<void> {
     sessionLog.info(`[generateTitle] Starting for session ${managed.id}`)
 
-    // Use existing agent or create temporary one
-    let agent: AgentInstance | null = managed.agent
-    let isTemporary = false
-
-    // Wait briefly for agent to be created (it's created concurrently)
-    if (!agent) {
+    // This fires right after the first message is queued — the session's
+    // connection lock and agent are set concurrently a few ms later. Wait
+    // for the session to finish initializing before deciding how to route
+    // the title, otherwise managed.llmConnection is still undefined and the
+    // Hermes-vs-native decision below reads stale (empty) state.
+    if (!managed.llmConnection || !managed.agent) {
       let attempts = 0
-      while (!managed.agent && attempts < 10) {
+      while ((!managed.llmConnection || !managed.agent) && attempts < 10) {
         await new Promise(resolve => setTimeout(resolve, 100))
         attempts++
       }
-      agent = managed.agent
     }
 
-    // If still no agent, create a temporary one using the session's connection
-    if (!agent && managed.llmConnection) {
-      try {
-        const connection = getLlmConnection(managed.llmConnection)
+    // Now connection/agent state is stable — decide routing. Title is a
+    // Craft-internal mini task: native sessions (Claude / Pi) reuse the live
+    // agent; Hermes sessions route through a native temp agent because the
+    // Hermes ACP/codex backend is chat-only. Same rationale as skills edit.
+    const titleSlug = this.resolveInternalTaskConnectionSlug(managed)
+    const sessionConn = managed.llmConnection ? getLlmConnection(managed.llmConnection) : undefined
+    const sessionIsHermes = !!sessionConn && isHermesProvider(sessionConn.providerType)
 
-        agent = createSessionBackendFromConnection(managed.llmConnection, {
+    // Use existing agent for native sessions; force a temp agent for Hermes.
+    let agent: AgentInstance | null = sessionIsHermes ? null : managed.agent
+    let isTemporary = false
+
+    // If no agent, create a temporary one. For Hermes sessions titleSlug
+    // resolves to a native connection (Claude / Pi); otherwise it is the
+    // session's own connection.
+    if (!agent && titleSlug) {
+      try {
+        const connection = getLlmConnection(titleSlug)
+
+        agent = createSessionBackendFromConnection(titleSlug, {
           workspace: managed.workspace,
           miniModel: connection ? (getMiniModel(connection) ?? connection.defaultModel) : undefined,
           session: {
             id: `title-${managed.id}`,
             workspaceRootPath: managed.workspace.rootPath,
-            llmConnection: managed.llmConnection,
-            hermesProfile: managed.hermesProfile,
+            llmConnection: titleSlug,
+            // Only forward the Hermes profile when the title actually runs on
+            // the session's own Hermes connection (no native runtime found).
+            hermesProfile: titleSlug === managed.llmConnection ? managed.hermesProfile : undefined,
             createdAt: Date.now(),
             lastUsedAt: Date.now(),
           },
@@ -6393,7 +6442,7 @@ export class SessionManager implements ISessionManager {
         }, buildBackendHostRuntimeContext()) as AgentInstance
         await agent.postInit()
         isTemporary = true
-        sessionLog.info(`[generateTitle] Created temporary agent for session ${managed.id}`)
+        sessionLog.info(`[generateTitle] Created temporary ${sessionIsHermes ? 'native ' : ''}agent for session ${managed.id} (connection: ${titleSlug})`)
       } catch (error) {
         sessionLog.error(`[generateTitle] Failed to create temporary agent:`, error)
         return

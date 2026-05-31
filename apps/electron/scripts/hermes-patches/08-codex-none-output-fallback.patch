@@ -1,0 +1,208 @@
+diff --git a/agent/auxiliary_client.py b/agent/auxiliary_client.py
+index 56b2d5c1b..0a9aa21f6 100644
+--- a/agent/auxiliary_client.py
++++ b/agent/auxiliary_client.py
+@@ -796,26 +796,82 @@ class _CodexCompletionsAdapter:
+                 timeout_timer.daemon = True
+                 timeout_timer.start()
+             _check_cancelled()
+-            with self._client.responses.stream(**resp_kwargs) as stream:
+-                for _event in stream:
++            try:
++                with self._client.responses.stream(**resp_kwargs) as stream:
++                    for _event in stream:
++                        _check_cancelled()
++                        _etype = getattr(_event, "type", "")
++                        if _etype == "response.output_item.done":
++                            _done = getattr(_event, "item", None)
++                            if _done is not None:
++                                collected_output_items.append(_done)
++                        elif "output_text.delta" in _etype:
++                            _delta = getattr(_event, "delta", "")
++                            if _delta:
++                                collected_text_deltas.append(_delta)
++                        elif "function_call" in _etype:
++                            has_function_calls = True
+                     _check_cancelled()
+-                    _etype = getattr(_event, "type", "")
+-                    if _etype == "response.output_item.done":
+-                        _done = getattr(_event, "item", None)
+-                        if _done is not None:
+-                            collected_output_items.append(_done)
+-                    elif "output_text.delta" in _etype:
+-                        _delta = getattr(_event, "delta", "")
+-                        if _delta:
+-                            collected_text_deltas.append(_delta)
+-                    elif "function_call" in _etype:
+-                        has_function_calls = True
+-                _check_cancelled()
+-                final = stream.get_final_response()
+-
+-            # Backfill empty output from collected stream events
++                    final = stream.get_final_response()
++            except TypeError as _stream_te:
++                # The SDK's responses.stream() helper crashes with
++                # "'NoneType' object is not iterable" when the ChatGPT
++                # Codex backend sends a response event whose ``output`` is
++                # None (openai 2.24.0 _parsing/_responses.py). Recover via
++                # the raw create(stream=True) path, which skips the typed
++                # accumulate/parse helper. Same root cause and fix as the
++                # main agent loop (agent/codex_runtime.py).
++                if "is not iterable" not in str(_stream_te):
++                    raise
++                logger.debug(
++                    "Codex auxiliary stream helper hit None output (%s); "
++                    "falling back to create(stream=True).", _stream_te,
++                )
++                collected_output_items = []
++                collected_text_deltas = []
++                has_function_calls = False
++                final = None
++                _raw_stream = self._client.responses.create(
++                    **{**resp_kwargs, "stream": True}
++                )
++                try:
++                    for _event in _raw_stream:
++                        _check_cancelled()
++                        _etype = getattr(_event, "type", "")
++                        if _etype == "response.output_item.done":
++                            _done = getattr(_event, "item", None)
++                            if _done is None and isinstance(_event, dict):
++                                _done = _event.get("item")
++                            if _done is not None:
++                                collected_output_items.append(_done)
++                        elif "output_text.delta" in _etype:
++                            _delta = getattr(_event, "delta", "")
++                            if not _delta and isinstance(_event, dict):
++                                _delta = _event.get("delta", "")
++                            if _delta:
++                                collected_text_deltas.append(_delta)
++                        elif "function_call" in _etype:
++                            has_function_calls = True
++                        if _etype in {"response.completed", "response.incomplete", "response.failed"}:
++                            final = getattr(_event, "response", None)
++                            if final is None and isinstance(_event, dict):
++                                final = _event.get("response")
++                finally:
++                    _close = getattr(_raw_stream, "close", None)
++                    if callable(_close):
++                        try:
++                            _close()
++                        except Exception:
++                            pass
++                if final is None:
++                    final = SimpleNamespace(output=None, usage=None)
++
++            # Backfill empty output from collected stream events. The Codex
++            # backend can leave ``output`` as None (not just empty list);
++            # treat None like empty and never leave it None so the
++            # downstream output iteration doesn't crash.
+             _output = getattr(final, "output", None)
+-            if isinstance(_output, list) and not _output:
++            if _output is None or (isinstance(_output, list) and not _output):
+                 if collected_output_items:
+                     final.output = list(collected_output_items)
+                     logger.debug(
+@@ -835,6 +891,8 @@ class _CodexCompletionsAdapter:
+                         "Codex auxiliary: synthesized from %d deltas (%d chars)",
+                         len(collected_text_deltas), len(assembled),
+                     )
++                else:
++                    final.output = []
+ 
+             # Extract text and tool calls from the Responses output.
+             # Items may be SDK objects (attrs) or dicts (raw/fallback paths),
+@@ -845,7 +903,7 @@ class _CodexCompletionsAdapter:
+                     val = obj.get(key, default)
+                 return val if val is not None else default
+ 
+-            for item in getattr(final, "output", []):
++            for item in (getattr(final, "output", None) or []):
+                 item_type = _item_get(item, "type")
+                 if item_type == "message":
+                     for part in (_item_get(item, "content") or []):
+diff --git a/agent/codex_runtime.py b/agent/codex_runtime.py
+index 02b788f57..01cb3006d 100644
+--- a/agent/codex_runtime.py
++++ b/agent/codex_runtime.py
+@@ -242,10 +242,14 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
+                         )
+                 final_response = stream.get_final_response()
+                 # PATCH: ChatGPT Codex backend streams valid output items
+-                # but get_final_response() can return an empty output list.
+-                # Backfill from collected items or synthesize from deltas.
++                # but get_final_response() can return an empty output list
++                # — or ``output=None``. The SDK's ``output_text`` property
++                # does ``for output in self.output``, so a None output
++                # crashes downstream with "'NoneType' object is not
++                # iterable". Treat None like empty and never return a
++                # response whose output is still None.
+                 _out = getattr(final_response, "output", None)
+-                if isinstance(_out, list) and not _out:
++                if _out is None or (isinstance(_out, list) and not _out):
+                     if collected_output_items:
+                         final_response.output = list(collected_output_items)
+                         logger.debug(
+@@ -264,6 +268,8 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
+                             "Codex stream: synthesized output from %d text deltas (%d chars)",
+                             len(agent._codex_streamed_text_parts), len(assembled),
+                         )
++                    else:
++                        final_response.output = []
+                 return final_response
+         except (_httpx.RemoteProtocolError, _httpx.ReadTimeout, _httpx.ConnectError, ConnectionError) as exc:
+             if attempt < max_stream_retries:
+@@ -281,6 +287,27 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
+                 exc,
+             )
+             return agent._run_codex_create_stream_fallback(api_kwargs, client=active_client)
++        except TypeError as exc:
++            # The OpenAI SDK's responses.stream() helper crashes with
++            # "'NoneType' object is not iterable" when the ChatGPT Codex
++            # backend (chatgpt.com/backend-api/codex) emits a response
++            # event whose ``output`` is None — parse_response() does
++            # ``for output in response.output`` with no None guard
++            # (openai 2.24.0, _parsing/_responses.py:61). The error is
++            # raised mid-iteration, before our get_final_response()
++            # backfill can run, and it isn't an httpx/RuntimeError so it
++            # escapes the handlers above and aborts the whole turn as a
++            # non-retryable client error. The raw create(stream=True)
++            # fallback bypasses the typed accumulate/parse path entirely,
++            # so recover through it instead of failing.
++            if "is not iterable" not in str(exc):
++                raise
++            logger.debug(
++                "Codex Responses stream helper hit None output (%s); "
++                "falling back to create(stream=True). %s",
++                exc, agent._client_log_context(),
++            )
++            return agent._run_codex_create_stream_fallback(api_kwargs, client=active_client)
+         except RuntimeError as exc:
+             err_text = str(exc)
+             missing_completed = "response.completed" in err_text
+@@ -406,9 +433,14 @@ def run_codex_create_stream_fallback(agent, api_kwargs: dict, client: Any = None
+             if terminal_response is None and isinstance(event, dict):
+                 terminal_response = event.get("response")
+             if terminal_response is not None:
+-                # Backfill empty output from collected stream events
++                # Backfill empty output from collected stream events.
++                # The Codex backend can send ``output: null`` — treat None
++                # like an empty list and never return a response whose
++                # output is still None, so the SDK's ``output_text``
++                # property (for output in self.output) doesn't crash with
++                # "'NoneType' object is not iterable" downstream.
+                 _out = getattr(terminal_response, "output", None)
+-                if isinstance(_out, list) and not _out:
++                if _out is None or (isinstance(_out, list) and not _out):
+                     if collected_output_items:
+                         terminal_response.output = list(collected_output_items)
+                         logger.debug(
+@@ -426,6 +458,8 @@ def run_codex_create_stream_fallback(agent, api_kwargs: dict, client: Any = None
+                             "Codex fallback stream: synthesized from %d deltas (%d chars)",
+                             len(collected_text_deltas), len(assembled),
+                         )
++                    else:
++                        terminal_response.output = []
+                 return terminal_response
+     finally:
+         close_fn = getattr(stream_or_response, "close", None)
