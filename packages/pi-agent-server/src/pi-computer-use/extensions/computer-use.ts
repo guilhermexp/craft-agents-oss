@@ -118,11 +118,8 @@ const dragTool = defineTool({
 	executionMode: "sequential",
 	parameters: Type.Object({
 		path: Type.Array(
-			Type.Union([
-				Type.Object({ x: Type.Number(), y: Type.Number() }),
-				Type.Tuple([Type.Number(), Type.Number()]),
-			]),
-			{ minItems: 2, description: "At least two points, each as {x,y} or [x,y]" },
+			Type.Object({ x: Type.Number(), y: Type.Number() }),
+			{ minItems: 2, description: "At least two points, each as {x,y}" },
 		),
 		captureId: Type.Optional(Type.String({ description: "Optional screenshot validation id" })),
 	}),
@@ -259,7 +256,7 @@ const batchedActionSchema = Type.Union([
 	}),
 	Type.Object({
 		type: Type.Literal("drag"),
-		path: Type.Array(Type.Union([Type.Object({ x: Type.Number(), y: Type.Number() }), Type.Tuple([Type.Number(), Type.Number()])]), {
+		path: Type.Array(Type.Object({ x: Type.Number(), y: Type.Number() }), {
 			minItems: 2,
 		}),
 		captureId: Type.Optional(Type.String()),
