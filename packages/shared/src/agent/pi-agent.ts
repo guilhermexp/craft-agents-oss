@@ -408,6 +408,12 @@ export class PiAgent extends BaseAgent {
         ...(sessionDir ? { CRAFT_SESSION_DIR: sessionDir } : {}),
         // Propagate debug mode
         CRAFT_DEBUG: (process.argv.includes('--debug') || process.env.CRAFT_DEBUG === '1') ? '1' : '0',
+        // Disable Pi SDK startup network operations (per-session npm installs of
+        // auto-resolved extensions). Craft only ships the LOCAL computer-use
+        // extension, which resolves without install, so offline mode is safe and
+        // removes the repeated "changed N packages" runtime npm churn + latency.
+        // An explicit PI_OFFLINE in the parent env still wins.
+        PI_OFFLINE: process.env.PI_OFFLINE ?? '1',
       },
     });
 
