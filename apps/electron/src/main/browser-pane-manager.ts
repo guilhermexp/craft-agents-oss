@@ -2824,9 +2824,33 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       void this.extractThemeColor(instance)
     })
 
-    pageWc.on('before-input-event', (_event, _input) => {
+    pageWc.on('before-input-event', (event, input) => {
+      // DevTools toggle. The browser pane is a chromeless BrowserView with no
+      // menu, so the usual DevTools shortcut never reaches it. Wire it directly:
+      // Cmd+Opt+I (mac), Ctrl+Shift+I, or F12. Use input.code (physical key) so
+      // Option-composed characters on mac don't break the match. The automation
+      // CDP debugger and DevTools are mutually exclusive, so detach CDP before
+      // opening; DevTools opens detached since the view has no host window.
+      if (input.type === 'keyDown') {
+        const code = input.code || ''
+        const isInspectCombo =
+          (code === 'KeyI' && input.alt && (input.meta || input.control)) ||
+          (code === 'KeyI' && input.control && input.shift) ||
+          code === 'F12'
+        if (isInspectCombo) {
+          event.preventDefault()
+          if (pageWc.isDevToolsOpened()) {
+            pageWc.closeDevTools()
+          } else {
+            instance.cdp.detach()
+            pageWc.openDevTools({ mode: 'detach' })
+          }
+          return
+        }
+      }
+
       if (instance.lockState.active) {
-        _event.preventDefault()
+        event.preventDefault()
       }
     })
 

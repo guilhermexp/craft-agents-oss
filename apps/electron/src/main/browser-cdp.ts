@@ -115,9 +115,15 @@ export class BrowserCDP {
       this.webContents.debugger.attach('1.3')
       this.attached = true
     } catch (err) {
-      // May already be attached
-      if (String(err).includes('Already attached')) {
+      const msg = String(err)
+      // May already be attached by us.
+      if (msg.includes('Already attached')) {
         this.attached = true
+      } else if (msg.includes('Another debugger is already attached')) {
+        // DevTools is open on this pane (user opened it manually) — DevTools and
+        // the automation debugger are mutually exclusive. Surface a clear,
+        // actionable error instead of a raw CDP string.
+        throw new Error('Cannot drive this browser pane while its DevTools are open — close DevTools and retry.')
       } else {
         throw err
       }
