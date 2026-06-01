@@ -364,6 +364,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private profilesChangeCallback: ((settings: BrowserProfileSettings) => void) | null = null
   private profileManagementRequestCallback: ((instanceId: string) => void) | null = null
   private partitionPermissionsInitialized = false
+  // Dedupe permission-denial logs: a page's service workers re-request the same
+  // always-denied permissions (web-app-installation, background-sync) on a timer —
+  // sometimes for many minutes after the pane is gone — which floods the log with
+  // identical lines. We log each unique kind:permission:origin once.
+  private loggedPermissionDenials = new Set<string>()
   private partitionObserversInitialized = false
   private inFlightRequestsByWebContentsId = new Map<number, number>()
   private lastNetworkActivityByWebContentsId = new Map<number, number>()
@@ -2653,12 +2658,28 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
   }
 
+  // Permissions that are always denied for the browser pane by design and that
+  // chatty sites (service workers, ad/analytics frames) probe repeatedly. Their
+  // denial is routine, so log it at most once per origin and at debug level.
+  private static readonly ROUTINE_DENIED_PERMISSIONS = new Set([
+    'background-sync',
+    'web-app-installation',
+    'background-fetch',
+    'periodic-background-sync',
+  ])
+
   private logPermissionDecision(kind: 'check' | 'request', permission: string, origin: string): void {
-    const isNonBlockingNoise = permission === 'background-sync'
-    const suffix = isNonBlockingNoise ? ' (non-blocking)' : ''
+    // Suppress repeats: SWs re-probe the same denied permission on a timer (even
+    // after the pane is destroyed), which would otherwise flood the log.
+    const dedupeKey = `${kind}:${permission}:${origin}`
+    if (this.loggedPermissionDenials.has(dedupeKey)) return
+    this.loggedPermissionDenials.add(dedupeKey)
+
+    const isRoutine = BrowserPaneManager.ROUTINE_DENIED_PERMISSIONS.has(permission)
+    const suffix = permission === 'background-sync' ? ' (non-blocking)' : ''
     const message = `[browser-pane] permission denied (${kind}): ${permission} origin=${origin}${suffix}`
-    if (isNonBlockingNoise) {
-      mainLog.info(message)
+    if (isRoutine) {
+      mainLog.debug(message)
       return
     }
     mainLog.warn(message)
