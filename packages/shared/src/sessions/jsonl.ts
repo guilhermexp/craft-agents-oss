@@ -102,7 +102,11 @@ export function readSessionHeader(sessionFile: string): SessionHeader | null {
     const parsed = safeJsonParse(expandSessionPath(firstLine, dirname(sessionFile))) as SessionHeader;
     return normalizeHeaderPermissionModes(parsed);
   } catch (error) {
-    debug('[jsonl] Failed to read session header:', sessionFile, error);
+    // ENOENT is expected for a freshly-created/restored session whose jsonl
+    // hasn't been written yet — don't log it as a failure (just noise).
+    if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+      debug('[jsonl] Failed to read session header:', sessionFile, error);
+    }
     return null;
   }
 }
@@ -267,7 +271,11 @@ export async function readSessionHeaderAsync(sessionFile: string): Promise<Sessi
       await handle.close();
     }
   } catch (error) {
-    debug('[jsonl] Failed to read session header async:', sessionFile, error);
+    // ENOENT is expected for a freshly-created/restored session whose jsonl
+    // hasn't been written yet — don't log it as a failure (just noise).
+    if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+      debug('[jsonl] Failed to read session header async:', sessionFile, error);
+    }
     return null;
   }
 }

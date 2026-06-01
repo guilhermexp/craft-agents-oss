@@ -129,10 +129,12 @@ class SessionPersistenceQueue {
         ? mergeHeaderWithExternalMetadata(localHeader, diskHeader)
         : localHeader
 
-      if (hasMetadataMismatch) {
+      // Only the external-mutation case ('disk preserved') is noteworthy. The
+      // plain 'local preserved' path fires routinely whenever our own metadata
+      // update (e.g. generated title) diverges from disk — not worth logging.
+      if (hasMetadataMismatch && hasExternalMetadataChange) {
         const baseline = previousSig ? `, previousSig=${previousSig.slice(0, 12)}` : ', previousSig=<none>'
-        const mode = hasExternalMetadataChange ? 'disk preserved' : 'local preserved'
-        debug(`[PersistenceQueue] Session ${sessionId} metadata mismatch detected (${mode}${baseline})`)
+        debug(`[PersistenceQueue] Session ${sessionId} external metadata change detected (disk preserved${baseline})`)
       }
 
       const persistableMessages = storageSession.messages
