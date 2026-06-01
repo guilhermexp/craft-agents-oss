@@ -595,7 +595,8 @@ export function createAnthropicSseStrippingStream(): TransformStream<Uint8Array,
   });
 }
 
-const anthropicAdapter: ApiAdapter = {
+// Exported for regression testing of the extended-thinking history guard.
+export const anthropicAdapter: ApiAdapter = {
   name: 'anthropic',
 
   shouldIntercept(url: string): boolean {
@@ -665,6 +666,16 @@ const anthropicAdapter: ApiAdapter = {
 
     for (const message of messages) {
       if (message.role !== 'assistant' || !Array.isArray(message.content)) continue;
+
+      // Extended thinking: when an assistant turn contains thinking/redacted_thinking
+      // blocks, the Anthropic API treats the whole turn as cryptographically signed and
+      // rejects ANY modification ("thinking blocks ... cannot be modified", 400). Mutating
+      // a sibling tool_use.input to re-inject _intent/_displayName would break that
+      // signature, so skip metadata injection for signed turns entirely.
+      const isSignedThinkingTurn = message.content.some(
+        (block) => block.type === 'thinking' || block.type === 'redacted_thinking',
+      );
+      if (isSignedThinkingTurn) continue;
 
       for (const block of message.content) {
         if (block.type !== 'tool_use' || !block.id || !block.input) continue;
