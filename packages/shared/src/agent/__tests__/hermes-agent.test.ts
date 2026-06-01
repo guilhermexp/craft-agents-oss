@@ -15,7 +15,7 @@ import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
 
 import { HermesAgent, buildCraftSessionContextPrompt, extractHermesTextDelta, resolveHermesModelId } from '../hermes-agent.ts'
 import { createMockBackendConfig, createMockSession, createMockWorkspace } from './test-utils.ts'
-import type { BackendConfig, SdkMcpServerConfig } from '../backend/types.ts'
+import { AbortReason, type BackendConfig, type SdkMcpServerConfig } from '../backend/types.ts'
 import type { NormalizedHermesRuntimeConfig } from '../../hermes/acp-config.ts'
 import { warRoomChannelId } from '../../channels/types.ts'
 import { saveChannelsConfig } from '../../channels/storage.ts'
@@ -303,6 +303,74 @@ describe('HermesAgent.setSourceServers', () => {
     expect(fresh.cleanupCount).toBe(1)
     expect(agent.getProviderForTest()).toBeNull()
     expect(agent.getPendingRestartForTest()).toBe(false)
+  })
+})
+
+describe('HermesAgent abort — orphan ACP notification guard', () => {
+  type FakeAcpInternals = {
+    provider: { cleanup: () => void }
+    installedHandlers: Array<(notification: unknown) => void>
+    cancelCalls: Array<{ sessionId: string }>
+  }
+
+  function makeProviderWithAcpInternals(sessionId: string | null): FakeAcpInternals {
+    const installedHandlers: Array<(notification: unknown) => void> = []
+    const cancelCalls: Array<{ sessionId: string }> = []
+    const provider = {
+      cleanup: () => {},
+      model: {
+        client: {
+          setSessionUpdateHandler: (handler: (notification: unknown) => void) => {
+            installedHandlers.push(handler)
+          },
+        },
+        connection: {
+          cancel: async (params: { sessionId: string }) => {
+            cancelCalls.push(params)
+          },
+        },
+        getSessionId: () => sessionId,
+      },
+    }
+    return { provider, installedHandlers, cancelCalls }
+  }
+
+  it('detaches the session-update handler and sends session/cancel on abort', async () => {
+    const agent = new TestableHermesAgent(createHermesConfig())
+    const internals = makeProviderWithAcpInternals('hermes-session-1')
+    agent.setProviderForTest(internals.provider)
+
+    await agent.abort()
+
+    // session/cancel was sent for the live session.
+    expect(internals.cancelCalls).toEqual([{ sessionId: 'hermes-session-1' }])
+    // A no-op handler was installed; invoking it must not throw (this is what
+    // absorbs late notifications that would otherwise hit a closed controller).
+    expect(internals.installedHandlers).toHaveLength(1)
+    expect(() => internals.installedHandlers[0]!({ sessionUpdate: 'agent_thought_chunk' })).not.toThrow()
+  })
+
+  it('forceAbort also detaches the handler and cancels', () => {
+    const agent = new TestableHermesAgent(createHermesConfig())
+    const internals = makeProviderWithAcpInternals('hermes-session-2')
+    agent.setProviderForTest(internals.provider)
+
+    agent.forceAbort(AbortReason.UserStop)
+
+    expect(internals.cancelCalls).toEqual([{ sessionId: 'hermes-session-2' }])
+    expect(internals.installedHandlers).toHaveLength(1)
+  })
+
+  it('is a no-op without a session id (no cancel sent, no throw)', async () => {
+    const agent = new TestableHermesAgent(createHermesConfig())
+    const internals = makeProviderWithAcpInternals(null)
+    agent.setProviderForTest(internals.provider)
+
+    await agent.abort()
+
+    // No session id -> no cancel notification, but the handler is still detached.
+    expect(internals.cancelCalls).toEqual([])
+    expect(internals.installedHandlers).toHaveLength(1)
   })
 })
 

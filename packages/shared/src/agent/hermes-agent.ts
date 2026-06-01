@@ -45,10 +45,17 @@ type AcpPermissionHandler = (request: RequestPermissionRequest) => Promise<Reque
 
 type AcpClientWithPermissionHandler = {
   setPermissionRequestHandler?: (handler: AcpPermissionHandler) => void
+  setSessionUpdateHandler?: (handler: (notification: unknown) => void) => void
+}
+
+type AcpConnectionWithCancel = {
+  cancel?: (params: { sessionId: string }) => Promise<void>
 }
 
 type AcpLanguageModelWithClient = {
   client?: AcpClientWithPermissionHandler
+  connection?: AcpConnectionWithCancel
+  getSessionId?: () => string | null
 }
 
 type AcpProviderInternalShape = {
@@ -460,6 +467,38 @@ export class HermesAgent extends BaseAgent {
     client.setPermissionRequestHandler(async (request: RequestPermissionRequest) => this.handleAcpPermissionRequest(request))
   }
 
+  private getAcpModelInternals(): AcpLanguageModelWithClient | null {
+    return (this.provider as unknown as AcpProviderInternalShape | null)?.model ?? null
+  }
+
+  /**
+   * Drop the ACP provider's session-update handler.
+   *
+   * The provider re-registers a fresh handler bound to the active stream
+   * controller on every doStream()/doGenerate(). Once our turn's stream closes
+   * (normal finish OR abort), late session/update notifications from the still-
+   * draining Hermes subprocess would be enqueued into the now-closed controller,
+   * throwing "Invalid state: Controller is already closed" and flooding logs via
+   * the ACP SDK's notification error handler. Swapping in a no-op handler drops
+   * those orphaned notifications; the next turn installs its own handler.
+   */
+  private detachAcpStreamHandler(): void {
+    this.getAcpModelInternals()?.client?.setSessionUpdateHandler?.(() => {})
+  }
+
+  /**
+   * Send an ACP session/cancel so the Hermes subprocess stops generating after a
+   * hard abort. Without it the subprocess keeps running the abandoned prompt
+   * (wasting tokens) and streaming orphaned updates. Fire-and-forget: the agent
+   * may still emit a few final updates, which detachAcpStreamHandler() absorbs.
+   */
+  private cancelAcpPrompt(): void {
+    const internals = this.getAcpModelInternals()
+    const sessionId = internals?.getSessionId?.() ?? this.hermesSessionId
+    if (!internals?.connection?.cancel || !sessionId) return
+    void internals.connection.cancel({ sessionId }).catch(() => {})
+  }
+
   private async handleAcpPermissionRequest(request: RequestPermissionRequest): Promise<RequestPermissionResponse> {
     if (!this.onPermissionRequest) {
       this.onDebug?.('[hermes-permission] ACP permission request received without UI handler; denying')
@@ -700,6 +739,10 @@ export class HermesAgent extends BaseAgent {
       this.isStreaming = false
       this.abortController = null
 
+      // Orphan-notification guard: once this turn's stream is closed, any late
+      // session/update from the draining subprocess must not hit the dead controller.
+      this.detachAcpStreamHandler()
+
       if (this.pendingProviderRestart) {
         this.pendingProviderRestart = false
         this.provider?.cleanup()
@@ -710,11 +753,15 @@ export class HermesAgent extends BaseAgent {
   }
 
   async abort(_reason?: string): Promise<void> {
+    this.detachAcpStreamHandler()
+    this.cancelAcpPrompt()
     this.abortController?.abort()
     this.isStreaming = false
   }
 
   override forceAbort(_reason: AbortReason): void {
+    this.detachAcpStreamHandler()
+    this.cancelAcpPrompt()
     this.abortController?.abort()
     this.isStreaming = false
   }
