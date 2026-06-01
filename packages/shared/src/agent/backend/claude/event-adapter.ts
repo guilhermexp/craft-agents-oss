@@ -138,6 +138,13 @@ export class ClaudeEventAdapter extends BaseEventAdapter {
       this.callbacks.onDebug(`SDK message: ${msgInfo}`);
     }
 
+    // rate_limit_event is an informational SDK message (carries rate-limit
+    // headers). We don't surface it as an AgentEvent, but handle it explicitly so
+    // it doesn't fall through to the "Unhandled SDK message type" debug log.
+    if ((message as { type?: string }).type === 'rate_limit_event') {
+      return events;
+    }
+
     switch (message.type) {
       case 'assistant':
         await this.adaptAssistant(message, events);

@@ -600,6 +600,22 @@ describe('ClaudeEventAdapter', () => {
       expect(events).toHaveLength(0);
       expect(debugMessages.some(m => m.includes('Unhandled SDK message type'))).toBe(true);
     });
+
+    it('should silently ignore rate_limit_event without logging it as unhandled', async () => {
+      const debugMessages: string[] = [];
+      const adapter = new ClaudeEventAdapter(createCallbacks({
+        onDebug: (msg) => debugMessages.push(msg),
+      }));
+      adapter.startTurn();
+
+      const events = await adapter.adapt({
+        type: 'rate_limit_event',
+        session_id: 'sess-1',
+      } as any);
+
+      expect(events).toHaveLength(0);
+      expect(debugMessages.some(m => m.includes('Unhandled SDK message type'))).toBe(false);
+    });
   });
 
   describe('tool start dedup across stream + assistant messages', () => {
