@@ -97,7 +97,8 @@
     "marketing:preview": "vite preview --config apps/marketing/vite.config.ts",
     "docs:dev": "cd apps/online-docs && npm install && npx mintlify dev",
     "build": "bun run scripts/build.ts",
-    "prepare": "husky"
+    "prepare": "husky",
+    "doctor": "npx react-doctor@latest"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1030.0",
@@ -115,6 +116,7 @@
     "@types/semver": "^7.7.1",
     "@types/shell-quote": "^1.7.5",
     "@types/uuid": "^11.0.0",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.58.2",
     "@typescript-eslint/parser": "^8.58.2",
     "@vitejs/plugin-react": "^6.0.1",
@@ -130,6 +132,7 @@
     "openai": "^6.34.0",
     "postcss": "^8.5.10",
     "react-devtools-core": "^7.0.1",
+    "react-doctor": "^0.5.0",
     "tailwindcss": "^4.2.2",
     "tar": "^7.5.13",
     "typescript": "^6.0.2",
@@ -198,11 +201,11 @@
   "optionalDependencies": {
     "@img/sharp-darwin-arm64": "0.34.5",
     "@img/sharp-darwin-x64": "0.34.5",
-    "@img/sharp-linux-arm64": "0.34.5",
-    "@img/sharp-linux-x64": "0.34.5",
     "@img/sharp-libvips-darwin-arm64": "1.2.4",
     "@img/sharp-libvips-darwin-x64": "1.2.4",
     "@img/sharp-libvips-linux-arm64": "1.2.4",
-    "@img/sharp-libvips-linux-x64": "1.2.4"
+    "@img/sharp-libvips-linux-x64": "1.2.4",
+    "@img/sharp-linux-arm64": "0.34.5",
+    "@img/sharp-linux-x64": "0.34.5"
   }
 }

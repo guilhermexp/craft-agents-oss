@@ -2,3 +2,9 @@ packages:
   - "packages/*"
   - "apps/*"
   - "!apps/online-docs"
+
+# Supply-chain hardening: delay installs of freshly published versions (7 days)
+# so malicious releases have time to be caught and unpublished, and refuse
+# packages whose trust signals (provenance, signatures) weaken between updates.
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade

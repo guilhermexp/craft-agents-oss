@@ -1,0 +1,48 @@
+#!/bin/sh
+
+# ── i18n key parity (advisory) ─────────────────────────────────────────────
+# Os scripts staged originais (scripts/typecheck-staged.sh e
+# scripts/lint-i18n-staged.sh, citados no CLAUDE.md) foram removidos no branch
+# refactor/architecture-deepening. Reaproveitamos a checagem de paridade global
+# que ainda existe (scripts/check-i18n-parity.ts) em modo AVISO — ela NÃO
+# bloqueia o commit, porque o branch atual já tem chaves divergentes em
+# andamento (ex: locales de meetings). Promova para bloqueante (troque o
+# printf por `exit 1`) quando a paridade voltar a ficar verde.
+if command -v bun >/dev/null 2>&1; then
+  bun run lint:i18n:parity || \
+    printf '%s\n' "i18n parity: chaves divergentes entre locales (advisory; commit não bloqueado)." >&2
+fi
+
+# react-doctor hook start
+react_doctor_scan_staged_files() {
+  if [ -x "./node_modules/.bin/react-doctor" ]; then
+    "./node_modules/.bin/react-doctor" --staged --blocking warning
+    return
+  fi
+
+  if command -v react-doctor >/dev/null 2>&1; then
+    react-doctor --staged --blocking warning
+    return
+  fi
+
+  if command -v pnpm >/dev/null 2>&1; then
+    pnpm dlx react-doctor@latest --staged --blocking warning
+    return
+  fi
+
+  if command -v npx >/dev/null 2>&1; then
+    npx --yes react-doctor@latest --staged --blocking warning
+    return
+  fi
+
+  printf '%s\n' "react-doctor: command not found; skipping staged scan."
+}
+
+react_doctor_output=$(mktemp "${TMPDIR:-/tmp}/react-doctor-hook.XXXXXX")
+if react_doctor_scan_staged_files > "$react_doctor_output" 2>&1; then
+  rm -f "$react_doctor_output"
+else
+  rm -f "$react_doctor_output"
+  printf '%s\n' "React Doctor found staged regressions." "Run react-doctor --staged --blocking warning to inspect." "Want them fixed? Ask your agent to run that command and resolve the findings." >&2
+fi
+# react-doctor hook end
