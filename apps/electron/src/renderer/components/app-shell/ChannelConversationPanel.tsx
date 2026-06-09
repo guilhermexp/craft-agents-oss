@@ -396,7 +396,7 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
           {lastDispatchSummary && !error ? <div className="mb-2 text-xs text-muted-foreground">{lastDispatchSummary}</div> : null}
           <div className="relative rounded-md border border-border bg-background">
             {mentionSuggestions.length > 0 ? (
-              <div className="absolute bottom-full left-2 z-20 mb-2 w-72 overflow-hidden rounded-md border border-border bg-popover shadow-lg">
+              <div className="absolute bottom-full left-2 z-20 mb-2 w-72 overflow-hidden rounded-md border border-border bg-popover shadow-modal-small">
                 <div className="border-b border-border/60 px-3 py-2 text-[11px] uppercase tracking-wide text-muted-foreground">Agentes do canal</div>
                 {mentionSuggestions.map(participant => (
                   <button

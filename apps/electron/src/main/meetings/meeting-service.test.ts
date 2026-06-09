@@ -3,11 +3,15 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { BrowserPaneManager } from '../browser-pane-manager'
+import type { MeetingRecord, MeetingTranscriptSegment } from '../../shared/types'
 import { getWorkspaceMeetingsPath } from '@craft-agent/shared/workspaces'
+import type { LLMQueryRequest, LLMQueryResult } from '@craft-agent/shared/agent/llm-tool'
+import type { AgentBackend } from '@craft-agent/shared/agent/backend'
 
 const tempDirs: string[] = []
 const metadataDirs: string[] = []
 const credentials = new Map<string, { value: string }>()
+const summaryRequests: LLMQueryRequest[] = []
 
 mock.module('electron', () => ({
   session: {
@@ -40,6 +44,44 @@ mock.module('@craft-agent/shared/credentials', () => ({
   }),
 }))
 
+mock.module('@craft-agent/shared/config', () => ({
+  getDefaultLlmConnection: () => 'claude-default',
+  getLlmConnection: (slug: string) => ({ slug, providerType: 'anthropic' }),
+  getLlmConnections: () => [{ slug: 'claude-default', providerType: 'anthropic' }],
+}))
+
+mock.module('@craft-agent/shared/skills', () => ({
+  loadSkill: () => null,
+}))
+
+mock.module('@craft-agent/shared/agent/backend', () => ({
+  createBackendFromConnection: () => ({
+    async queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
+      summaryRequests.push(request)
+      return { text: '## Follow-up\n\n- Guilherme: ship the follow-up fix tomorrow.' }
+    },
+    destroy: () => {},
+  } as Pick<AgentBackend, 'queryLlm' | 'destroy'>),
+}))
+
+mock.module('./transcription-service', () => ({
+  TranscriptionService: class {
+    async transcribe(): Promise<{ segments: MeetingTranscriptSegment[]; text: string }> {
+      return {
+        segments: [
+          {
+            id: 'segment-1',
+            speaker: 'Speaker 1',
+            text: 'Guilherme will ship the follow-up fix tomorrow.',
+            timestamp: 0,
+          },
+        ],
+        text: 'Guilherme will ship the follow-up fix tomorrow.',
+      }
+    }
+  },
+}))
+
 const { MeetingService } = await import('./meeting-service')
 
 function createBrowserPaneManager(): BrowserPaneManager {
@@ -60,6 +102,7 @@ function createBrowserPaneManager(): BrowserPaneManager {
 
 beforeEach(() => {
   credentials.clear()
+  summaryRequests.splice(0)
 })
 
 afterEach(() => {
@@ -139,6 +182,16 @@ describe('MeetingService storage', () => {
       urlOrCode: 'abc-defg-hij',
       transcriptionProvider: 'bogus' as never,
     })).rejects.toThrow('Unsupported transcription provider')
+
+    await expect(service.saveTranscriptionConfig('ws-test', workspaceRoot, {
+      provider: 'groq' as never,
+      model: 'whisper-large-v3',
+    })).rejects.toThrow('Unsupported transcription provider')
+
+    await expect(service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      transcriptionProvider: 'groq' as never,
+    })).rejects.toThrow('Unsupported transcription provider')
   })
 
   it('archives records out of the default list and can unarchive them', async () => {
@@ -197,5 +250,123 @@ describe('MeetingService storage', () => {
     expect(existsSync(join(meetingsDir, 'transcripts', `${record.id}.json`))).toBe(false)
     expect(existsSync(join(meetingsDir, 'summaries', `${record.id}.md`))).toBe(false)
     expect(existsSync(recordingPath)).toBe(false)
+  })
+
+  it('reconciles orphan .webm recordings on first ensureLoaded and keeps referenced files', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-orphans-'))
+    tempDirs.push(workspaceRoot)
+
+    const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
+    metadataDirs.push(dirname(meetingsDir))
+    const recordingsDir = join(meetingsDir, 'recordings')
+
+    const keptPath = join(recordingsDir, '22222222-2222-2222-2222-222222222222.webm')
+    const orphanPath = join(recordingsDir, '11111111-1111-1111-1111-111111111111.webm')
+    const stagingPath = join(recordingsDir, '.33333333-3333-3333-3333-333333333333.tmp')
+
+    const service = new MeetingService(createBrowserPaneManager())
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+    })
+    // Mark `keptPath` as referenced by the meeting record so it survives the
+    // orphan sweep, then simulate the recording artifacts left over from a
+    // previous app session (one good, one orphan, one atomic-write staging).
+    await service.completeRecording('ws-test', workspaceRoot, record.id, {
+      outputPath: keptPath,
+      bytesWritten: 19,
+      durationMs: 1000,
+      mimeType: 'audio/webm',
+    })
+    mkdirSync(recordingsDir, { recursive: true })
+    writeFileSync(keptPath, 'kept-partial-bytes')
+    writeFileSync(orphanPath, 'orphan-partial-bytes')
+    writeFileSync(stagingPath, 'atomic-write-staging')
+
+    // Pre-conditions: both webm files + the atomic staging file exist.
+    expect(existsSync(orphanPath)).toBe(true)
+    expect(existsSync(keptPath)).toBe(true)
+    expect(existsSync(stagingPath)).toBe(true)
+
+    // Trigger ensureLoaded on a fresh service instance (simulates app restart).
+    const reloaded = new MeetingService(createBrowserPaneManager())
+    reloaded.list(workspaceRoot)
+
+    // Orphan .webm was deleted, referenced .webm was kept, .tmp staging untouched.
+    expect(existsSync(orphanPath)).toBe(false)
+    expect(existsSync(keptPath)).toBe(true)
+    expect(existsSync(stagingPath)).toBe(true)
+  })
+
+  it('does not delete orphan recordings that belong to a different workspace', async () => {
+    const workspaceA = mkdtempSync(join(tmpdir(), 'craft-meetings-orphans-a-'))
+    const workspaceB = mkdtempSync(join(tmpdir(), 'craft-meetings-orphans-b-'))
+    tempDirs.push(workspaceA, workspaceB)
+
+    const meetingsDirA = getWorkspaceMeetingsPath(workspaceA)
+    const meetingsDirB = getWorkspaceMeetingsPath(workspaceB)
+    metadataDirs.push(dirname(meetingsDirA), dirname(meetingsDirB))
+    const recordingsA = join(meetingsDirA, 'recordings')
+    const recordingsB = join(meetingsDirB, 'recordings')
+    mkdirSync(recordingsA, { recursive: true })
+    mkdirSync(recordingsB, { recursive: true })
+
+    const service = new MeetingService(createBrowserPaneManager())
+    // Create one record per workspace so each ensureLoaded runs the reconcile
+    // pass and the records are not held in the same in-memory state.
+    await service.start(workspaceA, { urlOrCode: 'abc-defg-hij', captureMode: 'craft', transcribe: false })
+    await service.start(workspaceB, { urlOrCode: 'abc-defg-hij', captureMode: 'craft', transcribe: false })
+
+    const orphanA = join(recordingsA, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.webm')
+    const orphanB = join(recordingsB, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb.webm')
+    writeFileSync(orphanA, 'orphan-a')
+    writeFileSync(orphanB, 'orphan-b')
+
+    // New service instance triggers fresh ensureLoaded for both workspaces.
+    const reloaded = new MeetingService(createBrowserPaneManager())
+    reloaded.list(workspaceA)
+    reloaded.list(workspaceB)
+
+    expect(existsSync(orphanA)).toBe(false)
+    expect(existsSync(orphanB)).toBe(false)
+  })
+
+  it('runs post-meeting summary generation when only follow-up is enabled', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-follow-up-'))
+    tempDirs.push(workspaceRoot)
+
+    credentials.set(JSON.stringify({
+      type: 'meeting_transcription_api_key',
+      workspaceId: 'ws-test',
+      name: 'deepgram',
+    }), { value: 'dg-test-key' })
+
+    const service = new MeetingService(createBrowserPaneManager())
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: true,
+      summarizeOnEnd: false,
+      followUpOnEnd: true,
+    })
+
+    const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
+    metadataDirs.push(dirname(meetingsDir))
+    const recordingPath = join(meetingsDir, 'recordings', `${record.id}.webm`)
+    mkdirSync(dirname(recordingPath), { recursive: true })
+    writeFileSync(recordingPath, 'audio')
+
+    await service.completeRecording('ws-test', workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      bytesWritten: 5,
+      durationMs: 1000,
+      mimeType: 'audio/webm',
+    })
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(summaryRequests).toHaveLength(1)
+    expect(summaryRequests[0]?.systemPrompt).toContain('follow-up')
+    expect(service.status(workspaceRoot, record.id)?.summaryMarkdown).toContain('## Follow-up')
   })
 })

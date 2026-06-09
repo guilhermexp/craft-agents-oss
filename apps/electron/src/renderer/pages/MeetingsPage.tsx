@@ -2,7 +2,6 @@ import * as React from 'react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  AlertCircle,
   ArrowRight,
   CheckCircle2,
   ClipboardList,
@@ -11,7 +10,6 @@ import {
   HelpCircle,
   Loader2,
   MessageSquareText,
-  Mic,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -27,6 +25,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Markdown } from '@/components/markdown'
 import { MEETINGS_CHANGED_EVENT } from '@/components/app-shell/MeetingsListPanel'
+import { isMissingMeetingError, resolveEffectiveMeetingId } from '@/lib/meetings-selection'
 import { cn } from '@/lib/utils'
 import type { BrowserInstanceInfo, MeetingRecord, MeetingStartInput, MeetingTranscriptResult } from '../../shared/types'
 
@@ -160,88 +159,6 @@ function ProcessStep({ icon, title, description }: { icon: React.ReactNode; titl
   )
 }
 
-function ProcessingPipeline({
-  record,
-  transcript,
-  t,
-}: {
-  record: MeetingRecord | null
-  transcript: MeetingTranscriptResult | null
-  t: (key: string, options?: { defaultValue?: string }) => string
-}) {
-  if (!record) return null
-
-  const recordingDone = Boolean(record.recording?.path)
-  const transcriptionActive = transcript?.status === 'capturing'
-  const transcriptionDone = transcript?.status === 'ready'
-  const transcriptionUnavailable = transcript?.status === 'unavailable'
-  const waitingForRecording = record.status === 'running' || record.status === 'starting' || (!recordingDone && record.captureMode === 'craft')
-  const steps = [
-    {
-      key: 'recording',
-      title: t('meetings.pipelineRecording', { defaultValue: 'Gravação' }),
-      description: recordingDone
-        ? t('meetings.pipelineRecordingSaved', { defaultValue: 'Arquivo WebM salvo no workspace.' })
-        : waitingForRecording
-          ? t('meetings.pipelineRecordingActive', { defaultValue: 'Capturando a reunião no Craft.' })
-          : t('meetings.pipelineRecordingPending', { defaultValue: 'Aguardando o arquivo de gravação.' }),
-      state: recordingDone ? 'done' : waitingForRecording ? 'active' : 'pending',
-    },
-    {
-      key: 'transcription',
-      title: t('meetings.pipelineTranscription', { defaultValue: 'Transcrição' }),
-      description: transcriptionDone
-        ? t('meetings.pipelineTranscriptionDone', { defaultValue: 'Markdown da transcrição disponível.' })
-        : transcriptionActive
-          ? t('meetings.pipelineTranscriptionActive', { defaultValue: 'Enviando o áudio para transcrição.' })
-          : transcriptionUnavailable
-            ? transcript?.message || t('meetings.pipelineTranscriptionUnavailable', { defaultValue: 'Transcrição indisponível.' })
-            : t('meetings.pipelineTranscriptionPending', { defaultValue: 'Aguardando a gravação finalizar.' }),
-      state: transcriptionDone ? 'done' : transcriptionActive ? 'active' : transcriptionUnavailable ? 'error' : 'pending',
-    },
-    {
-      key: 'markdown',
-      title: t('meetings.pipelineMarkdown', { defaultValue: 'Markdown' }),
-      description: transcriptionDone
-        ? t('meetings.pipelineMarkdownDone', { defaultValue: 'Resumo e aba de transcrição foram atualizados.' })
-        : transcriptionUnavailable
-          ? t('meetings.pipelineMarkdownUnavailable', { defaultValue: 'Revise o erro antes de gerar entregáveis.' })
-          : t('meetings.pipelineMarkdownPending', { defaultValue: 'Será atualizado quando a transcrição terminar.' }),
-      state: transcriptionDone ? 'done' : transcriptionUnavailable ? 'error' : 'pending',
-    },
-  ] as const
-
-  return (
-    <div className="mb-3 grid gap-2 md:grid-cols-3">
-      {steps.map((step) => (
-        <div key={step.key} className="rounded-lg border border-border/60 bg-background/35 p-3">
-          <div className="flex items-center gap-2">
-            <span className={cn(
-              'flex size-6 shrink-0 items-center justify-center rounded-md border',
-              step.state === 'done' && 'border-success/25 bg-success/10 text-success',
-              step.state === 'active' && 'border-foreground/20 bg-foreground/[0.06] text-foreground',
-              step.state === 'error' && 'border-destructive/30 bg-destructive/10 text-destructive',
-              step.state === 'pending' && 'border-border/70 bg-background/45 text-muted-foreground'
-            )}>
-              {step.state === 'active' ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : step.state === 'done' ? (
-                <CheckCircle2 className="size-3.5" />
-              ) : step.state === 'error' ? (
-                <AlertCircle className="size-3.5" />
-              ) : (
-                <FileText className="size-3.5" />
-              )}
-            </span>
-            <span className="min-w-0 truncate text-xs font-medium text-foreground">{step.title}</span>
-          </div>
-          <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{step.description}</p>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 interface MeetingsPageProps {
   workspaceId?: string | null
   selectedMeetingId?: string | null
@@ -321,6 +238,12 @@ function buildTranscriptMarkdown(
   return lines.join('\n').trimEnd()
 }
 
+function getRecordingMediaUrl(record: MeetingRecord | null): string | null {
+  const recordingPath = record?.recording?.path
+  if (!recordingPath) return null
+  return `media://recording/${encodeURIComponent(recordingPath)}`
+}
+
 export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPageProps) {
   const { t } = useTranslation()
   const [meetingInput, setMeetingInput] = useState('')
@@ -341,6 +264,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
   const [liveStartedId, setLiveStartedId] = useState<string | null>(null)
   const [selectedRecord, setSelectedRecord] = useState<MeetingRecord | null>(null)
   const [selectedTranscript, setSelectedTranscript] = useState<MeetingTranscriptResult | null>(null)
+  const [missingMeetingId, setMissingMeetingId] = useState<string | null>(null)
   const [selectedDetailTab, setSelectedDetailTab] = useState<MeetingDetailTab>('summary')
   const [activeSection, setActiveSection] = useState<MeetingsSection>('invite')
   const [howItWorksOpen, setHowItWorksOpen] = useState(false)
@@ -350,7 +274,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
   const normalizedUrl = useMemo(() => normalizeGoogleMeetInput(meetingInput), [meetingInput])
   // Prefer the parent's explicit selection; fall back to a just-started meeting
   // so recording/transcription feedback shows immediately after clicking record.
-  const effectiveMeetingId = selectedMeetingId ?? liveStartedId
+  const effectiveMeetingId = resolveEffectiveMeetingId({ selectedMeetingId, liveStartedId, missingMeetingId })
   const canJoin = !!workspaceId && !!normalizedUrl && !isJoining
   const currentTranscriptionModels = TRANSCRIPTION_MODELS[transcriptionProvider]
 
@@ -471,6 +395,13 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
         setSelectedTranscript(transcript)
       } catch (error) {
         if (cancelled) return
+        if (isMissingMeetingError(error)) {
+          setMissingMeetingId(effectiveMeetingId)
+          setLiveStartedId((current) => current === effectiveMeetingId ? null : current)
+          setSelectedRecord(null)
+          setSelectedTranscript(null)
+          return
+        }
         const message = error instanceof Error ? error.message : t('meetings.joinError')
         toast.error(message)
       }
@@ -518,6 +449,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
       if (result.status === 'error') throw new Error(result.error || t('meetings.joinError'))
       launchedMeetUrlsRef.current.add(meetingUrl)
       setDetectedMeeting((current) => current?.url === meetingUrl ? null : current)
+      setMissingMeetingId(null)
       // Surface the live recording immediately: select it locally, show its
       // record, and switch to the results view so the ProcessingPipeline renders
       // (recording → transcription feedback) without waiting for a list click.
@@ -626,51 +558,59 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
   const selectedDetailMarkdown = selectedDetailTab === 'summary'
     ? selectedSummaryMarkdown
     : selectedTranscriptMarkdown
+  const isShowingResult = activeSection === 'results' && Boolean(effectiveMeetingId)
+  const recordingMediaUrl = getRecordingMediaUrl(selectedRecord)
 
   return (
-    <div className="h-full overflow-auto overflow-x-hidden bg-background px-4 py-5 sm:px-5">
-      <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-5">
+    <div className={cn(
+      'h-full overflow-auto overflow-x-hidden bg-background px-4 py-5 sm:px-5',
+      isShowingResult && 'py-4'
+    )}>
+      <div className={cn(
+        'mx-auto flex w-full min-w-0 flex-col gap-5',
+        isShowingResult ? 'max-w-7xl' : 'max-w-5xl'
+      )}>
+        {!isShowingResult && (
         <header className="grid min-w-0 gap-4 border-b border-border/50 pb-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] xl:items-end">
-          <div className="min-w-0 space-y-3">
+          <div className="min-w-0 space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               <div className="inline-flex items-center gap-2 rounded-md border border-border/70 bg-foreground/[0.025] px-2 py-1 text-xs text-muted-foreground">
                 <Video className="size-3.5" />
                 <span>{t('meetings.eyebrow')}</span>
               </div>
-              <Button
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 gap-1.5 px-2 text-xs"
+                className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
                 onClick={() => setHowItWorksOpen(true)}
               >
                 <HelpCircle className="size-3.5" />
                 {t('meetings.flowTitle')}
-              </Button>
-              <Button
-                type="button"
-                variant={activeSection === 'invite' ? 'secondary' : 'outline'}
-                size="sm"
-                className="h-7 gap-1.5 px-2 text-xs"
-                onClick={() => setActiveSection('invite')}
-              >
-                <Sparkles className="size-3.5" />
-                {t('meetings.inviteSection')}
-              </Button>
-              <Button
-                type="button"
-                variant={activeSection === 'results' ? 'secondary' : 'outline'}
-                size="sm"
-                className="h-7 gap-1.5 px-2 text-xs"
-                onClick={() => setActiveSection('results')}
-              >
-                <MessageSquareText className="size-3.5" />
-                {t('meetings.resultsSection')}
-              </Button>
+              </button>
             </div>
             <div className="space-y-1">
               <h1 className="text-[26px] font-semibold tracking-tight text-foreground">{t('meetings.title')}</h1>
               <p className="max-w-2xl text-sm leading-6 text-muted-foreground">{t('meetings.subtitle')}</p>
+            </div>
+            <div className="inline-flex items-center rounded-lg border border-border/70 bg-foreground/[0.02] p-0.5">
+              {([
+                ['invite', <Sparkles key="i" className="size-3.5" />, t('meetings.inviteSection')],
+                ['results', <MessageSquareText key="r" className="size-3.5" />, t('meetings.resultsSection')],
+              ] as const).map(([section, icon, label]) => (
+                <button
+                  key={section}
+                  type="button"
+                  onClick={() => setActiveSection(section)}
+                  className={cn(
+                    'inline-flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors',
+                    activeSection === section
+                      ? 'bg-background text-foreground shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {icon}
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
           <div className="min-w-0 rounded-lg border border-border/65 bg-card/25 p-3 text-xs text-muted-foreground">
@@ -696,6 +636,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
             </div>
           </div>
         </header>
+        )}
 
         <Dialog open={howItWorksOpen} onOpenChange={setHowItWorksOpen}>
           <DialogContent className="sm:max-w-[760px]">
@@ -761,7 +702,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
                         className="h-11 w-full shrink-0 gap-2 px-4 xl:w-auto"
                         onClick={handleCraftRecord}
                       >
-                        {isCraftRecording ? <Loader2 className="size-4 animate-spin" /> : <Mic className="size-4" />}
+                        {isCraftRecording ? <Loader2 className="size-4 animate-spin" /> : <Video className="size-4" />}
                         {t('meetings.craftRecordButton')}
                       </Button>
                     </div>
@@ -923,51 +864,81 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
             </div>
           </form>
         ) : effectiveMeetingId ? (
-          <section className="rounded-lg border border-border/70 bg-card/25 p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <h2 className="truncate text-sm font-medium text-foreground">
+          <section className="grid min-h-[calc(100vh-7rem)] min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,430px)]">
+            <div className="min-w-0 overflow-hidden rounded-lg border border-border/65 bg-card/20">
+              <div className="flex min-w-0 items-center justify-between gap-3 border-b border-border/55 px-4 py-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  {([
+                    ['summary', t('meetings.summary')],
+                    ['transcript', t('meetings.transcription')],
+                  ] as const).map(([tab, label]) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => setSelectedDetailTab(tab)}
+                      className={cn(
+                        'h-8 rounded-md border px-3 text-xs font-medium transition-colors',
+                        selectedDetailTab === tab
+                          ? 'border-foreground bg-foreground text-background shadow-xs'
+                          : 'border-border/70 bg-background/35 text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <span className="hidden min-w-0 truncate text-xs text-muted-foreground sm:block">
                   {selectedRecord?.title || selectedRecord?.code || t('meetings.selectedMeetingTitle')}
-                </h2>
-                <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {selectedRecord?.captureMode === 'craft' ? t('meetings.captureModeCraft') : t('meetings.captureModeHermes')}
-                  {selectedRecord?.transcriptionProvider && selectedRecord.transcriptionModel
-                    ? ` · ${getTranscriptionProviderLabel(selectedRecord.transcriptionProvider)} ${selectedRecord.transcriptionModel}`
-                    : ''}
-                </p>
-              </div>
-              {selectedRecord?.status && (
-                <span className="shrink-0 rounded-md border border-border/65 bg-background/45 px-2 py-1 text-xs text-muted-foreground">
-                  {selectedRecord.status}
                 </span>
-              )}
+              </div>
+              <div className="max-h-[calc(100vh-12rem)] overflow-y-auto px-5 py-5">
+                <Markdown mode="minimal" className="text-sm leading-7 text-foreground">
+                  {selectedDetailMarkdown}
+                </Markdown>
+              </div>
             </div>
-            <ProcessingPipeline record={selectedRecord} transcript={selectedTranscript} t={t} />
-            <div className="mb-3 flex flex-wrap gap-2">
-              {([
-                ['summary', t('meetings.summary')],
-                ['transcript', t('meetings.transcription')],
-              ] as const).map(([tab, label]) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setSelectedDetailTab(tab)}
-                  className={cn(
-                    'h-8 rounded-full border px-3 text-xs font-medium transition-colors',
-                    selectedDetailTab === tab
-                      ? 'border-foreground bg-foreground text-background shadow-sm'
-                      : 'border-border/70 bg-background/55 text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="max-h-[520px] overflow-y-auto rounded-lg border border-border/55 bg-background/35 p-4">
-              <Markdown mode="minimal" className="text-sm leading-6 text-foreground">
-                {selectedDetailMarkdown}
-              </Markdown>
-            </div>
+
+            <aside className="min-w-0 rounded-lg border border-border/65 bg-card/20 p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-foreground">
+                    {t('meetings.recordingPreview', { defaultValue: 'Gravação' })}
+                  </div>
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {selectedRecord?.recording?.durationMs
+                      ? formatTranscriptTimestamp(selectedRecord.recording.durationMs)
+                      : selectedRecord?.status ?? ''}
+                  </div>
+                </div>
+                {selectedRecord?.recording?.path && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"
+                    onClick={() => window.electronAPI.showInFolder(selectedRecord.recording!.path)}
+                  >
+                    <ExternalLink className="size-3.5" />
+                    {t('chat.viewInFileManager', { fileManager: 'Finder' })}
+                  </Button>
+                )}
+              </div>
+              <div className="aspect-video overflow-hidden rounded-md border border-border/60 bg-black">
+                {recordingMediaUrl ? (
+                  <video
+                    key={recordingMediaUrl}
+                    src={recordingMediaUrl}
+                    controls
+                    preload="metadata"
+                    className="size-full bg-black object-contain"
+                  />
+                ) : (
+                  <div className="flex size-full items-center justify-center p-4 text-center text-xs leading-5 text-muted-foreground">
+                    {t('meetings.recordingPreviewUnavailable', { defaultValue: 'A gravação em vídeo aparecerá aqui quando o arquivo WebM estiver salvo.' })}
+                  </div>
+                )}
+              </div>
+            </aside>
           </section>
         ) : (
           <section className="rounded-lg border border-border/70 bg-card/25 p-6">

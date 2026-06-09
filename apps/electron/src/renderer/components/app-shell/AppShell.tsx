@@ -3449,7 +3449,7 @@ function AppShellContent({
                 workspaceId={activeWorkspaceId ?? null}
                 selectedMeetingId={navState.details?.meetingId ?? null}
                 onSelectMeeting={(record) => {
-                  navigate(routes.view.meetings(record.id))
+                  navigate(routes.view.meetings(record?.id))
                 }}
               />
             )}

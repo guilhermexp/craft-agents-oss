@@ -10,7 +10,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import ReactDOM from 'react-dom/client'
 import { initReactI18next } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
-import { EyeOff, Mic, Sparkles, Square, X, XCircle } from 'lucide-react'
+import { EyeOff, Sparkles, Square, Video, X, XCircle } from 'lucide-react'
 import { BrowserControls } from '@craft-agent/ui'
 import { setupI18n } from '@craft-agent/shared/i18n'
 import { HeaderIconButton } from '@/components/ui/HeaderIconButton'
@@ -293,9 +293,10 @@ function BrowserToolbarApp() {
         audio: true,
       })
       const hasVideo = stream.getVideoTracks().length > 0
-      const mimeTypeCandidates = hasVideo
-        ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
-        : ['audio/webm;codecs=opus', 'audio/webm']
+      if (!hasVideo) {
+        throw new Error('A gravação precisa capturar vídeo da reunião.')
+      }
+      const mimeTypeCandidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
       const mimeType = mimeTypeCandidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? mimeTypeCandidates[mimeTypeCandidates.length - 1]!
       const recorder = new MediaRecorder(stream, { mimeType })
       const recordingId = prepared.recordingId
@@ -321,6 +322,22 @@ function BrowserToolbarApp() {
         setRecordingState('error')
       }
       recordingRef.current = { id: recordingId, recorder, stream, mimeType, pendingChunks }
+      // Auto-stop when the shared tab/window/screen ends (user closed the Meet
+      // tab, navigated away, or clicked "Stop sharing" in the Chromium bar).
+      // The MediaStream tracks fire `ended` in all those cases; the recorder
+      // will stop emitting data so we must finalize or the .webm is lost.
+      const onTrackEnded = (event: Event) => {
+        const target = event.target as MediaStreamTrack | null
+        console.info('[browser-toolbar] recording track ended, auto-finalizing', {
+          recordingId,
+          trackKind: target?.kind,
+          trackLabel: target?.label,
+        })
+        void stopRecording('finalize')
+      }
+      stream.getTracks().forEach((track) => {
+        track.addEventListener('ended', onTrackEnded, { once: true })
+      })
       recorder.start(1000)
       setRecordingState('recording')
       console.info('[browser-toolbar] recording started', { recordingId, outputPath: prepared.outputPath })
@@ -344,7 +361,13 @@ function BrowserToolbarApp() {
         recordingRef.current = null
         active.recorder.state !== 'inactive' && active.recorder.stop()
         active.stream.getTracks().forEach((track) => track.stop())
-        void api?.abortRecording(active.id)
+        // Finalize on unmount so the partial .webm is persisted (the user may
+        // have closed the pane before remembering to click Parar). abortRecording
+        // would destroy the file; finalizeRecording keeps the partial capture
+        // and triggers the usual transcribe + completeRecording pipeline.
+        void api?.finalizeRecording(active.id, active.mimeType).catch((err) => {
+          console.error('[browser-toolbar] finalize on unmount failed', err)
+        })
       }
     }
   }, [api])
@@ -395,9 +418,9 @@ function BrowserToolbarApp() {
       onClick={handleToggleRecording}
       disabled={recordingState === 'preparing' || recordingState === 'stopping'}
       className={recordingButtonClassName}
-      title={recordingError ?? (recordingState === 'recording' ? 'Parar gravação' : 'Gravar áudio da reunião')}
+      title={recordingError ?? (recordingState === 'recording' ? 'Parar gravação' : 'Gravar vídeo da reunião')}
     >
-      {recordingState === 'recording' ? <Square className="size-3.5" /> : <Mic className="size-3.5" />}
+      {recordingState === 'recording' ? <Square className="size-3.5" /> : <Video className="size-3.5" />}
       {recordingState === 'preparing'
         ? 'Preparando...'
         : recordingState === 'stopping'

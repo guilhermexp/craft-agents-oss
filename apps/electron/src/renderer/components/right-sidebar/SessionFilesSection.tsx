@@ -763,7 +763,7 @@ export function WorkspaceFilesSection({ sessionId, className }: { sessionId?: st
 
   const handleFileDoubleClick = useCallback((file: SessionFile) => {
     if (file.type === 'directory') {
-      window.electronAPI.openFile(file.path)
+      onOpenFile(file.path)
     } else {
       onOpenFile(file.path)
     }

@@ -1,3 +1,4 @@
+export { CONFIG_DIR } from './paths.ts';
 export * from './types.ts';
 export * from './llm-connections.ts';
 export * from './llm-validation.ts';

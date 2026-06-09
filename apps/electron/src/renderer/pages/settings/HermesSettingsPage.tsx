@@ -31,13 +31,6 @@ export const meta: DetailsPageMeta = {
   slug: 'hermes',
 }
 
-function formatHermesReleaseLabel(runtime?: HermesRuntimeDetailsResult | null): string | undefined {
-  const tag = runtime?.sourceRepoReleaseTag?.trim()
-  const commitDate = runtime?.sourceRepoCommitDate?.trim()
-  if (tag && commitDate) return `${tag} · ${commitDate}`
-  return tag || commitDate || undefined
-}
-
 function formatHermesRuntimeVersion(runtime?: HermesRuntimeDetailsResult | null): string {
   const version = runtime?.version?.trim()
   return version ? `v${version}` : 'desconhecida'
@@ -54,10 +47,6 @@ function formatHermesSourceKind(runtime?: HermesRuntimeDetailsResult | null): st
   if (runtime?.sourceRepoRemote?.includes('guilhermexp/hermes-agent')) return 'Override/dev fork explícito'
   if (runtime?.runtimeSource === 'bundled') return 'Runtime embutido do Craft'
   return 'CLI do sistema'
-}
-
-function formatHermesPin(runtime?: HermesRuntimeDetailsResult | null): string {
-  return runtime?.hermesPin?.trim() || 'pin não encontrado'
 }
 
 export default function HermesSettingsPage() {
@@ -173,32 +162,14 @@ export default function HermesSettingsPage() {
                       {runtime?.found ? 'Ativo' : 'Indisponível'}
                     </span>
                   </SettingsRow>
-                  <SettingsRow label="Versão em uso" description="Hermes carregado pelo Craft agora; é a versão efetivamente usada nas sessões ACP.">
+                  <SettingsRow label="Versão em uso" description="Versão do Hermes carregada nas sessões ACP.">
                     <span className="text-xs font-medium text-foreground">
                       {formatHermesRuntimeVersion(runtime)}
-                    </span>
-                  </SettingsRow>
-                  <SettingsRow label="Build / pin acompanhado" description={formatHermesReleaseLabel(runtime) ?? 'Sem tag/data Git no source atual'}>
-                    <span className="text-[11px] text-muted-foreground max-w-[260px] truncate">
-                      pin: {formatHermesPin(runtime)}
                     </span>
                   </SettingsRow>
                   <SettingsRow label="Código desta build" description={runtime?.sourceRepoRemote ?? formatHermesSourceKind(runtime)}>
                     <button type="button" className="text-[11px] text-muted-foreground max-w-[260px] truncate hover:text-foreground" onClick={() => revealAbsolutePath(runtime?.sourceRepoPath)}>
                       {formatHermesCommit(runtime)}
-                    </button>
-                  </SettingsRow>
-                  <SettingsRow label="Origem do runtime" description={formatHermesSourceKind(runtime)}>
-                    <code className="text-[11px] text-muted-foreground max-w-[260px] truncate">{runtime?.resolvedCommand ?? runtime?.command}</code>
-                  </SettingsRow>
-                  <SettingsRow label="Agent root" description="Código Python do Hermes que o Craft está carregando via ACP.">
-                    <button type="button" className="text-[11px] text-muted-foreground max-w-[260px] truncate hover:text-foreground" onClick={() => revealAbsolutePath(runtime?.agentRoot)}>
-                      {runtime?.agentRoot ?? 'não publicado'}
-                    </button>
-                  </SettingsRow>
-                  <SettingsRow label="Cache / pin file" description={runtime?.sourceRepoPath ?? 'Cache upstream ainda não encontrado'}>
-                    <button type="button" className="text-[11px] text-muted-foreground max-w-[260px] truncate hover:text-foreground" onClick={() => revealAbsolutePath(runtime?.hermesPinPath)}>
-                      {runtime?.hermesPinPath ?? 'hermes-version.txt não encontrado'}
                     </button>
                   </SettingsRow>
                   <SettingsRow label="Config" description={runtime?.configExists ? runtime.configPath : 'config.yaml ainda não existe no runtime isolado'}>

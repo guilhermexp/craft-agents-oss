@@ -75,7 +75,7 @@ describe('Hermes LLM connection model sync', () => {
     expect(synced.defaultModel).toBe('gpt-5')
     expect(synced.models).toEqual([{
       id: 'gpt-5',
-      name: 'gpt-5 via Hermes (openai-codex)',
+      name: 'gpt-5 via Hermes',
       shortName: 'gpt-5',
       description: 'Modelo ativo no Hermes (openai-codex)',
       provider: 'hermes',

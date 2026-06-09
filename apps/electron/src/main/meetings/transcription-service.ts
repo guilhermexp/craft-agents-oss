@@ -1,4 +1,4 @@
-import { readFileSync } from 'fs'
+import { readFile } from 'fs/promises'
 import { randomUUID } from 'crypto'
 import type { MeetingTranscriptSegment } from '@craft-agent/shared/protocol'
 import { mainLog } from '../logger'
@@ -18,7 +18,7 @@ export interface TranscribeOutput {
 export class TranscriptionService {
   async transcribe(input: TranscribeInput): Promise<TranscribeOutput> {
     const { filePath, model, apiKey, mimeType } = input
-    const audioData = readFileSync(filePath)
+    const audioData = await readFile(filePath)
 
     const url = new URL('https://api.deepgram.com/v1/listen')
     url.searchParams.set('model', model)
@@ -26,13 +26,19 @@ export class TranscriptionService {
     url.searchParams.set('diarize', 'true')
     url.searchParams.set('utterances', 'true')
 
-    mainLog.info(`[transcription] starting Deepgram transcription: model=${model} file=${filePath} size=${audioData.byteLength}`)
+    // Deepgram wants a clean container content-type, not the MediaRecorder mime
+    // string. The recorder hands us `video/webm;codecs=vp9,opus`; passing that
+    // verbatim (video/ prefix + codecs param) can break Deepgram's demux and
+    // yield an empty transcript. Strip to the audio container type.
+    const contentType = toDeepgramContentType(mimeType)
+
+    mainLog.info(`[transcription] starting Deepgram transcription: model=${model} file=${filePath} size=${audioData.byteLength} contentType=${contentType}`)
 
     const response = await fetch(url.toString(), {
       method: 'POST',
       headers: {
         'Authorization': `Token ${apiKey}`,
-        'Content-Type': mimeType || 'audio/webm',
+        'Content-Type': contentType,
       },
       body: audioData,
     })
@@ -50,6 +56,16 @@ export class TranscriptionService {
     mainLog.info(`[transcription] completed: ${segments.length} segments, ${text.length} chars`)
     return { segments, text }
   }
+}
+
+/**
+ * Normalize a MediaRecorder mime string to a Deepgram-friendly container
+ * content-type: drop the `;codecs=…` parameter and map `video/webm` → `audio/webm`.
+ */
+function toDeepgramContentType(mimeType?: string): string {
+  const base = (mimeType ?? 'audio/webm').split(';')[0]!.trim().toLowerCase()
+  if (!base) return 'audio/webm'
+  return base.startsWith('video/') ? base.replace('video/', 'audio/') : base
 }
 
 interface DeepgramUtterance {

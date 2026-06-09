@@ -7,6 +7,9 @@ const registeredNamespaces: string[] = []
 
 mock.module('electron', () => ({
   ipcMain: {
+    // ipcMain is a separate transport from the RPC server this test verifies.
+    // Channels registered here (meetings recording, hermes env, …) are NOT part
+    // of the RPC HANDLED_CHANNELS contract, so the mock intentionally ignores them.
     handle: () => {},
     on: () => {},
   },

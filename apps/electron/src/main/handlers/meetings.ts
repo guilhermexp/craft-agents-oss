@@ -12,13 +12,11 @@ const RECORDING_APPEND = 'meetings:recording:append'
 const RECORDING_FINALIZE = 'meetings:recording:finalize'
 const RECORDING_ABORT = 'meetings:recording:abort'
 
+// RPC server (server.handle) channels — verified by the registration coverage
+// test. ipcMain-only channels (resolve-workspace, recording:*) are a separate
+// transport for the in-pane toolbar and are listed in IPC_ONLY_CHANNELS below.
 export const HANDLED_CHANNELS = [
   RPC_NAMESPACES.meetings.START,
-  MEETINGS_RESOLVE_WORKSPACE,
-  RECORDING_PREPARE,
-  RECORDING_APPEND,
-  RECORDING_FINALIZE,
-  RECORDING_ABORT,
   RPC_NAMESPACES.meetings.LIST,
   RPC_NAMESPACES.meetings.STATUS,
   RPC_NAMESPACES.meetings.STOP,
@@ -28,6 +26,16 @@ export const HANDLED_CHANNELS = [
   RPC_NAMESPACES.meetings.ARCHIVE,
   RPC_NAMESPACES.meetings.UNARCHIVE,
   RPC_NAMESPACES.meetings.DELETE,
+] as const
+
+// ipcMain-only channels used by the browser-pane toolbar recorder. Registered
+// via ipcMain.handle (not the RPC server), so they are NOT part of HANDLED_CHANNELS.
+export const IPC_ONLY_CHANNELS = [
+  MEETINGS_RESOLVE_WORKSPACE,
+  RECORDING_PREPARE,
+  RECORDING_APPEND,
+  RECORDING_FINALIZE,
+  RECORDING_ABORT,
 ] as const
 
 let meetingService: MeetingService | null = null
@@ -216,7 +224,14 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
     try {
       return meetingService!.transcript(resolveWorkspaceRoot(workspaceId), id)
     } catch (err) {
-      platform.logger.error(`[meetings] transcript failed for ${id}:`, err)
+      // "Meeting not found" is a benign, client-handled race (the renderer polls
+      // a stale selection and clears it on this error). Don't spam a stacktrace.
+      const message = err instanceof Error ? err.message : String(err)
+      if (message.startsWith('Meeting not found:')) {
+        platform.logger.debug?.(`[meetings] transcript for missing meeting ${id} (client will clear selection)`)
+      } else {
+        platform.logger.error(`[meetings] transcript failed for ${id}:`, err)
+      }
       throw err
     }
   })

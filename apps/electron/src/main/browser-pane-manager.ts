@@ -455,10 +455,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     this.setupSessionPermissions(ses)
     this.setupSessionObservers(ses)
 
-    // Keep the native window chrome aligned with the OS theme, but force embedded
-    // pages into light color scheme via CDP emulation. Without this, sites like
-    // Google Meet pick up prefers-color-scheme:dark from Electron's nativeTheme
-    // and partially apply dark styles, creating a jarring two-theme appearance.
+    // Native window chrome follows the OS theme. Embedded pages are left to honor
+    // their own prefers-color-scheme (like a normal browser) — we do not override
+    // the page color scheme.
     const chromeBgColor = nativeTheme.shouldUseDarkColors ? '#2b292e' : '#fafafb'
     const pageBgColor = '#ffffff'
 
@@ -526,7 +525,6 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     overlayWcWithBg.setBackgroundColor?.('#00000000')
 
     const cdp = new BrowserCDP(pageView.webContents)
-    void cdp.setColorSchemeEmulation('light')
 
     const instance: BrowserInstance = {
       id: instanceId,
@@ -579,7 +577,16 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       }
     })
 
-    const sanitizedUa = defaultUa.replace(/\sElectron\/[^\s]+/g, '')
+    // Strip Electron's default app tokens so the UA reads as vanilla Chrome.
+    // Electron appends both `Electron/<ver>` and an app token derived from
+    // app.getName() with spaces removed (e.g. `CraftAgents/<ver>`); either one
+    // is a passive bot-detection tell at page load (Cloudflare Layer 1).
+    const appToken = (typeof app.getName === 'function' ? app.getName() : '').replace(/[^A-Za-z0-9]/g, '')
+    let sanitizedUa = defaultUa.replace(/\sElectron\/[^\s]+/g, '')
+    if (appToken) {
+      sanitizedUa = sanitizedUa.replace(new RegExp(`\\s${appToken}\\/[^\\s]+`, 'g'), '')
+    }
+    sanitizedUa = sanitizedUa.replace(/\s{2,}/g, ' ').trim()
     if (sanitizedUa && sanitizedUa !== defaultUa) {
       pageView.webContents.setUserAgent(sanitizedUa)
     }

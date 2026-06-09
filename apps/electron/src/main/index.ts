@@ -48,7 +48,7 @@ import { initializeNativeAgentHostRuntime, setPowerShellValidatorRoot } from '@c
 import { handleDeepLink } from './deep-link'
 import { BrowserPaneManager } from './browser-pane-manager'
 import { OAuthFlowStore } from '@craft-agent/shared/auth'
-import { registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
+import { registerMediaHandler, registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath, getMessagingGatewayLogFilePath, messagingGatewayLog } from './logger'
 import { setPerfEnabled, enableDebug } from '@craft-agent/shared/utils'
 import { registerPiModelResolver } from '@craft-agent/shared/config'
@@ -377,8 +377,9 @@ app.whenReady().then(async () => {
     mainLog.warn('Hermes seed skill bootstrap reported errors', { errors: hermesSeed.errors, seedDir: hermesSeed.seedDir })
   }
 
-  // Register thumbnail:// protocol handler (scheme was registered earlier, before app.whenReady)
+  // Register local media/thumbnail protocol handlers (schemes were registered earlier, before app.whenReady)
   registerThumbnailHandler()
+  registerMediaHandler()
 
   // Re-apply proxy settings now that Electron sessions are available
   // (first call before app.whenReady only configured Node-level proxy)

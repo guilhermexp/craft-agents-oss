@@ -14,6 +14,8 @@ interface ActiveRecording {
   stream: WriteStream
   startedAt: number
   bytesWritten: number
+  /** Set when the write stream emits an error; append/finalize stop touching it. */
+  streamError?: Error
 }
 
 export interface PrepareRecordingInput {
@@ -59,7 +61,7 @@ export class RecordingService {
     const outputPath = join(recordingsDir, `${id}.webm`)
     const stream = createWriteStream(outputPath, { flags: 'w' })
 
-    this.recordings.set(id, {
+    const recording: ActiveRecording = {
       id,
       workspaceId: input.workspaceId,
       browserInstanceId: input.browserInstanceId,
@@ -68,7 +70,15 @@ export class RecordingService {
       stream,
       startedAt: Date.now(),
       bytesWritten: 0,
+    }
+    // Without an error listener a failed write would crash the process with an
+    // unhandled 'error' event. Capture it so append/finalize can surface it.
+    stream.on('error', (err: Error) => {
+      recording.streamError = err
+      mainLog.error(`[recording] write stream error id=${id}: ${err.message}`)
     })
+
+    this.recordings.set(id, recording)
 
     mainLog.info(`[recording] prepared id=${id} pane=${input.browserInstanceId} -> ${outputPath}`)
     return { recordingId: id, meetingId: input.meetingId, outputPath }
@@ -78,6 +88,12 @@ export class RecordingService {
     const recording = this.recordings.get(recordingId)
     if (!recording) {
       throw new Error(`recording not found: ${recordingId}`)
+    }
+    if (recording.streamError) {
+      throw new Error(`recording stream failed: ${recording.streamError.message}`)
+    }
+    if (recording.stream.writableEnded || recording.stream.destroyed) {
+      throw new Error(`recording stream already closed: ${recordingId}`)
     }
     const buffer = chunk instanceof Uint8Array ? Buffer.from(chunk) : Buffer.from(chunk as ArrayBuffer)
     recording.stream.write(buffer)
@@ -90,6 +106,10 @@ export class RecordingService {
       throw new Error(`recording not found: ${recordingId}`)
     }
     this.recordings.delete(recordingId)
+    if (recording.streamError) {
+      try { recording.stream.destroy() } catch { /* ignore */ }
+      throw new Error(`recording stream failed: ${recording.streamError.message}`)
+    }
     await new Promise<void>((resolve, reject) => {
       recording.stream.end((err: NodeJS.ErrnoException | null | undefined) => (err ? reject(err) : resolve()))
     })

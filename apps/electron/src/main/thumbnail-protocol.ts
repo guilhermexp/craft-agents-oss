@@ -19,8 +19,10 @@
  */
 
 import { protocol, nativeImage } from 'electron'
-import { stat } from 'fs/promises'
-import { isAbsolute } from 'path'
+import { createReadStream } from 'fs'
+import { realpath, stat } from 'fs/promises'
+import { isAbsolute, join, sep } from 'path'
+import { CONFIG_DIR } from '@craft-agent/shared/config'
 import { mainLog } from './logger'
 
 /** Thumbnail output size in pixels (width and height) */
@@ -41,6 +43,9 @@ const OS_THUMBNAIL_EXTENSIONS = new Set([
 
 /** All extensions we can potentially thumbnail */
 const ALL_PREVIEWABLE = new Set([...IMAGE_EXTENSIONS, ...OS_THUMBNAIL_EXTENSIONS])
+const MEDIA_EXTENSIONS = new Map([
+  ['webm', 'video/webm'],
+])
 
 // In-memory LRU cache: path -> { mtime, data }
 const cache = new Map<string, { mtime: number; data: Buffer }>()
@@ -116,6 +121,16 @@ export function registerThumbnailScheme(): void {
         corsEnabled: true,
         // Stream support for efficient response delivery
         stream: true,
+      },
+    },
+    {
+      scheme: 'media',
+      privileges: {
+        supportFetchAPI: true,
+        standard: true,
+        corsEnabled: true,
+        stream: true,
+        bypassCSP: true,
       },
     },
   ])
@@ -196,4 +211,126 @@ export function registerThumbnailHandler(): void {
   })
 
   mainLog.info('Registered thumbnail:// protocol handler')
+}
+
+/**
+ * Root that legitimately holds meeting recordings:
+ * `~/.craft-agent/workspaces/<slug>/meetings/recordings/<id>.webm`.
+ */
+const WORKSPACES_ROOT = join(CONFIG_DIR, 'workspaces')
+
+/**
+ * Confine an incoming media path to the recordings directory before streaming.
+ * Canonicalizes via realpath to defeat `..` traversal and symlink escapes,
+ * then requires the path to live under WORKSPACES_ROOT inside a
+ * `meetings/recordings` segment. Returns the safe canonical path or null.
+ */
+async function resolveRecordingPath(filePath: string): Promise<string | null> {
+  let canonical: string
+  try {
+    canonical = await realpath(filePath)
+  } catch {
+    return null
+  }
+  const rootWithSep = WORKSPACES_ROOT.endsWith(sep) ? WORKSPACES_ROOT : WORKSPACES_ROOT + sep
+  if (!canonical.startsWith(rootWithSep)) return null
+  if (!canonical.includes(`${sep}meetings${sep}recordings${sep}`)) return null
+  return canonical
+}
+
+function parseRangeHeader(rangeHeader: string | null, size: number): { start: number; end: number } | null {
+  if (!rangeHeader) return null
+  // An empty file has no satisfiable byte range — fall back to a full response.
+  if (size <= 0) return null
+  const match = rangeHeader.match(/^bytes=(\d*)-(\d*)$/)
+  if (!match) return null
+
+  const [, rawStart, rawEnd] = match
+  if (!rawStart && !rawEnd) return null
+
+  if (!rawStart) {
+    const suffixLength = Number(rawEnd)
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0) return null
+    return {
+      start: Math.max(size - suffixLength, 0),
+      end: size - 1,
+    }
+  }
+
+  const start = Number(rawStart)
+  const end = rawEnd ? Number(rawEnd) : size - 1
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || start >= size) return null
+  return { start, end: Math.min(end, size - 1) }
+}
+
+/**
+ * Register the media:// protocol handler for meeting recording playback.
+ *
+ * URL format: media://recording/<encodeURIComponent(absolutePath)>
+ */
+export function registerMediaHandler(): void {
+  protocol.handle('media', async (request) => {
+    try {
+      const url = new URL(request.url)
+      if (url.hostname !== 'recording') {
+        return new Response(null, { status: 404 })
+      }
+
+      const requestedPath = decodeURIComponent(url.pathname.slice(1))
+      if (!requestedPath || !isAbsolute(requestedPath)) {
+        return new Response(null, { status: 400 })
+      }
+
+      const ext = requestedPath.split('.').pop()?.toLowerCase() || ''
+      const contentType = MEDIA_EXTENSIONS.get(ext)
+      if (!contentType) {
+        return new Response(null, { status: 404 })
+      }
+
+      // Confine to the recordings directory — reject traversal/symlink escapes.
+      const filePath = await resolveRecordingPath(requestedPath)
+      if (!filePath) {
+        return new Response(null, { status: 403 })
+      }
+
+      let fileStat: Awaited<ReturnType<typeof stat>>
+      try {
+        fileStat = await stat(filePath)
+      } catch {
+        return new Response(null, { status: 404 })
+      }
+      if (!fileStat.isFile()) {
+        return new Response(null, { status: 404 })
+      }
+
+      const size = fileStat.size
+      const range = parseRangeHeader(request.headers.get('range'), size)
+      if (range) {
+        const { start, end } = range
+        const chunkSize = end - start + 1
+        return new Response(createReadStream(filePath, { start, end }) as unknown as BodyInit, {
+          status: 206,
+          headers: {
+            'Accept-Ranges': 'bytes',
+            'Content-Length': String(chunkSize),
+            'Content-Range': `bytes ${start}-${end}/${size}`,
+            'Content-Type': contentType,
+          },
+        })
+      }
+
+      return new Response(createReadStream(filePath) as unknown as BodyInit, {
+        headers: {
+          'Accept-Ranges': 'bytes',
+          'Content-Length': String(size),
+          'Content-Type': contentType,
+        },
+      })
+    } catch (error) {
+      mainLog.error('Media protocol error:', error)
+      return new Response(null, { status: 500 })
+    }
+  })
+
+  mainLog.info('Registered media:// protocol handler')
 }

@@ -1165,6 +1165,9 @@ export const HANDLED_CHANNELS = [
   RPC_NAMESPACES.hermes.GET_PROFILE_SETUP_COMMAND,
   RPC_NAMESPACES.hermes.GET_PROFILE_SOUL,
   RPC_NAMESPACES.hermes.UPDATE_PROFILE_SOUL,
+  RPC_NAMESPACES.hermes.LIST_ENV,
+  RPC_NAMESPACES.hermes.SET_ENV,
+  RPC_NAMESPACES.hermes.DELETE_ENV,
 ] as const
 
 export function registerHermesHandlers(server: RpcServer, deps: HandlerDeps): void {

@@ -22,6 +22,10 @@ import 'react-pdf/dist/Page/TextLayer.css'
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker
 
+// Disable eval/new Function in pdf.js so it complies with the renderer CSP
+// (which intentionally omits 'unsafe-eval'). Stable ref avoids re-loading the doc.
+const PDF_OPTIONS = { isEvalSupported: false } as const
+
 interface PreviewItem {
   src: string
   label?: string
@@ -143,6 +147,7 @@ export function PDFPreviewOverlay({
         {fileObj && (
           <Document
             file={fileObj}
+            options={PDF_OPTIONS}
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={onDocumentLoadError}
             loading={<div className="text-muted-foreground text-sm">{t('common.rendering')}</div>}

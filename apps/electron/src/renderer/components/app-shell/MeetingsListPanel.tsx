@@ -1,9 +1,10 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertCircle, Archive, Bot, CalendarDays, Mic, Square, Trash2 } from 'lucide-react'
+import { AlertCircle, Archive, Bot, CalendarDays, Square, Trash2, Video } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
+import { shouldClearSelectedMeeting } from '@/lib/meetings-selection'
 import { cn } from '@/lib/utils'
 import type { MeetingRecord } from '../../../shared/types'
 
@@ -12,7 +13,7 @@ export const MEETINGS_CHANGED_EVENT = 'craft:meetings-changed'
 interface MeetingsListPanelProps {
   workspaceId?: string | null
   selectedMeetingId?: string | null
-  onSelectMeeting: (record: MeetingRecord) => void
+  onSelectMeeting: (record: MeetingRecord | null) => void
 }
 
 function formatMeetingDate(value: number): string {
@@ -90,6 +91,13 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
     }
   }, [loadMeetings])
 
+  React.useEffect(() => {
+    if (loading) return
+    if (shouldClearSelectedMeeting(records, selectedMeetingId)) {
+      onSelectMeeting(null)
+    }
+  }, [loading, onSelectMeeting, records, selectedMeetingId])
+
   const handleStop = async (record: MeetingRecord) => {
     if (!workspaceId) return
     setStoppingId(record.id)
@@ -110,6 +118,9 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
     setActionId(`archive:${record.id}`)
     try {
       await window.electronAPI.meetings.archive(workspaceId, record.id)
+      if (selectedMeetingId === record.id) {
+        onSelectMeeting(null)
+      }
       window.dispatchEvent(new Event(MEETINGS_CHANGED_EVENT))
       await loadMeetings()
     } catch (error) {
@@ -126,6 +137,9 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
     setActionId(`delete:${record.id}`)
     try {
       await window.electronAPI.meetings.deleteMeeting(workspaceId, record.id)
+      if (selectedMeetingId === record.id) {
+        onSelectMeeting(null)
+      }
       window.dispatchEvent(new Event(MEETINGS_CHANGED_EVENT))
       await loadMeetings()
     } catch (error) {
@@ -164,7 +178,7 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
         {records.map((record) => {
           const selected = selectedMeetingId === record.id
           const isLive = record.status === 'running' || record.status === 'starting'
-          const CaptureIcon = record.captureMode === 'craft' ? Mic : Bot
+          const CaptureIcon = record.captureMode === 'craft' ? Video : Bot
           const transcriptionLabel = getTranscriptionLabel(record)
           return (
             <div

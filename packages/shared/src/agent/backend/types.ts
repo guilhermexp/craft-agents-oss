@@ -28,6 +28,7 @@ import { AbortReason, type RecoveryMessage } from '../core/index.ts';
 export { AbortReason, type RecoveryMessage };
 
 import type { ModelProvider } from '../../config/models.ts';
+import type { LLMQueryRequest, LLMQueryResult } from '../llm-tool.ts';
 
 // Import LLM connection types for auth
 import type { LlmAuthType, LlmProviderType } from '../../config/llm-connections.ts';
@@ -375,6 +376,14 @@ export interface AgentBackend {
    * Used for connection testing, title generation, and summarization.
    */
   runMiniCompletion(prompt: string): Promise<string | null>;
+
+  /**
+   * Run a one-shot LLM query (prompt + optional system prompt / schema) using
+   * the backend's auth infrastructure, without a chat session. Used by the
+   * call_llm tool and headless features (e.g. meeting summaries). All backends
+   * implement this via BaseAgent. See packages/shared/CLAUDE.md `queryLlm` contract.
+   */
+  queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult>;
 
   /**
    * Clean up resources (MCP connections, watchers, etc.)

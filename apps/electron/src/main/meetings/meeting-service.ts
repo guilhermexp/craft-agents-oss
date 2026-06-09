@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
@@ -10,8 +10,10 @@ import type {
   MeetingStatus,
   MeetingTranscriptionProvider,
   MeetingTranscriptResult,
+  MeetingTranscriptSegment,
   SaveMeetingTranscriptionConfigInput,
 } from '../../shared/types'
+import { generateMeetingSummaryMarkdown } from './meeting-summary-service'
 import type { BrowserPaneManager } from '../browser-pane-manager'
 import { getHermesRuntimePaths } from '../handlers/hermes-runtime'
 import { mainLog } from '../logger'
@@ -462,6 +464,14 @@ export class MeetingService {
       state.transcripts.set(meetingId, transcript)
       this.persistTranscript(state, transcript)
       this.updateRecord(state, meetingId, { summaryMarkdown })
+
+      // Hand the ready transcript to the configured Craft agent for a real
+      // summary (text → markdown). Fire-and-forget: the 'ready' status above
+      // already unblocked the UI; the poll surfaces the upgraded summary when
+      // the agent finishes. Hermes is excluded inside the summary service.
+      if ((currentRecord.summarizeOnEnd || currentRecord.followUpOnEnd) && result.segments.length > 0) {
+        void this.generateAgentSummary(workspaceId, workspaceRootPath, meetingId, result.segments)
+      }
     } catch (error) {
       const currentRecord = state.records.get(meetingId) ?? record
       const message = error instanceof Error ? error.message : String(error)
@@ -488,6 +498,42 @@ export class MeetingService {
       this.persistTranscript(state, unavailable)
       this.updateRecord(state, meetingId, { summaryMarkdown })
       throw error
+    }
+  }
+
+  /**
+   * Run the configured Craft agent (Claude/Pi, never Hermes) on the ready
+   * transcript to produce a real summary, replacing the boilerplate one.
+   * Best-effort: failures keep the existing summary and are logged.
+   */
+  private async generateAgentSummary(
+    workspaceId: string,
+    workspaceRootPath: string,
+    meetingId: string,
+    segments: MeetingTranscriptSegment[],
+  ): Promise<void> {
+    try {
+      const state = this.getWorkspaceState(workspaceRootPath)
+      const record = state.records.get(meetingId)
+      if (!record) return
+
+      const markdown = await generateMeetingSummaryMarkdown({
+        workspaceId,
+        workspaceRootPath,
+        record,
+        segments,
+      })
+      if (!markdown) return
+
+      // The record may have been deleted/archived while the agent ran.
+      const latest = this.getWorkspaceState(workspaceRootPath)
+      if (!latest.records.has(meetingId)) return
+      this.updateRecord(latest, meetingId, { summaryMarkdown: markdown })
+      mainLog.info(`[meetings] agent summary generated for ${meetingId}`)
+    } catch (error) {
+      mainLog.error(
+        `[meetings] generateAgentSummary failed for ${meetingId}: ${error instanceof Error ? error.message : String(error)}`,
+      )
     }
   }
 
@@ -718,6 +764,7 @@ except Exception as exc:
       if (!existsSync(state.storePath)) {
         this.persist(state)
         state.loaded = true
+        this.reconcileOrphanRecordings(state)
         return
       }
       const parsed = readJsonFileSync<PersistedMeetingsStore>(state.storePath)
@@ -729,6 +776,7 @@ except Exception as exc:
         }
       }
       state.loaded = true
+      this.reconcileOrphanRecordings(state)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       mainLog.error(`[meetings] failed to load persisted meetings from ${state.storePath}: ${message}`)
@@ -737,6 +785,51 @@ except Exception as exc:
       } else {
         state.corruptDetected = true
       }
+    }
+  }
+
+  /**
+   * Scan the workspace's `recordings/` directory and delete any `.webm` file
+   * that is not referenced by a persisted meeting record. These orphans
+   * accumulate when the renderer (or the app) crashed mid-recording, or when
+   * the toolbar unmounted against an older build that aborted instead of
+   * finalizing. Deleting on startup keeps disk usage bounded and prevents the
+   * Media Pane from listing files that no meeting owns.
+   *
+   * Runs once per workspace (the first time `ensureLoaded` is called), so it
+   * cannot race with an in-flight recording in the same workspace.
+   */
+  private reconcileOrphanRecordings(state: WorkspaceMeetingState): void {
+    const meetingsDir = dirname(state.storePath)
+    const recordingsDir = join(meetingsDir, 'recordings')
+    if (!existsSync(recordingsDir)) return
+    const knownPaths = new Set<string>()
+    for (const record of state.records.values()) {
+      if (record.recording?.path) knownPaths.add(record.recording.path)
+    }
+    let removed = 0
+    let entries: string[]
+    try {
+      entries = readdirSync(recordingsDir)
+    } catch (error) {
+      mainLog.warn(`[meetings] could not read recordings dir for orphan cleanup: ${error instanceof Error ? error.message : String(error)}`)
+      return
+    }
+    for (const entry of entries) {
+      // Skip atomic-write staging files (see `atomicWriteTextFileSync`) and any
+      // other non-.webm artifact that may have been written to this folder.
+      if (!entry.endsWith('.webm')) continue
+      const filePath = join(recordingsDir, entry)
+      if (knownPaths.has(filePath)) continue
+      try {
+        unlinkSync(filePath)
+        removed += 1
+      } catch (error) {
+        mainLog.warn(`[meetings] failed to remove orphan recording ${filePath}: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    if (removed > 0) {
+      mainLog.info(`[meetings] orphan recording cleanup removed=${removed} dir=${recordingsDir}`)
     }
   }
 

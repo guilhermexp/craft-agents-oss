@@ -40,7 +40,7 @@ export function HermesSkillsConfig({
             onClick={() => setTab('hub')}
             disabled
             className={`text-sm font-medium py-1.5 rounded-lg transition opacity-50 cursor-not-allowed ${
-              tab === 'hub' ? 'bg-background shadow-sm' : ''
+              tab === 'hub' ? 'bg-background shadow-xs' : ''
             }`}
             title="HermesHub estará disponível em uma próxima versão"
           >
@@ -50,7 +50,7 @@ export function HermesSkillsConfig({
             type="button"
             onClick={() => setTab('installed')}
             className={`text-sm font-medium py-1.5 rounded-lg transition ${
-              tab === 'installed' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              tab === 'installed' ? 'bg-background shadow-xs' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             Instaladas

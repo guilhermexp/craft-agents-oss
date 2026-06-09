@@ -42,8 +42,8 @@ export async function readHermesLiveModelMetadata(): Promise<HermesLiveModelMeta
   }
 }
 
-function hermesLiveModelName(model: string, provider?: string): string {
-  return provider ? `${model} via Hermes (${provider})` : `${model} via Hermes`
+function hermesLiveModelName(model: string, _provider?: string): string {
+  return `${model} via Hermes`
 }
 
 export function applyHermesLiveModelMetadata<T extends LlmConnection>(

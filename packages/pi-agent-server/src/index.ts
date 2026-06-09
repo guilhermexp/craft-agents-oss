@@ -231,6 +231,17 @@ let pendingContextOverflowRecoveryError: string | null = null;
 let overflowRecoveryInProgress = false;
 let overflowRecoveryAttemptedForCurrentPrompt = false;
 
+// Continuation prompt used after a context-overflow compaction. Re-sending the
+// original user message makes the model redo the same work (e.g. re-fan-out
+// web_fetch over many pages), which overflows the window again and yields no
+// assistant response. Instead, nudge it to answer from the compacted context
+// without re-running tools, which breaks the overflow loop.
+const OVERFLOW_CONTINUATION_NUDGE =
+  'The conversation was automatically compacted because it exceeded the model context window. ' +
+  'Do NOT re-run tools or re-fetch any pages already retrieved. ' +
+  "Using only the information already gathered above, complete the user's original request now. " +
+  'If some data is missing, state briefly what is missing and answer with what you already have.';
+
 // Pending promises for async handshakes
 const pendingPreToolUse = new Map<string, { resolve: (response: { action: string; input?: Record<string, unknown>; reason?: string }) => void }>();
 const pendingToolExecutions = new Map<string, { resolve: (result: { content: string; isError: boolean }) => void }>();
@@ -888,11 +899,18 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
 
   debugLog('[queryLlm] Starting');
 
-  // Pick mini model. If the configured miniModel uses a different provider than
-  // what the user authenticated with (e.g. gemini-2.5-pro when only anthropic
-  // credentials exist), fall back to the default summarization model which uses
-  // the same provider family.
-  let model = request.model ?? initConfig.miniModel ?? getDefaultSummarizationModel();
+  // Pick the auxiliary model (large-response summarization, compaction summaries,
+  // call_llm without an explicit model). For the codex/GPT provider the user wants
+  // a single model — the session model (e.g. gpt-5.5) — used everywhere instead of
+  // silently dropping to a mini. Other providers keep the cheaper mini default, and
+  // an explicit request.model always wins. If the chosen miniModel's provider differs
+  // from the authenticated one (e.g. gemini-2.5-pro under anthropic creds), the guard
+  // below falls back to the default summarization model for the same provider family.
+  const auxDefaultModel =
+    initConfig.piAuth?.provider === 'openai-codex' && initConfig.model
+      ? initConfig.model
+      : (initConfig.miniModel ?? getDefaultSummarizationModel());
+  let model = request.model ?? auxDefaultModel;
 
   // Create authenticated registry upfront — used by both the provider guard and the ephemeral session.
   const { authStorage, modelRegistry } = createAuthenticatedRegistry();
@@ -1305,9 +1323,13 @@ async function recoverFromContextOverflow(source: string, errorMsg: string): Pro
     const session = await ensureSession();
     await session.compact();
     await waitForCompaction(session);
-    await session.prompt(currentUserMessage, {
-      images: currentPromptImages && currentPromptImages.length > 0 ? currentPromptImages : undefined,
+    // The original user message is still in history after compaction. Continue
+    // from the compacted context with a nudge instead of re-sending it, so the
+    // model answers rather than redoing the work that overflowed (see
+    // OVERFLOW_CONTINUATION_NUDGE).
+    await session.prompt(OVERFLOW_CONTINUATION_NUDGE, {
       streamingBehavior: 'followUp',
+      images: currentPromptImages,
     });
     debugLog(`${source} compact+retry queued after overflow`);
   } catch (retryError) {

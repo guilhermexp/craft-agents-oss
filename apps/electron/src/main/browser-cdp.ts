@@ -95,7 +95,6 @@ export class BrowserCDP {
   private attached = false
   private detachListenerRegistered = false
   private idleDetachTimer: ReturnType<typeof setTimeout> | null = null
-  private persistAttach = false
   private emulatedColorScheme: 'light' | 'dark' | null = null
   // Map from "@eN" refs to backend node IDs for the current snapshot.
   private refMap: Map<string, number> = new Map()
@@ -146,7 +145,6 @@ export class BrowserCDP {
   }
 
   private resetIdleDetachTimer(): void {
-    if (this.persistAttach) return
     if (this.idleDetachTimer) {
       clearTimeout(this.idleDetachTimer)
     }
@@ -172,7 +170,10 @@ export class BrowserCDP {
   }
 
   async setColorSchemeEmulation(scheme: 'light' | 'dark'): Promise<void> {
-    this.persistAttach = true
+    // emulatedColorScheme is reapplied automatically on each reattach (see
+    // ensureAttached), so we deliberately let the debugger idle-detach instead
+    // of pinning it attached — a permanently attached CDP debugger is a passive
+    // bot-detection tell (Cloudflare Layer 1).
     this.emulatedColorScheme = scheme
     await this.send('Emulation.setEmulatedMedia', {
       features: [{ name: 'prefers-color-scheme', value: scheme }],
@@ -711,23 +712,52 @@ export class BrowserCDP {
   // ---------------------------------------------------------------------------
 
   async clickAtCoordinates(x: number, y: number): Promise<void> {
+    // Route mouse input through CDP (Input.dispatchMouseEvent) rather than
+    // webContents.sendInputEvent. CDP composites in the browser process, so the
+    // click hit-tests through cross-origin OOPIFs (e.g. Cloudflare Turnstile),
+    // shadow DOM, and nested frames. sendInputEvent only reaches the main frame
+    // and silently no-ops on OOPIFs (no throw), so it can never click a
+    // cross-origin challenge widget.
     try {
-      // Generate short trajectory to the click target for realism
+      const tx = Math.round(x)
+      const ty = Math.round(y)
+      // Humanized approach trajectory for realism (still via CDP).
       const startX = x + (Math.random() - 0.5) * 60
       const startY = y + (Math.random() - 0.5) * 60
       const trajectory = this.generateTrajectory(startX, startY, x, y, 3 + Math.floor(Math.random() * 3))
 
       for (const point of trajectory) {
-        this.sendMouseEvent('mouseMove', point.x, point.y)
+        await this.send('Input.dispatchMouseEvent', {
+          type: 'mouseMoved',
+          x: Math.round(point.x),
+          y: Math.round(point.y),
+          buttons: 0,
+        })
         await new Promise(resolve => setTimeout(resolve, 4 + Math.random() * 8))
       }
 
-      this.sendMouseEvent('mouseDown', Math.round(x), Math.round(y), 'left', 1)
+      await this.send('Input.dispatchMouseEvent', {
+        type: 'mousePressed',
+        x: tx,
+        y: ty,
+        button: 'left',
+        buttons: 1,
+        clickCount: 1,
+      })
       await new Promise(resolve => setTimeout(resolve, 20 + Math.random() * 40))
-      this.sendMouseEvent('mouseUp', Math.round(x), Math.round(y), 'left', 1)
+      await this.send('Input.dispatchMouseEvent', {
+        type: 'mouseReleased',
+        x: tx,
+        y: ty,
+        button: 'left',
+        buttons: 0,
+        clickCount: 1,
+      })
     } catch (error) {
-      mainLog.warn(`[browser-cdp] native clickAt failed, falling back to CDP: ${error instanceof Error ? error.message : String(error)}`)
-      await this.clickAtCDP(x, y)
+      mainLog.warn(`[browser-cdp] CDP clickAt failed, falling back to native sendInputEvent: ${error instanceof Error ? error.message : String(error)}`)
+      this.sendMouseEvent('mouseDown', Math.round(x), Math.round(y), 'left', 1)
+      await new Promise(resolve => setTimeout(resolve, 20))
+      this.sendMouseEvent('mouseUp', Math.round(x), Math.round(y), 'left', 1)
     }
   }
 
