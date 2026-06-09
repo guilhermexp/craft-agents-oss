@@ -66,6 +66,7 @@ export function HermesSkillsConfig({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Buscar skills…"
               className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              aria-label="Buscar skills"
             />
           </div>
           <Button variant="outline" size="sm" onClick={onOpenFolder}>

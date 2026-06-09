@@ -51,7 +51,7 @@ const MENU_ITEM_SELECTED = 'bg-foreground/5'
 export function filterSessionStatuses(states: SessionStatus[], filter: string): SessionStatus[] {
   if (!filter) return states
 
-  const segments = filter.toLowerCase().split('/').map(s => s.trim()).filter(Boolean)
+  const segments = filter.toLowerCase().split('/').flatMap(s => { const r = s.trim(); return r ? [r] : [] })
   if (segments.length === 0) return states
 
   // States are flat (no hierarchy), so just match the first segment against the label
@@ -73,6 +73,8 @@ export function filterSessionStatuses(states: SessionStatus[], filter: string): 
 // InlineLabelMenu Component
 // ============================================================================
 
+const EMPTY_STATES: SessionStatus[] = []
+
 /**
  * Inline autocomplete menu for labels and states, triggered by # in the input.
  * When states are provided, shows a "States" section above the labels section.
@@ -87,13 +89,22 @@ export function InlineLabelMenu({
   filter = '',
   position,
   className,
-  states = [],
+  states = EMPTY_STATES,
   activeStateId,
   onSelectState,
 }: InlineLabelMenuProps) {
   const menuRef = React.useRef<HTMLDivElement>(null)
   const listRef = React.useRef<HTMLDivElement>(null)
-  const [selectedIndex, setSelectedIndex] = React.useState(0)
+  // Track which filter value the selectedIndex was computed for so the index
+  // resets to 0 the moment the filter changes — no effect required.
+  const [selectionState, setSelectionState] = React.useState<{ forFilter: string; index: number }>({ forFilter: filter, index: 0 })
+  const selectedIndex = selectionState.forFilter === filter ? selectionState.index : 0
+  const setSelectedIndex = React.useCallback((next: number | ((prev: number) => number)) => {
+    setSelectionState(prev => ({
+      forFilter: filter,
+      index: typeof next === 'function' ? next(prev.forFilter === filter ? prev.index : 0) : next,
+    }))
+  }, [filter])
   const filteredItems = filterItems(items, filter)
   const filteredStates_ = filterSessionStatuses(states, filter)
 
@@ -103,11 +114,6 @@ export function InlineLabelMenu({
 
   // When no items exist at all but onAddLabel is provided, show the "Add New Label" row
   const showAddLabel = totalItemCount === 0 && !!onAddLabel
-
-  // Reset selection when filter changes
-  React.useEffect(() => {
-    setSelectedIndex(0)
-  }, [filter])
 
   // Scroll selected item into view
   React.useEffect(() => {
@@ -165,7 +171,7 @@ export function InlineLabelMenu({
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [open, filteredStates_, filteredItems, totalItemCount, selectedIndex, onSelect, onSelectState, onAddLabel, onOpenChange, showAddLabel, filter])
+  }, [open, filteredStates_, filteredItems, totalItemCount, selectedIndex, setSelectedIndex, onSelect, onSelectState, onAddLabel, onOpenChange, showAddLabel, filter])
 
   // Close on click outside
   React.useEffect(() => {
@@ -202,11 +208,19 @@ export function InlineLabelMenu({
       <div ref={listRef} className={MENU_LIST_STYLE}>
         {showAddLabel ? (
           /* "Add New Label" fallback row when nothing matches the filter */
-          <div
+          <button
+            type="button"
             data-selected="true"
             onClick={() => {
               onAddLabel?.(filter)
               onOpenChange(false)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onAddLabel?.(filter)
+                onOpenChange(false)
+              }
             }}
             className={cn(MENU_ITEM_STYLE, MENU_ITEM_SELECTED)}
           >
@@ -214,7 +228,7 @@ export function InlineLabelMenu({
               <Plus className="size-3.5" />
             </div>
             <span className="text-[13px]">Add New Label</span>
-          </div>
+          </button>
         ) : (
           <>
             {/* ── States section ── */}
@@ -229,12 +243,20 @@ export function InlineLabelMenu({
                   const isSelected = index === selectedIndex
                   const isActive = state.id === activeStateId
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={`state-${state.id}`}
                       data-selected={isSelected}
                       onClick={() => {
                         onSelectState?.(state.id)
                         onOpenChange(false)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          onSelectState?.(state.id)
+                          onOpenChange(false)
+                        }
                       }}
                       onMouseEnter={() => setSelectedIndex(index)}
                       className={cn(
@@ -255,7 +277,7 @@ export function InlineLabelMenu({
                       {isActive && (
                         <Check className="size-3.5 shrink-0 text-muted-foreground" />
                       )}
-                    </div>
+                    </button>
                   )
                 })}
               </>
@@ -279,12 +301,20 @@ export function InlineLabelMenu({
                   const flatIndex = filteredStates_.length + index
                   const isSelected = flatIndex === selectedIndex
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={item.id}
                       data-selected={isSelected}
                       onClick={() => {
                         onSelect(item.id)
                         onOpenChange(false)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          onSelect(item.id)
+                          onOpenChange(false)
+                        }
                       }}
                       onMouseEnter={() => setSelectedIndex(flatIndex)}
                       className={cn(
@@ -301,7 +331,7 @@ export function InlineLabelMenu({
                         )}
                         <span>{item.label}</span>
                       </div>
-                    </div>
+                    </button>
                   )
                 })}
               </>
@@ -420,7 +450,7 @@ export function useInlineLabelMenu({
       setFilter('')
       setHashStart(-1)
     }
-  }, [inputRef, items])
+  }, [inputRef])
 
   // Handle label selection: remove #trigger text from input, call onSelect
   const handleSelect = React.useCallback((labelId: string): string => {

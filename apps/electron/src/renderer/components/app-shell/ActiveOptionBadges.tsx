@@ -85,21 +85,26 @@ interface ResolvedLabelEntry {
   index: number
 }
 
+const EMPTY_TASKS: BackgroundTask[] = []
+const EMPTY_STRINGS: string[] = []
+const EMPTY_LABEL_CONFIGS: LabelConfig[] = []
+const EMPTY_SESSION_STATUSES: SessionStatus[] = []
+
 export function ActiveOptionBadges({
   permissionMode = 'ask',
   onPermissionModeChange,
-  tasks = [],
+  tasks = EMPTY_TASKS,
   sessionId,
   sessionFolderPath,
   onKillTask,
   onInsertMessage,
-  sessionLabels = [],
-  labels = [],
+  sessionLabels = EMPTY_STRINGS,
+  labels = EMPTY_LABEL_CONFIGS,
   onRemoveLabel,
   onLabelsChange,
   autoOpenLabelId,
   onAutoOpenConsumed,
-  sessionStatuses = [],
+  sessionStatuses = EMPTY_SESSION_STATUSES,
   currentSessionStatus,
   onSessionStatusChange,
   className,
@@ -110,10 +115,11 @@ export function ActiveOptionBadges({
   const resolvedLabels = React.useMemo((): ResolvedLabelEntry[] => {
     if (sessionLabels.length === 0 || labels.length === 0) return []
     const flat = flattenLabels(labels)
+    const flatById = new Map(flat.map(l => [l.id, l]))
     const result: ResolvedLabelEntry[] = []
     for (let i = 0; i < sessionLabels.length; i++) {
       const parsed = parseLabelEntry(sessionLabels[i])
-      const config = flat.find(l => l.id === parsed.id)
+      const config = flatById.get(parsed.id)
       if (config) {
         result.push({ config, rawValue: parsed.rawValue, index: i })
       }
@@ -191,7 +197,7 @@ export function ActiveOptionBadges({
               {/* Label badges */}
               {resolvedLabels.map(({ config, rawValue, index }) => (
                 <LabelBadge
-                  key={`${config.id}-${index}`}
+                  key={config.id}
                   label={config}
                   value={rawValue}
                   autoOpen={config.id === autoOpenLabelId}
@@ -419,6 +425,24 @@ function FilesPopoverButton({ sessionId, sessionFolderPath }: { sessionId?: stri
   )
 }
 
+// Mode-specific styling. Icons already encode the mode, so the chip body
+// stays neutral to avoid a "neon" look on themes with loud accents. The
+// tinted outline still carries a subtle hint of the mode color.
+const PERMISSION_MODE_STYLES: Record<PermissionMode, { className: string; shadowVar: string }> = {
+  'safe': {
+    className: 'bg-foreground/5 text-foreground/70',
+    shadowVar: 'var(--foreground-rgb)',
+  },
+  'ask': {
+    className: 'bg-foreground/5 text-foreground/80',
+    shadowVar: 'var(--foreground-rgb)',
+  },
+  'allow-all': {
+    className: 'bg-foreground/5 text-foreground/80',
+    shadowVar: 'var(--foreground-rgb)',
+  },
+}
+
 interface PermissionModeDropdownProps {
   permissionMode: PermissionMode
   onPermissionModeChange?: (mode: PermissionMode) => void
@@ -452,24 +476,7 @@ function PermissionModeDropdown({ permissionMode, onPermissionModeChange, sessio
   // Get config for current mode (use optimistic state for instant UI update)
   const config = PERMISSION_MODE_CONFIG[optimisticMode]
 
-  // Mode-specific styling. Icons already encode the mode, so the chip body
-  // stays neutral to avoid a "neon" look on themes with loud accents. The
-  // tinted outline still carries a subtle hint of the mode color.
-  const modeStyles: Record<PermissionMode, { className: string; shadowVar: string }> = {
-    'safe': {
-      className: 'bg-foreground/5 text-foreground/70',
-      shadowVar: 'var(--foreground-rgb)',
-    },
-    'ask': {
-      className: 'bg-foreground/5 text-foreground/80',
-      shadowVar: 'var(--foreground-rgb)',
-    },
-    'allow-all': {
-      className: 'bg-foreground/5 text-foreground/80',
-      shadowVar: 'var(--foreground-rgb)',
-    },
-  }
-  const currentStyle = modeStyles[optimisticMode]
+  const currentStyle = PERMISSION_MODE_STYLES[optimisticMode]
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

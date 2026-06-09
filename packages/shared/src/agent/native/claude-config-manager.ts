@@ -160,7 +160,7 @@ export function createClaudeConfigManager(
   };
 }
 
-export const defaultClaudeConfigManager = createClaudeConfigManager();
+const defaultClaudeConfigManager = createClaudeConfigManager();
 
 export async function ensureDefaultClaudeConfigValid(): Promise<void> {
   await defaultClaudeConfigManager.ensureValid();

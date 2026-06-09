@@ -15,10 +15,12 @@ export interface BrowserEmptyStateCardProps {
   onPromptSelect?: (prompt: BrowserEmptyPromptSample) => void
 }
 
+const EMPTY_PROMPTS: readonly BrowserEmptyPromptSample[] = []
+
 export function BrowserEmptyStateCard({
   title,
   description,
-  prompts = [],
+  prompts = EMPTY_PROMPTS,
   showExamplePrompts = true,
   showSafetyHint = true,
   onPromptSelect,

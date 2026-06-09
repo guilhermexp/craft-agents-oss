@@ -128,6 +128,7 @@ export function SearchableModelInput({
               <input
                 ref={searchInputRef}
                 type="text"
+                aria-label={t("apiSetup.searchModels")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={t("apiSetup.searchModels")}

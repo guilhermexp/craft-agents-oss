@@ -162,6 +162,22 @@ interface AuthRequestCardProps {
  * - cancelled: Show cancelled state
  * - failed: Show error state
  */
+function getAuthTypeLabel(type: AuthRequestType | undefined): string {
+  switch (type) {
+    case 'oauth':
+      return 'OAuth'
+    case 'oauth-google':
+      return 'Google Sign-In'
+    case 'oauth-slack':
+      return 'Slack Sign-In'
+    case 'oauth-microsoft':
+      return 'Microsoft Sign-In'
+    case 'credential':
+    default:
+      return 'Authentication'
+  }
+}
+
 export function AuthRequestCard({ message, onRespondToCredential, sessionId, isInteractive = true }: AuthRequestCardProps) {
   const [value, setValue] = useState('')
   const [username, setUsername] = useState('')
@@ -294,23 +310,6 @@ export function AuthRequestCard({ message, onRespondToCredential, sessionId, isI
   const basePasswordLabel = authLabels?.password || 'Password'
   const passwordLabel = getPasswordLabel(basePasswordLabel, passwordRequired)
   const passwordPlaceholder = getPasswordPlaceholder(basePasswordLabel, passwordRequired)
-
-  // Get auth type label
-  const getAuthTypeLabel = (type: AuthRequestType | undefined) => {
-    switch (type) {
-      case 'oauth':
-        return 'OAuth'
-      case 'oauth-google':
-        return 'Google Sign-In'
-      case 'oauth-slack':
-        return 'Slack Sign-In'
-      case 'oauth-microsoft':
-        return 'Microsoft Sign-In'
-      case 'credential':
-      default:
-        return 'Authentication'
-    }
-  }
 
   const authTypeLabel = getAuthTypeLabel(authRequestType)
 

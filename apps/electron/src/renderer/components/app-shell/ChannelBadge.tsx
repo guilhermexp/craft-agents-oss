@@ -41,7 +41,7 @@ export interface ChannelBadgeProps {
  * Resolve which channels are linked to the given session labels.
  * Exposed for testing and for callers that want to short-circuit when empty.
  */
-export function resolveSessionChannels(
+function resolveSessionChannels(
   sessionLabels: string[] | undefined,
   channels: WarRoomChannel[] | undefined,
 ): WarRoomChannel[] {

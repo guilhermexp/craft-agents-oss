@@ -189,6 +189,7 @@ export function MarkdownMermaidBlock({ code, className, showExpandButton = true,
             TurnCard's own fullscreen button occupies the same top-right position). */}
         {showExpandButton && (
           <button
+            type="button"
             onClick={() => setIsFullscreen(true)}
             className={cn(
               "absolute top-2 right-2 p-1 rounded-[6px] transition-all z-10 select-none",

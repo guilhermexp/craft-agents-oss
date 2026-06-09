@@ -6,7 +6,7 @@
  */
 
 import * as React from 'react'
-import { motion, AnimatePresence } from 'motion/react'
+import { LazyMotion, m, AnimatePresence, domAnimation } from 'motion/react'
 import { cn } from '@/lib/utils'
 import { settingsUI } from './SettingsUIConstants'
 
@@ -56,13 +56,14 @@ export function SettingsRadioGroup<T extends string = string>({
   className,
 }: SettingsRadioGroupProps<T>) {
   const childArray = React.Children.toArray(children).filter(Boolean)
+  const contextValue = React.useMemo<RadioGroupContextValue>(
+    () => ({ value, onValueChange: onValueChange as (value: string) => void }),
+    [value, onValueChange]
+  )
 
   return (
     <RadioGroupContext.Provider
-      value={{
-        value,
-        onValueChange: onValueChange as (value: string) => void,
-      }}
+      value={contextValue}
     >
       <div
         role="radiogroup"
@@ -199,21 +200,23 @@ export function SettingsRadioCard({
       </button>
 
       {/* Expanded content */}
-      <AnimatePresence initial={false}>
-        {isSelected && expandedContent && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 500, damping: 40 }}
-            className="overflow-hidden"
-          >
-            <div className="px-4 pb-4 pt-0">
-              <div className="pl-[30px]">{expandedContent}</div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <LazyMotion features={domAnimation}>
+        <AnimatePresence initial={false}>
+          {isSelected && expandedContent && (
+            <m.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+              className="overflow-hidden"
+            >
+              <div className="px-4 pb-4 pt-0">
+                <div className="pl-[30px]">{expandedContent}</div>
+              </div>
+            </m.div>
+          )}
+        </AnimatePresence>
+      </LazyMotion>
     </div>
   )
 }

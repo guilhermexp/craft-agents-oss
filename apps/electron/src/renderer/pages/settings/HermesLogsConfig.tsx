@@ -86,18 +86,14 @@ export function HermesLogsConfig({
   const [loading, setLoading] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!selectedFile && logs.length > 0) {
-      const preferred = logs.find(l => l.name.startsWith('agent')) ?? logs[0]
-      if (preferred) setSelectedFile(preferred.name)
-    }
-  }, [logs, selectedFile])
+  // Derive the effective file: use the user's explicit selection, or auto-pick the preferred log
+  const effectiveFile = selectedFile || (logs.find(l => l.name.startsWith('agent'))?.name ?? logs[0]?.name ?? '')
 
   const loadLog = useCallback(async () => {
-    if (!selectedFile) return
+    if (!effectiveFile) return
     setLoading(true)
     try {
-      const res = await onReadLog(selectedFile)
+      const res = await onReadLog(effectiveFile)
       if (!res.success) {
         toast.error('Falha ao ler log', { description: res.error })
         setContent('')
@@ -112,7 +108,7 @@ export function HermesLogsConfig({
     } finally {
       setLoading(false)
     }
-  }, [selectedFile, onReadLog])
+  }, [effectiveFile, onReadLog])
 
   useEffect(() => { void loadLog() }, [loadLog])
 
@@ -137,7 +133,7 @@ export function HermesLogsConfig({
       <div className="space-y-3">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           <SelectFilter
-            value={selectedFile}
+            value={effectiveFile}
             onChange={setSelectedFile}
             options={logs.map(l => ({ value: l.name, label: l.name }))}
             placeholder="Selecione log"
@@ -193,11 +189,11 @@ export function HermesLogsConfig({
               )}
               {lines.length === 0 ? (
                 <div className="text-muted-foreground py-12 text-center text-xs">
-                  {loading ? 'Carregando…' : selectedFile ? 'Nenhuma linha corresponde aos filtros.' : 'Selecione um arquivo de log.'}
+                  {loading ? 'Carregando…' : effectiveFile ? 'Nenhuma linha corresponde aos filtros.' : 'Selecione um arquivo de log.'}
                 </div>
               ) : (
-                lines.map((line, i) => (
-                  <div key={i} className={`whitespace-pre-wrap break-all ${LINE_COLOR[classifyLine(line)]}`}>
+                lines.map((line) => (
+                  <div key={line} className={`whitespace-pre-wrap break-all ${LINE_COLOR[classifyLine(line)]}`}>
                     {line}
                   </div>
                 ))

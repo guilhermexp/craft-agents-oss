@@ -28,6 +28,12 @@ import { getEventDisplayName, getPermissionDisplayName, flattenConditions, type 
 import { describeCron, computeNextRuns } from './utils'
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+const EMPTY_EXECUTIONS: ExecutionEntry[] = []
+
+// ============================================================================
 // Component
 // ============================================================================
 
@@ -45,7 +51,7 @@ export interface AutomationInfoPageProps {
 
 export function AutomationInfoPage({
   automation,
-  executions = [],
+  executions = EMPTY_EXECUTIONS,
   testResult,
   onToggleEnabled,
   onTest,
@@ -65,21 +71,23 @@ export function AutomationInfoPage({
     />
   ) : undefined
 
+  const titleMenu = React.useMemo(() => (
+    <AutomationMenu
+      automationId={automation.id}
+      automationName={automation.name}
+      enabled={automation.enabled}
+      onToggleEnabled={onToggleEnabled}
+      onTest={onTest}
+      onDuplicate={onDuplicate}
+      onDelete={onDelete}
+    />
+  ), [automation.id, automation.name, automation.enabled, onToggleEnabled, onTest, onDuplicate, onDelete])
+
   return (
     <Info_Page className={className}>
       <Info_Page.Header
         title={automation.name}
-        titleMenu={
-          <AutomationMenu
-            automationId={automation.id}
-            automationName={automation.name}
-            enabled={automation.enabled}
-            onToggleEnabled={onToggleEnabled}
-            onTest={onTest}
-            onDuplicate={onDuplicate}
-            onDelete={onDelete}
-          />
-        }
+        titleMenu={titleMenu}
       />
 
       <Info_Page.Content>
@@ -136,8 +144,8 @@ export function AutomationInfoPage({
                     <div className="flex flex-col gap-0.5">
                       {(() => {
                         const spansYears = nextRuns.length > 1 && nextRuns[0].getFullYear() !== nextRuns[nextRuns.length - 1].getFullYear()
-                        return nextRuns.map((date, i) => (
-                          <span key={i} className="text-sm text-foreground/70">
+                        return nextRuns.map((date) => (
+                          <span key={date.toISOString()} className="text-sm text-foreground/70">
                             {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(spansYears && { year: 'numeric' }) })}{' '}
                             {date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
                           </span>
@@ -161,7 +169,7 @@ export function AutomationInfoPage({
           >
             <Info_Table>
               {flattenConditions(automation.conditions).map((row, i) => (
-                <Info_Table.Row key={i} label={row.label}>
+                <Info_Table.Row key={`${row.label}-${i}`} label={row.label}>
                   <span className="text-sm text-foreground/70">
                     {row.description}
                   </span>
@@ -179,7 +187,7 @@ export function AutomationInfoPage({
         >
           <div className="divide-y divide-border/30">
             {automation.actions.map((action, i) => (
-              <AutomationActionRow key={i} action={action} index={i} />
+              <AutomationActionRow key={`${action.type}-${i}`} action={action} index={i} />
             ))}
           </div>
         </Info_Section>

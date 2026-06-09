@@ -78,7 +78,9 @@ export function IslandFollowUpContentView({
   const minInputHeight = isViewMode ? 20 : 44
   const [inputHeight, setInputHeight] = React.useState(minInputHeight)
   const [inputOverflow, setInputOverflow] = React.useState(false)
-  const [submitMenuOpen, setSubmitMenuOpen] = React.useState(false)
+  const [_submitMenuOpen, setSubmitMenuOpen] = React.useState(false)
+  // Auto-close the menu when the submit-and-send option becomes unavailable
+  const submitMenuOpen = _submitMenuOpen && canSubmitAndSend
 
   const handleSubmitMenuInteractOutside = React.useCallback((event: unknown) => {
     const dismissEvent = event as {
@@ -126,12 +128,6 @@ export function IslandFollowUpContentView({
 
     return () => window.cancelAnimationFrame(raf)
   }, [isViewMode])
-
-  React.useEffect(() => {
-    if (!canSubmitAndSend && submitMenuOpen) {
-      setSubmitMenuOpen(false)
-    }
-  }, [canSubmitAndSend, submitMenuOpen])
 
   return (
     <IslandContentView id={id} anchorX="center" anchorY="top" morphFrom={morphFrom} lockScroll={lockScroll} blockOutsideInteraction={blockOutsideInteraction}>
@@ -194,6 +190,7 @@ export function IslandFollowUpContentView({
               }
             }}
             placeholder={placeholder}
+            aria-label={title ?? placeholder}
             rows={isViewMode ? 1 : 2}
             style={{ height: inputHeight, overflowY: inputOverflow ? 'auto' : 'hidden' }}
             className="relative w-full resize-none bg-transparent outline-none text-sm leading-5 select-text pl-[4px]"

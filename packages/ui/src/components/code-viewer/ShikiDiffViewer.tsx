@@ -9,7 +9,7 @@
  */
 
 import * as React from 'react'
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { FileDiff, type FileDiffMetadata, type FileDiffProps } from '@pierre/diffs/react'
 import { parseDiffFromFile, DIFFS_TAG_NAME, type FileContents } from '@pierre/diffs'
 import { cn } from '../../lib/utils'
@@ -99,7 +99,7 @@ export function ShikiDiffViewer({
   className,
 }: ShikiDiffViewerProps) {
   const hasCalledReady = useRef(false)
-  const [isReady, setIsReady] = useState(false)
+  const isReadyRef = useRef(false)
 
   // Resolve language
   const resolvedLang = useMemo(() => {
@@ -150,7 +150,7 @@ export function ShikiDiffViewer({
       hasCalledReady.current = true
       // Give Shiki time to highlight
       const timer = setTimeout(() => {
-        setIsReady(true)
+        isReadyRef.current = true
         onReady()
       }, 100)
       return () => {
@@ -184,9 +184,10 @@ export function ShikiDiffViewer({
       ;(header as any).__craftClickCleanup = () => header.removeEventListener('click', handleClick)
     }, 150)
 
+    const container = containerRef.current
     return () => {
       clearTimeout(timer)
-      const diffsContainer = containerRef.current?.querySelector(DIFFS_TAG_NAME)
+      const diffsContainer = container?.querySelector(DIFFS_TAG_NAME)
       const header = diffsContainer?.shadowRoot?.querySelector('[data-diffs-header]')
       if (header) {
         ;(header as any).__craftClickCleanup?.()

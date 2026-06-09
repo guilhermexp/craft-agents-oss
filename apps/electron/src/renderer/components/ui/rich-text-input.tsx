@@ -383,6 +383,9 @@ function textToHTML(
     html += '\u200B'
   }
 
+  const skillsBySlug = new Map(skills.map(s => [s.slug, s]))
+  const sourcesBySlug = new Map(sources.map(s => [s.config.slug, s]))
+
   for (const match of matches) {
     // Add escaped text before this mention
     if (match.startIndex > lastIndex) {
@@ -396,10 +399,10 @@ function textToHTML(
     let tooltip: string | undefined
 
     if (match.type === 'skill') {
-      skill = skills.find(s => s.slug === match.id)
+      skill = skillsBySlug.get(match.id)
       label = skill?.metadata.name || match.id
     } else if (match.type === 'source') {
-      source = sources.find(s => s.config.slug === match.id)
+      source = sourcesBySlug.get(match.id)
       label = source?.config.name || match.id
     } else if (match.type === 'file') {
       // Show filename as badge label, full path as tooltip
@@ -764,7 +767,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
     const placeholderArray = React.useMemo(() => {
       if (!placeholder) return [t("chatInput.placeholder.typeMessage")]
       return Array.isArray(placeholder) ? placeholder : [placeholder]
-    }, [placeholder])
+    }, [placeholder, t])
 
     // Check if value contains any mentions (badges) to adjust line height
     const hasMentions = React.useMemo(() => {

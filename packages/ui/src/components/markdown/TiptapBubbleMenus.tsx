@@ -292,6 +292,7 @@ function RichBlockEditMenu({ editor }: { editor: Editor }) {
         <textarea
           ref={textareaRef}
           value={code}
+          aria-label={label}
           onChange={(e) => setCode(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -375,6 +376,7 @@ function InlineMathEditMenu({ editor }: { editor: Editor }) {
         ref={inputRef}
         type="text"
         value={latex}
+        aria-label="LaTeX expression"
         onChange={(e) => setLatex(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {

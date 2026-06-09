@@ -41,9 +41,8 @@ export interface SpinnerProps {
  */
 export function Spinner({ className }: SpinnerProps) {
   return (
-    <span
+    <output
       className={cn("spinner", className)}
-      role="status"
       aria-label="Loading"
     >
       <span className="spinner-cube" />
@@ -55,7 +54,7 @@ export function Spinner({ className }: SpinnerProps) {
       <span className="spinner-cube" />
       <span className="spinner-cube" />
       <span className="spinner-cube" />
-    </span>
+    </output>
   )
 }
 

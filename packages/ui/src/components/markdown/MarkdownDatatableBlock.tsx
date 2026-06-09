@@ -213,14 +213,16 @@ function computeGranularityOptions(data: DatatableData): Map<string, Granularity
   const result = new Map<string, GranularityOption[]>()
   for (const col of data.columns) {
     if (col.type === 'date') {
-      const timestamps = data.rows
-        .map((r) => new Date(r[col.key] as string | number).getTime())
-        .filter((t) => !isNaN(t))
+      const timestamps = data.rows.flatMap((r) => {
+        const t = new Date(r[col.key] as string | number).getTime()
+        return isNaN(t) ? [] : [t]
+      })
       result.set(col.key, computeDateGranularities(timestamps))
     } else if (col.type === 'number' || col.type === 'currency' || col.type === 'percent') {
-      const nums = data.rows
-        .map((r) => typeof r[col.key] === 'number' ? r[col.key] as number : Number(r[col.key]))
-        .filter((n) => !isNaN(n))
+      const nums = data.rows.flatMap((r) => {
+        const n = typeof r[col.key] === 'number' ? r[col.key] as number : Number(r[col.key])
+        return isNaN(n) ? [] : [n]
+      })
       const opts = computeNumericGranularities(nums, col.type)
       if (opts.length > 0) result.set(col.key, opts)
     }
@@ -312,44 +314,58 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
     }
   }, [code])
 
-  // Load file data when src is present
-  const [fileData, setFileData] = React.useState<DatatableData | null>(null)
-  const [fileError, setFileError] = React.useState<string | null>(null)
-  const [fileLoading, setFileLoading] = React.useState(false)
+  // Load file data when src is present.
+  // State is keyed by src so stale data/error auto-evict when src changes —
+  // no synchronous setter calls needed when the dep changes.
+  const [fileState, setFileState] = React.useState<{
+    forSrc: string
+    data: DatatableData | null
+    error: string | null
+    loading: boolean
+  } | null>(null)
+
+  // Derive per-render without a reset effect
+  const activeSrc = spec?.src ?? null
+  const fileData = fileState?.forSrc === activeSrc ? fileState.data : null
+  const fileError = fileState?.forSrc === activeSrc ? fileState.error : null
+  const fileLoading = activeSrc != null && (fileState == null || fileState.forSrc !== activeSrc)
 
   React.useEffect(() => {
     if (!spec?.src || !onReadFile) return
     const src = spec.src
-    setFileLoading(true)
-    setFileError(null)
+    setFileState({ forSrc: src, data: null, error: null, loading: true })
     onReadFile(src)
       .then((content) => {
         try {
           const raw = JSON.parse(content)
           // File can be full {title, columns, rows} or just a rows array
           if (Array.isArray(raw)) {
-            setFileData({ rows: raw, columns: [], title: undefined })
+            setFileState({ forSrc: src, data: { rows: raw, columns: [], title: undefined }, error: null, loading: false })
           } else if (raw && typeof raw === 'object') {
-            setFileData({
-              title: raw.title,
-              columns: Array.isArray(raw.columns) ? raw.columns : [],
-              rows: Array.isArray(raw.rows) ? raw.rows : [],
+            setFileState({
+              forSrc: src,
+              data: {
+                title: raw.title,
+                columns: Array.isArray(raw.columns) ? raw.columns : [],
+                rows: Array.isArray(raw.rows) ? raw.rows : [],
+              },
+              error: null,
+              loading: false,
             })
           } else {
-            setFileError('File does not contain valid datatable data')
+            setFileState({ forSrc: src, data: null, error: 'File does not contain valid datatable data', loading: false })
           }
         } catch {
           if (/\.(csv|tsv)$/i.test(src)) {
-            setFileData(parseDelimitedTabularData(content, src))
+            setFileState({ forSrc: src, data: parseDelimitedTabularData(content, src), error: null, loading: false })
           } else {
-            setFileError('Failed to parse data file as JSON')
+            setFileState({ forSrc: src, data: null, error: 'Failed to parse data file as JSON', loading: false })
           }
         }
       })
       .catch((err) => {
-        setFileError(err instanceof Error ? err.message : 'Failed to read data file')
+        setFileState({ forSrc: src, data: null, error: err instanceof Error ? err.message : 'Failed to read data file', loading: false })
       })
-      .finally(() => setFileLoading(false))
   }, [spec?.src, onReadFile])
 
   // Merge: inline spec takes precedence, file provides rows
@@ -478,7 +494,7 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
 
   const renderRows = (rows: Record<string, unknown>[]) =>
     rows.map((row, i) => (
-      <tr key={i} className="border-b border-foreground/[0.03] last:border-0 hover:bg-foreground/[0.015] transition-colors">
+      <tr key={(row['id'] as string | number | undefined) ?? i} className="border-b border-foreground/[0.03] last:border-0 hover:bg-foreground/[0.015] transition-colors">
         {parsed.columns.map((col) => (
           <td key={col.key} className={cn('py-2 px-3 whitespace-nowrap', colAlign(col.type, col.align))}>
             {formatCell(row[col.key], col.type)}
@@ -547,6 +563,7 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
+          type="button"
           className={cn(
             'p-1 rounded-[6px] transition-all select-none',
             'bg-background shadow-minimal',
@@ -678,6 +695,7 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
 
         {/* Expand button */}
         <button
+          type="button"
           onClick={() => setIsFullscreen(true)}
           className={cn(
             "absolute top-[7px] right-2 p-1 rounded-[6px] transition-all z-10 select-none",

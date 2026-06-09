@@ -6,7 +6,7 @@
 /**
  * Map of file extensions to Monaco editor language IDs.
  */
-export const LANGUAGE_MAP: Record<string, string> = {
+const LANGUAGE_MAP: Record<string, string> = {
   ts: 'typescript',
   tsx: 'typescript',
   js: 'javascript',
@@ -52,15 +52,3 @@ export function getLanguageFromPath(filePath: string, explicit?: string): string
   return LANGUAGE_MAP[ext || ''] || 'plaintext'
 }
 
-/**
- * Format file path for display, replacing home directory with ~.
- * @param filePath - The file path to format
- * @returns Formatted path (e.g., /Users/john/code/file.ts → ~/code/file.ts)
- */
-export function formatFilePath(filePath: string): string {
-  const homeMatch = filePath.match(/^\/Users\/[^/]+\/(.+)$/)
-  if (homeMatch) {
-    return `~/${homeMatch[1]}`
-  }
-  return filePath
-}

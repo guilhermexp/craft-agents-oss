@@ -14,7 +14,7 @@
 import * as React from 'react'
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { motion, AnimatePresence } from 'motion/react'
+import { LazyMotion, m, AnimatePresence, domAnimation } from 'motion/react'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
@@ -300,7 +300,7 @@ export default function WorkspaceSettingsPage() {
       // Calculate what the new modes would be
       const newModes = checked
         ? [...enabledModes, mode]
-        : enabledModes.filter((m) => m !== mode)
+        : enabledModes.filter((em) => em !== mode)
 
       // Validate: at least 2 modes required
       if (newModes.length < 2) {
@@ -452,37 +452,39 @@ export default function WorkspaceSettingsPage() {
               description={t("settings.workspace.modeCyclingDesc")}
             >
               <SettingsCard>
-                {(['safe', 'ask', 'allow-all'] as const).map((m) => {
+                {(['safe', 'ask', 'allow-all'] as const).map((pmode) => {
                   const modeTranslations: Record<string, { label: string; desc: string }> = {
                     'safe': { label: t("mode.explore"), desc: t("mode.exploreFullDesc") },
                     'ask': { label: t("mode.askToEdit"), desc: t("mode.askFullDesc") },
                     'allow-all': { label: t("mode.execute"), desc: t("mode.executeFullDesc") },
                   }
-                  const isEnabled = enabledModes.includes(m)
+                  const isEnabled = enabledModes.includes(pmode)
                   return (
                     <SettingsToggle
-                      key={m}
-                      label={modeTranslations[m].label}
-                      description={modeTranslations[m].desc}
+                      key={pmode}
+                      label={modeTranslations[pmode].label}
+                      description={modeTranslations[pmode].desc}
                       checked={isEnabled}
-                      onCheckedChange={(checked) => handleModeToggle(m, checked)}
+                      onCheckedChange={(checked) => handleModeToggle(pmode, checked)}
                     />
                   )
                 })}
               </SettingsCard>
-              <AnimatePresence>
-                {modeCyclingError && (
-                  <motion.p
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-                    className="text-xs text-destructive mt-1 overflow-hidden"
-                  >
-                    {modeCyclingError}
-                  </motion.p>
-                )}
-              </AnimatePresence>
+              <LazyMotion features={domAnimation}>
+                <AnimatePresence>
+                  {modeCyclingError && (
+                    <m.p
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+                      className="text-xs text-destructive mt-1 overflow-hidden"
+                    >
+                      {modeCyclingError}
+                    </m.p>
+                  )}
+                </AnimatePresence>
+              </LazyMotion>
             </SettingsSection>
 
             {/* Default Sources */}

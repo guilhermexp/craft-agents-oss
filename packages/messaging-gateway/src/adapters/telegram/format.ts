@@ -9,7 +9,7 @@
 const TG_SPECIAL_CHARS = /([_*\[\]()~`>#+\-=|{}.!\\])/g
 
 /** Escape text for Telegram MarkdownV2 parse mode. */
-export function escapeTelegramMarkdown(text: string): string {
+function escapeTelegramMarkdown(text: string): string {
   return text.replace(TG_SPECIAL_CHARS, '\\$1')
 }
 

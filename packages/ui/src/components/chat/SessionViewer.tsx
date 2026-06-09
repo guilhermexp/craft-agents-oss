@@ -12,7 +12,7 @@ import { useMemo, useState, useCallback } from 'react'
 import type { StoredSession } from '@craft-agent/core'
 import { cn } from '../../lib/utils'
 import { CHAT_LAYOUT, CHAT_CLASSES } from '../../lib/layout'
-import { PlatformProvider, type PlatformActions } from '../../context'
+import { PlatformProvider, type PlatformActions } from '../../context/PlatformContext'
 import { TurnCard } from './TurnCard'
 import { UserMessageBubble } from './UserMessageBubble'
 import { SystemMessage } from './SystemMessage'
@@ -48,6 +48,8 @@ export interface SessionViewerProps {
   sessionFolderPath?: string
 }
 
+const EMPTY_PLATFORM_ACTIONS: PlatformActions = {}
+
 /**
  * CraftAgentLogo - The Craft Agent "C" logo for branding
  */
@@ -59,9 +61,9 @@ function CraftAgentLogo({ className }: { className?: string }) {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <g transform="translate(3.4502, 3)" fill="currentColor">
+      <g transform="translate(3.45, 3)" fill="currentColor">
         <path
-          d="M3.17890888,3.6 L3.17890888,0 L16,0 L16,3.6 L3.17890888,3.6 Z M9.642,7.2 L9.64218223,10.8 L0,10.8 L0,3.6 L16,3.6 L16,7.2 L9.642,7.2 Z M3.17890888,18 L3.178,14.4 L0,14.4 L0,10.8 L16,10.8 L16,18 L3.17890888,18 Z"
+          d="M3.18,3.6 L3.18,0 L16,0 L16,3.6 L3.18,3.6 Z M9.64,7.2 L9.64,10.8 L0,10.8 L0,3.6 L16,3.6 L16,7.2 L9.64,7.2 Z M3.18,18 L3.18,14.4 L0,14.4 L0,10.8 L16,10.8 L16,18 L3.18,18 Z"
           fillRule="nonzero"
         />
       </g>
@@ -75,7 +77,7 @@ function CraftAgentLogo({ className }: { className?: string }) {
 export function SessionViewer({
   session,
   mode = 'readonly',
-  platformActions = {},
+  platformActions = EMPTY_PLATFORM_ACTIONS,
   className,
   onTurnClick,
   onActivityClick,

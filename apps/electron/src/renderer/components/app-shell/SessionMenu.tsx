@@ -75,6 +75,9 @@ export interface SessionMenuProps {
   onDelete: () => void
 }
 
+const EMPTY_LABELS: LabelConfig[] = []
+const EMPTY_SESSION_LABELS: string[] = []
+
 /**
  * SessionMenu - Renders the menu items for session actions
  * This is the content only, not wrapped in a DropdownMenu
@@ -82,7 +85,7 @@ export interface SessionMenuProps {
 export function SessionMenu({
   item,
   sessionStatuses,
-  labels = [],
+  labels = EMPTY_LABELS,
   onLabelsChange,
   onRename,
   onFlag,
@@ -104,7 +107,7 @@ export function SessionMenu({
   const isArchived = item.isArchived ?? false
   const sharedUrl = item.sharedUrl
   const currentSessionStatus = getSessionStatus(item)
-  const sessionLabels = item.labels ?? []
+  const sessionLabels = item.labels ?? EMPTY_SESSION_LABELS
   const _hasMessages = hasMessagesMeta(item)
   const _hasUnread = hasUnreadMeta(item)
   // Share handlers

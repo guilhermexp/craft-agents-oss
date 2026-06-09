@@ -12,7 +12,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from 'i18next'
 import { GripHorizontal } from 'lucide-react'
-import { motion, AnimatePresence } from 'motion/react' // motion used for backdrop only
+import { LazyMotion, m, AnimatePresence, domAnimation } from 'motion/react' // m used for backdrop only
 import { Popover, PopoverTrigger, PopoverContent } from './popover'
 import { Button } from './button'
 import { cn } from '@/lib/utils'
@@ -707,7 +707,7 @@ interface EditPromptResult {
  * // Without user instructions (for context menu - opens window with context pre-filled)
  * const { prompt, badges } = buildEditPrompt(context, "")
  */
-export function buildEditPrompt(context: EditContext, userInstructions: string, displayLabel?: string): EditPromptResult {
+function buildEditPrompt(context: EditContext, userInstructions: string, displayLabel?: string): EditPromptResult {
   // Build the metadata section (will be hidden by badge)
   // Simple structure: label (for display/context), file (where to edit), optional context
   // context.label stays in English for the agent; displayLabel is translated for UI
@@ -779,13 +779,13 @@ export function EditPopover({
   const [internalOpen, setInternalOpen] = useState(false)
   const isControlled = controlledOpen !== undefined
   const open = isControlled ? controlledOpen : internalOpen
-  const setOpen = (value: boolean) => {
+  const setOpen = useCallback((value: boolean) => {
     if (isControlled) {
       controlledOnOpenChange?.(value)
     } else {
       setInternalOpen(value)
     }
-  }
+  }, [isControlled, controlledOnOpenChange])
 
   // Use App context for session management (same code path as main chat)
   const { onCreateSession, onSendMessage, onRespondToPermission, onRespondToCredential } = useAppShellContext()
@@ -876,7 +876,7 @@ export function EditPopover({
 
   // Resize state for dynamic sizing
   const [containerSize, setContainerSize] = useState({ width: width || 400, height: 480 })
-  const [isResizing, setIsResizing] = useState(false)
+  const isResizingRef = useRef(false)
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 })
 
   // Reset drag position and size when popover opens
@@ -939,19 +939,16 @@ export function EditPopover({
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setIsResizing(true)
+    isResizingRef.current = true
     resizeStartRef.current = {
       x: e.clientX,
       y: e.clientY,
       width: containerSize.width,
       height: containerSize.height,
     }
-  }, [containerSize])
-
-  useEffect(() => {
-    if (!isResizing) return
 
     const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizingRef.current) return
       const deltaX = e.clientX - resizeStartRef.current.x
       const deltaY = e.clientY - resizeStartRef.current.y
       setContainerSize({
@@ -961,16 +958,14 @@ export function EditPopover({
     }
 
     const handleMouseUp = () => {
-      setIsResizing(false)
+      isResizingRef.current = false
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
     }
 
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [isResizing])
+  }, [containerSize])
 
   // Reset state when popover opens
   useEffect(() => {
@@ -1026,17 +1021,19 @@ export function EditPopover({
   return (
     <>
       {/* Full-screen backdrop - rendered BEHIND the popover during processing */}
-      <AnimatePresence>
-        {open && isProcessing && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.5, ease: 'easeInOut' }}
-            className="fixed inset-0 bg-black/5 z-40"
-          />
-        )}
-      </AnimatePresence>
+      <LazyMotion features={domAnimation}>
+        <AnimatePresence>
+          {open && isProcessing && (
+            <m.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.5, ease: 'easeInOut' }}
+              className="fixed inset-0 bg-black/5 z-40"
+            />
+          )}
+        </AnimatePresence>
+      </LazyMotion>
 
       <Popover open={open} onOpenChange={setOpen} modal={modal}>
         <PopoverTrigger asChild className={triggerClassName}>
@@ -1067,7 +1064,10 @@ export function EditPopover({
               }}
             >
               {/* Drag handle - floating overlay */}
-              <div
+              <button
+                type="button"
+                tabIndex={0}
+                aria-label="Drag to move"
                 onMouseDown={handleDragStart}
                 className={cn(
                   "absolute top-0 left-1/2 -translate-x-1/2 z-50 px-4 py-2 cursor-grab rounded pointer-events-auto titlebar-no-drag",
@@ -1075,7 +1075,7 @@ export function EditPopover({
                 )}
               >
                 <GripHorizontal className="size-4 text-muted-foreground/30" />
-              </div>
+              </button>
 
               {/* Content area - always uses compact ChatDisplay */}
               <div className="flex-1 flex flex-col bg-foreground-2" style={{ height: '100%' }}>
@@ -1098,7 +1098,10 @@ export function EditPopover({
             </div>
 
             {/* Bottom-right resize handle - outside overflow-hidden container */}
-            <div
+            <button
+              type="button"
+              tabIndex={0}
+              aria-label="Resize"
               onMouseDown={handleResizeStart}
               className="absolute -bottom-2 -right-2 size-6 cursor-nwse-resize pointer-events-auto z-50"
               style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}

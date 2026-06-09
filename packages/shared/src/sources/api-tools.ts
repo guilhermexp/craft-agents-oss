@@ -201,7 +201,7 @@ function buildToolDescription(config: ApiConfig): string {
  * @param sessionPath - Optional path to session folder for saving large responses
  * @returns SDK tool that can be included in an MCP server
  */
-export function createApiTool(
+function createApiTool(
   config: ApiConfig,
   credential: ApiCredentialSource,
   sessionPath?: string,

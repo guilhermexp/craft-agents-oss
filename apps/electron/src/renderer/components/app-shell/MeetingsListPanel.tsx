@@ -16,13 +16,15 @@ interface MeetingsListPanelProps {
   onSelectMeeting: (record: MeetingRecord | null) => void
 }
 
+const MEETING_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
 function formatMeetingDate(value: number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value))
+  return MEETING_DATE_FORMAT.format(new Date(value))
 }
 
 function getStatusLabel(status: MeetingRecord['status'], t: (key: string) => string): string {

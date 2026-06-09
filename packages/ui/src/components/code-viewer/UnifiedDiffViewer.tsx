@@ -9,7 +9,7 @@
  */
 
 import * as React from 'react'
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { FileDiff, type FileDiffProps } from '@pierre/diffs/react'
 import { parsePatchFiles, DIFFS_TAG_NAME, registerCustomTheme, resolveTheme, type FileDiffMetadata } from '@pierre/diffs'
 import { cn } from '../../lib/utils'
@@ -105,7 +105,7 @@ export function UnifiedDiffViewer({
   className,
 }: UnifiedDiffViewerProps) {
   const hasCalledReady = useRef(false)
-  const [isReady, setIsReady] = useState(false)
+  const isReadyRef = useRef(false)
 
   // Parse the unified diff
   const fileDiff = useMemo(() => {
@@ -139,7 +139,7 @@ export function UnifiedDiffViewer({
       hasCalledReady.current = true
       // Give Shiki time to highlight
       const timer = setTimeout(() => {
-        setIsReady(true)
+        isReadyRef.current = true
         onReady()
       }, 100)
       return () => {
@@ -171,9 +171,10 @@ export function UnifiedDiffViewer({
       ;(header as any).__craftClickCleanup = () => header.removeEventListener('click', handleClick)
     }, 150)
 
+    const container = containerRef.current
     return () => {
       clearTimeout(timer)
-      const diffsContainer = containerRef.current?.querySelector(DIFFS_TAG_NAME)
+      const diffsContainer = container?.querySelector(DIFFS_TAG_NAME)
       const header = diffsContainer?.shadowRoot?.querySelector('[data-diffs-header]')
       if (header) {
         ;(header as any).__craftClickCleanup?.()

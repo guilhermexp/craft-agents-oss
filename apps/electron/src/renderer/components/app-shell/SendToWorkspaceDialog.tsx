@@ -59,10 +59,7 @@ export function SendToWorkspaceDialog({
 
   // Listen for chunk upload progress from main process and normalize across batch
   useEffect(() => {
-    if (!isTransferring) {
-      setOverallProgress(0)
-      return
-    }
+    if (!isTransferring) return
     const cleanup = window.electronAPI.onTransferProgress((p) => {
       // Each session contributes 1/sessionCount to the total.
       // Within a session, chunkSent/chunkTotal fills that slice.
@@ -79,6 +76,7 @@ export function SendToWorkspaceDialog({
 
   // Only show remote workspaces (local-to-local is pointless)
   const remoteWorkspaces = workspaces.filter(w => w.id !== activeWorkspaceId && w.remoteServer)
+  const remoteWorkspaceIdKey = remoteWorkspaces.map(w => w.id).join(',')
 
   // Check connectivity for all remote workspaces when dialog opens
   useEffect(() => {
@@ -115,7 +113,7 @@ export function SendToWorkspaceDialog({
     }
 
     return () => abort.abort()
-  }, [open, remoteWorkspaces.map(w => w.id).join(',')])
+  }, [open, remoteWorkspaceIdKey])
 
   const handleTransfer = useCallback(async () => {
     if (!selectedWorkspaceId || sessionIds.length === 0) return
@@ -130,14 +128,13 @@ export function SendToWorkspaceDialog({
     const toastId = toast.loading(t('sendToWorkspace.sending', { count, target: targetName }))
 
     try {
-      const newSessionIds: string[] = []
-
-      for (let i = 0; i < sessionIds.length; i++) {
-        const sessionId = sessionIds[i]
-        // Main process handles export + summary + transport (chunked for large bundles)
-        const result = await window.electronAPI.transferSessionToWorkspace(sessionId, selectedWorkspaceId, i, sessionIds.length)
-        newSessionIds.push(result.sessionId)
-      }
+      // Fan out all transfers concurrently — each session export is independent
+      const results = await Promise.all(
+        sessionIds.map((sessionId, i) =>
+          window.electronAPI.transferSessionToWorkspace(sessionId, selectedWorkspaceId, i, sessionIds.length)
+        )
+      )
+      const newSessionIds = results.map(r => r.sessionId)
 
       toast.success(t('sendToWorkspace.sent', { count, target: targetName }), {
         id: toastId,
@@ -157,8 +154,9 @@ export function SendToWorkspaceDialog({
       })
     } finally {
       setIsTransferring(false)
+      setOverallProgress(0)
     }
-  }, [selectedWorkspaceId, sessionIds, workspaces, onOpenChange, onTransferComplete])
+  }, [selectedWorkspaceId, sessionIds, workspaces, t, onOpenChange, onTransferComplete])
 
   const count = sessionIds.length
 

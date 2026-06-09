@@ -108,17 +108,16 @@ function renderMenuItem(
   return null
 }
 
-/**
- * Renders a menu section as a submenu
- */
-function renderMenuSection(
-  section: MenuSection,
-  actionHandlers: MenuActionHandlers,
-  t: (key: string) => string,
-): React.ReactNode {
+interface MenuSectionItemProps {
+  section: MenuSection
+  actionHandlers: MenuActionHandlers
+  t: (key: string) => string
+}
+
+function MenuSectionItem({ section, actionHandlers, t }: MenuSectionItemProps) {
   const Icon = getIcon(section.icon)
   return (
-    <DropdownMenuSub key={section.id}>
+    <DropdownMenuSub>
       <StyledDropdownMenuSubTrigger>
         {Icon && <Icon className="size-3.5" />}
         {t(section.labelKey)}
@@ -226,9 +225,9 @@ export function AppMenu({
           <StyledDropdownMenuSeparator />
 
           {/* Edit, View, Window submenus from shared schema */}
-          {renderMenuSection(EDIT_MENU, actionHandlers, t)}
-          {renderMenuSection(VIEW_MENU, actionHandlers, t)}
-          {renderMenuSection(WINDOW_MENU, actionHandlers, t)}
+          <MenuSectionItem key={EDIT_MENU.id} section={EDIT_MENU} actionHandlers={actionHandlers} t={t} />
+          <MenuSectionItem key={VIEW_MENU.id} section={VIEW_MENU} actionHandlers={actionHandlers} t={t} />
+          <MenuSectionItem key={WINDOW_MENU.id} section={WINDOW_MENU} actionHandlers={actionHandlers} t={t} />
 
           <StyledDropdownMenuSeparator />
 

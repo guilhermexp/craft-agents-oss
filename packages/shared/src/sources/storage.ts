@@ -206,7 +206,7 @@ export function loadSourceGuide(workspaceRootPath: string, sourceSlug: string): 
  * Looks for the first non-empty paragraph after the title, or falls back to scope section
  * @returns Tagline string (max 100 chars) or null if not found
  */
-export function extractTagline(guide: SourceGuide | null): string | null {
+function extractTagline(guide: SourceGuide | null): string | null {
   if (!guide?.raw) return null;
 
   const content = guide.raw;

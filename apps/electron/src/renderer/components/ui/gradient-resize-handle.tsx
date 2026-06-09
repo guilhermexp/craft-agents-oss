@@ -43,6 +43,9 @@ export function GradientResizeHandle({ className, headerHeight = 50 }: GradientR
       {/* Touch area container - extends 6px each side for 12px total hit area */}
       <div
         ref={ref}
+        role="separator"
+        aria-orientation="vertical"
+        tabIndex={0}
         onMouseDown={handlers.onMouseDown}
         onMouseMove={handlers.onMouseMove}
         onMouseLeave={handlers.onMouseLeave}

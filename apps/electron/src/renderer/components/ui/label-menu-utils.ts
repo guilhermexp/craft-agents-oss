@@ -11,7 +11,7 @@ export interface LabelMenuItem {
 
 const labelMenuCollator = new Intl.Collator(undefined, { sensitivity: 'base' })
 
-export function compareLabelMenuItems(a: LabelMenuItem, b: LabelMenuItem): number {
+function compareLabelMenuItems(a: LabelMenuItem, b: LabelMenuItem): number {
   return labelMenuCollator.compare(a.label, b.label)
     || labelMenuCollator.compare(a.parentPath ?? '', b.parentPath ?? '')
     || a.id.localeCompare(b.id)

@@ -52,7 +52,7 @@ const SOURCE_FALLBACKS: Record<string, IconComponent> = {
 /**
  * Get the fallback icon for a source type
  */
-export function getSourceFallbackIcon(type: SourceType): IconComponent {
+function getSourceFallbackIcon(type: SourceType): IconComponent {
   return SOURCE_FALLBACKS[type] ?? Plug
 }
 
@@ -80,7 +80,8 @@ function useFaviconFallback(
   source: LoadedSource,
   primaryIcon: ResolvedEntityIcon
 ): string | null {
-  const [faviconUrl, setFaviconUrl] = React.useState<string | null>(null)
+  // Store {forKey, url} so stale url auto-evicts when the source/need changes
+  const [faviconEntry, setFaviconEntry] = React.useState<{ forKey: string; url: string | null } | null>(null)
 
   // Only resolve favicon when primary icon resolved to fallback (no local file found)
   const needsFavicon = primaryIcon.kind === 'fallback'
@@ -92,29 +93,23 @@ function useFaviconFallback(
   const apiBaseUrl = source.config.api?.baseUrl
   const sourceType = source.config.type
 
+  // Derive service URL and cache key outside the effect for inline derivation
+  const serviceUrl = needsFavicon
+    ? (sourceType === 'mcp' && mcpUrl ? mcpUrl : sourceType === 'api' && apiBaseUrl ? apiBaseUrl : null)
+    : null
+  const resolvedProvider = slug ?? provider
+  const cacheKey = serviceUrl != null ? `${serviceUrl}:${resolvedProvider ?? ''}` : null
+
+  // Derive the favicon URL — automatically null when cacheKey changes before resolution
+  const faviconUrl = faviconEntry?.forKey === cacheKey ? faviconEntry.url : null
+
   React.useEffect(() => {
-    if (!needsFavicon) {
-      setFaviconUrl(null)
-      return
-    }
-
-    // Derive service URL from primitive fields
-    let serviceUrl: string | null = null
-    if (sourceType === 'mcp' && mcpUrl) serviceUrl = mcpUrl
-    else if (sourceType === 'api' && apiBaseUrl) serviceUrl = apiBaseUrl
-
-    if (!serviceUrl) {
-      setFaviconUrl(null)
-      return
-    }
-
-    const resolvedProvider = slug ?? provider
-    const cacheKey = `${serviceUrl}:${resolvedProvider ?? ''}`
+    if (!needsFavicon || !serviceUrl || !cacheKey) return
 
     // Check logo URL cache first
     const cached = logoUrlCache.get(cacheKey)
     if (cached !== undefined) {
-      setFaviconUrl(cached)
+      setFaviconEntry({ forKey: cacheKey, url: cached })
       return
     }
 
@@ -124,16 +119,16 @@ function useFaviconFallback(
       .then((result) => {
         if (cancelled) return
         logoUrlCache.set(cacheKey, result)
-        setFaviconUrl(result)
+        setFaviconEntry({ forKey: cacheKey, url: result })
       })
       .catch(() => {
         if (cancelled) return
         logoUrlCache.set(cacheKey, null)
-        setFaviconUrl(null)
+        setFaviconEntry({ forKey: cacheKey, url: null })
       })
 
     return () => { cancelled = true }
-  }, [needsFavicon, slug, provider, mcpUrl, apiBaseUrl, sourceType])
+  }, [needsFavicon, cacheKey, serviceUrl, resolvedProvider])
 
   return faviconUrl
 }

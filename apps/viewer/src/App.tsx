@@ -92,7 +92,7 @@ export function App() {
     }
 
     fetchSession()
-  }, [sessionId])
+  }, [sessionId, t])
 
   // Handle browser navigation
   useEffect(() => {
@@ -216,6 +216,7 @@ export function App() {
           <div className="text-center">
             <div className="text-destructive mb-4">{error}</div>
             <button
+              type="button"
               onClick={handleClear}
               className="px-4 py-2 rounded-md bg-background text-foreground shadow-sm border border-border hover:bg-foreground/5 transition-colors"
             >

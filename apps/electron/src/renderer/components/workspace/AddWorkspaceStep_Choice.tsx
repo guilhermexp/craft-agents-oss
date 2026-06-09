@@ -20,6 +20,7 @@ interface ChoiceCardProps {
 function ChoiceCard({ icon, title, description, onClick, variant = 'secondary' }: ChoiceCardProps) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
         "flex items-center gap-4 w-full p-4 rounded-lg text-left",

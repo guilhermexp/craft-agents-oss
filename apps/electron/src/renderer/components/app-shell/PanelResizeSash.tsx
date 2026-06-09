@@ -123,6 +123,9 @@ export function PanelResizeSash({
   return (
     <div
       ref={ref}
+      role="separator"
+      aria-orientation="vertical"
+      tabIndex={0}
       className="relative w-0 h-full cursor-col-resize flex justify-center shrink-0"
       style={{ margin: `0 ${PANEL_SASH_FLEX_MARGIN}px` }}
       onMouseDown={handleMouseDown}

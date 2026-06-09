@@ -150,40 +150,6 @@ export function removeMention(text: string, type: MentionItemType, id: string): 
     .trim()
 }
 
-/**
- * Check if text contains any valid mentions
- */
-export function hasMentions(
-  text: string,
-  availableSkillSlugs: string[],
-  availableSourceSlugs: string[]
-): boolean {
-  const mentions = parseMentions(text, availableSkillSlugs, availableSourceSlugs)
-  return mentions.skills.length > 0 || mentions.sources.length > 0 || mentions.files.length > 0 || mentions.folders.length > 0
-}
-
-// ============================================================================
-// Legacy compatibility - parseSkillMentions
-// ============================================================================
-
-/**
- * Extract valid [skill:...] mentions from message text (legacy API)
- *
- * @deprecated Use parseMentions() instead
- */
-export function parseSkillMentions(text: string, availableSlugs: string[]): string[] {
-  return parseMentions(text, availableSlugs, []).skills
-}
-
-/**
- * Remove [bracket] mentions from message text (legacy API)
- *
- * @deprecated Use stripAllMentions() instead
- */
-export function stripSkillMentions(text: string): string {
-  return stripAllMentions(text)
-}
-
 // ============================================================================
 // Badge Extraction
 // ============================================================================

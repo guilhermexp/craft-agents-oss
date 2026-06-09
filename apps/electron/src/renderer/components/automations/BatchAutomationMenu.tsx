@@ -73,7 +73,7 @@ export function BatchAutomationMenu() {
     if (!activeWorkspaceId) return
     const count = selectedIds.size
     clearMultiSelect()
-    const sorted = [...selectedAutomations].sort((a, b) => b.matcherIndex - a.matcherIndex)
+    const sorted = selectedAutomations.toSorted((a, b) => b.matcherIndex - a.matcherIndex)
     for (const a of sorted) {
       await window.electronAPI.deleteAutomation(
         activeWorkspaceId,

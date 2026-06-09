@@ -87,6 +87,8 @@ export function MermaidPreviewOverlay({
     >
       <div
         ref={containerRef}
+        role="application"
+        aria-label="Mermaid diagram — drag to pan, scroll to zoom"
         className="flex items-center justify-center select-none"
         onMouseDown={onMouseDown}
         onDoubleClick={onDoubleClick}

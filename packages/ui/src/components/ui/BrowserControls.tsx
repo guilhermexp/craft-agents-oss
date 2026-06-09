@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, forwardRef, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight, RotateCw, X, Globe } from 'lucide-react'
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence, LazyMotion, m, domAnimation } from 'motion/react'
 import { cn } from '../../lib/utils'
 import { useTranslation } from 'react-i18next'
 import { Spinner } from './LoadingIndicator'
@@ -250,6 +250,7 @@ export function BrowserControls({
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
           placeholder={t('browser.urlPlaceholder')}
+          aria-label={t('browser.urlPlaceholder')}
           className={cn(
             'w-full rounded-[8px] bg-transparent px-3 pl-8 text-[13px] text-foreground/70 outline-none transition-all',
             compact ? 'h-[28px]' : 'h-[30px]',
@@ -283,24 +284,26 @@ export function BrowserControls({
 
   /* Shared: progress bar */
   const progressBar = showProgressBar && (
-    <AnimatePresence>
-      {loading && (
-        <motion.div
-          className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] bg-gradient-to-r from-transparent via-accent to-transparent"
-          style={{ backgroundSize: '220% 100%' }}
-          initial={{ opacity: 0 }}
-          animate={{
-            opacity: 0.9,
-            backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
-          }}
-          exit={{ opacity: 0 }}
-          transition={{
-            opacity: { duration: 0.2, ease: 'easeOut' },
-            backgroundPosition: { duration: 1.6, repeat: Infinity, ease: 'easeInOut' },
-          }}
-        />
-      )}
-    </AnimatePresence>
+    <LazyMotion features={domAnimation}>
+      <AnimatePresence>
+        {loading && (
+          <m.div
+            className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] bg-gradient-to-r from-transparent via-accent to-transparent"
+            style={{ backgroundSize: '220% 100%' }}
+            initial={{ opacity: 0 }}
+            animate={{
+              opacity: 0.9,
+              backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
+            }}
+            exit={{ opacity: 0 }}
+            transition={{
+              opacity: { duration: 0.2, ease: 'easeOut' },
+              backgroundPosition: { duration: 1.6, repeat: Infinity, ease: 'easeInOut' },
+            }}
+          />
+        )}
+      </AnimatePresence>
+    </LazyMotion>
   )
 
   /* ---- Layout ---- */

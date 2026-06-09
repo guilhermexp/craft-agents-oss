@@ -147,7 +147,7 @@ export function WorkspaceSwitcher({
       toast.success(t('toast.removedWorkspace', { name: workspace.name }))
       onWorkspaceRemoved?.()
     }
-  }, [activeWorkspaceId, onWorkspaceRemoved])
+  }, [activeWorkspaceId, onWorkspaceRemoved, t])
 
   const handleCloseCreationScreen = useCallback(() => {
     setShowCreationScreen(false)
@@ -168,7 +168,7 @@ export function WorkspaceSwitcher({
 
     handleCloseCreationScreen()
     toast.success(t('toast.workspaceReconnected'))
-  }, [activeWorkspaceId, handleCloseCreationScreen, onSelect])
+  }, [activeWorkspaceId, handleCloseCreationScreen, onSelect, t])
 
   return (
     <>
@@ -210,6 +210,7 @@ export function WorkspaceSwitcher({
             </button>
           ) : (
             <button
+              type="button"
               className={cn(
                 "flex items-center gap-1 w-full min-w-0 justify-start px-2 py-1.5 rounded-md",
                 "text-foreground hover:bg-foreground/5 data-[state=open]:bg-foreground/5 transition-colors duration-150",
@@ -289,6 +290,7 @@ export function WorkspaceSwitcher({
                   {/* Action buttons - only visible on hover for non-active workspaces */}
                   {activeWorkspaceId !== workspace.id && (
                     <button
+                      type="button"
                       className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/20 hover:text-destructive transition-opacity"
                       onClick={(e) => {
                         e.stopPropagation()
@@ -301,6 +303,7 @@ export function WorkspaceSwitcher({
                   )}
                   {activeWorkspaceId !== workspace.id && !disconnected && (
                     <button
+                      type="button"
                       className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-foreground/10 transition-opacity"
                       onClick={(e) => {
                         e.stopPropagation()

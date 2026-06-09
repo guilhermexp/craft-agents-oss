@@ -110,6 +110,8 @@ export const DEFAULT_SLASH_COMMAND_GROUPS: CommandGroup[] = [
 // Shared Styles
 // ============================================================================
 
+const EMPTY_ACTIVE_COMMANDS: SlashCommandId[] = []
+
 const MENU_CONTAINER_STYLE = 'min-w-[200px] overflow-hidden rounded-[8px] bg-background text-foreground shadow-modal-small'
 const MENU_LIST_STYLE = 'max-h-[260px] overflow-y-auto py-1'
 const MENU_ITEM_STYLE = 'flex cursor-pointer select-none items-center gap-2 rounded-[6px] mx-1 px-2 py-1.5 text-[13px]'
@@ -141,16 +143,14 @@ function filterSections(sections: SlashSection[], filter: string): SlashSection[
   const lowerFilter = filter.toLowerCase()
 
   // Filter items within each section, keeping section structure
-  return sections
-    .map(section => ({
-      ...section,
-      items: section.items.filter(item =>
-        item.label.toLowerCase().includes(lowerFilter) ||
-        item.id.toLowerCase().includes(lowerFilter) ||
-        item.description?.toLowerCase().includes(lowerFilter)
-      ),
-    }))
-    .filter(section => section.items.length > 0)
+  return sections.flatMap(section => {
+    const items = section.items.filter(item =>
+      item.label.toLowerCase().includes(lowerFilter) ||
+      item.id.toLowerCase().includes(lowerFilter) ||
+      item.description?.toLowerCase().includes(lowerFilter)
+    )
+    return items.length > 0 ? [{ ...section, items }] : []
+  })
 }
 
 /** Flatten sections into a single array of items */
@@ -199,7 +199,7 @@ export interface SlashCommandMenuProps {
 export function SlashCommandMenu({
   commands,
   commandGroups,
-  activeCommands = [],
+  activeCommands = EMPTY_ACTIVE_COMMANDS,
   onSelect,
   showFilter = false,
   filterPlaceholder,
@@ -213,10 +213,10 @@ export function SlashCommandMenu({
   // If groups provided, filter within each group; otherwise use flat commands
   const filteredGroups = React.useMemo(() => {
     if (commandGroups) {
-      return commandGroups.map(group => ({
-        ...group,
-        commands: filterCommands(group.commands, filter),
-      })).filter(group => group.commands.length > 0)
+      return commandGroups.flatMap(group => {
+        const commands = filterCommands(group.commands, filter)
+        return commands.length > 0 ? [{ ...group, commands }] : []
+      })
     }
     return null
   }, [commandGroups, filter])
@@ -328,7 +328,7 @@ export function InlineSlashCommand({
   open,
   onOpenChange,
   sections,
-  activeCommands = [],
+  activeCommands = EMPTY_ACTIVE_COMMANDS,
   onSelectCommand,
   onSelectFolder,
   filter = '',
@@ -337,14 +337,14 @@ export function InlineSlashCommand({
 }: InlineSlashCommandProps) {
   const menuRef = React.useRef<HTMLDivElement>(null)
   const listRef = React.useRef<HTMLDivElement>(null)
-  const [selectedIndex, setSelectedIndex] = React.useState(0)
+  // Store {forFilter, index} so stale index auto-evicts when filter changes
+  const [selection, setSelection] = React.useState<{ forFilter: string; index: number }>({
+    forFilter: filter,
+    index: 0,
+  })
   const filteredSections = filterSections(sections, filter)
   const flatItems = flattenSections(filteredSections)
-
-  // Reset selection when filter changes
-  React.useEffect(() => {
-    setSelectedIndex(0)
-  }, [filter])
+  const selectedIndex = selection.forFilter === filter ? selection.index : 0
 
   // Scroll selected item into view
   React.useEffect(() => {
@@ -374,11 +374,17 @@ export function InlineSlashCommand({
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault()
-          setSelectedIndex(prev => (prev < flatItems.length - 1 ? prev + 1 : 0))
+          setSelection(prev => {
+            const cur = prev.forFilter === filter ? prev.index : 0
+            return { forFilter: filter, index: cur < flatItems.length - 1 ? cur + 1 : 0 }
+          })
           break
         case 'ArrowUp':
           e.preventDefault()
-          setSelectedIndex(prev => (prev > 0 ? prev - 1 : flatItems.length - 1))
+          setSelection(prev => {
+            const cur = prev.forFilter === filter ? prev.index : 0
+            return { forFilter: filter, index: cur > 0 ? cur - 1 : flatItems.length - 1 }
+          })
           break
         case 'Enter':
         case 'Tab':
@@ -396,7 +402,7 @@ export function InlineSlashCommand({
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [open, flatItems, selectedIndex, handleSelect, onOpenChange])
+  }, [open, flatItems, selectedIndex, handleSelect, onOpenChange, filter])
 
   // Close on click outside
   React.useEffect(() => {
@@ -446,11 +452,12 @@ export function InlineSlashCommand({
               if (isFolder(item)) {
                 // Folder item - single line with path
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={`${section.id}-${item.id}`}
                     data-selected={isSelected}
                     onClick={() => handleSelect(item)}
-                    onMouseEnter={() => setSelectedIndex(itemIndex)}
+                    onMouseEnter={() => setSelection({ forFilter: filter, index: itemIndex })}
                     className={cn(
                       MENU_ITEM_STYLE,
                       isSelected && MENU_ITEM_SELECTED
@@ -463,24 +470,25 @@ export function InlineSlashCommand({
                       <span>{item.label}</span>
                       <span className="text-muted-foreground ml-1.5">{item.description}</span>
                     </div>
-                  </div>
+                  </button>
                 )
               } else {
                 // Command item
                 const isActive = activeCommands.includes(item.id)
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={item.id}
                     data-selected={isSelected}
                     onClick={() => handleSelect(item)}
-                    onMouseEnter={() => setSelectedIndex(itemIndex)}
+                    onMouseEnter={() => setSelection({ forFilter: filter, index: itemIndex })}
                     className={cn(
                       MENU_ITEM_STYLE,
                       isSelected && MENU_ITEM_SELECTED
                     )}
                   >
                     <CommandItemContent command={item} isActive={isActive} />
-                  </div>
+                  </button>
                 )
               }
             })}
@@ -583,8 +591,7 @@ export function useInlineSlashCommand({
 
     // Recent folders section - sorted alphabetically by folder name, show all
     if (recentFolders.length > 0) {
-      const sortedFolders = [...recentFolders]
-        .sort((a, b) => {
+      const sortedFolders = recentFolders.toSorted((a, b) => {
           const nameA = getFolderName(a).toLowerCase()
           const nameB = getFolderName(b).toLowerCase()
           return nameA.localeCompare(nameB)

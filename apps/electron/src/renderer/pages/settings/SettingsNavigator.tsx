@@ -19,15 +19,9 @@ import {
 import { DropdownMenuProvider } from '@/components/ui/menu-context'
 import { cn } from '@/lib/utils'
 import { Separator } from '@/components/ui/separator'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import type { SettingsSubpage } from '../../../shared/types'
 import { SETTINGS_ITEMS } from '../../../shared/menu-schema'
 import { SETTINGS_ICONS } from '@/components/icons/SettingsIcons'
-
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'navigator',
-}
 
 interface SettingsNavigatorProps {
   /** Currently selected settings subpage */

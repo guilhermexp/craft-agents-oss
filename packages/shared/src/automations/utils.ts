@@ -84,7 +84,7 @@ export function parsePromptReferences(prompt: string): PromptReferences {
  *
  * Accepts both plain data objects (legacy API) and BaseEventPayload (handler API).
  */
-export function getMatchValue(event: AutomationEvent, data: Record<string, unknown>): string {
+function getMatchValue(event: AutomationEvent, data: Record<string, unknown>): string {
   switch (event) {
     case 'LabelAdd':
     case 'LabelRemove':
@@ -113,7 +113,7 @@ export function getMatchValue(event: AutomationEvent, data: Record<string, unkno
  * Mirrors the Claude SDK's `fieldToMatch` per event — each event type matches
  * against a specific field from the input.
  */
-export function getMatchValueForSdkInput(event: AgentEvent, input: SdkAutomationInput): string {
+function getMatchValueForSdkInput(event: AgentEvent, input: SdkAutomationInput): string {
   switch (event) {
     case 'PreToolUse':
     case 'PostToolUse':
@@ -164,7 +164,7 @@ function matchesBasePredicate(matcher: AutomationMatcher, event: AutomationEvent
 /**
  * Canonical matcher evaluation pipeline used by all automation entry points.
  */
-export function matcherMatchesWithContext(
+function matcherMatchesWithContext(
   matcher: AutomationMatcher,
   event: AutomationEvent,
   context: MatcherContext,

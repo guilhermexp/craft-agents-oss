@@ -112,7 +112,8 @@ function ContextMenuContent({
   children,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Content>) {
-  const shortcutRegistry = React.useRef<Map<string, ShortcutHandler>>(new Map())
+  const shortcutRegistry = React.useRef<Map<string, ShortcutHandler> | null>(null)
+  if (shortcutRegistry.current === null) shortcutRegistry.current = new Map()
   const contentRef = React.useRef<HTMLDivElement>(null)
 
   // Close the menu by pressing Escape programmatically
@@ -125,10 +126,10 @@ function ContextMenuContent({
 
   const contextValue = React.useMemo(() => ({
     register: (key: string, handler: ShortcutHandler) => {
-      shortcutRegistry.current.set(key.toLowerCase(), handler)
+      shortcutRegistry.current?.set(key.toLowerCase(), handler)
     },
     unregister: (key: string) => {
-      shortcutRegistry.current.delete(key.toLowerCase())
+      shortcutRegistry.current?.delete(key.toLowerCase())
     },
     close: closeMenu,
   }), [closeMenu])
@@ -138,7 +139,7 @@ function ContextMenuContent({
     onKeyDown?.(e)
 
     // Check if key matches a registered shortcut
-    const handler = shortcutRegistry.current.get(e.key.toLowerCase())
+    const handler = shortcutRegistry.current?.get(e.key.toLowerCase())
     if (handler && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault()
       handler()

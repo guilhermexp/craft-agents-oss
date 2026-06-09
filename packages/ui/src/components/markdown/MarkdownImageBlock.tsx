@@ -114,20 +114,13 @@ export function MarkdownImageBlock({ code, className, onCreateRegionAnnotation: 
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
-  const activeItem = items[activeIndex]
-  const safeActiveItem = activeItem ?? items[0]
+  // Derive a safe index inline — clamps to [0, items.length-1] so we never see a stale
+  // out-of-bounds value after items shrink, removing the need for a reset effect.
+  const safeActiveIndex = items.length > 0 && activeIndex < items.length ? activeIndex : 0
+  const activeItem = items[safeActiveIndex]
+  const safeActiveItem = activeItem
   const activeDataUrl = safeActiveItem ? contentCache[safeActiveItem.src] : undefined
   const hasMultiple = items.length > 1
-
-  React.useEffect(() => {
-    if (!activeItem) {
-      setActiveIndex(0)
-      return
-    }
-    if (activeIndex > items.length - 1) {
-      setActiveIndex(0)
-    }
-  }, [activeIndex, activeItem, items.length])
 
   React.useEffect(() => {
     if (!onReadFileDataUrl || items.length === 0) return
@@ -158,9 +151,10 @@ export function MarkdownImageBlock({ code, className, onCreateRegionAnnotation: 
 
         for (const result of results) {
           if (result.status === 'fulfilled') {
-            nextCache[result.value.src] = result.value.dataUrl
-            if (result.value.ratio && Number.isFinite(result.value.ratio)) {
-              nextRatios[result.value.src] = result.value.ratio
+            const { src, dataUrl, ratio } = result.value
+            nextCache[src] = dataUrl
+            if (ratio && Number.isFinite(ratio)) {
+              nextRatios[src] = ratio
             }
           } else {
             failedCount += 1
@@ -226,6 +220,7 @@ export function MarkdownImageBlock({ code, className, onCreateRegionAnnotation: 
       <div className={cn('relative group rounded-[8px] overflow-visible', className)}>
         <div className="relative h-[320px] overflow-visible flex items-center justify-center p-3">
           <button
+            type="button"
             onClick={() => setIsFullscreen(true)}
             className={cn(
               'absolute right-2 top-2 z-10 p-1 rounded-[6px] transition-all select-none',
@@ -241,7 +236,7 @@ export function MarkdownImageBlock({ code, className, onCreateRegionAnnotation: 
           {hasMultiple && stackItems.length > 0 && (
             <ImageCardStack
               items={stackItems}
-              currentIndex={activeIndex}
+              currentIndex={safeActiveIndex}
               onIndexChange={setActiveIndex}
               onTopCardTap={() => setIsFullscreen(true)}
               className="max-w-full max-h-full"
@@ -249,13 +244,19 @@ export function MarkdownImageBlock({ code, className, onCreateRegionAnnotation: 
           )}
 
           {!hasMultiple && activeDataUrl && (
-            <img
-              src={activeDataUrl}
-              alt={safeActiveItem?.label || safeActiveItem?.src.split('/').pop() || 'Image preview'}
-              className="max-w-full max-h-full object-contain"
-              draggable={false}
+            <button
+              type="button"
+              className="contents cursor-zoom-in"
               onClick={() => setIsFullscreen(true)}
-            />
+              aria-label={safeActiveItem?.label || 'Open image fullscreen'}
+            >
+              <img
+                src={activeDataUrl}
+                alt={safeActiveItem?.label || safeActiveItem?.src.split('/').pop() || 'Image preview'}
+                className="max-w-full max-h-full object-contain"
+                draggable={false}
+              />
+            </button>
           )}
 
           {loading && (!activeDataUrl || (hasMultiple && stackItems.length === 0)) && (
@@ -274,7 +275,7 @@ export function MarkdownImageBlock({ code, className, onCreateRegionAnnotation: 
         onClose={() => setIsFullscreen(false)}
         filePath={safeActiveItem.src}
         items={items}
-        initialIndex={activeIndex}
+        initialIndex={safeActiveIndex}
         loadDataUrl={handleLoadDataUrl}
         title={spec.title}
       />

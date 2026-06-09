@@ -107,9 +107,7 @@ export function JSONPreviewOverlay({
 }: JSONPreviewOverlayProps) {
   const { t } = useTranslation()
   // Select theme based on mode
-  const jsonTheme = useMemo(() => {
-    return theme === 'dark' ? craftAgentDarkTheme : craftAgentLightTheme
-  }, [theme])
+  const jsonTheme = theme === 'dark' ? craftAgentDarkTheme : craftAgentLightTheme
 
   // Recursively parse any stringified JSON within the data for better display.
   // Guard: @uiw/react-json-view crashes on null/undefined/primitive values — wrap them

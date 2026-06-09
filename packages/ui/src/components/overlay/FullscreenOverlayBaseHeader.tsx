@@ -163,6 +163,7 @@ function FilePathBadge({ filePath }: FilePathBadgeProps) {
           <DropdownMenuTrigger asChild>
             {/* Badge that responds to left-click (dropdown) and right-click (context menu) */}
             <button
+              type="button"
               className={cn(
                 'flex items-center gap-1.5 h-[26px] px-2.5 rounded-[6px]',
                 'font-sans text-[13px] font-medium text-foreground/70',
@@ -221,6 +222,7 @@ export function FullscreenOverlayBaseHeader({
     <>
       {copyContent != null && (
         <button
+          type="button"
           onClick={handleCopy}
           className={cn(
             'p-1.5 rounded-[6px] bg-background shadow-minimal cursor-pointer',

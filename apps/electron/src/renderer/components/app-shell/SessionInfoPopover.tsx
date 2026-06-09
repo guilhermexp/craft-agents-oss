@@ -111,8 +111,10 @@ export function SessionInfoPopoverContent({ sessionId, sessionFolderPath }: { se
 
   React.useEffect(() => {
     return () => {
-      if (renameTimeoutRef.current) {
-        clearTimeout(renameTimeoutRef.current)
+      // Capture current value so the cleanup closure sees the correct timer id
+      const timeout = renameTimeoutRef.current
+      if (timeout) {
+        clearTimeout(timeout)
       }
     }
   }, [])

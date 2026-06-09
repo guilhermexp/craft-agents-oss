@@ -159,7 +159,7 @@ function isConfigured(entry: MessengerEntry, envByKey: Map<string, HermesEnvVar>
 
 function parseAllowlist(value: string | undefined): string[] {
   if (!value) return []
-  return value.split(',').map(s => s.trim()).filter(Boolean)
+  return value.split(',').flatMap(s => { const t = s.trim(); return t ? [t] : [] })
 }
 
 export function HermesMessengersConfig() {
@@ -323,8 +323,8 @@ function MessengerModal({
 
           {entry.setupSteps && (
             <ol className="text-xs text-muted-foreground leading-relaxed list-decimal pl-4 space-y-1">
-              {entry.setupSteps.map((step, i) => (
-                <li key={i}>{step}</li>
+              {entry.setupSteps.map((step) => (
+                <li key={step}>{step}</li>
               ))}
             </ol>
           )}
@@ -341,10 +341,11 @@ function MessengerModal({
           )}
 
           <div className="space-y-2 pt-2">
-            {allKeys.filter(k => k !== entry.allowlistEnv).map((key) => {
+            {allKeys.flatMap((key) => {
+              if (key === entry.allowlistEnv) return []
               const current = envByKey.get(key)
               const isRequired = entry.requiredEnv.includes(key)
-              return (
+              return [(
                 <div key={key} className="space-y-1">
                   <label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1">
                     {key}
@@ -361,9 +362,10 @@ function MessengerModal({
                     onChange={(e) => setValue(key, e.target.value)}
                     placeholder={current?.isSet ? '•••• (preencha para sobrescrever)' : 'Cole o valor'}
                     className="w-full text-sm px-2 py-1.5 rounded-md bg-muted/40 border border-border/60 focus:outline-none focus:border-primary/60"
+                    aria-label={key}
                   />
                 </div>
-              )
+              )]
             })}
           </div>
 
@@ -470,6 +472,7 @@ function AllowlistEditor({
           placeholder="Cole o user ID e pressione Enter"
           disabled={busy}
           className="flex-1 text-sm px-2 py-1.5 rounded-md bg-muted/40 border border-border/60 focus:outline-none focus:border-primary/60"
+          aria-label="User ID"
         />
         <Button size="sm" variant="outline" onClick={() => void add()} disabled={busy || !input.trim()}>
           Adicionar

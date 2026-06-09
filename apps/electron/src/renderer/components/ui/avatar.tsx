@@ -70,38 +70,24 @@ function CrossfadeAvatar({
   fallbackClassName,
   imageClassName,
 }: CrossfadeAvatarProps) {
-  const [isLoaded, setIsLoaded] = React.useState(false)
-  const [currentSrc, setCurrentSrc] = React.useState(src)
+  // `loadedSrc` is the URL whose image has fully loaded (or was already cached).
+  // `isLoaded` derives from it: true only when the current `src` has been loaded.
+  // When `src` changes, `isLoaded` instantly becomes false without any effect,
+  // so the fallback shows immediately — no stale-state flash.
+  const [loadedSrc, setLoadedSrc] = React.useState<string | null | undefined>(null)
+  const isLoaded = loadedSrc === src
 
   // Detect if the image is an SVG
   const isSvg = React.useMemo(() => src?.endsWith('.svg') ?? false, [src])
 
-  // Reset loaded state when src changes (but check if new image is already cached first)
-  React.useEffect(() => {
-    if (src !== currentSrc) {
-      // Check if new image is already in browser cache
-      if (src) {
-        const img = new Image()
-        img.src = src
-        if (img.complete && img.naturalWidth > 0) {
-          // Image is already cached, no need to show fallback
-          setCurrentSrc(src)
-          setIsLoaded(true)
-          return
-        }
-      }
-      setIsLoaded(false)
-      setCurrentSrc(src)
-    }
-  }, [src, currentSrc])
-
-  // Callback ref to check if image is cached immediately when element mounts
+  // Callback ref to check if image is cached immediately when element mounts.
+  // Also handles the loaded event on subsequent loads.
   const imgCallbackRef = React.useCallback((node: HTMLImageElement | null) => {
     if (node && node.complete && node.naturalWidth > 0) {
       // Image is already cached/loaded
-      setIsLoaded(true)
+      setLoadedSrc(node.src)
     }
-  }, [src])
+  }, [])
 
   return (
     <div
@@ -145,7 +131,7 @@ function CrossfadeAvatar({
               ref={imgCallbackRef}
               src={src}
               alt=""
-              onLoad={() => setIsLoaded(true)}
+              onLoad={(e) => setLoadedSrc((e.currentTarget as HTMLImageElement).src)}
               style={{ display: 'none' }}
             />
           </div>
@@ -155,7 +141,7 @@ function CrossfadeAvatar({
             ref={imgCallbackRef}
             src={src}
             alt={alt}
-            onLoad={() => setIsLoaded(true)}
+            onLoad={(e) => setLoadedSrc((e.currentTarget as HTMLImageElement).src)}
             className={cn(
               "h-full w-full object-cover transition-opacity duration-200",
               isLoaded ? "opacity-100" : "opacity-0",

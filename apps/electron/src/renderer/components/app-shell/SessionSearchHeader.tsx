@@ -74,12 +74,15 @@ export function SessionSearchHeader({
           onBlur={onBlur}
           readOnly={readOnly}
           placeholder={placeholder}
+          aria-label={placeholder}
           className="w-full h-8 pl-8 pr-8 text-sm bg-transparent border-0 rounded-[8px] outline-none focus-visible:ring-0 focus-visible:outline-none placeholder:text-muted-foreground/50"
         />
         {onSearchClose && (
           <button
+            type="button"
             onClick={onSearchClose}
             className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-foreground/10 rounded"
+            aria-label={t("session.closeSearch")}
             title={t("session.closeSearch")}
           >
             <X className="size-3.5 text-muted-foreground" />

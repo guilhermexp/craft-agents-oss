@@ -9,7 +9,7 @@ import { atom } from 'jotai'
 import type { BrowserInstanceInfo } from '../../shared/types'
 
 /** Map of all browser instances by ID */
-export const browserInstancesMapAtom = atom<Map<string, BrowserInstanceInfo>>(new Map())
+const browserInstancesMapAtom = atom<Map<string, BrowserInstanceInfo>>(new Map())
 
 /** Derived: array of all browser instances (for iteration) */
 export const browserInstancesAtom = atom<BrowserInstanceInfo[]>(
@@ -17,7 +17,7 @@ export const browserInstancesAtom = atom<BrowserInstanceInfo[]>(
 )
 
 /** Derived: count of active browser instances */
-export const browserInstanceCountAtom = atom<number>(
+const browserInstanceCountAtom = atom<number>(
   (get) => get(browserInstancesMapAtom).size
 )
 
@@ -25,10 +25,10 @@ export const browserInstanceCountAtom = atom<number>(
 export const activeBrowserInstanceIdAtom = atom<string | null>(null)
 
 /** Tombstones for instances removed from renderer state (guards against late out-of-order updates) */
-export const removedBrowserInstanceIdsAtom = atom<Set<string>>(new Set<string>())
+const removedBrowserInstanceIdsAtom = atom<Set<string>>(new Set<string>())
 
 /** Derived: currently active browser instance info */
-export const activeBrowserInstanceAtom = atom<BrowserInstanceInfo | null>((get) => {
+const activeBrowserInstanceAtom = atom<BrowserInstanceInfo | null>((get) => {
   const activeId = get(activeBrowserInstanceIdAtom)
   if (!activeId) return null
   return get(browserInstancesMapAtom).get(activeId) ?? null

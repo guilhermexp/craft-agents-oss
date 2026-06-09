@@ -195,6 +195,7 @@ export function PermissionsDataTable({
   // Fullscreen button for toolbar - shown on hover
   const fullscreenButton = fullscreen ? (
     <button
+      type="button"
       onClick={() => setIsFullscreen(true)}
       className={cn(
         'p-1 rounded-[6px] transition-all',

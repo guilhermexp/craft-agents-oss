@@ -118,30 +118,31 @@ export function MarkdownPdfBlock({ code, className, onCreateRegionAnnotation: _o
 
   // Content cache: src path → loaded Uint8Array (master copy, never passed to react-pdf directly)
   const [contentCache, setContentCache] = React.useState<Record<string, Uint8Array>>({})
-  const [loading, setLoading] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
+  // Store which src produced loading/error so stale state auto-evicts when src changes
+  const [loadingForSrc, setLoadingForSrc] = React.useState<string | null>(null)
+  const [errorEntry, setErrorEntry] = React.useState<{ message: string; forSrc: string } | null>(null)
 
   const activeItem = items[activeIndex]
   const activePdfData = activeItem ? contentCache[activeItem.src] : undefined
+  // Derived: only show loading/error when they belong to the currently active src
+  const loading = loadingForSrc === activeItem?.src
+  const error = errorEntry !== null && errorEntry.forSrc === activeItem?.src ? errorEntry.message : null
 
   // Load active item's content when it changes
   React.useEffect(() => {
     if (!activeItem?.src || !onReadFileBinary) return
-    if (contentCache[activeItem.src]) {
-      setError(null)
-      return
-    }
-    setLoading(true)
-    setError(null)
-    onReadFileBinary(activeItem.src)
+    if (contentCache[activeItem.src]) return
+    const src = activeItem.src
+    setLoadingForSrc(src)
+    onReadFileBinary(src)
       .then((data) => {
         // Store a copy — react-pdf transfers ArrayBuffers to workers, detaching the original
-        setContentCache((prev) => ({ ...prev, [activeItem.src]: new Uint8Array(data) }))
+        setContentCache((prev) => ({ ...prev, [src]: new Uint8Array(data) }))
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Failed to read PDF file')
+        setErrorEntry({ message: err instanceof Error ? err.message : 'Failed to read PDF file', forSrc: src })
       })
-      .finally(() => setLoading(false))
+      .finally(() => setLoadingForSrc((prev) => (prev === src ? null : prev)))
   }, [activeItem?.src, onReadFileBinary, contentCache])
 
   // Stable file objects per item (ref ensures Documents don't remount on re-render).
@@ -183,6 +184,7 @@ export function MarkdownPdfBlock({ code, className, onCreateRegionAnnotation: _o
           <div className="flex items-center gap-1">
             <ItemNavigator items={items} activeIndex={activeIndex} onSelect={setActiveIndex} />
             <button
+              type="button"
               onClick={() => setIsFullscreen(true)}
               className={cn(
                 "p-1 rounded-[6px] transition-all select-none",

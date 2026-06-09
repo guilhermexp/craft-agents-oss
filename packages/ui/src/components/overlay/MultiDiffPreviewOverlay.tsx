@@ -154,7 +154,8 @@ export function MultiDiffPreviewOverlay({
   const { onOpenFileExternal } = usePlatform()
 
   // Ref map for scroll-to-focused-change support
-  const changeRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const changeRefs = useRef<Map<string, HTMLDivElement> | null>(null)
+  if (changeRefs.current === null) changeRefs.current = new Map()
 
   // Build file sections (grouped or ungrouped)
   const fileSections = useMemo(() => {
@@ -171,7 +172,8 @@ export function MultiDiffPreviewOverlay({
   const readyCountRef = useRef(0)
   const scrollDoneRef = useRef(!focusedChangeId) // no scroll needed → already done
   const revealedRef = useRef(false)
-  const mountedAtRef = useRef(performance.now())
+  const mountedAtRef = useRef<number | null>(null)
+  if (mountedAtRef.current === null) mountedAtRef.current = performance.now()
   const [contentVisible, setContentVisible] = useState(false)
   const [animateReveal, setAnimateReveal] = useState(true)
 
@@ -180,7 +182,7 @@ export function MultiDiffPreviewOverlay({
     if (readyCountRef.current >= diffCount && scrollDoneRef.current) {
       revealedRef.current = true
       // If all conditions met within first frame, show instantly (no transition)
-      const elapsed = performance.now() - mountedAtRef.current
+      const elapsed = performance.now() - mountedAtRef.current!
       if (elapsed < 50) setAnimateReveal(false)
       setContentVisible(true)
     }
@@ -239,7 +241,7 @@ export function MultiDiffPreviewOverlay({
 
     // Small delay to allow ShikiDiffViewer to render (async syntax highlighting)
     const timer = setTimeout(() => {
-      const el = changeRefs.current.get(focusedChangeId)
+      const el = changeRefs.current!.get(focusedChangeId)
       if (el) {
         el.scrollIntoView({ behavior: 'instant', block: 'start' })
       }
@@ -299,9 +301,9 @@ export function MultiDiffPreviewOverlay({
   // Ref callback to register each change element for scroll-to support
   const setChangeRef = useCallback((changeId: string, el: HTMLDivElement | null) => {
     if (el) {
-      changeRefs.current.set(changeId, el)
+      changeRefs.current!.set(changeId, el)
     } else {
-      changeRefs.current.delete(changeId)
+      changeRefs.current!.delete(changeId)
     }
   }, [])
 

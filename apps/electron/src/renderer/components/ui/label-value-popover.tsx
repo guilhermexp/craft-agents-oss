@@ -185,6 +185,7 @@ export function LabelValuePopover({
                 <input
                   ref={inputRef}
                   type="text"
+                  aria-label={label.name}
                   value={draft}
                   onChange={(e) => {
                     setDraft(e.target.value)
@@ -268,6 +269,7 @@ export function LabelValuePopover({
             <input
               ref={inputRef}
               type={label.valueType === 'number' ? 'number' : 'text'}
+              aria-label={label.name}
               step={label.valueType === 'number' ? 'any' : undefined}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}

@@ -100,30 +100,8 @@ export function set<T>(key: StorageKey, value: T, suffix?: string): void {
 }
 
 /**
- * Remove a key from localStorage.
- */
-export function remove(key: StorageKey, suffix?: string): void {
-  localStorage.removeItem(buildKey(key, suffix))
-}
-
-/**
  * Get raw string value (for non-JSON data like atomWithStorage compatibility).
  */
 export function getRaw(key: StorageKey, suffix?: string): string | null {
   return localStorage.getItem(buildKey(key, suffix))
-}
-
-/**
- * Set raw string value (for non-JSON data like atomWithStorage compatibility).
- */
-export function setRaw(key: StorageKey, value: string, suffix?: string): void {
-  localStorage.setItem(buildKey(key, suffix), value)
-}
-
-/**
- * Build a full key string for use with atomWithStorage or other APIs
- * that need the raw key string.
- */
-export function getKeyString(key: StorageKey, suffix?: string): string {
-  return buildKey(key, suffix)
 }

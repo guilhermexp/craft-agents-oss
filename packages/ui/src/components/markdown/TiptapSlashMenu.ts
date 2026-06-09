@@ -15,7 +15,7 @@ export interface SlashCommandItem {
   run: (editor: Editor, insertPos?: number) => void
 }
 
-export const SlashCommandPluginKey = new PluginKey('tiptapSlashMenu')
+const SlashCommandPluginKey = new PluginKey('tiptapSlashMenu')
 
 type SlashIconName =
   | 'pilcrow'

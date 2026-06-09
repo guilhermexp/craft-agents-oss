@@ -96,7 +96,7 @@ export function LabelBadgeRow({
 
         return (
           <LabelValuePopover
-            key={`${parsed.id}-${index}`}
+            key={parsed.id}
             label={resolvedConfig}
             value={parsed.rawValue}
             open={openIndex === index}

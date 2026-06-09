@@ -81,18 +81,18 @@ function formatHostWithPort(host: string, port: number): string {
   }
 }
 
-export function shouldUseSecureCookies(req: Request, secureCookies?: boolean): boolean {
+function shouldUseSecureCookies(req: Request, secureCookies?: boolean): boolean {
   if (secureCookies != null) return secureCookies
   return getRequestProto(req) === 'https'
 }
 
-export interface ResolveWebSocketUrlOptions {
+interface ResolveWebSocketUrlOptions {
   publicWsUrl?: string
   wsProtocol: 'ws' | 'wss'
   wsPort: number
 }
 
-export function resolveWebSocketUrl(
+function resolveWebSocketUrl(
   req: Request,
   { publicWsUrl, wsProtocol, wsPort }: ResolveWebSocketUrlOptions,
 ): string {

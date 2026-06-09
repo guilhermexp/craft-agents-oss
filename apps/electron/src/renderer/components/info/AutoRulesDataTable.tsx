@@ -202,6 +202,7 @@ export function AutoRulesDataTable({
   // Fullscreen button (shown on hover)
   const fullscreenButton = fullscreen ? (
     <button
+      type="button"
       onClick={() => setIsFullscreen(true)}
       className={cn(
         'p-1 rounded-[6px] transition-all',

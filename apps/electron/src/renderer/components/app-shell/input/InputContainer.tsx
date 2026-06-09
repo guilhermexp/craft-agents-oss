@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { motion, AnimatePresence, useMotionValue, useMotionValueEvent, animate } from 'motion/react'
+import { LazyMotion, m, AnimatePresence, useMotionValue, useMotionValueEvent, animate, domAnimation } from 'motion/react'
 import { cn } from '@/lib/utils'
 import { FreeFormInput, type FreeFormInputProps } from './FreeFormInput'
 import { StructuredInput } from './StructuredInput'
@@ -65,7 +65,7 @@ export function InputContainer({
     compactMode ? FALLBACK_HEIGHTS['freeform-compact'] : FALLBACK_HEIGHTS.freeform
   )
   const [structuredHeight, setStructuredHeight] = React.useState<number | null>(null)
-  const [isFocused, setIsFocused] = React.useState(false)
+  const isFocusedRef = React.useRef(false)
   const hasInitializedRef = React.useRef(false)
 
   // Create a stable key for the current content
@@ -116,7 +116,7 @@ export function InputContainer({
 
   // Handle focus changes from FreeFormInput
   const handleFocusChange = React.useCallback((focused: boolean) => {
-    setIsFocused(focused)
+    isFocusedRef.current = focused
   }, [])
 
   // Use ResizeObserver only for structured inputs (freeform uses onHeightChange callback)
@@ -213,43 +213,45 @@ export function InputContainer({
   }
 
   return (
-    <div className="relative">
-      {/* Hidden measuring div - only needed for structured inputs (freeform uses onHeightChange) */}
-      {mode !== 'freeform' && (
-        <div
-          ref={measureRef}
-          className="absolute top-0 left-0 right-0 invisible pointer-events-none"
-          aria-hidden="true"
-        >
-          <div className="rounded-[8px] bg-background overflow-hidden">
-            {renderContent(true)}
-          </div>
-        </div>
-      )}
-
-      {/* Visible animated container */}
-      <motion.div
-        className={cn(
-          "input-container relative rounded-[12px] overflow-hidden transition-colors",
-          isFocusedPanel ? "shadow-middle" : "shadow-minimal",
-          "bg-background"
-        )}
-        style={{ height: heightMotionValue }}
-      >
-        {/* Crossfading content - freeform anchored to bottom (for auto-grow), others fill */}
-        <AnimatePresence mode="sync" initial={false}>
-          <motion.div
-            key={contentKey}
-            className={mode === 'freeform' ? "absolute bottom-0 left-0 right-0" : "absolute inset-0"}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: TRANSITION_DURATION, ease: TRANSITION_EASE }}
+    <LazyMotion features={domAnimation}>
+      <div className="relative">
+        {/* Hidden measuring div - only needed for structured inputs (freeform uses onHeightChange) */}
+        {mode !== 'freeform' && (
+          <div
+            ref={measureRef}
+            className="absolute top-0 left-0 right-0 invisible pointer-events-none"
+            aria-hidden="true"
           >
-            {renderContent(false)}
-          </motion.div>
-        </AnimatePresence>
-      </motion.div>
-    </div>
+            <div className="rounded-[8px] bg-background overflow-hidden">
+              {renderContent(true)}
+            </div>
+          </div>
+        )}
+
+        {/* Visible animated container */}
+        <m.div
+          className={cn(
+            "input-container relative rounded-[12px] overflow-hidden transition-colors",
+            isFocusedPanel ? "shadow-middle" : "shadow-minimal",
+            "bg-background"
+          )}
+          style={{ height: heightMotionValue }}
+        >
+          {/* Crossfading content - freeform anchored to bottom (for auto-grow), others fill */}
+          <AnimatePresence mode="sync" initial={false}>
+            <m.div
+              key={contentKey}
+              className={mode === 'freeform' ? "absolute bottom-0 left-0 right-0" : "absolute inset-0"}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: TRANSITION_DURATION, ease: TRANSITION_EASE }}
+            >
+              {renderContent(false)}
+            </m.div>
+          </AnimatePresence>
+        </m.div>
+      </div>
+    </LazyMotion>
   )
 }

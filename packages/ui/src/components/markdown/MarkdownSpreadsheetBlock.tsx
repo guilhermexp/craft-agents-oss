@@ -135,10 +135,21 @@ export function MarkdownSpreadsheetBlock({ code, className }: MarkdownSpreadshee
     }
   }, [code])
 
-  // Load file data when src is present
-  const [fileData, setFileData] = React.useState<SpreadsheetData | null>(null)
-  const [fileError, setFileError] = React.useState<string | null>(null)
-  const [fileLoading, setFileLoading] = React.useState(false)
+  // Load file data when src is present.
+  // State is keyed by src so stale data/error auto-evict when src changes —
+  // no synchronous setter calls needed when the dep changes.
+  const [fileState, setFileState] = React.useState<{
+    forSrc: string
+    data: SpreadsheetData | null
+    error: string | null
+    loading: boolean
+  } | null>(null)
+
+  // Derive per-render without a reset effect
+  const activeSrc = spec?.src ?? null
+  const fileData = fileState?.forSrc === activeSrc ? fileState.data : null
+  const fileError = fileState?.forSrc === activeSrc ? fileState.error : null
+  const fileLoading = activeSrc != null && (fileState == null || fileState.forSrc !== activeSrc)
 
   React.useEffect(() => {
     if (!spec?.src) return
@@ -147,20 +158,18 @@ export function MarkdownSpreadsheetBlock({ code, className }: MarkdownSpreadshee
     if (isXlsx && !onReadFileBinary) return
     if (!isXlsx && !onReadFile) return
 
-    setFileLoading(true)
-    setFileError(null)
+    setFileState({ forSrc: src, data: null, error: null, loading: true })
 
     if (isXlsx) {
       const readBinary = onReadFileBinary
       if (!readBinary) return
       readBinary(src)
         .then((data) => {
-          setFileData(parseXlsxTabularData(data, src))
+          setFileState({ forSrc: src, data: parseXlsxTabularData(data, src), error: null, loading: false })
         })
         .catch((err) => {
-          setFileError(err instanceof Error ? err.message : 'Failed to read spreadsheet file')
+          setFileState({ forSrc: src, data: null, error: err instanceof Error ? err.message : 'Failed to read spreadsheet file', loading: false })
         })
-        .finally(() => setFileLoading(false))
       return
     }
 
@@ -171,29 +180,33 @@ export function MarkdownSpreadsheetBlock({ code, className }: MarkdownSpreadshee
         try {
           const raw = JSON.parse(content)
           if (Array.isArray(raw)) {
-            setFileData({ rows: raw, columns: [] })
+            setFileState({ forSrc: src, data: { rows: raw, columns: [] }, error: null, loading: false })
           } else if (raw && typeof raw === 'object') {
-            setFileData({
-              filename: raw.filename,
-              sheetName: raw.sheetName,
-              columns: Array.isArray(raw.columns) ? raw.columns : [],
-              rows: Array.isArray(raw.rows) ? raw.rows : [],
+            setFileState({
+              forSrc: src,
+              data: {
+                filename: raw.filename,
+                sheetName: raw.sheetName,
+                columns: Array.isArray(raw.columns) ? raw.columns : [],
+                rows: Array.isArray(raw.rows) ? raw.rows : [],
+              },
+              error: null,
+              loading: false,
             })
           } else {
-            setFileError('File does not contain valid spreadsheet data')
+            setFileState({ forSrc: src, data: null, error: 'File does not contain valid spreadsheet data', loading: false })
           }
         } catch {
           if (/\.(csv|tsv)$/i.test(src)) {
-            setFileData(parseDelimitedTabularData(content, src))
+            setFileState({ forSrc: src, data: parseDelimitedTabularData(content, src), error: null, loading: false })
           } else {
-            setFileError('Failed to parse data file as JSON')
+            setFileState({ forSrc: src, data: null, error: 'Failed to parse data file as JSON', loading: false })
           }
         }
       })
       .catch((err) => {
-        setFileError(err instanceof Error ? err.message : 'Failed to read data file')
+        setFileState({ forSrc: src, data: null, error: err instanceof Error ? err.message : 'Failed to read data file', loading: false })
       })
-      .finally(() => setFileLoading(false))
   }, [spec?.src, onReadFile, onReadFileBinary])
 
   // Merge: inline spec takes precedence, file provides rows
@@ -263,7 +276,7 @@ export function MarkdownSpreadsheetBlock({ code, className }: MarkdownSpreadshee
         {/* Column letter headers */}
         <thead>
           <tr className="border-b border-foreground/[0.08] bg-foreground/[0.03]">
-            <th className="text-center py-1 px-2 font-normal text-muted-foreground/40 w-10 border-r border-foreground/[0.06] text-[11px]" />
+            <th aria-label="Row number" className="text-center py-1 px-2 font-normal text-muted-foreground/40 w-10 border-r border-foreground/[0.06] text-[11px]" />
             {colLetters.map((letter) => (
               <th key={letter} className="text-center py-1 px-3 font-normal text-muted-foreground/40 border-r border-foreground/[0.06] last:border-0 text-[11px]">{letter}</th>
             ))}
@@ -305,6 +318,7 @@ export function MarkdownSpreadsheetBlock({ code, className }: MarkdownSpreadshee
       <div className={cn('relative group rounded-[8px] overflow-hidden border bg-muted/10', className)}>
         {/* Expand button */}
         <button
+          type="button"
           onClick={() => setIsFullscreen(true)}
           className={cn(
             "absolute top-[7px] right-2 p-1 rounded-[6px] transition-all z-10 select-none",

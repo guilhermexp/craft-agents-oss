@@ -40,12 +40,14 @@ function ErrorScreen({ message, onRetry }: { message: string; onRetry: () => voi
       <p className="text-[13px] max-w-md text-center">{message}</p>
       <div className="flex gap-2 mt-2">
         <button
+          type="button"
           onClick={onRetry}
           className="px-4 py-1.5 rounded-md bg-background shadow-minimal text-[13px] text-foreground/70 cursor-pointer"
         >
           {t("common.retry")}
         </button>
         <button
+          type="button"
           onClick={() => {
             fetch('/api/auth/logout', { method: 'POST' }).then(() => {
               window.location.href = '/login'
@@ -133,8 +135,11 @@ export default function App() {
     }
 
     return () => {
-      // Cleanup on unmount
-      clientRef.current?.destroy()
+      // Capture the current client at effect setup time so the cleanup
+      // always destroys the same instance, not whatever clientRef.current
+      // happens to point to when cleanup runs.
+      const client = clientRef.current
+      client?.destroy()
     }
   }, [])
 

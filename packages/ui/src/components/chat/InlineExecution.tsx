@@ -11,7 +11,7 @@ import { CheckCircle2, XCircle, X } from 'lucide-react'
 import { cn } from '@craft-agent/ui'
 import { ActivityStatusIcon, SIZE_CONFIG, type ActivityItem, type ActivityStatus } from './TurnCard'
 import { LoadingIndicator } from '../ui/LoadingIndicator'
-import { Markdown } from '../markdown'
+import { Markdown } from '../markdown/Markdown'
 
 // ============================================================================
 // Types

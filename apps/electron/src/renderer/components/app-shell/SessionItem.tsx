@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { formatDistanceToNowStrict } from "date-fns"
 import type { Locale } from "date-fns"
 import { Flag, ShieldAlert } from "lucide-react"
@@ -125,6 +126,79 @@ export function SessionItem({
   const hermesProfileBadge = getHermesProfileSessionBadge(item)
   const hasTitleSuffix = hasMessagingBinding || hermesProfileBadge !== null
 
+  const titleSuffixNode = useMemo(() => {
+    if (!hasTitleSuffix) return undefined
+    return (
+      <div className="flex min-w-0 items-center gap-1">
+        {hermesProfileBadge ? (
+          <EntityListBadge
+            variant="text"
+            colorClass="bg-cyan-500/10 text-cyan-700 dark:bg-cyan-400/15 dark:text-cyan-200"
+            className="max-w-[92px] truncate"
+            tooltip={`Hermes profile: ${hermesProfileBadge}`}
+          >
+            {hermesProfileBadge}
+          </EntityListBadge>
+        ) : null}
+        {sessionBindings.map((binding) => {
+          const pill = PLATFORM_PILL[binding.platform as 'telegram' | 'whatsapp']
+          if (!pill) return null
+          return (
+            <EntityListBadge
+              key={binding.id}
+              variant="text"
+              colorClass={pill.colorClass}
+              tooltip={`Connected to ${pill.label}`}
+            >
+              {pill.label}
+            </EntityListBadge>
+          )
+        })}
+      </div>
+    )
+  }, [hasTitleSuffix, hermesProfileBadge, sessionBindings])
+
+  const titleTrailingNode = useMemo(() => {
+    if (hasMatch) {
+      return (
+        <span
+          className={cn(
+            "inline-flex items-center justify-center min-w-[24px] px-1 py-0.5 rounded-[6px] text-[10px] font-medium tabular-nums leading-tight whitespace-nowrap shadow-tinted",
+            isSelected
+              ? "bg-yellow-300/50 border border-yellow-500 text-yellow-900"
+              : "bg-yellow-300/10 border border-yellow-600/20 text-yellow-800"
+          )}
+          style={{
+            '--shadow-color': isSelected ? '234, 179, 8' : '133, 77, 14',
+          } as React.CSSProperties}
+          title={`Matches found (${nextHotkey} next, ${prevHotkey} prev)`}
+        >
+          {chatMatchCount}
+        </span>
+      )
+    }
+    if (item.isFlagged) {
+      return (
+        <div className="p-1 flex items-center justify-center">
+          <Flag className="size-3.5 text-info" />
+        </div>
+      )
+    }
+    if (item.lastMessageAt) {
+      return (
+        <span className="text-[11px] text-foreground/40 whitespace-nowrap">
+          {formatDistanceToNowStrict(new Date(item.lastMessageAt), { locale: shortTimeLocale as Locale, roundingMethod: 'floor' })}
+        </span>
+      )
+    }
+    return undefined
+  }, [hasMatch, chatMatchCount, isSelected, nextHotkey, prevHotkey, item.isFlagged, item.lastMessageAt])
+
+  const badgesNode = useMemo(() => {
+    if (!hasLabels) return undefined
+    return <SessionBadges item={item} />
+  }, [hasLabels, item])
+
   const handleDragStart = (event: React.DragEvent<HTMLButtonElement>) => {
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.setData(SESSION_DRAG_MIME, item.id)
@@ -210,14 +284,14 @@ export function SessionItem({
             {item.isProcessing && <Spinner className="text-[10px]" />}
             {hasUnreadMeta(item) && (
               <svg className="text-accent size-3.5" viewBox="0 0 25 24" fill="currentColor">
-                <g transform="translate(1.748, 0.7832)">
-                  <path fillRule="nonzero" d="M10.9952443,22 C8.89638276,22 7.01311428,21.5426195 5.34543882,20.6278586 C4.85718403,21.0547471 4.29283758,21.3901594 3.65239948,21.6340956 C3.01196138,21.8780319 2.3651823,22 1.71206226,22 C1.5028102,22 1.34111543,21.9466389 1.22697795,21.8399168 C1.11284047,21.7331947 1.05735697,21.6016979 1.06052745,21.4454262 C1.06369794,21.2891545 1.13820435,21.1347886 1.28404669,20.9823285 C1.5693904,20.6621622 1.77547197,20.3400901 1.9022914,20.0161123 C2.02911082,19.6921344 2.09252054,19.3090783 2.09252054,18.8669439 C2.09252054,18.4553015 2.02276985,18.0646223 1.88326848,17.6949064 C1.74376711,17.3251906 1.5693904,16.9383229 1.36013835,16.5343035 C1.15088629,16.1302841 0.941634241,15.6748094 0.732382188,15.1678794 C0.523130134,14.6609494 0.348753423,14.0682606 0.209252054,13.3898129 C0.0697506845,12.7113652 0,11.9147609 0,11 C0,9.40679141 0.271076524,7.93936244 0.813229572,6.5977131 C1.35538262,5.25606376 2.11946966,4.09164934 3.1054907,3.10446985 C4.09151175,2.11729037 5.25507998,1.35308385 6.59619542,0.811850312 C7.93731085,0.270616771 9.40366047,0 10.9952443,0 C12.5868281,0 14.0531777,0.270616771 15.3942931,0.811850312 C16.7354086,1.35308385 17.900562,2.11729037 18.8897536,3.10446985 C19.8789451,4.09164934 20.6446174,5.25606376 21.1867704,6.5977131 C21.7289235,7.93936244 22,9.40679141 22,11 C22,12.5932086 21.7289235,14.0606376 21.1867704,15.4022869 C20.6446174,16.7439362 19.8805303,17.9083507 18.8945093,18.8955301 C17.9084883,19.8827096 16.74492,20.6469161 15.4038046,21.1881497 C14.0626891,21.7293832 12.593169,22 10.9952443,22 Z" />
+                <g transform="translate(1.75, 0.78)">
+                  <path fillRule="nonzero" d="M11,22 C8.9,22 7.01,21.54 5.35,20.63 C4.86,21.05 4.29,21.39 3.65,21.63 C3.01,21.88 2.37,22 1.71,22 C1.5,22 1.34,21.95 1.23,21.84 C1.11,21.73 1.06,21.6 1.06,21.45 C1.06,21.29 1.14,21.13 1.28,20.98 C1.57,20.66 1.78,20.34 1.9,20.02 C2.03,19.69 2.09,19.31 2.09,18.87 C2.09,18.46 2.02,18.06 1.88,17.69 C1.74,17.33 1.57,16.94 1.36,16.53 C1.15,16.13 0.94,15.67 0.73,15.17 C0.52,14.66 0.35,14.07 0.21,13.39 C0.07,12.71 0,11.91 0,11 C0,9.41 0.27,7.94 0.81,6.6 C1.36,5.26 2.12,4.09 3.11,3.1 C4.09,2.12 5.26,1.35 6.6,0.81 C7.94,0.27 9.4,0 11,0 C12.59,0 14.05,0.27 15.39,0.81 C16.74,1.35 17.9,2.12 18.89,3.1 C19.88,4.09 20.64,5.26 21.19,6.6 C21.73,7.94 22,9.41 22,11 C22,12.59 21.73,14.06 21.19,15.4 C20.64,16.74 19.88,17.91 18.89,18.9 C17.91,19.88 16.74,20.65 15.4,21.19 C14.06,21.73 12.59,22 11,22 Z" />
                 </g>
               </svg>
             )}
             {item.lastMessageRole === 'plan' && (
               <svg className="text-success size-3.5" viewBox="0 0 25 24" fill="currentColor">
-                <path fillRule="nonzero" d="M13.7207031,22.6523438 C13.264974,22.6523438 12.9361979,22.4895833 12.734375,22.1640625 C12.5325521,21.8385417 12.360026,21.4316406 12.2167969,20.9433594 L10.6640625,15.7871094 C10.5729167,15.4615885 10.5403646,15.1995443 10.5664062,15.0009766 C10.5924479,14.8024089 10.6998698,14.6022135 10.8886719,14.4003906 L20.859375,3.6484375 C20.9179688,3.58984375 20.9472656,3.52473958 20.9472656,3.453125 C20.9472656,3.38151042 20.921224,3.32291667 20.8691406,3.27734375 C20.8170573,3.23177083 20.7568359,3.20735677 20.6884766,3.20410156 C20.6201172,3.20084635 20.5566406,3.22851562 20.4980469,3.28710938 L9.78515625,13.296875 C9.5703125,13.4921875 9.36197917,13.601237 9.16015625,13.6240234 C8.95833333,13.6468099 8.70117188,13.609375 8.38867188,13.5117188 L3.11523438,11.9101562 C2.64648438,11.7669271 2.25911458,11.5960286 1.953125,11.3974609 C1.64713542,11.1988932 1.49414062,10.875 1.49414062,10.4257812 C1.49414062,10.0742188 1.63411458,9.77148438 1.9140625,9.51757812 C2.19401042,9.26367188 2.5390625,9.05859375 2.94921875,8.90234375 L19.7460938,2.46679688 C19.9739583,2.38216146 20.1871745,2.31542969 20.3857422,2.26660156 C20.5843099,2.21777344 20.764974,2.19335938 20.9277344,2.19335938 C21.2467448,2.19335938 21.4973958,2.28450521 21.6796875,2.46679688 C21.8619792,2.64908854 21.953125,2.89973958 21.953125,3.21875 C21.953125,3.38802083 21.9287109,3.5703125 21.8798828,3.765625 C21.8310547,3.9609375 21.7643229,4.17252604 21.6796875,4.40039062 L15.2832031,21.109375 C15.1009115,21.578125 14.8828125,21.952474 14.6289062,22.2324219 C14.375,22.5123698 14.0722656,22.6523438 13.7207031,22.6523438 Z" />
+                <path fillRule="nonzero" d="M13.72,22.65 C13.26,22.65 12.94,22.49 12.73,22.16 C12.53,21.84 12.36,21.43 12.22,20.94 L10.66,15.79 C10.57,15.46 10.54,15.2 10.57,15 C10.59,14.8 10.7,14.6 10.89,14.4 L20.86,3.65 C20.92,3.59 20.95,3.52 20.95,3.45 C20.95,3.38 20.92,3.32 20.87,3.28 C20.82,3.23 20.76,3.21 20.69,3.2 C20.62,3.2 20.56,3.23 20.5,3.29 L9.79,13.3 C9.57,13.49 9.36,13.6 9.16,13.62 C8.96,13.65 8.7,13.61 8.39,13.51 L3.12,11.91 C2.65,11.77 2.26,11.6 1.95,11.4 C1.65,11.2 1.49,10.88 1.49,10.43 C1.49,10.07 1.63,9.77 1.91,9.52 C2.19,9.26 2.54,9.06 2.95,8.9 L19.75,2.47 C19.97,2.38 20.19,2.32 20.39,2.27 C20.58,2.22 20.76,2.19 20.93,2.19 C21.25,2.19 21.5,2.28 21.68,2.47 C21.86,2.65 21.95,2.9 21.95,3.22 C21.95,3.39 21.93,3.57 21.88,3.77 C21.83,3.96 21.76,4.17 21.68,4.4 L15.28,21.11 C15.1,21.58 14.88,21.95 14.63,22.23 C14.38,22.51 14.07,22.65 13.72,22.65 Z" />
               </svg>
             )}
             {hasPendingPrompt && <ShieldAlert className="size-3.5 text-info" />}
@@ -227,61 +301,9 @@ export function SessionItem({
       title={ctx.searchQuery ? highlightMatch(title, ctx.searchQuery) : title}
       titleClassName={cn("text-[13px]", item.isAsyncOperationOngoing && "animate-shimmer-text")}
       subtitle={previewText}
-      titleSuffix={
-        hasTitleSuffix ? (
-          <div className="flex min-w-0 items-center gap-1">
-            {hermesProfileBadge ? (
-              <EntityListBadge
-                variant="text"
-                colorClass="bg-cyan-500/10 text-cyan-700 dark:bg-cyan-400/15 dark:text-cyan-200"
-                className="max-w-[92px] truncate"
-                tooltip={`Hermes profile: ${hermesProfileBadge}`}
-              >
-                {hermesProfileBadge}
-              </EntityListBadge>
-            ) : null}
-            {sessionBindings.map((binding) => {
-              const pill = PLATFORM_PILL[binding.platform as 'telegram' | 'whatsapp']
-              if (!pill) return null
-              return (
-                <EntityListBadge
-                  key={binding.id}
-                  variant="text"
-                  colorClass={pill.colorClass}
-                  tooltip={`Connected to ${pill.label}`}
-                >
-                  {pill.label}
-                </EntityListBadge>
-              )
-            })}
-          </div>
-        ) : undefined
-      }
-      titleTrailing={hasMatch ? (
-        <span
-          className={cn(
-            "inline-flex items-center justify-center min-w-[24px] px-1 py-0.5 rounded-[6px] text-[10px] font-medium tabular-nums leading-tight whitespace-nowrap shadow-tinted",
-            isSelected
-              ? "bg-yellow-300/50 border border-yellow-500 text-yellow-900"
-              : "bg-yellow-300/10 border border-yellow-600/20 text-yellow-800"
-          )}
-          style={{
-            '--shadow-color': isSelected ? '234, 179, 8' : '133, 77, 14',
-          } as React.CSSProperties}
-          title={`Matches found (${nextHotkey} next, ${prevHotkey} prev)`}
-        >
-          {chatMatchCount}
-        </span>
-      ) : item.isFlagged ? (
-        <div className="p-1 flex items-center justify-center">
-          <Flag className="size-3.5 text-info" />
-        </div>
-      ) : item.lastMessageAt ? (
-        <span className="text-[11px] text-foreground/40 whitespace-nowrap">
-          {formatDistanceToNowStrict(new Date(item.lastMessageAt), { locale: shortTimeLocale as Locale, roundingMethod: 'floor' })}
-        </span>
-      ) : undefined}
-      badges={hasLabels ? <SessionBadges item={item} /> : undefined}
+      titleSuffix={titleSuffixNode}
+      titleTrailing={titleTrailingNode}
+      badges={badgesNode}
     />
   )
 }

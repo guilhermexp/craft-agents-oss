@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
 import { Check, CreditCard, Key, Cpu } from "lucide-react"
 import { StepFormLayout, BackButton, ContinueButton } from "./primitives"
-import type { LlmAuthType, LlmProviderType } from "@craft-agent/shared/config/llm-connections"
+import type { LlmProviderType } from "@craft-agent/shared/config/llm-connections"
 
 /** Provider segment for the segmented control */
 export type ProviderSegment = 'anthropic' | 'pi'
@@ -31,29 +31,6 @@ export type ApiSetupMethod =
   | 'pi_copilot_oauth'
   | 'pi_api_key'
   | 'hermes_local'
-
-/**
- * Map ApiSetupMethod to the underlying LLM connection types.
- */
-export function apiSetupMethodToConnectionTypes(method: ApiSetupMethod): {
-  providerType: LlmProviderType;
-  authType: LlmAuthType;
-} {
-  switch (method) {
-    case 'claude_oauth':
-      return { providerType: 'anthropic', authType: 'oauth' };
-    case 'anthropic_api_key':
-      return { providerType: 'anthropic', authType: 'api_key' };
-    case 'pi_chatgpt_oauth':
-      return { providerType: 'pi', authType: 'oauth' };
-    case 'pi_copilot_oauth':
-      return { providerType: 'pi', authType: 'oauth' };
-    case 'pi_api_key':
-      return { providerType: 'pi', authType: 'api_key' };
-    case 'hermes_local':
-      return { providerType: 'hermes' as LlmProviderType, authType: 'none' };
-  }
-}
 
 interface ApiSetupOption {
   id: ApiSetupMethod
@@ -95,6 +72,7 @@ function OptionButton({
 }) {
   return (
     <button
+      type="button"
       onClick={() => onSelect(option.id)}
       className={cn(
         "flex w-full items-start gap-4 rounded-xl p-4 text-left transition-all",
@@ -140,6 +118,8 @@ function OptionButton({
   )
 }
 
+const PROVIDER_SEGMENTS: ProviderSegment[] = ['anthropic', 'pi']
+
 /**
  * Segmented control for provider selection
  */
@@ -152,13 +132,14 @@ function ProviderSegmentedControl({
   onSegmentChange: (segment: ProviderSegment) => void
   segmentLabels: Record<ProviderSegment, string>
 }) {
-  const segments: ProviderSegment[] = ['anthropic', 'pi']
+  const segments = PROVIDER_SEGMENTS
 
   return (
     <div className="flex rounded-xl bg-foreground/[0.03] p-1 mb-4">
       {segments.map((segment) => (
         <button
           key={segment}
+          type="button"
           onClick={() => onSegmentChange(segment)}
           className={cn(
             "flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-all",

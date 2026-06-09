@@ -55,6 +55,7 @@ export function Info_Markdown({
         {/* Fullscreen button - visible on hover, positioned top-right */}
         {fullscreen && (
           <button
+            type="button"
             onClick={() => setIsFullscreen(true)}
             className={cn(
               'absolute top-2 right-2 p-1 rounded-[6px] transition-all z-10',

@@ -207,7 +207,7 @@ export const WINDOW_MENU: MenuSection = {
 }
 
 // All menu sections in order (for renderer)
-export const MENU_SECTIONS: MenuSection[] = [EDIT_MENU, VIEW_MENU, WINDOW_MENU]
+const MENU_SECTIONS: MenuSection[] = [EDIT_MENU, VIEW_MENU, WINDOW_MENU]
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Settings Menu Items

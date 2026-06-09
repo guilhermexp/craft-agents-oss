@@ -4,7 +4,7 @@ import i18n from 'i18next'
 import { useTranslation } from 'react-i18next'
 import type { ToolDisplayMeta, AnnotationV1 } from '@craft-agent/core'
 import { normalizePath, pathStartsWith, stripPathPrefix } from '@craft-agent/core/utils'
-import { motion, AnimatePresence } from 'motion/react'
+import { LazyMotion, m, AnimatePresence, domAnimation } from 'motion/react'
 import {
   ChevronRight,
   CheckCircle2,
@@ -24,7 +24,7 @@ import {
   GitBranch,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import { Markdown } from '../markdown'
+import { Markdown } from '../markdown/Markdown'
 import { Spinner } from '../ui/LoadingIndicator'
 import { type IslandTransitionConfig } from '../ui'
 import { AnnotationIslandMenu } from '../annotations/AnnotationIslandMenu'
@@ -35,7 +35,8 @@ import {
 } from '../annotations/island-motion'
 import { Tooltip, TooltipTrigger, TooltipContent } from '../tooltip'
 import { parseDiffFromFile, type FileContents } from '@pierre/diffs'
-import { getDiffStats, getUnifiedDiffStats } from '../code-viewer'
+import { getDiffStats } from '../code-viewer/ShikiDiffViewer'
+import { getUnifiedDiffStats } from '../code-viewer/UnifiedDiffViewer'
 import { TurnCardActionsMenu } from './TurnCardActionsMenu'
 import { computeLastChildSet, groupActivitiesByParent, isActivityGroup, formatDuration, formatTokens, deriveTurnPhase, shouldShowThinkingIndicator, type ActivityGroup, type AssistantTurn } from './turn-utils'
 import { extractAnnotationSelectedText } from './follow-up-helpers'
@@ -79,7 +80,7 @@ import { useAnnotationInteractionController } from '../annotations/use-annotatio
 import { useAnnotationIslandPresentation } from '../annotations/use-annotation-island-presentation'
 import { useAnnotationIslandEvents } from '../annotations/use-annotation-island-events'
 import { useAnnotationCancelRestore } from '../annotations/use-annotation-cancel-restore'
-import { DocumentFormattedMarkdownOverlay } from '../overlay'
+import { DocumentFormattedMarkdownOverlay } from '../overlay/DocumentFormattedMarkdownOverlay'
 import { AcceptPlanDropdown } from './AcceptPlanDropdown'
 import {
   DropdownMenu,
@@ -852,18 +853,20 @@ export function ActivityStatusIcon({
 
   // Wrap in AnimatePresence for crossfade between states
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      <motion.div
-        key={status}
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.8 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
-        className="shrink-0"
-      >
-        {renderIcon()}
-      </motion.div>
-    </AnimatePresence>
+    <LazyMotion features={domAnimation}>
+      <AnimatePresence mode="wait" initial={false}>
+        <m.div
+          key={status}
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.8 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
+          className="shrink-0"
+        >
+          {renderIcon()}
+        </m.div>
+      </AnimatePresence>
+    </LazyMotion>
   )
 }
 
@@ -916,6 +919,7 @@ function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, 
             SIZE_CONFIG.fontSize
           )}
           onClick={onOpenDetails && isComplete ? onOpenDetails : undefined}
+          onKeyDown={onOpenDetails && isComplete ? (e) => { if (e.key === 'Enter' || e.key === ' ') onOpenDetails() } : undefined}
         >
           {isThinking ? (
             <div className={cn(SIZE_CONFIG.iconSize, "flex items-center justify-center shrink-0")}>
@@ -927,9 +931,8 @@ function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, 
           <span className={cn("flex-1 min-w-0 whitespace-normal break-words leading-relaxed", onOpenDetails && isComplete && "group-hover/row:underline")}>{displayContent}</span>
           {/* Open details button */}
           {onOpenDetails && isComplete && (
-            <div
-              role="button"
-              tabIndex={0}
+            <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation()
                 onOpenDetails()
@@ -946,7 +949,7 @@ function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, 
               )}
             >
               <ArrowUpRight className={SIZE_CONFIG.iconSize} />
-            </div>
+            </button>
           )}
         </div>
       </div>
@@ -1030,6 +1033,7 @@ function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, 
           SIZE_CONFIG.fontSize
         )}
         onClick={onOpenDetails && isComplete ? onOpenDetails : undefined}
+        onKeyDown={onOpenDetails && isComplete ? (e) => { if (e.key === 'Enter' || e.key === ' ') onOpenDetails() } : undefined}
       >
         <ActivityStatusIcon status={activity.status} toolName={activity.toolName} customIcon={toolDisplay.icon} />
         {/* MCP/API tools: Source name (shrink-0) then error badge (if any) then compound label (flex-1) */}
@@ -1178,9 +1182,8 @@ function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, 
         {/* No spacer needed - both MCP/API and native tools now have flex-1 on their compound spans */}
         {/* Open details button */}
         {onOpenDetails && isComplete && (
-          <div
-            role="button"
-            tabIndex={0}
+          <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation()
               onOpenDetails()
@@ -1197,7 +1200,7 @@ function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, 
             )}
           >
             <ArrowUpRight className={SIZE_CONFIG.iconSize} />
-          </div>
+          </button>
         )}
       </div>
     </div>
@@ -1260,7 +1263,8 @@ function ActivityGroupRow({ group, expandedGroups: externalExpandedGroups, onExp
   const hasError = group.parent.status === 'error'
 
   return (
-    <motion.div
+    <LazyMotion features={domAnimation}>
+    <m.div
       initial={{ opacity: 0, x: -8 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: animationIndex < SIZE_CONFIG.staggeredAnimationLimit ? animationIndex * 0.03 : 0.3 }}
@@ -1269,21 +1273,22 @@ function ActivityGroupRow({ group, expandedGroups: externalExpandedGroups, onExp
       {/* Task header row - no left padding, chevron aligned with activity row icons */}
       <div
         className={cn(
-          "group/row flex items-center gap-2 py-0.5 rounded-md cursor-pointer text-muted-foreground",
+          "group/row flex w-full items-center gap-2 py-0.5 rounded-md cursor-pointer text-muted-foreground",
           "hover:text-foreground transition-colors",
           SIZE_CONFIG.fontSize
         )}
         onClick={toggleExpanded}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleExpanded() }}
       >
         {/* Chevron for expand/collapse - aligned with activity row icons */}
-        <motion.div
+        <m.div
           initial={false}
           animate={{ rotate: isExpanded ? 90 : 0 }}
           transition={{ duration: 0.15, ease: 'easeOut' }}
           className={cn(SIZE_CONFIG.iconSize, "flex items-center justify-center shrink-0")}
         >
           <ChevronRight className={SIZE_CONFIG.iconSize} />
-        </motion.div>
+        </m.div>
 
         {/* Status icon - aligned with tool call icons */}
         <ActivityStatusIcon status={group.parent.status} toolName={group.parent.toolName} />
@@ -1324,9 +1329,8 @@ function ActivityGroupRow({ group, expandedGroups: externalExpandedGroups, onExp
 
         {/* Open details button for the Task itself */}
         {onOpenActivityDetails && isComplete && (
-          <div
-            role="button"
-            tabIndex={0}
+          <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation()
               onOpenActivityDetails(group.parent)
@@ -1343,14 +1347,14 @@ function ActivityGroupRow({ group, expandedGroups: externalExpandedGroups, onExp
             )}
           >
             <ArrowUpRight className={SIZE_CONFIG.iconSize} />
-          </div>
+          </button>
         )}
       </div>
 
       {/* Children with indentation */}
       <AnimatePresence initial={false}>
         {isExpanded && group.children.length > 0 && (
-          <motion.div
+          <m.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -1362,7 +1366,7 @@ function ActivityGroupRow({ group, expandedGroups: externalExpandedGroups, onExp
           >
             <div className="pl-0 space-y-0.5 border-l-2 border-muted ml-[5px]">
               {group.children.map((child, idx) => (
-                <motion.div
+                <m.div
                   key={child.id}
                   initial={{ opacity: 0, x: -4 }}
                   animate={{ opacity: 1, x: 0 }}
@@ -1376,13 +1380,14 @@ function ActivityGroupRow({ group, expandedGroups: externalExpandedGroups, onExp
                     sessionFolderPath={sessionFolderPath}
                     displayMode={displayMode}
                   />
-                </motion.div>
+                </m.div>
               ))}
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </m.div>
+    </LazyMotion>
   )
 }
 
@@ -1491,8 +1496,7 @@ function clearAnnotationMarks(root: HTMLElement): void {
   const annotatedInlineCodeNodes = root.querySelectorAll<HTMLElement>('code[data-ca-annotation-inline-code="true"]')
   annotatedInlineCodeNodes.forEach((codeNode) => {
     codeNode.removeAttribute('data-ca-annotation-inline-code')
-    codeNode.style.backgroundColor = ''
-    codeNode.style.boxShadow = ''
+    Object.assign(codeNode.style, { backgroundColor: '', boxShadow: '' })
   })
 
   const marks = root.querySelectorAll('span[data-ca-annotation-id]')
@@ -1566,17 +1570,12 @@ function applyTextHighlightRange(
     const inlineCodeParent = selected.parentElement?.closest<HTMLElement>('code')
     if (inlineCodeParent) {
       inlineCodeParent.setAttribute('data-ca-annotation-inline-code', 'true')
-      inlineCodeParent.style.backgroundColor = annotationColorToCss(annotation.style?.color)
-      inlineCodeParent.style.boxShadow = 'none'
+      Object.assign(inlineCodeParent.style, { backgroundColor: annotationColorToCss(annotation.style?.color), boxShadow: 'none' })
     }
 
     const mark = document.createElement('span')
     mark.setAttribute('data-ca-annotation-id', annotation.id)
-    mark.style.backgroundColor = annotationColorToCss(annotation.style?.color)
-    mark.style.borderRadius = '0'
-    mark.style.padding = '0'
-    mark.style.margin = '0'
-    mark.style.position = 'relative'
+    Object.assign(mark.style, { backgroundColor: annotationColorToCss(annotation.style?.color), borderRadius: '0', padding: '0', margin: '0', position: 'relative' })
     selected.parentNode?.replaceChild(mark, selected)
     mark.appendChild(selected)
     createdMarks.push(mark)
@@ -1605,10 +1604,8 @@ function applyTextHighlightRange(
       const last = rowMarks[rowMarks.length - 1]
       if (!first || !last) continue
 
-      first.style.borderTopLeftRadius = '6px'
-      first.style.borderBottomLeftRadius = '6px'
-      last.style.borderTopRightRadius = '6px'
-      last.style.borderBottomRightRadius = '6px'
+      Object.assign(first.style, { borderTopLeftRadius: '6px', borderBottomLeftRadius: '6px' })
+      Object.assign(last.style, { borderTopRightRadius: '6px', borderBottomRightRadius: '6px' })
     }
   }
 
@@ -1686,13 +1683,14 @@ export function ResponseCard({
   const { t } = useTranslation()
   // Throttled content for display - updates every CONTENT_THROTTLE_MS during streaming
   const [displayedText, setDisplayedText] = useState(text)
-  const lastUpdateRef = useRef(Date.now())
+  const lastUpdateRef = useRef<number | null>(null)
+  if (lastUpdateRef.current === null) lastUpdateRef.current = Date.now()
   // Copy to clipboard state
   const [copied, setCopied] = useState(false)
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false)
   // Dark mode detection - scroll fade only shown in dark mode
-  const [isDarkMode, setIsDarkMode] = useState(false)
+  const [isDarkMode, setIsDarkMode] = useState(() => document.documentElement.classList.contains('dark'))
   // Pending text selection waiting for explicit follow-up action
   const interaction = useAnnotationInteractionController()
   const {
@@ -1717,7 +1715,7 @@ export function ResponseCard({
 
   const [selectionMenuShowNonce, setSelectionMenuShowNonce] = useState(0)
   const [selectionMenuTransitionConfig, setSelectionMenuTransitionConfig] = useState<IslandTransitionConfig>(
-    buildAnnotationChipEntryTransition()
+    () => buildAnnotationChipEntryTransition()
   )
   const [annotationOverlay, setAnnotationOverlay] = useState<{ rects: AnnotationOverlayRect[]; chips: AnnotationOverlayChip[] }>({ rects: [], chips: [] })
   const contentRef = useRef<HTMLDivElement>(null)
@@ -1738,7 +1736,6 @@ export function ResponseCard({
     const checkDarkMode = () => {
       setIsDarkMode(document.documentElement.classList.contains('dark'))
     }
-    checkDarkMode()
 
     // Observe class changes on documentElement for theme switches
     const observer = new MutationObserver(checkDarkMode)
@@ -1807,7 +1804,7 @@ export function ResponseCard({
       ...persisted,
       createSelectionPreviewAnnotation(messageId, pendingSelection, sessionId ?? ''),
     ]
-  }, [annotations, pendingSelection, selectionMenuView, messageId])
+  }, [annotations, pendingSelection, selectionMenuView, messageId, sessionId])
 
   const activeAnnotation = useMemo(() => {
     if (!activeAnnotationDetail) return null
@@ -2399,7 +2396,7 @@ export function ResponseCard({
     }
 
     const now = Date.now()
-    const elapsed = now - lastUpdateRef.current
+    const elapsed = now - (lastUpdateRef.current ?? now)
 
     if (elapsed >= BUFFER_CONFIG.CONTENT_THROTTLE_MS) {
       // Enough time passed - update immediately
@@ -2438,6 +2435,7 @@ export function ResponseCard({
           {/* Fullscreen button - desktop only; compact mode keeps message chrome minimal */}
           {!compactMode && (
           <button
+            type="button"
             onClick={() => setIsFullscreen(true)}
             className={cn(
               "absolute top-2 right-2 p-1 rounded-[6px] transition-all z-10 select-none",
@@ -2503,6 +2501,7 @@ export function ResponseCard({
               {/* Left side - Copy, View as Markdown, Annotation hint */}
               <div className="flex items-center gap-3">
                 <button
+                  type="button"
                   onClick={handleCopy}
                   className={cn(
                     "turn-action-btn flex items-center gap-1.5 transition-colors select-none",
@@ -2524,6 +2523,7 @@ export function ResponseCard({
                 </button>
                 {onPopOut && (
                   <button
+                    type="button"
                     onClick={onPopOut}
                     className={cn(
                       "turn-action-btn flex items-center gap-1.5 transition-colors select-none",
@@ -2699,14 +2699,14 @@ function TodoList({ todos }: TodoListProps) {
       </div>
       {/* Todo items */}
       {todos.map((todo, index) => (
-        <motion.div
+        <m.div
           key={`${todo.content}-${index}`}
           initial={{ opacity: 0, x: -8 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: index * 0.03 }}
         >
           <TodoRow todo={todo} />
-        </motion.div>
+        </m.div>
       ))}
     </div>
   )
@@ -2850,7 +2850,7 @@ export const TurnCard = React.memo(function TurnCard({
   // Sort activities by timestamp for correct chronological order
   // This handles the live streaming case (turn-utils sorts on flush for completed turns)
   const allSortedActivities = useMemo(
-    () => [...activities].sort((a, b) => a.timestamp - b.timestamp),
+    () => activities.toSorted((a, b) => a.timestamp - b.timestamp),
     [activities]
   )
 
@@ -2922,12 +2922,14 @@ export const TurnCard = React.memo(function TurnCard({
   const isThinking = shouldShowThinkingIndicator(turnPhase, isBuffering)
 
   return (
+    <LazyMotion features={domAnimation}>
     <div className="space-y-1">
       {/* Activity Section - excluded from search highlighting (matches ripgrep behavior) */}
       {hasActivities && (
         <div className="group select-none" data-search-exclude="true">
           {/* Collapsed Header / Toggle */}
           <button
+            type="button"
             onClick={toggleExpanded}
             className={cn(
               "flex items-center gap-2 w-full pl-2.5 pr-1.5 py-1.5 rounded-[8px] text-left",
@@ -2938,14 +2940,14 @@ export const TurnCard = React.memo(function TurnCard({
             )}
           >
             {/* Chevron with rotation animation - aligned with activity row icons */}
-            <motion.div
+            <m.div
               initial={false}
               animate={{ rotate: isExpanded ? 90 : 0 }}
               transition={{ duration: 0.15, ease: 'easeOut' }}
               className={cn(SIZE_CONFIG.iconSize, "flex items-center justify-center shrink-0")}
             >
               <ChevronRight className={SIZE_CONFIG.iconSize} />
-            </motion.div>
+            </m.div>
 
             {/* Step count badge */}
             <span className="-ml-0.5 shrink-0 px-1.5 py-0.5 rounded-[4px] bg-background shadow-minimal text-[10px] font-medium tabular-nums">
@@ -2955,7 +2957,7 @@ export const TurnCard = React.memo(function TurnCard({
             {/* Preview text with crossfade + inline failure count */}
             <span className="relative flex-1 min-w-0 h-5 flex items-center">
               <AnimatePresence initial={false}>
-                <motion.span
+                <m.span
                   key={previewText}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -2964,7 +2966,7 @@ export const TurnCard = React.memo(function TurnCard({
                   className="absolute inset-0 truncate"
                 >
                   {previewText}
-                </motion.span>
+                </m.span>
               </AnimatePresence>
             </span>
 
@@ -2981,7 +2983,7 @@ export const TurnCard = React.memo(function TurnCard({
           {/* Expanded Activity List */}
           <AnimatePresence initial={false}>
             {isExpanded && (
-              <motion.div
+              <m.div
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
@@ -3022,7 +3024,7 @@ export const TurnCard = React.memo(function TurnCard({
                           autoExpand={autoExpand}
                         />
                       ) : (
-                        <motion.div
+                        <m.div
                           key={item.id}
                           initial={
                             hasUserToggled.current || hasMounted.current
@@ -3038,13 +3040,13 @@ export const TurnCard = React.memo(function TurnCard({
                             sessionFolderPath={sessionFolderPath}
                             displayMode={displayMode}
                           />
-                        </motion.div>
+                        </m.div>
                       )
                     ))
                   ) : (
                     /* Flat view for simple tool calls */
                     sortedActivities.map((activity, index) => (
-                      <motion.div
+                      <m.div
                         key={activity.id}
                         initial={
                           hasUserToggled.current || hasMounted.current
@@ -3062,12 +3064,12 @@ export const TurnCard = React.memo(function TurnCard({
                           sessionFolderPath={sessionFolderPath}
                           displayMode={displayMode}
                         />
-                      </motion.div>
+                      </m.div>
                     ))
                   )}
                   {/* Thinking/Buffering indicator - shown while waiting for response */}
                   {isThinking && !animateResponse && (
-                    <motion.div
+                    <m.div
                       key="thinking"
                       initial={{ opacity: 0, x: -8 }}
                       animate={{ opacity: 1, x: 0 }}
@@ -3080,7 +3082,7 @@ export const TurnCard = React.memo(function TurnCard({
                     >
                       <Spinner className={SIZE_CONFIG.spinnerSize} />
                       <span>{isBuffering ? 'Preparing response...' : 'Thinking...'}</span>
-                    </motion.div>
+                    </m.div>
                   )}
                   </AnimatePresence>
                 </div>
@@ -3088,7 +3090,7 @@ export const TurnCard = React.memo(function TurnCard({
                 {todos && todos.length > 0 && (
                   <TodoList todos={todos} />
                 )}
-              </motion.div>
+              </m.div>
             )}
           </AnimatePresence>
         </div>
@@ -3138,7 +3140,7 @@ export const TurnCard = React.memo(function TurnCard({
       {animateResponse && (
         <AnimatePresence>
           {response && !isBuffering && (
-            <motion.div
+            <m.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: "easeOut" }}
@@ -3170,7 +3172,7 @@ export const TurnCard = React.memo(function TurnCard({
                 openAnnotationRequest={openAnnotationRequest}
                 annotationInteractionMode={annotationInteractionMode}
               />
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
       )}
@@ -3206,6 +3208,7 @@ export const TurnCard = React.memo(function TurnCard({
         </div>
       )}
     </div>
+    </LazyMotion>
   )
 }, (prev, next) => {
   // Conservative memoization: only skip re-render for completed, non-streaming turns

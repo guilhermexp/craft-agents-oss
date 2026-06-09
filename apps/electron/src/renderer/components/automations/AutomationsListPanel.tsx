@@ -10,7 +10,7 @@
  */
 
 import * as React from 'react'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Webhook } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@craft-agent/ui'
@@ -98,6 +98,39 @@ function AutomationItem({
     onClick()
   }, [isMultiSelectActive, isInMultiSelect, onToggleSelect, onRangeSelect, onClick])
 
+  const badgesNode = useMemo(() => (
+    <>
+      <MicroBadge colorClass="bg-foreground/8 text-foreground/60">
+        {getEventDisplayName(automation.event)}
+      </MicroBadge>
+      {automation.actions.some(a => a.type === 'prompt') && (
+        <MicroBadge colorClass="bg-accent/10 text-accent">
+          {t('automations.badgePrompt')}
+        </MicroBadge>
+      )}
+      {automation.actions.some(a => a.type === 'webhook') && (
+        <MicroBadge colorClass="bg-orange-500/10 text-orange-600 dark:text-orange-400">
+          {t('automations.badgeWebhook')}
+        </MicroBadge>
+      )}
+    </>
+  ), [automation.event, automation.actions, t])
+
+  const trailingNode = useMemo(() => (
+    automation.lastExecutedAt ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="shrink-0 text-[11px] text-foreground/40 whitespace-nowrap cursor-default">
+            {formatShortRelativeTime(automation.lastExecutedAt)}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" sideOffset={4}>
+          {t('automations.lastRan', { time: formatShortRelativeTime(automation.lastExecutedAt) })}
+        </TooltipContent>
+      </Tooltip>
+    ) : undefined
+  ), [automation.lastExecutedAt, t])
+
   return (
     <EntityRow
       className={cn('automation-item', !automation.enabled && 'opacity-50')}
@@ -108,37 +141,8 @@ function AutomationItem({
       onMouseDown={handleClick}
       icon={<AutomationAvatar event={automation.event} size="sm" />}
       title={automation.name}
-      badges={
-        <>
-          <MicroBadge colorClass="bg-foreground/8 text-foreground/60">
-            {getEventDisplayName(automation.event)}
-          </MicroBadge>
-          {automation.actions.some(a => a.type === 'prompt') && (
-            <MicroBadge colorClass="bg-accent/10 text-accent">
-              {t('automations.badgePrompt')}
-            </MicroBadge>
-          )}
-          {automation.actions.some(a => a.type === 'webhook') && (
-            <MicroBadge colorClass="bg-orange-500/10 text-orange-600 dark:text-orange-400">
-              {t('automations.badgeWebhook')}
-            </MicroBadge>
-          )}
-        </>
-      }
-      trailing={
-        automation.lastExecutedAt ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="shrink-0 text-[11px] text-foreground/40 whitespace-nowrap cursor-default">
-                {formatShortRelativeTime(automation.lastExecutedAt)}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={4}>
-              {t('automations.lastRan', { time: formatShortRelativeTime(automation.lastExecutedAt) })}
-            </TooltipContent>
-          </Tooltip>
-        ) : undefined
-      }
+      badges={badgesNode}
+      trailing={trailingNode}
       menuContent={
         <AutomationMenu
           automationId={automation.id}
@@ -229,7 +233,7 @@ export function AutomationsListPanel({
 
   // Sort: most recently executed first, never-run at the bottom
   const filteredAutomations = React.useMemo(() => {
-    return [...searchFiltered].sort((a, b) => {
+    return searchFiltered.toSorted((a, b) => {
       if (!a.lastExecutedAt && !b.lastExecutedAt) return 0
       if (!a.lastExecutedAt) return 1
       if (!b.lastExecutedAt) return -1
@@ -265,7 +269,7 @@ export function AutomationsListPanel({
             <EditPopover
               align="center"
               trigger={
-                <button className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors">
+                <button type="button" className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors">
                   {t('automations.addAutomation')}
                 </button>
               }
@@ -301,6 +305,7 @@ export function AutomationsListPanel({
           </p>
           {isSearchMode && (
             <button
+              type="button"
               onClick={() => setSearchQuery('')}
               className="text-xs text-foreground hover:underline"
             >

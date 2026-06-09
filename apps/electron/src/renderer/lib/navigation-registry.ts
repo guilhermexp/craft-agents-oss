@@ -115,7 +115,7 @@ const PlaceholderComponent: ComponentType<DetailsProps> = () => null
  * 2. Adding it to the appropriate navigator's detailsPages
  * 3. Exporting meta from the component
  */
-export const NavigationRegistry = {
+const NavigationRegistry = {
   sessions: {
     displayName: 'Sessions',
     detailsPages: {

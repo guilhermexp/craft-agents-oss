@@ -39,6 +39,10 @@ export interface SessionListRow {
 /** Grouping mode for chat list */
 export type ChatGroupingMode = 'date' | 'status'
 
+// Stable empty-array defaults to avoid re-creating new references on every render
+const EMPTY_SESSION_STATUSES: SessionStatus[] = []
+const EMPTY_LABELS: LabelConfig[] = []
+
 interface SessionListProps {
   items: SessionMeta[]
   onDelete: (sessionId: string, skipConfirmation?: boolean) => Promise<boolean>
@@ -129,9 +133,9 @@ export function SessionList({
   searchQuery = '',
   onSearchChange,
   onSearchClose,
-  sessionStatuses = [],
+  sessionStatuses = EMPTY_SESSION_STATUSES,
   evaluateViews,
-  labels = [],
+  labels = EMPTY_LABELS,
   onLabelsChange,
   groupingMode = 'date',
   workspaceId,
@@ -303,12 +307,14 @@ export function SessionList({
         }
       }
 
+      const statusById = new Map(sessionStatuses.map(s => [s.id, s]))
+      const collapsedMetaByKey = new Map(collapsedGroupsMeta.map(m => [m.key, m]))
       const orderedGroups: EntityListGroup<SessionListRow>[] = []
       for (const [key, { rows: groupRows, statusId }] of groupsByKey) {
-        const state = sessionStatuses.find(s => s.id === statusId)
+        const state = statusById.get(statusId)
         if (!state) continue
         groupRows.sort((a, b) => (b.item.lastMessageAt || 0) - (a.item.lastMessageAt || 0))
-        const collapsedMeta = collapsedGroupsMeta.find(m => m.key === key)
+        const collapsedMeta = collapsedMetaByKey.get(key)
         orderedGroups.push({
           key,
           label: t(`status.${state.id}`, state.label),
@@ -385,7 +391,7 @@ export function SessionList({
       rows,
       groups: orderedGroups,
     }
-  }, [isSearchMode, matchingFilterItems, otherResultItems, flatItems, groupingMode, sessionStatuses, collapsedGroupsMeta, t])
+  }, [isSearchMode, matchingFilterItems, otherResultItems, flatItems, groupingMode, sessionStatuses, collapsedGroupsMeta, t, i18n.resolvedLanguage])
 
   const flatRows = rowData.rows
 
@@ -621,6 +627,7 @@ export function SessionList({
         className="h-full"
       >
         <button
+          type="button"
           onClick={() => {
             const params: { status?: string; label?: string } = {}
             if (currentFilter?.kind === 'state') params.status = currentFilter.stateId
@@ -691,6 +698,7 @@ export function SessionList({
                 {t("session.noSessionsFoundDesc")}
               </p>
               <button
+                type="button"
                 onClick={() => onSearchChange?.('')}
                 className="text-xs text-foreground hover:underline mt-2"
               >

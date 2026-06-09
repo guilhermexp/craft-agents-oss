@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react"
 import * as React from "react"
-import { AnimatePresence, motion, type Variants } from "motion/react"
+import { AnimatePresence, LazyMotion, m, domAnimation, type Variants } from "motion/react"
 import { ChevronRight } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -182,7 +182,7 @@ const itemVariants: Variants = {
  */
 export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, isNested }: LeftSidebarProps) {
   // For nested sidebars, wrap in motion container for stagger effect
-  const NavWrapper = isNested ? motion.nav : 'nav'
+  const NavWrapper = isNested ? m.nav : 'nav'
   const navProps = isNested ? {
     variants: containerVariants,
     initial: 'hidden',
@@ -191,6 +191,7 @@ export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, i
   } : {}
 
   return (
+    <LazyMotion features={domAnimation}>
     <div className={cn("flex flex-col select-none", !isNested && "py-1")}>
       <NavWrapper
         className={cn(
@@ -281,7 +282,7 @@ export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, i
               {link.expandable && link.items && (
                 <AnimatePresence initial={false}>
                   {link.expanded && (
-                    <motion.div
+                    <m.div
                       initial={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
                       animate={{ height: 'auto', opacity: 1, marginTop: 2, marginBottom: isNested ? 4 : 8 }}
                       exit={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
@@ -289,18 +290,18 @@ export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, i
                       className="overflow-hidden"
                     >
                       {expandedContent}
-                    </motion.div>
+                    </m.div>
                   )}
                 </AnimatePresence>
               )}
             </div>
           )
 
-          // For nested items, wrap in motion.div for stagger animation
+          // For nested items, wrap in m.div for stagger animation
           return isNested ? (
-            <motion.div key={link.id} variants={itemVariants}>
+            <m.div key={link.id} variants={itemVariants}>
               {content}
-            </motion.div>
+            </m.div>
           ) : (
             <React.Fragment key={link.id}>
               {content}
@@ -309,6 +310,7 @@ export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, i
         })}
       </NavWrapper>
     </div>
+    </LazyMotion>
   )
 }
 
@@ -532,6 +534,7 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
 
     return (
       <button
+        type="button"
         {...(isOverlay ? {} : (() => {
           // Separate ref from itemProps so we can merge it with forwardedRef
           const { ref: _itemRef, ...rest } = itemProps || { ref: undefined }
@@ -571,15 +574,25 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
             <>
               {/* Main icon - hidden on hover */}
               <span className="absolute inset-0 flex items-center justify-center group-hover:opacity-0 transition-opacity duration-150">
-                {renderIcon(link)}
+                <SidebarIcon link={link} />
               </span>
               {/* Toggle chevron - shown on hover. data-no-dnd prevents drag activation on click. */}
+              {/* span instead of button to avoid nested <button> inside the outer sidebar item button */}
               <span
+                role="button"
+                tabIndex={0}
                 className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 cursor-pointer"
                 data-no-dnd="true"
                 onClick={(e) => {
                   e.stopPropagation()
                   link.onToggle?.()
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    link.onToggle?.()
+                  }
                 }}
               >
                 <ChevronRight
@@ -591,7 +604,7 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
               </span>
             </>
           ) : (
-            renderIcon(link)
+            <SidebarIcon link={link} />
           )}
         </span>
         {link.title}
@@ -611,6 +624,14 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
     )
   }
 )
+
+/**
+ * SidebarIcon - named component wrapping icon rendering so React reconciles it
+ * by component identity rather than remounting on every parent render.
+ */
+function SidebarIcon({ link }: { link: LinkItem }) {
+  return renderIcon(link)
+}
 
 /**
  * Helper to render icon - either component (function/forwardRef) or React element.

@@ -75,7 +75,7 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
     setCurrentChannel(channel)
   }, [channel])
 
-  const participants = currentChannel.participants ?? []
+  const participants = React.useMemo(() => currentChannel.participants ?? [], [currentChannel.participants])
   const llmConnections = appShell?.llmConnections ?? []
   const defaultConnection = appShell?.workspaceDefaultLlmConnection
     ?? llmConnections.find(connection => connection.isAuthenticated)?.slug
@@ -285,12 +285,14 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
         <form onSubmit={saveParticipant} className="shrink-0 border-b border-border/60 bg-muted/10 px-5 py-3">
           <div className="mx-auto grid max-w-5xl gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">
             <input
+              aria-label="ID da menção"
               value={participantIdDraft}
               onChange={event => setParticipantIdDraft(slugifyParticipantId(event.target.value))}
               placeholder="id da menção, ex: server-ops"
               className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/60"
             />
             <input
+              aria-label="Nome visível"
               value={participantNameDraft}
               onChange={event => setParticipantNameDraft(event.target.value)}
               placeholder="nome visível"
@@ -317,12 +319,14 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
           </div>
           <div className="mx-auto mt-2 grid max-w-5xl gap-2 md:grid-cols-2">
             <input
+              aria-label="Modelo opcional"
               value={participantModelDraft}
               onChange={event => setParticipantModelDraft(event.target.value)}
               placeholder="modelo opcional"
               className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/60"
             />
             <input
+              aria-label="Hermes profile opcional"
               value={participantHermesProfileDraft}
               onChange={event => setParticipantHermesProfileDraft(slugifyParticipantId(event.target.value))}
               placeholder="Hermes profile opcional, ex: server-ops"
@@ -414,6 +418,7 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
             ) : null}
             <textarea
               ref={textareaRef}
+              aria-label="Mensagem para o canal"
               value={draft}
               onChange={event => {
                 setDraft(event.target.value)

@@ -27,18 +27,20 @@ interface ActionRegistryContextType {
 const ActionRegistryContext = createContext<ActionRegistryContextType | null>(null)
 
 export function ActionRegistryProvider({ children }: { children: React.ReactNode }) {
-  const handlersRef = useRef<Map<ActionId, ActionHandler[]>>(new Map())
-  const userOverrides = useRef<Map<ActionId, string | null>>(new Map())
+  const handlersRef = useRef<Map<ActionId, ActionHandler[]> | null>(null)
+  if (!handlersRef.current) handlersRef.current = new Map()
+  const userOverrides = useRef<Map<ActionId, string | null> | null>(null)
+  if (!userOverrides.current) userOverrides.current = new Map()
 
   // Register a handler
   const register = useCallback((handler: ActionHandler) => {
-    const handlers = handlersRef.current.get(handler.actionId) || []
+    const handlers = handlersRef.current!.get(handler.actionId) || []
     handlers.push(handler)
-    handlersRef.current.set(handler.actionId, handlers)
+    handlersRef.current!.set(handler.actionId, handlers)
 
     // Return cleanup function
     return () => {
-      const handlers = handlersRef.current.get(handler.actionId) || []
+      const handlers = handlersRef.current!.get(handler.actionId) || []
       const index = handlers.indexOf(handler)
       if (index > -1) handlers.splice(index, 1)
     }
@@ -46,7 +48,7 @@ export function ActionRegistryProvider({ children }: { children: React.ReactNode
 
   // Execute an action
   const execute = useCallback((actionId: ActionId) => {
-    const handlers = handlersRef.current.get(actionId) || []
+    const handlers = handlersRef.current!.get(actionId) || []
     for (const handler of handlers) {
       if (!handler.enabled || handler.enabled()) {
         handler.handler()
@@ -58,8 +60,8 @@ export function ActionRegistryProvider({ children }: { children: React.ReactNode
   // Get hotkey for action
   const getHotkey = useCallback((actionId: ActionId): string | null => {
     // Check user overrides first
-    if (userOverrides.current.has(actionId)) {
-      return userOverrides.current.get(actionId) ?? null
+    if (userOverrides.current!.has(actionId)) {
+      return userOverrides.current!.get(actionId) ?? null
     }
     return actions[actionId].defaultHotkey
   }, [])
@@ -90,7 +92,7 @@ export function ActionRegistryProvider({ children }: { children: React.ReactNode
         // Evaluate when-clause against current context
         if (!evaluateWhen((action as ActionDefinition).when, context)) continue
 
-        const handlers = handlersRef.current.get(actionId as ActionId) || []
+        const handlers = handlersRef.current!.get(actionId as ActionId) || []
         for (const handler of handlers) {
           if (!handler.enabled || handler.enabled()) {
             e.preventDefault()
@@ -113,7 +115,7 @@ export function ActionRegistryProvider({ children }: { children: React.ReactNode
     getHotkey,
     getHotkeyDisplay,
     getAction,
-    userOverrides: userOverrides.current,
+    userOverrides: userOverrides.current!,
   }
 
   return (

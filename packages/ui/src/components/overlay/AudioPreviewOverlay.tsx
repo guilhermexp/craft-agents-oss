@@ -3,7 +3,7 @@
  */
 
 import * as React from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useReducer } from 'react'
 import { Music, PauseIcon, PlayIcon } from 'lucide-react'
 import { PreviewOverlay } from './PreviewOverlay'
 import { CopyButton } from './CopyButton'
@@ -32,6 +32,28 @@ export interface AudioPreviewOverlayProps {
   theme?: 'light' | 'dark'
 }
 
+type AudioLoadState =
+  | { status: 'idle' }
+  | { status: 'loading'; forPath: string }
+  | { status: 'loaded'; url: string; forPath: string }
+  | { status: 'error'; message: string; forPath: string }
+
+type AudioLoadAction =
+  | { type: 'start'; forPath: string }
+  | { type: 'loaded'; url: string; forPath: string }
+  | { type: 'error'; message: string; forPath: string }
+
+function audioLoadReducer(_state: AudioLoadState, action: AudioLoadAction): AudioLoadState {
+  switch (action.type) {
+    case 'start':
+      return { status: 'loading', forPath: action.forPath }
+    case 'loaded':
+      return { status: 'loaded', url: action.url, forPath: action.forPath }
+    case 'error':
+      return { status: 'error', message: action.message, forPath: action.forPath }
+  }
+}
+
 export function AudioPreviewOverlay({
   isOpen,
   onClose,
@@ -41,27 +63,25 @@ export function AudioPreviewOverlay({
   alignment,
   theme = 'light',
 }: AudioPreviewOverlayProps) {
-  const [audioSrc, setAudioSrc] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [loadState, dispatch] = useReducer(audioLoadReducer, { status: 'idle' })
+
+  // Derive current-path values — stale entries are treated as absent
+  const audioSrc = loadState.status === 'loaded' && loadState.forPath === filePath ? loadState.url : null
+  const error = loadState.status === 'error' && loadState.forPath === filePath ? loadState.message : null
+  const isLoading = loadState.status === 'loading' && loadState.forPath === filePath
 
   useEffect(() => {
     if (!isOpen) return
 
     let cancelled = false
-    setIsLoading(true)
-    setError(null)
-    setAudioSrc(null)
+    dispatch({ type: 'start', forPath: filePath })
 
     loadDataUrl(filePath)
       .then((url) => {
-        if (!cancelled) setAudioSrc(url)
+        if (!cancelled) dispatch({ type: 'loaded', url, forPath: filePath })
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load audio')
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false)
+        if (!cancelled) dispatch({ type: 'error', message: err instanceof Error ? err.message : 'Failed to load audio', forPath: filePath })
       })
 
     return () => { cancelled = true }

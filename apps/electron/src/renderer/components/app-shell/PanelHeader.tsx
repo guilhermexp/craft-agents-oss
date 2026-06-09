@@ -29,7 +29,7 @@
 
 import * as React from 'react'
 import { useState } from 'react'
-import { motion } from 'motion/react'
+import { LazyMotion, m, domAnimation } from 'motion/react'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCompensateForStoplight } from '@/context/StoplightContext'
@@ -99,7 +99,7 @@ export function PanelHeader({
   // Title content - either static or interactive with dropdown
   // Shimmer effect shows during title regeneration
   const titleContent = (
-    <motion.div
+    <m.div
       initial={false}
       animate={{ opacity: title ? 1 : 0 }}
       transition={{ duration: 0.15 }}
@@ -110,7 +110,7 @@ export function PanelHeader({
         isRegeneratingTitle && "animate-shimmer-text"
       )}>{title}</h1>
       {badge}
-    </motion.div>
+    </m.div>
   )
 
   const content = (
@@ -126,6 +126,7 @@ export function PanelHeader({
             <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
               {/* Wrapper button for the whole clickable area */}
               <button
+                type="button"
                 onClick={() => setDropdownOpen(true)}
                 className={cn(
                   "flex items-center gap-1 px-2 py-1 rounded-md titlebar-no-drag min-w-0",
@@ -179,15 +180,17 @@ export function PanelHeader({
     className
   )
 
-  // Use motion.div with animated paddingLeft to shift content while keeping background full-width
+  // Use m.div with animated paddingLeft to shift content while keeping background full-width
   return (
-    <motion.div
-      initial={false}
-      animate={{ paddingLeft: shouldCompensate ? STOPLIGHT_PADDING : basePadding }}
-      transition={springTransition}
-      className={baseClassName}
-    >
-      {content}
-    </motion.div>
+    <LazyMotion features={domAnimation}>
+      <m.div
+        initial={false}
+        animate={{ paddingLeft: shouldCompensate ? STOPLIGHT_PADDING : basePadding }}
+        transition={springTransition}
+        className={baseClassName}
+      >
+        {content}
+      </m.div>
+    </LazyMotion>
   )
 }

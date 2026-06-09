@@ -31,7 +31,7 @@ import PreferencesPage from './PreferencesPage'
  * Map of settings subpage IDs to their page components.
  * TypeScript will error if a page from SETTINGS_PAGES is missing here.
  */
-export const SETTINGS_PAGE_COMPONENTS: Record<SettingsSubpage, ComponentType> = {
+const SETTINGS_PAGE_COMPONENTS: Record<SettingsSubpage, ComponentType> = {
   app: AppSettingsPage,
   ai: AiSettingsPage,
   hermes: HermesSettingsPage,

@@ -33,6 +33,54 @@ import { navigate, routes } from '@/lib/navigate'
 
 const DEFAULT_MAX_VISIBLE_BADGES = 3
 
+interface BrowserActionsProps {
+  instance: BrowserInstanceInfo
+  instancesOverride: BrowserInstanceInfo[] | undefined
+  onFocus: (instance: BrowserInstanceInfo) => void
+  onOpenSession: (instance: BrowserInstanceInfo) => void
+  onTerminate: (instance: BrowserInstanceInfo) => void
+}
+
+function BrowserActions({ instance, instancesOverride, onFocus, onOpenSession, onTerminate }: BrowserActionsProps) {
+  const canUseLiveWindowActions = !instancesOverride
+  const targetSessionId = instance.boundSessionId ?? instance.ownerSessionId
+  const canOpenSession = !!targetSessionId
+  const openSessionLabel = instance.agentControlActive
+    ? 'Open Session Using this Window'
+    : 'Open Session Which Used this Window'
+
+  return (
+    <>
+      <StyledDropdownMenuItem
+        disabled={!canUseLiveWindowActions}
+        onSelect={() => onFocus(instance)}
+      >
+        <Icons.Monitor className="size-3.5" />
+        Show Browser Window
+      </StyledDropdownMenuItem>
+
+      <StyledDropdownMenuItem
+        disabled={!canOpenSession}
+        onSelect={() => onOpenSession(instance)}
+      >
+        <Icons.PanelRightOpen className="size-3.5" />
+        {openSessionLabel}
+      </StyledDropdownMenuItem>
+
+      <StyledDropdownMenuSeparator />
+
+      <StyledDropdownMenuItem
+        variant="destructive"
+        disabled={!canUseLiveWindowActions}
+        onSelect={() => onTerminate(instance)}
+      >
+        <Icons.XCircle className="size-3.5" />
+        Terminate Browser
+      </StyledDropdownMenuItem>
+    </>
+  )
+}
+
 interface BrowserTabStripProps {
   activeSessionId?: string | null
   instancesOverride?: BrowserInstanceInfo[]
@@ -206,45 +254,6 @@ export function BrowserTabStrip({
     })
   }, [instancesOverride, removeInstance, setActiveInstanceId])
 
-  const renderBrowserActions = useCallback((instance: BrowserInstanceInfo) => {
-    const canUseLiveWindowActions = !instancesOverride
-    const targetSessionId = instance.boundSessionId ?? instance.ownerSessionId
-    const canOpenSession = !!targetSessionId
-    const openSessionLabel = instance.agentControlActive
-      ? 'Open Session Using this Window'
-      : 'Open Session Which Used this Window'
-
-    return (
-      <>
-        <StyledDropdownMenuItem
-          disabled={!canUseLiveWindowActions}
-          onSelect={() => focusBrowserWindow(instance)}
-        >
-          <Icons.Monitor className="size-3.5" />
-          Show Browser Window
-        </StyledDropdownMenuItem>
-
-        <StyledDropdownMenuItem
-          disabled={!canOpenSession}
-          onSelect={() => openSessionUsingWindow(instance)}
-        >
-          <Icons.PanelRightOpen className="size-3.5" />
-          {openSessionLabel}
-        </StyledDropdownMenuItem>
-
-        <StyledDropdownMenuSeparator />
-
-        <StyledDropdownMenuItem
-          variant="destructive"
-          disabled={!canUseLiveWindowActions}
-          onSelect={() => terminateBrowserWindow(instance)}
-        >
-          <Icons.XCircle className="size-3.5" />
-          Terminate Browser
-        </StyledDropdownMenuItem>
-      </>
-    )
-  }, [instancesOverride, focusBrowserWindow, openSessionUsingWindow, terminateBrowserWindow])
 
   if (orderedInstances.length === 0) return null
 
@@ -263,7 +272,13 @@ export function BrowserTabStrip({
             />
           </DropdownMenuTrigger>
           <StyledDropdownMenuContent align="end" minWidth="min-w-56">
-            {renderBrowserActions(instance)}
+            <BrowserActions
+              instance={instance}
+              instancesOverride={instancesOverride}
+              onFocus={focusBrowserWindow}
+              onOpenSession={openSessionUsingWindow}
+              onTerminate={terminateBrowserWindow}
+            />
           </StyledDropdownMenuContent>
         </DropdownMenu>
       ))}
@@ -293,7 +308,13 @@ export function BrowserTabStrip({
                     <span className="truncate">{displayLabel}</span>
                   </StyledDropdownMenuSubTrigger>
                   <StyledDropdownMenuSubContent minWidth="min-w-56">
-                    {renderBrowserActions(instance)}
+                    <BrowserActions
+                      instance={instance}
+                      instancesOverride={instancesOverride}
+                      onFocus={focusBrowserWindow}
+                      onOpenSession={openSessionUsingWindow}
+                      onTerminate={terminateBrowserWindow}
+                    />
                   </StyledDropdownMenuSubContent>
                 </DropdownMenuSub>
               )

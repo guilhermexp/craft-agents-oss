@@ -196,14 +196,14 @@ export function EmptyStateHint({ hintIndex, className }: EmptyStateHintProps) {
         className
       )}
     >
-      {hint.segments.map((segment, index) => {
+      {hint.segments.map((segment, segIdx) => {
         if (segment.type === 'text') {
-          return <span key={index}>{segment.content}</span>
+          return <span key={`text-${segment.content}`}>{segment.content}</span>
         }
 
         return (
           <EntityBadge
-            key={index}
+            key={`entity-${segIdx}-${segment.label}`}
             entityType={segment.entityType}
             label={segment.label}
             provider={segment.provider}

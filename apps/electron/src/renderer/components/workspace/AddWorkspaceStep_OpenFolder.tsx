@@ -51,6 +51,7 @@ export function AddWorkspaceStep_OpenFolder({
     <AddWorkspaceContainer>
       {/* Back button */}
       <button
+        type="button"
         onClick={onBack}
         disabled={isCreating}
         className={cn(

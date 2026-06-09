@@ -28,9 +28,9 @@ export function SessionBadges({ item }: SessionBadgesProps) {
 
   return (
     <>
-      {resolvedLabels.map(({ config, rawValue }, idx) => (
+      {resolvedLabels.map(({ config, rawValue }) => (
         <EntityListLabelBadge
-          key={`${config.id}-${idx}`}
+          key={config.id}
           label={config}
           rawValue={rawValue}
           sessionLabels={item.labels || []}

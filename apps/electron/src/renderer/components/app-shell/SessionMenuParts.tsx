@@ -129,24 +129,23 @@ function countAppliedInSubtree(label: LabelConfig, appliedIds: Set<string>): num
   return count
 }
 
-/**
- * LabelMenuItems - Recursive component for rendering label tree as nested sub-menus.
- *
- * Labels with children render as nested Sub/SubTrigger/SubContent menus (the parent
- * itself appears as the first toggleable item inside its submenu, followed by children).
- * Leaf labels render as simple toggleable menu items with checkmarks.
- * Parent triggers show a count of applied descendants so users can see where selections are.
- */
-export function LabelMenuItems({
-  labels,
-  appliedLabelIds,
-  onToggle,
-  menu,
-}: LabelMenuItemsProps) {
-  const { MenuItem, Separator, Sub, SubTrigger, SubContent } = menu
-  const displayLabels = React.useMemo(() => sortLabelsForDisplay(labels), [labels])
+interface LabelMenuItemTreeProps {
+  nodes: LabelConfig[]
+  appliedLabelIds: Set<string>
+  onToggle: (labelId: string) => void
+  menu: Pick<MenuComponents, 'MenuItem' | 'Separator' | 'Sub' | 'SubTrigger' | 'SubContent'>
+}
 
-  const renderItems = (nodes: LabelConfig[]): React.ReactNode => (
+/**
+ * LabelMenuItemTree - Recursive named component for rendering a label subtree.
+ *
+ * Extracted from LabelMenuItems so React can reconcile by component identity
+ * and preserve internal state across renders.
+ */
+function LabelMenuItemTree({ nodes, appliedLabelIds, onToggle, menu }: LabelMenuItemTreeProps) {
+  const { MenuItem, Separator, Sub, SubTrigger, SubContent } = menu
+
+  return (
     <>
       {nodes.map(label => {
         const hasChildren = label.children && label.children.length > 0
@@ -180,7 +179,12 @@ export function LabelMenuItems({
                   </span>
                 </MenuItem>
                 <Separator />
-                {renderItems(label.children!)}
+                <LabelMenuItemTree
+                  nodes={label.children!}
+                  appliedLabelIds={appliedLabelIds}
+                  onToggle={onToggle}
+                  menu={menu}
+                />
               </SubContent>
             </Sub>
           )
@@ -204,6 +208,30 @@ export function LabelMenuItems({
       })}
     </>
   )
+}
 
-  return renderItems(displayLabels)
+/**
+ * LabelMenuItems - Recursive component for rendering label tree as nested sub-menus.
+ *
+ * Labels with children render as nested Sub/SubTrigger/SubContent menus (the parent
+ * itself appears as the first toggleable item inside its submenu, followed by children).
+ * Leaf labels render as simple toggleable menu items with checkmarks.
+ * Parent triggers show a count of applied descendants so users can see where selections are.
+ */
+export function LabelMenuItems({
+  labels,
+  appliedLabelIds,
+  onToggle,
+  menu,
+}: LabelMenuItemsProps) {
+  const displayLabels = React.useMemo(() => sortLabelsForDisplay(labels), [labels])
+
+  return (
+    <LabelMenuItemTree
+      nodes={displayLabels}
+      appliedLabelIds={appliedLabelIds}
+      onToggle={onToggle}
+      menu={menu}
+    />
+  )
 }

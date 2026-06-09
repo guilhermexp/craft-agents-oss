@@ -51,7 +51,7 @@ export function initRendererPerf(isDebug: boolean): void {
 /**
  * Check if perf tracking is enabled
  */
-export function isRendererPerfEnabled(): boolean {
+function isRendererPerfEnabled(): boolean {
   return debugMode
 }
 
@@ -60,7 +60,7 @@ export function isRendererPerfEnabled(): boolean {
  * Call this when user clicks on a session in the list.
  * Clears any other pending switches (user navigated away before completion).
  */
-export function startSessionSwitch(sessionId: string): void {
+function startSessionSwitch(sessionId: string): void {
   if (!debugMode) return
 
   // Clear any other pending switches - user navigated away before they completed
@@ -81,7 +81,7 @@ export function startSessionSwitch(sessionId: string): void {
  * Add a checkpoint mark during session switch.
  * Use for intermediate steps like 'session.loaded', 'agent.status', etc.
  */
-export function markSessionSwitch(sessionId: string, markName: string): void {
+function markSessionSwitch(sessionId: string, markName: string): void {
   if (!debugMode) return
 
   const metric = pendingSwitches.get(sessionId)
@@ -97,7 +97,7 @@ export function markSessionSwitch(sessionId: string, markName: string): void {
  * End session switch tracking and log final duration.
  * Call this when the chat display has fully rendered.
  */
-export function endSessionSwitch(sessionId: string): number | null {
+function endSessionSwitch(sessionId: string): number | null {
   if (!debugMode) return null
 
   const metric = pendingSwitches.get(sessionId)
@@ -128,14 +128,14 @@ export function endSessionSwitch(sessionId: string): number | null {
 /**
  * Get recent session switch metrics for analysis
  */
-export function getRecentMetrics(): SessionSwitchMetric[] {
+function getRecentMetrics(): SessionSwitchMetric[] {
   return [...recentMetrics]
 }
 
 /**
  * Get statistics for session switch times
  */
-export function getSessionSwitchStats(): {
+function getSessionSwitchStats(): {
   count: number
   avgMs: number
   p50Ms: number
@@ -167,7 +167,7 @@ export function getSessionSwitchStats(): {
 /**
  * Clear all metrics
  */
-export function clearMetrics(): void {
+function clearMetrics(): void {
   pendingSwitches.clear()
   recentMetrics.length = 0
 }
@@ -184,4 +184,3 @@ export const rendererPerf = {
   clear: clearMetrics,
 }
 
-export default rendererPerf

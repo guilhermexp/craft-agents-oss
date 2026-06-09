@@ -157,7 +157,7 @@ const sessionLoadingPromises = new Map<string, Promise<Session | null>>()
  * Currently active session ID - the session displayed in the main content area
  * This replaces the tab-based session selection
  */
-export const activeSessionIdAtom = atom<string | null>(null)
+const activeSessionIdAtom = atom<string | null>(null)
 
 // NOTE: sessionsAtom REMOVED to fix memory leak
 // The sessions array with messages was being retained by Jotai's internal state.
@@ -212,7 +212,7 @@ export const updateSessionMetaAtom = atom(
  * Note: Does NOT update lastMessageAt - caller must handle timestamp updates
  * to avoid session list jumping on intermediate/tool messages
  */
-export const appendMessageAtom = atom(
+const appendMessageAtom = atom(
   null,
   (get, set, sessionId: string, message: Message) => {
     const sessionAtom = sessionAtomFamily(sessionId)
@@ -231,7 +231,7 @@ export const appendMessageAtom = atom(
  * Action atom: update streaming content for a session
  * For text_delta events - appends to the last streaming message
  */
-export const updateStreamingContentAtom = atom(
+const updateStreamingContentAtom = atom(
   null,
   (get, set, sessionId: string, content: string, turnId?: string) => {
     const sessionAtom = sessionAtomFamily(sessionId)
@@ -444,7 +444,7 @@ export const removeSessionAtom = atom(
  * Once a "handoff" event (complete, error, etc.) occurs, React state catches up
  * and sync works normally again.
  */
-export const syncSessionsToAtomsAtom = atom(
+const syncSessionsToAtomsAtom = atom(
   null,
   (get, set, sessions: Session[]) => {
     const loadedSessions = get(loadedSessionsAtom)

@@ -9,7 +9,7 @@
  * Follows the Appearance settings pattern: app-level defaults + workspace overrides.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -21,7 +21,7 @@ import type { CredentialHealthStatus, CredentialHealthIssue } from '../../../sha
 import { FullscreenOverlayBase } from '@craft-agent/ui'
 import { useSetAtom } from 'jotai'
 import { fullscreenOverlayOpenAtom } from '@/atoms/overlay'
-import { motion, AnimatePresence } from 'motion/react'
+import { LazyMotion, m, domAnimation, AnimatePresence } from 'motion/react'
 import type { LlmConnectionWithStatus, ThinkingLevel, WorkspaceSettings, Workspace } from '../../../shared/types'
 import { DEFAULT_THINKING_LEVEL, THINKING_LEVELS } from '@craft-agent/shared/agent/thinking-levels'
 import type { DetailsPageMeta } from '@/lib/navigation-registry'
@@ -280,6 +280,7 @@ function ConnectionRow({ connection, isLastConnection, onRenameClick, onDelete, 
       <DropdownMenu modal={false} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <button
+            type="button"
             className="p-1.5 rounded-md hover:bg-foreground/[0.05] data-[state=open]:bg-foreground/[0.05] transition-colors"
             data-state={menuOpen ? 'open' : 'closed'}
           >
@@ -395,7 +396,7 @@ function WorkspaceOverrideCard({ workspace, llmConnections, onSettingsChange }: 
         description: message,
       })
     }
-  }, [workspace.id, onSettingsChange, settings])
+  }, [workspace.id, onSettingsChange, settings, t])
 
   const handleConnectionChange = useCallback((slug: string) => {
     // 'global' means use app default (clear workspace override)
@@ -484,63 +485,65 @@ function WorkspaceOverrideCard({ workspace, llmConnections, onSettingsChange }: 
         )}
       </button>
 
-      <AnimatePresence initial={false}>
-        {isExpanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-            className="overflow-hidden"
-          >
-            <div className="border-t border-border/50 px-4 py-2">
-              <SettingsMenuSelectRow
-                label={t("settings.ai.connection")}
-                description={t("settings.ai.connectionDesc")}
-                value={currentConnection}
-                onValueChange={handleConnectionChange}
-                options={[
-                  { value: 'global', label: t("settings.ai.useDefault"), description: t("settings.ai.inheritFromApp") },
-                  ...llmConnections.map((conn) => ({
-                    value: conn.slug,
-                    label: conn.name,
-                    description: conn.providerType === 'anthropic' ? 'Anthropic' :
-                                 conn.providerType === 'pi' ? 'Craft Agents Backend' :
-                                 conn.providerType === 'hermes' ? 'Hermes' :
-                                 conn.providerType || 'Unknown',
-                  })),
-                ]}
-              />
-              <SettingsMenuSelectRow
-                label={t("settings.ai.model")}
-                description={t("settings.ai.modelDesc")}
-                value={currentModel}
-                onValueChange={handleModelChange}
-                options={[
-                  { value: 'global', label: t("settings.ai.useDefault"), description: t("settings.ai.inheritFromApp") },
-                  ...getModelOptionsForConnection(workspaceEffectiveConnection).map(o => ({
-                    ...o, description: o.descriptionKey ? t(o.descriptionKey) : o.description,
-                  })),
-                ]}
-              />
-              <SettingsMenuSelectRow
-                label={t("settings.ai.thinking")}
-                description={t("settings.ai.thinkingDesc")}
-                value={currentThinking}
-                onValueChange={handleThinkingChange}
-                options={[
-                  { value: 'global', label: t("settings.ai.useDefault"), description: t("settings.ai.inheritFromApp") },
-                  ...THINKING_LEVELS.map(({ id, nameKey, descriptionKey }) => ({
-                    value: id,
-                    label: t(nameKey),
-                    description: t(descriptionKey),
-                  })),
-                ]}
-              />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <LazyMotion features={domAnimation}>
+        <AnimatePresence initial={false}>
+          {isExpanded && (
+            <m.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+              className="overflow-hidden"
+            >
+              <div className="border-t border-border/50 px-4 py-2">
+                <SettingsMenuSelectRow
+                  label={t("settings.ai.connection")}
+                  description={t("settings.ai.connectionDesc")}
+                  value={currentConnection}
+                  onValueChange={handleConnectionChange}
+                  options={[
+                    { value: 'global', label: t("settings.ai.useDefault"), description: t("settings.ai.inheritFromApp") },
+                    ...llmConnections.map((conn) => ({
+                      value: conn.slug,
+                      label: conn.name,
+                      description: conn.providerType === 'anthropic' ? 'Anthropic' :
+                                   conn.providerType === 'pi' ? 'Craft Agents Backend' :
+                                   conn.providerType === 'hermes' ? 'Hermes' :
+                                   conn.providerType || 'Unknown',
+                    })),
+                  ]}
+                />
+                <SettingsMenuSelectRow
+                  label={t("settings.ai.model")}
+                  description={t("settings.ai.modelDesc")}
+                  value={currentModel}
+                  onValueChange={handleModelChange}
+                  options={[
+                    { value: 'global', label: t("settings.ai.useDefault"), description: t("settings.ai.inheritFromApp") },
+                    ...getModelOptionsForConnection(workspaceEffectiveConnection).map(o => ({
+                      ...o, description: o.descriptionKey ? t(o.descriptionKey) : o.description,
+                    })),
+                  ]}
+                />
+                <SettingsMenuSelectRow
+                  label={t("settings.ai.thinking")}
+                  description={t("settings.ai.thinkingDesc")}
+                  value={currentThinking}
+                  onValueChange={handleThinkingChange}
+                  options={[
+                    { value: 'global', label: t("settings.ai.useDefault"), description: t("settings.ai.inheritFromApp") },
+                    ...THINKING_LEVELS.map(({ id, nameKey, descriptionKey }) => ({
+                      value: id,
+                      label: t(nameKey),
+                      description: t(descriptionKey),
+                    })),
+                  ]}
+                />
+              </div>
+            </m.div>
+          )}
+        </AnimatePresence>
+      </LazyMotion>
     </SettingsCard>
   )
 }
@@ -597,7 +600,7 @@ export default function AiSettingsPage() {
 
   // Rename dialog state
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
-  const [renamingConnection, setRenamingConnection] = useState<{ slug: string; name: string } | null>(null)
+  const renamingConnection = useRef<{ slug: string; name: string } | null>(null)
   const [renameValue, setRenameValue] = useState('')
 
   // Load workspaces, default settings, and credential health
@@ -696,7 +699,7 @@ export default function AiSettingsPage() {
 
   // Connection action handlers
   const handleRenameClick = useCallback((connection: LlmConnectionWithStatus) => {
-    setRenamingConnection({ slug: connection.slug, name: connection.name })
+    renamingConnection.current = { slug: connection.slug, name: connection.name }
     setRenameValue(connection.name)
     // Defer dialog open to next frame to let dropdown fully unmount first
     requestAnimationFrame(() => {
@@ -705,15 +708,15 @@ export default function AiSettingsPage() {
   }, [])
 
   const handleRenameSubmit = useCallback(async () => {
-    if (!renamingConnection || !window.electronAPI) return
+    if (!renamingConnection.current || !window.electronAPI) return
     const trimmedName = renameValue.trim()
-    if (!trimmedName || trimmedName === renamingConnection.name) {
+    if (!trimmedName || trimmedName === renamingConnection.current.name) {
       setRenameDialogOpen(false)
       return
     }
     try {
       // Get the full connection, update name, and save
-      const connection = await window.electronAPI.getLlmConnection(renamingConnection.slug)
+      const connection = await window.electronAPI.getLlmConnection(renamingConnection.current.slug)
       if (connection) {
         const result = await window.electronAPI.saveLlmConnection({ ...connection, name: trimmedName })
         if (result.success) {
@@ -726,9 +729,9 @@ export default function AiSettingsPage() {
       console.error('Failed to rename connection:', error)
     }
     setRenameDialogOpen(false)
-    setRenamingConnection(null)
+    renamingConnection.current = null
     setRenameValue('')
-  }, [renamingConnection, renameValue, refreshLlmConnections])
+  }, [renameValue, refreshLlmConnections])
 
   const handleReauthenticateConnection = useCallback((connection: LlmConnectionWithStatus) => {
     openApiSetup(connection.slug)
@@ -758,8 +761,10 @@ export default function AiSettingsPage() {
 
     // Set initial values before opening overlay so ApiKeyInput mounts with them
     const modelIds = connection.models
-      ?.map((m: string | ModelDefinition) => typeof m === 'string' ? m : m.id)
-      .filter(Boolean)
+      ?.flatMap((m: string | ModelDefinition) => {
+        const id = typeof m === 'string' ? m : m.id
+        return id ? [id] : []
+      })
 
     const isCustomEndpointConnection = !!connection.customEndpoint && !!connection.baseUrl?.trim()
 
@@ -975,8 +980,8 @@ export default function AiSettingsPage() {
                       {t("settings.ai.noConnections")}
                     </div>
                   ) : (
-                    [...llmConnections]
-                      .sort((a, b) => {
+                    llmConnections
+                      .toSorted((a, b) => {
                         if (a.isDefault && !b.isDefault) return -1
                         if (!a.isDefault && b.isDefault) return 1
                         return a.name.localeCompare(b.name)
@@ -1000,6 +1005,7 @@ export default function AiSettingsPage() {
                 </SettingsCard>
                 <div className="pt-0">
                   <button
+                    type="button"
                     onClick={() => openApiSetup()}
                     className="inline-flex items-center h-8 px-3 text-sm rounded-lg bg-background shadow-minimal hover:bg-foreground/[0.02] transition-colors"
                   >
@@ -1054,6 +1060,7 @@ export default function AiSettingsPage() {
                   style={{ zIndex: 'var(--z-fullscreen, 350)' }}
                 >
                   <button
+                    type="button"
                     onClick={handleCloseApiSetup}
                     className="p-1.5 rounded-[6px] transition-all bg-background shadow-minimal text-muted-foreground/50 hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     title={t("common.closeEsc")}

@@ -20,8 +20,8 @@ export function AvatarGroup({ children, max = 3, className }: AvatarGroupProps) 
 
   return (
     <div className={cn("flex -space-x-1.5", className)}>
-      {shown.map((child, i) => (
-        <div key={i} className="ring-1 ring-background rounded-full">
+      {shown.map((child) => (
+        <div key={(child as React.ReactElement).key} className="ring-1 ring-background rounded-full">
           {child}
         </div>
       ))}

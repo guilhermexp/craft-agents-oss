@@ -114,7 +114,7 @@ export function ExcalidrawPreviewOverlay({
     if (!isOpen || !dimensions || parseError) return
     const id = window.requestAnimationFrame(() => zoomToFit(dimensions))
     return () => window.cancelAnimationFrame(id)
-  }, [isOpen, dimensions?.width, dimensions?.height, parseError, zoomToFit])
+  }, [isOpen, dimensions, parseError, zoomToFit])
 
   const headerActions = (
     <div className="flex items-center gap-1.5">
@@ -146,17 +146,13 @@ export function ExcalidrawPreviewOverlay({
     >
       <div
         ref={containerRef}
-        className="relative flex items-center justify-center select-none"
+        role="application"
+        aria-label="Excalidraw canvas — drag to pan, scroll to zoom"
+        className="relative flex items-center justify-center select-none -mt-6 -mb-6 w-full h-[calc(100vh-96px)] min-h-[520px] overflow-hidden"
         onMouseDown={onMouseDown}
         onDoubleClick={onDoubleClick}
         style={{
-          marginTop: -24,
-          marginBottom: -24,
-          width: '100%',
-          height: 'calc(100vh - 96px)',
-          minHeight: 520,
           cursor: isDragging ? 'grabbing' : 'grab',
-          overflow: 'hidden',
           backgroundColor: canvasBackground,
           backgroundImage: theme === 'dark'
             ? 'linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)'

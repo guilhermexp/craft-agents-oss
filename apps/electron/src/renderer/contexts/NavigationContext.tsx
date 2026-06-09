@@ -123,7 +123,7 @@ interface NavigationContextValue {
   navigateToSession: (sessionId: string) => void
 }
 
-export const NavigationContext = createContext<NavigationContextValue | null>(null)
+const NavigationContext = createContext<NavigationContextValue | null>(null)
 
 interface NavigationProviderProps {
   children: ReactNode
@@ -478,7 +478,8 @@ export function NavigationProvider({
   // Track which session IDs are visible across all panels. When a session ID
   // disappears (navigate away, close tab, Cmd+W), check if it was empty and
   // auto-delete it. This is the single codepath for all navigate-away cleanup.
-  const prevVisibleSessionIdsRef = useRef<Set<string>>(new Set())
+  const prevVisibleSessionIdsRef = useRef<Set<string>>(null!)
+  if (prevVisibleSessionIdsRef.current === null) prevVisibleSessionIdsRef.current = new Set()
 
   useEffect(() => {
     const currentIds = new Set<string>()
@@ -723,8 +724,7 @@ export function NavigationProvider({
           if (parsed.params.sources) {
             const sourceSlugs = parsed.params.sources
               .split(',')
-              .map(slug => slug.trim())
-              .filter(Boolean)
+              .flatMap(slug => { const s = slug.trim(); return s ? [s] : [] })
             if (sourceSlugs.length > 0) {
               await window.electronAPI.sessionCommand(session.id, { type: 'setSources', sourceSlugs })
             }
@@ -1150,7 +1150,7 @@ export function NavigationProvider({
     })
 
     return cleanup
-  }, [workspaceId, navigate])
+  }, [workspaceId, navigate, t])
 
   // =========================================================================
   // INTERNAL NAVIGATION EVENT LISTENER
@@ -1263,28 +1263,34 @@ export function NavigationProvider({
     getLastSelectedSessionId,
     getFirstSessionId,
     navigateToSession,
+    store,
   ])
 
   // =========================================================================
   // CONTEXT VALUE
   // =========================================================================
 
+  const contextValue = useMemo(() => ({
+    navigate,
+    isReady,
+    navigationState,
+    canGoBack,
+    canGoForward,
+    goBack,
+    goForward,
+    updateRightSidebar,
+    toggleRightSidebar,
+    navigateToSource,
+    navigateToSession,
+  }), [
+    navigate, isReady, navigationState,
+    canGoBack, canGoForward, goBack, goForward,
+    updateRightSidebar, toggleRightSidebar,
+    navigateToSource, navigateToSession,
+  ])
+
   return (
-    <NavigationContext.Provider
-      value={{
-        navigate,
-        isReady,
-        navigationState,
-        canGoBack,
-        canGoForward,
-        goBack,
-        goForward,
-        updateRightSidebar,
-        toggleRightSidebar,
-        navigateToSource,
-        navigateToSession,
-      }}
-    >
+    <NavigationContext.Provider value={contextValue}>
       {children}
     </NavigationContext.Provider>
   )

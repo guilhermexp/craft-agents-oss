@@ -20,7 +20,7 @@ export const BROWSER_LIVE_FX_BORDER = {
  * Use this when injecting styles into a foreign DOM (e.g. CDP overlay)
  * where `var(--accent)` would resolve against the website's stylesheet.
  */
-export function resolveBrowserLiveFxBorder(accentColor: string): { color: string; boxShadow: string } {
+function resolveBrowserLiveFxBorder(accentColor: string): { color: string; boxShadow: string } {
   return {
     color: accentColor,
     boxShadow: `inset 0 0 0 1px color-mix(in oklab, ${accentColor} 45%, transparent), inset 0 0 20px color-mix(in oklab, ${accentColor} 28%, transparent)`,

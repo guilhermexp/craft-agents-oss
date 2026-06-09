@@ -16,7 +16,7 @@ import type { Components } from 'react-markdown'
  * instead of crashing React. Always renders both opening and closing tags
  * for consistency (it's escaped text anyway).
  */
-export const UnknownTag: React.FC<{ tagName: string; children?: React.ReactNode }> = ({
+const UnknownTag: React.FC<{ tagName: string; children?: React.ReactNode }> = ({
   tagName,
   children,
 }) => (

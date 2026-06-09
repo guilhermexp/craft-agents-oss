@@ -105,6 +105,7 @@ export function ProviderSelectStep({ onSelect, onSkip, errorMessage }: ProviderS
         {PROVIDER_OPTIONS.map((option) => (
           <button
             key={option.id}
+            type="button"
             onClick={() => onSelect(option.id)}
             className={cn(
               "flex w-full items-start gap-4 rounded-xl bg-foreground-2 p-4 text-left transition-all",
@@ -131,6 +132,7 @@ export function ProviderSelectStep({ onSelect, onSkip, errorMessage }: ProviderS
       {onSkip && (
         <div className="mt-4 text-center">
           <button
+            type="button"
             onClick={onSkip}
             className="text-xs text-muted-foreground hover:text-foreground transition-colors"
           >

@@ -15,7 +15,7 @@ import type { ReactNode } from 'react'
 import type { StoredAttachment, ContentBadge } from '@craft-agent/core'
 import { normalizePath } from '@craft-agent/core/utils'
 import { cn } from '../../lib/utils'
-import { Markdown } from '../markdown'
+import { Markdown } from '../markdown/Markdown'
 import { FileTypeIcon, getFileTypeLabel } from './attachment-helpers'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '../tooltip'
 import { useTranslation } from 'react-i18next'
@@ -131,7 +131,7 @@ function FileBadgeIcon({ badge }: { badge: ContentBadge }) {
   if (badge.type === 'folder') {
     return (
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" className="shrink-0 text-muted-foreground">
-        <path d="M20.5 10C20.5 9.07003 20.5 8.60504 20.3978 8.22354C20.1204 7.18827 19.3117 6.37962 18.2765 6.10222C17.895 6 17.43 6 16.5 6H13.1008C12.4742 6 12.1609 6 11.8739 5.91181C11.6824 5.85298 11.5009 5.76572 11.3353 5.65295C11.0871 5.48389 10.8914 5.23926 10.5 4.75L10.4095 4.63693C10.107 4.25881 9.9558 4.06975 9.7736 3.92674C9.54464 3.74703 9.27921 3.61946 8.99585 3.55294C8.77037 3.5 8.52825 3.5 8.04402 3.5C6.60485 3.5 5.88527 3.5 5.32008 3.74178C4.61056 4.0453 4.0453 4.61056 3.74178 5.32008C3.5 5.88527 3.5 6.60485 3.5 8.04402V10M9.46502 20.5H14.535C16.9102 20.5 18.0978 20.5 18.9301 19.8113C19.7624 19.1226 19.9846 17.9559 20.429 15.6227L20.8217 13.5613C21.1358 11.9121 21.2929 11.0874 20.843 10.5437C20.393 10 19.5536 10 17.8746 10H6.12537C4.44643 10 3.60696 10 3.15704 10.5437C2.70713 11.0874 2.8642 11.9121 3.17835 13.5613L3.57099 15.6227C4.01541 17.9559 4.23763 19.1226 5.06992 19.8113C5.90221 20.5 7.08981 20.5 9.46502 20.5Z"/>
+        <path d="M20.5 10C20.5 9.07 20.5 8.61 20.4 8.22C20.12 7.19 19.31 6.38 18.28 6.1C17.9 6 17.43 6 16.5 6H13.1C12.47 6 12.16 6 11.87 5.91C11.68 5.85 11.5 5.77 11.34 5.65C11.09 5.48 10.89 5.24 10.5 4.75L10.41 4.64C10.11 4.26 9.96 4.07 9.77 3.93C9.54 3.75 9.28 3.62 9 3.55C8.77 3.5 8.53 3.5 8.04 3.5C6.6 3.5 5.89 3.5 5.32 3.74C4.61 4.05 4.05 4.61 3.74 5.32C3.5 5.89 3.5 6.6 3.5 8.04V10M9.47 20.5H14.54C16.91 20.5 18.1 20.5 18.93 19.81C19.76 19.12 19.98 17.96 20.43 15.62L20.82 13.56C21.14 11.91 21.29 11.09 20.84 10.54C20.39 10 19.55 10 17.87 10H6.13C4.45 10 3.61 10 3.16 10.54C2.71 11.09 2.86 11.91 3.18 13.56L3.57 15.62C4.02 17.96 4.24 19.12 5.07 19.81C5.9 20.5 7.09 20.5 9.47 20.5Z"/>
       </svg>
     )
   }
@@ -144,7 +144,7 @@ function FileBadgeIcon({ badge }: { badge: ContentBadge }) {
     // Code file icon (document with < > brackets)
     return (
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted-foreground">
-        <path d="M10.5 2.5C12.1569 2.5 13.5 3.84315 13.5 5.5V6.1C13.5 6.4716 13.5 6.6574 13.5246 6.81287C13.6602 7.66865 14.3313 8.33983 15.1871 8.47538C15.3426 8.5 15.5284 8.5 15.9 8.5H16.5C18.1569 8.5 19.5 9.84315 19.5 11.5M10.5 12.8799C9.70024 13.2985 9.10807 13.8275 8.64232 14.5478C8.51063 14.7515 8.44479 14.8533 8.44489 15.0011C8.44498 15.1488 8.51099 15.2506 8.643 15.4542C9.1095 16.1736 9.70167 16.7028 10.5 17.1225M13.5 12.8799C14.2998 13.2985 14.8919 13.8275 15.3577 14.5478C15.4894 14.7515 15.5552 14.8533 15.5551 15.0011C15.555 15.1488 15.489 15.2506 15.357 15.4542C14.8905 16.1736 14.2983 16.7028 13.5 17.1225M10.9645 2.5H10.6678C8.64635 2.5 7.63561 2.5 6.84835 2.85692C5.96507 3.25736 5.25736 3.96507 4.85692 4.84835C4.5 5.63561 4.5 6.64635 4.5 8.66781V14C4.5 17.2875 4.5 18.9312 5.40796 20.0376C5.57418 20.2401 5.75989 20.4258 5.96243 20.592C7.06878 21.5 8.71252 21.5 12 21.5C15.2875 21.5 16.9312 21.5 18.0376 20.592C18.2401 20.4258 18.4258 20.2401 18.592 20.0376C19.5 18.9312 19.5 17.2875 19.5 14V11.0355C19.5 10.0027 19.5 9.48628 19.4176 8.99414C19.2671 8.09576 18.9141 7.24342 18.3852 6.50177C18.0955 6.09549 17.7303 5.73032 17 5C16.2697 4.26968 15.9045 3.90451 15.4982 3.6148C14.7566 3.08595 13.9042 2.7329 13.0059 2.58243C12.5137 2.5 11.9973 2.5 10.9645 2.5Z"/>
+        <path d="M10.5 2.5C12.16 2.5 13.5 3.84 13.5 5.5V6.1C13.5 6.47 13.5 6.66 13.52 6.81C13.66 7.67 14.33 8.34 15.19 8.48C15.34 8.5 15.53 8.5 15.9 8.5H16.5C18.16 8.5 19.5 9.84 19.5 11.5M10.5 12.88C9.7 13.3 9.11 13.83 8.64 14.55C8.51 14.75 8.44 14.85 8.44 15C8.44 15.15 8.51 15.25 8.64 15.45C9.11 16.17 9.7 16.7 10.5 17.12M13.5 12.88C14.3 13.3 14.89 13.83 15.36 14.55C15.49 14.75 15.56 14.85 15.56 15C15.56 15.15 15.49 15.25 15.36 15.45C14.89 16.17 14.3 16.7 13.5 17.12M10.96 2.5H10.67C8.65 2.5 7.64 2.5 6.85 2.86C5.97 3.26 5.26 3.97 4.86 4.85C4.5 5.64 4.5 6.65 4.5 8.67V14C4.5 17.29 4.5 18.93 5.41 20.04C5.57 20.24 5.76 20.43 5.96 20.59C7.07 21.5 8.71 21.5 12 21.5C15.29 21.5 16.93 21.5 18.04 20.59C18.24 20.43 18.43 20.24 18.59 20.04C19.5 18.93 19.5 17.29 19.5 14V11.04C19.5 10 19.5 9.49 19.42 8.99C19.27 8.1 18.91 7.24 18.39 6.5C18.1 6.1 17.73 5.73 17 5C16.27 4.27 15.9 3.9 15.5 3.61C14.76 3.09 13.9 2.73 13.01 2.58C12.51 2.5 12 2.5 10.96 2.5Z"/>
       </svg>
     )
   }
@@ -152,7 +152,7 @@ function FileBadgeIcon({ badge }: { badge: ContentBadge }) {
   // Generic file icon (document with folded corner)
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted-foreground">
-      <path d="M10.5 2.5C12.1569 2.5 13.5 3.84315 13.5 5.5V6.1C13.5 6.4716 13.5 6.6574 13.5246 6.81287C13.6602 7.66865 14.3313 8.33983 15.1871 8.47538C15.3426 8.5 15.5284 8.5 15.9 8.5H16.5C18.1569 8.5 19.5 9.84315 19.5 11.5M9 16H15M9 12H10M10.9645 2.5H10.6678C8.64635 2.5 7.63561 2.5 6.84835 2.85692C5.96507 3.25736 5.25736 3.96507 4.85692 4.84835C4.5 5.63561 4.5 6.64635 4.5 8.66781V14C4.5 17.2875 4.5 18.9312 5.40796 20.0376C5.57418 20.2401 5.75989 20.4258 5.96243 20.592C7.06878 21.5 8.71252 21.5 12 21.5C15.2875 21.5 16.9312 21.5 18.0376 20.592C18.2401 20.4258 18.4258 20.2401 18.592 20.0376C19.5 18.9312 19.5 17.2875 19.5 14V11.0355C19.5 10.0027 19.5 9.48628 19.4176 8.99414C19.2671 8.09576 18.9141 7.24342 18.3852 6.50177C18.0955 6.09549 17.7303 5.73032 17 5C16.2697 4.26968 15.9045 3.90451 15.4982 3.6148C14.7566 3.08595 13.9042 2.7329 13.0059 2.58243C12.5137 2.5 11.9973 2.5 10.9645 2.5Z"/>
+      <path d="M10.5 2.5C12.16 2.5 13.5 3.84 13.5 5.5V6.1C13.5 6.47 13.5 6.66 13.52 6.81C13.66 7.67 14.33 8.34 15.19 8.48C15.34 8.5 15.53 8.5 15.9 8.5H16.5C18.16 8.5 19.5 9.84 19.5 11.5M9 16H15M9 12H10M10.96 2.5H10.67C8.65 2.5 7.64 2.5 6.85 2.86C5.97 3.26 5.26 3.97 4.86 4.85C4.5 5.64 4.5 6.65 4.5 8.67V14C4.5 17.29 4.5 18.93 5.41 20.04C5.57 20.24 5.76 20.43 5.96 20.59C7.07 21.5 8.71 21.5 12 21.5C15.29 21.5 16.93 21.5 18.04 20.59C18.24 20.43 18.43 20.24 18.59 20.04C19.5 18.93 19.5 17.29 19.5 14V11.04C19.5 10 19.5 9.49 19.42 8.99C19.27 8.1 18.91 7.24 18.39 6.5C18.1 6.1 17.73 5.73 17 5C16.27 4.27 15.9 3.9 15.5 3.61C14.76 3.09 13.9 2.73 13.01 2.58C12.51 2.5 12 2.5 10.96 2.5Z"/>
     </svg>
   )
 }
@@ -178,7 +178,9 @@ function InlineFileBadge({
   const badgeContent = (
     <span
       role={isClickable ? 'button' : undefined}
+      tabIndex={isClickable ? 0 : undefined}
       onClick={() => isClickable && onFileClick!(badge.filePath!)}
+      onKeyDown={isClickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') onFileClick!(badge.filePath!) } : undefined}
       className={cn(
         "inline-flex items-center gap-1 h-[22px] px-1.5 mx-0.5 rounded-[5px] bg-background shadow-minimal text-[12px] align-middle",
         isClickable && "hover:bg-foreground/5 transition-colors cursor-pointer"
@@ -239,19 +241,19 @@ function renderContentWithBadges(
   }
 
   // Sort badges by start position
-  const sortedBadges = [...badges].sort((a, b) => a.start - b.start)
+  const sortedBadges = badges.toSorted((a, b) => a.start - b.start)
 
   const elements: ReactNode[] = []
   let lastEnd = 0
 
-  sortedBadges.forEach((badge, i) => {
+  sortedBadges.forEach((badge) => {
     // Add text before this badge
     if (badge.start > lastEnd) {
       const textBefore = content.slice(lastEnd, badge.start)
       if (textBefore.trim()) {
         elements.push(
           <Markdown
-            key={`text-${i}`}
+            key={`text-${badge.start}`}
             mode="minimal"
             onUrlClick={onUrlClick}
             onFileClick={onFileClick}
@@ -270,13 +272,13 @@ function renderContentWithBadges(
     // Source/skill badges show inline with the original text
     // Note: edit_request badges are filtered out and rendered above the bubble separately
     if (badge.type === 'context') {
-      elements.push(<ContextBadge key={`badge-${i}`} badge={badge} />)
+      elements.push(<ContextBadge key={`badge-${badge.start}`} badge={badge} />)
     } else if (badge.type === 'command') {
-      elements.push(<CommandBadge key={`badge-${i}`} badge={badge} />)
+      elements.push(<CommandBadge key={`badge-${badge.start}`} badge={badge} />)
     } else if (badge.type === 'file' || badge.type === 'folder') {
-      elements.push(<InlineFileBadge key={`badge-${i}`} badge={badge} onFileClick={onFileClick} />)
+      elements.push(<InlineFileBadge key={`badge-${badge.start}`} badge={badge} onFileClick={onFileClick} />)
     } else {
-      elements.push(<InlineBadge key={`badge-${i}`} badge={badge} />)
+      elements.push(<InlineBadge key={`badge-${badge.start}`} badge={badge} />)
     }
 
     lastEnd = badge.end
@@ -355,7 +357,7 @@ export function UserMessageBubble({
   if (hasEditRequestBadges) {
     // Sort badges by start position descending so we can remove from end to start
     // (this preserves positions for earlier removals)
-    const sortedBadges = [...editRequestBadges].sort((a, b) => b.start - a.start)
+    const sortedBadges = editRequestBadges.toSorted((a, b) => b.start - a.start)
     for (const badge of sortedBadges) {
       displayContent = displayContent.slice(0, badge.start) + displayContent.slice(badge.end)
     }
@@ -372,10 +374,12 @@ export function UserMessageBubble({
             const hasThumbnail = !!att.thumbnailBase64
 
             return (
-              <div
+              <button
                 key={att.id || i}
-                className="shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                type="button"
+                className="shrink-0 cursor-pointer hover:opacity-80 transition-opacity bg-transparent border-0 p-0 text-left"
                 onClick={() => att.storedPath && onFileClick?.(att.storedPath)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') att.storedPath && onFileClick?.(att.storedPath) }}
                 title={t('chat.clickToOpen', { name: att.name })}
               >
                 {isImage ? (
@@ -417,7 +421,7 @@ export function UserMessageBubble({
                     </div>
                   </div>
                 )}
-              </div>
+              </button>
             )
           })}
         </div>
@@ -426,8 +430,8 @@ export function UserMessageBubble({
       {/* Badges row - edit request badges above text bubble */}
       {hasEditRequestBadges && (
         <div className="flex gap-2 justify-end max-w-[80%] flex-wrap">
-          {editRequestBadges.map((badge, i) => (
-            <EditRequestBadge key={`edit-badge-${i}`} badge={badge} />
+          {editRequestBadges.map((badge) => (
+            <EditRequestBadge key={`edit-badge-${badge.start}`} badge={badge} />
           ))}
         </div>
       )}

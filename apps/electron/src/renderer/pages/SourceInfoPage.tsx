@@ -217,7 +217,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
     return () => {
       isMounted = false
     }
-  }, [workspaceId, sourceSlug])
+  }, [workspaceId, sourceSlug, t])
 
   // Load MCP tools when source is loaded and is MCP type
   useEffect(() => {
@@ -254,7 +254,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
     return () => {
       isMounted = false
     }
-  }, [source, workspaceId, sourceSlug])
+  }, [source, workspaceId, sourceSlug, t])
 
   // Load workspace settings (for localMcpEnabled)
   useEffect(() => {
@@ -347,7 +347,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
         description: err instanceof Error ? err.message : undefined,
       })
     }
-  }, [source, workspaceId, sourceSlug, onDelete, navigateToSource])
+  }, [source, workspaceId, sourceSlug, t, onDelete, navigateToSource])
 
   // Handle opening in new window
   const handleOpenInNewWindow = useCallback(() => {
@@ -357,6 +357,16 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
   // Get source name for header
   const sourceName = source?.config.name || sourceSlug
 
+  const titleMenu = useMemo(() => (
+    <SourceMenu
+      sourceSlug={sourceSlug}
+      sourceName={sourceName}
+      onOpenInNewWindow={handleOpenInNewWindow}
+      onShowInFinder={handleOpenSourceFolder}
+      onDelete={handleDelete}
+    />
+  ), [sourceSlug, sourceName, handleOpenInNewWindow, handleOpenSourceFolder, handleDelete])
+
   return (
     <Info_Page
       loading={loading}
@@ -365,15 +375,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
     >
       <Info_Page.Header
         title={sourceName}
-        titleMenu={
-          <SourceMenu
-            sourceSlug={sourceSlug}
-            sourceName={sourceName}
-            onOpenInNewWindow={handleOpenInNewWindow}
-            onShowInFinder={handleOpenSourceFolder}
-            onDelete={handleDelete}
-          />
-        }
+        titleMenu={titleMenu}
       />
 
       {source && (
@@ -425,6 +427,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
               {sourceUrl && (
                 <Info_Table.Row label={t('common.url')}>
                   <button
+                    type="button"
                     onClick={handleOpenUrl}
                     className="truncate hover:underline text-foreground focus:outline-none focus-visible:underline text-left block w-full"
                   >

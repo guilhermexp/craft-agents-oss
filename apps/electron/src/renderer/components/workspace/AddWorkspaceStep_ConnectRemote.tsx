@@ -70,16 +70,47 @@ export function AddWorkspaceStep_ConnectRemote({
   const [serverUrl, setServerUrl] = useState(initialUrl ?? '')
   const [token, setToken] = useState(initialToken ?? '')
   const [homeDir, setHomeDir] = useState('')
-  const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle')
-  const [testError, setTestError] = useState<string | null>(null)
-  const [remoteWorkspaces, setRemoteWorkspaces] = useState<Array<{ id: string; name: string }>>([])
-  const [selectedValue, setSelectedValue] = useState<string | null>(null) // workspace ID or CREATE_NEW_VALUE
-  const [newWorkspaceName, setNewWorkspaceName] = useState('')
-  const [serverVersion, setServerVersion] = useState<string | null>(null)
   const selectPortalRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     window.electronAPI.getHomeDir().then(setHomeDir)
+  }, [])
+
+  // All test-result state is stored together with the (url, token) pair it was computed for.
+  // Derived values fall back to their initial values automatically when serverUrl/token change,
+  // eliminating the need for a reset effect.
+  interface ConnectionTestResult {
+    forUrl: string
+    forToken: string
+    state: 'testing' | 'ok' | 'error'
+    error: string | null
+    workspaces: Array<{ id: string; name: string }>
+    selectedValue: string | null
+    newWorkspaceName: string
+    serverVersion: string | null
+  }
+  const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null)
+
+  // Derive whether the stored result is still valid for the current credentials.
+  // Using a narrowed local binding so TypeScript knows `currentResult` is non-null.
+  const currentResult =
+    testResult !== null && testResult.forUrl === serverUrl && testResult.forToken === token
+      ? testResult
+      : null
+  const testState: 'idle' | 'testing' | 'ok' | 'error' = currentResult?.state ?? 'idle'
+  const testError = currentResult?.error ?? null
+  const remoteWorkspaces = currentResult?.workspaces ?? []
+  const selectedValue = currentResult?.selectedValue ?? null
+  const newWorkspaceName = currentResult?.newWorkspaceName ?? ''
+  // serverVersion intentionally not reset when URL/token change (preserves original behaviour)
+  const serverVersion = testResult?.serverVersion ?? null
+
+  // Helpers to mutate user-editable fields inside the current result
+  const setSelectedValue = useCallback((v: string | null) => {
+    setTestResult((prev) => prev ? { ...prev, selectedValue: v } : prev)
+  }, [])
+  const setNewWorkspaceName = useCallback((v: string) => {
+    setTestResult((prev) => prev ? { ...prev, newWorkspaceName: v } : prev)
   }, [])
 
   const isCreateNew = selectedValue === CREATE_NEW_VALUE
@@ -87,43 +118,57 @@ export function AddWorkspaceStep_ConnectRemote({
   // Fresh server (no workspaces at all) — always in create mode
   const isFreshServer = testState === 'ok' && remoteWorkspaces.length === 0
 
-  // Reset test state when URL or token changes
-  useEffect(() => {
-    setTestState('idle')
-    setTestError(null)
-    setRemoteWorkspaces([])
-    setSelectedValue(null)
-    setNewWorkspaceName('')
-  }, [serverUrl, token])
-
   const handleTestConnection = useCallback(async () => {
     if (!serverUrl || !token) return
-    setTestState('testing')
-    setTestError(null)
+    // Mark as testing — preserve any previously loaded serverVersion
+    setTestResult((prev) => ({
+      forUrl: serverUrl,
+      forToken: token,
+      state: 'testing',
+      error: null,
+      workspaces: [],
+      selectedValue: null,
+      newWorkspaceName: '',
+      serverVersion: prev?.serverVersion ?? null,
+    }))
     try {
       const result = await window.electronAPI.testRemoteConnection(serverUrl, token)
       console.log('[ConnectRemote] testRemoteConnection result:', JSON.stringify(result, null, 2))
       if (result.ok) {
-        setTestState('ok')
-        setServerVersion(result.serverVersion ?? null)
-        if (result.needsWorkspace) {
-          // Fresh server — no workspaces, go straight to create mode
-          setRemoteWorkspaces([])
-          setSelectedValue(null)
-        } else {
-          const workspaces = result.remoteWorkspaces ?? []
-          setRemoteWorkspaces(workspaces)
-          if (workspaces.length === 1) {
-            setSelectedValue(workspaces[0]!.id)
-          }
-        }
+        const workspaces = result.needsWorkspace ? [] : (result.remoteWorkspaces ?? [])
+        setTestResult({
+          forUrl: serverUrl,
+          forToken: token,
+          state: 'ok',
+          error: null,
+          workspaces,
+          selectedValue: workspaces.length === 1 ? workspaces[0]!.id : null,
+          newWorkspaceName: '',
+          serverVersion: result.serverVersion ?? null,
+        })
       } else {
-        setTestState('error')
-        setTestError(result.error || 'Connection failed')
+        setTestResult((prev) => ({
+          forUrl: serverUrl,
+          forToken: token,
+          state: 'error',
+          error: result.error || 'Connection failed',
+          workspaces: [],
+          selectedValue: null,
+          newWorkspaceName: '',
+          serverVersion: prev?.serverVersion ?? null,
+        }))
       }
     } catch (err) {
-      setTestState('error')
-      setTestError(err instanceof Error ? err.message : 'Connection failed')
+      setTestResult((prev) => ({
+        forUrl: serverUrl,
+        forToken: token,
+        state: 'error',
+        error: err instanceof Error ? err.message : 'Connection failed',
+        workspaces: [],
+        selectedValue: null,
+        newWorkspaceName: '',
+        serverVersion: prev?.serverVersion ?? null,
+      }))
     }
   }, [serverUrl, token])
 
@@ -140,8 +185,11 @@ export function AddWorkspaceStep_ConnectRemote({
         })
         return
       } catch (err) {
-        setTestState('error')
-        setTestError(err instanceof Error ? err.message : 'Failed to reconnect workspace')
+        setTestResult((prev) => prev ? {
+          ...prev,
+          state: 'error',
+          error: err instanceof Error ? err.message : 'Failed to reconnect workspace',
+        } : prev)
         return
       }
     }
@@ -163,8 +211,11 @@ export function AddWorkspaceStep_ConnectRemote({
         const finalPath = path || `${defaultBasePath}/${slug}`
         await onCreate(finalPath, name, { url: serverUrl, token, remoteWorkspaceId: created.id })
       } catch (err) {
-        setTestState('error')
-        setTestError(err instanceof Error ? err.message : 'Failed to create workspace on remote server')
+        setTestResult((prev) => prev ? {
+          ...prev,
+          state: 'error',
+          error: err instanceof Error ? err.message : 'Failed to create workspace on remote server',
+        } : prev)
         return
       }
     } else if (selectedWorkspace) {
@@ -188,6 +239,7 @@ export function AddWorkspaceStep_ConnectRemote({
     <AddWorkspaceContainer>
       {/* Back button */}
       <button
+        type="button"
         onClick={onBack}
         disabled={isCreating}
         className={cn(

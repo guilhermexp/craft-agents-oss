@@ -6,7 +6,6 @@
  */
 
 import { openSync, readSync, closeSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'fs';
-import { open, readFile } from 'fs/promises';
 import { dirname } from 'path';
 import type { SessionHeader, StoredSession, StoredMessage, SessionTokenUsage } from './types.ts';
 import type { PermissionMode } from '../agent/mode-types.ts';
@@ -250,53 +249,6 @@ function extractPreview(messages: StoredMessage[]): string | undefined {
     .trim();
 
   return sanitized.substring(0, 150) || undefined;
-}
-
-/**
- * Async version of readSessionHeader for parallel I/O.
- * Uses fs/promises for non-blocking reads.
- */
-export async function readSessionHeaderAsync(sessionFile: string): Promise<SessionHeader | null> {
-  try {
-    const handle = await open(sessionFile, 'r');
-    try {
-      const buffer = Buffer.alloc(8192);
-      const { bytesRead } = await handle.read(buffer, 0, 8192, 0);
-      const content = buffer.toString('utf-8', 0, bytesRead);
-      const firstNewline = content.indexOf('\n');
-      const firstLine = firstNewline > 0 ? content.slice(0, firstNewline) : content;
-      const parsed = safeJsonParse(expandSessionPath(firstLine, dirname(sessionFile))) as SessionHeader;
-      return normalizeHeaderPermissionModes(parsed);
-    } finally {
-      await handle.close();
-    }
-  } catch (error) {
-    // ENOENT is expected for a freshly-created/restored session whose jsonl
-    // hasn't been written yet — don't log it as a failure (just noise).
-    if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-      debug('[jsonl] Failed to read session header async:', sessionFile, error);
-    }
-    return null;
-  }
-}
-
-/**
- * Read only messages from a JSONL file (skips header).
- * Used for lazy loading when session is selected.
- * Resilient to corrupted/truncated lines (skips them instead of failing entirely).
- */
-export function readSessionMessages(sessionFile: string): StoredMessage[] {
-  try {
-    const content = readFileSync(sessionFile, 'utf-8');
-    const lines = content.split('\n').filter(Boolean);
-    // Skip first line (header), expand session path tokens, parse rest as messages resiliently
-    const sessionDir = dirname(sessionFile);
-    const expandedLines = lines.slice(1).map(line => expandSessionPath(line, sessionDir));
-    return parseMessagesResilient(expandedLines);
-  } catch (error) {
-    debug('[jsonl] Failed to read session messages:', sessionFile, error);
-    return [];
-  }
 }
 
 /**

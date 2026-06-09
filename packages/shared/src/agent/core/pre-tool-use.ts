@@ -128,7 +128,7 @@ export const FILE_PATH_TOOLS = new Set([
 export const CONFIG_WRITE_TOOLS = new Set(['Write', 'Edit']);
 
 /** File tools blocked for labels domain. */
-export const LABELS_BLOCKED_FILE_TOOLS = new Set(['Read', 'Write', 'Edit']);
+const LABELS_BLOCKED_FILE_TOOLS = new Set(['Read', 'Write', 'Edit']);
 
 
 // ============================================================
@@ -474,7 +474,7 @@ function detectCliNamespaceFromConfigDetection(detection: ConfigFileDetection): 
  * - skills/{slug}/SKILL.md: redirect on Write/Edit
  * - automations.json: redirect on Write/Edit
  */
-export function getConfigCliRedirect(
+function getConfigCliRedirect(
   toolName: string,
   input: Record<string, unknown>,
   workspaceRootPath: string,
@@ -521,7 +521,7 @@ export function getConfigCliRedirect(
  * Block bash commands that operate on guarded config paths unless they use craft-agent commands.
  * Current guarded domains in Bash are declared in shared CLI domain policy.
  */
-export function getConfigDomainBashRedirect(
+function getConfigDomainBashRedirect(
   input: Record<string, unknown>,
   workspaceRootPath: string,
   workingDirectory?: string,

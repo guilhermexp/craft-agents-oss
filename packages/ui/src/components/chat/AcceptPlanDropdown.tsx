@@ -40,34 +40,8 @@ export function AcceptPlanDropdown({
   const effectiveAcceptOptionLabel = acceptOptionLabel ?? t('plan.accept')
   const [isOpen, setIsOpen] = useState(false)
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null)
-  const triggerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
-
-  // Calculate menu position relative to trigger
-  // Prefers below the button, falls back to above if insufficient space
-  const updatePosition = useCallback(() => {
-    if (!triggerRef.current) return
-
-    const rect = triggerRef.current.getBoundingClientRect()
-    const menuWidth = 280
-    const menuHeight = 120 // Approximate height for 2 items with subtitles
-    const gap = 4
-
-    // Check if there's enough space below the button
-    const spaceBelow = window.innerHeight - rect.bottom
-    const top = spaceBelow >= menuHeight + gap
-      ? rect.bottom + gap  // Position below
-      : rect.top - menuHeight - gap  // Position above
-
-    let left = rect.right - menuWidth
-    // Keep menu within viewport horizontally
-    if (left < 8) left = 8
-    if (left + menuWidth > window.innerWidth - 8) {
-      left = window.innerWidth - menuWidth - 8
-    }
-
-    setPosition({ top, left })
-  }, [])
 
   const handleToggle = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
@@ -112,13 +86,6 @@ export function AcceptPlanDropdown({
     onAcceptWithCompact()
   }, [handleClose, onAcceptWithCompact])
 
-  // Update position when opening
-  useEffect(() => {
-    if (isOpen) {
-      updatePosition()
-    }
-  }, [isOpen, updatePosition])
-
   // Click outside detection
   useEffect(() => {
     if (!isOpen) return
@@ -152,30 +119,26 @@ export function AcceptPlanDropdown({
   return (
     <>
       {/* Trigger button - matches existing Accept Plan button styling */}
-      <div
+      <button
         ref={triggerRef}
+        type="button"
         onClick={handleToggle}
-        className="inline-flex"
+        className={cn(
+          "h-[28px] pl-2.5 pr-2 text-xs font-medium rounded-[6px] flex items-center gap-1.5 transition-all",
+          "bg-success/5 text-success hover:bg-success/10 shadow-tinted",
+          className
+        )}
+        style={{ '--shadow-color': '34, 136, 82' } as React.CSSProperties}
       >
-        <button
-          type="button"
-          className={cn(
-            "h-[28px] pl-2.5 pr-2 text-xs font-medium rounded-[6px] flex items-center gap-1.5 transition-all",
-            "bg-success/5 text-success hover:bg-success/10 shadow-tinted",
-            className
-          )}
-          style={{ '--shadow-color': '34, 136, 82' } as React.CSSProperties}
-        >
-          <svg className="size-3.5" viewBox="0 0 25 24" fill="currentColor">
-            <path fillRule="nonzero" d="M13.7207031,22.6523438 C13.264974,22.6523438 12.9361979,22.4895833 12.734375,22.1640625 C12.5325521,21.8385417 12.360026,21.4316406 12.2167969,20.9433594 L10.6640625,15.7871094 C10.5729167,15.4615885 10.5403646,15.1995443 10.5664062,15.0009766 C10.5924479,14.8024089 10.6998698,14.6022135 10.8886719,14.4003906 L20.859375,3.6484375 C20.9179688,3.58984375 20.9472656,3.52473958 20.9472656,3.453125 C20.9472656,3.38151042 20.921224,3.32291667 20.8691406,3.27734375 C20.8170573,3.23177083 20.7568359,3.20735677 20.6884766,3.20410156 C20.6201172,3.20084635 20.5566406,3.22851562 20.4980469,3.28710938 L9.78515625,13.296875 C9.5703125,13.4921875 9.36197917,13.601237 9.16015625,13.6240234 C8.95833333,13.6468099 8.70117188,13.609375 8.38867188,13.5117188 L3.11523438,11.9101562 C2.64648438,11.7669271 2.25911458,11.5960286 1.953125,11.3974609 C1.64713542,11.1988932 1.49414062,10.875 1.49414062,10.4257812 C1.49414062,10.0742188 1.63411458,9.77148438 1.9140625,9.51757812 C2.19401042,9.26367188 2.5390625,9.05859375 2.94921875,8.90234375 L19.7460938,2.46679688 C19.9739583,2.38216146 20.1871745,2.31542969 20.3857422,2.26660156 C20.5843099,2.21777344 20.764974,2.19335938 20.9277344,2.19335938 C21.2467448,2.19335938 21.4973958,2.28450521 21.6796875,2.46679688 C21.8619792,2.64908854 21.953125,2.89973958 21.953125,3.21875 C21.953125,3.38802083 21.9287109,3.5703125 21.8798828,3.765625 C21.8310547,3.9609375 21.7643229,4.17252604 21.6796875,4.40039062 L15.2832031,21.109375 C15.1009115,21.578125 14.8828125,21.952474 14.6289062,22.2324219 C14.375,22.5123698 14.0722656,22.6523438 13.7207031,22.6523438 Z" />
-          </svg>
-          <span>{effectiveAcceptLabel}</span>
-          <ChevronDown className={cn(
-            "size-3 transition-transform duration-150",
-            isOpen && "rotate-180"
-          )} />
-        </button>
-      </div>
+        <svg className="size-3.5" viewBox="0 0 25 24" fill="currentColor">
+          <path fillRule="nonzero" d="M13.72,22.65 C13.26,22.65 12.94,22.49 12.73,22.16 C12.53,21.84 12.36,21.43 12.22,20.94 L10.66,15.79 C10.57,15.46 10.54,15.2 10.57,15 C10.59,14.8 10.7,14.6 10.89,14.4 L20.86,3.65 C20.92,3.59 20.95,3.52 20.95,3.45 C20.95,3.38 20.92,3.32 20.87,3.28 C20.82,3.23 20.76,3.21 20.69,3.2 C20.62,3.2 20.56,3.23 20.5,3.29 L9.79,13.3 C9.57,13.49 9.36,13.6 9.16,13.62 C8.96,13.65 8.7,13.61 8.39,13.51 L3.12,11.91 C2.65,11.77 2.26,11.6 1.95,11.4 C1.65,11.2 1.49,10.88 1.49,10.43 C1.49,10.07 1.63,9.77 1.91,9.52 C2.19,9.26 2.54,9.06 2.95,8.9 L19.75,2.47 C19.97,2.38 20.19,2.32 20.39,2.27 C20.58,2.22 20.76,2.19 20.93,2.19 C21.25,2.19 21.5,2.28 21.68,2.47 C21.86,2.65 21.95,2.9 21.95,3.22 C21.95,3.39 21.93,3.57 21.88,3.77 C21.83,3.96 21.76,4.17 21.68,4.4 L15.28,21.11 C15.1,21.58 14.88,21.95 14.63,22.23 C14.38,22.51 14.07,22.65 13.72,22.65 Z" />
+        </svg>
+        <span>{effectiveAcceptLabel}</span>
+        <ChevronDown className={cn(
+          "size-3 transition-transform duration-150",
+          isOpen && "rotate-180"
+        )} />
+      </button>
 
       {/* Dropdown menu - rendered via portal */}
       {isOpen && position && ReactDOM.createPortal(

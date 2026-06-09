@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { ChevronRight } from 'lucide-react'
-import { motion, AnimatePresence } from 'motion/react'
+import { LazyMotion, m, domAnimation, AnimatePresence } from 'motion/react'
 import { cn } from '../../lib/utils'
 
 /**
@@ -8,19 +8,21 @@ import { cn } from '../../lib/utils'
  */
 function AnimatedCollapsibleContent({ isOpen, children }: { isOpen: boolean; children: React.ReactNode }) {
   return (
-    <AnimatePresence initial={false}>
-      {isOpen && (
-        <motion.div
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: 0.2, ease: 'easeInOut' }}
-          className="overflow-hidden"
-        >
-          {children}
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <LazyMotion features={domAnimation}>
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <m.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            {children}
+          </m.div>
+        )}
+      </AnimatePresence>
+    </LazyMotion>
   )
 }
 
@@ -65,26 +67,31 @@ export function CollapsibleSection({
     <div className="markdown-collapsible-section" data-section-id={sectionId}>
       {/* Heading with toggle trigger */}
       <div
+        role={hasContent ? 'button' : undefined}
+        tabIndex={hasContent ? 0 : undefined}
         className={cn(
           'relative group',
           hasContent && 'cursor-pointer'
         )}
         onClick={() => hasContent && onToggle(sectionId)}
+        onKeyDown={(e) => { if (hasContent && (e.key === 'Enter' || e.key === ' ')) onToggle(sectionId) }}
       >
         {/* Chevron - always visible when collapsed, hover-only when expanded */}
-        <motion.div
-          initial={false}
-          animate={{ rotate: isExpanded ? 90 : 0 }}
-          transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-          className={cn(
-            'absolute -left-4 top-[5px] select-none transition-opacity',
-            !hasContent && 'opacity-0',
-            hasContent && isCollapsed && 'opacity-100',
-            hasContent && isExpanded && 'opacity-0 group-hover:opacity-100'
-          )}
-        >
-          <ChevronRight className="size-3 text-muted-foreground" />
-        </motion.div>
+        <LazyMotion features={domAnimation}>
+          <m.div
+            initial={false}
+            animate={{ rotate: isExpanded ? 90 : 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            className={cn(
+              'absolute -left-4 top-[5px] select-none transition-opacity',
+              !hasContent && 'opacity-0',
+              hasContent && isCollapsed && 'opacity-100',
+              hasContent && isExpanded && 'opacity-0 group-hover:opacity-100'
+            )}
+          >
+            <ChevronRight className="size-3 text-muted-foreground" />
+          </m.div>
+        </LazyMotion>
 
         {/* Heading content */}
         {heading}

@@ -72,6 +72,7 @@ export function SendResourceToWorkspaceDialog({
 
   // All workspaces except current (both local and remote)
   const targetWorkspaces = workspaces.filter(w => w.id !== activeWorkspaceId)
+  const targetWorkspaceIds = targetWorkspaces.map(w => w.id).join(',')
 
   // Health-check remote workspaces when dialog opens
   useEffect(() => {
@@ -108,7 +109,7 @@ export function SendResourceToWorkspaceDialog({
     }
 
     return () => abort.abort()
-  }, [open, targetWorkspaces.map(w => w.id).join(',')])
+  }, [open, targetWorkspaceIds])
 
   const handleSend = useCallback(async () => {
     if (!selectedWorkspaceId || !activeWorkspaceId || resourceIds.length === 0) return

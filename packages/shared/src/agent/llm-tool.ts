@@ -98,7 +98,7 @@ const MAX_TOTAL_CONTENT_BYTES = 2_000_000; // 2MB total across all attachments
 // These provide structured output schemas for common use cases
 // ============================================================================
 
-export const OUTPUT_FORMATS = {
+const OUTPUT_FORMATS = {
   summary: {
     type: 'object' as const,
     properties: {
@@ -339,7 +339,7 @@ type AttachmentResult =
   | { type: 'image'; base64: string; mediaType: string }
   | { type: 'error'; message: string };
 
-export async function processAttachment(
+async function processAttachment(
   input: string | AttachmentInput,
   index: number,
   basePath?: string,

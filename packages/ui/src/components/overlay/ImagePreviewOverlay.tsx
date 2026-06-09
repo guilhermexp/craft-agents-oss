@@ -48,8 +48,9 @@ export function ImagePreviewOverlay({
   const [activeIdx, setActiveIdx] = useState(initialIndex)
   const [contentCache, setContentCache] = useState<Record<string, string>>({})
   const [dimensionsCache, setDimensionsCache] = useState<Record<string, { width: number; height: number }>>({})
-  const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  // Store discriminated load state so stale error/loading auto-evict when activeItem.src changes
+  const [errorEntry, setErrorEntry] = useState<{ message: string; forSrc: string } | null>(null)
+  const [loadingForSrc, setLoadingForSrc] = useState<string | null>(null)
 
   const containerRef = React.useRef<HTMLDivElement>(null)
 
@@ -73,6 +74,9 @@ export function ImagePreviewOverlay({
   const activeItem = resolvedItems[activeIdx]
   const activeDataUrl = activeItem ? contentCache[activeItem.src] : null
   const activeDimensions = activeItem ? dimensionsCache[activeItem.src] : null
+  // Derived: only show error/loading when they belong to the currently active src
+  const error = errorEntry !== null && errorEntry.forSrc === activeItem?.src ? errorEntry.message : null
+  const isLoading = loadingForSrc === activeItem?.src
 
   useEffect(() => {
     if (isOpen) {
@@ -89,36 +93,33 @@ export function ImagePreviewOverlay({
 
   useEffect(() => {
     if (!isOpen || !activeItem?.src) return
-    if (contentCache[activeItem.src]) {
-      setError(null)
-      return
-    }
+    if (contentCache[activeItem.src]) return
+    const src = activeItem.src
 
     let cancelled = false
-    setIsLoading(true)
-    setError(null)
+    setLoadingForSrc(src)
 
-    loadDataUrl(activeItem.src)
+    loadDataUrl(src)
       .then((url) => {
         if (!cancelled) {
-          setContentCache((prev) => ({ ...prev, [activeItem.src]: url }))
+          setContentCache((prev) => ({ ...prev, [src]: url }))
           const img = new window.Image()
           img.onload = () => {
             if (cancelled) return
             if (!img.naturalWidth || !img.naturalHeight) return
             setDimensionsCache(prev => ({
               ...prev,
-              [activeItem.src]: { width: img.naturalWidth, height: img.naturalHeight },
+              [src]: { width: img.naturalWidth, height: img.naturalHeight },
             }))
           }
           img.src = url
-          setIsLoading(false)
+          setLoadingForSrc((prev) => (prev === src ? null : prev))
         }
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load image')
-          setIsLoading(false)
+          setErrorEntry({ message: err instanceof Error ? err.message : 'Failed to load image', forSrc: src })
+          setLoadingForSrc((prev) => (prev === src ? null : prev))
         }
       })
 
@@ -165,6 +166,9 @@ export function ImagePreviewOverlay({
     >
       <div
         ref={containerRef}
+        role="application"
+        aria-label="Image viewer"
+        tabIndex={0}
         className="min-h-full flex items-center justify-center p-4 select-none"
         onMouseDown={onMouseDown}
         onDoubleClick={onDoubleClick}

@@ -11,7 +11,7 @@
 
 import type { CSSProperties } from 'react'
 import { cn } from '../../lib/utils'
-import { Markdown } from '../markdown'
+import { Markdown } from '../markdown/Markdown'
 
 export type SystemMessageType = 'error' | 'info' | 'warning' | 'system'
 

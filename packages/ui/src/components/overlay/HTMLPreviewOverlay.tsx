@@ -88,14 +88,15 @@ export function HTMLPreviewOverlay({
     if (isOpen) {
       setActiveIdx(initialIndex)
       setContentSize(null)
+      setLoadError(null)
     }
   }, [isOpen, initialIndex])
 
-  // Reset size when active item changes
-  React.useEffect(() => {
+  const handleSelectItem = React.useCallback((idx: number) => {
+    setActiveIdx(idx)
     setContentSize(null)
     setLoadError(null)
-  }, [activeIdx])
+  }, [])
 
   // Load content for active item if not cached
   React.useEffect(() => {
@@ -150,7 +151,7 @@ export function HTMLPreviewOverlay({
   // Header actions: item navigation + copy button
   const headerActions = (
     <div className="flex items-center gap-2">
-      <ItemNavigator items={resolvedItems} activeIndex={activeIdx} onSelect={setActiveIdx} size="md" />
+      <ItemNavigator items={resolvedItems} activeIndex={activeIdx} onSelect={handleSelectItem} size="md" />
       <CopyButton content={activeContent || ''} label="Copy HTML" className="bg-background shadow-minimal" />
     </div>
   )

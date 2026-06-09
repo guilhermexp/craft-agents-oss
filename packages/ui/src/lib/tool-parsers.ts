@@ -148,7 +148,7 @@ export function parseGlobResult(
  * Converts raw JSON arrays in "Links: [...]" to formatted markdown lists.
  * Handles multiple Links sections in a single result.
  */
-export function parseWebSearchResult(rawContent: string): string {
+function parseWebSearchResult(rawContent: string): string {
   // Find all Links: [...] patterns (may span multiple lines)
   // Use a function replacer to process each match individually
   return rawContent.replace(/Links: (\[[\s\S]*?\])(?=\n|$)/g, (match, jsonArray) => {
@@ -445,7 +445,7 @@ function formatCliValue(value: unknown): string {
 }
 
 /** Build a deterministic, Bash-like command preview from tool name + input. */
-export function formatToolCommandPreview(
+function formatToolCommandPreview(
   toolName: string | undefined,
   input: Record<string, unknown> | undefined,
 ): string | undefined {

@@ -19,17 +19,11 @@ import { HermesLogsConfig } from './HermesLogsConfig'
 import { HermesMessengersConfig } from './HermesMessengersConfig'
 import { HermesProfilesConfig } from './HermesProfilesConfig'
 import { HermesSkillsConfig } from './HermesSkillsConfig'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import type {
   HermesLogFileInfo,
   HermesRuntimeDetailsResult,
   HermesSkillInfo,
 } from '@craft-agent/shared/protocol'
-
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'hermes',
-}
 
 function formatHermesRuntimeVersion(runtime?: HermesRuntimeDetailsResult | null): string {
   const version = runtime?.version?.trim()

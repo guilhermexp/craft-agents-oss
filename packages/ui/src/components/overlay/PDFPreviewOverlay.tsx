@@ -118,6 +118,13 @@ export function PDFPreviewOverlay({
     [pdfData]
   )
 
+  // Memoize loading element so Document doesn't receive a new JSX reference each render
+  const renderingLabel = t('common.rendering')
+  const documentLoading = useMemo(
+    () => <div className="text-muted-foreground text-sm">{renderingLabel}</div>,
+    [renderingLabel]
+  )
+
   // Header actions: item navigation + copy button
   const headerActions = (
     <div className="flex items-center gap-2">
@@ -150,7 +157,7 @@ export function PDFPreviewOverlay({
             options={PDF_OPTIONS}
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={onDocumentLoadError}
-            loading={<div className="text-muted-foreground text-sm">{t('common.rendering')}</div>}
+            loading={documentLoading}
           >
             {Array.from({ length: numPages }, (_, i) => (
               <Page

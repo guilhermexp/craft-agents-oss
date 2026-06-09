@@ -96,11 +96,16 @@ interface CronFieldProps {
 function CronField({ field, value, onChange }: CronFieldProps) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+      <label
+        htmlFor={`cron-field-${field.label.toLowerCase()}`}
+        className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider"
+      >
         {field.label}
       </label>
       <input
+        id={`cron-field-${field.label.toLowerCase()}`}
         type="text"
+        aria-label={field.label}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className={cn(
@@ -134,7 +139,7 @@ export function CronBuilder({
 }: CronBuilderProps) {
   const { t } = useTranslation()
   const [rawInput, setRawInput] = useState(value)
-  const [fields, setFields] = useState<string[]>(value.split(/\s+/))
+  const [fields, setFields] = useState<string[]>(() => value.split(/\s+/))
 
   // Sync raw input and fields
   useEffect(() => {
@@ -184,6 +189,7 @@ export function CronBuilder({
           {PRESETS.map((preset) => (
             <button
               key={preset.cron}
+              type="button"
               onClick={() => handlePreset(preset.cron)}
               className={cn(
                 'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
@@ -221,6 +227,7 @@ export function CronBuilder({
           Advanced
         </h4>
         <input
+          aria-label="Cron expression"
           type="text"
           value={rawInput}
           onChange={(e) => handleRawChange(e.target.value)}
@@ -256,8 +263,8 @@ export function CronBuilder({
             <div className="flex flex-col gap-0.5">
               {(() => {
                 const spansYears = nextRuns.length > 1 && nextRuns[0].getFullYear() !== nextRuns[nextRuns.length - 1].getFullYear()
-                return nextRuns.map((date, i) => (
-                  <span key={i} className="text-xs text-foreground/70 tabular-nums">
+                return nextRuns.map((date) => (
+                  <span key={date.toISOString()} className="text-xs text-foreground/70 tabular-nums">
                     {date.toLocaleDateString('en-US', {
                       weekday: 'short',
                       month: 'short',

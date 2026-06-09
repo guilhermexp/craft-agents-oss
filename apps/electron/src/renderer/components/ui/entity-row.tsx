@@ -130,6 +130,7 @@ export function EntityRow({
 
       {/* Main content button */}
       <button
+        type="button"
         {...(buttonProps as React.ButtonHTMLAttributes<HTMLButtonElement>)}
         className={cn(
           "entity-row-btn flex w-full items-start gap-2 pl-2 pr-4 py-3 text-left text-sm outline-none rounded-[8px]",

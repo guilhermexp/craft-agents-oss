@@ -16,9 +16,9 @@
  * The right sidebar stays OUTSIDE this container.
  */
 
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, type CSSProperties } from 'react'
 import { useAtomValue } from 'jotai'
-import { motion } from 'motion/react'
+import { LazyMotion, m, domAnimation } from 'motion/react'
 import { cn } from '@/lib/utils'
 import { panelStackAtom, focusedPanelIdAtom, focusedSessionIdAtom } from '@/atoms/panel-stack'
 import { PanelSlot } from './PanelSlot'
@@ -33,6 +33,21 @@ import {
 
 /** Spring transition matching AppShell's sidebar/navigator animation */
 const PANEL_SPRING = { type: 'spring' as const, stiffness: 600, damping: 49 }
+
+/** Static scroll container style — extracted to avoid rebuilding on every render */
+const SCROLL_CONTAINER_STYLE: CSSProperties = {
+  overflowX: 'auto',
+  overflowY: 'hidden',
+  // Extra vertical space for box-shadows (collapsed back with negative margin)
+  paddingBlock: PANEL_STACK_VERTICAL_OVERFLOW,
+  marginBlock: -PANEL_STACK_VERTICAL_OVERFLOW,
+  // Extend to window bottom so scrollbar sits at the very edge
+  marginBottom: -6,
+  paddingBottom: 6,
+  // Extra horizontal space for last panel's box-shadow
+  paddingRight: 8,
+  marginRight: -8,
+}
 
 interface PanelStackContainerProps {
   sidebarSlot: React.ReactNode
@@ -97,27 +112,16 @@ export function PanelStackContainer({
   const transition = (isResizing || isCompact) ? { duration: 0 } : PANEL_SPRING
 
   return (
+    <LazyMotion features={domAnimation}>
     <div
       ref={scrollRef}
       className="flex-1 min-w-0 flex relative z-panel panel-scroll @container/shell"
-      style={{
-        overflowX: 'auto',
-        overflowY: 'hidden',
-        // Extra vertical space for box-shadows (collapsed back with negative margin)
-        paddingBlock: PANEL_STACK_VERTICAL_OVERFLOW,
-        marginBlock: -PANEL_STACK_VERTICAL_OVERFLOW,
-        // Extend to window bottom so scrollbar sits at the very edge
-        marginBottom: -6,
-        paddingBottom: 6,
-        // Extra horizontal space for last panel's box-shadow
-        paddingRight: 8,
-        marginRight: -8,
-      }}
+      style={SCROLL_CONTAINER_STYLE}
     >
       {/* Inner flex container — flex-grow: 1 fills viewport, content can overflow for scroll.
            Animated paddingLeft provides window-edge spacing when sidebar/navigator are hidden.
            Hidden slots use marginRight: -PANEL_GAP to cancel their trailing flex gap. */}
-      <motion.div
+      <m.div
         className="flex h-full"
         initial={false}
         animate={{ paddingLeft: !hasSidebar ? PANEL_EDGE_INSET : 0 }}
@@ -125,7 +129,7 @@ export function PanelStackContainer({
         style={{ gap: PANEL_GAP, flexGrow: 1, minWidth: 0 }}
       >
         {/* === SIDEBAR SLOT === */}
-        <motion.div
+        <m.div
           data-panel-role="sidebar"
           initial={false}
           animate={{
@@ -140,10 +144,10 @@ export function PanelStackContainer({
           <div className="h-full" style={{ width: sidebarWidth }}>
             {sidebarSlot}
           </div>
-        </motion.div>
+        </m.div>
 
         {/* === NAVIGATOR SLOT === */}
-        <motion.div
+        <m.div
           data-panel-role="navigator"
           initial={false}
           animate={{
@@ -168,7 +172,7 @@ export function PanelStackContainer({
           <div className="h-full" style={{ width: isCompact && hasNavigator && !hasSelectedContent ? '100%' : navigatorWidth }}>
             {navigatorSlot}
           </div>
-        </motion.div>
+        </m.div>
 
         {/* === CONTENT PANELS WITH SASHES === */}
         {visiblePanels.length === 0 ? (
@@ -195,7 +199,8 @@ export function PanelStackContainer({
             />
           ))
         )}
-      </motion.div>
+      </m.div>
     </div>
+    </LazyMotion>
   )
 }

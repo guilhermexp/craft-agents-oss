@@ -1,9 +1,11 @@
 import * as React from 'react'
 import {
   animate,
+  domMax,
   easeIn,
+  LazyMotion,
+  m,
   mix,
-  motion,
   useMotionValue,
   useTransform,
   wrap,
@@ -73,30 +75,32 @@ export function ImageCardStack({
   }
 
   return (
-    <ul
-      ref={ref}
-      className={cn('relative w-full h-full list-none m-0 p-0 mx-auto', className)}
-      style={{ maxHeight }}
-    >
-      {items.map((item, index) => (
-        <StackImage
-          key={`${item.src}-${index}`}
-          src={item.src}
-          ratio={item.ratio ?? 4 / 3}
-          alt={item.alt || item.label || `Image ${index + 1}`}
-          index={index}
-          currentIndex={currentIndex}
-          totalImages={items.length}
-          maxRotate={maxRotate}
-          minDistance={Math.max(80, width * minSwipeDistanceRatio)}
-          minSpeed={minSwipeVelocity}
-          stackScale={Math.min(1, Math.max(0.5, stackScale))}
-          isTopCard={index === currentIndex}
-          onTopCardTap={onTopCardTap}
-          setNextImage={setNextImage}
-        />
-      ))}
-    </ul>
+    <LazyMotion features={domMax}>
+      <ul
+        ref={ref}
+        className={cn('relative w-full h-full list-none m-0 p-0 mx-auto', className)}
+        style={{ maxHeight }}
+      >
+        {items.map((item, index) => (
+          <StackImage
+            key={`${item.src}-${index}`}
+            src={item.src}
+            ratio={item.ratio ?? 4 / 3}
+            alt={item.alt || item.label || `Image ${index + 1}`}
+            index={index}
+            currentIndex={currentIndex}
+            totalImages={items.length}
+            maxRotate={maxRotate}
+            minDistance={Math.max(80, width * minSwipeDistanceRatio)}
+            minSpeed={minSwipeVelocity}
+            stackScale={Math.min(1, Math.max(0.5, stackScale))}
+            isTopCard={index === currentIndex}
+            onTopCardTap={onTopCardTap}
+            setNextImage={setNextImage}
+          />
+        ))}
+      </ul>
+    </LazyMotion>
   )
 }
 
@@ -172,7 +176,7 @@ function StackImage({
   const y = stackPosition * depthStep - stackLift
 
   return (
-    <motion.li
+    <m.li
       className={cn(
         'absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2',
         'overflow-hidden rounded-[10px] bg-background will-change-transform',
@@ -214,6 +218,6 @@ function StackImage({
         onPointerDown={(event) => event.preventDefault()}
         draggable={false}
       />
-    </motion.li>
+    </m.li>
   )
 }

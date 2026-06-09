@@ -17,7 +17,7 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
-import { AnimatePresence, motion, type Variants } from 'motion/react'
+import { AnimatePresence, LazyMotion, m, domAnimation, type Variants } from 'motion/react'
 import { File, Folder, FolderOpen, FileText, Image, FileCode, ChevronRight, ExternalLink, Music, Video } from 'lucide-react'
 import {
   ContextMenu,
@@ -199,16 +199,35 @@ function getThumbnailUrl(filePath: string): string {
  * Shows the Lucide icon immediately, then cross-fades to the thumbnail on load.
  * If loading fails, the icon stays visible — no layout shift, no error state.
  */
+interface FileThumbnailState {
+  loaded: boolean
+  failed: boolean
+  dataUrl: string | null
+}
+
+type FileThumbnailAction =
+  | { type: 'reset' }
+  | { type: 'load'; dataUrl: string }
+  | { type: 'loaded' }
+  | { type: 'failed' }
+
+function fileThumbnailReducer(state: FileThumbnailState, action: FileThumbnailAction): FileThumbnailState {
+  switch (action.type) {
+    case 'reset': return { loaded: false, failed: false, dataUrl: null }
+    case 'load': return { loaded: false, failed: false, dataUrl: action.dataUrl }
+    case 'loaded': return { ...state, loaded: true, failed: false }
+    case 'failed': return { ...state, loaded: false, failed: true }
+  }
+}
+
+const FILE_THUMBNAIL_INITIAL: FileThumbnailState = { loaded: false, failed: false, dataUrl: null }
+
 const FileThumbnail = memo(function FileThumbnail({ file }: { file: SessionFile }) {
-  const [loaded, setLoaded] = useState(false)
-  const [failed, setFailed] = useState(false)
-  const [dataUrl, setDataUrl] = useState<string | null>(null)
+  const [{ loaded, failed, dataUrl }, dispatch] = React.useReducer(fileThumbnailReducer, FILE_THUMBNAIL_INITIAL)
 
   // Reset state when file changes (e.g. watcher triggered re-render)
   useEffect(() => {
-    setLoaded(false)
-    setFailed(false)
-    setDataUrl(null)
+    dispatch({ type: 'reset' })
   }, [file.path])
 
   const ext = file.name.split('.').pop()?.toLowerCase() || ''
@@ -220,9 +239,9 @@ const FileThumbnail = memo(function FileThumbnail({ file }: { file: SessionFile 
     if (!isWebMode || !canPreview || failed) return
     let cancelled = false
     window.electronAPI.readFilePreviewDataUrl(file.path, 64).then((url) => {
-      if (!cancelled) setDataUrl(url)
+      if (!cancelled) dispatch({ type: 'load', dataUrl: url })
     }).catch(() => {
-      if (!cancelled) setFailed(true)
+      if (!cancelled) dispatch({ type: 'failed' })
     })
     return () => { cancelled = true }
   }, [file.path, canPreview, failed])
@@ -251,8 +270,8 @@ const FileThumbnail = memo(function FileThumbnail({ file }: { file: SessionFile 
           src={imgSrc}
           alt=""
           loading="lazy"
-          onLoad={() => setLoaded(true)}
-          onError={() => setFailed(true)}
+          onLoad={() => dispatch({ type: 'loaded' })}
+          onError={() => dispatch({ type: 'failed' })}
           className={cn(
             'absolute inset-0 size-full rounded-[2px] object-cover transition-opacity duration-200',
             loaded ? 'opacity-100' : 'opacity-0'
@@ -325,6 +344,7 @@ function FileTreeItem({
   // The button element for the file/folder item
   const buttonElement = (
     <button
+      type="button"
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       className={cn(
@@ -348,6 +368,8 @@ function FileTreeItem({
             </span>
             {/* Toggle chevron - shown on hover */}
             <span
+              role="button"
+              tabIndex={-1}
               className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 cursor-pointer"
               onClick={handleChevronClick}
             >
@@ -399,9 +421,10 @@ function FileTreeItem({
       </ContextMenu>
       {/* Expandable children with framer-motion animation - matches LeftSidebar exactly */}
       {hasChildren && (
-        <AnimatePresence initial={false}>
+        <LazyMotion features={domAnimation}>
+          <AnimatePresence initial={false}>
           {isExpanded && (
-            <motion.div
+            <m.div
               initial={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
               animate={{ height: 'auto', opacity: 1, marginTop: 2, marginBottom: 8 }}
               exit={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
@@ -410,7 +433,7 @@ function FileTreeItem({
             >
               {/* Wrapper div matches LeftSidebar recursive structure - min-w-0 allows shrinking */}
               <div className="flex flex-col select-none min-w-0">
-                <motion.nav
+                <m.nav
                   className="grid gap-0.5 pl-5 pr-0 relative"
                   variants={containerVariants}
                   initial="hidden"
@@ -423,7 +446,7 @@ function FileTreeItem({
                     aria-hidden="true"
                   />
                   {children.map((child) => (
-                    <motion.div key={child.path} variants={itemVariants} className="min-w-0">
+                    <m.div key={child.path} variants={itemVariants} className="min-w-0">
                       <FileTreeItem
                         file={child}
                         depth={depth + 1}
@@ -435,13 +458,14 @@ function FileTreeItem({
                         onRevealInFileManager={onRevealInFileManager}
                         isNested={true}
                       />
-                    </motion.div>
+                    </m.div>
                   ))}
-                </motion.nav>
+                </m.nav>
               </div>
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
+        </LazyMotion>
       )}
     </div>
   )
@@ -678,7 +702,8 @@ export function WorkspaceFilesSection({ sessionId, className }: { sessionId?: st
   const [files, setFiles] = useState<SessionFile[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
-  const loadedPathsRef = useRef<Set<string>>(new Set())
+  const loadedPathsRef = useRef<Set<string>>(null!)
+  if (loadedPathsRef.current === null) loadedPathsRef.current = new Set()
   const mountedRef = useRef(true)
   const fileManagerName = getFileManagerName()
 

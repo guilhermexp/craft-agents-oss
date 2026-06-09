@@ -43,6 +43,7 @@ export function AutomationCard({
     >
       {/* Collapsed header */}
       <button
+        type="button"
         onClick={() => setExpanded(!expanded)}
         className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-foreground/2 transition-colors"
       >
@@ -102,6 +103,7 @@ export function AutomationCard({
           <div className="flex items-center gap-2 pt-1">
             {onTest && (
               <button
+                type="button"
                 onClick={onTest}
                 className="px-2.5 py-1 text-xs font-medium rounded-md bg-foreground/[0.03] shadow-minimal hover:bg-foreground/[0.06] transition-colors"
               >

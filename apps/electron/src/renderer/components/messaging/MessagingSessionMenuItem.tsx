@@ -129,7 +129,7 @@ export function MessagingSessionMenuItem({
  * Narrow on purpose — only classifies well-known failure modes; anything else
  * is surfaced verbatim so real errors aren't hidden.
  */
-export function classifyMessagingError(err: unknown, t: TranslationFn): string {
+function classifyMessagingError(err: unknown, t: TranslationFn): string {
   const msg = err instanceof Error ? err.message : String(err)
   if (/platform not connected|no adapter|not configured/i.test(msg)) {
     return t('toast.messagingNotConfigured')

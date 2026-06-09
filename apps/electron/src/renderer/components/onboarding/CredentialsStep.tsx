@@ -10,13 +10,8 @@ import { useTranslation } from "react-i18next"
 import { Check, ExternalLink } from "lucide-react"
 import type { ApiSetupMethod } from "./APISetupStep"
 import { StepFormLayout, BackButton, ContinueButton } from "./primitives"
-import {
-  ApiKeyInput,
-  type ApiKeyStatus,
-  type ApiKeySubmitData,
-  OAuthConnect,
-  type OAuthStatus,
-} from "../apisetup"
+import { ApiKeyInput, type ApiKeyStatus, type ApiKeySubmitData } from "../apisetup/ApiKeyInput"
+import { OAuthConnect, type OAuthStatus } from "../apisetup/OAuthConnect"
 import type { CustomEndpointApi } from '@config/llm-connections'
 
 export type CredentialStatus = ApiKeyStatus | OAuthStatus

@@ -9,14 +9,8 @@ import { useTranslation } from 'react-i18next'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { SettingsSection, SettingsCard, SettingsRow } from '@/components/settings'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import { isMac } from '@/lib/platform'
 import { actionsByCategory, useActionLabel, type ActionId } from '@/actions'
-
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'shortcuts',
-}
 
 interface ShortcutItem {
   keys: string[]
@@ -148,8 +142,8 @@ export default function ShortcutsPage() {
             {componentSpecificSections.map((section) => (
               <SettingsSection key={section.title} title={section.title}>
                 <SettingsCard>
-                  {section.shortcuts.map((shortcut, index) => (
-                    <SettingsRow key={index} label={shortcut.description}>
+                  {section.shortcuts.map((shortcut) => (
+                    <SettingsRow key={shortcut.description} label={shortcut.description}>
                       <div className="flex items-center gap-1">
                         {shortcut.keys.map((key, keyIndex) => (
                           <Kbd key={keyIndex}>{key}</Kbd>

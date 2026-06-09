@@ -115,6 +115,7 @@ export function TableOfContents({
             return (
               <button
                 key={`${heading.line}-${heading.text}`}
+                type="button"
                 onClick={() => onHeadingClick(heading.line)}
                 className={cn(
                   'block w-full text-left text-[13px] py-1.5 px-3 rounded-md transition-colors',

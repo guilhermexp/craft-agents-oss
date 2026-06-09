@@ -61,13 +61,13 @@ export function InlineSkillMention({
   className,
 }: InlineSkillMentionProps) {
   const menuRef = React.useRef<HTMLDivElement>(null)
-  const [selectedIndex, setSelectedIndex] = React.useState(0)
+  // Store {forFilter, index} so stale index auto-evicts when filter changes
+  const [selection, setSelection] = React.useState<{ forFilter: string; index: number }>({
+    forFilter: filter,
+    index: 0,
+  })
+  const selectedIndex = selection.forFilter === filter ? selection.index : 0
   const filteredSkills = filterSkills(skills, filter)
-
-  // Reset selection when filter changes
-  React.useEffect(() => {
-    setSelectedIndex(0)
-  }, [filter])
 
   // Keyboard navigation
   React.useEffect(() => {
@@ -77,11 +77,17 @@ export function InlineSkillMention({
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault()
-          setSelectedIndex(prev => (prev < filteredSkills.length - 1 ? prev + 1 : 0))
+          setSelection(prev => {
+            const cur = prev.forFilter === filter ? prev.index : 0
+            return { forFilter: filter, index: cur < filteredSkills.length - 1 ? cur + 1 : 0 }
+          })
           break
         case 'ArrowUp':
           e.preventDefault()
-          setSelectedIndex(prev => (prev > 0 ? prev - 1 : filteredSkills.length - 1))
+          setSelection(prev => {
+            const cur = prev.forFilter === filter ? prev.index : 0
+            return { forFilter: filter, index: cur > 0 ? cur - 1 : filteredSkills.length - 1 }
+          })
           break
         case 'Enter':
         case 'Tab':
@@ -100,7 +106,7 @@ export function InlineSkillMention({
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [open, filteredSkills, selectedIndex, onSelect, onOpenChange])
+  }, [open, filter, filteredSkills, selectedIndex, onSelect, onOpenChange])
 
   // Close on click outside
   React.useEffect(() => {
@@ -134,13 +140,22 @@ export function InlineSkillMention({
         {filteredSkills.map((skill, index) => {
           const isSelected = index === selectedIndex
           return (
-            <div
+            <button
               key={skill.slug}
+              type="button"
+              tabIndex={0}
               onClick={() => {
                 onSelect(skill.slug)
                 onOpenChange(false)
               }}
-              onMouseEnter={() => setSelectedIndex(index)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onSelect(skill.slug)
+                  onOpenChange(false)
+                }
+              }}
+              onMouseEnter={() => setSelection({ forFilter: filter, index })}
               className={cn(
                 MENU_ITEM_STYLE,
                 isSelected && MENU_ITEM_SELECTED
@@ -157,7 +172,7 @@ export function InlineSkillMention({
                   </div>
                 )}
               </div>
-            </div>
+            </button>
           )
         })}
       </div>

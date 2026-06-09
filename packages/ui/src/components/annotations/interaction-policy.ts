@@ -29,7 +29,7 @@ export function isAnnotationChipClickable(annotation?: AnnotationV1 | null): boo
   return getAnnotationChipInteraction(annotation).clickable
 }
 
-export function getAnnotationChipOpenMode(): 'view' {
+function getAnnotationChipOpenMode(): 'view' {
   return 'view'
 }
 

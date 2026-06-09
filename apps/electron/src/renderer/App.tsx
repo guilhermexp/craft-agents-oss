@@ -8,8 +8,8 @@ import type { SessionDraft, DraftAttachmentRef } from '@craft-agent/shared/confi
 import type { SessionOptions, SessionOptionUpdates } from './hooks/useSessionOptions'
 import { defaultSessionOptions, mergeSessionOptions } from './hooks/useSessionOptions'
 import { generateMessageId } from '../shared/types'
-import { useEventProcessor } from './event-processor'
-import type { AgentEvent, Effect } from './event-processor'
+import { useEventProcessor } from './event-processor/useEventProcessor'
+import type { AgentEvent, Effect } from './event-processor/types'
 import { AppShell } from '@/components/app-shell/AppShell'
 import type { AppShellContextType } from '@/context/AppShellContext'
 import { OnboardingWizard, ReauthScreen } from '@/components/onboarding'
@@ -282,7 +282,8 @@ export default function App() {
   // switches, conversation changes, and app restarts. Using a ref avoids re-renders
   // during typing; attachments are stored as lightweight refs (path + name) and
   // hydrated via readFileAttachment() on session switch.
-  const sessionDraftsRef = useRef<Map<string, SessionDraft>>(new Map())
+  const sessionDraftsRef = useRef<Map<string, SessionDraft>>(null!)
+  if (sessionDraftsRef.current === null) sessionDraftsRef.current = new Map()
   // Unified session options for all session-scoped settings
   const [sessionOptions, setSessionOptions] = useState<Map<string, SessionOptions>>(new Map())
 
@@ -553,7 +554,7 @@ export default function App() {
       // Still transition to ready — the app can recover via reconnect
     }
     setAppState('ready')
-  }, [])
+  }, [setWindowWorkspaceId])
 
   // Onboarding hook — onConfigSaved fires immediately when billing is saved,
   // ensuring connection state updates before the wizard closes.
@@ -611,7 +612,7 @@ export default function App() {
     }
 
     initialize()
-  }, [])
+  }, [setWindowWorkspaceId])
 
   // Session selection state
   const [sessionSelection, setSession] = useSession()
@@ -666,7 +667,7 @@ export default function App() {
     })
     // Load app-level theme
     window.electronAPI.getAppTheme().then(setAppTheme)
-  }, [appState, loadSessionsFromServer, resolveDefaultConnectionSlug])
+  }, [appState, loadSessionsFromServer, resolveDefaultConnectionSlug, t])
 
   // Subscribe to theme change events (live updates when theme.json changes)
   useEffect(() => {
@@ -946,12 +947,13 @@ export default function App() {
       store.set(sessionMetaMapAtom, newMetaMap)
     })
 
+    const timeoutsRef = autoRetryTimeoutsRef.current
     return () => {
       cleanup()
-      for (const timeout of autoRetryTimeoutsRef.current) {
+      for (const timeout of timeoutsRef) {
         clearTimeout(timeout)
       }
-      autoRetryTimeoutsRef.current.clear()
+      timeoutsRef.clear()
     }
   }, [
     processAgentEvent,
@@ -997,7 +999,8 @@ export default function App() {
 
       // Refresh full message content only for the active session plus any
       // session still marked processing after the metadata refresh.
-      for (const sessionId of refreshIds) {
+      // Fan out across sessions concurrently — each session's retry chain is independent.
+      await Promise.all(refreshIds.map(async (sessionId) => {
         let refreshResult = await refreshSessionFromServer(sessionId)
         if (refreshResult !== 'refreshed') {
           // Server may need time to restart session subprocess after reconnect,
@@ -1009,7 +1012,7 @@ export default function App() {
             if (refreshResult === 'refreshed') break
           }
         }
-      }
+      }))
 
       // Final fallback: if the active session is still empty, force a reload
       // even when the session is already marked loaded.
@@ -1050,6 +1053,8 @@ export default function App() {
       unsubSettings()
       unsubShortcuts()
     }
+    // Menu listeners are registered once on mount; handlers are stable refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleCreateSession = useCallback(async (workspaceId: string, options?: import('../shared/types').CreateSessionOptions): Promise<Session> => {
@@ -1186,8 +1191,7 @@ export default function App() {
           console.warn(`${failedCount} attachment(s) failed to store`)
           // Add warning message to session so user knows some attachments weren't included
           const failedNames = attachments
-            .filter((_, i) => storeResults[i].status === 'rejected')
-            .map(a => a.name)
+            .flatMap((a, i) => storeResults[i].status === 'rejected' ? [a.name] : [])
             .join(', ')
           updateSessionById(sessionId, (s) => ({
             messages: [...s.messages, {
@@ -1307,7 +1311,7 @@ export default function App() {
         ]
       }))
     }
-  }, [sessionOptions, updateSessionById, skills, sources, windowWorkspaceId])
+  }, [sessionOptions, updateSessionById, skills, sources, windowWorkspaceId, windowWorkspaceSlug])
 
   /**
    * Unified handler for all session option changes.
@@ -1330,17 +1334,20 @@ export default function App() {
       // Sync thinking level change with backend (session-level, persisted)
       window.electronAPI.sessionCommand(sessionId, { type: 'setThinkingLevel', level: updates.thinkingLevel })
     }
-  }, [sessionOptions])
+  }, [])
 
   // Handle input draft changes per session with debounced persistence
-  const draftSaveTimeoutRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
-  const autoRetryTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+  const draftSaveTimeoutRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(null!)
+  if (draftSaveTimeoutRef.current === null) draftSaveTimeoutRef.current = new Map()
+  const autoRetryTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(null!)
+  if (autoRetryTimeoutsRef.current === null) autoRetryTimeoutsRef.current = new Set()
 
   // Cleanup draft save timers on unmount to prevent memory leaks
   useEffect(() => {
+    const timeouts = draftSaveTimeoutRef.current
     return () => {
-      draftSaveTimeoutRef.current.forEach(clearTimeout)
-      draftSaveTimeoutRef.current.clear()
+      timeouts.forEach(clearTimeout)
+      timeouts.clear()
     }
   }, [])
 
@@ -1594,7 +1601,7 @@ export default function App() {
       const message = error instanceof Error ? error.message : 'Unknown error'
       toast.error(t('toast.reconnectFailed'), { description: message })
     })
-  }, [])
+  }, [t])
 
   const handleOpenFile = linkInterceptor.handleOpenFile
   const handleOpenUrl = linkInterceptor.handleOpenUrl
@@ -1639,7 +1646,7 @@ export default function App() {
     } finally {
       setShowResetDialog(false)
     }
-  }, [onboarding, initializeSessions])
+  }, [onboarding, initializeSessions, setWindowWorkspaceId])
 
   // Handle workspace selection
   // - Default: switch workspace in same window (in-window switching)
@@ -1692,7 +1699,7 @@ export default function App() {
       // Sessions and theme will reload automatically due to windowWorkspaceId dependency
       // in useEffect hooks.
     }
-  }, [windowWorkspaceId, setSession, store])
+  }, [windowWorkspaceId, setSession, store, setWindowWorkspaceId])
 
   // Handle workspace switch by slug (called by NavigationContext on popstate when ?ws= changes)
   const handleSwitchWorkspaceBySlug = useCallback((slug: string) => {

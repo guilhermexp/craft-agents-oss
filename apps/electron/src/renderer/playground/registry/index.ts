@@ -24,7 +24,7 @@ import { messagingComponents } from './messaging'
 
 export * from './types'
 
-export const componentRegistry: ComponentEntry[] = [
+const componentRegistry: ComponentEntry[] = [
   ...apiKeyInputComponents,
   ...onboardingComponents,
   ...chatComponents,

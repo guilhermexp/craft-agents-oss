@@ -67,7 +67,7 @@ const COMPOUND_ROUTE_PREFIXES = [
 /**
  * Check if a route is a compound route (new format)
  */
-export function isCompoundRoute(route: string): boolean {
+function isCompoundRoute(route: string): boolean {
   const firstSegment = route.split('/')[0]
   return COMPOUND_ROUTE_PREFIXES.includes(firstSegment)
 }
@@ -794,7 +794,7 @@ export function buildRouteFromNavigationState(state: NavigationState): string {
  *   'session-info' -> { type: 'session-info' }
  *   'none' -> { type: 'none' }
  */
-export function parseRightSidebarParam(sidebarStr?: string): RightSidebarPanel | undefined {
+function parseRightSidebarParam(sidebarStr?: string): RightSidebarPanel | undefined {
   if (!sidebarStr) return undefined
 
   if (sidebarStr === 'history') {

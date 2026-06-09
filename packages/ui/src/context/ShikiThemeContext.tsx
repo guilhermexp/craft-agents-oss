@@ -14,7 +14,7 @@
  * - Scenic mode (forces dark)
  */
 
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, useMemo, type ReactNode } from 'react'
 
 interface ShikiThemeContextValue {
   /**
@@ -47,8 +47,9 @@ export interface ShikiThemeProviderProps {
  * ```
  */
 export function ShikiThemeProvider({ children, shikiTheme }: ShikiThemeProviderProps) {
+  const value = useMemo(() => ({ shikiTheme }), [shikiTheme])
   return (
-    <ShikiThemeContext.Provider value={{ shikiTheme }}>
+    <ShikiThemeContext.Provider value={value}>
       {children}
     </ShikiThemeContext.Provider>
   )
@@ -65,4 +66,3 @@ export function useShikiTheme(): string | null {
   return shikiTheme
 }
 
-export default ShikiThemeContext

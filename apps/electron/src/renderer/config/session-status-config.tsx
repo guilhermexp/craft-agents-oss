@@ -53,7 +53,7 @@ export interface SessionStatus extends SessionStatusConfig {
  * - Emoji icons → not colorable (they have their own colors)
  * - Everything else (SVGs, fallback) → colorable (uses currentColor)
  */
-export function statusConfigToSessionStatus(
+function statusConfigToSessionStatus(
   config: StatusConfig,
   workspaceId: string,
   isDark: boolean
@@ -141,17 +141,6 @@ export function getStateColor(
   states: SessionStatus[]
 ): string | undefined {
   return states.find(s => s.id === stateId)?.resolvedColor
-}
-
-/**
- * Get the label for a todo state
- */
-export function getStateLabel(
-  stateId: string,
-  states: SessionStatus[]
-): string {
-  const state = states.find(s => s.id === stateId)
-  return state?.label ?? stateId
 }
 
 /**

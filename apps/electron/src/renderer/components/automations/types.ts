@@ -289,7 +289,7 @@ export interface TestResult {
 // ============================================================================
 
 /** Maps internal event names to user-friendly labels */
-export const EVENT_DISPLAY_NAMES: Record<AutomationTrigger, string> = {
+const EVENT_DISPLAY_NAMES: Record<AutomationTrigger, string> = {
   // App events
   LabelAdd:             'Label Added',
   LabelRemove:          'Label Removed',
@@ -321,7 +321,7 @@ export function getEventDisplayName(event: AutomationTrigger): string {
 }
 
 /** Maps permission mode values to user-friendly labels */
-export const PERMISSION_DISPLAY_NAMES: Record<PermissionMode, string> = {
+const PERMISSION_DISPLAY_NAMES: Record<PermissionMode, string> = {
   'safe':      'Explore',
   'ask':       'Ask',
   'allow-all': 'Execute',

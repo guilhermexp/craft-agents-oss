@@ -12,11 +12,13 @@ import {
 } from '@/config/session-status-config'
 
 // Re-export types for backwards compatibility
-export { type SessionStatusId, type SessionStatus, getStateIcon, getStateColor }
+export { type SessionStatusId, type SessionStatus }
 
 // ============================================================================
 // Shared Styles (matching slash-command-menu)
 // ============================================================================
+
+const EMPTY_STATES: SessionStatus[] = []
 
 const MENU_CONTAINER_STYLE = 'min-w-[180px] overflow-hidden rounded-[8px] bg-background text-foreground shadow-modal-small'
 const MENU_LIST_STYLE = 'max-h-[240px] overflow-y-auto p-1 [&_[cmdk-list-sizer]]:space-y-px'
@@ -59,7 +61,7 @@ export interface SessionStatusMenuProps {
 }
 
 export function SessionStatusMenu({
-  states = [],
+  states = EMPTY_STATES,
   activeState,
   onSelect,
   isArchived,

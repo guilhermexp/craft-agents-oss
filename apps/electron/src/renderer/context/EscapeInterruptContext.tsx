@@ -31,9 +31,10 @@ export function EscapeInterruptProvider({ children }: { children: React.ReactNod
 
   // Clear timeout on unmount
   useEffect(() => {
+    const ref = timeoutRef
     return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
+      if (ref.current) {
+        clearTimeout(ref.current)
       }
     }
   }, [])

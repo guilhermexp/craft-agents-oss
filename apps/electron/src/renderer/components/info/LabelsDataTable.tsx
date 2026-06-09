@@ -143,6 +143,7 @@ export function LabelsDataTable({
   // Fullscreen button (shown on hover via group class)
   const fullscreenButton = fullscreen ? (
     <button
+      type="button"
       onClick={() => setIsFullscreen(true)}
       className={cn(
         'p-1 rounded-[6px] transition-all',

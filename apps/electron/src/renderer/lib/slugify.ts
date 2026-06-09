@@ -26,10 +26,3 @@ export function slugify(str: string): string {
     // Remove leading/trailing hyphens
     .replace(/^-|-$/g, '')
 }
-
-/**
- * Check if a string is a valid slug (already slugified)
- */
-export function isValidSlug(str: string): boolean {
-  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(str)
-}

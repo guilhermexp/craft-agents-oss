@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { X } from "lucide-react"
-import { motion } from "motion/react"
+import { LazyMotion, m, domAnimation } from "motion/react"
 import { Dithering } from "@paper-design/shaders-react"
 import { FullscreenOverlayBase } from "@craft-agent/ui"
 import { cn } from "@/lib/utils"
@@ -46,14 +46,16 @@ export function WorkspaceCreationScreen({
   // Start at 'remote' step directly when reconnecting
   const [step, setStep] = useState<CreationStep>(reconnectWorkspace ? 'remote' : 'choice')
   const [isCreating, setIsCreating] = useState(false)
-  const [dimensions, setDimensions] = useState({ width: 1920, height: 1080 })
+  const [dimensions, setDimensions] = useState(() => ({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1920,
+    height: typeof window !== 'undefined' ? window.innerHeight : 1080,
+  }))
 
   // Track window dimensions for shader
   useEffect(() => {
     const updateDimensions = () => {
       setDimensions({ width: window.innerWidth, height: window.innerHeight })
     }
-    updateDimensions()
     window.addEventListener('resize', updateDimensions)
     return () => window.removeEventListener('resize', updateDimensions)
   }, [])
@@ -79,7 +81,7 @@ export function WorkspaceCreationScreen({
     } finally {
       setIsCreating(false)
     }
-  }, [onWorkspaceCreated])
+  }, [onWorkspaceCreated, t])
 
   const handleReconnectWorkspace = useCallback(async (workspaceId: string, remoteServer: { url: string; token: string; remoteWorkspaceId: string }) => {
     if (!onReconnectWorkspace) {
@@ -163,69 +165,71 @@ export function WorkspaceCreationScreen({
       onClose={handleClose}
       className={cn("z-splash flex flex-col bg-background", className)}
     >
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={overlayTransitionIn}
-        className="flex flex-col flex-1"
-      >
-        {/* Dithering shader background */}
-        <motion.div
+      <LazyMotion features={domAnimation}>
+        <m.div
           initial={{ opacity: 0 }}
-          animate={{ opacity: 0.3 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
           transition={overlayTransitionIn}
-          className="absolute inset-0 pointer-events-none"
+          className="flex flex-col flex-1"
         >
-          <Dithering
-            colorBack={shaderColors.back}
-            colorFront={shaderColors.front}
-            shape="swirl"
-            type="8x8"
-            size={2}
-            speed={1}
-            scale={1}
-            width={dimensions.width}
-            height={dimensions.height}
-          />
-        </motion.div>
+          {/* Dithering shader background */}
+          <m.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.3 }}
+            transition={overlayTransitionIn}
+            className="absolute inset-0 pointer-events-none"
+          >
+            <Dithering
+              colorBack={shaderColors.back}
+              colorFront={shaderColors.front}
+              shape="swirl"
+              type="8x8"
+              size={2}
+              speed={1}
+              scale={1}
+              width={dimensions.width}
+              height={dimensions.height}
+            />
+          </m.div>
 
-        {/* Header with drag region and close button */}
-        <header className="titlebar-drag-region relative h-[50px] shrink-0 flex items-center justify-end px-6">
-          {/* Close button - explicitly no-drag */}
-          <motion.button
+          {/* Header with drag region and close button */}
+          <header className="titlebar-drag-region relative h-[50px] shrink-0 flex items-center justify-end px-6">
+            {/* Close button - explicitly no-drag */}
+            <m.button
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={overlayTransitionIn}
+              onClick={(e) => {
+                e.stopPropagation()
+                handleClose()
+              }}
+              disabled={isCreating}
+              className={cn(
+                "titlebar-no-drag flex items-center justify-center p-2 rounded-[6px]",
+                "bg-background shadow-minimal hover:bg-foreground-5",
+                "text-muted-foreground hover:text-foreground",
+                "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "mr-[-8px] mt-2",
+                isCreating && "opacity-50 cursor-not-allowed"
+              )}
+              aria-label="Close"
+            >
+              <X className="size-4" />
+            </m.button>
+          </header>
+
+          {/* Main content */}
+          <m.main
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={overlayTransitionIn}
-            onClick={(e) => {
-              e.stopPropagation()
-              handleClose()
-            }}
-            disabled={isCreating}
-            className={cn(
-              "titlebar-no-drag flex items-center justify-center p-2 rounded-[6px]",
-              "bg-background shadow-minimal hover:bg-foreground-5",
-              "text-muted-foreground hover:text-foreground",
-              "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              "mr-[-8px] mt-2",
-              isCreating && "opacity-50 cursor-not-allowed"
-            )}
-            aria-label="Close"
+            className="relative flex flex-1 items-center justify-center p-8"
           >
-            <X className="size-4" />
-          </motion.button>
-        </header>
-
-        {/* Main content */}
-        <motion.main
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={overlayTransitionIn}
-          className="relative flex flex-1 items-center justify-center p-8"
-        >
-          {renderStep()}
-        </motion.main>
-      </motion.div>
+            {renderStep()}
+          </m.main>
+        </m.div>
+      </LazyMotion>
     </FullscreenOverlayBase>
   )
 }

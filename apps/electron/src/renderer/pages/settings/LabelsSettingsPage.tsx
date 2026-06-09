@@ -30,12 +30,6 @@ import {
   SettingsCard,
 } from '@/components/settings'
 import { routes } from '@/lib/navigate'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
-
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'labels',
-}
 
 export default function LabelsSettingsPage() {
   const { t } = useTranslation()

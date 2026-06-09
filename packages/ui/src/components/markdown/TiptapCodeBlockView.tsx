@@ -227,6 +227,7 @@ function TiptapCodeBlockView({ node, updateAttributes }: TiptapCodeBlockViewProp
             <input
               ref={languageFilterInputRef}
               value={languageFilter}
+              aria-label={t('editor.searchLanguages')}
               onChange={(event) => setLanguageFilter(event.target.value)}
               onKeyDown={handleLanguageFilterKeyDown}
               placeholder={t('editor.searchLanguages')}

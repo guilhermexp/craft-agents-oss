@@ -208,6 +208,7 @@ export function HermesProfilesConfig() {
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') void createProfile()
                 }}
+                aria-label="Nome"
               />
             </SettingsRow>
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -263,6 +264,7 @@ export function HermesProfilesConfig() {
                                     setRenameTo('')
                                   }
                                 }}
+                                aria-label="Renomear profile"
                               />
                             ) : (
                               <span className="truncate text-sm font-medium">{profile.name}</span>
@@ -335,6 +337,7 @@ export function HermesProfilesConfig() {
                             placeholder="Instruções, personalidade e contexto persistente desse profile."
                             value={soulText}
                             onChange={(event) => setSoulText(event.target.value)}
+                            aria-label="SOUL.md"
                           />
                           <Button size="sm" onClick={() => saveSoul(profile.name)} disabled={isSavingSoul}>
                             <Save className="size-3.5 mr-1.5" /> {isSavingSoul ? 'Salvando...' : 'Salvar SOUL.md'}

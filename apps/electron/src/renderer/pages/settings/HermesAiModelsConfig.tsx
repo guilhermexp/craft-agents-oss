@@ -346,6 +346,7 @@ export function HermesAiModelsConfig() {
                     placeholder={provider.placeholder}
                     value={baseUrl}
                     onChange={(e) => setBaseUrl(e.target.value)}
+                    aria-label="Base URL"
                   />
                 </SettingsRow>
               )}
@@ -558,6 +559,7 @@ function ModelField({
               placeholder="Search…"
               className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
               autoFocus
+              aria-label="Search models"
             />
           </div>
           <div className="max-h-[280px] overflow-y-auto">

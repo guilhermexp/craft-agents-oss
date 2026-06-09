@@ -28,6 +28,9 @@ import { LabelMenuItems, StatusMenuItems } from './SessionMenuParts'
 
 type MultiSelectEntityType = 'automation' | 'session' | 'skill' | 'source'
 
+const EMPTY_SESSION_STATUSES: NonNullable<MultiSelectPanelProps['sessionStatuses']> = []
+const EMPTY_LABELS: NonNullable<MultiSelectPanelProps['labels']> = []
+
 export interface MultiSelectPanelProps {
   /** Number of selected items */
   count: number
@@ -58,10 +61,10 @@ export interface MultiSelectPanelProps {
 export function MultiSelectPanel({
   count,
   entityType = 'session',
-  sessionStatuses = [],
+  sessionStatuses = EMPTY_SESSION_STATUSES,
   activeStatusId,
   onSetStatus,
-  labels = [],
+  labels = EMPTY_LABELS,
   appliedLabelIds = new Set(),
   onToggleLabel,
   onArchive,

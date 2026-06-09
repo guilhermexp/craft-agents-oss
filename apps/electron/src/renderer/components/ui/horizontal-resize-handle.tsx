@@ -72,6 +72,9 @@ export function HorizontalResizeHandle({ onResize, onResizeEnd, className }: Hor
       {/* Touch area container - extends 6px each side for 12px total hit area */}
       <div
         ref={ref}
+        role="separator"
+        aria-orientation="horizontal"
+        tabIndex={0}
         onMouseDown={handleMouseDown}
         onMouseMove={handlers.onMouseMove}
         onMouseLeave={handlers.onMouseLeave}

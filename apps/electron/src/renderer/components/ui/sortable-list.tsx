@@ -49,7 +49,7 @@ function hasNoDndAncestor(element: HTMLElement | null): boolean {
   return false
 }
 
-export class SmartPointerSensor extends PointerSensor {
+class SmartPointerSensor extends PointerSensor {
   static activators = [
     {
       eventName: 'onPointerDown' as const,
@@ -187,9 +187,9 @@ export function SortableList<T extends SortableItemData>({
               id={item.id}
               isDragActive={activeId === item.id}
               hideWhileDragging={showOverlay}
-            >
-              {renderItem(item, activeId === item.id)}
-            </SortableItemWrapper>
+              item={item}
+              renderItem={renderItem}
+            />
           ))}
         </div>
       </SortableContext>
@@ -221,14 +221,15 @@ export function SortableList<T extends SortableItemData>({
 // SortableItemWrapper - wraps each item with useSortable
 // ============================================================
 
-interface SortableItemWrapperProps {
+interface SortableItemWrapperProps<T extends SortableItemData> {
   id: string
   isDragActive: boolean
   hideWhileDragging: boolean
-  children: React.ReactNode
+  item: T
+  renderItem: (item: T, isDragging: boolean) => React.ReactNode
 }
 
-function SortableItemWrapper({ id, isDragActive, hideWhileDragging, children }: SortableItemWrapperProps) {
+function SortableItemWrapper<T extends SortableItemData>({ id, isDragActive, hideWhileDragging, item, renderItem }: SortableItemWrapperProps<T>) {
   const {
     attributes,
     listeners,
@@ -253,7 +254,7 @@ function SortableItemWrapper({ id, isDragActive, hideWhileDragging, children }: 
       {...attributes}
       {...listeners}
     >
-      {children}
+      {renderItem(item, isDragActive)}
     </div>
   )
 }

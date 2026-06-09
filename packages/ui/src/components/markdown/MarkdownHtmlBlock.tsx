@@ -68,6 +68,41 @@ class HtmlBlockErrorBoundary extends React.Component<
   }
 }
 
+// ── Fetch state ──────────────────────────────────────────────────────────────
+
+type FetchState = {
+  contentCache: Record<string, string>
+  loadingForSrc: string | null
+  errorEntry: { message: string; forSrc: string } | null
+}
+
+type FetchAction =
+  | { type: 'loading'; src: string }
+  | { type: 'loaded'; src: string; content: string }
+  | { type: 'error'; src: string; message: string }
+  | { type: 'clear_loading'; src: string }
+
+function fetchReducer(state: FetchState, action: FetchAction): FetchState {
+  switch (action.type) {
+    case 'loading':
+      return { ...state, loadingForSrc: action.src }
+    case 'loaded':
+      return {
+        contentCache: { ...state.contentCache, [action.src]: action.content },
+        loadingForSrc: state.loadingForSrc === action.src ? null : state.loadingForSrc,
+        errorEntry: null,
+      }
+    case 'error':
+      return { ...state, errorEntry: { message: action.message, forSrc: action.src } }
+    case 'clear_loading':
+      return { ...state, loadingForSrc: state.loadingForSrc === action.src ? null : state.loadingForSrc }
+    default:
+      return state
+  }
+}
+
+const FETCH_INITIAL_STATE: FetchState = { contentCache: {}, loadingForSrc: null, errorEntry: null }
+
 // ── Main component ───────────────────────────────────────────────────────────
 
 export interface MarkdownHtmlBlockProps {
@@ -106,31 +141,31 @@ export function MarkdownHtmlBlock({ code, className }: MarkdownHtmlBlockProps) {
   const [activeIndex, setActiveIndex] = React.useState(0)
   const [isFullscreen, setIsFullscreen] = React.useState(false)
 
-  // Content cache: src path → loaded HTML string
-  const [contentCache, setContentCache] = React.useState<Record<string, string>>({})
-  const [loading, setLoading] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
+  // Combined fetch state: cache + in-flight tracking + error
+  const [fetchState, dispatch] = React.useReducer(fetchReducer, FETCH_INITIAL_STATE)
+
+  const { contentCache, loadingForSrc, errorEntry } = fetchState
 
   const activeItem = items[activeIndex]
   const activeHtml = activeItem ? contentCache[activeItem.src] : undefined
+  // Derived: only show loading/error when they belong to the currently active src
+  const loading = loadingForSrc === activeItem?.src
+  const error = errorEntry !== null && errorEntry.forSrc === activeItem?.src ? errorEntry.message : null
 
   // Load active item's content when it changes
   React.useEffect(() => {
     if (!activeItem?.src || !onReadFile) return
-    if (contentCache[activeItem.src]) {
-      setError(null)
-      return
-    }
-    setLoading(true)
-    setError(null)
-    onReadFile(activeItem.src)
+    if (contentCache[activeItem.src]) return
+    const src = activeItem.src
+    dispatch({ type: 'loading', src })
+    onReadFile(src)
       .then((content) => {
-        setContentCache((prev) => ({ ...prev, [activeItem.src]: content }))
+        dispatch({ type: 'loaded', src, content })
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Failed to read HTML file')
+        dispatch({ type: 'error', src, message: err instanceof Error ? err.message : 'Failed to read HTML file' })
+        dispatch({ type: 'clear_loading', src })
       })
-      .finally(() => setLoading(false))
   }, [activeItem?.src, onReadFile, contentCache])
 
   // Preprocess all cached HTML before assigning it to iframe srcDoc.
@@ -150,7 +185,7 @@ export function MarkdownHtmlBlock({ code, className }: MarkdownHtmlBlockProps) {
     if (contentCache[src]) return contentCache[src]
     if (!onReadFile) throw new Error('Cannot load content')
     const content = await onReadFile(src)
-    setContentCache((prev) => ({ ...prev, [src]: content }))
+    dispatch({ type: 'loaded', src, content })
     return content
   }, [contentCache, onReadFile])
 
@@ -173,6 +208,7 @@ export function MarkdownHtmlBlock({ code, className }: MarkdownHtmlBlockProps) {
           <div className="flex items-center gap-1">
             <ItemNavigator items={items} activeIndex={activeIndex} onSelect={setActiveIndex} />
             <button
+              type="button"
               onClick={() => setIsFullscreen(true)}
               className={cn(
                 "p-1 rounded-[6px] transition-all select-none",

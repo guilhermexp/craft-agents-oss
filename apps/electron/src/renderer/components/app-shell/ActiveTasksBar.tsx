@@ -63,7 +63,7 @@ function shortenId(id: string): string {
  * Styled to match ActiveOptionBadges for visual consistency
  * Only renders when there are active tasks
  */
-export function ActiveTasksBar({ tasks, sessionId, onKillTask, onInsertMessage, onShowTerminalOverlay, className }: ActiveTasksBarProps) {
+function ActiveTasksBar({ tasks, sessionId, onKillTask, onInsertMessage, onShowTerminalOverlay, className }: ActiveTasksBarProps) {
   // Don't render if no tasks
   if (tasks.length === 0) return null
 

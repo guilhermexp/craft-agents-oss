@@ -58,7 +58,7 @@ export type SettingsSubpage = (typeof SETTINGS_PAGES)[number]['id']
 /**
  * Array of valid settings subpage IDs - for runtime validation
  */
-export const VALID_SETTINGS_SUBPAGES: readonly SettingsSubpage[] = SETTINGS_PAGES.map(p => p.id)
+const VALID_SETTINGS_SUBPAGES: readonly SettingsSubpage[] = SETTINGS_PAGES.map(p => p.id)
 
 /**
  * Type guard to check if a string is a valid settings subpage
@@ -67,11 +67,3 @@ export function isValidSettingsSubpage(value: string): value is SettingsSubpage 
   return VALID_SETTINGS_SUBPAGES.includes(value as SettingsSubpage)
 }
 
-/**
- * Get settings page definition by ID
- */
-export function getSettingsPage(id: SettingsSubpage): SettingsPageDefinition {
-  const page = SETTINGS_PAGES.find(p => p.id === id)
-  if (!page) throw new Error(`Unknown settings page: ${id}`)
-  return page
-}

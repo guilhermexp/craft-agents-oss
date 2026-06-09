@@ -5,7 +5,7 @@
  * tags before assigning `srcDoc` avoids Chromium console errors while keeping
  * the preview sandboxed.
  */
-export function sanitizeHtmlPreview(html: string): string {
+function sanitizeHtmlPreview(html: string): string {
   return html
     .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
     .replace(/<script\b[^>]*\/\s*>/gi, '')
@@ -15,7 +15,7 @@ export function sanitizeHtmlPreview(html: string): string {
  * Inject `<base target="_top">` so link clicks navigate the top frame,
  * which Electron's will-navigate handler intercepts.
  */
-export function injectHtmlPreviewBaseTarget(html: string): string {
+function injectHtmlPreviewBaseTarget(html: string): string {
   if (/<base\s/i.test(html)) return html
   if (/<head[^>]*>/i.test(html)) {
     return html.replace(/(<head[^>]*>)/i, '$1<base target="_top">')

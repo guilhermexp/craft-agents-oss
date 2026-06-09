@@ -63,8 +63,9 @@ function summarizeToolCall(command: string): string {
       const path = getStringField(args, ['path', 'file_path', 'notebook_path'])
       if (path) lines.push(`path: ${path}`)
 
+      const pathKeys = new Set(['path', 'file_path', 'notebook_path'])
       for (const [key, value] of Object.entries(args)) {
-        if (['path', 'file_path', 'notebook_path'].includes(key)) continue
+        if (pathKeys.has(key)) continue
         if (key === 'content' && typeof value === 'string') {
           lines.push(`content: ${countLines(value)} lines, ${value.length} chars (hidden in approval preview)`)
           continue

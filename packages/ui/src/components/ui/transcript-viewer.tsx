@@ -36,6 +36,36 @@ export interface TranscriptViewerContainerProps extends React.HTMLAttributes<HTM
   as?: 'div' | 'span'
 }
 
+interface AudioPlaybackState {
+  currentTime: number
+  duration: number
+  isPlaying: boolean
+}
+
+type AudioPlaybackAction =
+  | { type: 'duration'; duration: number }
+  | { type: 'timeUpdate'; currentTime: number }
+  | { type: 'play' }
+  | { type: 'pause' }
+  | { type: 'seek'; currentTime: number }
+
+function audioPlaybackReducer(state: AudioPlaybackState, action: AudioPlaybackAction): AudioPlaybackState {
+  switch (action.type) {
+    case 'duration':
+      return { ...state, duration: action.duration }
+    case 'timeUpdate':
+      return { ...state, currentTime: action.currentTime }
+    case 'play':
+      return { ...state, isPlaying: true }
+    case 'pause':
+      return { ...state, isPlaying: false }
+    case 'seek':
+      return { ...state, currentTime: action.currentTime }
+  }
+}
+
+const INITIAL_PLAYBACK_STATE: AudioPlaybackState = { currentTime: 0, duration: 0, isPlaying: false }
+
 export function TranscriptViewerContainer({
   audioSrc,
   audioType,
@@ -46,19 +76,18 @@ export function TranscriptViewerContainer({
   ...props
 }: TranscriptViewerContainerProps) {
   const audioRef = React.useRef<HTMLAudioElement>(null)
-  const [currentTime, setCurrentTime] = React.useState(0)
-  const [duration, setDuration] = React.useState(0)
-  const [isPlaying, setIsPlaying] = React.useState(false)
+  const [playbackState, dispatchPlayback] = React.useReducer(audioPlaybackReducer, INITIAL_PLAYBACK_STATE)
+  const { currentTime, duration, isPlaying } = playbackState
 
   React.useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
 
-    const handleLoadedMetadata = () => setDuration(Number.isFinite(audio.duration) ? audio.duration : 0)
-    const handleTimeUpdate = () => setCurrentTime(audio.currentTime)
-    const handlePlay = () => setIsPlaying(true)
-    const handlePause = () => setIsPlaying(false)
-    const handleEnded = () => setIsPlaying(false)
+    const handleLoadedMetadata = () => dispatchPlayback({ type: 'duration', duration: Number.isFinite(audio.duration) ? audio.duration : 0 })
+    const handleTimeUpdate = () => dispatchPlayback({ type: 'timeUpdate', currentTime: audio.currentTime })
+    const handlePlay = () => dispatchPlayback({ type: 'play' })
+    const handlePause = () => dispatchPlayback({ type: 'pause' })
+    const handleEnded = () => dispatchPlayback({ type: 'pause' })
 
     audio.addEventListener('loadedmetadata', handleLoadedMetadata)
     audio.addEventListener('durationchange', handleLoadedMetadata)
@@ -95,7 +124,7 @@ export function TranscriptViewerContainer({
     const audio = audioRef.current
     if (!audio) return
     audio.currentTime = Math.max(0, Math.min(seconds, duration || seconds))
-    setCurrentTime(audio.currentTime)
+    dispatchPlayback({ type: 'seek', currentTime: audio.currentTime })
   }, [duration])
 
   const value = React.useMemo<TranscriptViewerContextValue>(() => ({

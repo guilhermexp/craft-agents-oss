@@ -23,15 +23,18 @@ export interface AutomationActionRowProps {
 function PromptText({ text, t }: { text: string; t: (key: string) => string }) {
   if (!text) return <span className="text-sm text-muted-foreground italic">{t('automations.emptyPrompt')}</span>
   const parts = text.split(/(@\w[\w-]*)/g)
+  let offset = 0
   return (
     <span className="text-sm break-words">
-      {parts.map((part, i) =>
-        part.startsWith('@') ? (
-          <span key={i} className="text-accent font-medium">{part}</span>
+      {parts.map((part) => {
+        const key = `p-${offset}`
+        offset += part.length
+        return part.startsWith('@') ? (
+          <span key={key} className="text-accent font-medium">{part}</span>
         ) : (
-          <span key={i}>{part}</span>
+          <span key={key}>{part}</span>
         )
-      )}
+      })}
     </span>
   )
 }

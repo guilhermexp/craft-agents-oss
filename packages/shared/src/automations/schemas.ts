@@ -13,14 +13,14 @@ import { APP_EVENTS, AGENT_EVENTS } from './types.ts';
 // Zod Schemas
 // ============================================================================
 
-export const PromptActionSchema = z.object({
+const PromptActionSchema = z.object({
   type: z.literal('prompt'),
   prompt: z.string().min(1, 'Prompt cannot be empty'),
   llmConnection: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
 });
 
-export const WebhookActionSchema = z.object({
+const WebhookActionSchema = z.object({
   type: z.literal('webhook'),
   url: z.string().min(1, 'URL cannot be empty').refine(
     (url) => {
@@ -55,7 +55,7 @@ export const WebhookActionSchema = z.object({
 });
 
 /** Accepts prompt and webhook actions strictly; passes through legacy/unknown action types without erroring */
-export const ActionDefinitionSchema = z.union([
+const ActionDefinitionSchema = z.union([
   PromptActionSchema,
   WebhookActionSchema,
   z.object({ type: z.string() }).passthrough(),
@@ -128,7 +128,7 @@ export const AutomationConditionSchema: z.ZodType = z.lazy(() =>
 // Matcher Schema
 // ============================================================================
 
-export const AutomationMatcherSchema = z.object({
+const AutomationMatcherSchema = z.object({
   id: z.string().optional(),
   name: z.string().optional(),
   matcher: z.string().optional(),

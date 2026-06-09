@@ -32,23 +32,24 @@ const ModalContext = createContext<ModalContextValue | null>(null)
 export function ModalProvider({ children }: { children: React.ReactNode }) {
   // Using ref instead of state to avoid re-renders when modals register/unregister.
   // The UI doesn't need to know about the registry - only the close handler does.
-  const modalsRef = useRef<Map<string, RegisteredModal>>(new Map())
+  const modalsRef = useRef<Map<string, RegisteredModal> | null>(null)
+  if (modalsRef.current === null) modalsRef.current = new Map()
 
   const registerModal = useCallback((id: string, close: () => void, priority = 0) => {
-    modalsRef.current.set(id, { id, priority, close })
+    modalsRef.current!.set(id, { id, priority, close })
 
     // Return unregister function for cleanup
     return () => {
-      modalsRef.current.delete(id)
+      modalsRef.current!.delete(id)
     }
   }, [])
 
   const hasOpenModals = useCallback(() => {
-    return modalsRef.current.size > 0
+    return modalsRef.current!.size > 0
   }, [])
 
   const closeTopModal = useCallback(() => {
-    const modals = Array.from(modalsRef.current.values())
+    const modals = Array.from(modalsRef.current!.values())
     if (modals.length === 0) return false
 
     // Sort by priority descending, close the highest priority modal

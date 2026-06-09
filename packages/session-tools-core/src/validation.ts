@@ -262,7 +262,7 @@ export function validateSkillContent(markdownContent: string, slug: string): Val
 /**
  * Valid mermaid diagram types
  */
-export const MERMAID_DIAGRAM_TYPES = [
+const MERMAID_DIAGRAM_TYPES = [
   'graph', 'flowchart', 'sequenceDiagram', 'classDiagram',
   'stateDiagram', 'erDiagram', 'gantt', 'pie', 'mindmap',
   'timeline', 'gitGraph', 'C4Context', 'sankey',
@@ -272,7 +272,7 @@ export const MERMAID_DIAGRAM_TYPES = [
  * Basic mermaid syntax validation (no rendering).
  * Checks for common syntax errors without requiring a browser.
  */
-export function validateMermaidSyntax(code: string): ValidationResult {
+function validateMermaidSyntax(code: string): ValidationResult {
   const lines = code.trim().split('\n');
   const firstLine = lines[0]?.trim() ?? '';
 

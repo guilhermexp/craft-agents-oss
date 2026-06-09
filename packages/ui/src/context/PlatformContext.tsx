@@ -121,7 +121,9 @@ export interface PlatformActions {
   onSetTrafficLightsVisible?: (visible: boolean) => void
 }
 
-const PlatformContext = createContext<PlatformActions>({})
+const EMPTY_ACTIONS: PlatformActions = {}
+
+const PlatformContext = createContext<PlatformActions>(EMPTY_ACTIONS)
 
 export interface PlatformProviderProps {
   children: ReactNode
@@ -153,7 +155,7 @@ export interface PlatformProviderProps {
  * </PlatformProvider>
  * ```
  */
-export function PlatformProvider({ children, actions = {} }: PlatformProviderProps) {
+export function PlatformProvider({ children, actions = EMPTY_ACTIONS }: PlatformProviderProps) {
   return (
     <PlatformContext.Provider value={actions}>
       {children}
@@ -186,4 +188,3 @@ export function usePlatform(): PlatformActions {
   return useContext(PlatformContext)
 }
 
-export default PlatformContext

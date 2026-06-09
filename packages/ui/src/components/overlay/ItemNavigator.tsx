@@ -49,6 +49,7 @@ export function ItemNavigator({ items, activeIndex, onSelect, size = 'sm' }: Ite
   return (
     <div className="flex items-center gap-1 select-none">
       <button
+        type="button"
         onClick={goToPrev}
         disabled={activeIndex === 0}
         className={cn(
@@ -65,6 +66,7 @@ export function ItemNavigator({ items, activeIndex, onSelect, size = 'sm' }: Ite
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
+            type="button"
             className={cn(
               'flex items-center text-muted-foreground font-medium',
               'bg-background shadow-minimal cursor-pointer',
@@ -79,7 +81,7 @@ export function ItemNavigator({ items, activeIndex, onSelect, size = 'sm' }: Ite
         <StyledDropdownMenuContent align="center" className="max-h-64 overflow-y-auto" style={{ zIndex: 'var(--z-floating-menu, 400)' }}>
           {items.map((item, idx) => (
             <StyledDropdownMenuItem
-              key={idx}
+              key={item.label ?? idx}
               onSelect={() => onSelect(idx)}
             >
               <span className="flex-1 truncate">
@@ -92,6 +94,7 @@ export function ItemNavigator({ items, activeIndex, onSelect, size = 'sm' }: Ite
       </DropdownMenu>
 
       <button
+        type="button"
         onClick={goToNext}
         disabled={activeIndex === items.length - 1}
         className={cn(

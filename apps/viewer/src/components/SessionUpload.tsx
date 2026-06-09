@@ -145,6 +145,7 @@ export function SessionUpload({ onSessionLoad }: SessionUploadProps) {
         accept=".json"
         onChange={handleFileSelect}
         className="hidden"
+        aria-label="Upload session JSON"
       />
 
       {error && (

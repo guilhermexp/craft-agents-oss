@@ -23,12 +23,6 @@ import {
   SettingsTextarea,
 } from '@/components/settings'
 import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopover'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
-
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'preferences',
-}
 
 interface PreferencesFormState {
   name: string
@@ -122,8 +116,9 @@ export default function PreferencesPage() {
     load()
 
     return () => {
-      if (initialLoadTimeoutRef.current) {
-        clearTimeout(initialLoadTimeoutRef.current)
+      const timer = initialLoadTimeoutRef.current
+      if (timer) {
+        clearTimeout(timer)
         initialLoadTimeoutRef.current = null
       }
     }
@@ -155,8 +150,9 @@ export default function PreferencesPage() {
     }, 500)
 
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current)
+      const timer = saveTimeoutRef.current
+      if (timer) {
+        clearTimeout(timer)
       }
     }
   }, [formState, isLoading])

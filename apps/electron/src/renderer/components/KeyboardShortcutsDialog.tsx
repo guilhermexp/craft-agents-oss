@@ -128,12 +128,12 @@ function StaticSection({ section }: { section: ShortcutSection }) {
         {section.title}
       </h3>
       <div className="space-y-1.5">
-        {section.shortcuts.map((shortcut, index) => (
-          <div key={index} className="flex items-center justify-between py-1">
+        {section.shortcuts.map((shortcut) => (
+          <div key={shortcut.description} className="flex items-center justify-between py-1">
             <span className="text-sm">{shortcut.description}</span>
             <div className="flex items-center gap-1">
-              {shortcut.keys.map((key, keyIndex) => (
-                <Kbd key={keyIndex}>{key}</Kbd>
+              {shortcut.keys.map((key) => (
+                <Kbd key={key}>{key}</Kbd>
               ))}
             </div>
           </div>

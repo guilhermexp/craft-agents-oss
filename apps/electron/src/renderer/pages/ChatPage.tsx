@@ -282,7 +282,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     const connection = connectionSlug ? llmConnections.find(c => c.slug === connectionSlug) : null
 
     return connection?.defaultModel ?? ''
-  }, [session?.id, session?.model, session?.llmConnection, workspaceDefaultLlmConnection, llmConnections, connectionUnavailable])
+  }, [session?.model, session?.llmConnection, workspaceDefaultLlmConnection, llmConnections, connectionUnavailable])
 
   // Working directory for this session
   const workingDirectory = session?.workingDirectory
@@ -290,7 +290,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     () => workspaces.find((w) => w.id === activeWorkspaceId) || null,
     [workspaces, activeWorkspaceId]
   )
-  const inlineFileResolveCacheRef = React.useRef(new Map<string, InlineFileResolveCacheEntry>())
+  const inlineFileResolveCacheRef = React.useRef<Map<string, InlineFileResolveCacheEntry>>(null as unknown as Map<string, InlineFileResolveCacheEntry>)
+  if (!inlineFileResolveCacheRef.current) inlineFileResolveCacheRef.current = new Map()
   const handleWorkingDirectoryChange = React.useCallback(async (path: string) => {
     if (!session) return
     await window.electronAPI.sessionCommand(session.id, { type: 'updateWorkingDirectory', dir: path })
@@ -503,7 +504,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     } else {
       toast.error(t('toast.failedToShare'), { description: result?.error || t('toast.unknownError') })
     }
-  }, [sessionId])
+  }, [sessionId, t])
 
   const handleOpenInBrowser = React.useCallback(() => {
     if (sharedUrl) window.electronAPI.openUrl(sharedUrl)
@@ -514,7 +515,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
       await navigator.clipboard.writeText(sharedUrl)
       toast.success(t('toast.linkCopied'))
     }
-  }, [sharedUrl])
+  }, [sharedUrl, t])
 
   const handleUpdateShare = React.useCallback(async () => {
     const result = await window.electronAPI.sessionCommand(sessionId, { type: 'updateShare' }) as { success: boolean; error?: string } | undefined
@@ -523,7 +524,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     } else {
       toast.error(t('chat.failedToUpdateShare'), { description: result?.error })
     }
-  }, [sessionId])
+  }, [sessionId, t])
 
   const handleRevokeShare = React.useCallback(async () => {
     const result = await window.electronAPI.sessionCommand(sessionId, { type: 'revokeShare' }) as { success: boolean; error?: string } | undefined
@@ -532,7 +533,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     } else {
       toast.error(t('chat.failedToStopSharing'), { description: result?.error })
     }
-  }, [sessionId])
+  }, [sessionId, t])
 
   // Share button with dropdown menu rendered in PanelHeader actions slot
   const shareButton = React.useMemo(() => (
@@ -542,10 +543,10 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
           aria-label={sharedUrl ? 'Shared session options' : 'Share session'}
           icon={sharedUrl
             ? <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M11.2383 10.2871C11.6481 10.0391 12.1486 10.0082 12.5811 10.1943L12.7617 10.2871L13.0088 10.4414C14.2231 11.227 15.1393 12.2124 15.8701 13.502C16.1424 13.9824 15.9736 14.5929 15.4932 14.8652C15.0127 15.1375 14.4022 14.9688 14.1299 14.4883C13.8006 13.9073 13.4303 13.417 13 12.9883V21C13 21.5523 12.5523 22 12 22C11.4477 22 11 21.5523 11 21V12.9883C10.5697 13.417 10.1994 13.9073 9.87012 14.4883C9.59781 14.9688 8.98732 15.1375 8.50684 14.8652C8.02643 14.5929 7.8576 13.9824 8.12988 13.502C8.90947 12.1264 9.90002 11.0972 11.2383 10.2871ZM11.5 3C14.2848 3 16.6594 4.75164 17.585 7.21289C20.1294 7.90815 22 10.235 22 13C22 16.3137 19.3137 19 16 19H15V16.9961C15.5021 16.9966 16.0115 16.8707 16.4795 16.6055C17.9209 15.7885 18.4272 13.9571 17.6104 12.5156C16.6661 10.8495 15.4355 9.56805 13.7969 8.57617C12.692 7.90745 11.308 7.90743 10.2031 8.57617C8.56453 9.56806 7.3339 10.8495 6.38965 12.5156C5.57277 13.957 6.07915 15.7885 7.52051 16.6055C7.98851 16.8707 8.49794 16.9966 9 16.9961V19H7C4.23858 19 2 16.7614 2 14C2 11.9489 3.23498 10.1861 5.00195 9.41504C5.04745 5.86435 7.93852 3 11.5 3Z" />
+                <path d="M11.24 10.29C11.65 10.04 12.15 10.01 12.58 10.19L12.76 10.29L13.01 10.44C14.22 11.23 15.14 12.21 15.87 13.5C16.14 13.98 15.97 14.59 15.49 14.87C15.01 15.14 14.4 14.97 14.13 14.49C13.8 13.91 13.43 13.42 13 12.99V21C13 21.55 12.55 22 12 22C11.45 22 11 21.55 11 21V12.99C10.57 13.42 10.2 13.91 9.87 14.49C9.6 14.97 8.99 15.14 8.51 14.87C8.03 14.59 7.86 13.98 8.13 13.5C8.91 12.13 9.9 11.1 11.24 10.29ZM11.5 3C14.28 3 16.66 4.75 17.59 7.21C20.13 7.91 22 10.24 22 13C22 16.31 19.31 19 16 19H15V17C15.5 17 16.01 16.87 16.48 16.61C17.92 15.79 18.43 13.96 17.61 12.52C16.67 10.85 15.44 9.57 13.8 8.58C12.69 7.91 11.31 7.91 10.2 8.58C8.56 9.57 7.33 10.85 6.39 12.52C5.57 13.96 6.08 15.79 7.52 16.61C7.99 16.87 8.5 17 9 17V19H7C4.24 19 2 16.76 2 14C2 11.95 3.23 10.19 5 9.42C5.05 5.86 7.94 3 11.5 3Z" />
               </svg>
             : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M8 8.53809C6.74209 8.60866 5.94798 8.80911 5.37868 9.37841C4.5 10.2571 4.5 11.6713 4.5 14.4997V15.4997C4.5 18.3282 4.5 19.7424 5.37868 20.6211C6.25736 21.4997 7.67157 21.4997 10.5 21.4997H13.5C16.3284 21.4997 17.7426 21.4997 18.6213 20.6211C19.5 19.7424 19.5 18.3282 19.5 15.4997V14.4997C19.5 11.6713 19.5 10.2571 18.6213 9.37841C18.052 8.80911 17.2579 8.60866 16 8.53809M12 14V3.5M9.5 5.5C9.99903 4.50411 10.6483 3.78875 11.5606 3.24093C11.7612 3.12053 11.8614 3.06033 12 3.06033C12.1386 3.06033 12.2388 3.12053 12.4394 3.24093C13.3517 3.78875 14.001 4.50411 14.5 5.5" />
+                <path d="M8 8.54C6.74 8.61 5.95 8.81 5.38 9.38C4.5 10.26 4.5 11.67 4.5 14.5V15.5C4.5 18.33 4.5 19.74 5.38 20.62C6.26 21.5 7.67 21.5 10.5 21.5H13.5C16.33 21.5 17.74 21.5 18.62 20.62C19.5 19.74 19.5 18.33 19.5 15.5V14.5C19.5 11.67 19.5 10.26 18.62 9.38C18.05 8.81 17.26 8.61 16 8.54M12 14V3.5M9.5 5.5C10 4.5 10.65 3.79 11.56 3.24C11.76 3.12 11.86 3.06 12 3.06C12.14 3.06 12.24 3.12 12.44 3.24C13.35 3.79 14 4.5 14.5 5.5" />
               </svg>
           }
           className={sharedUrl ? `${HEADER_ICON_ONLY_BUTTON_CLASS} text-accent` : HEADER_ICON_ONLY_BUTTON_CLASS}
@@ -581,7 +582,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
           <>
             <StyledDropdownMenuItem onClick={handleShare}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M8 8.53809C6.74209 8.60866 5.94798 8.80911 5.37868 9.37841C4.5 10.2571 4.5 11.6713 4.5 14.4997V15.4997C4.5 18.3282 4.5 19.7424 5.37868 20.6211C6.25736 21.4997 7.67157 21.4997 10.5 21.4997H13.5C16.3284 21.4997 17.7426 21.4997 18.6213 20.6211C19.5 19.7424 19.5 18.3282 19.5 15.4997V14.4997C19.5 11.6713 19.5 10.2571 18.6213 9.37841C18.052 8.80911 17.2579 8.60866 16 8.53809M12 14V3.5M9.5 5.5C9.99903 4.50411 10.6483 3.78875 11.5606 3.24093C11.7612 3.12053 11.8614 3.06033 12 3.06033C12.1386 3.06033 12.2388 3.12053 12.4394 3.24093C13.3517 3.78875 14.001 4.50411 14.5 5.5" />
+                <path d="M8 8.54C6.74 8.61 5.95 8.81 5.38 9.38C4.5 10.26 4.5 11.67 4.5 14.5V15.5C4.5 18.33 4.5 19.74 5.38 20.62C6.26 21.5 7.67 21.5 10.5 21.5H13.5C16.33 21.5 17.74 21.5 18.62 20.62C19.5 19.74 19.5 18.33 19.5 15.5V14.5C19.5 11.67 19.5 10.26 18.62 9.38C18.05 8.81 17.26 8.61 16 8.54M12 14V3.5M9.5 5.5C10 4.5 10.65 3.79 11.56 3.24C11.76 3.12 11.86 3.06 12 3.06C12.14 3.06 12.24 3.12 12.44 3.24C13.35 3.79 14 4.5 14.5 5.5" />
               </svg>
               <span className="flex-1">{t('chat.shareOnline')}</span>
             </StyledDropdownMenuItem>
@@ -594,7 +595,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
         )}
       </StyledDropdownMenuContent>
     </DropdownMenu>
-  ), [sharedUrl, handleShare, handleOpenInBrowser, handleCopyLink, handleUpdateShare, handleRevokeShare])
+  ), [sharedUrl, handleShare, handleOpenInBrowser, handleCopyLink, handleUpdateShare, handleRevokeShare, t])
 
   const compactInfoButton = React.useMemo(() => {
     if (!isCompactMode || !sessionMeta) return undefined
@@ -613,7 +614,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
         )}
       />
     )
-  }, [isCompactMode, sessionId, session?.sessionFolderPath, sessionMeta])
+  }, [isCompactMode, sessionId, session?.sessionFolderPath, sessionMeta, t])
 
   const sessionInfoSidebarButton = React.useMemo(() => {
     if (isCompactMode || !sessionMeta) return undefined

@@ -2,7 +2,7 @@ import * as React from 'react'
 import { useTranslation } from "react-i18next"
 import { Command as CommandPrimitive } from 'cmdk'
 import { toast } from 'sonner'
-import { AnimatePresence, motion } from 'motion/react'
+import { LazyMotion, m, AnimatePresence, domAnimation } from 'motion/react'
 import {
   Paperclip,
   ArrowUp,
@@ -240,6 +240,35 @@ export interface FreeFormInputProps {
   connectionUnavailable?: boolean
 }
 
+// Stable empty-array defaults to avoid re-creating new references on every render
+const EMPTY_SOURCES: LoadedSource[] = []
+const EMPTY_SOURCE_SLUGS: string[] = []
+const EMPTY_SKILLS: LoadedSkill[] = []
+const EMPTY_LABELS: LabelConfig[] = []
+const EMPTY_SESSION_LABELS: string[] = []
+const EMPTY_FOLLOW_UP_ITEMS: FollowUpInputItem[] = []
+
+/** Get the next available number for a pasted file prefix (e.g., pasted-image-1, pasted-image-2) */
+function getNextPastedNumber(
+  prefix: 'image' | 'text' | 'file',
+  existingAttachments: FileAttachment[]
+): number {
+  const pattern = new RegExp(`^pasted-${prefix}-(\\d+)\\.`)
+  let maxNum = 0
+  for (const att of existingAttachments) {
+    const match = att.name.match(pattern)
+    if (match) {
+      maxNum = Math.max(maxNum, parseInt(match[1], 10))
+    }
+  }
+  return maxNum + 1
+}
+
+function handleDragOver(e: React.DragEvent) {
+  e.preventDefault()
+  e.stopPropagation()
+}
+
 /**
  * FreeFormInput - Self-contained textarea input with attachments and controls
  *
@@ -271,12 +300,12 @@ export function FreeFormInput({
   unstyled = false,
   onHeightChange,
   onFocusChange,
-  sources = [],
-  enabledSourceSlugs = [],
+  sources = EMPTY_SOURCES,
+  enabledSourceSlugs = EMPTY_SOURCE_SLUGS,
   onSourcesChange,
-  skills = [],
-  labels = [],
-  sessionLabels = [],
+  skills = EMPTY_SKILLS,
+  labels = EMPTY_LABELS,
+  sessionLabels = EMPTY_SESSION_LABELS,
   onLabelAdd,
   workspaceId,
   workingDirectory,
@@ -287,7 +316,7 @@ export function FreeFormInput({
   disableSend = false,
   isEmptySession = false,
   contextStatus,
-  followUpItems = [],
+  followUpItems = EMPTY_FOLLOW_UP_ITEMS,
   onFollowUpClick,
   onFollowUpIndexClick,
   compactMode = false,
@@ -596,7 +625,8 @@ export function FreeFormInput({
   }, [enabledSourceSlugs])
 
   // Sync from parent when inputValue changes externally (e.g., switching sessions)
-  const prevInputValueRef = React.useRef(coerceInputText(inputValue))
+  const prevInputValueRef = React.useRef<string | null>(null)
+  if (prevInputValueRef.current === null) prevInputValueRef.current = coerceInputText(inputValue)
   React.useEffect(() => {
     if (inputValue === undefined) return
     const nextInputValue = coerceInputText(inputValue)
@@ -623,9 +653,10 @@ export function FreeFormInput({
   inputRef.current = input // Keep ref in sync with state
 
   React.useEffect(() => {
+    const syncTimeout = syncTimeoutRef
     return () => {
       // Cancel pending debounced sync
-      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current)
+      if (syncTimeout.current) clearTimeout(syncTimeout.current)
       // Immediately sync current value to parent on unmount
       // This preserves input when switching to structured input (e.g., permission request)
       if (onInputChange && inputRef.current !== prevInputValueRef.current) {
@@ -638,7 +669,7 @@ export function FreeFormInput({
   const [loadingCount, setLoadingCount] = React.useState(0)
   const [sourceDropdownOpen, setSourceDropdownOpen] = React.useState(false)
   const [isFocused, setIsFocused] = React.useState(false)
-  const [inputMaxHeight, setInputMaxHeight] = React.useState(540)
+  const [inputMaxHeight, setInputMaxHeight] = React.useState(() => Math.min(Math.floor(window.innerHeight * 0.66), 540))
   const [modelDropdownOpen, setModelDropdownOpen] = React.useState(false)
 
   // Input settings (loaded from config)
@@ -669,13 +700,12 @@ export function FreeFormInput({
   // Double-Esc interrupt: show warning overlay on first Esc, interrupt on second
   const { showEscapeOverlay } = useEscapeInterrupt()
 
-  // Calculate max height: min(66% of window height, 540px)
+  // Update max height on resize: min(66% of window height, 540px)
   React.useEffect(() => {
     const updateMaxHeight = () => {
       const maxFromWindow = Math.floor(window.innerHeight * 0.66)
       setInputMaxHeight(Math.min(maxFromWindow, 540))
     }
-    updateMaxHeight()
     window.addEventListener('resize', updateMaxHeight)
     return () => window.removeEventListener('resize', updateMaxHeight)
   }, [])
@@ -932,22 +962,6 @@ export function FreeFormInput({
     return () => clearTimeout(focusTimer)
   }, [sessionId, richInputRef])
 
-  // Get the next available number for a pasted file prefix (e.g., pasted-image-1, pasted-image-2)
-  const getNextPastedNumber = (
-    prefix: 'image' | 'text' | 'file',
-    existingAttachments: FileAttachment[]
-  ): number => {
-    const pattern = new RegExp(`^pasted-${prefix}-(\\d+)\\.`)
-    let maxNum = 0
-    for (const att of existingAttachments) {
-      const match = att.name.match(pattern)
-      if (match) {
-        maxNum = Math.max(maxNum, parseInt(match[1], 10))
-      }
-    }
-    return maxNum + 1
-  }
-
   // Listen for craft:paste-files events (for global paste when input not focused)
   React.useEffect(() => {
     const handlePasteFiles = async (e: CustomEvent<{ files: File[]; sessionId?: string }>) => {
@@ -971,9 +985,9 @@ export function FreeFormInput({
         return file.name
       })
 
-      for (let i = 0; i < files.length; i++) {
+      await Promise.all(files.map(async (file, i) => {
         try {
-          const attachment = await readFileAsAttachment(files[i], fileNames[i])
+          const attachment = await readFileAsAttachment(file, fileNames[i])
           if (attachment) {
             setAttachments(prev => [...prev, attachment])
           }
@@ -981,7 +995,7 @@ export function FreeFormInput({
           console.error('[FreeFormInput] Failed to process pasted file:', error)
         }
         setLoadingCount(prev => prev - 1)
-      }
+      }))
 
       // Focus the input after adding attachments
       richInputRef.current?.focus()
@@ -1160,9 +1174,7 @@ export function FreeFormInput({
     const fileList = Array.from(files)
     setLoadingCount(prev => prev + fileList.length)
 
-    for (const file of fileList) {
-      await processFileAttachment(file)
-    }
+    await Promise.all(fileList.map(file => processFileAttachment(file)))
 
     // Reset input so re-selecting the same file triggers onChange again
     e.target.value = ''
@@ -1189,11 +1201,6 @@ export function FreeFormInput({
     if (dragCounterRef.current === 0) {
       setIsDraggingOver(false)
     }
-  }
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
   }
 
   // Helper to read a File using FileReader API
@@ -1281,9 +1288,7 @@ export function FreeFormInput({
       return file.name
     })
 
-    for (let i = 0; i < files.length; i++) {
-      await processFileAttachment(files[i], fileNames[i])
-    }
+    await Promise.all(files.map((file, i) => processFileAttachment(file, fileNames[i])))
   }
 
   // Handle long text paste - convert to file attachment
@@ -1313,9 +1318,7 @@ export function FreeFormInput({
     const files = Array.from(e.dataTransfer.files)
     setLoadingCount(files.length)
 
-    for (const file of files) {
-      await processFileAttachment(file)
-    }
+    await Promise.all(files.map(file => processFileAttachment(file)))
   }
 
   // Submit message - backend handles queueing and interruption
@@ -1604,6 +1607,7 @@ export function FreeFormInput({
   const hasContent = input.trim() || attachments.length > 0 || followUpItems.length > 0
 
   return (
+    <LazyMotion features={domAnimation}>
     <form onSubmit={handleSubmit}>
       <div
         ref={containerRef}
@@ -1693,7 +1697,7 @@ export function FreeFormInput({
         {/* Follow-up context chips */}
         <AnimatePresence initial={false}>
           {followUpItems.length > 0 && (
-            <motion.div
+            <m.div
               key="follow-up-chips"
               layout={animateFollowUpLayout}
               initial={{ opacity: 0, height: 0 }}
@@ -1702,8 +1706,8 @@ export function FreeFormInput({
               transition={{ duration: 0.18, ease: [0.2, 0, 0.2, 1] }}
               className="overflow-hidden"
             >
-              <motion.div layout={animateFollowUpLayout} className="px-3 pt-3.5 pb-0">
-                <motion.div layout={animateFollowUpLayout} className="flex flex-wrap gap-1">
+              <m.div layout={animateFollowUpLayout} className="px-3 pt-3.5 pb-0">
+                <m.div layout={animateFollowUpLayout} className="flex flex-wrap gap-1">
                   <AnimatePresence initial={false}>
                     {followUpItems.map((item, idx) => {
                       const chipIndex = item.index ?? idx + 1
@@ -1712,7 +1716,7 @@ export function FreeFormInput({
                       const noteExcerpt = formatFollowUpChipText(item.noteLabel, t('chat.followUp'), 50)
 
                       return (
-                        <motion.button
+                        <m.button
                           key={item.id}
                           type="button"
                           layout={animateFollowUpLayout}
@@ -1764,13 +1768,13 @@ export function FreeFormInput({
                             <span className="mx-1 text-foreground/40">·</span>
                             <span>{noteExcerpt}</span>
                           </span>
-                        </motion.button>
+                        </m.button>
                       )
                     })}
                   </AnimatePresence>
-                </motion.div>
-              </motion.div>
-            </motion.div>
+                </m.div>
+              </m.div>
+            </m.div>
           )}
         </AnimatePresence>
 
@@ -1818,6 +1822,7 @@ export function FreeFormInput({
             ref={fileInputRef}
             type="file"
             multiple
+            aria-label="Attach files"
             className="hidden"
             onChange={handleFileInputChange}
           />
@@ -2402,6 +2407,7 @@ export function FreeFormInput({
         </div>
       </div>
     </form>
+    </LazyMotion>
   )
 }
 

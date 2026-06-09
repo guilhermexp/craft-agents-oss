@@ -74,17 +74,3 @@ export function loadWindowState(): WindowState | null {
     return null
   }
 }
-
-/**
- * Clear the saved window state
- */
-export function clearWindowState(): void {
-  try {
-    if (existsSync(WINDOW_STATE_FILE)) {
-      writeFileSync(WINDOW_STATE_FILE, JSON.stringify({ windows: [] }, null, 2), 'utf-8')
-      mainLog.info('[WindowState] Cleared window state')
-    }
-  } catch (error) {
-    mainLog.error('[WindowState] Failed to clear window state:', error)
-  }
-}

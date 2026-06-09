@@ -134,7 +134,7 @@ export const playgroundMessagingHandle: PlaygroundMessagingHandle = {
 // Mock electronAPI
 // ============================================================================
 
-export const mockElectronAPI = {
+const mockElectronAPI = {
   isDebugMode: async () => true,
 
   // Called at module-load time by SessionFilesSection.tsx (and others) to
@@ -679,8 +679,3 @@ export const mockAttachmentCallbacks = {
   },
 }
 
-export const mockBackgroundTaskCallbacks = {
-  onKillTask: (taskId: string) => {
-    console.log('[Playground] Kill task:', taskId)
-  },
-}

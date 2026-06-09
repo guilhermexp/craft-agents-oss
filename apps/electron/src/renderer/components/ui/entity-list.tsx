@@ -108,6 +108,7 @@ function CollapsibleGroupHeader({
     <ContextMenu modal>
       <ContextMenuTrigger asChild>
         <button
+          type="button"
           onClick={onToggle}
           className="w-full py-2 px-4 flex items-center gap-1.5 cursor-pointer group/header relative"
         >

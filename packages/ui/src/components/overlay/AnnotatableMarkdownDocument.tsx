@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Markdown } from '../markdown'
+import { Markdown } from '../markdown/Markdown'
 import type { AnnotationV1 } from '@craft-agent/core'
 import { type IslandTransitionConfig } from '../ui'
 import { AnnotationIslandMenu } from '../annotations/AnnotationIslandMenu'
@@ -107,7 +107,7 @@ export function AnnotatableMarkdownDocument({
 
   const [selectionMenuShowNonce, setSelectionMenuShowNonce] = React.useState(0)
   const [selectionMenuTransitionConfig, setSelectionMenuTransitionConfig] = React.useState<IslandTransitionConfig>(
-    buildAnnotationChipEntryTransition()
+    () => buildAnnotationChipEntryTransition()
   )
   const [annotationOverlay, setAnnotationOverlay] = React.useState<{ rects: AnnotationOverlayRect[]; chips: AnnotationOverlayChip[] }>({ rects: [], chips: [] })
 
@@ -426,7 +426,7 @@ export function AnnotatableMarkdownDocument({
       selectionMenuOpenedAtRef.current = Date.now()
       dragStartPointerRef.current = null
     })
-  }, [annotations, canAnnotate, closeSelectionMenu, triggerSelectionMenuEntryReplay])
+  }, [annotations, canAnnotate, closeSelectionMenu, openFromSelection, triggerSelectionMenuEntryReplay])
 
   const handleSelectionPointerDown = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     selectionStartedInContentRef.current = true

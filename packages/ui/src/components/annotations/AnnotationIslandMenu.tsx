@@ -4,9 +4,9 @@ import { CornerDownRight } from 'lucide-react'
 import {
   Island,
   IslandContentView,
-  IslandFollowUpContentView,
   type IslandTransitionConfig,
-} from '../ui'
+} from '../ui/Island'
+import { IslandFollowUpContentView } from '../ui/IslandFollowUpContentView'
 import { cn } from '../../lib/utils'
 import { clampIslandAnchorX, getDefaultIslandWidthEstimate } from './island-motion'
 import { useTranslation } from 'react-i18next'

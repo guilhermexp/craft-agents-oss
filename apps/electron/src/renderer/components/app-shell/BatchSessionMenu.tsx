@@ -147,12 +147,10 @@ export function BatchSessionMenu({ onSendToWorkspace }: BatchSessionMenuProps = 
   const handleBatchDelete = useCallback(async () => {
     const count = selectedIds.size
     const ids = [...selectedIds]
-    // Delete one-by-one (first shows confirmation, rest skip if first is confirmed)
+    // Show confirmation for first; if confirmed, delete remaining concurrently
     const firstDeleted = await onDeleteSession(ids[0])
     if (!firstDeleted) return // User cancelled
-    for (let i = 1; i < ids.length; i++) {
-      await onDeleteSession(ids[i], true) // skip confirmation for remaining
-    }
+    await Promise.all(ids.slice(1).map((id) => onDeleteSession(id, true)))
     clearMultiSelect()
     toast(`${count} ${count === 1 ? 'session' : 'sessions'} deleted`)
   }, [selectedIds, onDeleteSession, clearMultiSelect])

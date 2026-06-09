@@ -200,7 +200,7 @@ interface FilterMatchOptions {
   labelFilterMap?: Map<string, 'include' | 'exclude'>
 }
 
-export function sessionMatchesCurrentFilter(
+function sessionMatchesCurrentFilter(
   session: SessionMeta,
   currentFilter: SessionFilter | undefined,
   options: FilterMatchOptions = {}

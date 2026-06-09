@@ -52,8 +52,21 @@ export function FilterableSelectPopover<T>({
 }: FilterableSelectPopoverProps<T>) {
   const { t } = useTranslation()
   const resolvedPlaceholder = filterPlaceholder ?? t('common.search')
-  const [filter, setFilter] = React.useState('')
-  const [highlightedIndex, setHighlightedIndex] = React.useState(0)
+  // Store filter and highlightedIndex with a discriminator so they self-evict
+  // when `open` changes instead of being reset inside an effect (which causes a
+  // stale-value flash before the effect fires).
+  const [filterState, setFilterState] = React.useState<{ forOpen: boolean; value: string }>({ forOpen: false, value: '' })
+  const [highlightState, setHighlightState] = React.useState<{ forOpen: boolean; value: number }>({ forOpen: false, value: 0 })
+  const filter = filterState.forOpen === open ? filterState.value : ''
+  const highlightedIndex = highlightState.forOpen === open ? highlightState.value : 0
+  const setFilter = React.useCallback((value: string) => setFilterState({ forOpen: open, value }), [open])
+  const setHighlightedIndex = React.useCallback((updater: number | ((prev: number) => number)) => {
+    setHighlightState(prev => {
+      const current = prev.forOpen === open ? prev.value : 0
+      const next = typeof updater === 'function' ? updater(current) : updater
+      return { forOpen: open, value: next }
+    })
+  }, [open])
   const [position, setPosition] = React.useState<{ top: number; left: number } | null>(null)
   const inputRef = React.useRef<HTMLInputElement>(null)
   const listRef = React.useRef<HTMLDivElement>(null)
@@ -84,8 +97,6 @@ export function FilterableSelectPopover<T>({
   React.useEffect(() => {
     if (!open) return
 
-    setFilter('')
-    setHighlightedIndex(0)
     updatePosition()
 
     const focusInput = () => inputRef.current?.focus()
@@ -108,7 +119,7 @@ export function FilterableSelectPopover<T>({
     if (highlightedIndex >= filteredItems.length) {
       setHighlightedIndex(Math.max(0, filteredItems.length - 1))
     }
-  }, [filteredItems.length, highlightedIndex])
+  }, [filteredItems.length, highlightedIndex, setHighlightedIndex])
 
   React.useEffect(() => {
     if (!open || !listRef.current) return
@@ -153,9 +164,11 @@ export function FilterableSelectPopover<T>({
 
   return ReactDOM.createPortal(
     <>
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- backdrop dismissal handled by keyboard via input onKeyDown Escape */}
       <div
         className="fixed inset-0 z-floating-backdrop"
         onClick={() => onOpenChange(false)}
+        onKeyDown={(e) => { if (e.key === 'Escape') onOpenChange(false) }}
       />
 
       <div
@@ -181,6 +194,7 @@ export function FilterableSelectPopover<T>({
                 onChange={(e) => setFilter(e.target.value)}
                 onKeyDown={handleInputKeyDown}
                 placeholder={resolvedPlaceholder}
+                aria-label={resolvedPlaceholder}
                 className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground placeholder:select-none"
               />
             </div>

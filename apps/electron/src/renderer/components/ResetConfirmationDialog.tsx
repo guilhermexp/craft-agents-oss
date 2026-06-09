@@ -36,12 +36,15 @@ export function ResetConfirmationDialog({
   // Register with modal context so X button / Cmd+W closes this dialog first
   useRegisterModal(open, onCancel)
 
-  // Generate a random math problem when dialog opens
+  // Generate a random math problem when dialog opens.
+  // `open` is intentionally listed to regenerate the problem on each open — it is not
+  // a captured closure value, but a signal dep to re-run the memo when the dialog opens.
+  // oxlint-disable-next-line exhaustive-deps
   const problem = useMemo(() => {
     const a = Math.floor(Math.random() * 50) + 10
     const b = Math.floor(Math.random() * 50) + 10
     return { a, b, sum: a + b }
-  }, [open]) // Regenerate when dialog opens
+  }, [open])
 
   const isCorrect = parseInt(answer) === problem.sum
 

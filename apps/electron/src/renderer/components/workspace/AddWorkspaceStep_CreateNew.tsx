@@ -102,6 +102,7 @@ export function AddWorkspaceStep_CreateNew({
     <AddWorkspaceContainer>
       {/* Back button */}
       <button
+        type="button"
         onClick={onBack}
         disabled={isCreating}
         className={cn(

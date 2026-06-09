@@ -101,6 +101,7 @@ export function TerminalOutput({
             <span>Command</span>
           </div>
           <button
+            type="button"
             onClick={() => copyToClipboard(command, 'command')}
             className={cn(
               'p-1 rounded transition-colors',
@@ -139,6 +140,7 @@ export function TerminalOutput({
             )}
           </div>
           <button
+            type="button"
             onClick={() => copyToClipboard(output, 'output')}
             className={cn(
               'p-1 rounded transition-colors',

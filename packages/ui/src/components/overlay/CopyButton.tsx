@@ -39,6 +39,7 @@ export function CopyButton({ content, title, className }: CopyButtonProps) {
 
   return (
     <button
+      type="button"
       onClick={handleCopy}
       className={cn(
         'flex items-center justify-center size-7 rounded-[6px] transition-colors shrink-0 select-none',

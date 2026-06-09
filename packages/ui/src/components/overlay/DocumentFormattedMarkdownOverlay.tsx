@@ -12,7 +12,7 @@
  */
 
 import { ListTodo } from 'lucide-react'
-import { Markdown } from '../markdown'
+import { Markdown } from '../markdown/Markdown'
 import type { AnnotationV1 } from '@craft-agent/core'
 import type { ExternalOpenAnnotationRequest } from '../annotations/use-annotation-interaction-controller'
 import { FullscreenOverlayBase } from './FullscreenOverlayBase'

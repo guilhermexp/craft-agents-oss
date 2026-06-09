@@ -1,5 +1,5 @@
 import * as CollapsiblePrimitive from "@radix-ui/react-collapsible"
-import { motion, AnimatePresence } from "motion/react"
+import { LazyMotion, m, AnimatePresence, domAnimation } from "motion/react"
 import * as React from "react"
 
 // Radix primitives (unchanged)
@@ -32,20 +32,22 @@ function AnimatedCollapsibleContent({
   className
 }: AnimatedCollapsibleContentProps) {
   return (
-    <AnimatePresence initial={false}>
-      {isOpen && (
-        <motion.div
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: "auto", opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={springTransition}
-          className={className}
-          style={{ clipPath: "inset(0 -20px)" }}
-        >
-          {children}
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <LazyMotion features={domAnimation}>
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <m.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={springTransition}
+            className={className}
+            style={{ clipPath: "inset(0 -20px)" }}
+          >
+            {children}
+          </m.div>
+        )}
+      </AnimatePresence>
+    </LazyMotion>
   )
 }
 

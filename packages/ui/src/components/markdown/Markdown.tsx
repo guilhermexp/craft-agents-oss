@@ -667,11 +667,12 @@ function createComponents(
               type="checkbox"
               checked={checked}
               readOnly
+              aria-label="task item"
               className="mr-2 rounded border-muted-foreground align-middle"
             />
           )
         }
-        return <input type={type} />
+        return <input type={type} aria-label="input field" />
       },
       // Clean tables
       table: ({ children }) => (
@@ -855,11 +856,12 @@ function createComponents(
             type="checkbox"
             checked={checked}
             readOnly
+            aria-label="task item"
             className="mr-2 rounded border-muted-foreground"
           />
         )
       }
-      return <input type={type} />
+      return <input type={type} aria-label="input field" />
     },
     // Horizontal rules
     hr: () => <hr className="my-6 border-border" />,

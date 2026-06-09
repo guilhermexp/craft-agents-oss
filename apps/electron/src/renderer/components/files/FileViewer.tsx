@@ -15,11 +15,7 @@ export function FileViewer({ path }: FileViewerProps) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!path) {
-      setContent('')
-      setError(null)
-      return
-    }
+    if (!path) return
 
     const loadFile = async () => {
       setIsLoading(true)

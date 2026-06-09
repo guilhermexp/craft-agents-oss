@@ -156,6 +156,7 @@ export function MarkdownJsonBlock({ code, className }: MarkdownJsonBlockProps) {
         <div className="flex items-center justify-between px-3 py-1.5 bg-muted/50 border-b text-xs">
           <span className="text-muted-foreground font-medium uppercase tracking-wide">json</span>
           <button
+            type="button"
             onClick={handleCopy}
             className="opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
             aria-label="Copy JSON"

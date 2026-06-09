@@ -70,18 +70,19 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
     intent: null,
     shouldMoveDOMFocus: false,
   })
-  const zonesRef = useRef<Map<FocusZoneId, FocusZone>>(new Map())
+  const zonesRef = useRef<Map<FocusZoneId, FocusZone> | null>(null)
+  if (zonesRef.current === null) zonesRef.current = new Map()
 
   const registerZone = useCallback((zone: FocusZone) => {
-    zonesRef.current.set(zone.id, zone)
+    zonesRef.current!.set(zone.id, zone)
   }, [])
 
   const unregisterZone = useCallback((id: FocusZoneId) => {
-    zonesRef.current.delete(id)
+    zonesRef.current!.delete(id)
   }, [])
 
   const focusZone = useCallback((id: FocusZoneId, options?: FocusZoneOptions) => {
-    const zone = zonesRef.current.get(id)
+    const zone = zonesRef.current!.get(id)
     if (!zone) return
 
     const intent = options?.intent ?? 'programmatic'

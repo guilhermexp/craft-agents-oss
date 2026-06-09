@@ -22,6 +22,7 @@ function CrashFallback() {
       <p className="text-base font-medium">Something went wrong</p>
       <p className="text-[13px]">Please restart the app. The error has been reported.</p>
       <button
+        type="button"
         onClick={() => window.location.reload()}
         className="mt-2 px-4 py-1.5 rounded-md bg-background shadow-minimal text-[13px] text-foreground/70 cursor-pointer"
       >

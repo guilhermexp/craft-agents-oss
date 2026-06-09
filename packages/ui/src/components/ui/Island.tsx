@@ -1,6 +1,6 @@
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence, LazyMotion, m, domMax } from 'motion/react'
 import { cn } from '../../lib/utils'
 import { getDismissibleLayerBridge } from '../../lib/dismissible-layer-bridge'
 
@@ -103,7 +103,7 @@ const DEFAULT_TRANSITION: Required<IslandTransitionConfig> = {
 
 const IslandAnimationContext = React.createContext<Required<IslandTransitionConfig>>(DEFAULT_TRANSITION)
 
-export function useIslandAnimationConfig(): Required<IslandTransitionConfig> {
+function useIslandAnimationConfig(): Required<IslandTransitionConfig> {
   return React.useContext(IslandAnimationContext)
 }
 
@@ -262,6 +262,14 @@ function computeMorphDelta(
   }
 }
 
+const VISIBLE_POSE = {
+  opacity: 1,
+  x: 0,
+  y: 0,
+  scaleX: 1,
+  scaleY: 1,
+}
+
 /**
  * Animated shell that morphs between registered IslandContentView children.
  *
@@ -292,7 +300,8 @@ export function Island({
   const lastSizeRef = React.useRef<{ id: string; width: number; height: number } | null>(null)
   const [isTransitionSettling, setIsTransitionSettling] = React.useState(true)
   const [morphDelta, setMorphDelta] = React.useState<{ x: number; y: number; scaleX: number; scaleY: number } | null>(null)
-  const warmedViewIdsRef = React.useRef<Set<string>>(new Set())
+  const warmedViewIdsRef = React.useRef<Set<string>>(null as unknown as Set<string>)
+  if (!warmedViewIdsRef.current) warmedViewIdsRef.current = new Set()
   const [isMorphWarmReady, setIsMorphWarmReady] = React.useState(true)
   const shouldPrimeInitialVisibleReplay = replayOnVisible === 'always' && isVisible
   const [isVisibilityPrimed, setIsVisibilityPrimed] = React.useState(() => !shouldPrimeInitialVisibleReplay)
@@ -706,14 +715,6 @@ export function Island({
     shouldUseConfiguredStartScale,
   ])
 
-  const visiblePose = {
-    opacity: 1,
-    x: 0,
-    y: 0,
-    scaleX: 1,
-    scaleY: 1,
-  }
-
   React.useEffect(() => {
     const isFirstVisibleFrame = isVisible && spawnHiddenPoseRef.current == null
     const becameVisible = !prevIsVisibleRef.current && isVisible
@@ -781,43 +782,45 @@ export function Island({
         />,
         document.body
       )}
-      <motion.div
-        key={replayEntryKey != null ? `replay:${String(replayEntryKey)}` : 'replay:default'}
-        ref={shellRef}
-        layout
-        initial={shouldAnimateFromHiddenOnMount ? hiddenPose : false}
-        animate={effectiveVisible ? visiblePose : exitHiddenPose}
-        transition={shellTransition}
-        style={{ borderRadius: radius, transformOrigin: '50% 50%' }}
-        role={isDialogMode ? 'dialog' : undefined}
-        aria-modal={isDialogMode ? true : undefined}
-        tabIndex={isDialogMode ? -1 : undefined}
-        data-ca-island-dialog={isDialogMode ? 'true' : undefined}
-        data-state={effectiveVisible ? 'open' : 'closed'}
-        className={cn('mx-auto w-fit overflow-hidden border border-border/50 bg-background shadow-strong', className)}
-      >
-        <div className="relative">
-          <AnimatePresence initial={false} mode="popLayout">
-            <motion.div
-              key={activeView.id}
-              layout
-              initial={{ opacity: 0, filter: `blur(${cfg.blurPx}px)` }}
-              animate={{ opacity: 1, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, filter: `blur(${cfg.blurPx}px)` }}
-              transition={contentTransition}
-              onAnimationComplete={() => setIsTransitionSettling(false)}
-              onLayoutAnimationComplete={() => setIsTransitionSettling(false)}
-            >
-              <div
-                ref={activeViewRef}
-                className={cn('flex', resolveAlignClass(activeView.anchorX, activeView.anchorY), activeView.className)}
+      <LazyMotion features={domMax}>
+        <m.div
+          key={replayEntryKey != null ? `replay:${String(replayEntryKey)}` : 'replay:default'}
+          ref={shellRef}
+          layout
+          initial={shouldAnimateFromHiddenOnMount ? hiddenPose : false}
+          animate={effectiveVisible ? VISIBLE_POSE : exitHiddenPose}
+          transition={shellTransition}
+          style={{ borderRadius: radius, transformOrigin: '50% 50%' }}
+          role={isDialogMode ? 'dialog' : undefined}
+          aria-modal={isDialogMode ? true : undefined}
+          tabIndex={isDialogMode ? -1 : undefined}
+          data-ca-island-dialog={isDialogMode ? 'true' : undefined}
+          data-state={effectiveVisible ? 'open' : 'closed'}
+          className={cn('mx-auto w-fit overflow-hidden border border-border/50 bg-background shadow-strong', className)}
+        >
+          <div className="relative">
+            <AnimatePresence initial={false} mode="popLayout">
+              <m.div
+                key={activeView.id}
+                layout
+                initial={{ opacity: 0, filter: `blur(${cfg.blurPx}px)` }}
+                animate={{ opacity: 1, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, filter: `blur(${cfg.blurPx}px)` }}
+                transition={contentTransition}
+                onAnimationComplete={() => setIsTransitionSettling(false)}
+                onLayoutAnimationComplete={() => setIsTransitionSettling(false)}
               >
-                {activeView.node}
-              </div>
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      </motion.div>
+                <div
+                  ref={activeViewRef}
+                  className={cn('flex', resolveAlignClass(activeView.anchorX, activeView.anchorY), activeView.className)}
+                >
+                  {activeView.node}
+                </div>
+              </m.div>
+            </AnimatePresence>
+          </div>
+        </m.div>
+      </LazyMotion>
     </IslandAnimationContext.Provider>
   )
 }

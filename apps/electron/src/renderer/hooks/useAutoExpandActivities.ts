@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from 'react'
 
-export const AUTO_EXPAND_ACTIVITIES_EVENT = 'autoExpandActivitiesChanged'
+const AUTO_EXPAND_ACTIVITIES_EVENT = 'autoExpandActivitiesChanged'
 
 export function useAutoExpandActivities(): boolean {
   const [value, setValue] = useState<boolean>(false)

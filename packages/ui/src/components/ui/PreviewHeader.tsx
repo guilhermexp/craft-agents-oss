@@ -81,6 +81,7 @@ export function PreviewHeaderBadge({
   if (onClick) {
     return (
       <button
+        type="button"
         onClick={onClick}
         className={cn(baseClasses, 'min-w-0 cursor-pointer group')}
         title={title || label}
@@ -152,6 +153,7 @@ export function PreviewHeader({
         {rightActions}
         {onClose && (
           <button
+            type="button"
             onClick={onClose}
             className={cn(
               'p-1.5 rounded-[6px] bg-background shadow-minimal cursor-pointer',

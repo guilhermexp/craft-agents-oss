@@ -30,6 +30,15 @@ interface SkillInfoPageProps {
   workingDirectory?: string
 }
 
+// Format path to show just the skill-relative portion (skills/{slug}/)
+function formatPath(path: string): string {
+  const skillsIndex = path.indexOf('/skills/')
+  if (skillsIndex !== -1) {
+    return path.slice(skillsIndex + 1) // Remove leading slash, keep "skills/{slug}/..."
+  }
+  return path
+}
+
 export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory }: SkillInfoPageProps) {
   const { t } = useTranslation()
   const [skill, setSkill] = useState<LoadedSkill | null>(null)
@@ -80,7 +89,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
       isMounted = false
       unsubscribe?.()
     }
-  }, [workspaceId, skillSlug, workingDirectory])
+  }, [workspaceId, skillSlug, workingDirectory, t])
 
   // Handle open in finder
   const handleOpenInFinder = useCallback(async () => {
@@ -108,7 +117,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
         description: err instanceof Error ? err.message : undefined,
       })
     }
-  }, [skill, workspaceId, skillSlug])
+  }, [skill, workspaceId, skillSlug, t])
 
   // Handle opening in new window
   const handleOpenInNewWindow = useCallback(() => {
@@ -119,15 +128,6 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
   const skillName = skill?.metadata.name || skillSlug
   const canDeleteSkill = skill?.source === 'workspace'
 
-  // Format path to show just the skill-relative portion (skills/{slug}/)
-  const formatPath = (path: string) => {
-    const skillsIndex = path.indexOf('/skills/')
-    if (skillsIndex !== -1) {
-      return path.slice(skillsIndex + 1) // Remove leading slash, keep "skills/{slug}/..."
-    }
-    return path
-  }
-
   // Open the skill folder in Finder with SKILL.md selected
   const handleLocationClick = () => {
     if (!skill) return
@@ -135,6 +135,19 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
     if (!canRevealLocally) return
     window.electronAPI.showInFolder(`${skill.path}/SKILL.md`)
   }
+
+  const titleMenu = React.useMemo(() => (
+    <SkillMenu
+      skillSlug={skillSlug}
+      skillName={skillName}
+      onOpenInNewWindow={handleOpenInNewWindow}
+      onShowInFinder={handleOpenInFinder}
+      canShowInFinder={canRevealLocally}
+      onDelete={canDeleteSkill ? handleDelete : undefined}
+      canDelete={canDeleteSkill}
+      deleteLabel={canDeleteSkill ? t('skillInfo.deleteSkill') : t('skillInfo.managedByProject')}
+    />
+  ), [skillSlug, skillName, handleOpenInNewWindow, handleOpenInFinder, canRevealLocally, canDeleteSkill, handleDelete, t])
 
   return (
     <Info_Page
@@ -144,18 +157,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
     >
       <Info_Page.Header
         title={skillName}
-        titleMenu={
-          <SkillMenu
-            skillSlug={skillSlug}
-            skillName={skillName}
-            onOpenInNewWindow={handleOpenInNewWindow}
-            onShowInFinder={handleOpenInFinder}
-            canShowInFinder={canRevealLocally}
-            onDelete={canDeleteSkill ? handleDelete : undefined}
-            canDelete={canDeleteSkill}
-            deleteLabel={canDeleteSkill ? t('skillInfo.deleteSkill') : t('skillInfo.managedByProject')}
-          />
-        }
+        titleMenu={titleMenu}
       />
 
       {skill && (
@@ -195,6 +197,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory
               </Info_Table.Row>
               <Info_Table.Row label={t('common.location')}>
                 <button
+                  type="button"
                   onClick={handleLocationClick}
                   className="hover:underline cursor-pointer text-left"
                 >

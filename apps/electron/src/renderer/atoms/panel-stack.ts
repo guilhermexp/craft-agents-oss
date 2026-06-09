@@ -25,16 +25,6 @@ export interface PanelLanePolicy {
   singleton: boolean
 }
 
-export const PANEL_LANE_POLICIES: Record<PanelLaneId, PanelLanePolicy> = {
-  main: {
-    id: 'main',
-    order: 0,
-    allowedTypes: ['session', 'source', 'settings', 'skills', 'other'],
-    locked: false,
-    singleton: false,
-  },
-}
-
 export interface PanelStackEntry {
   id: string
   route: ViewRoute
@@ -78,10 +68,6 @@ export function getPanelTypeFromRoute(route: ViewRoute): PanelType {
     default:
       return 'other'
   }
-}
-
-export function getDefaultLaneForType(_type: PanelType): PanelLaneId {
-  return 'main'
 }
 
 function createEntry(route: ViewRoute, proportion: number, id?: string): PanelStackEntry {

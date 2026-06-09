@@ -141,7 +141,8 @@ export function SimpleDropdown({
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Item registry (supports nested SimpleDropdownItem usage)
-  const itemRefs = useRef(new Map<string, HTMLButtonElement>())
+  const itemRefs = useRef<Map<string, HTMLButtonElement>>(null!)
+  if (itemRefs.current === null) itemRefs.current = new Map()
   const itemOrder = useRef<string[]>([])
 
   const getNavigableIds = useCallback(() => {
@@ -306,7 +307,15 @@ export function SimpleDropdown({
     <>
       <div
         ref={triggerRef}
+        role="button"
+        tabIndex={disabled ? -1 : 0}
         onClick={handleToggle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            if (!disabled) setIsOpenWithCallback(prev => !prev)
+          }
+        }}
         className={cn('inline-flex', disabled && 'opacity-50 pointer-events-none')}
       >
         {trigger}

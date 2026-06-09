@@ -34,24 +34,21 @@ function TiptapImageNodeView({ node, editor, getPos, updateAttributes }: TiptapI
   const hasIntrinsicSize = width != null && height != null
 
   const imageRef = React.useRef<HTMLImageElement | null>(null)
-  const [loaded, setLoaded] = React.useState(false)
-  const [failed, setFailed] = React.useState(false)
+  const [loadedSrc, setLoadedSrc] = React.useState<string | null>(null)
+  const [failedSrc, setFailedSrc] = React.useState<string | null>(null)
+  const loaded = loadedSrc === src
+  const failed = failedSrc === src
 
-  React.useEffect(() => {
-    setLoaded(false)
-    setFailed(false)
-  }, [src])
-
+  // When the image element is reused for a new src, check if the browser has
+  // already cached it (complete before any load event fires).
   React.useEffect(() => {
     const image = imageRef.current
     if (!image) return
     if (!image.complete) return
     if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-      setLoaded(true)
-      setFailed(false)
+      setLoadedSrc(src)
     } else {
-      setFailed(true)
-      setLoaded(false)
+      setFailedSrc(src)
     }
   }, [src])
 
@@ -106,12 +103,10 @@ function TiptapImageNodeView({ node, editor, getPos, updateAttributes }: TiptapI
           onLoad={(event) => {
             const image = event.currentTarget
             captureIntrinsicDimensions(image)
-            setLoaded(true)
-            setFailed(false)
+            setLoadedSrc(src)
           }}
           onError={() => {
-            setFailed(true)
-            setLoaded(false)
+            setFailedSrc(src)
           }}
           className="tiptap-image-element"
           data-loaded={loaded ? 'true' : 'false'}

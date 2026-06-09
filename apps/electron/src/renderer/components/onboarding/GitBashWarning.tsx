@@ -8,6 +8,10 @@ import type { GitBashStatus } from "../../../shared/types"
 
 export type { GitBashStatus }
 
+function handleDownload() {
+  window.electronAPI.openUrl('https://git-scm.com/downloads/win')
+}
+
 interface GitBashWarningProps {
   status: GitBashStatus
   onBrowse: () => Promise<string | null>
@@ -54,10 +58,6 @@ export function GitBashWarning({
     if (customPath.trim()) {
       onUsePath(customPath.trim())
     }
-  }
-
-  const handleDownload = () => {
-    window.electronAPI.openUrl('https://git-scm.com/downloads/win')
   }
 
   return (

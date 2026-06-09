@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Plus, Trash2, Pencil } from 'lucide-react'
 import {
   Dialog,
@@ -45,11 +45,15 @@ export function BrowserProfilePicker({
     renameProfile,
     setAlwaysAsk,
   } = useBrowserProfiles()
-  const [mode, setMode] = useState<Mode>({ kind: 'list' })
-
-  useEffect(() => {
-    if (open) setMode({ kind: 'list' })
-  }, [open])
+  // Store which `open` value the mode was last set for so we can derive a
+  // reset without an effect: when `open` flips to true, effectiveMode auto-
+  // returns to 'list' without a wasted render.
+  const [modeState, setModeState] = useState<{ forOpen: boolean; mode: Mode }>({
+    forOpen: false,
+    mode: { kind: 'list' },
+  })
+  const mode: Mode = modeState.forOpen === open ? modeState.mode : { kind: 'list' }
+  const setMode = (next: Mode) => setModeState({ forOpen: open, mode: next })
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -120,8 +124,16 @@ function ProfileGrid({ profiles, onPick, onCreateClick, onRename, onDelete }: Pr
         return (
           <div
             key={p.id}
+            role="button"
+            tabIndex={0}
             className="group relative flex flex-col items-center gap-2 rounded-lg border border-border p-4 hover:bg-foreground/5 transition cursor-pointer"
             onClick={() => !isRenaming && onPick(p.id)}
+            onKeyDown={(e) => {
+              if ((e.key === 'Enter' || e.key === ' ') && !isRenaming) {
+                e.preventDefault()
+                onPick(p.id)
+              }
+            }}
           >
             <ProfileAvatar profile={p} size={56} />
             {isRenaming ? (
@@ -228,8 +240,7 @@ function ProfileCreateForm({ onSubmit, onCancel }: ProfileCreateFormProps) {
         clientName: clientName.trim() || undefined,
         domainHints: domainHintsText
           .split(/[\n,]/)
-          .map((value) => value.trim())
-          .filter(Boolean),
+          .flatMap((value) => { const t = value.trim(); return t ? [t] : [] }),
       })
     } finally {
       setBusy(false)
@@ -303,6 +314,8 @@ function ProfileCreateForm({ onSubmit, onCancel }: ProfileCreateFormProps) {
             <button
               key={c}
               type="button"
+              aria-label={`Selecionar cor ${c}`}
+              aria-pressed={color === c}
               onClick={() => setColor(c)}
               className={cn(
                 'size-8 rounded-full ring-offset-2 ring-offset-background',
@@ -330,7 +343,7 @@ interface ProfileAvatarProps {
   size?: number
 }
 
-export function ProfileAvatar({ profile, size = 32 }: ProfileAvatarProps) {
+function ProfileAvatar({ profile, size = 32 }: ProfileAvatarProps) {
   const initial = (profile.name?.trim().charAt(0) || '?').toUpperCase()
   return (
     <div

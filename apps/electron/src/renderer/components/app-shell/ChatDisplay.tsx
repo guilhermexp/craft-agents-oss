@@ -12,7 +12,7 @@ import {
   Info,
   X,
 } from "lucide-react"
-import { motion, AnimatePresence } from "motion/react"
+import { LazyMotion, m, AnimatePresence, domAnimation } from "motion/react"
 import { toast } from "sonner"
 
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -63,7 +63,8 @@ import {
   type AuthRequestTurn,
 } from "@craft-agent/ui"
 import { MemoizedAuthRequestCard } from "@/components/chat/AuthRequestCard"
-import { ChatInputZone, type StructuredInputState, type StructuredResponse, type PermissionResponse, type AdminApprovalResponse } from "./input"
+import { ChatInputZone } from "./input/ChatInputZone"
+import type { StructuredInputState, StructuredResponse, PermissionResponse, AdminApprovalResponse } from "./input/structured/types"
 import type { RichTextInputHandle } from "@/components/ui/rich-text-input"
 import { useBackgroundTasks } from "@/hooks/useBackgroundTasks"
 import { useTurnCardExpansion } from "@/hooks/useTurnCardExpansion"
@@ -367,6 +368,7 @@ function ProcessingIndicator({ startTime, statusMessage }: ProcessingIndicatorPr
   const displayMessage = statusMessage || t(PROCESSING_MESSAGE_KEYS[messageIndex])
 
   return (
+    <LazyMotion features={domAnimation}>
     <div className="flex items-center gap-2 px-3 py-1 -mb-1 text-[13px] text-muted-foreground">
       {/* Spinner in same location as TurnCard chevron */}
       <div className="size-3 flex items-center justify-center shrink-0">
@@ -375,7 +377,7 @@ function ProcessingIndicator({ startTime, statusMessage }: ProcessingIndicatorPr
       {/* Label with crossfade animation on content change only */}
       <span className="relative h-5 flex items-center">
         <AnimatePresence mode="wait" initial={false}>
-          <motion.span
+          <m.span
             key={displayMessage}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -383,7 +385,7 @@ function ProcessingIndicator({ startTime, statusMessage }: ProcessingIndicatorPr
             transition={{ duration: 0.4, ease: 'easeInOut' }}
           >
             {displayMessage}
-          </motion.span>
+          </m.span>
         </AnimatePresence>
         {elapsed >= 1 && (
           <span className="text-muted-foreground/60 ml-1 tabular-nums">
@@ -392,6 +394,7 @@ function ProcessingIndicator({ startTime, statusMessage }: ProcessingIndicatorPr
         )}
       </span>
     </div>
+    </LazyMotion>
   )
 }
 
@@ -565,7 +568,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // ============================================================================
   // Current match index for navigation (internal state, exposed via ref)
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0)
-  const turnRefs = React.useRef<Map<string, HTMLDivElement>>(new Map())
+  const turnRefs = React.useRef<Map<string, HTMLDivElement>>(null!)
+  if (turnRefs.current === null) turnRefs.current = new Map()
   // Inject ::highlight() styles at runtime to avoid LightningCSS build warnings
   // (the optimizer doesn't recognize ::highlight as a valid pseudo-element yet)
   React.useEffect(() => {
@@ -672,8 +676,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
           textContent = content
         } else if (Array.isArray(content)) {
           textContent = content
-            .filter((block: { type?: string }) => block.type === 'text')
-            .map((block: { text?: string }) => block.text || '')
+            .flatMap((block: { type?: string; text?: string }) => block.type === 'text' ? [block.text || ''] : [])
             .join('\n')
         }
       } else if (turn.type === 'assistant') {
@@ -1121,7 +1124,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   React.useEffect(() => {
     const viewport = scrollViewportRef.current
     if (!viewport) return
-    viewport.addEventListener('scroll', handleScroll)
+    viewport.addEventListener('scroll', handleScroll, { passive: true })
     return () => viewport.removeEventListener('scroll', handleScroll)
   }, [handleScroll])
 
@@ -1284,7 +1287,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
         detail: { sessionId: session.id },
       }))
     }, 0)
-  }, [session, isInputDisabled, disableSend, connectionUnavailable])
+  }, [session, isInputDisabled, disableSend, connectionUnavailable, t])
 
   // Handle stop request from InputContainer
   // silent=true when redirecting (sending new message), silent=false when user clicks Stop button
@@ -1463,6 +1466,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const skipScrollToBottom = isSessionSwitchForScroll && isSearchActive
 
   return (
+    <LazyMotion features={domAnimation}>
     <div ref={zoneRef} className="flex h-full flex-col min-w-0" data-focus-zone="chat">
       {session ? (
         <div className="flex flex-1 flex-col min-h-0 min-w-0 relative">
@@ -1486,7 +1490,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
               )}>
                 {/* Session-level AnimatePresence: Prevents layout jump when switching sessions */}
                 <AnimatePresence mode={compactMode ? "sync" : "wait"} initial={false}>
-                  <motion.div
+                  <m.div
                     key={compactMode ? 'compact-session' : session?.id}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -1497,7 +1501,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                     <AnimatePresence mode={compactMode ? "sync" : "wait"} initial={false}>
                     {messagesLoading ? (
                       /* Loading State: Show spinner while messages are being lazy loaded */
-                      <motion.div
+                      <m.div
                         key="loading"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -1506,11 +1510,11 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         className="flex items-center justify-center h-64"
                       >
                         <Spinner className="text-foreground/30" />
-                      </motion.div>
+                      </m.div>
                     ) : (
                     /* Turn-based Message Display - memoized to avoid re-grouping on every render */
                     /* AnimatePresence handles the fade-in animation when transitioning from loading */
-                    <motion.div
+                    <m.div
                       key={compactMode ? 'loaded-compact' : `loaded-${session?.id}`}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
@@ -1829,10 +1833,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                       </div>
                     )
                   })}
-                    </motion.div>
+                    </m.div>
                     )}
                     </AnimatePresence>
-                  </motion.div>
+                  </m.div>
                 </AnimatePresence>
                 {/* Processing Indicator - always visible while processing */}
                 {session.isProcessing && (() => {
@@ -2049,6 +2053,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
         )
       )}
     </div>
+    </LazyMotion>
   )
 })
 
@@ -2166,6 +2171,7 @@ function ErrorMessage({
             {actions.map((action) => (
               <button
                 key={action.key}
+                type="button"
                 onClick={() => {
                   handleErrorMessageAction(action, {
                     sessionId,
@@ -2185,6 +2191,7 @@ function ErrorMessage({
         {hasDetails && (
           <div className="mt-2">
             <button
+              type="button"
               onClick={() => setDetailsOpen(!detailsOpen)}
               className="flex items-center gap-1 text-xs text-destructive/70 hover:text-destructive transition-colors"
             >
@@ -2194,8 +2201,8 @@ function ErrorMessage({
 
             <AnimatedCollapsibleContent isOpen={detailsOpen} className="overflow-hidden">
               <div className="mt-2 pt-2 border-t border-destructive/20 text-xs text-destructive/60 font-mono space-y-0.5">
-                {message.errorDetails?.map((detail, i) => (
-                  <div key={i}>{detail}</div>
+                {message.errorDetails?.map((detail) => (
+                  <div key={detail}>{detail}</div>
                 ))}
                 {message.errorOriginal && !message.errorDetails?.some(d => d.includes('Raw error:')) && (
                   <div className="mt-1">Raw: {message.errorOriginal.slice(0, 200)}{message.errorOriginal.length > 200 ? '...' : ''}</div>
@@ -2247,6 +2254,7 @@ function MessageBubble({
           {/* Pop-out button - visible on hover */}
           {onPopOut && !message.isStreaming && (
             <button
+              type="button"
               onClick={() => onPopOut(message)}
               className="absolute top-2 right-2 p-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-foreground/5"
               title={t("sidebarMenu.openInNewWindow")}

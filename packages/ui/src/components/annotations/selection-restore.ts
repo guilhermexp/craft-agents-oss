@@ -5,7 +5,7 @@ export type RestorableTextSelection = {
   end: number
 }
 
-export function restoreDomSelectionFromOffsets(
+function restoreDomSelectionFromOffsets(
   root: HTMLElement,
   start: number,
   end: number,

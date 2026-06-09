@@ -59,12 +59,6 @@ export function WhatsAppConnectDialog({ open, onOpenChange, onConnected }: Whats
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  React.useEffect(() => {
-    if (!open) {
-      setPhase({ kind: 'idle' })
-    }
-  }, [open])
-
   const handleEvent = (event: WhatsAppUiEvent) => {
     switch (event.type) {
       case 'qr':
@@ -96,7 +90,7 @@ export function WhatsAppConnectDialog({ open, onOpenChange, onConnected }: Whats
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent key={open ? 'open' : 'closed'} className="sm:max-w-[480px]">
         <DialogHeader>
           <DialogTitle>{t('dialog.whatsapp.title')}</DialogTitle>
           <DialogDescription>{t('dialog.whatsapp.description')}</DialogDescription>

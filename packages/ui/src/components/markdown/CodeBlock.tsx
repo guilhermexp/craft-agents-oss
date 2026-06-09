@@ -274,6 +274,7 @@ export function CodeBlock({ code, language = 'text', className, mode = 'full', f
           {resolvedLang !== 'text' ? resolvedLang : 'plain text'}
         </span>
         <button
+          type="button"
           onClick={handleCopy}
           className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
           aria-label="Copy code"

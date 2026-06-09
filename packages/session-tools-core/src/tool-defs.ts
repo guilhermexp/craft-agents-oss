@@ -164,7 +164,7 @@ export const BrowserToolSchema = z.object({
   ]).describe('Browser command as a string (e.g., "click @e1") or array (e.g., ["evaluate", "var x = 1; x + 2"]). Array mode preserves semicolons and whitespace in arguments.'),
 });
 
-export const SpawnSessionSchema = z.object({
+const SpawnSessionSchema = z.object({
   help: z.boolean().optional().describe('If true, returns available connections, models, and sources instead of creating a session'),
   prompt: z.string().optional().describe('Instructions for the new session (required when not in help mode)'),
   name: z.string().optional().describe('Session name'),
@@ -183,21 +183,21 @@ export const SpawnSessionSchema = z.object({
 });
 
 // Session self-management tools
-export const SetSessionLabelsSchema = z.object({
+const SetSessionLabelsSchema = z.object({
   sessionId: z.string().optional().describe('Session ID to update. Omit to update the current session.'),
   labels: z.array(z.string()).describe('Labels to set (replaces all existing labels)'),
 });
 
-export const SetSessionStatusSchema = z.object({
+const SetSessionStatusSchema = z.object({
   sessionId: z.string().optional().describe('Session ID to update. Omit to update the current session.'),
   status: z.string().describe('Status to set (e.g., "todo", "in_progress", "done")'),
 });
 
-export const GetSessionInfoSchema = z.object({
+const GetSessionInfoSchema = z.object({
   sessionId: z.string().optional().describe('Session ID to query. Omit to get info about the current session.'),
 });
 
-export const ListSessionsSchema = z.object({
+const ListSessionsSchema = z.object({
   status: z.string().optional().describe('Filter by status'),
   label: z.string().optional().describe('Filter by label'),
   search: z.string().optional().describe('Substring match on session name'),
@@ -207,7 +207,7 @@ export const ListSessionsSchema = z.object({
 });
 
 // Memory tools
-export const MemoryStoreSchema = z.object({
+const MemoryStoreSchema = z.object({
   action: z.enum(['add', 'replace', 'remove']).describe('Action: add new, replace existing, or remove entry'),
   target: z.enum(['agent', 'user']).describe("'user' for user profile, 'agent' for agent notes"),
   category: z.enum(['profile', 'event', 'knowledge', 'behavior', 'skill']).describe('Memory category'),
@@ -216,7 +216,7 @@ export const MemoryStoreSchema = z.object({
   tags: z.array(z.string()).optional().describe('Tags for organization'),
 });
 
-export const MemoryRecallSchema = z.object({
+const MemoryRecallSchema = z.object({
   query: z.string().describe('Search query to find relevant memories'),
   target: z.enum(['agent', 'user']).optional().describe('Filter by target'),
   category: z.enum(['profile', 'event', 'knowledge', 'behavior', 'skill']).optional().describe('Filter by category'),
@@ -224,7 +224,7 @@ export const MemoryRecallSchema = z.object({
 });
 
 // Inter-session messaging
-export const SendAgentMessageSchema = z.object({
+const SendAgentMessageSchema = z.object({
   sessionId: z.string().describe('Target session ID to send the message to'),
   message: z.string().describe('The message to send to the target session'),
   attachments: z.array(z.object({
@@ -240,11 +240,11 @@ export const ChannelDispatchSchema = z.object({
   parentMessageId: z.string().optional().describe('Optional channel message id this dispatch should be linked to'),
 });
 
-export const ListMessagingChannelsSchema = z.object({
+const ListMessagingChannelsSchema = z.object({
   sessionId: z.string().optional().describe('Session ID to list bindings for. Defaults to current session.'),
 });
 
-export const UnbindMessagingChannelSchema = z.object({
+const UnbindMessagingChannelSchema = z.object({
   platform: z.enum(['telegram', 'whatsapp']).optional().describe('Platform to unbind. If omitted, unbinds all.'),
 });
 

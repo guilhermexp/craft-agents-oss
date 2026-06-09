@@ -53,7 +53,7 @@ export function ServerDirectoryBrowser({
   const [error, setError] = useState<string | null>(null)
   const [pathInput, setPathInput] = useState('')
   const [selectedEntry, setSelectedEntry] = useState<string | null>(null)
-  const [serverHomePath, setServerHomePath] = useState<string | null>(null)
+  const serverHomePathRef = useRef<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Navigate to a directory (for browse mode)
@@ -81,7 +81,7 @@ export function ServerDirectoryBrowser({
       setError(null)
       setSelectedEntry(null)
       setPathInput('')
-      setServerHomePath(null)
+      serverHomePathRef.current = null
       return
     }
 
@@ -98,7 +98,7 @@ export function ServerDirectoryBrowser({
           const result = await window.electronAPI.listServerDirectory(path)
           setListing(result)
           setPathInput(result.currentPath)
-          setServerHomePath(result.currentPath)
+          serverHomePathRef.current = result.currentPath
         }
 
         try {
@@ -127,7 +127,7 @@ export function ServerDirectoryBrowser({
       } else {
         // Manual mode — fetch home dir for platform detection
         const homeDir = await window.electronAPI.getHomeDir()
-        setServerHomePath(homeDir)
+        serverHomePathRef.current = homeDir
       }
     }
     void init()
@@ -139,7 +139,7 @@ export function ServerDirectoryBrowser({
     if (!trimmed) return
 
     // Client-side rejection of wrong-platform paths (avoids round-trip)
-    if (isWrongPlatformPath(trimmed, serverHomePath)) {
+    if (isWrongPlatformPath(trimmed, serverHomePathRef.current)) {
       setError('This looks like a path from a different OS. Enter a path that exists on the server.')
       return
     }
@@ -150,7 +150,7 @@ export function ServerDirectoryBrowser({
       // Manual mode — just select the path
       onSelect(trimmed)
     }
-  }, [pathInput, mode, navigateTo, onSelect, serverHomePath])
+  }, [pathInput, mode, navigateTo, onSelect])
 
   // Handle selecting the current directory (or highlighted entry)
   const handleSelect = useCallback(() => {

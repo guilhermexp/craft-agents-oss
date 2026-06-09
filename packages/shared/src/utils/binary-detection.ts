@@ -40,7 +40,7 @@ const MAGIC_SIGNATURES: Array<{ bytes: number[]; ext: string }> = [
 /**
  * MIME type to file extension mapping for binary downloads.
  */
-export const MIME_TO_EXT: Record<string, string> = {
+const MIME_TO_EXT: Record<string, string> = {
   'application/pdf': '.pdf',
   'application/zip': '.zip',
   'application/gzip': '.gz',

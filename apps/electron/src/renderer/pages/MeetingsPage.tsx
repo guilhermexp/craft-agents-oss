@@ -265,12 +265,18 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
   const [selectedRecord, setSelectedRecord] = useState<MeetingRecord | null>(null)
   const [selectedTranscript, setSelectedTranscript] = useState<MeetingTranscriptResult | null>(null)
   const [missingMeetingId, setMissingMeetingId] = useState<string | null>(null)
-  const [selectedDetailTab, setSelectedDetailTab] = useState<MeetingDetailTab>('summary')
+  // Store the tab keyed to the meeting it was selected for, so it auto-resets
+  // to 'summary' when the parent selects a different meeting — no effect needed.
+  const [detailTabEntry, setDetailTabEntry] = useState<{ forMeetingId: string | null; tab: MeetingDetailTab }>({ forMeetingId: null, tab: 'summary' })
+  const selectedDetailTab: MeetingDetailTab = detailTabEntry.forMeetingId === selectedMeetingId ? detailTabEntry.tab : 'summary'
+  const setSelectedDetailTab = (tab: MeetingDetailTab) => setDetailTabEntry({ forMeetingId: selectedMeetingId ?? null, tab })
   const [activeSection, setActiveSection] = useState<MeetingsSection>('invite')
   const [howItWorksOpen, setHowItWorksOpen] = useState(false)
   const [detectedMeeting, setDetectedMeeting] = useState<{ url: string; instanceId: string; profileId?: string; title?: string } | null>(null)
-  const promptedMeetUrlsRef = React.useRef<Set<string>>(new Set())
-  const launchedMeetUrlsRef = React.useRef<Set<string>>(new Set())
+  const promptedMeetUrlsRef = React.useRef<Set<string>>(null!)
+  if (!promptedMeetUrlsRef.current) promptedMeetUrlsRef.current = new Set()
+  const launchedMeetUrlsRef = React.useRef<Set<string>>(null!)
+  if (!launchedMeetUrlsRef.current) launchedMeetUrlsRef.current = new Set()
   const normalizedUrl = useMemo(() => normalizeGoogleMeetInput(meetingInput), [meetingInput])
   // Prefer the parent's explicit selection; fall back to a just-started meeting
   // so recording/transcription feedback shows immediately after clicking record.
@@ -314,7 +320,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
     return () => {
       cancelled = true
     }
-  }, [workspaceId])
+  }, [workspaceId, t])
 
   const handleSaveTranscriptionSettings = async () => {
     if (!workspaceId) {
@@ -368,7 +374,6 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
   }
 
   React.useEffect(() => {
-    setSelectedDetailTab('summary')
     if (selectedMeetingId) {
       // Parent made an explicit selection — drop any local just-started override.
       setLiveStartedId(null)
@@ -930,6 +935,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
                     src={recordingMediaUrl}
                     controls
                     preload="metadata"
+                    aria-label={t('meetings.recordingPreview', { defaultValue: 'Meeting recording' })}
                     className="size-full bg-black object-contain"
                   />
                 ) : (
@@ -965,4 +971,3 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
   )
 }
 
-export default MeetingsPage

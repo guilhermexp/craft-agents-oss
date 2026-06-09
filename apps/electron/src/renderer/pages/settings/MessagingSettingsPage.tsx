@@ -50,13 +50,7 @@ import {
 } from '@/atoms/messaging'
 import { sessionMetaMapAtom } from '@/atoms/sessions'
 import { getSessionTitle } from '@/utils/session'
-import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import type { MessagingPlatformRuntimeInfo } from '../../../shared/types'
-
-export const meta: DetailsPageMeta = {
-  navigator: 'settings',
-  slug: 'messaging',
-}
 
 export default function MessagingSettingsPage() {
   const { t } = useTranslation()
@@ -231,6 +225,7 @@ function PlatformRow({ platform, workspaceId }: { platform: Platform; workspaceI
             <DropdownMenu modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <button
+                  type="button"
                   className="rounded-md p-1.5 transition-colors hover:bg-foreground/[0.05] data-[state=open]:bg-foreground/[0.05]"
                   data-state={menuOpen ? 'open' : 'closed'}
                   aria-label={t('common.more', { defaultValue: 'More' })}

@@ -136,6 +136,9 @@ const GOOGLE_PRESETS: Preset[] = [
 /** Presets that require the Pi SDK for authentication — hidden in Anthropic API Key mode */
 const PI_ONLY_PRESET_KEYS: ReadonlySet<string> = new Set(['minimax-global', 'minimax-cn'])
 
+/** Providers with well-known endpoints handled by the SDK — no custom URL/model fields shown */
+const DEFAULT_ENDPOINT_PROVIDERS: ReadonlySet<string> = new Set(['anthropic', 'openai', 'pi', 'google'])
+
 const COMPAT_ANTHROPIC_DEFAULTS = 'claude-opus-4-7, claude-sonnet-4-6, claude-haiku-4-5'
 const COMPAT_OPENAI_DEFAULTS = 'openai/gpt-5.4, openai/gpt-5.4-mini'
 const COMPAT_MINIMAX_DEFAULTS = 'MiniMax-M2.5, MiniMax-M2.5-highspeed'
@@ -158,8 +161,7 @@ function getPresetForUrl(url: string, presets: Preset[]): PresetKey {
 function parseModelList(value: string): string[] {
   return value
     .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean)
+    .flatMap((entry) => { const s = entry.trim(); return s ? [s] : [] })
 }
 
 // ============================================================
@@ -188,7 +190,7 @@ export function ApiKeyInput({
   const [showValue, setShowValue] = useState(false)
   const [baseUrl, setBaseUrl] = useState(initialValues?.baseUrl ?? defaultPreset.url)
   const [activePreset, setActivePreset] = useState<PresetKey>(initialPreset)
-  const [lastNonCustomPreset, setLastNonCustomPreset] = useState<PresetKey | null>(
+  const lastNonCustomPresetRef = useRef<PresetKey | null>(
     initialPreset !== 'custom' ? initialPreset : defaultPreset.key
   )
   const [connectionDefaultModel, setConnectionDefaultModel] = useState(initialValues?.connectionDefaultModel ?? '')
@@ -218,8 +220,6 @@ export function ApiKeyInput({
 
   const isPiApiKeyFlow = providerType === 'pi_api_key'
   const isBedrock = activePreset === 'amazon-bedrock'
-  // Hide endpoint/model fields for providers with well-known endpoints handled by the SDK
-  const DEFAULT_ENDPOINT_PROVIDERS = new Set(['anthropic', 'openai', 'pi', 'google'])
   const isDefaultProviderPreset = DEFAULT_ENDPOINT_PROVIDERS.has(activePreset)
 
   // Provider-specific placeholders from the active preset
@@ -255,7 +255,7 @@ export function ApiKeyInput({
     } finally {
       setPiModelsLoading(false)
     }
-  }, [isPiApiKeyFlow])
+  }, [initialPreset, initialValues?.models, isPiApiKeyFlow])
 
   useEffect(() => {
     loadPiModels(activePreset)
@@ -267,7 +267,7 @@ export function ApiKeyInput({
   const handlePresetSelect = (preset: Preset) => {
     setActivePreset(preset.key)
     if (preset.key !== 'custom') {
-      setLastNonCustomPreset(preset.key)
+      lastNonCustomPresetRef.current = preset.key
     }
     if (preset.key === 'custom') {
       setBaseUrl('')
@@ -300,10 +300,10 @@ export function ApiKeyInput({
       matchedPreset: presetKey,
       activePreset,
       activePresetHasEmptyUrl: currentPresetObj?.url === '',
-      lastNonCustomPreset,
+      lastNonCustomPreset: lastNonCustomPresetRef.current,
     })
     setActivePreset(nextPresetState.activePreset)
-    setLastNonCustomPreset(nextPresetState.lastNonCustomPreset)
+    lastNonCustomPresetRef.current = nextPresetState.lastNonCustomPreset
     setModelError(null)
     if (!connectionDefaultModel.trim()) {
       if (presetKey === 'ollama') {
@@ -322,7 +322,7 @@ export function ApiKeyInput({
     e.preventDefault()
 
     const effectivePiAuthProvider = isPiApiKeyFlow
-      ? resolvePiAuthProviderForSubmit(activePreset, lastNonCustomPreset)
+      ? resolvePiAuthProviderForSubmit(activePreset, lastNonCustomPresetRef.current)
       : undefined
 
     // Pi API key flow with tier dropdowns — submit selected models
@@ -704,7 +704,9 @@ export function ApiKeyInput({
                 <>
                   <div
                     className="fixed inset-0 z-floating-backdrop"
+                    aria-hidden="true"
                     onClick={() => { setOpenTier(null); setTierFilter('') }}
+                    onKeyDown={(e) => { if (e.key === 'Escape') { setOpenTier(null); setTierFilter('') } }}
                   />
                   <div
                     className="fixed z-floating-menu min-w-[200px] overflow-hidden rounded-[8px] bg-background text-foreground shadow-modal-small"
@@ -730,8 +732,7 @@ export function ApiKeyInput({
                       </div>
                       <CommandPrimitive.List className="max-h-[240px] overflow-y-auto p-1">
                         {piModels
-                          .filter(m => m.name.toLowerCase().includes(tierFilter.toLowerCase()))
-                          .map((model) => (
+                          .flatMap((model) => model.name.toLowerCase().includes(tierFilter.toLowerCase()) ? [(
                             <CommandPrimitive.Item
                               key={model.id}
                               value={model.id}
@@ -753,7 +754,7 @@ export function ApiKeyInput({
                               </div>
                               <Check className={cn("size-3 shrink-0", activeTierConfig.value === model.id ? "opacity-100" : "opacity-0")} />
                             </CommandPrimitive.Item>
-                          ))}
+                          )] : [])}
                       </CommandPrimitive.List>
                     </CommandPrimitive>
                   </div>

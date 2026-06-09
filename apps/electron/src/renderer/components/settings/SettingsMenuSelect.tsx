@@ -139,6 +139,7 @@ export function SettingsMenuSelect({
             <input
               ref={searchInputRef}
               type="text"
+              aria-label={effectiveSearchPlaceholder}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={effectiveSearchPlaceholder}

@@ -301,12 +301,7 @@ export default function AppearanceSettingsPage() {
   // Theme options for dropdowns
   const themeOptions = useMemo(() => [
     { value: 'default', label: t("settings.appearance.useDefault") },
-    ...presetThemes
-      .filter(t => t.id !== 'default')
-      .map(t => ({
-        value: t.id,
-        label: t.theme.name || t.id,
-      })),
+    ...presetThemes.flatMap(t => t.id !== 'default' ? [{ value: t.id, label: t.theme.name || t.id }] : []),
   ], [presetThemes, t])
 
   // Get current app default theme label for display (null when using 'default' to avoid redundant "Use Default (Default)")
@@ -692,6 +687,7 @@ export default function AppearanceSettingsPage() {
                               value={scenicBackgroundOpacityPercent}
                               onChange={handleScenicOpacityChange}
                               className="w-full accent-[var(--accent)]"
+                              aria-label={t('settings.appearance.scenicBackgroundOpacity', { defaultValue: 'Opacity' })}
                             />
                           </div>
                         )}
@@ -712,6 +708,7 @@ export default function AppearanceSettingsPage() {
                             value={scenicBackgroundContrastPercent}
                             onChange={handleScenicContrastChange}
                             className="w-full accent-[var(--accent)]"
+                            aria-label={t('settings.appearance.scenicBackgroundContrast', { defaultValue: 'Contrast' })}
                           />
                         </div>
                         {showScenicBackgroundControls && (
@@ -732,6 +729,7 @@ export default function AppearanceSettingsPage() {
                               value={scenicBackgroundBlur}
                               onChange={handleScenicBlurChange}
                               className="w-full accent-[var(--accent)]"
+                              aria-label={t('settings.appearance.scenicBackgroundBlur', { defaultValue: 'Blur' })}
                             />
                           </div>
                         )}
@@ -807,12 +805,7 @@ export default function AppearanceSettingsPage() {
                             onValueChange={(value) => handleWorkspaceThemeChange(workspace.id, value)}
                             options={[
                               { value: 'default', label: appDefaultLabel ? t("settings.appearance.useDefaultWithTheme", { theme: appDefaultLabel }) : t("settings.appearance.useDefault") },
-                              ...presetThemes
-                                .filter(t => t.id !== 'default')
-                                .map(t => ({
-                                  value: t.id,
-                                  label: t.theme.name || t.id,
-                                })),
+                              ...presetThemes.flatMap(t => t.id !== 'default' ? [{ value: t.id, label: t.theme.name || t.id }] : []),
                             ]}
                           />
                         </SettingsRow>

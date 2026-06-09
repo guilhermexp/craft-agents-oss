@@ -9,6 +9,11 @@ import { ActiveOptionBadges } from '../ActiveOptionBadges'
 import { InputContainer } from './InputContainer'
 import { InputErrorBoundary } from './InputErrorBoundary'
 
+const EMPTY_TASKS: BackgroundTask[] = []
+const EMPTY_SESSION_LABELS: string[] = []
+const EMPTY_LABELS: LabelConfig[] = []
+const EMPTY_SESSION_STATUSES: SessionStatus[] = []
+
 interface ChatInputZoneProps {
   compactMode?: boolean
   showOptionBadges?: boolean
@@ -34,15 +39,15 @@ export function ChatInputZone({
   showOptionBadges,
   permissionMode = 'ask',
   onPermissionModeChange,
-  tasks = [],
+  tasks = EMPTY_TASKS,
   sessionId,
   sessionFolderPath,
   onKillTask,
   onInsertMessage,
-  sessionLabels = [],
-  labels = [],
+  sessionLabels = EMPTY_SESSION_LABELS,
+  labels = EMPTY_LABELS,
   onLabelsChange,
-  sessionStatuses = [],
+  sessionStatuses = EMPTY_SESSION_STATUSES,
   currentSessionStatus = 'todo',
   onSessionStatusChange,
   className,

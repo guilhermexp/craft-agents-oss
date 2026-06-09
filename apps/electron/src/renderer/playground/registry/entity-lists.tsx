@@ -294,9 +294,9 @@ function SessionEntityListPreview({
                         <Flag className="size-[10px] text-info fill-info" />
                       </span>
                     )}
-                    {session.labels?.map((label, i) => (
+                    {session.labels?.map((label) => (
                       <span
-                        key={i}
+                        key={label}
                         className="shrink-0 h-[18px] max-w-[120px] px-1.5 text-[10px] font-medium rounded flex items-center whitespace-nowrap"
                         style={{
                           backgroundColor: 'rgba(var(--foreground-rgb), 0.05)',

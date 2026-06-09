@@ -13,7 +13,7 @@
  */
 
 import * as React from 'react'
-import { motion, AnimatePresence } from 'motion/react'
+import { m, AnimatePresence } from 'motion/react'
 import { Globe } from 'lucide-react'
 import { useAtomValue } from 'jotai'
 import { useTranslation, Trans } from 'react-i18next'
@@ -60,7 +60,7 @@ export function ToolbarStatusSlot({
   return (
     <AnimatePresence>
       {showEscapeOverlay && (
-        <motion.div
+        <m.div
           key="escape"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -85,7 +85,7 @@ export function ToolbarStatusSlot({
               components={{ kbd: <Kbd className="text-inherit bg-current/10" /> }}
             />
           </span>
-        </motion.div>
+        </m.div>
       )}
 
       {showBrowser && browserInstance && (
@@ -125,14 +125,11 @@ function BrowserStatusBar({
     ? (isDarkTheme ? 'text-white/90' : 'text-black/80')
     : ''
 
-  const [faviconFailed, setFaviconFailed] = React.useState(false)
-
-  React.useEffect(() => {
-    setFaviconFailed(false)
-  }, [instance.favicon])
+  const [failedFaviconUrl, setFailedFaviconUrl] = React.useState<string | null>(null)
+  const faviconFailed = failedFaviconUrl === instance.favicon
 
   return (
-    <motion.button
+    <m.button
       type="button"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -171,7 +168,7 @@ function BrowserStatusBar({
                 src={instance.favicon}
                 alt=""
                 className="size-3.5 aspect-square rounded-none object-cover block"
-                onError={() => setFaviconFailed(true)}
+                onError={() => setFailedFaviconUrl(instance.favicon ?? null)}
               />
             </span>
           ) : (
@@ -179,7 +176,7 @@ function BrowserStatusBar({
               src={instance.favicon}
               alt=""
               className="size-3.5 rounded-sm block"
-              onError={() => setFaviconFailed(true)}
+              onError={() => setFailedFaviconUrl(instance.favicon ?? null)}
             />
           )
         ) : (
@@ -189,6 +186,6 @@ function BrowserStatusBar({
       <span className="text-sm font-medium truncate max-w-[200px]">
         {t('chat.usingConnection', { name: hostname })}
       </span>
-    </motion.button>
+    </m.button>
   )
 }

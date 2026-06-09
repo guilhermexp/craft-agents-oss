@@ -1,6 +1,6 @@
 import * as React from "react"
 import i18next from "i18next"
-import type { Session, Message } from "../../shared/types"
+import type { Session } from "../../shared/types"
 import type { SessionMeta } from "../atoms/sessions"
 import type { SessionStatusId } from "../config/session-status-config"
 
@@ -76,64 +76,6 @@ export function getSessionPreviewText(session: SessionLike | SessionMeta, maxLen
 
   const trimmed = sanitized.slice(0, maxLength)
   return trimmed.length < sanitized.length ? `${trimmed.trimEnd()}…` : trimmed
-}
-
-/**
- * Get the ID of the last final assistant or plan message (not intermediate)
- * Used for unread message tracking
- */
-export function getLastFinalAssistantMessageId(session: Session): string | undefined {
-  for (let i = session.messages.length - 1; i >= 0; i--) {
-    const msg = session.messages[i]
-    // Include plan messages as final responses (they're AI-generated content)
-    if ((msg.role === 'assistant' || msg.role === 'plan') && !msg.isIntermediate) {
-      return msg.id
-    }
-  }
-  return undefined
-}
-
-/**
- * Check if a session has unread messages
- * A session is unread if:
- * - There's a final assistant message AND
- * - Its ID differs from lastReadMessageId
- */
-export function hasUnreadMessages(session: Session): boolean {
-  const lastFinalId = getLastFinalAssistantMessageId(session)
-  if (!lastFinalId) return false  // No final assistant message yet
-  return lastFinalId !== session.lastReadMessageId
-}
-
-/**
- * Count the number of unread final assistant messages
- * Returns the count of final assistant messages after lastReadMessageId
- */
-export function countUnreadMessages(session: Session): number {
-  // Helper to check if message is a final response (assistant or plan)
-  const isFinalResponse = (msg: Message) =>
-    (msg.role === 'assistant' || msg.role === 'plan') && !msg.isIntermediate
-
-  if (!session.lastReadMessageId) {
-    // Never read - count all final messages
-    return session.messages.filter(isFinalResponse).length
-  }
-
-  // Find the index of the last read message
-  const lastReadIndex = session.messages.findIndex(msg => msg.id === session.lastReadMessageId)
-  if (lastReadIndex === -1) {
-    // Last read message not found - count all final messages
-    return session.messages.filter(isFinalResponse).length
-  }
-
-  // Count final messages after the last read index
-  let count = 0
-  for (let i = lastReadIndex + 1; i < session.messages.length; i++) {
-    if (isFinalResponse(session.messages[i])) {
-      count++
-    }
-  }
-  return count
 }
 
 // ---------------------------------------------------------------------------

@@ -77,6 +77,7 @@ function AttachmentBubble({ attachment, onRemove, disabled }: AttachmentBubblePr
       {/* Remove button - appears on hover */}
       {!disabled && (
         <button
+          type="button"
           onClick={onRemove}
           className={cn(
             "absolute -top-1.5 -right-1.5 z-10",

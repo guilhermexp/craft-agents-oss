@@ -85,7 +85,7 @@ function filterCacheResults(cache: FileSearchResult[], query: string): MentionIt
   if (!lowerQuery) return []
 
   const scored = cache
-    .map(f => {
+    .flatMap(f => {
       const name = f.name.toLowerCase()
       const path = f.relativePath.toLowerCase()
       let score = 0
@@ -94,9 +94,8 @@ function filterCacheResults(cache: FileSearchResult[], query: string): MentionIt
       } else if (subsequenceMatch(name, lowerQuery) || subsequenceMatch(path, lowerQuery)) {
         score = 1
       }
-      return { f, score }
+      return score > 0 ? [{ f, score }] : []
     })
-    .filter(({ score }) => score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 20)
 
@@ -213,14 +212,18 @@ export function InlineMentionMenu({
   const { t } = useTranslation()
   const menuRef = React.useRef<HTMLDivElement>(null)
   const listRef = React.useRef<HTMLDivElement>(null)
-  const [selectedIndex, setSelectedIndex] = React.useState(0)
+  // Track which filter value the selectedIndex was computed for so the index
+  // resets to 0 the moment the filter changes — no effect required.
+  const [selectionState, setSelectionState] = React.useState<{ forFilter: string; index: number }>({ forFilter: filter, index: 0 })
+  const selectedIndex = selectionState.forFilter === filter ? selectionState.index : 0
+  const setSelectedIndex = (next: number | ((prev: number) => number)) => {
+    setSelectionState(prev => ({
+      forFilter: filter,
+      index: typeof next === 'function' ? next(prev.forFilter === filter ? prev.index : 0) : next,
+    }))
+  }
   const filteredSections = filterSections(sections, filter)
   const flatItems = flattenItems(filteredSections)
-
-  // Reset selection when filter changes
-  React.useEffect(() => {
-    setSelectedIndex(0)
-  }, [filter])
 
   // Keyboard navigation
   // Don't attach listener when no items - allows Enter to propagate to input handler
@@ -311,12 +314,20 @@ export function InlineMentionMenu({
           const isSelected = itemIndex === selectedIndex
 
           return (
-            <div
+            <button
+              type="button"
               key={`${item.type}-${item.id}`}
               data-selected={isSelected}
               onClick={() => {
                 onSelect(item)
                 onOpenChange(false)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onSelect(item)
+                  onOpenChange(false)
+                }
               }}
               onMouseEnter={() => setSelectedIndex(itemIndex)}
               className={cn(
@@ -334,7 +345,7 @@ export function InlineMentionMenu({
                 )}
                 {item.type === 'folder' && (
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" className="text-muted-foreground">
-                    <path d="M20.5 10C20.5 9.07003 20.5 8.60504 20.3978 8.22354C20.1204 7.18827 19.3117 6.37962 18.2765 6.10222C17.895 6 17.43 6 16.5 6H13.1008C12.4742 6 12.1609 6 11.8739 5.91181C11.6824 5.85298 11.5009 5.76572 11.3353 5.65295C11.0871 5.48389 10.8914 5.23926 10.5 4.75L10.4095 4.63693C10.107 4.25881 9.9558 4.06975 9.7736 3.92674C9.54464 3.74703 9.27921 3.61946 8.99585 3.55294C8.77037 3.5 8.52825 3.5 8.04402 3.5C6.60485 3.5 5.88527 3.5 5.32008 3.74178C4.61056 4.0453 4.0453 4.61056 3.74178 5.32008C3.5 5.88527 3.5 6.60485 3.5 8.04402V10M9.46502 20.5H14.535C16.9102 20.5 18.0978 20.5 18.9301 19.8113C19.7624 19.1226 19.9846 17.9559 20.429 15.6227L20.8217 13.5613C21.1358 11.9121 21.2929 11.0874 20.843 10.5437C20.393 10 19.5536 10 17.8746 10H6.12537C4.44643 10 3.60696 10 3.15704 10.5437C2.70713 11.0874 2.8642 11.9121 3.17835 13.5613L3.57099 15.6227C4.01541 17.9559 4.23763 19.1226 5.06992 19.8113C5.90221 20.5 7.08981 20.5 9.46502 20.5Z"/>
+                    <path d="M20.5 10C20.5 9.07 20.5 8.61 20.4 8.22C20.12 7.19 19.31 6.38 18.28 6.1C17.9 6 17.43 6 16.5 6H13.1C12.47 6 12.16 6 11.87 5.91C11.68 5.85 11.5 5.77 11.34 5.65C11.09 5.48 10.89 5.24 10.5 4.75L10.41 4.64C10.11 4.26 9.96 4.07 9.77 3.93C9.54 3.75 9.28 3.62 9 3.55C8.77 3.5 8.53 3.5 8.04 3.5C6.6 3.5 5.89 3.5 5.32 3.74C4.61 4.05 4.05 4.61 3.74 5.32C3.5 5.89 3.5 6.6 3.5 8.04V10M9.47 20.5H14.54C16.91 20.5 18.1 20.5 18.93 19.81C19.76 19.12 19.98 17.96 20.43 15.62L20.82 13.56C21.14 11.91 21.29 11.09 20.84 10.54C20.39 10 19.55 10 17.87 10H6.13C4.45 10 3.61 10 3.16 10.54C2.71 11.09 2.86 11.91 3.18 13.56L3.57 15.62C4.02 17.96 4.24 19.12 5.07 19.81C5.9 20.5 7.09 20.5 9.47 20.5Z"/>
                   </svg>
                 )}
                 {item.type === 'file' && (
@@ -364,7 +375,7 @@ export function InlineMentionMenu({
                   </span>
                 </>
               )}
-            </div>
+            </button>
           )
         })}
 
@@ -410,7 +421,7 @@ function FileMenuIcon({ name }: { name: string }) {
     // Code file icon (document with < > brackets)
     return (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
-        <path d="M10.5 2.5C12.1569 2.5 13.5 3.84315 13.5 5.5V6.1C13.5 6.4716 13.5 6.6574 13.5246 6.81287C13.6602 7.66865 14.3313 8.33983 15.1871 8.47538C15.3426 8.5 15.5284 8.5 15.9 8.5H16.5C18.1569 8.5 19.5 9.84315 19.5 11.5M10.5 12.8799C9.70024 13.2985 9.10807 13.8275 8.64232 14.5478C8.51063 14.7515 8.44479 14.8533 8.44489 15.0011C8.44498 15.1488 8.51099 15.2506 8.643 15.4542C9.1095 16.1736 9.70167 16.7028 10.5 17.1225M13.5 12.8799C14.2998 13.2985 14.8919 13.8275 15.3577 14.5478C15.4894 14.7515 15.5552 14.8533 15.5551 15.0011C15.555 15.1488 15.489 15.2506 15.357 15.4542C14.8905 16.1736 14.2983 16.7028 13.5 17.1225M10.9645 2.5H10.6678C8.64635 2.5 7.63561 2.5 6.84835 2.85692C5.96507 3.25736 5.25736 3.96507 4.85692 4.84835C4.5 5.63561 4.5 6.64635 4.5 8.66781V14C4.5 17.2875 4.5 18.9312 5.40796 20.0376C5.57418 20.2401 5.75989 20.4258 5.96243 20.592C7.06878 21.5 8.71252 21.5 12 21.5C15.2875 21.5 16.9312 21.5 18.0376 20.592C18.2401 20.4258 18.4258 20.2401 18.592 20.0376C19.5 18.9312 19.5 17.2875 19.5 14V11.0355C19.5 10.0027 19.5 9.48628 19.4176 8.99414C19.2671 8.09576 18.9141 7.24342 18.3852 6.50177C18.0955 6.09549 17.7303 5.73032 17 5C16.2697 4.26968 15.9045 3.90451 15.4982 3.6148C14.7566 3.08595 13.9042 2.7329 13.0059 2.58243C12.5137 2.5 11.9973 2.5 10.9645 2.5Z"/>
+        <path d="M10.5 2.5C12.16 2.5 13.5 3.84 13.5 5.5V6.1C13.5 6.47 13.5 6.66 13.52 6.81C13.66 7.67 14.33 8.34 15.19 8.48C15.34 8.5 15.53 8.5 15.9 8.5H16.5C18.16 8.5 19.5 9.84 19.5 11.5M10.5 12.88C9.7 13.3 9.11 13.83 8.64 14.55C8.51 14.75 8.44 14.85 8.44 15C8.44 15.15 8.51 15.25 8.64 15.45C9.11 16.17 9.7 16.7 10.5 17.12M13.5 12.88C14.3 13.3 14.89 13.83 15.36 14.55C15.49 14.75 15.56 14.85 15.56 15C15.56 15.15 15.49 15.25 15.36 15.45C14.89 16.17 14.3 16.7 13.5 17.12M10.96 2.5H10.67C8.65 2.5 7.64 2.5 6.85 2.86C5.97 3.26 5.26 3.97 4.86 4.85C4.5 5.64 4.5 6.65 4.5 8.67V14C4.5 17.29 4.5 18.93 5.41 20.04C5.57 20.24 5.76 20.43 5.96 20.59C7.07 21.5 8.71 21.5 12 21.5C15.29 21.5 16.93 21.5 18.04 20.59C18.24 20.43 18.43 20.24 18.59 20.04C19.5 18.93 19.5 17.29 19.5 14V11.04C19.5 10 19.5 9.49 19.42 9C19.27 8.1 18.91 7.24 18.39 6.5C18.1 6.1 17.73 5.73 17 5C16.27 4.27 15.9 3.9 15.5 3.61C14.76 3.09 13.9 2.73 13.01 2.58C12.51 2.5 12 2.5 10.96 2.5Z"/>
       </svg>
     )
   }
@@ -419,8 +430,8 @@ function FileMenuIcon({ name }: { name: string }) {
     // Image file icon (landscape frame with mountain/sun)
     return (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
-        <path d="M8 8.5C8 8.77614 7.77614 9 7.5 9C7.22386 9 7 8.77614 7 8.5C7 8.22386 7.22386 8 7.5 8C7.77614 8 8 8.22386 8 8.5Z" fill="currentColor"/>
-        <path d="M20.9998 16.1004L17.9497 13.0503C16.6163 11.7169 15.9496 11.0503 15.1212 11.0503C14.2928 11.0503 13.6261 11.7169 12.2928 13.0503L5.34323 20M8 8.5C8 8.77614 7.77614 9 7.5 9C7.22386 9 7 8.77614 7 8.5C7 8.22386 7.22386 8 7.5 8C7.77614 8 8 8.22386 8 8.5ZM10.5 20.5H13.5C17.2712 20.5 19.1569 20.5 20.3284 19.3284C21.5 18.1569 21.5 16.2712 21.5 12.5V11.5C21.5 7.72876 21.5 5.84315 20.3284 4.67157C19.1569 3.5 17.2712 3.5 13.5 3.5H10.5C6.72876 3.5 4.84315 3.5 3.67157 4.67157C2.5 5.84315 2.5 7.72876 2.5 11.5V12.5C2.5 16.2712 2.5 18.1569 3.67157 19.3284C4.84315 20.5 6.72876 20.5 10.5 20.5Z"/>
+        <path d="M8 8.5C8 8.78 7.78 9 7.5 9C7.22 9 7 8.78 7 8.5C7 8.22 7.22 8 7.5 8C7.78 8 8 8.22 8 8.5Z" fill="currentColor"/>
+        <path d="M21 16.1L17.95 13.05C16.62 11.72 15.95 11.05 15.12 11.05C14.29 11.05 13.63 11.72 12.29 13.05L5.34 20M8 8.5C8 8.78 7.78 9 7.5 9C7.22 9 7 8.78 7 8.5C7 8.22 7.22 8 7.5 8C7.78 8 8 8.22 8 8.5ZM10.5 20.5H13.5C17.27 20.5 19.16 20.5 20.33 19.33C21.5 18.16 21.5 16.27 21.5 12.5V11.5C21.5 7.73 21.5 5.84 20.33 4.67C19.16 3.5 17.27 3.5 13.5 3.5H10.5C6.73 3.5 4.84 3.5 3.67 4.67C2.5 5.84 2.5 7.73 2.5 11.5V12.5C2.5 16.27 2.5 18.16 3.67 19.33C4.84 20.5 6.73 20.5 10.5 20.5Z"/>
       </svg>
     )
   }
@@ -428,7 +439,7 @@ function FileMenuIcon({ name }: { name: string }) {
   // Generic file icon (document with folded corner)
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
-      <path d="M10.5 2.5C12.1569 2.5 13.5 3.84315 13.5 5.5V6.1C13.5 6.4716 13.5 6.6574 13.5246 6.81287C13.6602 7.66865 14.3313 8.33983 15.1871 8.47538C15.3426 8.5 15.5284 8.5 15.9 8.5H16.5C18.1569 8.5 19.5 9.84315 19.5 11.5M9 16H15M9 12H10M10.9645 2.5H10.6678C8.64635 2.5 7.63561 2.5 6.84835 2.85692C5.96507 3.25736 5.25736 3.96507 4.85692 4.84835C4.5 5.63561 4.5 6.64635 4.5 8.66781V14C4.5 17.2875 4.5 18.9312 5.40796 20.0376C5.57418 20.2401 5.75989 20.4258 5.96243 20.592C7.06878 21.5 8.71252 21.5 12 21.5C15.2875 21.5 16.9312 21.5 18.0376 20.592C18.2401 20.4258 18.4258 20.2401 18.592 20.0376C19.5 18.9312 19.5 17.2875 19.5 14V11.0355C19.5 10.0027 19.5 9.48628 19.4176 8.99414C19.2671 8.09576 18.9141 7.24342 18.3852 6.50177C18.0955 6.09549 17.7303 5.73032 17 5C16.2697 4.26968 15.9045 3.90451 15.4982 3.6148C14.7566 3.08595 13.9042 2.7329 13.0059 2.58243C12.5137 2.5 11.9973 2.5 10.9645 2.5Z"/>
+      <path d="M10.5 2.5C12.16 2.5 13.5 3.84 13.5 5.5V6.1C13.5 6.47 13.5 6.66 13.52 6.81C13.66 7.67 14.33 8.34 15.19 8.48C15.34 8.5 15.53 8.5 15.9 8.5H16.5C18.16 8.5 19.5 9.84 19.5 11.5M9 16H15M9 12H10M10.96 2.5H10.67C8.65 2.5 7.64 2.5 6.85 2.86C5.97 3.26 5.26 3.97 4.86 4.85C4.5 5.64 4.5 6.65 4.5 8.67V14C4.5 17.29 4.5 18.93 5.41 20.04C5.57 20.24 5.76 20.43 5.96 20.59C7.07 21.5 8.71 21.5 12 21.5C15.29 21.5 16.93 21.5 18.04 20.59C18.24 20.43 18.43 20.24 18.59 20.04C19.5 18.93 19.5 17.29 19.5 14V11.04C19.5 10 19.5 9.49 19.42 9C19.27 8.1 18.91 7.24 18.39 6.5C18.1 6.1 17.73 5.73 17 5C16.27 4.27 15.9 3.9 15.5 3.61C14.76 3.09 13.9 2.73 13.01 2.58C12.51 2.5 12 2.5 10.96 2.5Z"/>
     </svg>
   )
 }
@@ -527,15 +538,17 @@ export function useInlineMention({
       result.push({
         id: 'sources',
         label: 'Sources',
-        items: sources
-          .filter(source => source.config.slug && source.config.name)
-          .map(source => ({
-            id: source.config.slug,
-            type: 'source' as const,
-            label: source.config.name,
-            description: source.config.tagline,
-            source,
-          })),
+        items: sources.flatMap(source =>
+          source.config.slug && source.config.name
+            ? [{
+                id: source.config.slug,
+                type: 'source' as const,
+                label: source.config.name,
+                description: source.config.tagline,
+                source,
+              }]
+            : []
+        ),
       })
     }
 

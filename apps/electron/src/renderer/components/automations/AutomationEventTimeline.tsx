@@ -75,6 +75,7 @@ function CopyButton({ details }: { details: import('./types').WebhookDetails }) 
 
   return (
     <button
+      type="button"
       className={cn(
         'shrink-0 p-1 rounded hover:bg-foreground/10 transition-colors',
         copied ? 'text-success' : 'text-foreground/40 hover:text-foreground/60',
@@ -118,15 +119,18 @@ export function AutomationEventTimeline({ entries, className, onReplay }: Automa
 
         return (
           <div key={entry.id}>
+            {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- handlers are undefined for non-webhook rows */}
             <div
               className={cn(
                 'flex items-center gap-3 px-4 py-2.5 text-sm',
                 isWebhook && 'cursor-pointer hover:bg-foreground/[0.03] transition-colors',
               )}
-              onClick={handleToggle}
-              onKeyDown={handleKeyDown}
-              role={isWebhook ? 'button' : undefined}
-              tabIndex={isWebhook ? 0 : undefined}
+              {...(isWebhook && {
+                onClick: handleToggle,
+                onKeyDown: handleKeyDown,
+                role: 'button' as const,
+                tabIndex: 0,
+              })}
             >
               {/* Status icon */}
               <StatusIcon className={cn('size-3.5 shrink-0', config.classes)} />
@@ -144,6 +148,7 @@ export function AutomationEventTimeline({ entries, className, onReplay }: Automa
               {/* Session deep link */}
               {entry.sessionId && (
                 <button
+                  type="button"
                   className="shrink-0 text-[11px] text-accent hover:underline cursor-pointer"
                   onClick={(e) => { e.stopPropagation(); navigateToSession(entry.sessionId!) }}
                 >
@@ -154,6 +159,7 @@ export function AutomationEventTimeline({ entries, className, onReplay }: Automa
               {/* Retry button for failed webhook entries */}
               {entry.status === 'error' && isWebhook && onReplay && (
                 <button
+                  type="button"
                   className="shrink-0 text-[11px] text-accent hover:underline cursor-pointer"
                   onClick={(e) => { e.stopPropagation(); onReplay(entry.automationId, entry.event) }}
                 >

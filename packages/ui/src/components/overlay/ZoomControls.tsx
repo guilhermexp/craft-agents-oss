@@ -61,6 +61,7 @@ function ZoomDropdown({
   return (
     <div ref={dropdownRef} className="relative">
       <button
+        type="button"
         onClick={() => setIsOpen(prev => !prev)}
         className="flex items-center gap-0.5 px-1 py-1 hover:bg-foreground/5 text-[13px] tabular-nums min-w-[4rem] justify-center transition-colors"
         title={t('overlay.zoomPresets')}
@@ -133,6 +134,7 @@ export function ZoomControls({
     <div className={cn('flex items-center gap-1.5', className)}>
       <div className="flex items-center gap-px bg-background shadow-minimal rounded-[6px]">
         <button
+          type="button"
           onClick={onZoomOut}
           disabled={scale <= minScale}
           className={cn(
@@ -154,6 +156,7 @@ export function ZoomControls({
         />
 
         <button
+          type="button"
           onClick={onZoomIn}
           disabled={scale >= maxScale}
           className={cn(
@@ -168,6 +171,7 @@ export function ZoomControls({
       </div>
 
       <button
+        type="button"
         onClick={onReset}
         disabled={resetDisabled}
         className={resetBtnClass}

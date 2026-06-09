@@ -130,9 +130,9 @@ export default function ShortcutsPage() {
                   {section.title}
                 </h3>
                 <div className="space-y-0.5">
-                  {section.shortcuts.map((shortcut, index) => (
+                  {section.shortcuts.map((shortcut) => (
                     <div
-                      key={index}
+                      key={shortcut.description}
                       className="group flex items-center justify-between py-1.5"
                     >
                       <span className="text-sm">{shortcut.description}</span>

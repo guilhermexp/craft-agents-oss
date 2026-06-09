@@ -51,16 +51,6 @@ export function TelegramConnectDialog({
   const [saving, setSaving] = React.useState(false)
   const [test, setTest] = React.useState<TestResult>({ state: 'idle' })
 
-  // Reset local state whenever dialog (re)opens — keeps reconfigure attempts
-  // from leaking previous success/error badges.
-  React.useEffect(() => {
-    if (!open) {
-      setToken('')
-      setTest({ state: 'idle' })
-      setSaving(false)
-    }
-  }, [open])
-
   const handleTest = async () => {
     const trimmed = token.trim()
     if (!trimmed) return
@@ -98,7 +88,7 @@ export function TelegramConnectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent key={open ? 'open' : 'closed'} className="sm:max-w-[480px]">
         <DialogHeader>
           <DialogTitle>
             {reconfigure

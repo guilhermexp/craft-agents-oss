@@ -26,7 +26,7 @@ import type { LlmProviderType } from '@craft-agent/shared/config/llm-connections
 /**
  * Icon URLs for each provider
  */
-export const providerIcons = {
+const providerIcons = {
   anthropic: claudeIcon,
   aws: awsIcon,
   azure: azureIcon,
@@ -46,36 +46,7 @@ export const providerIcons = {
 
 export type ProviderIconKey = keyof typeof providerIcons
 
-/** Human-readable provider names */
-const providerDisplayNames: Record<string, string> = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  openai_compat: 'OpenAI',
-  copilot: 'GitHub Copilot',
-  deepseek: 'DeepSeek',
-  kimi: 'Kimi',
-  minimax: 'Minimax',
-  ollama: 'Ollama',
-  openrouter: 'OpenRouter',
-  pi: 'Craft Agents Backend',
-  pi_compat: 'Craft Agents Backend',
-  hermes: 'Hermes',
-  vercel: 'Vercel',
-}
 
-/** Get a human-readable provider name from provider type and optional base URL */
-export function getProviderDisplayName(providerType: string, baseUrl?: string | null): string {
-  // Try URL detection first for compat providers
-  if (baseUrl) {
-    const url = baseUrl.toLowerCase()
-    if (url.includes('openrouter.ai')) return 'OpenRouter'
-    if (url.includes('ollama')) return 'Ollama'
-    if (url.includes('kimi.com')) return 'Kimi'
-    if (url.includes('minimax.io') || url.includes('minimaxi.com')) return 'Minimax'
-    if (url.includes('v0.dev') || url.includes('vercel')) return 'Vercel'
-  }
-  return providerDisplayNames[providerType] || providerType
-}
 
 /**
  * Detect provider from base URL

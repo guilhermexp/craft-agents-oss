@@ -518,11 +518,12 @@ export function ThemeProvider({
   }, [mode, font])
 
   const setAppTheme = useCallback(async (newTheme: ThemeOverrides | null) => {
-    await window.electronAPI?.setAppTheme?.(newTheme)
     if (newTheme === null) {
+      await window.electronAPI?.setAppTheme?.(newTheme)
       setAppThemeState(null)
       return
     }
+    await window.electronAPI?.setAppTheme?.(newTheme)
     const resolvedTheme = await window.electronAPI?.getAppTheme?.()
     setAppThemeState(resolvedTheme ?? null)
   }, [])
@@ -560,43 +561,51 @@ export function ThemeProvider({
     return cleanup
   }, [activeWorkspaceId])
 
+  const contextValue = useMemo(() => ({
+    // App-level preferences
+    mode,
+    colorTheme,
+    font,
+    setMode,
+    setColorTheme,
+    setFont,
+
+    // Workspace-level theme override
+    activeWorkspaceId,
+    workspaceColorTheme,
+    setWorkspaceColorTheme,
+
+    // Derived
+    resolvedMode,
+    systemPreference,
+    effectiveColorTheme,
+    previewColorTheme,
+    setPreviewColorTheme,
+    effectiveColorThemeSource,
+    themeResolvedFrom,
+    themeLoadError,
+
+    // Theme resolution (singleton)
+    presetTheme,
+    appTheme,
+    setAppTheme,
+    resolvedTheme,
+    isDark,
+    isScenic,
+    shikiTheme,
+    shikiConfig,
+  }), [
+    mode, colorTheme, font, setMode, setColorTheme, setFont,
+    activeWorkspaceId, workspaceColorTheme, setWorkspaceColorTheme,
+    resolvedMode, systemPreference, effectiveColorTheme,
+    previewColorTheme, setPreviewColorTheme, effectiveColorThemeSource,
+    themeResolvedFrom, themeLoadError,
+    presetTheme, appTheme, setAppTheme, resolvedTheme,
+    isDark, isScenic, shikiTheme, shikiConfig,
+  ])
+
   return (
-    <ThemeContext.Provider
-      value={{
-        // App-level preferences
-        mode,
-        colorTheme,
-        font,
-        setMode,
-        setColorTheme,
-        setFont,
-
-        // Workspace-level theme override
-        activeWorkspaceId,
-        workspaceColorTheme,
-        setWorkspaceColorTheme,
-
-        // Derived
-        resolvedMode,
-        systemPreference,
-        effectiveColorTheme,
-        previewColorTheme,
-        setPreviewColorTheme,
-        effectiveColorThemeSource,
-        themeResolvedFrom,
-        themeLoadError,
-
-        // Theme resolution (singleton)
-        presetTheme,
-        appTheme,
-        setAppTheme,
-        resolvedTheme,
-        isDark,
-        isScenic,
-        shikiTheme,
-        shikiConfig,
-      }}
-    >
+    <ThemeContext.Provider value={contextValue}>
       {children}
     </ThemeContext.Provider>
   )
