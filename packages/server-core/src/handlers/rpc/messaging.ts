@@ -31,6 +31,12 @@ export function registerMessagingHandlers(server: RpcServer, deps: HandlerDeps):
     return { success: true }
   })
 
+  server.handle(RPC_NAMESPACES.messaging.SAVE_LARK, async (ctx, credentialsJson: string) => {
+    if (!ctx.workspaceId) throw new Error('Missing workspaceId')
+    await registry.saveLarkCredentials(ctx.workspaceId, credentialsJson)
+    return { success: true }
+  })
+
   server.handle(RPC_NAMESPACES.messaging.DISCONNECT, async (ctx, platform: string) => {
     if (!ctx.workspaceId) throw new Error('Missing workspaceId')
     await registry.disconnectPlatform(ctx.workspaceId, platform)

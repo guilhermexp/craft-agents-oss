@@ -189,6 +189,7 @@ const EXPECTED_CHANNELS: string[] = [
   "messaging:getBindings",
   "messaging:getConfig",
   "messaging:platformStatus",
+  "messaging:saveLark",
   "messaging:saveTelegram",
   "messaging:testTelegram",
   "messaging:unbind",

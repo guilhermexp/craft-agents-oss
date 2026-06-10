@@ -41,6 +41,7 @@ import { SettingsSection, SettingsCard } from '@/components/settings'
 import { MessagingPlatformIcon } from '@/components/messaging/MessagingPlatformIcon'
 import { TelegramConnectDialog } from '@/components/messaging/TelegramConnectDialog'
 import { WhatsAppConnectDialog } from '@/components/messaging/WhatsAppConnectDialog'
+import { LarkConnectDialog } from '@/components/messaging/LarkConnectDialog'
 import { useActiveWorkspace } from '@/context/AppShellContext'
 import { useNavigation } from '@/contexts/NavigationContext'
 import {
@@ -95,6 +96,9 @@ export default function MessagingSettingsPage() {
             <SettingsCard>
               <PlatformRow platform="whatsapp" workspaceId={activeWorkspace.id} />
             </SettingsCard>
+            <SettingsCard>
+              <PlatformRow platform="lark" workspaceId={activeWorkspace.id} />
+            </SettingsCard>
           </SettingsSection>
         </div>
       </ScrollArea>
@@ -106,16 +110,18 @@ export default function MessagingSettingsPage() {
 // Platform row
 // ---------------------------------------------------------------------------
 
-type Platform = 'telegram' | 'whatsapp'
+type Platform = 'telegram' | 'whatsapp' | 'lark'
 
 const PLATFORM_LABEL_KEYS: Record<Platform, string> = {
   telegram: 'settings.messaging.telegram.title',
   whatsapp: 'settings.messaging.whatsapp.title',
+  lark: 'settings.messaging.lark.title',
 }
 
 const PLATFORM_API_DESCRIPTION: Record<Platform, string> = {
   telegram: 'Bot API',
   whatsapp: 'Unofficial Web API',
+  lark: 'Open Platform API',
 }
 
 function PlatformRow({ platform, workspaceId }: { platform: Platform; workspaceId: string }) {
@@ -234,12 +240,12 @@ function PlatformRow({ platform, workspaceId }: { platform: Platform; workspaceI
                 </button>
               </DropdownMenuTrigger>
               <StyledDropdownMenuContent align="end">
-                {platform === 'telegram' ? (
+                {platform === 'telegram' || platform === 'lark' ? (
                   <>
                     <StyledDropdownMenuItem onClick={() => runAfterMenuClose(handleReconfigure)}>
                       <Settings2 className="size-3.5" />
                       <span>
-                        {t('settings.messaging.telegram.reconfigure', {
+                        {t(`settings.messaging.${platform}.reconfigure`, {
                           defaultValue: 'Reconfigure',
                         })}
                       </span>
@@ -329,6 +335,13 @@ function PlatformRow({ platform, workspaceId }: { platform: Platform; workspaceI
       )}
       {platform === 'whatsapp' && (
         <WhatsAppConnectDialog open={connectOpen} onOpenChange={setConnectOpen} />
+      )}
+      {platform === 'lark' && (
+        <LarkConnectDialog
+          open={connectOpen}
+          onOpenChange={setConnectOpen}
+          reconfigure={reconfigure}
+        />
       )}
     </>
   )

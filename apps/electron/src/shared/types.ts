@@ -751,6 +751,7 @@ export interface ElectronAPI {
   updateMessagingConfig(config: Record<string, unknown>): Promise<void>
   testTelegramToken(token: string): Promise<{ success: boolean; botName?: string; botUsername?: string; error?: string }>
   saveTelegramToken(token: string): Promise<void>
+  saveLarkCredentials(credentialsJson: string): Promise<void>
   disconnectMessagingPlatform(platform: string): Promise<void>
   forgetMessagingPlatform(platform: string): Promise<void>
   getMessagingBindings(): Promise<Array<{ id: string; workspaceId: string; sessionId: string; platform: string; channelId: string; channelName?: string; enabled: boolean; createdAt: number }>>

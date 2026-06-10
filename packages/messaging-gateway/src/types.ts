@@ -10,7 +10,7 @@ import type { Opaque } from '@craft-agent/shared/opaque'
 // Platform types
 // ---------------------------------------------------------------------------
 
-export type PlatformType = 'telegram' | 'whatsapp'
+export type PlatformType = 'telegram' | 'whatsapp' | 'lark'
 export type MessagingChannelId = Opaque<string, 'MessagingChannelId'>
 
 export function messagingChannelId(value: string): MessagingChannelId {
@@ -76,7 +76,7 @@ export interface AdapterCapabilities {
   inlineButtons: boolean
   maxButtons: number
   maxMessageLength: number
-  markdown: 'v2' | 'whatsapp'
+  markdown: 'v2' | 'whatsapp' | 'lark-post'
   webhookSupport: boolean
 }
 
@@ -276,6 +276,9 @@ export interface MessagingConfig {
        * the expected UX for new users.
        */
       selfChatMode?: boolean
+    }
+    lark?: {
+      enabled: boolean
     }
   }
 }

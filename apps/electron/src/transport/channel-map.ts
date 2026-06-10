@@ -450,6 +450,7 @@ export const CHANNEL_MAP = {
   updateMessagingConfig: invoke(RPC_NAMESPACES.messaging.UPDATE_CONFIG),
   testTelegramToken: invoke(RPC_NAMESPACES.messaging.TEST_TELEGRAM),
   saveTelegramToken: invoke(RPC_NAMESPACES.messaging.SAVE_TELEGRAM),
+  saveLarkCredentials: invoke(RPC_NAMESPACES.messaging.SAVE_LARK),
   disconnectMessagingPlatform: invoke(RPC_NAMESPACES.messaging.DISCONNECT),
   forgetMessagingPlatform: invoke(RPC_NAMESPACES.messaging.FORGET),
   getMessagingBindings: invoke(RPC_NAMESPACES.messaging.GET_BINDINGS),

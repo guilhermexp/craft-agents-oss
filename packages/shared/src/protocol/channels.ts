@@ -468,6 +468,7 @@ export const RPC_NAMESPACES = {
     UPDATE_CONFIG: 'messaging:updateConfig',
     TEST_TELEGRAM: 'messaging:testTelegram',
     SAVE_TELEGRAM: 'messaging:saveTelegram',
+    SAVE_LARK: 'messaging:saveLark',
     DISCONNECT: 'messaging:disconnect',
     FORGET: 'messaging:forget',
     GET_BINDINGS: 'messaging:getBindings',

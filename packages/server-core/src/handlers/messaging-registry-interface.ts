@@ -57,6 +57,9 @@ export interface IMessagingGatewayRegistry {
   /** Save Telegram token and (re)initialize the adapter. */
   saveTelegramToken(workspaceId: string, token: string): Promise<void>
 
+  /** Save Lark/Feishu credentials (JSON appId/appSecret/domain) and (re)initialize the adapter. */
+  saveLarkCredentials(workspaceId: string, credentialsJson: string): Promise<void>
+
   /** Disable a platform for a workspace, preserving WhatsApp auth state unless forgotten separately. */
   disconnectPlatform(workspaceId: string, platform: string): Promise<void>
 
