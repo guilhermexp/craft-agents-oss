@@ -230,6 +230,28 @@ export function setEnable1MContext(enabled: boolean): void {
 }
 
 /**
+ * Get whether rtk Bash-output compression is enabled.
+ * When enabled, the PreToolUse pipeline rewrites Bash commands to their `rtk` equivalents
+ * to reduce token consumption on common dev commands (git, ls, grep, test runners, etc.).
+ * Defaults to false — opt-in. Requires the `rtk` binary on PATH.
+ * https://github.com/rtk-ai/rtk
+ */
+export function getRtkEnabled(): boolean {
+  const config = loadStoredConfig();
+  return config?.rtkEnabled === true;
+}
+
+/**
+ * Set whether rtk Bash-output compression is enabled.
+ */
+export function setRtkEnabled(enabled: boolean): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  config.rtkEnabled = enabled;
+  saveConfig(config);
+}
+
+/**
  * Get whether TurnCards and their activity groups should auto-expand by default in chat.
  * Defaults to false (collapsed) to preserve historical behavior.
  */

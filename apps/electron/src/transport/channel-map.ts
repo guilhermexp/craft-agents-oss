@@ -344,6 +344,12 @@ export const CHANNEL_MAP = {
   getEnable1MContext: invoke(RPC_NAMESPACES.caching.GET_ENABLE_1M_CONTEXT),
   setEnable1MContext: invoke(RPC_NAMESPACES.caching.SET_ENABLE_1M_CONTEXT),
 
+  // RTK Bash-output compression (opt-in; requires the `rtk` binary on PATH)
+  getRtkEnabled: invoke(RPC_NAMESPACES.rtk.GET_ENABLED),
+  setRtkEnabled: invoke(RPC_NAMESPACES.rtk.SET_ENABLED),
+  getRtkStatus: invoke(RPC_NAMESPACES.rtk.GET_STATUS),
+  getRtkGain: invoke(RPC_NAMESPACES.rtk.GET_GAIN),
+
   // Badge
   refreshBadge: invoke(RPC_NAMESPACES.badge.REFRESH),
   setDockIconWithBadge: invoke(RPC_NAMESPACES.badge.SET_ICON),

@@ -35,6 +35,10 @@ export const HANDLED_CHANNELS = [
   RPC_NAMESPACES.caching.SET_EXTENDED_PROMPT_CACHE,
   RPC_NAMESPACES.caching.GET_ENABLE_1M_CONTEXT,
   RPC_NAMESPACES.caching.SET_ENABLE_1M_CONTEXT,
+  RPC_NAMESPACES.rtk.GET_ENABLED,
+  RPC_NAMESPACES.rtk.SET_ENABLED,
+  RPC_NAMESPACES.rtk.GET_STATUS,
+  RPC_NAMESPACES.rtk.GET_GAIN,
   RPC_NAMESPACES.sessions.GET_MODEL,
   RPC_NAMESPACES.sessions.SET_MODEL,
   RPC_NAMESPACES.settings.GET_DEFAULT_THINKING_LEVEL,
@@ -313,6 +317,29 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   server.handle(RPC_NAMESPACES.caching.SET_ENABLE_1M_CONTEXT, async (_ctx, enabled: boolean) => {
     const { setEnable1MContext } = await import('@craft-agent/shared/config/storage')
     setEnable1MContext(enabled)
+  })
+
+  // RTK Bash-output compression — opt-in toggle
+  server.handle(RPC_NAMESPACES.rtk.GET_ENABLED, async () => {
+    const { getRtkEnabled } = await import('@craft-agent/shared/config/storage')
+    return getRtkEnabled()
+  })
+
+  server.handle(RPC_NAMESPACES.rtk.SET_ENABLED, async (_ctx, enabled: boolean) => {
+    const { setRtkEnabled } = await import('@craft-agent/shared/config/storage')
+    setRtkEnabled(enabled)
+  })
+
+  // RTK binary detection status (installed/path/version) for the Settings UI
+  server.handle(RPC_NAMESPACES.rtk.GET_STATUS, async () => {
+    const { getRtkStatus } = await import('@craft-agent/shared/agent')
+    return getRtkStatus({ forceRecheck: true })
+  })
+
+  // RTK token-savings stats (`rtk gain --format json`); null when unavailable
+  server.handle(RPC_NAMESPACES.rtk.GET_GAIN, async () => {
+    const { getRtkGain } = await import('@craft-agent/shared/agent')
+    return getRtkGain()
   })
 
   // Get auto-expand chat activities setting

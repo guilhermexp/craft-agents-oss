@@ -588,6 +588,8 @@ export default function AiSettingsPage() {
   const [defaultThinking, setDefaultThinking] = useState<ThinkingLevel>(DEFAULT_THINKING_LEVEL)
   const [extendedPromptCache, setExtendedPromptCache] = useState(false)
   const [enable1MContext, setEnable1MContext] = useState(false)
+  const [rtkEnabled, setRtkEnabledState] = useState(false)
+  const [rtkInstalled, setRtkInstalled] = useState(false)
 
   // Validation state per connection
   const [validationStates, setValidationStates] = useState<Record<string, {
@@ -619,6 +621,11 @@ export default function AiSettingsPage() {
 
         const enable1M = await window.electronAPI.getEnable1MContext()
         setEnable1MContext(enable1M)
+
+        const rtkOn = await window.electronAPI.getRtkEnabled()
+        setRtkEnabledState(rtkOn)
+        const rtkStatus = await window.electronAPI.getRtkStatus()
+        setRtkInstalled(rtkStatus.installed)
 
         // Check credential health for potential issues (corruption, machine migration)
         const health = await window.electronAPI.getCredentialHealth()
@@ -894,6 +901,11 @@ export default function AiSettingsPage() {
     await window.electronAPI?.setEnable1MContext(enabled)
   }, [])
 
+  const handleRtkEnabledChange = useCallback(async (enabled: boolean) => {
+    setRtkEnabledState(enabled)
+    await window.electronAPI?.setRtkEnabled(enabled)
+  }, [])
+
   // Refresh callback for workspace cards
   const handleWorkspaceSettingsChange = useCallback(() => {
     // Refresh context so changes propagate immediately
@@ -1028,6 +1040,13 @@ export default function AiSettingsPage() {
                     description={t("settings.ai.extendedPromptCacheDesc")}
                     checked={extendedPromptCache}
                     onCheckedChange={handleExtendedPromptCacheChange}
+                  />
+                  <SettingsToggle
+                    label={t("settings.ai.rtkCompression")}
+                    description={rtkInstalled ? t("settings.ai.rtkCompressionDesc") : t("settings.ai.rtkCompressionNotInstalled")}
+                    checked={rtkEnabled && rtkInstalled}
+                    onCheckedChange={handleRtkEnabledChange}
+                    disabled={!rtkInstalled}
                   />
                 </SettingsCard>
               </SettingsSection>
