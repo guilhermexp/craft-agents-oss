@@ -4,7 +4,7 @@ This folder contains assets that are bundled with the Electron app. Most legacy 
 
 ## How It Works
 
-1. **Build time**: `scripts/copy-assets.ts` copies this folder to `dist/resources/`, excluding the generated Hermes runtime under `resources/vendor/hermes/`
+1. **Build time**: `scripts/copy-assets.ts` copies this folder to `dist/resources/`, excluding generated/dev-only Hermes vendor trees under `resources/vendor/hermes/` and `resources/vendor/hermes-agent/`
 2. **Package time**: electron-builder includes `dist/resources/` in the app bundle and separately injects the generated Hermes runtime through `extraResources` as `app/vendor/hermes`
 3. **Runtime**: `getBundledAssetsDir()` resolves paths to these bundled assets
 4. **Launch**: Legacy asset types sync to the user's home directory; Hermes seed assets are copy/merged into app-scoped `HERMES_HOME` by `ensureHermesSeedSkills()`
@@ -41,6 +41,7 @@ These files are used by electron-builder or the app directly, not synced to user
 | `generate-icons.sh` | Icon generation script |
 | `hermes-seed/` | Repository-bundled seed skills/instructions for embedded Hermes; bootstrapped into app-scoped `HERMES_HOME` with copy-if-missing semantics |
 | `vendor/hermes/` | Generated embedded Hermes runtime; excluded from `dist/resources` and shipped through `extraResources` as `app/vendor/hermes` |
+| `vendor/hermes-agent/` | Legacy/dev-only Hermes checkout; excluded from `dist/resources` and not shipped |
 | `bridge-mcp-server/` | Bundled MCP server for Codex/Copilot API source bridge |
 | `session-mcp-server/` | Bundled MCP server for session tools |
 

@@ -522,7 +522,8 @@ runtime.
 - `apps/electron/scripts/copy-assets.ts` clears `dist/resources`, copies normal
   resources and `hermes-seed`, and deliberately excludes `resources/vendor/hermes`
   plus dev-only `resources/vendor/hermes-agent` so the runtime is not duplicated
-  under `dist/resources`.
+  under `dist/resources`. The root `scripts/electron-build-resources.ts` and
+  `scripts/electron-dev.ts` resource-copy paths mirror the same exclusion.
 - `asar` remains disabled for this app so the embedded Python interpreter,
   symlinks, ripgrep, Playwright assets, and Hermes source mirror are available
   directly on disk.

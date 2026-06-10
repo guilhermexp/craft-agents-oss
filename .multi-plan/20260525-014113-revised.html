@@ -1,0 +1,509 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Implementation plan — Meetings page hardening</title>
+  <style>
+    :root {
+      --ivory:    #FAF9F5;
+      --slate:    #141413;
+      --clay:     #D97757;
+      --oat:      #E3DACC;
+      --olive:    #788C5D;
+      --gray-150: #F0EEE6;
+      --gray-300: #D1CFC5;
+      --gray-500: #87867F;
+      --gray-700: #3D3D3A;
+      --white:    #FFFFFF;
+      --serif: ui-serif, Georgia, 'Times New Roman', serif;
+      --sans:  system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --mono:  ui-monospace, 'SF Mono', Menlo, Monaco, monospace;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: var(--sans); background: var(--ivory); color: var(--gray-700); line-height: 1.55; padding: 56px 32px 120px; -webkit-font-smoothing: antialiased; }
+    .page { max-width: 1120px; margin: 0 auto; }
+    header.page-head { margin-bottom: 48px; max-width: 820px; }
+    .eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray-500); margin-bottom: 12px; }
+    h1 { font-family: var(--serif); font-weight: 500; font-size: 38px; line-height: 1.15; color: var(--slate); margin-bottom: 18px; letter-spacing: -0.01em; }
+    .prompt-box { background: var(--gray-150); border: 1.5px solid var(--gray-300); border-radius: 12px; padding: 16px 20px; font-size: 14.5px; color: var(--gray-700); }
+    .prompt-box .label { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray-500); display: block; margin-bottom: 6px; }
+    section { margin-bottom: 64px; }
+    .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; }
+    .sec-head .num { font-family: var(--mono); font-size: 12px; background: var(--oat); color: var(--slate); padding: 3px 9px; border-radius: 8px; }
+    .sec-head h2 { font-family: var(--serif); font-weight: 500; font-size: 26px; color: var(--slate); letter-spacing: -0.01em; }
+    .sec-intro { font-size: 14.5px; color: var(--gray-500); max-width: 720px; margin-bottom: 28px; }
+    .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 64px; }
+    .summary .cell { background: var(--white); border: 1.5px solid var(--gray-300); border-radius: 12px; padding: 18px 20px; }
+    .summary .k { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray-500); margin-bottom: 6px; }
+    .summary .v { font-size: 17px; color: var(--slate); font-weight: 600; }
+    .summary .v.accent { color: var(--clay); }
+    .milestones { display: flex; flex-direction: column; gap: 0; }
+    .milestone { display: grid; grid-template-columns: 120px 28px 1fr; gap: 0 18px; position: relative; }
+    .milestone .when { text-align: right; font-family: var(--mono); font-size: 12px; color: var(--gray-500); padding-top: 4px; }
+    .milestone .dot-col { display: flex; flex-direction: column; align-items: center; }
+    .milestone .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--white); border: 3px solid var(--clay); margin-top: 4px; flex-shrink: 0; }
+    .milestone .dot.done { background: var(--olive); border-color: var(--olive); }
+    .milestone .line { width: 2px; flex: 1; background: var(--gray-300); margin: 4px 0; }
+    .milestone:last-child .line { display: none; }
+    .milestone .body { padding-bottom: 36px; }
+    .milestone .body h3 { font-family: var(--serif); font-weight: 500; font-size: 19px; color: var(--slate); margin-bottom: 4px; }
+    .milestone .body p { font-size: 14px; color: var(--gray-500); margin-bottom: 10px; max-width: 620px; }
+    .milestone .tags { display: flex; gap: 8px; flex-wrap: wrap; }
+    .milestone .tag { font-family: var(--mono); font-size: 11.5px; background: var(--gray-150); border: 1px solid var(--gray-300); border-radius: 6px; padding: 3px 8px; color: var(--gray-700); }
+    .risks { border: 1.5px solid var(--gray-300); border-radius: 12px; overflow: hidden; background: var(--white); }
+    .risks .row { display: grid; grid-template-columns: 1.6fr 90px 1.6fr; gap: 0; }
+    .risks .row + .row { border-top: 1.5px solid var(--gray-300); }
+    .risks .cell { padding: 14px 18px; font-size: 13.5px; }
+    .risks .cell + .cell { border-left: 1.5px solid var(--gray-300); }
+    .risks .head { background: var(--gray-150); font-weight: 600; color: var(--slate); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .sev { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 6px; font-weight: 600; }
+    .sev.high { background: #F3D9CC; color: #8A3B1E; }
+    .sev.med { background: var(--oat); color: var(--slate); }
+    .sev.low { background: #E4E9DC; color: #4B5C39; }
+    .open-q { display: flex; flex-direction: column; gap: 14px; max-width: 820px; }
+    .q { background: var(--white); border: 1.5px solid var(--gray-300); border-left: 4px solid var(--clay); border-radius: 10px; padding: 16px 20px; }
+    .q .qt { font-weight: 600; font-size: 15px; color: var(--slate); margin-bottom: 4px; }
+    .q .qd { font-size: 13.5px; color: var(--gray-500); }
+    .q .owner { font-family: var(--mono); font-size: 11.5px; color: var(--gray-500); margin-top: 8px; }
+    .code-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+    .code-block { display: flex; flex-direction: column; gap: 10px; }
+    .code-block .file-label { font-family: var(--mono); font-size: 12px; color: var(--gray-500); }
+    .code { background: var(--slate); border-radius: 12px; padding: 18px 20px; overflow-x: auto; flex: 1; }
+    .code pre { font-family: var(--mono); font-size: 12.5px; line-height: 1.65; color: #E8E6DE; white-space: pre; }
+    .code .kw { color: var(--clay); }
+    .code .str { color: var(--olive); }
+    .code .cm { color: var(--gray-500); }
+    .code .fn { color: #C9B98A; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="page-head">
+      <div class="eyebrow">Implementation plan review</div>
+      <h1>Meetings page hardening</h1>
+      <div class="prompt-box">
+        <span class="label">Scope</span>
+        Revised plan for the Craft Agents OSS Meetings page. Baseline checked against the current CWD on 2026-05-25: DTOs, MeetingService, RecordingService, IPC channels, renderer UI, i18n locales, tests, and Hermes embed docs.
+      </div>
+    </header>
+
+    <div class="summary">
+      <div class="cell">
+        <div class="k">Primary change</div>
+        <div class="v">Make records real</div>
+      </div>
+      <div class="cell">
+        <div class="k">Key correction</div>
+        <div class="v accent">No cookie copy to bot-auth</div>
+      </div>
+      <div class="cell">
+        <div class="k">New contract</div>
+        <div class="v">Archive/delete IPC</div>
+      </div>
+      <div class="cell">
+        <div class="k">Largest risk</div>
+        <div class="v">Post-processing backend</div>
+      </div>
+    </div>
+
+    <section>
+      <div class="sec-head">
+        <span class="num">01</span>
+        <h2>Repo Reality</h2>
+      </div>
+      <p class="sec-intro">
+        The original plan is directionally right, but several details do not match the current implementation.
+      </p>
+      <div class="open-q">
+        <div class="q">
+          <div class="qt">DTO flags are half-present</div>
+          <div class="qd">`MeetingStartInput` already contains `summarizeOnEnd` and `followUpOnEnd` in `packages/shared/src/protocol/dto.ts:49-69`. `MeetingRecord` in `dto.ts:72-88` still lacks those fields plus archive and recording metadata. The `isArchived` lines cited by the original plan belong to `Session`, not `MeetingRecord`.</div>
+          <div class="owner">owner: packages/shared/src/protocol/dto.ts</div>
+        </div>
+        <div class="q">
+          <div class="qt">Recording is not connected to meetings</div>
+          <div class="qd">`RecordingService.finalize()` returns `{ recordingId, outputPath, bytesWritten, durationMs }`, but no code updates a `MeetingRecord` or transcript after finalization. The toolbar records `.webm` independently from the MeetingService record lifecycle.</div>
+          <div class="owner">owner: apps/electron/src/main/meetings/recording-service.ts</div>
+        </div>
+        <div class="q">
+          <div class="qt">Summarize command does not exist</div>
+          <div class="qd">`runHermesMeetPlugin` currently accepts only `start`, `status`, `transcript`, and `stop`. The plan must not call `runHermesMeetPlugin('summarize')` unless a real Hermes command is added and tested.</div>
+          <div class="owner">owner: apps/electron/src/main/meetings/meeting-service.ts</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <span class="num">02</span>
+        <h2>Sequence</h2>
+      </div>
+      <p class="sec-intro">
+        Implement in dependency order. Keep tests close to each contract change before moving to the next batch.
+      </p>
+      <div class="milestones">
+        <div class="milestone">
+          <div class="when">0</div>
+          <div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Contract tests first</h3>
+            <p>Add focused tests for DTO persistence, archive/delete, stop ownership, auth behavior, recording finalize, and transcript persistence.</p>
+            <div class="tags"><span class="tag">meeting-service.test.ts</span><span class="tag">channel-map-parity</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">1</div>
+          <div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>DTO and storage</h3>
+            <p>Extend `MeetingRecord` with flags, archive fields, browser ownership, and recording metadata. Update `sanitizeRecord()` to preserve and normalize those fields.</p>
+            <div class="tags"><span class="tag">dto.ts</span><span class="tag">sanitizeRecord</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">2</div>
+          <div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Dedicated bot auth</h3>
+            <p>Remove the dead `auth.json` export path or leave it unused. Do not copy organizer BrowserPane cookies into `bot-auth.json`; keep the dedicated bot account contract.</p>
+            <div class="tags"><span class="tag">bot-auth.json</span><span class="tag">hermes-embed.md</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">3</div>
+          <div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Non-destructive stop</h3>
+            <p>Track `ownsBrowserInstance`. `stop()` destroys only panes created by MeetingService; reused panes remain open. Hermes bot stop remains independent from browser destruction.</p>
+            <div class="tags"><span class="tag">MeetingService.stop</span><span class="tag">BrowserPane</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">4</div>
+          <div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Archive and delete</h3>
+            <p>Add archive, unarchive, and delete through service, handlers, protocol channels, routing, ElectronAPI, channel map, and UI actions with confirmation.</p>
+            <div class="tags"><span class="tag">channels.ts</span><span class="tag">handlers/meetings.ts</span><span class="tag">MeetingsListPanel</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">5</div>
+          <div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Hermes bot health</h3>
+            <p>Add per-meeting health timers for Hermes captures only. Use a real 5s timeout around plugin status checks and clear timers on terminal state or delete.</p>
+            <div class="tags"><span class="tag">status</span><span class="tag">timeout</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">6</div>
+          <div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>i18n and polling</h3>
+            <p>Move MeetingsPage, MeetingsListPanel, browser-toolbar, and backend markdown/status strings off hardcoded Portuguese. Replace duplicate 5s polling with event/focus reload plus a slower fallback.</p>
+            <div class="tags"><span class="tag">8 locales</span><span class="tag">MEETINGS_CHANGED_EVENT</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">7</div>
+          <div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Real transcription</h3>
+            <p>Create TranscriptionService, connect recording finalize to MeetingService, persist transcript results, and handle provider errors as transcript unavailable with a clear message.</p>
+            <div class="tags"><span class="tag">Deepgram</span><span class="tag">Groq</span><span class="tag">Zod</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">8</div>
+          <div class="dot-col"><div class="dot"></div></div>
+          <div class="body">
+            <h3>Post-meeting output</h3>
+            <p>Persist `summarizeOnEnd` and `followUpOnEnd`; run post-processing only after transcript status is ready. Choose a real summarization adapter before implementing AI output.</p>
+            <div class="tags"><span class="tag">no fake summarize command</span><span class="tag">post-processing</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <span class="num">03</span>
+        <h2>Contracts</h2>
+      </div>
+      <p class="sec-intro">
+        The implementation should update shared contracts first, then wire main and renderer surfaces.
+      </p>
+      <div class="code-grid">
+        <div class="code-block">
+          <div class="file-label">packages/shared/src/protocol/dto.ts</div>
+          <div class="code"><pre><span class="kw">export interface</span> MeetingRecord {
+  id: string
+  provider: <span class="str">'google-meet'</span>
+  captureMode?: <span class="str">'hermes'</span> | <span class="str">'craft'</span>
+  status: MeetingStatus
+  url: string
+  browserInstanceId: string
+  ownsBrowserInstance?: boolean
+  summarizeOnEnd?: boolean
+  followUpOnEnd?: boolean
+  isArchived?: boolean
+  archivedAt?: number
+  recording?: {
+    path: string
+    mimeType?: string
+    bytesWritten?: number
+    durationMs?: number
+  }
+}</pre></div>
+        </div>
+        <div class="code-block">
+          <div class="file-label">RPC / ElectronAPI</div>
+          <div class="code"><pre>meetings: {
+  START: <span class="str">'meetings:start'</span>,
+  LIST: <span class="str">'meetings:list'</span>,
+  STATUS: <span class="str">'meetings:status'</span>,
+  STOP: <span class="str">'meetings:stop'</span>,
+  TRANSCRIPT: <span class="str">'meetings:transcript'</span>,
+  ARCHIVE: <span class="str">'meetings:archive'</span>,
+  UNARCHIVE: <span class="str">'meetings:unarchive'</span>,
+  DELETE: <span class="str">'meetings:delete'</span>,
+  GET_TRANSCRIPTION_CONFIG: <span class="str">'meetings:getTranscriptionConfig'</span>,
+  SAVE_TRANSCRIPTION_CONFIG: <span class="str">'meetings:saveTranscriptionConfig'</span>,
+}</pre></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <span class="num">04</span>
+        <h2>Service Flow</h2>
+      </div>
+      <p class="sec-intro">
+        Keep the user-visible browser, Hermes bot, and Craft recorder as separate ownership domains.
+      </p>
+      <div class="open-q">
+        <div class="q">
+          <div class="qt">Start</div>
+          <div class="qd">When `browserInstanceId` is provided and exists, set `ownsBrowserInstance: false`. When MeetingService creates a pane, set `ownsBrowserInstance: true`. Store `summarizeOnEnd` and `followUpOnEnd` on the record immediately.</div>
+          <div class="owner">owner: MeetingService.start</div>
+        </div>
+        <div class="q">
+          <div class="qt">Stop</div>
+          <div class="qd">If Hermes capture is active, call `runHermesMeetPlugin('stop')`. Destroy the BrowserPane only when `ownsBrowserInstance === true`. Then mark stopped and trigger post-processing only when a transcript or recording is available.</div>
+          <div class="owner">owner: MeetingService.stop</div>
+        </div>
+        <div class="q">
+          <div class="qt">Archive/delete</div>
+          <div class="qd">Archive updates record metadata only. Delete removes the record, transcript JSON, summary markdown, and the recorded media path stored under `recording.path`.</div>
+          <div class="owner">owner: MeetingService.archive/delete</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <span class="num">05</span>
+        <h2>Transcription</h2>
+      </div>
+      <p class="sec-intro">
+        Current code has provider settings and saved API keys, but no real transcription. The missing bridge is recording finalize to meeting transcript.
+      </p>
+      <div class="code-grid">
+        <div class="code-block">
+          <div class="file-label">apps/electron/src/main/meetings/transcription-service.ts</div>
+          <div class="code"><pre><span class="kw">type</span> TranscribeInput = {
+  provider: MeetingTranscriptionProvider
+  model: string
+  apiKey: string
+  filePath: string
+  mimeType?: string
+}
+
+<span class="kw">type</span> TranscribeOutput = {
+  transcript: MeetingTranscriptSegment[]
+  text: string
+}</pre></div>
+        </div>
+        <div class="code-block">
+          <div class="file-label">recording finalize bridge</div>
+          <div class="code"><pre><span class="cm">// Handler owns both services today.</span>
+const result = await recordingService.finalize(recordingId, mimeType)
+await meetingService.completeRecording(
+  workspaceId,
+  workspaceRoot,
+  meetingId,
+  result
+)</pre></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <span class="num">06</span>
+        <h2>Provider Rules</h2>
+      </div>
+      <p class="sec-intro">
+        Use current provider docs but keep conversion/chunking as fallback, not as the default assumption.
+      </p>
+      <div class="risks">
+        <div class="row">
+          <div class="cell head">Provider</div>
+          <div class="cell head">Status</div>
+          <div class="cell head">Implementation note</div>
+        </div>
+        <div class="row">
+          <div class="cell">Deepgram prerecorded audio</div>
+          <div class="cell"><span class="sev low">WebM ok</span></div>
+          <div class="cell">POST binary bytes with the recorded MIME type. Deepgram docs list WebM among common supported formats.</div>
+        </div>
+        <div class="row">
+          <div class="cell">Groq speech-to-text</div>
+          <div class="cell"><span class="sev med">Size risk</span></div>
+          <div class="cell">Use multipart form upload with `file` and `model`. Groq docs list WebM, but size limits make chunking or ffmpeg compression relevant for long calls.</div>
+        </div>
+        <div class="row">
+          <div class="cell">Provider parsing</div>
+          <div class="cell"><span class="sev high">Strict</span></div>
+          <div class="cell">Validate response shapes with Zod/type guards before writing transcript files. Persist provider failure as `unavailable` plus message.</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <span class="num">07</span>
+        <h2>UX And i18n</h2>
+      </div>
+      <p class="sec-intro">
+        The visible Meetings UI has hardcoded strings in multiple places, not only the page component.
+      </p>
+      <div class="milestones">
+        <div class="milestone">
+          <div class="when">UI</div>
+          <div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Renderer strings</h3>
+            <p>Move hardcoded Portuguese in MeetingsPage, MeetingsListPanel, and browser-toolbar into `meetings.*` keys across all eight locale files.</p>
+            <div class="tags"><span class="tag">en</span><span class="tag">pt-BR</span><span class="tag">es</span><span class="tag">de</span><span class="tag">hu</span><span class="tag">ja</span><span class="tag">pl</span><span class="tag">zh-Hans</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">Poll</div>
+          <div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Reload policy</h3>
+            <p>Replace both 5s intervals with `MEETINGS_CHANGED_EVENT`, focus reload, and a 15s or 30s fallback. Keep dispatch after start, stop, archive, delete, and recording finalize.</p>
+            <div class="tags"><span class="tag">MeetingsPage</span><span class="tag">MeetingsListPanel</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">List</div>
+          <div class="dot-col"><div class="dot"></div></div>
+          <div class="body">
+            <h3>Archive/delete controls</h3>
+            <p>Stopped/error records get Archive and Delete actions. Delete requires confirmation and must clear selected meeting state if the selected record is removed.</p>
+            <div class="tags"><span class="tag">confirm</span><span class="tag">selection reset</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <span class="num">08</span>
+        <h2>Verification</h2>
+      </div>
+      <p class="sec-intro">
+        Run focused tests first, then global validation. Keep i18n parity separate because `validate:dev` does not include it.
+      </p>
+      <div class="code-grid">
+        <div class="code-block">
+          <div class="file-label">focused checks</div>
+          <div class="code"><pre>bun test apps/electron/src/main/meetings/meeting-service.test.ts
+bun test apps/electron/src/main/meetings/transcription-service.test.ts
+bun test apps/electron/src/transport/__tests__/channel-map-parity.test.ts
+bun test packages/shared/src/i18n/__tests__/locale-parity.test.ts
+bun test packages/shared/src/i18n/__tests__/locale-registry.test.ts</pre></div>
+        </div>
+        <div class="code-block">
+          <div class="file-label">final checks</div>
+          <div class="code"><pre>bun run lint:i18n:parity
+bun run typecheck:all
+bun run validate:dev</pre></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <span class="num">09</span>
+        <h2>Risks</h2>
+      </div>
+      <p class="sec-intro">
+        These are the implementation risks that should stay visible while applying the plan.
+      </p>
+      <div class="risks">
+        <div class="row">
+          <div class="cell head">Risk</div>
+          <div class="cell head">Severity</div>
+          <div class="cell head">Mitigation</div>
+        </div>
+        <div class="row">
+          <div class="cell">Summarization backend is undefined</div>
+          <div class="cell"><span class="sev high">High</span></div>
+          <div class="cell">Do not call a nonexistent Hermes `summarize` command. Pick an explicit adapter before implementing AI summary/tasks.</div>
+        </div>
+        <div class="row">
+          <div class="cell">Recording finalize lacks meeting identity</div>
+          <div class="cell"><span class="sev high">High</span></div>
+          <div class="cell">Return `meetingId` from prepare and pass it into finalize, or create a MeetingRecord inside prepare.</div>
+        </div>
+        <div class="row">
+          <div class="cell">Bot auth identity confusion</div>
+          <div class="cell"><span class="sev high">High</span></div>
+          <div class="cell">Keep `bot-auth.json` generated by `create-meet-bot-auth.py`; do not reuse visible organizer cookies.</div>
+        </div>
+        <div class="row">
+          <div class="cell">Long recordings exceed Groq limits</div>
+          <div class="cell"><span class="sev med">Medium</span></div>
+          <div class="cell">Start with direct WebM upload; add chunking or ffmpeg compression when size/provider errors require it.</div>
+        </div>
+        <div class="row">
+          <div class="cell">Session meeting_tool remains placeholder</div>
+          <div class="cell"><span class="sev med">Medium</span></div>
+          <div class="cell">If product scope includes Hermes session-tool parity, add a separate task for `SessionManager` callbacks and session-tool contract tests.</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head">
+        <span class="num">10</span>
+        <h2>Open Questions</h2>
+      </div>
+      <p class="sec-intro">
+        Resolve these before implementing the final post-processing step.
+      </p>
+      <div class="open-q">
+        <div class="q">
+          <div class="qt">Which engine generates summaries and follow-ups?</div>
+          <div class="qd">MeetingService currently has no LLM dependency. Choose Craft LLM connection, Hermes ACP session, or deterministic non-AI summary. The original Hermes plugin command is not present.</div>
+          <div class="owner">owner: product/architecture</div>
+        </div>
+        <div class="q">
+          <div class="qt">Should archived meetings have a visible archive view?</div>
+          <div class="qd">If `list()` filters archived records by default, the UI needs either an includeArchived toggle or an unarchive path; otherwise archive is effectively one-way from the user perspective.</div>
+          <div class="owner">owner: renderer UX</div>
+        </div>
+        <div class="q">
+          <div class="qt">Should session-scoped meeting_tool route to MeetingService?</div>
+          <div class="qd">Current callbacks in `SessionManager.ts:3386-3461` operate on BrowserPane placeholders. Leave this out of scope unless the feature promises Hermes agent control parity.</div>
+          <div class="owner">owner: session tools</div>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>

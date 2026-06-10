@@ -4,6 +4,7 @@ import { AlertCircle, Archive, Bot, CalendarDays, Square, Trash2, Video } from '
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
+import { MeetingAskButton } from './MeetingAskButton'
 import { shouldClearSelectedMeeting } from '@/lib/meetings-selection'
 import { cn } from '@/lib/utils'
 import type { MeetingRecord } from '../../../shared/types'
@@ -58,13 +59,16 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
   const [stoppingId, setStoppingId] = React.useState<string | null>(null)
   const [actionId, setActionId] = React.useState<string | null>(null)
 
-  const loadMeetings = React.useCallback(async () => {
+  // `silent` background refreshes must NOT toggle the global `loading` flag —
+  // doing so triggers the `if (loading) return <Carregando/>` early-return, which
+  // unmounts the whole list (and any open meeting popover) on every 5s poll.
+  const loadMeetings = React.useCallback(async (options?: { silent?: boolean }) => {
     if (!workspaceId) {
       setRecords([])
       setLoading(false)
       return
     }
-    setLoading(true)
+    if (!options?.silent) setLoading(true)
     try {
       const next = await window.electronAPI.meetings.list(workspaceId)
       setRecords(next)
@@ -72,17 +76,17 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
       const message = error instanceof Error ? error.message : t('meetings.joinError')
       toast.error(message)
     } finally {
-      setLoading(false)
+      if (!options?.silent) setLoading(false)
     }
   }, [t, workspaceId])
 
   React.useEffect(() => {
     void loadMeetings()
     const timer = window.setInterval(() => {
-      void loadMeetings()
+      void loadMeetings({ silent: true })
     }, 5_000)
     const handleMeetingsChanged = () => {
-      void loadMeetings()
+      void loadMeetings({ silent: true })
     }
     window.addEventListener(MEETINGS_CHANGED_EVENT, handleMeetingsChanged)
     window.addEventListener('focus', handleMeetingsChanged)
@@ -239,6 +243,9 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
                 </div>
               ) : (
                 <div className="flex justify-end gap-1.5">
+                  {workspaceId && (
+                    <MeetingAskButton workspaceId={workspaceId} record={record} />
+                  )}
                   <Button
                     type="button"
                     size="sm"

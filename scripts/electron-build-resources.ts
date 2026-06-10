@@ -2,8 +2,8 @@
  * Cross-platform resources copy script
  */
 
-import { existsSync, cpSync } from "fs";
-import { join } from "path";
+import { existsSync, cpSync, rmSync } from "fs";
+import { join, relative, sep } from "path";
 import { copyBundledSubprocessResources, type Arch, type Platform } from "./build/common";
 
 const ROOT_DIR = join(import.meta.dir, "..");
@@ -25,8 +25,21 @@ function resolveArch(): Arch {
   throw new Error(`Unsupported architecture: ${process.arch}`);
 }
 
+function shouldCopyResource(source: string): boolean {
+  const resourceRelative = relative(srcDir, source).split(sep).join("/");
+  // Keep generated/dev-only Hermes trees out of dist/resources. The release
+  // runtime is copied by electron-builder extraResources as app/vendor/hermes.
+  return !(
+    resourceRelative === "vendor/hermes" ||
+    resourceRelative.startsWith("vendor/hermes/") ||
+    resourceRelative === "vendor/hermes-agent" ||
+    resourceRelative.startsWith("vendor/hermes-agent/")
+  );
+}
+
 if (existsSync(srcDir)) {
-  cpSync(srcDir, destDir, { recursive: true, force: true });
+  rmSync(destDir, { recursive: true, force: true });
+  cpSync(srcDir, destDir, { recursive: true, force: true, filter: shouldCopyResource });
   copyBundledSubprocessResources({
     platform: resolvePlatform(),
     arch: resolveArch(),

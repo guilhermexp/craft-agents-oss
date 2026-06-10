@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plano Revisado - Aprofundamento Arquitetural Completo</title>
+  <style>
+    :root {
+      --ivory: #FAF9F5;
+      --slate: #141413;
+      --clay: #D97757;
+      --oat: #E3DACC;
+      --olive: #788C5D;
+      --gray-150: #F0EEE6;
+      --gray-300: #D1CFC5;
+      --gray-500: #87867F;
+      --gray-700: #3D3D3A;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--ivory);
+      color: var(--slate);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+    .page { max-width: 1120px; margin: 0 auto; padding: 48px 28px 72px; }
+    header.page-head { border-bottom: 1px solid var(--gray-300); padding-bottom: 28px; margin-bottom: 28px; }
+    .eyebrow { color: var(--clay); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    h1 { font-size: 42px; line-height: 1.05; margin: 10px 0 18px; letter-spacing: 0; }
+    .prompt-box { background: var(--gray-150); border: 1px solid var(--gray-300); border-radius: 8px; padding: 18px; color: var(--gray-700); }
+    .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0 34px; }
+    .cell { background: #fff; border: 1px solid var(--gray-300); border-radius: 8px; padding: 14px; }
+    .k { color: var(--gray-500); font-size: 12px; font-weight: 700; text-transform: uppercase; }
+    .v { color: var(--slate); font-size: 18px; font-weight: 700; margin-top: 4px; }
+    section { padding: 30px 0; border-top: 1px solid var(--gray-300); }
+    .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 10px; }
+    .num { color: var(--clay); font-weight: 800; font-size: 14px; }
+    h2 { font-size: 28px; margin: 0; letter-spacing: 0; }
+    .sec-intro { color: var(--gray-700); margin: 0 0 18px; max-width: 880px; }
+    .milestones { display: grid; gap: 16px; }
+    .milestone { display: grid; grid-template-columns: 120px 28px 1fr; gap: 14px; }
+    .when { color: var(--gray-500); font-size: 13px; font-weight: 700; padding-top: 2px; }
+    .dot-col { display: flex; flex-direction: column; align-items: center; }
+    .dot { width: 12px; height: 12px; border-radius: 999px; background: var(--olive); margin-top: 6px; }
+    .line { width: 1px; flex: 1; background: var(--gray-300); margin-top: 8px; }
+    .body { background: #fff; border: 1px solid var(--gray-300); border-radius: 8px; padding: 16px; }
+    .body h3 { margin: 0 0 8px; font-size: 18px; }
+    .body p { margin: 0 0 10px; color: var(--gray-700); }
+    .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tag { background: var(--gray-150); color: var(--gray-700); border: 1px solid var(--gray-300); border-radius: 999px; padding: 4px 9px; font-size: 12px; font-weight: 700; }
+    .code { margin-top: 14px; }
+    .code-block { border: 1px solid var(--gray-300); border-radius: 8px; overflow: hidden; background: var(--slate); }
+    .file-label { background: var(--gray-700); color: var(--ivory); font-size: 12px; font-weight: 700; padding: 8px 12px; }
+    pre { margin: 0; padding: 14px; overflow: auto; color: var(--ivory); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.45; }
+    .risks { display: grid; border: 1px solid var(--gray-300); border-radius: 8px; overflow: hidden; background: #fff; }
+    .row { display: grid; grid-template-columns: 160px 1fr 1fr; border-top: 1px solid var(--gray-300); }
+    .row:first-child { border-top: 0; }
+    .row .cell { border: 0; border-radius: 0; background: transparent; }
+    .head { font-weight: 800; }
+    .sev { display: inline-block; border-radius: 999px; padding: 4px 9px; font-size: 12px; font-weight: 800; }
+    .sev.high { background: #f7d8cc; color: #8b2d16; }
+    .sev.med { background: #efe5c8; color: #6d551d; }
+    .sev.low { background: #dfe8d5; color: #40522f; }
+    .open-q { display: grid; gap: 12px; }
+    .q { background: #fff; border: 1px solid var(--gray-300); border-radius: 8px; padding: 15px; }
+    .qt { font-weight: 800; margin-bottom: 4px; }
+    .qd { color: var(--gray-700); }
+    .owner { color: var(--olive); font-size: 12px; font-weight: 800; margin-top: 8px; text-transform: uppercase; }
+    @media (max-width: 760px) {
+      .summary { grid-template-columns: 1fr; }
+      .milestone { grid-template-columns: 86px 22px 1fr; }
+      .row { grid-template-columns: 1fr; }
+      h1 { font-size: 32px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="page-head">
+      <div class="eyebrow">Plano revisado</div>
+      <h1>Aprofundamento Arquitetural Completo</h1>
+      <div class="prompt-box">
+        Revisão baseada no CWD real em <strong>craft-agents-oss</strong>. O plano agora trata extrações já existentes como fundação, preserva o contrato Hermes ACP isolado, separa rota de mapa ElectronAPI, e adiciona pré-flight OpenSpec/worktree antes de qualquer refactor.
+      </div>
+    </header>
+
+    <div class="summary">
+      <div class="cell"><div class="k">Escopo</div><div class="v">5 fases + pré-flight</div></div>
+      <div class="cell"><div class="k">Arquivos críticos</div><div class="v">Config, transport, sources, agents, sessions, browser</div></div>
+      <div class="cell"><div class="k">Regra Hermes</div><div class="v">ACP isolado</div></div>
+      <div class="cell"><div class="k">Validação</div><div class="v">Focada + CI</div></div>
+    </div>
+
+    <section>
+      <div class="sec-head"><div class="num">00</div><h2>Contexto</h2></div>
+      <p class="sec-intro">
+        Os arquivos grandes existem, mas o CWD não está em estado “zero extração”. Já há `BaseAgent`, `BaseEventAdapter`, `runPreToolUseChecks`, `TokenRefreshManager`, `SessionMessageStore`, `SessionEventPublisher`, `SessionArtifactRenderer`, `BrowserCDP` e helpers de perfil. O objetivo é aprofundar essas extrações e reduzir interfaces, não criar abstrações paralelas.
+      </p>
+      <div class="milestones">
+        <div class="milestone">
+          <div class="when">Pré-flight</div><div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Estabilizar base de trabalho</h3>
+            <p>Registrar `git status --short`, revisar alterações locais nos arquivos-alvo e abrir proposta OpenSpec antes do refactor. Há mudanças locais em `channels.ts`, `routing.ts`, `channel-map.ts`, `browser-pane-manager.ts` e outros arquivos de meetings/browser.</p>
+            <div class="tags"><span class="tag">OpenSpec</span><span class="tag">worktree dirty</span><span class="tag">sem merge acidental</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">Ordem</div><div class="dot-col"><div class="dot"></div></div>
+          <div class="body">
+            <h3>Sequência revisada</h3>
+            <p>0. Pré-flight/OpenSpec; 1. Config Storage Split + Transport Route Registry; 2. Credential Strategy Extraction; 3. Agent Tool Pipeline Unification sem registrar Hermes no runtime nativo; 4. SessionManager Extraction reutilizando módulos existentes; 5. BrowserPaneManager Modularization após transport/session estabilizados.</p>
+            <div class="tags"><span class="tag">dependências</span><span class="tag">baixo risco primeiro</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="code">
+        <div class="code-block">
+          <div class="file-label">pré-flight</div>
+          <pre>git status --short
+openspec list
+# criar openspec/changes/&lt;change-id&gt;/ para a mudança arquitetural
+openspec validate &lt;change-id&gt; --strict --no-interactive</pre>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><div class="num">01A</div><h2>Config Storage Split</h2></div>
+      <p class="sec-intro">
+        `packages/shared/src/config/storage.ts` tem 3.197 linhas e mistura core config, preferências app, workspace list, drafts, temas, LLM connections, migrations, proxy e browser profile persistence. O plano deve reutilizar módulos já existentes em `packages/shared/src/config/` em vez de duplicá-los.
+      </p>
+      <div class="milestones">
+        <div class="milestone">
+          <div class="when">Passo 1</div><div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Quebrar ciclo storage/validators</h3>
+            <p>Antes de extrair schemas, remover o ciclo `storage.ts:26 -> validators.ts` e `validators.ts:1725 -> storage.ts`. Mover paths/helpers de tool icons para `tool-icon-storage.ts` ou `config-core.ts` sem depender de validators.</p>
+            <div class="tags"><span class="tag">import cycle</span><span class="tag">validators</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">Passo 2</div><div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Extrair persistência por domínio</h3>
+            <p>Criar `config-core.ts`, `workspace-storage.ts`, `draft-storage.ts`, `llm-connection-storage.ts`, `llm-connection-migrations.ts`, `browser-profile-storage.ts`, `tool-icon-storage.ts` e `validators/schemas.ts`. Manter `preferences.ts`, `theme.ts`, `llm-connections.ts`, `browser-profiles.ts`, `server-config.ts` e `types.ts` como módulos existentes.</p>
+            <div class="tags"><span class="tag">facade</span><span class="tag">zero import break</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">Passo 3</div><div class="dot-col"><div class="dot"></div></div>
+          <div class="body">
+            <h3>Facade temporária</h3>
+            <p>`storage.ts` vira facade temporária com re-exports e shims explícitos onde necessário. `config/index.ts` continua compatível. Importers podem migrar em PRs subsequentes.</p>
+            <div class="tags"><span class="tag">compatibilidade</span><span class="tag">incremental</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="code">
+        <div class="code-block">
+          <div class="file-label">validação fase 1A</div>
+          <pre>bun test packages/shared/src/config/__tests__/session-drafts.test.ts \
+  packages/shared/src/config/__tests__/theme-storage-background-image.test.ts \
+  packages/shared/src/config/__tests__/llm-connections.test.ts \
+  packages/shared/src/config/__tests__/storage-migrations.test.ts \
+  packages/shared/src/config/__tests__/storage-startup-migration.test.ts \
+  packages/shared/src/config/__tests__/browser-profiles.test.ts
+bun run typecheck:shared</pre>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><div class="num">01B</div><h2>Transport Route Registry</h2></div>
+      <p class="sec-intro">
+        Hoje `RPC_NAMESPACES` define canais, `routing.ts` classifica local/remoto, e `CHANNEL_MAP` mapeia métodos ElectronAPI para canais. Esses três artefatos não têm a mesma responsabilidade. O registry deve ser fonte de classificação de canais; `CHANNEL_MAP` deve continuar como mapa de API do preload, validado contra o registry.
+      </p>
+      <div class="milestones">
+        <div class="milestone">
+          <div class="when">Passo 1</div><div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Criar registry aditivo</h3>
+            <p>Criar `packages/shared/src/protocol/route-registry.ts` com `channel`, `routeType`, `kind`, `owner` e `notes`. Exportar sets derivados com os nomes atuais `LOCAL_ONLY_NAMESPACES` e `REMOTE_ELIGIBLE_NAMESPACES`.</p>
+            <div class="tags"><span class="tag">aditivo</span><span class="tag">protocol</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">Passo 2</div><div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Manter routing como facade</h3>
+            <p>Atualizar `routing.ts` para re-exportar os sets/helpers derivados. Não deletar `routing.ts` na primeira entrega, porque testes e importers atuais dependem dele.</p>
+            <div class="tags"><span class="tag">compat</span><span class="tag">routed-client</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">Passo 3</div><div class="dot-col"><div class="dot"></div></div>
+          <div class="body">
+            <h3>Validar CHANNEL_MAP contra registry</h3>
+            <p>Adicionar teste para garantir que todo canal usado por `apps/electron/src/transport/channel-map.ts` existe no registry. `CHANNEL_MAP` continua validando paridade com `ElectronAPI`.</p>
+            <div class="tags"><span class="tag">channel-map</span><span class="tag">paridade</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="code">
+        <div class="code-block">
+          <div class="file-label">validação fase 1B</div>
+          <pre>bun test packages/shared/src/protocol/__tests__/routing.test.ts
+bun test apps/electron/src/transport/__tests__/channel-map-parity.test.ts \
+  apps/electron/src/transport/__tests__/routed-client.test.ts
+bun run typecheck:all</pre>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><div class="num">02</div><h2>Credential Strategy Extraction</h2></div>
+      <p class="sec-intro">
+        O arquivo real é `packages/shared/src/sources/credential-manager.ts` com `SourceCredentialManager`. Ele já delega orchestration de refresh para `TokenRefreshManager` em `packages/shared/src/sources/token-refresh-manager.ts`; a extração deve focar em provider-specific prepare/exchange/refresh.
+      </p>
+      <div class="milestones">
+        <div class="milestone">
+          <div class="when">Passo 1</div><div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Criar strategies no domínio sources</h3>
+            <p>Usar `packages/shared/src/sources/auth-strategies/` ou `credential-strategies/`, não `shared/src/auth/strategies/`. Os módulos em `shared/src/auth/*` seguem como clientes OAuth puros.</p>
+            <div class="tags"><span class="tag">sources</span><span class="tag">OAuth</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">Passo 2</div><div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Extrair por fatias</h3>
+            <p>Primeiro provider detection e `prepareOAuth`; depois `exchangeAndStore`; por último refresh. Manter `TokenRefreshManager` como entrada única de refresh com cooldown/rate-limit.</p>
+            <div class="tags"><span class="tag">baixo risco</span><span class="tag">sem duplicar refresh</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">Passo 3</div><div class="dot-col"><div class="dot"></div></div>
+          <div class="body">
+            <h3>Preservar Craft Bridge</h3>
+            <p>Preservar `sourceUsesCraftBridgeAuth`, `prepareCraftBridgeMcpOAuth` e `createCraftBridgeOAuthClient`, usados hoje no fluxo de MCP/OAuth e refresh.</p>
+            <div class="tags"><span class="tag">craft bridge</span><span class="tag">compatibilidade</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="code">
+        <div class="code-block">
+          <div class="file-label">validação fase 2</div>
+          <pre>bun test packages/shared/src/sources/__tests__/credential-manager-integration.test.ts \
+  packages/shared/src/sources/__tests__/credential-manager-expiry.test.ts \
+  packages/shared/src/sources/__tests__/credential-manager-renew.test.ts \
+  packages/shared/src/sources/__tests__/token-refresh-manager.test.ts \
+  packages/shared/src/sources/__tests__/oauth-relay.test.ts
+bun test packages/shared/src/auth/__tests__/oauth.test.ts \
+  packages/shared/src/auth/__tests__/oauth-relay.test.ts
+bun run typecheck:shared</pre>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><div class="num">03</div><h2>Agent Tool Pipeline Unification</h2></div>
+      <p class="sec-intro">
+        `BaseAgent`, `PermissionManager`, `SourceManager`, `runPreToolUseChecks` e `BaseEventAdapter` já existem. A fase deve consolidar tradução/prompt/permission handling em cima disso. Hermes continua ACP/Python separado e não deve ser registrado no runtime nativo.
+      </p>
+      <div class="milestones">
+        <div class="milestone">
+          <div class="when">Passo 1</div><div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Criar ToolPermissionDispatcher</h3>
+            <p>Extrair apenas a orquestração repetida em Claude/Pi: chamar `runPreToolUseChecks`, emitir prompts, guardar pending permission, aplicar whitelists e traduzir resultado para formato provider-specific.</p>
+            <div class="tags"><span class="tag">Claude</span><span class="tag">Pi</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">Passo 2</div><div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Manter adapters existentes</h3>
+            <p>Manter `BaseEventAdapter` e adapters Claude/Pi/Hermes. Não renomear para `EventNormalizer` nem recriar camada paralela.</p>
+            <div class="tags"><span class="tag">event adapters</span><span class="tag">sem duplicação</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">Passo 3</div><div class="dot-col"><div class="dot"></div></div>
+          <div class="body">
+            <h3>Hermes fica isolado</h3>
+            <p>Hermes mantém ACP permission bridge em `HermesAgent`. Qualquer mudança em `packages/shared/src/agent/hermes-agent.ts` exige atualizar/validar `apps/electron/docs/hermes-embed.md` e testes Hermes focados.</p>
+            <div class="tags"><span class="tag">Hermes ACP</span><span class="tag">AGENTS.md</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="code">
+        <div class="code-block">
+          <div class="file-label">validação fase 3</div>
+          <pre>bun test packages/shared/src/agent/core/__tests__/pre-tool-use-checks.isolated.ts \
+  packages/shared/src/agent/core/__tests__/permission-manager.test.ts \
+  packages/shared/src/agent/__tests__/claude-agent-branching.test.ts \
+  packages/shared/src/agent/__tests__/pi-agent-pretool-labels.test.ts \
+  packages/shared/src/agent/__tests__/hermes-agent.test.ts \
+  packages/shared/src/agent/backend/hermes/event-adapter.test.ts
+bun run typecheck:shared</pre>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><div class="num">04</div><h2>SessionManager Extraction</h2></div>
+      <p class="sec-intro">
+        `SessionManager.ts` ainda tem 7.576 linhas, mas já existem extrações testadas: `SessionMessageStore`, `SessionEventPublisher`, `SessionArtifactRenderer` e `SessionLifecycleManager`. O gap é extrair domínios ainda inline: source/MCP lifecycle, agent construction, auth flow, watcher/automation, read-state/metadata e transferência/export.
+      </p>
+      <div class="milestones">
+        <div class="milestone">
+          <div class="when">Passo 1</div><div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Source e auth primeiro</h3>
+            <p>Criar `session-source-orchestrator.ts` para `buildServersFromSources`, refresh/rebuild e bridge updates; criar `session-auth-flow-manager.ts` para pending credentials, pending permissions e admin approvals.</p>
+            <div class="tags"><span class="tag">sources</span><span class="tag">auth</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">Passo 2</div><div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Runtime por workspace</h3>
+            <p>Criar `session-workspace-runtime-manager.ts` para `ConfigWatcher`, `AutomationSystem`, broadcasts de config e cleanup. Esse estado hoje vive em maps dentro de `SessionManager`.</p>
+            <div class="tags"><span class="tag">watchers</span><span class="tag">automations</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">Passo 3</div><div class="dot-col"><div class="dot"></div></div>
+          <div class="body">
+            <h3>Agent, metadata e transfer</h3>
+            <p>Criar `session-agent-coordinator.ts`, `session-read-state-manager.ts` e `session-transfer-manager.ts`. Reusar store/event/artifact modules atuais; evitar wrappers que apenas repassam chamadas sem dono real de estado.</p>
+            <div class="tags"><span class="tag">metadata</span><span class="tag">transfer</span><span class="tag">testável</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="code">
+        <div class="code-block">
+          <div class="file-label">validação fase 4</div>
+          <pre>bun test packages/server-core/src/sessions/create-managed-session.test.ts \
+  packages/server-core/src/sessions/session-message-store.test.ts \
+  packages/server-core/src/sessions/session-event-publisher.test.ts \
+  packages/server-core/src/sessions/session-artifact-renderer.test.ts \
+  packages/server-core/src/sessions/session-lifecycle-manager.test.ts
+bun test apps/electron/src/main/__tests__/session-lazy-load-race.test.ts \
+  apps/electron/src/main/__tests__/session-persistence.test.ts \
+  apps/electron/src/main/__tests__/sessions-browser-release.test.ts
+bun run typecheck:all</pre>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><div class="num">05</div><h2>BrowserPaneManager Modularization</h2></div>
+      <p class="sec-intro">
+        `browser-pane-manager.ts` tem 3.505 linhas, mas `BrowserCDP` e `browser-profile-resolver.ts` já existem. A modularização deve separar lifecycle, profiles, toolbar host, session permissions/observers, navigation/deep-links e capture orchestration, mantendo CDP/accessibility em `BrowserCDP`.
+      </p>
+      <div class="milestones">
+        <div class="milestone">
+          <div class="when">Passo 1</div><div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Lifecycle e profiles</h3>
+            <p>Extrair `browser-instance-lifecycle.ts` e `browser-profile-service.ts`, preservando `getProfilePartition`, cleanup de partitions e callbacks de profile changes.</p>
+            <div class="tags"><span class="tag">lifecycle</span><span class="tag">profiles</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">Passo 2</div><div class="dot-col"><div class="dot"></div><div class="line"></div></div>
+          <div class="body">
+            <h3>Toolbar host e session policy</h3>
+            <p>Extrair `browser-toolbar-host.ts` para IPC/load/state do toolbar e `browser-session-policy.ts` para permissions, display capture, downloads, network observers e popup tracking.</p>
+            <div class="tags"><span class="tag">toolbar</span><span class="tag">permissions</span></div>
+          </div>
+        </div>
+        <div class="milestone">
+          <div class="when">Passo 3</div><div class="dot-col"><div class="dot"></div></div>
+          <div class="body">
+            <h3>Navigation e visual capture</h3>
+            <p>Extrair `browser-navigation-controller.ts` e `browser-visual-capture.ts`. `BrowserCDP` segue dono de accessibility snapshot, refs e interação CDP; toolbar React segue em `apps/electron/src/renderer/browser-toolbar.tsx`.</p>
+            <div class="tags"><span class="tag">navigation</span><span class="tag">screenshots</span><span class="tag">CDP</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="code">
+        <div class="code-block">
+          <div class="file-label">validação fase 5</div>
+          <pre>bun test apps/electron/src/main/__tests__/browser-pane-manager.test.ts \
+  apps/electron/src/main/__tests__/browser-cdp.test.ts \
+  apps/electron/src/main/__tests__/browser-profile-resolver.test.ts \
+  apps/electron/src/main/__tests__/browser-tool-detection.test.ts
+bun run typecheck:electron
+bun run electron:build</pre>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><div class="num">06</div><h2>Validação Final</h2></div>
+      <p class="sec-intro">
+        A validação final precisa combinar gates globais e gates específicos de contrato. `validate:ci` existe, mas não roda o lint completo; se o plano exige lint, rodar explicitamente.
+      </p>
+      <div class="code">
+        <div class="code-block">
+          <div class="file-label">gates finais</div>
+          <pre>bun run validate:ci
+bun run lint
+bun run lint:tool-contracts
+bun run electron:build
+
+# Se tocar Hermes/Craft integration:
+bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
+  packages/shared/src/hermes/__tests__/auth-bridge.test.ts \
+  packages/shared/src/mcp/session-tools-server.test.ts \
+  packages/shared/src/agent/__tests__/hermes-agent.test.ts \
+  packages/server-core/src/handlers/rpc/hermes.test.ts \
+  apps/electron/src/transport/__tests__/channel-map-parity.test.ts</pre>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><div class="num">07</div><h2>Riscos</h2></div>
+      <div class="risks">
+        <div class="row">
+          <div class="cell head">Severidade</div>
+          <div class="cell head">Risco</div>
+          <div class="cell head">Mitigação</div>
+        </div>
+        <div class="row">
+          <div class="cell"><span class="sev high">Alta</span></div>
+          <div class="cell">Tratar Hermes como backend nativo comum viola `AGENTS.md` e `hermes-embed.md`.</div>
+          <div class="cell">Manter Hermes em `HermesAgent` + ACP + app-scoped `HERMES_HOME`; validar docs e testes focados.</div>
+        </div>
+        <div class="row">
+          <div class="cell"><span class="sev high">Alta</span></div>
+          <div class="cell">Worktree dirty toca arquivos que o plano quer refatorar, especialmente transport/browser.</div>
+          <div class="cell">Isolar branch/commit atual ou aplicar refactor só depois de estabilizar mudanças locais.</div>
+        </div>
+        <div class="row">
+          <div class="cell"><span class="sev med">Média</span></div>
+          <div class="cell">Route registry pode confundir classificação de canal com método ElectronAPI.</div>
+          <div class="cell">Registry classifica canais; `CHANNEL_MAP` permanece método -> canal e ganha validação contra registry.</div>
+        </div>
+        <div class="row">
+          <div class="cell"><span class="sev med">Média</span></div>
+          <div class="cell">Split de config pode piorar ciclo `storage.ts`/`validators.ts`.</div>
+          <div class="cell">Mover schemas/helpers puros primeiro e quebrar ciclo antes de extrair domínios.</div>
+        </div>
+        <div class="row">
+          <div class="cell"><span class="sev low">Baixa</span></div>
+          <div class="cell">Prometer contagens finais exatas cria falso critério de sucesso.</div>
+          <div class="cell">Usar métricas como alvo aproximado e exigir redução real de responsabilidades/testes.</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><div class="num">08</div><h2>Questões Abertas</h2></div>
+      <div class="open-q">
+        <div class="q">
+          <div class="qt">Como isolar o worktree atual?</div>
+          <div class="qd">Há mudanças locais de meetings, browser, protocol e sessions. O refactor deve começar em branch limpa ou depois que essas mudanças forem concluídas.</div>
+          <div class="owner">Owner: implementador</div>
+        </div>
+        <div class="q">
+          <div class="qt">Qual é o primeiro change-id OpenSpec?</div>
+          <div class="qd">A mudança é arquitetural e deve ter proposta/task list antes da implementação.</div>
+          <div class="owner">Owner: implementador</div>
+        </div>
+        <div class="q">
+          <div class="qt">Qual métrica define módulo profundo?</div>
+          <div class="qd">Line count ajuda, mas o critério deve ser dono claro de estado, interface menor e testes focados por domínio.</div>
+          <div class="owner">Owner: reviewer + implementador</div>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
