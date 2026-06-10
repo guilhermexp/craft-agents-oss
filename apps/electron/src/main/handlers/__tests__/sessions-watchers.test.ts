@@ -42,6 +42,8 @@ describe('sessions file watchers', () => {
       async invokeClient() {
         return null
       },
+      hasClientCapability() { return false },
+      findClientsWithCapability() { return [] },
     }
 
     const snapshot = (dir: string) => new Map(

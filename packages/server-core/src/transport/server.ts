@@ -201,6 +201,21 @@ export class WsRpcServer implements RpcServer {
     }
   }
 
+  hasClientCapability(clientId: string, capability: string): boolean {
+    const client = this.clients.get(clientId)
+    return !!client && client.capabilities.has(capability)
+  }
+
+  findClientsWithCapability(capability: string, opts?: { workspaceId?: string }): string[] {
+    const results: string[] = []
+    for (const [clientId, client] of this.clients) {
+      if (!client.capabilities.has(capability)) continue
+      if (opts?.workspaceId !== undefined && client.workspaceId !== opts.workspaceId) continue
+      results.push(clientId)
+    }
+    return results
+  }
+
   invokeClient(clientId: string, channel: string, ...args: any[]): Promise<any> {
     return new Promise((resolve, reject) => {
       const client = this.clients.get(clientId)

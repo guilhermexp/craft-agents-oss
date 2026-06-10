@@ -21,7 +21,7 @@ import {
 } from '../shared/types'
 import { DEFAULT_THEME, loadAppTheme } from '@craft-agent/shared/config'
 import { getBrowserLiveFxCornerRadii } from '../shared/browser-live-fx'
-import type { IBrowserPaneManager } from '@craft-agent/server-core/handlers'
+import type { IBrowserPaneManager, BrowserInstanceSnapshot } from '@craft-agent/server-core/handlers'
 
 export type { BrowserInstanceInfo }
 
@@ -1523,12 +1523,18 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     await instance.pageView.webContents.executeJavaScript(`window.scrollBy(${deltaX}, ${deltaY})`)
   }
 
-  bindSession(id: string, sessionId: string): void {
+  bindSession(id: string, sessionId: string, options?: { workspaceId?: string | null }): void {
     const instance = this.instances.get(id)
     if (instance) {
       instance.boundSessionId = sessionId
       instance.ownerType = 'session'
       instance.ownerSessionId = sessionId
+      // Adopt the binder's workspace. Manual windows being reused for a session
+      // start carrying that session's workspace so the receiving workspace's UI
+      // sees them and others filter them out.
+      if (options?.workspaceId !== undefined) {
+        instance.workspaceId = options.workspaceId
+      }
       this.emitStateChange(instance)
     }
   }
@@ -1570,36 +1576,54 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return null
   }
 
-  private findReusableUnboundInstance(): BrowserInstance | null {
-    const unbound = Array.from(this.instances.values()).filter(i => i.boundSessionId === null && i.ownerType === 'manual')
+  /**
+   * Pick an unbound window the caller's workspace is allowed to adopt. A window
+   * left behind when a session ended keeps its original `workspaceId`; allowing
+   * adoption only when that workspace is `null` (never bound) or matches the
+   * caller's workspace prevents a session in workspace B from grabbing (and
+   * thereby moving) a window left behind by workspace A.
+   */
+  private findReusableUnboundInstance(workspaceId: string | null): BrowserInstance | null {
+    const unbound = Array.from(this.instances.values()).filter(
+      i => i.boundSessionId === null && i.ownerType === 'manual'
+        && (i.workspaceId === null || i.workspaceId === workspaceId),
+    )
     if (unbound.length === 0) return null
 
     // Prefer visible windows first, then fall back to first available.
     return unbound.find(i => i.isVisible) ?? unbound[0]
   }
 
-  createForSession(sessionId: string, options?: { show?: boolean; profileId?: string }): string {
+  createForSession(sessionId: string, options?: { show?: boolean; profileId?: string; workspaceId?: string | null }): string {
     const existing = this.getBoundForSession(sessionId)
     if (existing) {
+      // Already bound — adopt the workspace if the caller provided one.
+      if (options?.workspaceId !== undefined) {
+        const inst = this.instances.get(existing)
+        if (inst) inst.workspaceId = options.workspaceId
+      }
       if (options?.show) {
         this.focus(existing)
       }
       return existing
     }
 
+    const workspaceId = options?.workspaceId ?? this.resolveLaunchWorkspaceId()
+
     // Reuse an unbound/manual window before creating a new one — but only when
     // no specific profile was requested or the reusable instance already
-    // matches the requested profile (mismatched partitions can't be reused).
-    const reusable = this.findReusableUnboundInstance()
+    // matches the requested profile (mismatched partitions can't be reused),
+    // and only when the caller's workspace is allowed to adopt it.
+    const reusable = this.findReusableUnboundInstance(workspaceId)
     const requestedProfile = options?.profileId
     const reuseMatchesProfile =
       reusable && (!requestedProfile || reusable.profileId === this.resolveProfileId(requestedProfile))
     if (reusable && reuseMatchesProfile) {
-      this.bindSession(reusable.id, sessionId)
+      this.bindSession(reusable.id, sessionId, { workspaceId })
       if (options?.show) {
         this.focus(reusable.id)
       }
-      mainLog.info(`[browser-pane] Reused unbound instance ${reusable.id} for session ${sessionId}`)
+      mainLog.info(`[browser-pane] Reused unbound instance ${reusable.id} for session ${sessionId} (workspace=${workspaceId ?? 'none'})`)
       return reusable.id
     }
 
@@ -1608,17 +1632,42 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       ownerType: 'session',
       ownerSessionId: sessionId,
       profileId: options?.profileId,
+      workspaceId,
     })
   }
 
-  focusBoundForSession(sessionId: string): string {
-    const id = this.createForSession(sessionId, { show: true })
+  focusBoundForSession(sessionId: string, options?: { workspaceId?: string | null }): string {
+    const id = this.createForSession(sessionId, { show: true, workspaceId: options?.workspaceId })
     this.focus(id)
     return id
   }
 
-  getOrCreateForSession(sessionId: string): string {
-    return this.createForSession(sessionId, { show: false })
+  getOrCreateForSession(sessionId: string, options?: { workspaceId?: string | null }): string {
+    return this.createForSession(sessionId, { show: false, workspaceId: options?.workspaceId })
+  }
+
+  // --- Async variants (required by IBrowserPaneManager for the remote bridge) -
+  // The local manager is fully synchronous, so these just resolve the sync
+  // result. The RemoteBrowserPaneManager implements the real WS round-trips.
+
+  async getOrCreateForSessionAsync(sessionId: string, options?: { workspaceId?: string | null }): Promise<string> {
+    return this.getOrCreateForSession(sessionId, options)
+  }
+
+  async createForSessionAsync(sessionId: string, options?: { show?: boolean; workspaceId?: string | null }): Promise<string> {
+    return this.createForSession(sessionId, options)
+  }
+
+  async getInstanceAsync(id: string): Promise<BrowserInstanceSnapshot | undefined> {
+    return this.getInstance(id)
+  }
+
+  async listInstancesAsync(): Promise<BrowserInstanceInfo[]> {
+    return this.listInstances()
+  }
+
+  async focusBoundForSessionAsync(sessionId: string, options?: { workspaceId?: string | null }): Promise<string> {
+    return this.focusBoundForSession(sessionId, options)
   }
 
   getBoundInstanceId(sessionId: string): string | null {
@@ -2208,9 +2257,16 @@ export class BrowserPaneManager implements IBrowserPaneManager {
    * Activate or update the agent control overlay on the browser instance
    * bound to the given session. Called from sessions.ts on browser_* tool_start events.
    */
-  setAgentControl(sessionId: string, meta: { displayName?: string; intent?: string }): void {
+  setAgentControl(
+    sessionId: string,
+    meta: { displayName?: string; intent?: string },
+    options?: { workspaceId?: string | null },
+  ): void {
     for (const instance of this.instances.values()) {
       if (instance.boundSessionId === sessionId) {
+        if (options?.workspaceId !== undefined) {
+          instance.workspaceId = options.workspaceId
+        }
         instance.agentControl = {
           active: true,
           sessionId,

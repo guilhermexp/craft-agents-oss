@@ -26,6 +26,12 @@ function createHarness(overrides?: Partial<HandlerDeps['platform']>) {
     async invokeClient() {
       return undefined
     },
+    hasClientCapability() {
+      return false
+    },
+    findClientsWithCapability() {
+      return []
+    },
   }
 
   const deps: HandlerDeps = {
