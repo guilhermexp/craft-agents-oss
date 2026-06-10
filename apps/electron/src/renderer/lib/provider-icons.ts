@@ -175,6 +175,11 @@ export function getProviderIcon(
         if (detectedProvider) {
           return providerIcons[detectedProvider]
         }
+        // Manifest (manifest.build) has no bundled SVG — fall back to Google
+        // Favicon V2 (same trick used for providers without static marks).
+        if (baseUrl.toLowerCase().includes('manifest.build')) {
+          return 'https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=128&url=https://app.manifest.build'
+        }
       }
       return null
   }

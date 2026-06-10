@@ -214,6 +214,12 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
         updates.authType = setup.bedrockAuthMethod
       }
 
+      // Manifest (manifest.build) brand-name preset, applied on first setup only
+      // so user-renamed connections aren't clobbered on re-save.
+      if (isNewConnection && !updates.name && setup.baseUrl?.toLowerCase().includes('manifest.build')) {
+        updates.name = 'Manifest'
+      }
+
       const effectiveProviderType = updates.providerType ?? connection.providerType
       if (effectiveProviderType === 'pi') {
         const isBedrockPi = (updates.piAuthProvider ?? connection.piAuthProvider) === 'amazon-bedrock'
