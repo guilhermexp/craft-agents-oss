@@ -24,6 +24,7 @@ import {
   whatsAppChannelId,
 } from './protocol'
 import { bareJid, classifyInbound, rememberSentId } from './filter'
+import { extractAttachments } from './media'
 
 /**
  * Build-time constants injected by `scripts/build-wa-worker.ts`
@@ -84,7 +85,7 @@ const silentLogger: SilentLogger = {
 // Baileys lifecycle (isolated — only referenced after dynamic import succeeds)
 // ---------------------------------------------------------------------------
 
-interface BaileysModule {
+export interface BaileysModule {
   /**
    * Factory exported as both `default` and `makeWASocket`. We prefer the
    * named export because CJS→ESM interop via esbuild's `await import()` does
@@ -96,6 +97,12 @@ interface BaileysModule {
   DisconnectReason: Record<string, number>
   Browsers: { macOS: (name: string) => [string, string, string] }
   fetchLatestBaileysVersion: () => Promise<{ version: number[]; isLatest: boolean }>
+  /**
+   * Decrypt + download a media message to a Buffer. Only the worker can do
+   * this — it holds the Signal session keys. Signature mirrors Baileys'
+   * `downloadMediaMessage(msg, 'buffer', {})`.
+   */
+  downloadMediaMessage: (msg: unknown, type: 'buffer', opts: Record<string, unknown>) => Promise<Buffer>
 }
 
 type BaileysSock = {
@@ -334,7 +341,7 @@ async function startSession(
       }, delay)
     })
 
-    sock.ev.on('messages.upsert', (upsert) => {
+    sock.ev.on('messages.upsert', async (upsert) => {
       // Accept 'notify' (new inbound from other accounts) AND 'append'
       // (server sync — includes messages the user typed on another device
       // into the self-chat, which is how self-chat arrives on this linked
@@ -383,19 +390,33 @@ async function startSession(
           selfLid,
           sentIds: session.sentIds,
         })
-        if (decision.action === 'skip') {
+        // Reject for any reason EXCEPT 'empty': a media-only message (e.g. a
+        // voice note with no caption) classifies as 'empty' but must still
+        // emit once its attachments are extracted.
+        if (decision.action === 'skip' && decision.reason !== 'empty') {
           log(`upsert skip: ${decision.reason}`)
           continue
         }
+
+        const attachments = await extractAttachments(baileys, msg, log)
+        const text = decision.action === 'emit' ? decision.text : ''
+
+        // Nothing to forward: empty text AND no downloadable media.
+        if (decision.action === 'skip' && attachments.length === 0) {
+          log('upsert skip: empty')
+          continue
+        }
+
         const key = msg.key as { remoteJid?: string; id?: string }
-        log(`upsert emit: whatsAppChannelId=${key.remoteJid} textLen=${decision.text.length}`)
+        log(`upsert emit: whatsAppChannelId=${key.remoteJid} textLen=${text.length} attachments=${attachments.length}`)
         emit({
           type: 'incoming',
           whatsAppChannelId: whatsAppChannelId(key.remoteJid!),
           messageId: key.id!,
           senderId: key.remoteJid!,
           senderName: (msg.pushName as string | undefined) ?? undefined,
-          text: decision.text,
+          text,
+          attachments: attachments.length > 0 ? attachments : undefined,
           timestamp: Number(msg.messageTimestamp) * 1000 || Date.now(),
         })
       }

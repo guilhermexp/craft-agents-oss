@@ -451,6 +451,17 @@ export class WhatsAppAdapter implements PlatformAdapter {
             senderId: ev.senderId,
             senderName: ev.senderName,
             text: ev.text,
+            // The worker has already decrypted+downloaded media to disk; the
+            // router forwards each `localPath` as a FileAttachment. `fileId` is
+            // unused for WhatsApp (no lazy server-side fetch) so we leave it empty.
+            attachments: ev.attachments?.map((a) => ({
+              type: a.type,
+              fileId: '',
+              fileName: a.fileName,
+              mimeType: a.mimeType,
+              fileSize: a.fileSize,
+              localPath: a.localPath,
+            })),
             timestamp: ev.timestamp,
             raw: ev,
           }

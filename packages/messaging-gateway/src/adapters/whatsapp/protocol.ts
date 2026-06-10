@@ -132,6 +132,20 @@ export interface DisconnectedEvent {
   reason?: string
 }
 
+/**
+ * A media attachment the worker has already downloaded to local disk. The
+ * worker decrypts/downloads via Baileys (only it holds the socket keys) and
+ * passes the resulting temp-file path to the adapter, which forwards it as an
+ * IncomingAttachment with `localPath` set.
+ */
+export interface WorkerIncomingAttachment {
+  type: 'photo' | 'document' | 'voice' | 'video' | 'audio'
+  fileName: string
+  mimeType: string
+  fileSize: number
+  localPath: string
+}
+
 export interface IncomingEvent {
   type: 'incoming'
   whatsAppChannelId: WhatsAppChannelId
@@ -139,6 +153,8 @@ export interface IncomingEvent {
   senderId: string
   senderName?: string
   text: string
+  /** Media attachments already downloaded to disk by the worker. */
+  attachments?: WorkerIncomingAttachment[]
   timestamp: number
 }
 
