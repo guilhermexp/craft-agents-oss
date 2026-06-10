@@ -106,6 +106,7 @@ export function LarkConnectDialog({
             value={appId}
             onChange={(e) => setAppId(e.target.value)}
             placeholder={t('settings.messaging.lark.appIdPlaceholder')}
+            aria-label={t('settings.messaging.lark.appIdLabel')}
             disabled={saving}
             className="w-full h-9 px-3 text-sm rounded-lg bg-foreground-2 outline-none focus:ring-1 focus:ring-foreground/30"
           />
