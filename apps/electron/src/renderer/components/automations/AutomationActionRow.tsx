@@ -7,7 +7,9 @@
 
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
-import type { AutomationAction } from './types'
+import { Badge } from '@/components/ui/badge'
+import { THINKING_LEVELS } from '@craft-agent/shared/agent/thinking-levels'
+import type { AutomationAction, PromptAction } from './types'
 import { ActionTypeIcon } from './ActionTypeIcon'
 import { DEFAULT_WEBHOOK_METHOD } from './constants'
 
@@ -71,9 +73,61 @@ export function AutomationActionRow({ action, index, className }: AutomationActi
         {isWebhook ? (
           <WebhookText action={action} />
         ) : (
-          <PromptText text={action.prompt} t={t} />
+          <>
+            <PromptText text={action.prompt} t={t} />
+            <PromptActionBadges action={action} t={t} />
+          </>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Render the per-action override chips (connection / model / thinking level).
+ * Each chip is conditional on its field being set on the action.
+ *
+ * The connection slug is shown verbatim (no display-name resolution) — that
+ * would require fetching the workspace's LlmConnection list into the Info
+ * page, which isn't justified for a read-only chip. If the slug becomes
+ * stale, executePromptAutomation already logs a warning at run time.
+ */
+function PromptActionBadges({ action, t }: { action: PromptAction; t: (key: string) => string }) {
+  const { llmConnection, model, thinkingLevel } = action
+  if (!llmConnection && !model && !thinkingLevel) return null
+
+  const thinkingDef = thinkingLevel ? THINKING_LEVELS.find((l) => l.id === thinkingLevel) : undefined
+  const thinkingLabel = thinkingDef ? t(thinkingDef.nameKey) : thinkingLevel
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+      {llmConnection && (
+        <Badge
+          variant="secondary"
+          className="font-mono text-[10px] px-1.5 py-0 font-normal"
+          title={`${t('automations.labelConnection')}: ${llmConnection}`}
+        >
+          {llmConnection}
+        </Badge>
+      )}
+      {model && (
+        <Badge
+          variant="secondary"
+          className="font-mono text-[10px] px-1.5 py-0 font-normal max-w-[14rem] truncate"
+          title={`${t('automations.labelModel')}: ${model}`}
+        >
+          {model}
+        </Badge>
+      )}
+      {thinkingLevel && (
+        <Badge
+          variant="secondary"
+          className="text-[10px] px-1.5 py-0 font-normal"
+          title={`${t('automations.labelThinking')}: ${thinkingLabel}`}
+        >
+          {thinkingLabel}
+        </Badge>
+      )}
     </div>
   )
 }

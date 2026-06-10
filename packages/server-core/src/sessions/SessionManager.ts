@@ -1679,6 +1679,7 @@ export class SessionManager implements ISessionManager {
                 pending.mentions,
                 pending.llmConnection,
                 pending.model,
+                pending.thinkingLevel,
                 pending.automationName,
               )
             )
@@ -7166,6 +7167,7 @@ export class SessionManager implements ISessionManager {
     mentions?: string[],
     llmConnection?: string,
     model?: string,
+    thinkingLevel?: ThinkingLevel,
     automationName?: string,
   ): Promise<{ sessionId: string }> {
     // Warn if llmConnection was specified but doesn't resolve
@@ -7196,6 +7198,7 @@ export class SessionManager implements ISessionManager {
       enabledSourceSlugs: resolved?.sourceSlugs,
       llmConnection,
       model,
+      thinkingLevel,
     })
 
     // Populate triggeredBy metadata so title generation is explicitly skipped

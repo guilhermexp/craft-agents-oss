@@ -11,7 +11,7 @@
  */
 
 import { computeNextRuns } from './utils'
-import type { PermissionMode } from '../../../shared/types'
+import type { PermissionMode, ThinkingLevel } from '../../../shared/types'
 import { DEFAULT_WEBHOOK_METHOD } from './constants'
 
 // ============================================================================
@@ -59,6 +59,12 @@ export const AGENT_EVENTS: AgentEvent[] = [
 export interface PromptAction {
   type: 'prompt'
   prompt: string
+  /** LLM connection slug override for the spawned session */
+  llmConnection?: string
+  /** Model ID override for the spawned session */
+  model?: string
+  /** Thinking level override for the spawned session */
+  thinkingLevel?: ThinkingLevel
 }
 
 export interface WebhookAction {

@@ -22,6 +22,7 @@ import {
 } from '@craft-agent/shared/protocol'
 import type { ActiveSessionInfo, SessionProcessingStatus } from '@craft-agent/core/types'
 import type { PermissionMode } from '@craft-agent/shared/agent'
+import type { ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
 import {
   ConfigWatcher,
   type ConfigWatcherCallbacks,
@@ -276,6 +277,7 @@ export class SessionWorkspaceRuntimeManager {
                 pending.mentions,
                 pending.llmConnection,
                 pending.model,
+                pending.thinkingLevel,
                 pending.automationName,
               )
             )
@@ -411,6 +413,7 @@ export class SessionWorkspaceRuntimeManager {
     mentions?: string[],
     llmConnection?: string,
     model?: string,
+    thinkingLevel?: ThinkingLevel,
     automationName?: string,
   ): Promise<{ sessionId: string }> {
     // Warn if llmConnection was specified but doesn't resolve
@@ -441,6 +444,7 @@ export class SessionWorkspaceRuntimeManager {
       enabledSourceSlugs: resolved?.sourceSlugs,
       llmConnection,
       model,
+      thinkingLevel,
     })
 
     // Populate triggeredBy metadata so title generation is explicitly skipped

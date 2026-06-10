@@ -242,6 +242,7 @@ export interface ISessionManager {
     mentions?: string[],
     llmConnection?: string,
     model?: string,
+    thinkingLevel?: ThinkingLevel,
     automationName?: string,
   ): Promise<{ sessionId: string }>
 }

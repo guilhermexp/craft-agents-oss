@@ -151,6 +151,7 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
           references.mentions,
           action.llmConnection,
           action.model,
+          action.thinkingLevel,
           payload.automationName,
         )
         results.push({
