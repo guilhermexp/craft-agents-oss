@@ -56,8 +56,16 @@ export class PromptBuilder {
   // ============================================================
 
   /**
-   * Build all context parts for a user message.
-   * Returns an array of strings that should be prepended to the user message.
+   * Build all context parts for a user message (volatile blocks first, then
+   * stable blocks). Returns an array of strings that should be prepended to the
+   * user message.
+   *
+   * This is the Claude path: it composes {@link buildVolatileContextParts} and
+   * {@link buildStableContextParts}, and the one-shot mode-change signal is
+   * consumed exactly once per turn (only the volatile builder consumes it).
+   * Callers that place volatile vs stable context in different locations (e.g.
+   * the Pi adapter, to preserve prompt caching — issue #862) should call the two
+   * halves directly instead of this method.
    *
    * @param options - Context building options
    * @param sourceStateBlock - Pre-formatted source state (from SourceManager)
@@ -67,12 +75,45 @@ export class PromptBuilder {
     options: ContextBlockOptions,
     sourceStateBlock?: string
   ): string[] {
+    return [
+      ...this.buildVolatileContextParts(options, sourceStateBlock),
+      ...this.buildStableContextParts(),
+    ];
+  }
+
+  /**
+   * Volatile context blocks — content that can change every turn, so it must
+   * ride the user-message tail rather than the cached system prefix (issue
+   * #862). Folding these into the system prompt re-stamps the cache prefix each
+   * turn and kills prompt-cache reuse for all downstream history.
+   *
+   * Blocks (in order):
+   *  1. date/time (minute precision)
+   *  2. session_state (permission mode + plans/data paths; carries
+   *     modeChangedAt/modeVersion and **consumes** the one-shot mode-change user
+   *     signal — see {@link formatSessionState})
+   *  3. source state (auth/connection status), when provided
+   *  4. memory context (CRAFT_FEATURE_MEMORY) — can grow mid-session as new
+   *     memories are saved, so it stays volatile to avoid busting the cache
+   *
+   * MUST be called exactly once per turn, because it consumes one-shot mode
+   * state. Never call it a second time to compute a cache-debug hash — hash the
+   * already-produced string instead.
+   *
+   * @param options - Context building options
+   * @param sourceStateBlock - Pre-formatted source state (from SourceManager)
+   */
+  buildVolatileContextParts(
+    options: ContextBlockOptions,
+    sourceStateBlock?: string
+  ): string[] {
     const parts: string[] = [];
 
-    // Add date/time context first (enables prompt caching)
+    // Date/time first (kept on the user tail to preserve prompt caching)
     parts.push(getDateTimeContext());
 
-    // Add session state (permission mode, plans folder path, data folder path)
+    // Session state (permission mode, plans folder path, data folder path).
+    // Only this volatile builder may consume the one-shot mode-change signal.
     const sessionId = this.config.session?.id ?? `temp-${Date.now()}`;
     const plansFolderPath = options.plansFolderPath ??
       getSessionPlansPath(this.workspaceRootPath, sessionId);
@@ -84,21 +125,13 @@ export class PromptBuilder {
       consumeModeChangeUserSignal: true,
     }));
 
-    // Add source state if provided
+    // Source state if provided
     if (sourceStateBlock) {
       parts.push(sourceStateBlock);
     }
 
-    // Add workspace capabilities
-    parts.push(this.formatWorkspaceCapabilities());
-
-    // Add working directory context
-    const workingDirContext = this.getWorkingDirectoryContext();
-    if (workingDirContext) {
-      parts.push(workingDirContext);
-    }
-
-    // Memory context (when feature flag is on)
+    // Memory context (when feature flag is on). Volatile because it can change
+    // mid-session as memories are written.
     if (this.config.memoryContextBuilder) {
       const memCtx = this.config.memoryContextBuilder.buildContext({
         availableTokens: this.config.contextWindow ?? 200_000,
@@ -106,6 +139,32 @@ export class PromptBuilder {
       if (memCtx.content) {
         parts.push(`<memory-context>\n${memCtx.content}\n</memory-context>`);
       }
+    }
+
+    return parts;
+  }
+
+  /**
+   * Stable context blocks — content that is invariant across a session, so it
+   * can safely live in the cached system prefix (issue #862).
+   *
+   * Blocks (in order):
+   *  1. workspace capabilities
+   *  2. working directory, when available
+   *
+   * Pure and idempotent: holds no one-shot state, so it is safe to call any
+   * number of times per turn.
+   */
+  buildStableContextParts(): string[] {
+    const parts: string[] = [];
+
+    // Workspace capabilities
+    parts.push(this.formatWorkspaceCapabilities());
+
+    // Working directory context
+    const workingDirContext = this.getWorkingDirectoryContext();
+    if (workingDirContext) {
+      parts.push(workingDirContext);
     }
 
     return parts;

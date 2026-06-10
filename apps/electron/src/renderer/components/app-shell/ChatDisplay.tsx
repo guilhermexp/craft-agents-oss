@@ -75,6 +75,7 @@ import { useAppShellContext } from "@/context/AppShellContext"
 import { navigate, routes } from "@/lib/navigate"
 import { CHAT_LAYOUT } from "@/config/layout"
 import { collectFileChangesFromActivities, getFirstFileChangeIdForActivity } from "@/lib/file-changes"
+import { coerceInputText, appendRestoredInput } from "@/lib/input-text"
 import { resolveBranchNewPanelOption } from "./branching"
 import { handleErrorMessageAction } from "./error-message-actions"
 
@@ -1294,6 +1295,17 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // silent=true when redirecting (sending new message), silent=false when user clicks Stop button
   const handleStop = (silent = false) => {
     if (!session?.isProcessing) return
+    // Restore the last user message back into the input on an explicit Stop so
+    // the user doesn't lose what they sent. Exclude isQueued messages — those
+    // are restored separately by the backend restore_input effect and would
+    // otherwise double up here.
+    if (!silent) {
+      const lastUserMsg = [...session.messages].reverse().find(m => m.role === 'user' && !m.isQueued)
+      const restoredText = coerceInputText(lastUserMsg?.content)
+      if (restoredText) {
+        onInputChange?.(appendRestoredInput(inputValue, restoredText))
+      }
+    }
     window.electronAPI.cancelProcessing(session.id, silent).catch(error => {
       console.error('[ChatDisplay] Failed to cancel processing:', error)
     })
@@ -1368,8 +1380,11 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // Memoize turn grouping - avoids O(n) iteration on every render/keystroke
   const allTurns = React.useMemo(() => {
     if (!session) return []
-    return groupMessagesByTurn(session.messages)
-  }, [session?.messages])
+    // Pass isSessionProcessing so a turn that ends on a tool call (no final
+    // non-intermediate text) is marked complete once the session stops — avoids
+    // the chat sitting on "Thinking…" forever.
+    return groupMessagesByTurn(session.messages, { isSessionProcessing: session.isProcessing })
+  }, [session?.messages, session?.isProcessing])
 
   // Keep ref in sync for scroll handler
   totalTurnCountRef.current = allTurns.length

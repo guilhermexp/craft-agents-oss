@@ -121,8 +121,34 @@ export async function buildServersFromSources(
     return undefined
   }
 
+  // Per-request credential getter for non-OAuth / non-renew API sources
+  // (bearer / header / query / basic auth).
+  //
+  // Without this, the in-process API tool captures the credential as a static
+  // string at build time and keeps using it forever — meaning a fresh JWT
+  // entered via source_credential_prompt is ignored until session restart.
+  //
+  // With this getter, every API call reads the latest credential from the
+  // vault, so credential updates take effect on the next call. OAuth and
+  // renew-endpoint sources have their own refresh logic via TokenRefreshManager
+  // and are skipped here.
+  const getCredentialForSource = (source: LoadedSource) => {
+    if (source.config.type !== 'api') return undefined
+    if (source.config.api?.authType === 'none') return undefined
+    if (isApiOAuthProvider(source.config.provider)) return undefined
+    if (source.config.api?.authType === 'oauth') return undefined
+    if (hasRenewEndpoint(source)) return undefined
+    return async () => credManager.getApiCredential(source)
+  }
+
   // Pass sessionPath to enable saving large API responses to session folder
-  const result = await serverBuilder.buildAll(sourcesWithCreds, getTokenForSource, sessionPath, summarize)
+  const result = await serverBuilder.buildAll(
+    sourcesWithCreds,
+    getTokenForSource,
+    sessionPath,
+    summarize,
+    getCredentialForSource,
+  )
   span.mark('servers.built')
   span.setMetadata('mcpCount', Object.keys(result.mcpServers).length)
   span.setMetadata('apiCount', Object.keys(result.apiServers).length)
@@ -131,10 +157,25 @@ export async function buildServersFromSources(
   for (const error of result.errors) {
     if (error.error === SERVER_BUILD_ERRORS.AUTH_REQUIRED) {
       const source = sources.find(s => s.config.slug === error.sourceSlug)
-      if (source) {
-        credManager.markSourceNeedsReauth(source, 'Token missing or expired')
-        sourceLog.info(`Marked source ${error.sourceSlug} as needing re-auth`)
+      if (!source) continue
+
+      // Re-classify AUTH_REQUIRED → TOKEN_EXPIRED when the credential is merely
+      // expired-but-refreshable; in that case the refresh cycle handles recovery
+      // and we must NOT mark the source as needing manual re-auth.
+      const cred = await credManager.load(source)
+      const isExpiredRefreshable =
+        cred &&
+        (credManager.isExpired(cred) || credManager.needsRefresh(cred)) &&
+        (cred.refreshToken || hasRenewEndpoint(source))
+
+      if (isExpiredRefreshable) {
+        error.error = SERVER_BUILD_ERRORS.TOKEN_EXPIRED
+        sourceLog.debug(`Source ${error.sourceSlug}: TOKEN_EXPIRED — refresh cycle will handle`)
+        continue
       }
+
+      credManager.markSourceNeedsReauth(source, 'Token missing or expired')
+      sourceLog.info(`Marked source ${error.sourceSlug} as needing re-auth`)
     }
   }
 

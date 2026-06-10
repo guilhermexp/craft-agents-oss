@@ -1,5 +1,6 @@
 import * as React from 'react'
-import ReactMarkdown, { type Components } from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown'
+import { markdownUrlTransform } from './url-transform'
 import rehypeKatex from 'rehype-katex'
 import rehypeRaw from 'rehype-raw'
 import remarkGfm from 'remark-gfm'
@@ -380,8 +381,15 @@ function PlainTextBlock({ code, onUrlClick, onFileClick }: {
         .map((child) => (typeof child === 'string' ? child : ''))
         .join('')
         .trim()
-      const target = (href?.trim() || fallbackText)
+      const trimmedHref = href?.trim() ?? ''
+      const target = (trimmedHref || fallbackText)
       const resolvedTarget = target ? resolveMarkdownLinkTarget(target) : null
+      // Sanitize the DOM href separately from the click-dispatch target: the
+      // click handler routes the ORIGINAL href through onFileClick/onUrlClick,
+      // but the rendered href passes through defaultUrlTransform so dangerous
+      // schemes (file:/javascript:/data:) can't escape via middle-click/cmd-click.
+      const sanitized = trimmedHref ? defaultUrlTransform(trimmedHref) : ''
+      const safeHref = sanitized ? sanitized : undefined
 
       const handleClick = (e: React.MouseEvent) => {
         e.preventDefault()
@@ -394,7 +402,7 @@ function PlainTextBlock({ code, onUrlClick, onFileClick }: {
       }
 
       return (
-        <a href={href} onClick={handleClick} className="text-accent hover:underline cursor-pointer">
+        <a href={safeHref} onClick={handleClick} className="text-accent hover:underline cursor-pointer">
           {children}
         </a>
       )
@@ -402,7 +410,7 @@ function PlainTextBlock({ code, onUrlClick, onFileClick }: {
     code: ({ children }) => <code className="bg-muted px-1 py-0.5 rounded text-sm">{children}</code>,
   }), [onUrlClick, onFileClick])
 
-  return <ReactMarkdown components={components} remarkPlugins={[remarkGfm]}>{processed}</ReactMarkdown>
+  return <ReactMarkdown components={components} remarkPlugins={[remarkGfm]} urlTransform={markdownUrlTransform}>{processed}</ReactMarkdown>
 }
 
 function createComponents(
@@ -468,11 +476,16 @@ function createComponents(
         .map((child) => (typeof child === 'string' ? child : ''))
         .join('')
         .trim()
-      const target = (href?.trim() || fallbackText)
+      const trimmedHref = href?.trim() ?? ''
+      const target = (trimmedHref || fallbackText)
       const resolvedTarget = target ? resolveMarkdownLinkTarget(target) : null
       const fileKind = resolvedTarget?.kind === 'file' ? classifyFile(resolvedTarget.path).type : null
       const isAudioFile = fileKind === 'audio'
       const isImageFile = fileKind === 'image'
+      // DOM href is sanitized independently of the click-dispatch target so
+      // dangerous schemes can't escape via middle-click/cmd-click (#807).
+      const sanitized = trimmedHref ? defaultUrlTransform(trimmedHref) : ''
+      const safeHref = sanitized ? sanitized : undefined
 
       const handleClick = (e: React.MouseEvent) => {
         e.preventDefault()
@@ -488,7 +501,7 @@ function createComponents(
 
       const link = (
         <a
-          href={href}
+          href={safeHref}
           onClick={handleClick}
           className="text-accent hover:underline cursor-pointer"
         >
@@ -954,6 +967,7 @@ export function Markdown({
           remarkPlugins={remarkPlugins}
           rehypePlugins={[rehypeKatex, rehypeRaw]}
           components={components}
+          urlTransform={markdownUrlTransform}
         >
           {processedContent}
         </ReactMarkdown>

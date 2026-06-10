@@ -88,7 +88,9 @@ export function SessionViewer({
 }: SessionViewerProps) {
   // Convert StoredMessage[] to Message[] and group into turns
   const turns = useMemo(
-    () => groupMessagesByTurn(session.messages.map(storedToMessage)),
+    // Static viewer — session is never processing, so mark turns that ended on
+    // a tool call complete (avoids a stale "Thinking…" on saved sessions).
+    () => groupMessagesByTurn(session.messages.map(storedToMessage), { isSessionProcessing: false }),
     [session.messages]
   )
 

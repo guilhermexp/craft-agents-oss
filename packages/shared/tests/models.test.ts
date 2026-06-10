@@ -118,8 +118,8 @@ describe('Opus 4.6 registry presence', () => {
     expect(ids).toContain('claude-opus-4-6');
   });
 
-  it('resolves "Opus" shortName to 4.7 (first match wins)', () => {
-    // 4.7 is listed first in MODEL_REGISTRY so default Opus callers unchanged.
-    expect(getModelIdByShortName('Opus')).toBe('claude-opus-4-7');
+  it('resolves "Opus" shortName to 4.8 (first match wins)', () => {
+    // 4.8 is listed first in MODEL_REGISTRY so it is the default Opus.
+    expect(getModelIdByShortName('Opus')).toBe('claude-opus-4-8');
   });
 });
