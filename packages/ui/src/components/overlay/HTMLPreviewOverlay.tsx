@@ -42,6 +42,14 @@ export interface HTMLPreviewOverlayProps {
   title?: string
   /** Theme mode for dark/light styling */
   theme?: 'light' | 'dark'
+  /**
+   * Allow the sandboxed iframe to execute scripts so CDN-based styling like
+   * Tailwind renders. When true the iframe runs WITHOUT `allow-same-origin`
+   * (null/opaque origin), so scripts cannot reach the parent renderer or the
+   * app origin — they are fully contained in the sandbox. Defaults to false
+   * (scripts stripped, same-origin so content height can be measured).
+   */
+  allowScripts?: boolean
 }
 
 export function HTMLPreviewOverlay({
@@ -54,6 +62,7 @@ export function HTMLPreviewOverlay({
   initialIndex = 0,
   title,
   theme,
+  allowScripts = false,
 }: HTMLPreviewOverlayProps) {
   // Normalize: single html prop → single item, or use items array
   const { t } = useTranslation()
@@ -118,8 +127,8 @@ export function HTMLPreviewOverlay({
 
   // Preprocess active HTML before assigning it to iframe srcDoc.
   const processedHtml = React.useMemo(
-    () => activeContent ? prepareHtmlPreviewSrcDoc(activeContent) : null,
-    [activeContent]
+    () => activeContent ? prepareHtmlPreviewSrcDoc(activeContent, { keepScripts: allowScripts }) : null,
+    [activeContent, allowScripts]
   )
 
   // Read iframe content dimensions after it loads
@@ -146,7 +155,10 @@ export function HTMLPreviewOverlay({
     ? `${contentSize.height}px`
     : 'calc(100vh - 200px)'
 
-  const measured = contentSize !== null
+  // With allowScripts the iframe is null-origin, so contentDocument can't be
+  // read to measure height — show it immediately at the default height instead
+  // of gating on a measurement that will never arrive.
+  const measured = contentSize !== null || allowScripts
 
   // Header actions: item navigation + copy button
   const headerActions = (
@@ -188,7 +200,14 @@ export function HTMLPreviewOverlay({
           >
             <iframe
               ref={iframeRef}
-              sandbox="allow-same-origin allow-top-navigation-by-user-activation"
+              sandbox={
+                // Never combine allow-scripts with allow-same-origin: a srcDoc
+                // iframe is same-origin to the renderer, so that pairing would
+                // let preview scripts reach the parent (renderer code execution).
+                allowScripts
+                  ? 'allow-scripts allow-top-navigation-by-user-activation'
+                  : 'allow-same-origin allow-top-navigation-by-user-activation'
+              }
               srcDoc={processedHtml}
               onLoad={handleLoad}
               title={activeItem?.label || title || 'HTML Preview'}

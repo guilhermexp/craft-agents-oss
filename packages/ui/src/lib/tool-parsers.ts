@@ -221,7 +221,17 @@ export interface DocumentOverlayData {
   error?: string
 }
 
-export type OverlayData = CodeOverlayData | TerminalOverlayData | GenericOverlayData | JSONOverlayData | DocumentOverlayData
+/** Rendered HTML preview — used for Read/Write of .html/.htm files */
+export interface HTMLOverlayData {
+  type: 'html'
+  content: string
+  filePath: string
+  /** Tool that produced this content (e.g. "Read", "Write") — used for the header type badge */
+  toolName: string
+  error?: string
+}
+
+export type OverlayData = CodeOverlayData | TerminalOverlayData | GenericOverlayData | JSONOverlayData | DocumentOverlayData | HTMLOverlayData
 
 /** Generic overlay card model (tab item) for activity details. */
 export interface OverlayCard {
@@ -253,9 +263,19 @@ export function extractOverlayData(activity: ActivityItem): OverlayData | null {
   // Get file path from various input formats
   const filePath = (input?.file_path as string) || (input?.path as string) || 'file'
 
-  // Read tool → Code overlay (read mode)
+  // Read tool → HTML preview for .html/.htm (rendered visually), Code overlay otherwise
   if (toolName === 'read') {
     const parsed = parseReadResult(rawContent)
+    const ext = filePath.split('.').pop()?.toLowerCase()
+    if ((ext === 'html' || ext === 'htm') && !activity.error) {
+      return {
+        type: 'html',
+        filePath,
+        content: parsed.content,
+        toolName: 'Read',
+        error: activity.error,
+      }
+    }
     return {
       type: 'code',
       filePath,
@@ -277,6 +297,15 @@ export function extractOverlayData(activity: ActivityItem): OverlayData | null {
     if (ext === 'md' || ext === 'txt') {
       return {
         type: 'document',
+        filePath,
+        content,
+        toolName: 'Write',
+        error: activity.error,
+      }
+    }
+    if ((ext === 'html' || ext === 'htm') && !activity.error) {
+      return {
+        type: 'html',
         filePath,
         content,
         toolName: 'Write',

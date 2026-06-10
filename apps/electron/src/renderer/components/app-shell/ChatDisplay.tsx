@@ -34,6 +34,7 @@ import {
   GenericOverlay,
   JSONPreviewOverlay,
   DocumentFormattedMarkdownOverlay,
+  HTMLPreviewOverlay,
   detectLanguage,
   type ActivityItem,
   type FileChange,
@@ -1987,6 +1988,15 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
               variant: 'blue',
             }}
             error={activityOutputOverlayData.error}
+          />
+        ) : activityOutputOverlayData.type === 'html' ? (
+          <HTMLPreviewOverlay
+            isOpen={true}
+            onClose={handleCloseOverlay}
+            html={activityOutputOverlayData.content}
+            title={activityOutputOverlayData.filePath}
+            allowScripts
+            theme={isDark ? 'dark' : 'light'}
           />
         ) : detectLanguage(activityOutputOverlayData.content) === 'markdown' ? (
           <DocumentFormattedMarkdownOverlay
