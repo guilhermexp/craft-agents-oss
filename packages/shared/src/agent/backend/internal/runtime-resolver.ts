@@ -166,12 +166,21 @@ function resolveClaudeBinaryPath(hostRuntime: BackendHostRuntimeContext): string
  * `optionalDependencies` parent). Two-step resolution is required so it works
  * under bun's `.bun` store layout, not just flat `node_modules`. Returns
  * undefined if anything is unresolvable or the binary is absent.
+ *
+ * IMPORTANT: resolve the package's `.` export (sdk.mjs), NOT its `package.json`.
+ * The main SDK package declares an `exports` map that does NOT expose
+ * `./package.json`. Bun and loose Node happily resolve the subpath anyway, but
+ * the Electron 41 main-process Node enforces `exports` strictly and throws
+ * `ERR_PACKAGE_PATH_NOT_EXPORTED` — which previously left `claudeCliPath`
+ * undefined and made every Claude session fail at `prepareRuntime` (strict) with
+ * "native binary not found". The per-platform package has no `exports` field, so
+ * resolving its `package.json` (step two) stays allowed everywhere.
  */
 function resolveBinaryViaSdkPackage(platformPkg: string, binaryName: string): string | undefined {
   try {
     const req = createRequire(import.meta.url);
-    const sdkMainPkgJson = req.resolve('@anthropic-ai/claude-agent-sdk/package.json');
-    const sdkReq = createRequire(sdkMainPkgJson);
+    const sdkMainEntry = req.resolve('@anthropic-ai/claude-agent-sdk');
+    const sdkReq = createRequire(sdkMainEntry);
     const platformPkgJson = sdkReq.resolve(`${platformPkg}/package.json`);
     const candidate = join(dirname(platformPkgJson), binaryName);
     return existsSync(candidate) ? candidate : undefined;

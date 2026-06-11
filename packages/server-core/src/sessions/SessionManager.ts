@@ -1323,7 +1323,7 @@ export class SessionManager implements ISessionManager {
     options?: SendMessageOptions,
   ): { started: true } {
     this.sendMessage(sessionId, message, attachments, storedAttachments, options).catch(err => {
-      sessionLog.error('Error in sendMessage:', err)
+      sessionLog.error(`Error in sendMessage: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`)
       if (!this.events.getSink()) return
       this.events.publishToClient(clientId, {
         type: 'error',
@@ -4777,7 +4777,7 @@ export class SessionManager implements ISessionManager {
         isTemporary = true
         sessionLog.info(`refreshTitle: Created temporary agent for session ${sessionId}`)
       } catch (error) {
-        sessionLog.error(`refreshTitle: Failed to create temporary agent:`, error)
+        sessionLog.error(`refreshTitle: Failed to create temporary agent: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
         return { success: false, error: 'Failed to create agent for title generation' }
       }
     }
@@ -6486,7 +6486,7 @@ export class SessionManager implements ISessionManager {
         isTemporary = true
         sessionLog.info(`[generateTitle] Created temporary ${sessionIsHermes ? 'native ' : ''}agent for session ${managed.id} (connection: ${titleSlug})`)
       } catch (error) {
-        sessionLog.error(`[generateTitle] Failed to create temporary agent:`, error)
+        sessionLog.error(`[generateTitle] Failed to create temporary agent: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
         return
       }
     }
