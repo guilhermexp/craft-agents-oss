@@ -33,6 +33,19 @@ import type { LLMQueryRequest, LLMQueryResult } from '../llm-tool.ts';
 // Import LLM connection types for auth
 import type { LlmAuthType, LlmProviderType } from '../../config/llm-connections.ts';
 export type { LlmAuthType, LlmProviderType } from '../../config/llm-connections.ts';
+
+export interface BackendRuntimeUpdate {
+  model: string;
+  providerType?: LlmProviderType;
+  authType?: LlmAuthType;
+  runtime?: {
+    baseUrl?: string;
+    piAuthProvider?: string;
+    customEndpoint?: { api: string; supportsImages?: boolean };
+    customModels?: Array<string | { id: string; contextWindow?: number; supportsImages?: boolean }>;
+    [key: string]: unknown;
+  };
+}
 import type { AutomationSystem } from '../../automations/index.ts';
 
 /**
@@ -212,6 +225,20 @@ export interface CoreBackendConfig {
   /** Callback when SDK session ID is cleared (e.g., after failed resume) */
   onSdkSessionIdCleared?: () => void;
 
+  /**
+   * Called when the agent decides the persisted branch-fork metadata
+   * (branchFromSdkSessionId / branchFromSdkCwd / branchFromSdkTurnId) is
+   * unrecoverable on this machine — typically because the parent's sdk cwd
+   * doesn't exist locally (cross-machine session import) or the SDK fork
+   * spawn failed before establishing a child session.
+   *
+   * Implementations MUST clear all four fields (including sdkSessionId)
+   * atomically and persist. `onSdkSessionIdCleared` is insufficient because
+   * it only clears sdkSessionId — branch fields would reload from disk
+   * on next launch and re-trigger the failure.
+   */
+  onBranchForkInvalidated?: () => void;
+
   /** Callback to get recent messages for recovery context */
   getRecoveryMessages?: () => RecoveryMessage[];
 
@@ -246,7 +273,7 @@ export interface CoreBackendConfig {
    */
   onImageResize?: (filePath: string, maxSizeBytes: number) => Promise<string | null>;
 
-  /** Enable 1M context window for Opus 4.7. Default: true. Set false to use 200K and conserve usage limits. */
+  /** Enable 1M context window for current Opus models. Default: true. Set false to use 200K and conserve usage limits. */
   enable1MContext?: boolean;
 
   /**
@@ -436,6 +463,19 @@ export interface AgentBackend {
   /** Set model (should validate against capabilities) */
   setModel(model: string): void;
 
+  /**
+   * Update runtime-affecting provider config without recreating the backend.
+   * Backends return false when the update cannot be applied in-place and the
+   * session manager should fall back to an idle restart.
+   */
+  updateRuntimeConfig?(update: BackendRuntimeUpdate): Promise<boolean>;
+
+  /**
+   * Dispose resources before an idle backend restart. Backends with subprocesses
+   * can wait for child process exit here to avoid transient process leaks.
+   */
+  disposeForRestart?(): Promise<void>;
+
   /** Get current thinking level */
   getThinkingLevel(): ThinkingLevel;
 
@@ -498,8 +538,9 @@ export interface AgentBackend {
   /**
    * Schedule a source-activation auto-restart. Consumed by the backend's
    * event loop after the next tool_result, which yields `source_activated`
-   * and `forceAbort`s the turn — triggering the renderer's existing
-   * auto_retry effect. Set by SessionManager after a successful mid-turn
+   * and `forceAbort`s the turn. SessionManager's `source_activated` handler
+   * then schedules the server-side resend with a "[{slug} activated]" suffix
+   * (craft-agents-oss#804). Set by SessionManager after a successful mid-turn
    * activation (source_test auto-enable).
    */
   setPendingSourceActivationRestart(pending: { sourceSlug: string; userMessage: string }): void;
@@ -606,8 +647,6 @@ export interface BackendConfig extends CoreBackendConfig {
    * Provider/SDK to use for this backend.
    * Determines which agent class is instantiated:
    * - 'anthropic' → ClaudeAgent (Anthropic SDK)
-   * - 'openai' → CodexAgent (OpenAI via app-server)
-   * - 'copilot' → CopilotAgent (GitHub Copilot via @github/copilot-sdk)
    * - 'pi' → PiAgent (Pi via @mariozechner/pi-coding-agent)
    */
   provider: AgentProvider;
