@@ -37,6 +37,9 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'src/renderer'),
       '@config': resolve(__dirname, '../../packages/shared/src/config'),
+      // Main-process-only optional require in packages/shared/src/utils/debug.ts;
+      // unresolvable from the renderer and aborts Vite's dependency scan without this.
+      'electron-log/main': resolve(__dirname, 'src/renderer/lib/electron-log-main-stub.ts'),
       // Force all React imports to use the root node_modules React
       // Bun hoists deps to root. This prevents "multiple React copies" error from @craft-agent/ui
       'react': resolve(__dirname, '../../node_modules/react'),
@@ -45,12 +48,12 @@ export default defineConfig({
     dedupe: ['react', 'react-dom']
   },
   optimizeDeps: {
-    include: ['react', 'react-dom', 'jotai', 'pdfjs-dist'],
+    // pdfjs-dist is a transitive dep (react-pdf > pdfjs-dist) — the bare name
+    // doesn't resolve from this package under bun's isolated store.
+    include: ['react', 'react-dom', 'jotai', 'react-pdf > pdfjs-dist'],
     exclude: ['@craft-agent/ui'],
-    esbuildOptions: {
-      supported: { 'top-level-await': true },
-      target: 'esnext'
-    }
+    // No esbuildOptions/rolldownOptions needed: Rolldown (Vite 8) handles
+    // top-level await natively, which was the only reason they existed.
   },
   server: {
     port: Number(process.env.CRAFT_VITE_PORT) || 5273,

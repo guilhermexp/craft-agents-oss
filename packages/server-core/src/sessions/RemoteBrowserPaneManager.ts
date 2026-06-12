@@ -15,6 +15,7 @@
 
 import { CodedError } from '@craft-agent/shared/protocol'
 import type { BrowserInstanceInfo } from '@craft-agent/shared/protocol'
+import { createScopedLogger, CONSOLE_LOGGER } from '../runtime/platform'
 import type {
   IBrowserPaneManager,
   BrowserScreenshotOptions,
@@ -39,6 +40,8 @@ import {
   type ScreenshotResultWire,
 } from '../transport'
 import type { RpcServer } from '../transport/types'
+
+const remoteBpmLog = createScopedLogger(CONSOLE_LOGGER, 'remote-bpm')
 
 export interface RemoteBrowserPaneManagerDeps {
   readonly sessionId: string
@@ -96,10 +99,13 @@ export class RemoteBrowserPaneManager implements IBrowserPaneManager {
   /** Synchronous methods on IBPM are emulated by awaiting in callers; here we
    * preserve a `void` return for fire-and-forget paths used by SessionManager. */
   private invokeSync(method: BrowserCapabilityMethod, args: unknown[]): void {
-    this.invoke<unknown>(method, args).catch(() => {
-      // Swallow — callers like setAgentControl / unbindAllForSession don't await.
-      // The remote agent will surface the error on the next awaited call if
-      // something is genuinely broken.
+    this.invoke<unknown>(method, args).catch((err: unknown) => {
+      // Don't rethrow — callers like setAgentControl / unbindAllForSession don't
+      // await. But log it: for cleanup paths (destroyForSession, unbindAll*)
+      // a silent failure means leaked remote tabs with no trace.
+      remoteBpmLog.warn(
+        `invokeSync(${method}) failed for session ${this.sessionId}: ${err instanceof Error ? err.message : String(err)}`,
+      )
     })
   }
 

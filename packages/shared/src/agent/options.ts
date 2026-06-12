@@ -42,11 +42,14 @@ function ensureClaudeConfig(): void {
     // Clean up stale .backup file — if present and .claude.json is missing,
     // the Claude Code executable writes "A backup file exists at..." to stdout, crashing the SDK.
     // We remove it so the executable sees a clean "missing file" state (which it handles silently).
+    // Only when the primary config is missing: with a healthy ~/.claude.json the
+    // backup is inert to the CLI, and the user's own Claude Code install may
+    // still want it for recovery.
     const backupPath = `${configPath}.backup`;
-    if (existsSync(backupPath)) {
+    if (existsSync(backupPath) && !existsSync(configPath)) {
         try {
             unlinkSync(backupPath);
-            debug('[options] Removed stale ~/.claude.json.backup');
+            debug('[options] Removed stale ~/.claude.json.backup (primary config missing)');
         } catch (err) {
             debug(`[options] Failed to remove ~/.claude.json.backup: ${err}`);
         }
