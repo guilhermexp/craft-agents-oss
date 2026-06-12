@@ -765,7 +765,7 @@ export function EditPopover({
   // Build placeholder: for inline execution use rotating array, otherwise build descriptive string
   // overridePlaceholder allows contexts like add-source/add-skill to say "add" instead of "change"
   const placeholder = inlineExecution
-    ? COMPACT_PLACEHOLDER_KEYS.map(key => t(key))
+    ? (overridePlaceholder ?? COMPACT_PLACEHOLDER_KEYS.map(key => t(key)))
     : (() => {
         const basePlaceholder = overridePlaceholder ?? t("editPopover.describePlaceholder")
         return example
