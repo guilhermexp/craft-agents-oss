@@ -110,6 +110,11 @@ mac:
         - "!vendor/ripgrep/arm64-linux/**"
         - "!vendor/ripgrep/x64-linux/**"
         - "!vendor/ripgrep/x64-win32/**"
+    # ripgrep for the search service (SDK ≥0.2.113 no longer ships vendor/ripgrep).
+    # Staged into apps/electron/node_modules by build-dmg.sh; resolved by
+    # resolveRipgrepPath() at app/node_modules/@vscode/ripgrep/bin/rg.
+    - from: node_modules/@vscode/ripgrep
+      to: app/node_modules/@vscode/ripgrep
     # Network interceptor source files (resolved from workspace root because apps/electron/packages/* doesn't exist)
     - from: ../../packages/shared/src/unified-network-interceptor.ts
       to: app/packages/shared/src/unified-network-interceptor.ts
@@ -204,6 +209,11 @@ win:
         - "!vendor/ripgrep/x64-darwin/**"
         - "!vendor/ripgrep/arm64-linux/**"
         - "!vendor/ripgrep/x64-linux/**"
+    # ripgrep for the search service (SDK ≥0.2.113 no longer ships vendor/ripgrep).
+    # Staged into apps/electron/node_modules by build-win.ps1; resolved by
+    # resolveRipgrepPath() at app/node_modules/@vscode/ripgrep/bin/rg.exe.
+    - from: node_modules/@vscode/ripgrep
+      to: app/node_modules/@vscode/ripgrep
     # Network interceptor source files (resolved from workspace root because apps/electron/packages/* doesn't exist)
     - from: ../../packages/shared/src/unified-network-interceptor.ts
       to: app/packages/shared/src/unified-network-interceptor.ts
@@ -261,6 +271,11 @@ linux:
         - "!vendor/ripgrep/arm64-darwin/**"
         - "!vendor/ripgrep/x64-darwin/**"
         - "!vendor/ripgrep/x64-win32/**"
+    # ripgrep for the search service (SDK ≥0.2.113 no longer ships vendor/ripgrep).
+    # Staged into apps/electron/node_modules by build-linux.sh; resolved by
+    # resolveRipgrepPath() at app/node_modules/@vscode/ripgrep/bin/rg.
+    - from: node_modules/@vscode/ripgrep
+      to: app/node_modules/@vscode/ripgrep
     # Network interceptor source files (resolved from workspace root because apps/electron/packages/* doesn't exist)
     - from: ../../packages/shared/src/unified-network-interceptor.ts
       to: app/packages/shared/src/unified-network-interceptor.ts

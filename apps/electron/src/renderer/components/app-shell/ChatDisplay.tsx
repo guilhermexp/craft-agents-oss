@@ -1305,6 +1305,19 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       if (restoredText) {
         onInputChange?.(appendRestoredInput(inputValue, restoredText))
       }
+      // Restore attachments too — rebuild FileAttachments from the stored
+      // copies on disk (the draft was cleared when the message was sent).
+      const storedAtts = lastUserMsg?.attachments
+      if (storedAtts?.length && onAttachmentsChange) {
+        void Promise.all(
+          storedAtts.map(a => window.electronAPI.readFileAttachment(a.storedPath).catch(() => null))
+        ).then(restored => {
+          const valid = restored.filter((a): a is FileAttachment => a !== null)
+          if (valid.length > 0) {
+            onAttachmentsChange([...(attachmentsValue ?? []), ...valid])
+          }
+        })
+      }
     }
     window.electronAPI.cancelProcessing(session.id, silent).catch(error => {
       console.error('[ChatDisplay] Failed to cancel processing:', error)

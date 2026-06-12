@@ -106,6 +106,26 @@ describe('formatForLarkPost — code blocks', () => {
     expect(codeEl.tag).toBe('code_block')
     expect(codeEl.language).toBeUndefined()
   })
+
+  it('keeps a fenced block containing blank lines as one code_block', () => {
+    const result = formatForLarkPost('```python\ndef a():\n    pass\n\n\ndef b():\n    pass\n```')
+    expect(result.kind).toBe('post')
+    if (result.kind !== 'post') return
+    expect(result.post.post.en_us.content.length).toBe(1)
+    const codeEl = result.post.post.en_us.content[0]![0]! as { tag: string; text?: string }
+    expect(codeEl.tag).toBe('code_block')
+    expect(codeEl.text).toBe('def a():\n    pass\n\n\ndef b():\n    pass')
+  })
+
+  it('still splits paragraphs around a fenced block with blank lines', () => {
+    const result = formatForLarkPost('Before.\n\n```\nline 1\n\nline 2\n```\n\nAfter.')
+    expect(result.kind).toBe('post')
+    if (result.kind !== 'post') return
+    expect(result.post.post.en_us.content.length).toBe(3)
+    const codeEl = result.post.post.en_us.content[1]![0]! as { tag: string; text?: string }
+    expect(codeEl.tag).toBe('code_block')
+    expect(codeEl.text).toBe('line 1\n\nline 2')
+  })
 })
 
 describe('formatForLarkPost — paragraphs', () => {

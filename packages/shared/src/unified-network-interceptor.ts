@@ -436,7 +436,12 @@ function stripBetaHeader(headers: HeadersInitType | undefined, beta: string): Re
 
   const existing = headerObj['anthropic-beta'];
   if (existing) {
-    headerObj['anthropic-beta'] = existing.split(',').filter(b => b.trim() !== beta).join(',');
+    const remaining = existing.split(',').map(b => b.trim()).filter(b => b !== '' && b !== beta);
+    if (remaining.length > 0) {
+      headerObj['anthropic-beta'] = remaining.join(',');
+    } else {
+      delete headerObj['anthropic-beta'];
+    }
   }
 
   return headerObj;
@@ -1482,6 +1487,7 @@ export function sanitizeOpenAiHistoryInPlace(body: Record<string, unknown>): {
 } {
   const messages = body.messages as Array<{
     role?: string;
+    content?: unknown;
     tool_call_id?: string;
     tool_calls?: Array<{
       id?: string;
@@ -1509,6 +1515,11 @@ export function sanitizeOpenAiHistoryInPlace(body: Record<string, unknown>): {
       if (cleaned.length !== message.tool_calls.length) {
         if (cleaned.length === 0) {
           delete message.tool_calls;
+          // An assistant turn with neither tool_calls nor content is rejected
+          // by OpenAI-compatible providers — keep it valid with empty content.
+          if (message.content === null || message.content === undefined) {
+            message.content = '';
+          }
         } else {
           message.tool_calls = cleaned;
         }

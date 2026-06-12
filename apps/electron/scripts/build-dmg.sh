@@ -148,7 +148,6 @@ if [ ! -d "$SDK_BIN_SOURCE" ]; then
     echo "Cross-arch build: ${SDK_BIN_PKG} not in node_modules — fetching from npm..."
     SDK_VERSION=$(node -p "require('$ROOT_DIR/package.json').dependencies['@anthropic-ai/claude-agent-sdk']" | tr -d '"')
     PKG_TMP=$(mktemp -d)
-    trap "rm -rf $PKG_TMP" RETURN
     (
         cd "$PKG_TMP"
         npm pack "@anthropic-ai/${SDK_BIN_PKG}@${SDK_VERSION}" >/dev/null
@@ -157,6 +156,7 @@ if [ ! -d "$SDK_BIN_SOURCE" ]; then
     )
     mkdir -p "$SDK_BIN_SOURCE"
     cp -r "$PKG_TMP/package/." "$SDK_BIN_SOURCE/"
+    rm -rf "$PKG_TMP"
 fi
 
 require_path "$SDK_BIN_SOURCE" "SDK native binary package (${SDK_BIN_PKG})" \

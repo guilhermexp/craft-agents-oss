@@ -10,7 +10,7 @@
  * interactive cards, attachments, and Markdown→post rich-text formatting.
  */
 
-import { writeFileSync } from 'node:fs'
+import { statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { extname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
@@ -756,6 +756,11 @@ export class LarkAdapter implements PlatformAdapter {
       // a plain Node Readable. Handle the common shapes.
       if (typeof sdkResource.writeFile === 'function') {
         await sdkResource.writeFile(localPath)
+        // The SDK gives no size metadata up front — enforce the cap post-write.
+        if (statSync(localPath).size > MAX_ATTACHMENT_BYTES) {
+          try { unlinkSync(localPath) } catch { /* best-effort cleanup */ }
+          throw new Error(`attachment exceeds ${MAX_ATTACHMENT_BYTES} bytes`)
+        }
       } else if (sdkResource.file instanceof Buffer) {
         const buf = sdkResource.file
         if (buf.length > MAX_ATTACHMENT_BYTES) {
@@ -799,6 +804,14 @@ export class LarkAdapter implements PlatformAdapter {
       this.log.warn('[lark] card action missing correlation ids', {
         event: 'lark_card_action_no_ids',
         operator: data.operator,
+      })
+      return
+    }
+    if (!channelId) {
+      this.log.warn('[lark] card action missing chat id', {
+        event: 'lark_card_action_no_chat_id',
+        buttonId: value.buttonId,
+        messageId: value.messageId,
       })
       return
     }
