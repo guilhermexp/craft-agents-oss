@@ -61,6 +61,7 @@ export interface StoredConfig {
   autoExpandActivities?: boolean;  // Auto-expand TurnCards and activity groups in the chat (default: false)
   // Tools
   browserToolEnabled?: boolean;  // Enable built-in browser tool (default: true). Disable for Playwright/Puppeteer.
+  allowRemoteEvaluate?: boolean;  // Allow remote agents to call `browser_tool evaluate` on local browser (default: true).
   // Prompt caching & context
   extendedPromptCache?: boolean;  // Use 1h prompt cache TTL instead of 5m (default: false)
   enable1MContext?: boolean;  // Enable 1M context window for supported models (default: false — opt-in; requires Anthropic Tier 4+)
@@ -103,6 +104,7 @@ const FALLBACK_CONFIG_DEFAULTS: ConfigDefaults = {
     richToolDescriptions: true,
     extendedPromptCache: false,
     browserToolEnabled: true,
+    allowRemoteEvaluate: true,
   },
   workspaceDefaults: {
     thinkingLevel: 'medium',
@@ -280,7 +282,7 @@ export async function clearAllConfig(): Promise<void> {
 // ============================================
 
 // Preferences
-export { getNotificationsEnabled, setNotificationsEnabled, getActiveHermesProfile, setActiveHermesProfile, getAutoCapitalisation, setAutoCapitalisation, getSendMessageKey, setSendMessageKey, getSpellCheck, setSpellCheck, getKeepAwakeWhileRunning, setKeepAwakeWhileRunning, getRichToolDescriptions, setRichToolDescriptions, getExtendedPromptCache, setExtendedPromptCache, getBrowserToolEnabled, setBrowserToolEnabled, getEnable1MContext, setEnable1MContext, getRtkEnabled, setRtkEnabled, getAutoExpandActivities, setAutoExpandActivities, getGitBashPath, setGitBashPath, clearGitBashPath, getConfigPath } from './preference-storage.ts';
+export { getNotificationsEnabled, setNotificationsEnabled, getActiveHermesProfile, setActiveHermesProfile, getAutoCapitalisation, setAutoCapitalisation, getSendMessageKey, setSendMessageKey, getSpellCheck, setSpellCheck, getKeepAwakeWhileRunning, setKeepAwakeWhileRunning, getRichToolDescriptions, setRichToolDescriptions, getExtendedPromptCache, setExtendedPromptCache, getBrowserToolEnabled, setBrowserToolEnabled, getAllowRemoteEvaluate, setAllowRemoteEvaluate, getEnable1MContext, setEnable1MContext, getRtkEnabled, setRtkEnabled, getAutoExpandActivities, setAutoExpandActivities, getGitBashPath, setGitBashPath, clearGitBashPath, getConfigPath } from './preference-storage.ts';
 
 // Network proxy, browser profiles, setup deferred, server config
 export { getNetworkProxySettings, setNetworkProxySettings, getBrowserProfileSettings, getBrowserProfiles, setBrowserProfiles, getLastUsedBrowserProfileId, setLastUsedBrowserProfileId, getBrowserPickerAlwaysAsk, setBrowserPickerAlwaysAsk, isSetupDeferred, setSetupDeferred, getServerConfig, setServerConfig } from './preference-storage.ts';

@@ -216,6 +216,7 @@ const instance = await (async () => {
         activeSessionManager = new SessionManager()
         return activeSessionManager
       },
+      bindRpcServer: (sm, server) => sm.setRpcServer(server),
       createHandlerDeps: ({ sessionManager, platform, oauthFlowStore }) => {
         messagingHandle = createMessagingBootstrap({
           sessionManager,

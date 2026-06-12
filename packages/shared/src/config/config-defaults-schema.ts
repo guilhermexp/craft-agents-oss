@@ -21,6 +21,7 @@ export interface ConfigDefaults {
     richToolDescriptions: boolean;
     extendedPromptCache: boolean;
     browserToolEnabled: boolean;
+    allowRemoteEvaluate: boolean;
   };
   workspaceDefaults: {
     thinkingLevel: ThinkingLevel;

@@ -208,6 +208,33 @@ export function setBrowserToolEnabled(enabled: boolean): void {
 }
 
 /**
+ * Get whether remote agents may run `browser_tool evaluate` against this
+ * desktop client's local browser. The check is enforced inside the local
+ * capability dispatcher; the remote server cannot override it.
+ *
+ * Defaults to true. Users can flip it off if they don't trust the remote
+ * workspaces they connect to.
+ */
+export function getAllowRemoteEvaluate(): boolean {
+  const config = loadStoredConfig();
+  if (config?.allowRemoteEvaluate !== undefined) {
+    return config.allowRemoteEvaluate;
+  }
+  const defaults = loadConfigDefaults();
+  return defaults.defaults.allowRemoteEvaluate;
+}
+
+/**
+ * Set whether remote agents may run `browser_tool evaluate` locally.
+ */
+export function setAllowRemoteEvaluate(allowed: boolean): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  config.allowRemoteEvaluate = allowed;
+  saveConfig(config);
+}
+
+/**
  * Get whether 1M context window is enabled.
  * When disabled, models use 200K context and the interceptor strips the context-1m beta header.
  * Defaults to false — the 1M beta requires Anthropic Tier 4+, and enabling it by default
