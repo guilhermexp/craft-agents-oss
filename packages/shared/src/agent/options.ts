@@ -4,6 +4,7 @@ import { homedir } from "os";
 import { existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from "fs";
 import { debug } from "../utils/debug";
 import { getProxyEnvVars } from "../config/proxy-env.ts";
+import { getExtendedPromptCache } from "../config/preference-storage.ts";
 
 declare const CRAFT_AGENT_CLI_VERSION: string | undefined;
 
@@ -202,6 +203,18 @@ export function buildClaudeSubprocessEnv(
     delete env.CLAUDE_CODE_USE_BEDROCK;
     delete env.AWS_BEARER_TOKEN_BEDROCK;
     delete env.ANTHROPIC_BEDROCK_BASE_URL;
+
+    // Honor the extendedPromptCache preference via the native CLI's own env
+    // switches (the interceptor that used to patch cache_control TTL doesn't
+    // run under the native binary). Skip when the user already set either
+    // switch in their shell.
+    if (!env.ENABLE_PROMPT_CACHING_1H && !env.FORCE_PROMPT_CACHING_5M) {
+        if (getExtendedPromptCache()) {
+            env.ENABLE_PROMPT_CACHING_1H = '1';
+        } else {
+            env.FORCE_PROMPT_CACHING_5M = '1';
+        }
+    }
 
     return env;
 }
