@@ -3,7 +3,7 @@ import { CheckCircle2, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   SettingsCard,
   SettingsCardContent,
@@ -319,7 +319,9 @@ function MessengerModal({
         </DialogHeader>
 
         <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
-          <div className="text-xs text-muted-foreground leading-relaxed">{entry.description}</div>
+          <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
+            {entry.description}
+          </DialogDescription>
 
           {entry.setupSteps && (
             <ol className="text-xs text-muted-foreground leading-relaxed list-decimal pl-4 space-y-1">

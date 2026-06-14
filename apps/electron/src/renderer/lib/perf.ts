@@ -36,6 +36,7 @@ const MAX_RECENT_METRICS = 50
 
 // Debug mode detection (matches main process pattern)
 let debugMode = false
+let hasLoggedRendererPerfEnabled = false
 
 /**
  * Initialize perf tracking. Call this once on app startup.
@@ -43,7 +44,8 @@ let debugMode = false
  */
 export function initRendererPerf(isDebug: boolean): void {
   debugMode = isDebug
-  if (debugMode) {
+  if (debugMode && !hasLoggedRendererPerfEnabled) {
+    hasLoggedRendererPerfEnabled = true
     perfLog.info('Renderer performance tracking enabled')
   }
 }

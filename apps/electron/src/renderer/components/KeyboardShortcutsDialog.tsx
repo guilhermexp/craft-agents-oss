@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -155,6 +156,9 @@ export function KeyboardShortcutsDialog({ open, onOpenChange }: KeyboardShortcut
       <DialogContent className="sm:max-w-[500px] max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t("shortcuts.title")}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {t("settings.shortcuts.description")}
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-6 py-2">
           {/* Registry-driven sections */}

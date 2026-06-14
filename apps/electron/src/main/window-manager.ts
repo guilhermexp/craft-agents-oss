@@ -442,7 +442,7 @@ export class WindowManager {
     // Debug: log registered workspaces when lookup fails
     if (windows.length === 0 && this.windows.size > 0) {
       const registered = Array.from(this.windows.values()).map(m => m.workspaceId)
-      windowLog.warn(`No windows for workspace '${workspaceId}', have: [${registered.join(', ')}]`)
+      windowLog.debug(`No windows for workspace '${workspaceId}', have: [${registered.join(', ')}]`)
     }
     return windows
   }

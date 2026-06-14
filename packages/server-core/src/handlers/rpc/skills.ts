@@ -16,7 +16,7 @@ export const HANDLED_CHANNELS = [
 export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): void {
   // Get all skills for a workspace (and optionally project-level skills from workingDirectory)
   server.handle(RPC_NAMESPACES.skills.GET, async (_ctx, workspaceId: string, workingDirectory?: string) => {
-    deps.platform.logger?.info(`SKILLS_GET: Loading skills for workspace: ${workspaceId}${workingDirectory ? `, workingDirectory: ${workingDirectory}` : ''}`)
+    deps.platform.logger?.debug(`SKILLS_GET: Loading skills for workspace: ${workspaceId}${workingDirectory ? `, workingDirectory: ${workingDirectory}` : ''}`)
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) {
       deps.platform.logger?.error(`SKILLS_GET: Workspace not found: ${workspaceId}`)
@@ -29,7 +29,7 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
       : undefined
     const { loadAllSkills } = await import('@craft-agent/shared/skills')
     const skills = loadAllSkills(workspace.rootPath, effectiveWorkingDir)
-    deps.platform.logger?.info(`SKILLS_GET: Loaded ${skills.length} skills from ${workspace.rootPath}`)
+    deps.platform.logger?.debug(`SKILLS_GET: Loaded ${skills.length} skills from ${workspace.rootPath}`)
     return skills
   })
 

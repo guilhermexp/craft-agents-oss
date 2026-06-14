@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -19,6 +20,7 @@ interface RenameDialogProps {
   onValueChange: (value: string) => void
   onSubmit: () => void
   placeholder?: string
+  description?: string
 }
 
 export function RenameDialog({
@@ -29,6 +31,7 @@ export function RenameDialog({
   onValueChange,
   onSubmit,
   placeholder,
+  description,
 }: RenameDialogProps) {
   const { t } = useTranslation()
   const effectivePlaceholder = placeholder ?? t("common.enterName")
@@ -58,6 +61,9 @@ export function RenameDialog({
       <DialogContent className="sm:max-w-[400px]" onOpenAutoFocus={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {description ?? effectivePlaceholder}
+          </DialogDescription>
         </DialogHeader>
         <div className="py-4">
           <Input
