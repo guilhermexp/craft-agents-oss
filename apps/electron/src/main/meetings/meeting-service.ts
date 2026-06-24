@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
@@ -14,6 +14,7 @@ import type {
   SaveMeetingTranscriptionConfigInput,
 } from '../../shared/types'
 import { generateMeetingSummaryMarkdown } from './meeting-summary-service'
+import { generateMeetingVideoAnalysisMarkdown } from './meeting-video-analysis-service'
 import type { BrowserPaneManager } from '../browser-pane-manager'
 import { getHermesRuntimePaths } from '../handlers/hermes-runtime'
 import { mainLog } from '../logger'
@@ -59,6 +60,8 @@ interface WorkspaceMeetingState {
   summariesDir: string
 }
 
+type MeetingVideoAnalysisGenerator = typeof generateMeetingVideoAnalysisMarkdown
+
 interface HermesMeetPluginResult {
   ok?: boolean
   error?: string
@@ -78,7 +81,11 @@ export class MeetingService {
   private readonly workspaceStates = new Map<string, WorkspaceMeetingState>()
   private readonly healthCheckTimers = new Map<string, ReturnType<typeof setInterval>>()
 
-  constructor(private readonly browserPaneManager: BrowserPaneManager, private readonly storePathOverride?: string) {}
+  constructor(
+    private readonly browserPaneManager: BrowserPaneManager,
+    private readonly storePathOverride?: string,
+    private readonly videoAnalysisGenerator: MeetingVideoAnalysisGenerator = generateMeetingVideoAnalysisMarkdown,
+  ) {}
 
   async getTranscriptionConfig(workspaceId: string, workspaceRootPath: string): Promise<MeetingTranscriptionConfig> {
     const state = this.getWorkspaceState(workspaceRootPath)
@@ -338,6 +345,8 @@ export class MeetingService {
     if (record.recording?.path) {
       try { if (existsSync(record.recording.path)) unlinkSync(record.recording.path) } catch {}
     }
+    // Remove generated video-analysis evidence (contact sheets, frames, audio)
+    try { rmSync(this.getVideoAnalysisDir(state, id), { recursive: true, force: true }) } catch {}
   }
 
   async completeRecording(
@@ -393,6 +402,11 @@ export class MeetingService {
         mainLog.error(`[meetings] transcription failed for ${meetingId}: ${err instanceof Error ? err.message : String(err)}`)
       })
     }
+
+    const updatedRecord = state.records.get(meetingId)
+    if (!updatedRecord?.transcriptionProvider || !updatedRecord.transcriptionModel) {
+      void this.generateAgentVideoAnalysis(workspaceId, workspaceRootPath, meetingId, [])
+    }
   }
 
   async transcribeRecording(workspaceId: string, workspaceRootPath: string, meetingId: string): Promise<void> {
@@ -426,6 +440,7 @@ export class MeetingService {
       state.transcripts.set(meetingId, unavailable)
       this.persistTranscript(state, unavailable)
       this.updateRecord(state, meetingId, { summaryMarkdown })
+      void this.generateAgentVideoAnalysis(workspaceId, workspaceRootPath, meetingId, [])
       return
     }
 
@@ -465,11 +480,13 @@ export class MeetingService {
       this.persistTranscript(state, transcript)
       this.updateRecord(state, meetingId, { summaryMarkdown })
 
-      // Hand the ready transcript to the configured Craft agent for a real
-      // summary (text → markdown). Fire-and-forget: the 'ready' status above
-      // already unblocked the UI; the poll surfaces the upgraded summary when
-      // the agent finishes. Hermes is excluded inside the summary service.
-      if ((currentRecord.summarizeOnEnd || currentRecord.followUpOnEnd) && result.segments.length > 0) {
+      // Hand every completed recording to the configured Craft agent for a
+      // video-aware post-meeting analysis. It keeps Deepgram as the STT source,
+      // but adds visual evidence (contact sheet + frames) from the recorded WebM.
+      // The fire-and-forget analysis replaces the boilerplate summary when done.
+      if (currentRecord.recording?.path) {
+        void this.generateAgentVideoAnalysis(workspaceId, workspaceRootPath, meetingId, result.segments)
+      } else if ((currentRecord.summarizeOnEnd || currentRecord.followUpOnEnd) && result.segments.length > 0) {
         void this.generateAgentSummary(workspaceId, workspaceRootPath, meetingId, result.segments)
       }
     } catch (error) {
@@ -497,14 +514,56 @@ export class MeetingService {
       state.transcripts.set(meetingId, unavailable)
       this.persistTranscript(state, unavailable)
       this.updateRecord(state, meetingId, { summaryMarkdown })
+      void this.generateAgentVideoAnalysis(workspaceId, workspaceRootPath, meetingId, [])
       throw error
     }
   }
 
   /**
-   * Run the configured Craft agent (Claude/Pi, never Hermes) on the ready
-   * transcript to produce a real summary, replacing the boilerplate one.
+   * Run the configured Craft agent (Claude/Pi, never Hermes) on the recorded
+   * meeting video plus Deepgram transcript segments to produce visual notes.
    * Best-effort: failures keep the existing summary and are logged.
+   */
+  private async generateAgentVideoAnalysis(
+    workspaceId: string,
+    workspaceRootPath: string,
+    meetingId: string,
+    segments: MeetingTranscriptSegment[],
+  ): Promise<void> {
+    try {
+      const state = this.getWorkspaceState(workspaceRootPath)
+      const record = state.records.get(meetingId)
+      const recordingPath = record?.recording?.path
+      if (!record || !recordingPath) return
+
+      const markdown = await this.videoAnalysisGenerator({
+        workspaceId,
+        workspaceRootPath,
+        record,
+        recordingPath,
+        outputDir: this.getVideoAnalysisDir(state, meetingId),
+        segments,
+      })
+      if (!markdown) {
+        if ((record.summarizeOnEnd || record.followUpOnEnd) && segments.length > 0) {
+          await this.generateAgentSummary(workspaceId, workspaceRootPath, meetingId, segments)
+        }
+        return
+      }
+
+      const latest = this.getWorkspaceState(workspaceRootPath)
+      if (!latest.records.has(meetingId)) return
+      this.updateRecord(latest, meetingId, { summaryMarkdown: markdown })
+      mainLog.info(`[meetings] agent video analysis generated for ${meetingId}`)
+    } catch (error) {
+      mainLog.error(
+        `[meetings] generateAgentVideoAnalysis failed for ${meetingId}: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+  }
+
+  /**
+   * Legacy text-only fallback for non-recorded transcript sources.
    */
   private async generateAgentSummary(
     workspaceId: string,
@@ -908,6 +967,10 @@ except Exception as exc:
 
   private getTranscriptPath(state: WorkspaceMeetingState, meetingId: string): string {
     return join(state.transcriptsDir, `${safeFileId(meetingId)}.json`)
+  }
+
+  private getVideoAnalysisDir(state: WorkspaceMeetingState, meetingId: string): string {
+    return join(dirname(state.storePath), 'video-analysis', safeFileId(meetingId))
   }
 
   private loadTranscriptionConfig(state: WorkspaceMeetingState): Omit<MeetingTranscriptionConfig, 'hasApiKey'> {

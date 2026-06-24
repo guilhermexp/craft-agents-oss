@@ -12,6 +12,11 @@ const tempDirs: string[] = []
 const metadataDirs: string[] = []
 const credentials = new Map<string, { value: string }>()
 const summaryRequests: LLMQueryRequest[] = []
+const videoAnalysisRequests: Array<{
+  recordingPath: string
+  segments: MeetingTranscriptSegment[]
+  record: MeetingRecord
+}> = []
 
 mock.module('electron', () => ({
   session: {
@@ -82,6 +87,28 @@ mock.module('./transcription-service', () => ({
   },
 }))
 
+mock.module('./meeting-video-analysis-service', () => ({
+  generateMeetingVideoAnalysisMarkdown: async (input: {
+    recordingPath: string
+    segments: MeetingTranscriptSegment[]
+    record: MeetingRecord
+  }): Promise<string> => {
+    videoAnalysisRequests.push(input)
+    return '## Visual analysis\n\n- The recording was reviewed with visual evidence.'
+  },
+}))
+
+mock.module('./meeting-video-analysis-service.ts', () => ({
+  generateMeetingVideoAnalysisMarkdown: async (input: {
+    recordingPath: string
+    segments: MeetingTranscriptSegment[]
+    record: MeetingRecord
+  }): Promise<string> => {
+    videoAnalysisRequests.push(input)
+    return '## Visual analysis\n\n- The recording was reviewed with visual evidence.'
+  },
+}))
+
 const { MeetingService } = await import('./meeting-service')
 
 function createBrowserPaneManager(): BrowserPaneManager {
@@ -103,6 +130,7 @@ function createBrowserPaneManager(): BrowserPaneManager {
 beforeEach(() => {
   credentials.clear()
   summaryRequests.splice(0)
+  videoAnalysisRequests.splice(0)
 })
 
 afterEach(() => {
@@ -332,7 +360,45 @@ describe('MeetingService storage', () => {
     expect(existsSync(orphanB)).toBe(false)
   })
 
-  it('runs post-meeting summary generation when only follow-up is enabled', async () => {
+  it('runs visual video analysis for every completed recording even when transcription is disabled', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-video-analysis-'))
+    tempDirs.push(workspaceRoot)
+
+    const service = new MeetingService(createBrowserPaneManager(), undefined, async (input) => {
+      videoAnalysisRequests.push(input)
+      return '## Visual analysis\n\n- The recording was reviewed with visual evidence.'
+    })
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+      summarizeOnEnd: false,
+      followUpOnEnd: false,
+    })
+
+    const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
+    metadataDirs.push(dirname(meetingsDir))
+    const recordingPath = join(meetingsDir, 'recordings', `${record.id}.webm`)
+    mkdirSync(dirname(recordingPath), { recursive: true })
+    writeFileSync(recordingPath, 'video')
+
+    await service.completeRecording('ws-test', workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      bytesWritten: 5,
+      durationMs: 1000,
+      mimeType: 'video/webm',
+    })
+    for (let i = 0; i < 20 && videoAnalysisRequests.length === 0; i += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+
+    expect(videoAnalysisRequests).toHaveLength(1)
+    expect(videoAnalysisRequests[0]?.recordingPath).toBe(recordingPath)
+    expect(videoAnalysisRequests[0]?.segments).toEqual([])
+    expect(service.status(workspaceRoot, record.id)?.summaryMarkdown).toContain('## Visual analysis')
+  })
+
+  it('passes the ready transcript and follow-up flag into visual post-meeting analysis', async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-follow-up-'))
     tempDirs.push(workspaceRoot)
 
@@ -342,7 +408,10 @@ describe('MeetingService storage', () => {
       name: 'deepgram',
     }), { value: 'dg-test-key' })
 
-    const service = new MeetingService(createBrowserPaneManager())
+    const service = new MeetingService(createBrowserPaneManager(), undefined, async (input) => {
+      videoAnalysisRequests.push(input)
+      return '## Follow-up\n\n- Guilherme: ship the follow-up fix tomorrow.'
+    })
     const record = await service.start(workspaceRoot, {
       urlOrCode: 'abc-defg-hij',
       captureMode: 'craft',
@@ -363,10 +432,15 @@ describe('MeetingService storage', () => {
       durationMs: 1000,
       mimeType: 'audio/webm',
     })
-    await new Promise(resolve => setTimeout(resolve, 0))
+    for (let i = 0; i < 20 && videoAnalysisRequests.length === 0; i += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
 
-    expect(summaryRequests).toHaveLength(1)
-    expect(summaryRequests[0]?.systemPrompt).toContain('follow-up')
+    expect(videoAnalysisRequests).toHaveLength(1)
+    expect(videoAnalysisRequests[0]?.record.followUpOnEnd).toBe(true)
+    expect(videoAnalysisRequests[0]?.segments.map(segment => segment.text)).toEqual([
+      'Guilherme will ship the follow-up fix tomorrow.',
+    ])
     expect(service.status(workspaceRoot, record.id)?.summaryMarkdown).toContain('## Follow-up')
   })
 })

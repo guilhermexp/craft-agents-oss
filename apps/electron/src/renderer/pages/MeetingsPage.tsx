@@ -120,27 +120,20 @@ function MeetingOption({ checked, onChange, icon, title, description }: MeetingO
         }
       }}
       className={cn(
-        'group flex w-full min-w-0 cursor-pointer items-center gap-3 overflow-hidden rounded-md border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/20',
+        'group flex min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/15',
         checked
           ? 'border-foreground/15 bg-foreground/[0.045] text-foreground'
-          : 'border-border/55 bg-transparent text-muted-foreground hover:border-border hover:bg-foreground/[0.025]'
+          : 'border-border/45 bg-transparent text-muted-foreground hover:border-border/70 hover:bg-foreground/[0.02]'
       )}
     >
-      <span
-        className={cn(
-          'flex size-7 shrink-0 items-center justify-center rounded-md border transition-colors',
-          checked
-            ? 'border-foreground/15 bg-background/80 text-foreground'
-            : 'border-border/60 bg-background/35 text-muted-foreground group-hover:text-foreground/80'
-        )}
-      >
+      <span className={cn('text-muted-foreground transition-colors group-hover:text-foreground/75', checked && 'text-foreground')}>
         {icon}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium leading-5 text-foreground">{title}</span>
-        <span className="block line-clamp-2 text-xs leading-5 text-muted-foreground">{description}</span>
+        <span className="block truncate text-xs font-medium leading-5">{title}</span>
+        <span className="sr-only">{description}</span>
       </span>
-      <Switch className="ml-1" checked={checked} onCheckedChange={onChange} onClick={(event) => event.stopPropagation()} />
+      <Switch className="scale-90" checked={checked} onCheckedChange={onChange} onClick={(event) => event.stopPropagation()} />
     </div>
   )
 }
@@ -576,71 +569,60 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
         isShowingResult ? 'max-w-7xl' : 'max-w-5xl'
       )}>
         {!isShowingResult && (
-        <header className="grid min-w-0 gap-4 border-b border-border/50 pb-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] xl:items-end">
-          <div className="min-w-0 space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex items-center gap-2 rounded-md border border-border/70 bg-foreground/[0.025] px-2 py-1 text-xs text-muted-foreground">
-                <Video className="size-3.5" />
+          <header className="mx-auto w-full max-w-3xl pt-4 sm:pt-8">
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <div className="inline-flex items-center gap-2 rounded-full border border-border/45 bg-foreground/[0.025] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                <Video className="size-3" />
                 <span>{t('meetings.eyebrow')}</span>
               </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  className={cn(
+                    'inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors',
+                    activeSection === 'results' ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground hover:text-foreground'
+                  )}
+                  onClick={() => setActiveSection(activeSection === 'results' ? 'invite' : 'results')}
+                >
+                  <MessageSquareText className="size-3.5" />
+                  {t('meetings.resultsSection')}
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+                  onClick={() => setHowItWorksOpen(true)}
+                  aria-label={t('meetings.flowTitle')}
+                >
+                  <HelpCircle className="size-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-8 space-y-3">
+              <h1 className="text-[34px] font-semibold tracking-[-0.04em] text-foreground sm:text-[42px]">
+                {t('meetings.title')}
+              </h1>
+              <p className="max-w-xl text-sm leading-6 text-muted-foreground">
+                {t('meetings.subtitle')}
+              </p>
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <CheckCircle2 className="size-3.5 text-foreground/65" />
+                {t('meetings.apiReady')}
+              </span>
               <button
                 type="button"
-                className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => setHowItWorksOpen(true)}
-              >
-                <HelpCircle className="size-3.5" />
-                {t('meetings.flowTitle')}
-              </button>
-            </div>
-            <div className="space-y-1">
-              <h1 className="text-[26px] font-semibold tracking-tight text-foreground">{t('meetings.title')}</h1>
-              <p className="max-w-2xl text-sm leading-6 text-muted-foreground">{t('meetings.subtitle')}</p>
-            </div>
-            <div className="inline-flex items-center rounded-lg border border-border/70 bg-foreground/[0.02] p-0.5">
-              {([
-                ['invite', <Sparkles key="i" className="size-3.5" />, t('meetings.inviteSection')],
-                ['results', <MessageSquareText key="r" className="size-3.5" />, t('meetings.resultsSection')],
-              ] as const).map(([section, icon, label]) => (
-                <button
-                  key={section}
-                  type="button"
-                  onClick={() => setActiveSection(section)}
-                  className={cn(
-                    'inline-flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors',
-                    activeSection === section
-                      ? 'bg-background text-foreground shadow-xs'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  {icon}
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="min-w-0 rounded-lg border border-border/65 bg-card/25 p-3 text-xs text-muted-foreground">
-            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 text-foreground/85">
-                  <CheckCircle2 className="size-4" />
-                  <span className="font-medium">{t('meetings.apiReady')}</span>
-                </div>
-                <p className="mt-1 line-clamp-2">{t('meetings.authHint')}</p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 w-full shrink-0 gap-1.5 px-2.5 text-xs sm:w-auto"
+                className="inline-flex items-center gap-1.5 font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                 disabled={isAuthenticating}
                 onClick={handleGoogleAuth}
               >
                 {isAuthenticating ? <Loader2 className="size-3.5 animate-spin" /> : <ExternalLink className="size-3.5" />}
                 {t('meetings.authGoogle')}
-              </Button>
+              </button>
             </div>
-          </div>
-        </header>
+          </header>
         )}
 
         <Dialog open={howItWorksOpen} onOpenChange={setHowItWorksOpen}>
@@ -676,198 +658,183 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
         </Dialog>
 
         {activeSection === 'invite' ? (
-          <form onSubmit={handleJoin} className="min-w-0 rounded-lg border border-border/70 bg-card/35 shadow-minimal">
-            <div className="grid min-w-0 gap-0 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
-              <section className="min-w-0 border-b border-border/60 p-4 sm:p-5 xl:border-b-0 xl:border-r">
-                <div className="space-y-5">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <label htmlFor="meeting-link" className="text-sm font-medium text-foreground">
-                        {t('meetings.inputLabel')}
-                      </label>
-                      <span className="hidden text-xs text-muted-foreground sm:inline">{t('meetings.inputHint')}</span>
-                    </div>
-                    <div className="grid min-w-0 gap-2 xl:grid-cols-[minmax(0,1fr)_auto_auto]">
-                      <Input
-                        id="meeting-link"
-                        value={meetingInput}
-                        onChange={(event) => setMeetingInput(event.target.value)}
-                        placeholder={t('meetings.inputPlaceholder')}
-                        autoFocus
-                        className="h-11 flex-1 border-border/70 bg-background/70 text-sm shadow-none focus-visible:ring-foreground/15"
-                      />
-                      <Button type="submit" disabled={!canJoin} className="h-11 w-full shrink-0 gap-2 px-4 xl:w-auto">
-                        {isJoining ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
-                        {t('meetings.join')}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={!workspaceId || !normalizedUrl || isJoining || isCraftRecording}
-                        className="h-11 w-full shrink-0 gap-2 px-4 xl:w-auto"
-                        onClick={handleCraftRecord}
-                      >
-                        {isCraftRecording ? <Loader2 className="size-4 animate-spin" /> : <Video className="size-4" />}
-                        {t('meetings.craftRecordButton')}
-                      </Button>
-                    </div>
-                    <p className="truncate text-xs text-muted-foreground/85">
-                      {normalizedUrl ? normalizedUrl : t('meetings.authDescription')}
-                    </p>
-                  </div>
+          <form onSubmit={handleJoin} className="mx-auto w-full max-w-3xl min-w-0 space-y-4">
+            <div className="rounded-2xl border border-border/55 bg-card/[0.18] p-2 shadow-minimal backdrop-blur-sm">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                <Input
+                  id="meeting-link"
+                  value={meetingInput}
+                  onChange={(event) => setMeetingInput(event.target.value)}
+                  placeholder={t('meetings.inputPlaceholder')}
+                  autoFocus
+                  className="h-12 flex-1 border-0 bg-transparent px-3 text-base shadow-none placeholder:text-muted-foreground/55 focus-visible:ring-0"
+                />
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
+                  <Button type="submit" disabled={!canJoin} className="h-10 gap-2 px-4 sm:h-11">
+                    {isJoining ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
+                    {t('meetings.join')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!workspaceId || !normalizedUrl || isJoining || isCraftRecording}
+                    className="h-10 gap-2 border-border/55 bg-background/30 px-4 sm:h-11"
+                    onClick={handleCraftRecord}
+                  >
+                    {isCraftRecording ? <Loader2 className="size-4 animate-spin" /> : <Video className="size-4" />}
+                    {t('meetings.craftRecordButton')}
+                  </Button>
+                </div>
+              </div>
+            </div>
 
-                  {detectedMeeting && (
-                    <div className="rounded-lg border border-foreground/15 bg-foreground/[0.04] p-3">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0 space-y-1">
-                          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                            <Sparkles className="size-4" />
-                            <span>{t('meetings.detectedTitle')}</span>
-                          </div>
-                          <p className="truncate text-xs text-muted-foreground">{detectedMeeting.url}</p>
-                        </div>
-                        <div className="flex shrink-0 gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-8 px-2.5 text-xs"
-                            onClick={handleDismissDetectedMeeting}
-                            disabled={isJoining}
-                          >
-                            {t('meetings.detectedDismiss')}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="h-8 gap-1.5 px-2.5 text-xs"
-                            onClick={handleApproveDetectedMeeting}
-                            disabled={isJoining}
-                          >
-                            {isJoining ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}
-                            {t('meetings.detectedApprove')}
-                          </Button>
+            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="min-w-0 truncate text-xs text-muted-foreground/75">
+                {normalizedUrl ? normalizedUrl : t('meetings.authDescription')}
+              </p>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-fit shrink-0 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                    aria-label={t('meetings.configAriaLabel')}
+                  >
+                    <Settings className="size-3.5" />
+                    {t('meetings.optionsTitle')}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-[320px] p-3">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium text-foreground">{t('meetings.configTitle')}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {hasTranscriptionApiKey ? t('meetings.configApiKeySaved') : t('meetings.configApiKeyNotSet')}
                         </div>
                       </div>
+                      {isLoadingTranscriptionSettings && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
                     </div>
-                  )}
-                </div>
-              </section>
-
-              <section className="min-w-0 p-4 sm:p-5">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <h2 className="text-sm font-medium text-foreground">{t('meetings.optionsTitle')}</h2>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">{t('meetings.optionsHint')}</span>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-7 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
-                            aria-label={t('meetings.configAriaLabel')}
-                          >
-                            <Settings className="size-3.5" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent align="end" className="w-[320px] p-3">
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between gap-3">
-                              <div>
-                                <div className="text-sm font-medium text-foreground">{t('meetings.configTitle')}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {hasTranscriptionApiKey ? t('meetings.configApiKeySaved') : t('meetings.configApiKeyNotSet')}
-                                </div>
-                              </div>
-                              {isLoadingTranscriptionSettings && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
-                            </div>
-                            <label className="block space-y-1.5">
-                              <span className="text-xs font-medium text-foreground">{t('meetings.configModel')}</span>
-                              <Select
-                                value={transcriptionProvider}
-                                onValueChange={handleTranscriptionProviderChange}
-                                disabled={isLoadingTranscriptionSettings || isSavingTranscriptionSettings}
-                              >
-                                <SelectTrigger className="h-9 bg-background/65 text-xs">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="deepgram">Deepgram</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </label>
-                            <label className="block space-y-1.5">
-                              <span className="text-xs font-medium text-foreground">{t('meetings.configModel')}</span>
-                              <Select
-                                value={transcriptionModel}
-                                onValueChange={setTranscriptionModel}
-                                disabled={isLoadingTranscriptionSettings || isSavingTranscriptionSettings}
-                              >
-                                <SelectTrigger className="h-9 bg-background/65 text-xs">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {currentTranscriptionModels.map((model) => (
-                                    <SelectItem key={model.id} value={model.id}>{model.label}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </label>
-                            <label className="block space-y-1.5">
-                              <span className="text-xs font-medium text-foreground">{t('meetings.configApiKeyLabel')}</span>
-                              <Input
-                                type="password"
-                                value={transcriptionApiKeyDraft}
-                                onChange={(event) => setTranscriptionApiKeyDraft(event.target.value)}
-                                placeholder={hasTranscriptionApiKey ? t('meetings.configApiKeyPlaceholderExists') : t('meetings.configApiKeyPlaceholderNew')}
-                                disabled={isLoadingTranscriptionSettings || isSavingTranscriptionSettings}
-                                className="h-9 bg-background/65 text-xs"
-                              />
-                            </label>
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="h-8 w-full gap-1.5 text-xs"
-                              disabled={isLoadingTranscriptionSettings || isSavingTranscriptionSettings}
-                              onClick={handleSaveTranscriptionSettings}
-                            >
-                              {isSavingTranscriptionSettings ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
-                              {t('meetings.configSave')}
-                            </Button>
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-                    </div>
+                    <label className="block space-y-1.5">
+                      <span className="text-xs font-medium text-foreground">{t('meetings.configModel')}</span>
+                      <Select
+                        value={transcriptionProvider}
+                        onValueChange={handleTranscriptionProviderChange}
+                        disabled={isLoadingTranscriptionSettings || isSavingTranscriptionSettings}
+                      >
+                        <SelectTrigger className="h-9 bg-background/65 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="deepgram">Deepgram</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </label>
+                    <label className="block space-y-1.5">
+                      <span className="text-xs font-medium text-foreground">{t('meetings.configModel')}</span>
+                      <Select
+                        value={transcriptionModel}
+                        onValueChange={setTranscriptionModel}
+                        disabled={isLoadingTranscriptionSettings || isSavingTranscriptionSettings}
+                      >
+                        <SelectTrigger className="h-9 bg-background/65 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {currentTranscriptionModels.map((model) => (
+                            <SelectItem key={model.id} value={model.id}>{model.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </label>
+                    <label className="block space-y-1.5">
+                      <span className="text-xs font-medium text-foreground">{t('meetings.configApiKeyLabel')}</span>
+                      <Input
+                        type="password"
+                        value={transcriptionApiKeyDraft}
+                        onChange={(event) => setTranscriptionApiKeyDraft(event.target.value)}
+                        placeholder={hasTranscriptionApiKey ? t('meetings.configApiKeyPlaceholderExists') : t('meetings.configApiKeyPlaceholderNew')}
+                        disabled={isLoadingTranscriptionSettings || isSavingTranscriptionSettings}
+                        className="h-9 bg-background/65 text-xs"
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 w-full gap-1.5 text-xs"
+                      disabled={isLoadingTranscriptionSettings || isSavingTranscriptionSettings}
+                      onClick={handleSaveTranscriptionSettings}
+                    >
+                      {isSavingTranscriptionSettings ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+                      {t('meetings.configSave')}
+                    </Button>
                   </div>
-                  <div className="grid gap-2">
-                    <MeetingOption
-                      checked={transcriptionEnabled}
-                      onChange={setTranscriptionEnabled}
-                      icon={<MessageSquareText className="size-4" />}
-                      title={t('meetings.transcription')}
-                      description={t('meetings.transcriptionDescription')}
-                    />
-                    <MeetingOption
-                      checked={summaryEnabled}
-                      onChange={setSummaryEnabled}
-                      icon={<Sparkles className="size-4" />}
-                      title={t('meetings.summary')}
-                      description={t('meetings.summaryDescription')}
-                    />
-                    <MeetingOption
-                      checked={followUpEnabled}
-                      onChange={setFollowUpEnabled}
-                      icon={<ClipboardList className="size-4" />}
-                      title={t('meetings.followUp')}
-                      description={t('meetings.followUpDescription')}
-                    />
-                  </div>
-                </div>
-              </section>
+                </PopoverContent>
+              </Popover>
             </div>
+
+            <div className="grid gap-2 sm:grid-cols-3">
+              <MeetingOption
+                checked={transcriptionEnabled}
+                onChange={setTranscriptionEnabled}
+                icon={<MessageSquareText className="size-3.5" />}
+                title={t('meetings.transcription')}
+                description={t('meetings.transcriptionDescription')}
+              />
+              <MeetingOption
+                checked={summaryEnabled}
+                onChange={setSummaryEnabled}
+                icon={<Sparkles className="size-3.5" />}
+                title={t('meetings.summary')}
+                description={t('meetings.summaryDescription')}
+              />
+              <MeetingOption
+                checked={followUpEnabled}
+                onChange={setFollowUpEnabled}
+                icon={<ClipboardList className="size-3.5" />}
+                title={t('meetings.followUp')}
+                description={t('meetings.followUpDescription')}
+              />
+            </div>
+
+            {detectedMeeting && (
+              <div className="rounded-xl border border-border/55 bg-foreground/[0.025] p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-xs font-medium text-foreground">
+                      <Sparkles className="size-3.5" />
+                      <span>{t('meetings.detectedTitle')}</span>
+                    </div>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">{detectedMeeting.url}</p>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 px-2.5 text-xs"
+                      onClick={handleDismissDetectedMeeting}
+                      disabled={isJoining}
+                    >
+                      {t('meetings.detectedDismiss')}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 gap-1.5 px-2.5 text-xs"
+                      onClick={handleApproveDetectedMeeting}
+                      disabled={isJoining}
+                    >
+                      {isJoining ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}
+                      {t('meetings.detectedApprove')}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </form>
+
         ) : effectiveMeetingId ? (
           <section className="grid min-h-[calc(100vh-7rem)] min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,430px)]">
             <div className="min-w-0 overflow-hidden rounded-lg border border-border/65 bg-card/20">
