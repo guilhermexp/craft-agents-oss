@@ -473,6 +473,7 @@
   "meetings.configAriaLabel": "Configurar transcrição",
   "meetings.configLoadError": "Não foi possível carregar a configuração de transcrição.",
   "meetings.configModel": "Modelo",
+  "meetings.configProvider": "Provedor",
   "meetings.configSave": "Salvar",
   "meetings.configSaveError": "Não foi possível salvar a configuração de transcrição.",
   "meetings.configSaved": "Configuração de transcrição salva.",

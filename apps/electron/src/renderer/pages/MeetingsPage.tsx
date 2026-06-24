@@ -666,6 +666,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
                   value={meetingInput}
                   onChange={(event) => setMeetingInput(event.target.value)}
                   placeholder={t('meetings.inputPlaceholder')}
+                  aria-label={t('meetings.inputLabel')}
                   autoFocus
                   className="h-12 flex-1 border-0 bg-transparent px-3 text-base shadow-none placeholder:text-muted-foreground/55 focus-visible:ring-0"
                 />
@@ -717,7 +718,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
                       {isLoadingTranscriptionSettings && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
                     </div>
                     <label className="block space-y-1.5">
-                      <span className="text-xs font-medium text-foreground">{t('meetings.configModel')}</span>
+                      <span className="text-xs font-medium text-foreground">{t('meetings.configProvider')}</span>
                       <Select
                         value={transcriptionProvider}
                         onValueChange={handleTranscriptionProviderChange}

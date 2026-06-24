@@ -12,11 +12,15 @@ const tempDirs: string[] = []
 const metadataDirs: string[] = []
 const credentials = new Map<string, { value: string }>()
 const summaryRequests: LLMQueryRequest[] = []
-const videoAnalysisRequests: Array<{
+type VideoAnalysisInput = {
+  workspaceId: string
+  workspaceRootPath: string
   recordingPath: string
+  outputDir: string
   segments: MeetingTranscriptSegment[]
   record: MeetingRecord
-}> = []
+}
+const videoAnalysisRequests: VideoAnalysisInput[] = []
 
 mock.module('electron', () => ({
   session: {
@@ -88,22 +92,14 @@ mock.module('./transcription-service', () => ({
 }))
 
 mock.module('./meeting-video-analysis-service', () => ({
-  generateMeetingVideoAnalysisMarkdown: async (input: {
-    recordingPath: string
-    segments: MeetingTranscriptSegment[]
-    record: MeetingRecord
-  }): Promise<string> => {
+  generateMeetingVideoAnalysisMarkdown: async (input: VideoAnalysisInput): Promise<string> => {
     videoAnalysisRequests.push(input)
     return '## Visual analysis\n\n- The recording was reviewed with visual evidence.'
   },
 }))
 
 mock.module('./meeting-video-analysis-service.ts', () => ({
-  generateMeetingVideoAnalysisMarkdown: async (input: {
-    recordingPath: string
-    segments: MeetingTranscriptSegment[]
-    record: MeetingRecord
-  }): Promise<string> => {
+  generateMeetingVideoAnalysisMarkdown: async (input: VideoAnalysisInput): Promise<string> => {
     videoAnalysisRequests.push(input)
     return '## Visual analysis\n\n- The recording was reviewed with visual evidence.'
   },
@@ -267,10 +263,16 @@ describe('MeetingService storage', () => {
       mimeType: 'audio/webm',
     })
 
+    // Simulate generated visual-analysis evidence on disk for this meeting.
+    const videoAnalysisDir = join(meetingsDir, 'video-analysis', record.id)
+    mkdirSync(videoAnalysisDir, { recursive: true })
+    writeFileSync(join(videoAnalysisDir, 'frame-0000s.jpg'), 'frame')
+
     expect(service.status(workspaceRoot, record.id)?.recording?.path).toBe(recordingPath)
     expect(existsSync(join(meetingsDir, 'transcripts', `${record.id}.json`))).toBe(true)
     expect(existsSync(join(meetingsDir, 'summaries', `${record.id}.md`))).toBe(true)
     expect(existsSync(recordingPath)).toBe(true)
+    expect(existsSync(videoAnalysisDir)).toBe(true)
 
     service.deleteMeeting(workspaceRoot, record.id)
 
@@ -278,6 +280,7 @@ describe('MeetingService storage', () => {
     expect(existsSync(join(meetingsDir, 'transcripts', `${record.id}.json`))).toBe(false)
     expect(existsSync(join(meetingsDir, 'summaries', `${record.id}.md`))).toBe(false)
     expect(existsSync(recordingPath)).toBe(false)
+    expect(existsSync(videoAnalysisDir)).toBe(false)
   })
 
   it('reconciles orphan .webm recordings on first ensureLoaded and keeps referenced files', async () => {
@@ -395,6 +398,10 @@ describe('MeetingService storage', () => {
     expect(videoAnalysisRequests).toHaveLength(1)
     expect(videoAnalysisRequests[0]?.recordingPath).toBe(recordingPath)
     expect(videoAnalysisRequests[0]?.segments).toEqual([])
+    // Pin the evidence-dir contract that deleteMeeting's rmSync depends on.
+    expect(videoAnalysisRequests[0]?.workspaceId).toBe('ws-test')
+    expect(videoAnalysisRequests[0]?.workspaceRootPath).toBe(workspaceRoot)
+    expect(videoAnalysisRequests[0]?.outputDir).toBe(join(meetingsDir, 'video-analysis', record.id))
     expect(service.status(workspaceRoot, record.id)?.summaryMarkdown).toContain('## Visual analysis')
   })
 
@@ -442,5 +449,112 @@ describe('MeetingService storage', () => {
       'Guilherme will ship the follow-up fix tomorrow.',
     ])
     expect(service.status(workspaceRoot, record.id)?.summaryMarkdown).toContain('## Follow-up')
+  })
+
+  it('falls back to the text-only agent summary when visual analysis returns null', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-fallback-'))
+    tempDirs.push(workspaceRoot)
+
+    credentials.set(JSON.stringify({
+      type: 'meeting_transcription_api_key',
+      workspaceId: 'ws-test',
+      name: 'deepgram',
+    }), { value: 'dg-test-key' })
+
+    // Generator returns null (e.g. no evidence / tools missing with a transcript),
+    // which must hand off to the legacy text-only summary path.
+    const service = new MeetingService(createBrowserPaneManager(), undefined, async () => null)
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: true,
+      summarizeOnEnd: false,
+      followUpOnEnd: true,
+    })
+
+    const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
+    metadataDirs.push(dirname(meetingsDir))
+    const recordingPath = join(meetingsDir, 'recordings', `${record.id}.webm`)
+    mkdirSync(dirname(recordingPath), { recursive: true })
+    writeFileSync(recordingPath, 'audio')
+
+    await service.completeRecording('ws-test', workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      bytesWritten: 5,
+      durationMs: 1000,
+      mimeType: 'audio/webm',
+    })
+    for (let i = 0; i < 30 && summaryRequests.length === 0; i += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+
+    expect(summaryRequests).toHaveLength(1)
+    expect(service.status(workspaceRoot, record.id)?.summaryMarkdown).toContain('## Follow-up')
+  })
+
+  it('does not fall back to a text summary when visual analysis returns null without a transcript', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-no-fallback-'))
+    tempDirs.push(workspaceRoot)
+
+    const service = new MeetingService(createBrowserPaneManager(), undefined, async () => null)
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+      summarizeOnEnd: false,
+      followUpOnEnd: true,
+    })
+
+    const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
+    metadataDirs.push(dirname(meetingsDir))
+    const recordingPath = join(meetingsDir, 'recordings', `${record.id}.webm`)
+    mkdirSync(dirname(recordingPath), { recursive: true })
+    writeFileSync(recordingPath, 'video')
+
+    await service.completeRecording('ws-test', workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      bytesWritten: 5,
+      durationMs: 1000,
+      mimeType: 'video/webm',
+    })
+    // Give the fire-and-forget analysis time to run and (not) fall back.
+    await new Promise(resolve => setTimeout(resolve, 60))
+
+    // No transcript segments means there is nothing for the text-only summary
+    // path to work with, so it must not run.
+    expect(summaryRequests).toHaveLength(0)
+  })
+
+  it('reconciles orphan video-analysis dirs on ensureLoaded and keeps owned ones', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-va-orphans-'))
+    tempDirs.push(workspaceRoot)
+
+    const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
+    metadataDirs.push(dirname(meetingsDir))
+
+    const service = new MeetingService(createBrowserPaneManager())
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+    })
+
+    const videoAnalysisRoot = join(meetingsDir, 'video-analysis')
+    const ownedDir = join(videoAnalysisRoot, record.id)
+    const orphanDir = join(videoAnalysisRoot, '99999999-9999-9999-9999-999999999999')
+    mkdirSync(ownedDir, { recursive: true })
+    mkdirSync(orphanDir, { recursive: true })
+    writeFileSync(join(ownedDir, 'frame.jpg'), 'owned')
+    writeFileSync(join(orphanDir, 'frame.jpg'), 'orphan')
+
+    expect(existsSync(ownedDir)).toBe(true)
+    expect(existsSync(orphanDir)).toBe(true)
+
+    // Fresh instance triggers ensureLoaded -> reconcile on first access.
+    const reloaded = new MeetingService(createBrowserPaneManager())
+    reloaded.list(workspaceRoot)
+
+    expect(existsSync(orphanDir)).toBe(false)
+    expect(existsSync(ownedDir)).toBe(true)
   })
 })

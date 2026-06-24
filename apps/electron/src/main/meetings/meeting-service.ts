@@ -860,35 +860,68 @@ except Exception as exc:
    */
   private reconcileOrphanRecordings(state: WorkspaceMeetingState): void {
     const meetingsDir = dirname(state.storePath)
-    const recordingsDir = join(meetingsDir, 'recordings')
-    if (!existsSync(recordingsDir)) return
     const knownPaths = new Set<string>()
+    const knownIds = new Set<string>()
     for (const record of state.records.values()) {
       if (record.recording?.path) knownPaths.add(record.recording.path)
+      knownIds.add(safeFileId(record.id))
     }
-    let removed = 0
-    let entries: string[]
-    try {
-      entries = readdirSync(recordingsDir)
-    } catch (error) {
-      mainLog.warn(`[meetings] could not read recordings dir for orphan cleanup: ${error instanceof Error ? error.message : String(error)}`)
-      return
-    }
-    for (const entry of entries) {
-      // Skip atomic-write staging files (see `atomicWriteTextFileSync`) and any
-      // other non-.webm artifact that may have been written to this folder.
-      if (!entry.endsWith('.webm')) continue
-      const filePath = join(recordingsDir, entry)
-      if (knownPaths.has(filePath)) continue
+
+    const recordingsDir = join(meetingsDir, 'recordings')
+    if (existsSync(recordingsDir)) {
+      let removed = 0
+      let entries: string[]
       try {
-        unlinkSync(filePath)
-        removed += 1
+        entries = readdirSync(recordingsDir)
       } catch (error) {
-        mainLog.warn(`[meetings] failed to remove orphan recording ${filePath}: ${error instanceof Error ? error.message : String(error)}`)
+        mainLog.warn(`[meetings] could not read recordings dir for orphan cleanup: ${error instanceof Error ? error.message : String(error)}`)
+        entries = []
+      }
+      for (const entry of entries) {
+        // Skip atomic-write staging files (see `atomicWriteTextFileSync`) and any
+        // other non-.webm artifact that may have been written to this folder.
+        if (!entry.endsWith('.webm')) continue
+        const filePath = join(recordingsDir, entry)
+        if (knownPaths.has(filePath)) continue
+        try {
+          unlinkSync(filePath)
+          removed += 1
+        } catch (error) {
+          mainLog.warn(`[meetings] failed to remove orphan recording ${filePath}: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+      if (removed > 0) {
+        mainLog.info(`[meetings] orphan recording cleanup removed=${removed} dir=${recordingsDir}`)
       }
     }
-    if (removed > 0) {
-      mainLog.info(`[meetings] orphan recording cleanup removed=${removed} dir=${recordingsDir}`)
+
+    // Sweep generated video-analysis evidence dirs with no owning record. These
+    // can leak when a meeting is deleted mid-analysis: deleteMeeting's rmSync
+    // removes the dir, then the in-flight extractVideoEvidence mkdirSync recreates
+    // it after the record is gone. Runs on the same once-per-workspace startup
+    // pass as the .webm sweep, so it cannot race a live recording.
+    const videoAnalysisRoot = join(meetingsDir, 'video-analysis')
+    if (existsSync(videoAnalysisRoot)) {
+      let removed = 0
+      let entries: string[]
+      try {
+        entries = readdirSync(videoAnalysisRoot)
+      } catch (error) {
+        mainLog.warn(`[meetings] could not read video-analysis dir for orphan cleanup: ${error instanceof Error ? error.message : String(error)}`)
+        entries = []
+      }
+      for (const entry of entries) {
+        if (knownIds.has(entry)) continue
+        try {
+          rmSync(join(videoAnalysisRoot, entry), { recursive: true, force: true })
+          removed += 1
+        } catch (error) {
+          mainLog.warn(`[meetings] failed to remove orphan video-analysis dir ${entry}: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+      if (removed > 0) {
+        mainLog.info(`[meetings] orphan video-analysis cleanup removed=${removed} dir=${videoAnalysisRoot}`)
+      }
     }
   }
 

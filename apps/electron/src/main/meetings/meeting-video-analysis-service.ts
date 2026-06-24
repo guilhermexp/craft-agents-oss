@@ -19,6 +19,14 @@ const MAX_FRAME_ATTACHMENTS = 8
 
 const FALLBACK_VIDEO_ANALYSIS_SKILL = `# Video Analysis\n\nAnalyze meeting recordings by using extracted visual evidence, key frames, contact sheets, and the transcript together. Cross-check speech against visible screen state. Report concrete findings with timestamps and evidence. Do not infer from one blurry frame when adjacent frames or transcript clarify the moment.`
 
+/** Visible status written into the meeting summary when the host is missing the
+ * CLI tools the evidence pipeline needs, so the feature fails loudly instead of
+ * silently producing nothing. */
+function buildToolsMissingStatus(missing: string[]): string {
+  const tools = missing.join(', ')
+  return `## Visual analysis\n\n_Análise visual indisponível: ${tools} não encontrado(s) no sistema. Instale ${tools} para habilitar a análise de vídeo das reuniões gravadas._`
+}
+
 export interface MeetingVideoAnalysisInput {
   workspaceId: string
   workspaceRootPath: string
@@ -85,6 +93,29 @@ function resolveVideoEvidenceScript(): string | null {
   if (!bundledSkillDir) return null
   const script = join(bundledSkillDir, 'scripts', 'video_evidence.py')
   return existsSync(script) ? script : null
+}
+
+/**
+ * Probe for the external CLIs the evidence pipeline shells out to. None of
+ * python3/ffmpeg/ffprobe is bundled in the packaged app, so on a clean install
+ * they may be absent. Returns the canonical names of whichever are missing.
+ */
+async function detectMissingVideoTools(): Promise<string[]> {
+  const python = process.platform === 'win32' ? 'python' : 'python3'
+  const checks: Array<{ tool: string; args: string[] }> = [
+    { tool: python, args: ['--version'] },
+    { tool: 'ffmpeg', args: ['-version'] },
+    { tool: 'ffprobe', args: ['-version'] },
+  ]
+  const missing: string[] = []
+  for (const { tool, args } of checks) {
+    try {
+      await execFileAsync(tool, args, { timeout: 10_000 })
+    } catch {
+      missing.push(tool)
+    }
+  }
+  return missing
 }
 
 async function extractVideoEvidence(recordingPath: string, outputDir: string): Promise<VideoEvidenceSummary | null> {
@@ -204,7 +235,7 @@ async function collectFinalChatText(backend: AgentBackend, prompt: string, attac
       if (isIntermediate !== true && text) finalText += text
     }
     if (event.type === 'error') {
-      const message = (event as { message?: string; error?: string }).message ?? (event as { error?: string }).error ?? 'Meeting video analysis agent failed'
+      const message = (event as { message?: string }).message ?? 'Meeting video analysis agent failed'
       throw new Error(message)
     }
   }
@@ -237,6 +268,15 @@ export async function generateMeetingVideoAnalysisMarkdown(input: MeetingVideoAn
     return null
   }
 
+  const missingTools = await detectMissingVideoTools()
+  if (missingTools.length > 0) {
+    mainLog.warn(`[meetings] video analysis tools missing (${missingTools.join(', ')}) for ${input.record.id}`)
+    // With a transcript we fall back to the text-only summary path (the caller
+    // runs generateAgentSummary when this returns null). Without one there is no
+    // fallback, so surface a visible status instead of silently doing nothing.
+    return input.segments.length > 0 ? null : buildToolsMissingStatus(missingTools)
+  }
+
   let backend: AgentBackend | undefined
   try {
     const evidence = await extractVideoEvidence(input.recordingPath, input.outputDir)
@@ -258,6 +298,18 @@ export async function generateMeetingVideoAnalysisMarkdown(input: MeetingVideoAn
       },
       isHeadless: true,
     })
+
+    // Inject the chosen connection's credentials/base-url before the first
+    // chat() (the Claude SDK subprocess spawns lazily and reads process.env).
+    // Without this, OAuth and custom-base-url providers authenticate against
+    // stale ambient env. Mirrors SessionManager's postInit-before-chat contract.
+    const init = await backend.postInit()
+    if (!init.authInjected) {
+      mainLog.warn(
+        `[meetings] video analysis backend auth not injected (connection=${connectionSlug})${init.authWarning ? `: ${init.authWarning}` : ''}; skipping`,
+      )
+      return null
+    }
 
     const skillContent = loadVideoAnalysisSkillContent(input.workspaceRootPath)
     const prompt = buildPrompt(input, evidence, skillContent)

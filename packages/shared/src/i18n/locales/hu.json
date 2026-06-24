@@ -473,6 +473,7 @@
   "meetings.configAriaLabel": "Configure transcription",
   "meetings.configLoadError": "Could not load transcription config.",
   "meetings.configModel": "Model",
+  "meetings.configProvider": "Provider",
   "meetings.configSave": "Save",
   "meetings.configSaveError": "Could not save transcription config.",
   "meetings.configSaved": "Transcription config saved.",

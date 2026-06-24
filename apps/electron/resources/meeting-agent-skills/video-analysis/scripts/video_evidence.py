@@ -96,12 +96,14 @@ def parse_timestamps(values: str | None, duration: float) -> list[float]:
     return sorted(set(max(0.0, min(duration, round(item, 2))) for item in parsed))
 
 
-def extract_contact_sheet(video: Path, output: Path, duration: float) -> None:
+def extract_contact_sheet(video: Path, output: Path, duration: float) -> bool:
     columns = 6
     rows = 8
     cells = columns * rows
     fps = max(0.1, min(1.0, cells / max(duration, 1.0)))
-    run(
+    # Best-effort: an audio-only or corrupt stream makes ffmpeg exit non-zero.
+    # Never let a failed contact sheet abort the whole evidence pipeline.
+    result = run(
         [
             "ffmpeg",
             "-y",
@@ -112,8 +114,10 @@ def extract_contact_sheet(video: Path, output: Path, duration: float) -> None:
             "-frames:v",
             "1",
             str(output),
-        ]
+        ],
+        check=False,
     )
+    return result.returncode == 0 and output.exists() and output.stat().st_size > 0
 
 
 def extract_frames(video: Path, frames_dir: Path, timestamps: list[float]) -> list[Path]:
@@ -122,7 +126,10 @@ def extract_frames(video: Path, frames_dir: Path, timestamps: list[float]) -> li
     for timestamp in timestamps:
         label = f"{int(math.floor(timestamp)):04d}s"
         frame = frames_dir / f"frame-{label}.jpg"
-        run(
+        # Per-frame best-effort: a seek past the last decodable frame (common on
+        # sparse-keyframe WebM screen recordings) exits non-zero. Skip that frame
+        # instead of discarding every frame already extracted.
+        result = run(
             [
                 "ffmpeg",
                 "-y",
@@ -135,9 +142,11 @@ def extract_frames(video: Path, frames_dir: Path, timestamps: list[float]) -> li
                 "-q:v",
                 "2",
                 str(frame),
-            ]
+            ],
+            check=False,
         )
-        paths.append(frame)
+        if result.returncode == 0 and frame.exists() and frame.stat().st_size > 0:
+            paths.append(frame)
     return paths
 
 
@@ -222,19 +231,22 @@ def main() -> int:
     metadata_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
 
     contact_sheet = out_dir / "contact-sheet.jpg"
-    extract_contact_sheet(video, contact_sheet, duration)
+    contact_sheet_ok = extract_contact_sheet(video, contact_sheet, duration)
     frames = extract_frames(video, frames_dir, timestamps)
 
     audio = audio_dir / "audio.wav"
     transcript = None
-    if extract_audio(video, audio) and not args.no_transcript:
-      transcript = transcribe(audio, audio_dir, args.whisper_model)
+    # Skip the full-file audio decode entirely when transcription is disabled:
+    # the only programmatic caller passes --no-transcript and never reads the WAV,
+    # so decoding it just burns time/disk against the caller's timeout budget.
+    if not args.no_transcript and extract_audio(video, audio):
+        transcript = transcribe(audio, audio_dir, args.whisper_model)
 
     summary = {
         "video": str(video),
         "output_dir": str(out_dir),
         "duration_seconds": duration,
-        "contact_sheet": str(contact_sheet),
+        "contact_sheet": str(contact_sheet) if contact_sheet_ok else None,
         "frames": [str(frame) for frame in frames],
         "audio": str(audio) if audio.exists() else None,
         "transcript": str(transcript) if transcript else None,
