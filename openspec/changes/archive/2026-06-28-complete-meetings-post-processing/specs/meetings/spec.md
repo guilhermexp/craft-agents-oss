@@ -11,6 +11,8 @@ O sistema SHALL entregar ao bot e à sessão Craft o contexto da reunião ao ent
 - **WHEN** apenas o link do Google Meet está disponível
 - **THEN** o sistema inicia a reunião com o link e marca participantes ou agenda como desconhecidos sem bloquear o convite.
 
+## ADDED Requirements
+
 ### Requirement: Craft processa gravações nativas de reunião
 O sistema SHALL gravar reuniões nativas em vídeo WebM, transcrever o áudio usando Deepgram e, quando solicitado, SHALL produzir Markdown pós-reunião com resumo e follow-up.
 
