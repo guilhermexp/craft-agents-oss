@@ -24,7 +24,7 @@ const FALLBACK_VIDEO_ANALYSIS_SKILL = `# Video Analysis\n\nAnalyze meeting recor
  * silently producing nothing. */
 function buildToolsMissingStatus(missing: string[]): string {
   const tools = missing.join(', ')
-  return `## Visual analysis\n\n_Análise visual indisponível: ${tools} não encontrado(s) no sistema. Instale ${tools} para habilitar a análise de vídeo das reuniões gravadas._`
+  return `## Visual analysis\n\n_Visual analysis unavailable: ${tools} not found on this system. Install ${tools} to enable video analysis for recorded meetings._`
 }
 
 export interface MeetingVideoAnalysisInput {

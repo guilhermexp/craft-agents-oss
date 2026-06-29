@@ -235,12 +235,15 @@ def main() -> int:
     frames = extract_frames(video, frames_dir, timestamps)
 
     audio = audio_dir / "audio.wav"
+    audio_ok = False
     transcript = None
     # Skip the full-file audio decode entirely when transcription is disabled:
     # the only programmatic caller passes --no-transcript and never reads the WAV,
     # so decoding it just burns time/disk against the caller's timeout budget.
-    if not args.no_transcript and extract_audio(video, audio):
-        transcript = transcribe(audio, audio_dir, args.whisper_model)
+    if not args.no_transcript:
+        audio_ok = extract_audio(video, audio)
+        if audio_ok:
+            transcript = transcribe(audio, audio_dir, args.whisper_model)
 
     summary = {
         "video": str(video),
@@ -248,7 +251,7 @@ def main() -> int:
         "duration_seconds": duration,
         "contact_sheet": str(contact_sheet) if contact_sheet_ok else None,
         "frames": [str(frame) for frame in frames],
-        "audio": str(audio) if audio.exists() else None,
+        "audio": str(audio) if audio_ok else None,
         "transcript": str(transcript) if transcript else None,
     }
     summary_path = out_dir / "summary.json"
