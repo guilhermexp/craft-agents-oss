@@ -603,7 +603,8 @@ describe('MeetingService storage', () => {
 
     const transcript = service.transcript(workspaceRoot, meetingId)
     expect(transcript.status).toBe('unavailable')
-    expect(transcript.message).toContain('interrompida')
+    // i18n falls back to en in tests (no language set in this process)
+    expect(transcript.message).toContain('interrupted')
     // The demotion must be persisted so a later reload does not resurrect 'capturing'.
     const persisted = JSON.parse(readFileSync(join(meetingsDir, 'transcripts', `${meetingId}.json`), 'utf8')) as { status: string }
     expect(persisted.status).toBe('unavailable')

@@ -19,6 +19,7 @@ import type { BrowserPaneManager } from '../browser-pane-manager'
 import { getHermesRuntimePaths } from '../handlers/hermes-runtime'
 import { mainLog } from '../logger'
 import { getCredentialManager, type CredentialId } from '@craft-agent/shared/credentials'
+import { setupI18n, i18n } from '@craft-agent/shared/i18n'
 import { readJsonFileSync } from '@craft-agent/shared/utils/files'
 import { getWorkspaceMeetingsPath } from '@craft-agent/shared/workspaces'
 
@@ -371,8 +372,8 @@ export class MeetingService {
       startedAt: record.startedAt,
       endedAt,
       summaryBody: record.transcriptionProvider && record.transcriptionModel
-        ? 'Gravacao finalizada. O audio foi salvo e a transcricao esta em processamento.'
-        : 'Gravacao finalizada. O audio foi salvo, mas a transcricao automatica nao esta ativa para esta reuniao.',
+        ? t('meetings.summaryDocBodyProcessing')
+        : t('meetings.summaryDocBodyNoTranscription'),
     })
 
     this.updateRecord(state, meetingId, {
@@ -393,7 +394,7 @@ export class MeetingService {
         status: 'capturing',
         transcript: [],
         summaryMarkdown: processingSummary,
-        message: 'Transcrevendo o audio gravado com Deepgram. O resultado aparecera aqui automaticamente.',
+        message: t('meetings.transcriptProcessingMessage'),
         updatedAt: Date.now(),
       }
       state.transcripts.set(meetingId, transcript)
@@ -448,13 +449,13 @@ export class MeetingService {
         status: 'stopped',
         startedAt: record.startedAt,
         endedAt: record.endedAt,
-        summaryBody: 'Transcricao interrompida antes de concluir e o audio gravado nao esta mais disponivel para reprocessar.',
+        summaryBody: t('meetings.summaryDocBodyInterrupted'),
       })
       const unavailable: MeetingTranscriptResult = {
         meetingId: record.id,
         status: 'unavailable',
         transcript: [],
-        message: 'Transcricao interrompida — audio gravado indisponivel para reprocessar.',
+        message: t('meetings.transcriptInterruptedMessage'),
         summaryMarkdown,
         updatedAt: Date.now(),
       }
@@ -483,13 +484,13 @@ export class MeetingService {
         status: 'stopped',
         startedAt: record.startedAt,
         endedAt: record.endedAt,
-        summaryBody: 'Transcricao pausada: configure a chave da API de transcricao para processar o audio gravado.',
+        summaryBody: t('meetings.summaryDocBodyMissingKey'),
       })
       const unavailable: MeetingTranscriptResult = {
         meetingId,
         status: 'unavailable',
         transcript: [],
-        message: 'Transcription API key not configured.',
+        message: t('meetings.transcriptMissingKeyMessage'),
         summaryMarkdown,
         updatedAt: Date.now(),
       }
@@ -511,8 +512,8 @@ export class MeetingService {
       })
       const currentRecord = state.records.get(meetingId) ?? record
       const message = result.segments.length > 0
-        ? `Transcricao concluida com ${result.segments.length} segmento${result.segments.length === 1 ? '' : 's'}. Abra a aba Transcricao para revisar o Markdown completo.`
-        : 'Transcricao concluida, mas nenhum trecho de fala foi detectado no audio gravado.'
+        ? t('meetings.transcriptCompletedMessage', { count: result.segments.length })
+        : t('meetings.transcriptCompletedEmptyMessage')
       const summaryMarkdown = createMeetingSummaryMarkdown({
         title: currentRecord.title,
         url: currentRecord.url,
@@ -557,7 +558,7 @@ export class MeetingService {
         status: 'stopped',
         startedAt: currentRecord.startedAt,
         endedAt: currentRecord.endedAt,
-        summaryBody: `Falha ao transcrever o audio gravado: ${message}`,
+        summaryBody: t('meetings.summaryDocBodyTranscribeFailed', { message }),
       })
       const unavailable: MeetingTranscriptResult = {
         meetingId,
@@ -1139,8 +1140,8 @@ function normalizeMeetCode(value: string): string | null {
 function createTranscriptPlaceholder(record: MeetingRecord): MeetingTranscriptResult {
   const captureMode = record.captureMode ?? 'hermes'
   const message = captureMode === 'craft'
-    ? 'Gravacao interna do Craft criada. Captura de audio/legendas e transcricao local ainda serao conectadas ao recorder nativo.'
-    : 'Captura real de transcricao ainda nao implementada neste MVP; retorno placeholder em memoria.'
+    ? t('meetings.placeholderCraftMessage')
+    : t('meetings.placeholderHermesMessage')
   return {
     meetingId: record.id,
     status: 'placeholder',
@@ -1160,6 +1161,16 @@ function createTranscriptPlaceholder(record: MeetingRecord): MeetingTranscriptRe
   }
 }
 
+/**
+ * Main-process i18n access. `setupI18n()` runs at app startup (main/index.ts)
+ * and the renderer syncs language changes via the `i18n:changeLanguage` IPC;
+ * the lazy init only matters for tests that import this module directly.
+ */
+function t(key: string, options?: Record<string, unknown>): string {
+  if (!i18n.isInitialized) setupI18n()
+  return String(i18n.t(key, options))
+}
+
 function createMeetingSummaryMarkdown(input: {
   title?: string
   url: string
@@ -1172,29 +1183,30 @@ function createMeetingSummaryMarkdown(input: {
   summaryBody?: string
 }): string {
   const title = input.title?.trim() || 'Google Meet'
-  const owner = input.captureMode === 'craft' ? 'Craft interno' : 'Hermes'
+  const owner = input.captureMode === 'craft' ? t('meetings.captureModeCraft') : t('meetings.captureModeHermes')
   const statusLabel = formatMeetingStatus(input.status)
+  const dateLocale = i18n.resolvedLanguage
   const lines = [
     `# ${title}`,
     '',
-    `- Origem: ${owner}`,
-    `- Status: ${statusLabel}`,
-    `- Link: ${input.url}`,
-    `- Inicio: ${new Date(input.startedAt).toLocaleString('pt-BR')}`,
+    `- ${t('meetings.summaryDocOrigin')}: ${owner}`,
+    `- ${t('meetings.summaryDocStatus')}: ${statusLabel}`,
+    `- ${t('meetings.summaryDocLink')}: ${input.url}`,
+    `- ${t('meetings.summaryDocStart')}: ${new Date(input.startedAt).toLocaleString(dateLocale)}`,
   ]
   if (input.transcriptionProvider && input.transcriptionModel) {
-    lines.push(`- Transcricao: ${formatTranscriptionProvider(input.transcriptionProvider)} / ${input.transcriptionModel}`)
+    lines.push(`- ${t('meetings.configTitle')}: ${formatTranscriptionProvider(input.transcriptionProvider)} / ${input.transcriptionModel}`)
   }
   if (input.endedAt) {
-    lines.push(`- Fim: ${new Date(input.endedAt).toLocaleString('pt-BR')}`)
+    lines.push(`- ${t('meetings.summaryDocEnd')}: ${new Date(input.endedAt).toLocaleString(dateLocale)}`)
   }
-  lines.push('', '## Resumo', '')
+  lines.push('', `## ${t('meetings.summary')}`, '')
   if (input.summaryBody) {
     lines.push(input.summaryBody)
   } else if (input.captureMode === 'craft') {
-    lines.push('Gravacao interna criada no Craft. A captura/transcricao nativa sera anexada aqui quando o recorder interno finalizar.')
+    lines.push(t('meetings.summaryDocBodyDefaultCraft'))
   } else {
-    lines.push('Reuniao registrada pelo fluxo Hermes. A transcricao capturada pelo bot sera usada aqui quando estiver disponivel.')
+    lines.push(t('meetings.summaryDocBodyDefaultHermes'))
   }
   return lines.join('\n')
 }
@@ -1202,13 +1214,13 @@ function createMeetingSummaryMarkdown(input: {
 function formatMeetingStatus(status: MeetingStatus): string {
   switch (status) {
     case 'starting':
-      return 'Iniciando'
+      return t('meetings.statusStarting')
     case 'running':
-      return 'Em andamento'
+      return t('meetings.statusRunning')
     case 'stopped':
-      return 'Finalizada'
+      return t('meetings.statusStopped')
     case 'error':
-      return 'Erro'
+      return t('meetings.statusError')
     default:
       return status
   }
