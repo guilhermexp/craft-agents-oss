@@ -201,8 +201,8 @@ describe('RemoteBrowserPaneManager — sync stubs', () => {
       getHostClient: () => 'client-A',
     })
 
-    expect(await bridge.getConsoleLogsAsync('inst-1', { level: 'error' })).toEqual(results.getConsoleLogs)
-    expect(await bridge.getNetworkLogsAsync('inst-1', { status: 'failed' })).toEqual(results.getNetworkLogs)
+    expect(await bridge.getConsoleLogsAsync('inst-1', { level: 'error' })).toEqual(results.getConsoleLogs as never)
+    expect(await bridge.getNetworkLogsAsync('inst-1', { status: 'failed' })).toEqual(results.getNetworkLogs as never)
     expect(await bridge.windowResizeAsync('inst-1', 1024, 768)).toEqual(results.windowResize as { width: number; height: number })
 
     const methods = calls.map((c) => (c.args[0] as BrowserCapabilityRequest).method)
