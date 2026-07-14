@@ -52,10 +52,15 @@ type AcpConnectionWithCancel = {
   cancel?: (params: { sessionId: string }) => Promise<void>
 }
 
+type AcpAgentProcessLike = {
+  once?: (event: 'exit', listener: () => void) => void
+}
+
 type AcpLanguageModelWithClient = {
   client?: AcpClientWithPermissionHandler
   connection?: AcpConnectionWithCancel
   getSessionId?: () => string | null
+  agentProcess?: AcpAgentProcessLike | null
 }
 
 type AcpProviderInternalShape = {
@@ -189,6 +194,16 @@ export function extractHermesTextDelta(part: StreamTextDeltaPart): string {
   return ''
 }
 
+// Signatures of a dead subprocess pipe (Node stream/socket errors surfaced
+// through the ACP provider). Deliberately narrow: API/business errors like
+// rate limits must NOT match, or a healthy provider would be torn down.
+const HERMES_SUBPROCESS_IO_ERROR_RE =
+  /\b(EPIPE|ECONNRESET|ERR_STREAM_DESTROYED|ERR_STREAM_WRITE_AFTER_END|ERR_STREAM_PREMATURE_CLOSE)\b|write after end|premature close|writable (?:side )?ended|agent process exited/i
+
+export function isHermesSubprocessIoError(message: string): boolean {
+  return HERMES_SUBPROCESS_IO_ERROR_RE.test(message)
+}
+
 function modelIdAliases(modelId: string): string[] {
   const trimmed = modelId.trim()
   if (!trimmed) return []
@@ -309,6 +324,7 @@ export class HermesAgent extends BaseAgent {
   private sessionToolsServer: CraftSessionToolsMcpServer | null = null
   private sessionToolsServerUrl: string | undefined
   private pendingAcpPermissions = new Map<string, PendingAcpPermission>()
+  private observedAgentProcesses = new WeakSet<object>()
 
   constructor(config: BackendConfig) {
     // Hermes ignora agent/native de proposito: e uma integracao ACP/MCP
@@ -469,6 +485,34 @@ export class HermesAgent extends BaseAgent {
 
   private getAcpModelInternals(): AcpLanguageModelWithClient | null {
     return (this.provider as unknown as AcpProviderInternalShape | null)?.model ?? null
+  }
+
+  /**
+   * Watch the ACP subprocess for death. The provider dep does not register any
+   * exit listener, so without this a crashed Python runtime leaves a stale
+   * connection and every following turn writes into a dead pipe (opaque EPIPE)
+   * until app restart. On observed exit we drop the stale provider so the next
+   * turn respawns clean; if a turn is streaming, the existing
+   * pendingProviderRestart path in chatImpl's finally does the reset.
+   */
+  private observeProviderProcessExit(provider: ACPProvider): void {
+    const proc = (provider as unknown as AcpProviderInternalShape).model?.agentProcess
+    if (!proc?.once || this.observedAgentProcesses.has(proc)) return
+    this.observedAgentProcesses.add(proc)
+
+    proc.once('exit', () => {
+      // Intentional teardown (cleanup/setWorkspace/runtime switch) already
+      // nulled or replaced this.provider before the exit event fires.
+      if (this.provider !== provider) return
+      this.onDebug?.('[hermes-provider] agent subprocess exited unexpectedly — dropping stale provider')
+      if (this.isStreaming) {
+        this.pendingProviderRestart = true
+      } else {
+        this.provider.cleanup()
+        this.provider = null
+        this.providerRuntimeHome = null
+      }
+    })
   }
 
   /**
@@ -641,6 +685,7 @@ export class HermesAgent extends BaseAgent {
 
     const provider = await this.getOrCreateProvider()
     const sessionInfo = await provider.initSession()
+    this.observeProviderProcessExit(provider)
     this.installAcpPermissionHandler(provider)
 
     this.hermesSessionId = provider.getSessionId() || sessionInfo.sessionId || null
@@ -730,6 +775,13 @@ export class HermesAgent extends BaseAgent {
       yield completionUsage ?? { type: 'complete' }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      // Dead-pipe fallback for when the exit observer hasn't fired yet: an I/O
+      // failure on the subprocess pipe means the provider is unusable, so mark
+      // it for the reset below. Business errors (rate-limit etc.) keep the
+      // provider alive.
+      if (isHermesSubprocessIoError(message)) {
+        this.pendingProviderRestart = true
+      }
       yield { type: 'error', message }
     } finally {
       this.hermesSessionId = provider.getSessionId() || this.hermesSessionId
@@ -794,6 +846,7 @@ export class HermesAgent extends BaseAgent {
   async runMiniCompletion(prompt: string): Promise<string | null> {
     const provider = await this.getOrCreateProvider()
     const sessionInfo = await provider.initSession()
+    this.observeProviderProcessExit(provider)
     this.hermesSessionId = provider.getSessionId() || sessionInfo.sessionId || this.hermesSessionId
 
     const result = await generateText({
