@@ -409,6 +409,62 @@ export class MeetingService {
     }
   }
 
+  /**
+   * Boot-time recovery for transcripts interrupted by a crash/quit while in
+   * `capturing` (completeRecording persists that status before the
+   * fire-and-forget transcribeRecording finishes). Re-dispatches the
+   * transcription when the recorded audio still exists and the record has a
+   * provider/model (transcribeRecording itself demotes to `unavailable` on
+   * missing key or network failure); otherwise demotes to `unavailable` with
+   * an actionable message. No `capturing` orphan survives a boot.
+   */
+  async recoverInterruptedTranscriptions(workspaceId: string, workspaceRootPath: string): Promise<void> {
+    const state = this.getWorkspaceState(workspaceRootPath)
+    this.ensureLoaded(state)
+    for (const record of [...state.records.values()]) {
+      const transcript = state.transcripts.get(record.id)
+      if (transcript?.status !== 'capturing') continue
+
+      const canRetry = Boolean(
+        record.recording?.path
+        && existsSync(record.recording.path)
+        && record.transcriptionProvider
+        && record.transcriptionModel,
+      )
+      if (canRetry) {
+        mainLog.info(`[meetings] resuming transcription interrupted by app shutdown for ${record.id}`)
+        void this.transcribeRecording(workspaceId, workspaceRootPath, record.id).catch((err) => {
+          mainLog.error(`[meetings] transcription recovery failed for ${record.id}: ${err instanceof Error ? err.message : String(err)}`)
+        })
+        continue
+      }
+
+      const summaryMarkdown = createMeetingSummaryMarkdown({
+        title: record.title,
+        url: record.url,
+        captureMode: record.captureMode ?? 'craft',
+        transcriptionProvider: record.transcriptionProvider,
+        transcriptionModel: record.transcriptionModel,
+        status: 'stopped',
+        startedAt: record.startedAt,
+        endedAt: record.endedAt,
+        summaryBody: 'Transcricao interrompida antes de concluir e o audio gravado nao esta mais disponivel para reprocessar.',
+      })
+      const unavailable: MeetingTranscriptResult = {
+        meetingId: record.id,
+        status: 'unavailable',
+        transcript: [],
+        message: 'Transcricao interrompida — audio gravado indisponivel para reprocessar.',
+        summaryMarkdown,
+        updatedAt: Date.now(),
+      }
+      state.transcripts.set(record.id, unavailable)
+      this.persistTranscript(state, unavailable)
+      this.updateRecord(state, record.id, { summaryMarkdown })
+      mainLog.warn(`[meetings] demoted interrupted transcription without recoverable audio for ${record.id}`)
+    }
+  }
+
   async transcribeRecording(workspaceId: string, workspaceRootPath: string, meetingId: string): Promise<void> {
     const state = this.getWorkspaceState(workspaceRootPath)
     this.ensureLoaded(state)
