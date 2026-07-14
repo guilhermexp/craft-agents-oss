@@ -363,8 +363,9 @@ function BrowserToolbarApp() {
         active.stream.getTracks().forEach((track) => track.stop())
         // Finalize on unmount so the partial .webm is persisted (the user may
         // have closed the pane before remembering to click Parar). abortRecording
-        // would destroy the file; finalizeRecording keeps the partial capture
-        // and triggers the usual transcribe + completeRecording pipeline.
+        // deletes the partial file and closes the meeting record; finalizeRecording
+        // keeps the partial capture and triggers the usual transcribe +
+        // completeRecording pipeline.
         void api?.finalizeRecording(active.id, active.mimeType).catch((err) => {
           console.error('[browser-toolbar] finalize on unmount failed', err)
         })

@@ -159,7 +159,14 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
     })
 
     ipcMain.handle(RECORDING_ABORT, (_event, recordingId: string) => {
-      recordingService!.abort(recordingId)
+      const aborted = recordingService!.abort(recordingId)
+      if (aborted?.meetingId) {
+        try {
+          meetingService!.stop(resolveWorkspaceRoot(aborted.workspaceId), aborted.meetingId)
+        } catch (err) {
+          platform.logger.error('[meetings] closing meeting record after abort failed:', err)
+        }
+      }
     })
 
     ipcMain.handle(RPC_NAMESPACES.meetings.ARCHIVE, (_event, workspaceIdOrId: string, maybeId?: string) => {
