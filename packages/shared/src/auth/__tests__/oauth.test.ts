@@ -485,6 +485,34 @@ describe('discoverOAuthMetadata', () => {
     });
   });
 
+  describe('SSRF protection on mcpUrl (discovery entry point)', () => {
+    it('rejects link-local metadata endpoint without any fetch', async () => {
+      const result = await discoverOAuthMetadata('https://169.254.169.254/mcp');
+      expect(result).toBeNull();
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects localhost without any fetch', async () => {
+      const result = await discoverOAuthMetadata('https://localhost/mcp');
+      expect(result).toBeNull();
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects private IP ranges without any fetch', async () => {
+      for (const url of ['https://10.0.0.5/mcp', 'https://192.168.1.1/mcp', 'https://172.16.0.1/mcp']) {
+        const result = await discoverOAuthMetadata(url);
+        expect(result).toBeNull();
+      }
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-HTTPS mcpUrl without any fetch', async () => {
+      const result = await discoverOAuthMetadata('http://example.com/mcp');
+      expect(result).toBeNull();
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
   describe('error handling', () => {
     it('returns null when no metadata found', async () => {
       mockFetch.mockImplementation((url: string, options?: RequestInit) => {

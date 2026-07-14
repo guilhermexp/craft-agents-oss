@@ -958,6 +958,15 @@ export async function discoverOAuthMetadata(
     return null;
   }
 
+  // SSRF protection: never probe internal/private endpoints during discovery.
+  // This covers the RFC 9728 probe of mcpUrl and the RFC 8414 candidates
+  // derived from its origin.
+  const mcpUrlCheck = isUrlSafeToFetch(mcpUrl);
+  if (!mcpUrlCheck.safe) {
+    onLog?.(`Unsafe MCP URL rejected for OAuth discovery: ${mcpUrlCheck.reason}`);
+    return null;
+  }
+
   onLog?.(`Discovering OAuth metadata for ${mcpUrl}`);
 
   // 1. Try RFC 9728 protected resource discovery first (handles Craft MCP and other compliant servers)
@@ -975,6 +984,11 @@ export async function discoverOAuthMetadata(
   ];
 
   for (const candidate of candidates) {
+    const candidateCheck = isUrlSafeToFetch(candidate);
+    if (!candidateCheck.safe) {
+      onLog?.(`  ✗ Unsafe discovery URL rejected: ${candidateCheck.reason}`);
+      continue;
+    }
     const metadata = await tryFetchAuthServerMetadata(candidate, onLog);
     if (metadata) {
       return metadata;
