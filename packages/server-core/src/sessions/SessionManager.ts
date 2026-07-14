@@ -1167,15 +1167,21 @@ export function createManagedSession(
 
 /**
  * Resolve supportsBranching for a managed session.
- * Prefers the live agent instance; falls back to true for all backends.
+ * Prefers the live agent instance; with a lazy agent (e.g. session restored
+ * after restart) falls back to the declarative capability of the resolved
+ * backend — a blind `true` here made restored Hermes sessions offer branches
+ * that silently lost all history (Hermes does not consume branchFrom*).
  */
-function resolveSupportsBranching(managed: ManagedSession): boolean {
+export function resolveSupportsBranching(managed: ManagedSession): boolean {
   // If agent is live, use its instance property (authoritative)
   if (managed.agent) {
     return managed.agent.supportsBranching
   }
 
-  return true // default: branching enabled for all backends
+  return resolveBackendContext({
+    sessionConnectionSlug: managed.llmConnection,
+    managedModel: managed.model,
+  }).capabilities.supportsBranching
 }
 
 const DEFAULT_TOKEN_USAGE = {
@@ -2575,6 +2581,17 @@ export class SessionManager implements ISessionManager {
     } | undefined
 
     if (options?.branchFromSessionId || options?.branchFromMessageId) {
+      // Backends without branching support (Hermes) never consume branchFrom* —
+      // accepting the request would create a branch with silent amnesia.
+      if (!targetBackendContext.capabilities.supportsBranching) {
+        sessionLog.warn('Branch validation failed: target backend does not support branching', {
+          workspaceId,
+          branchFromSessionId: options.branchFromSessionId,
+          targetProvider: targetBackendContext.provider,
+        })
+        throw new Error(`Branching is not supported for the ${targetBackendContext.provider} backend.`)
+      }
+
       if (!options.branchFromSessionId || !options.branchFromMessageId) {
         sessionLog.warn('Branch validation failed: missing branchFromSessionId or branchFromMessageId', {
           workspaceId,
