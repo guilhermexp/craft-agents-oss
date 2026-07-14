@@ -133,15 +133,16 @@ if (isDebugMode) {
 // instead of a system-wide `hermes` install.
 publishHermesRuntimeEnv()
 
-// Reap dashboard children leaked by a previous Craft session that crashed or
-// exited without running before-quit. Targets only this build's vendor python.
+// Reap dashboard/ACP-adapter children leaked by a previous Craft session that
+// crashed or exited without running before-quit. Targets only this build's
+// vendor python.
 {
   const vendorPython = process.env.CRAFT_HERMES_PYTHON
   if (vendorPython) {
     cleanupHermesDashboardOrphans(vendorPython)
       .then((pids) => {
         if (pids.length > 0) {
-          mainLog.info('Reaped leaked Hermes dashboard processes from prior session', { pids })
+          mainLog.info('Reaped leaked Hermes dashboard/ACP-adapter processes from prior session', { pids })
         }
       })
       .catch((err) => mainLog.warn('Hermes orphan cleanup failed', err))

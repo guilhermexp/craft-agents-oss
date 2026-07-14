@@ -69,6 +69,8 @@ mock.module('@craft-agent/shared/config', () => ({
   }),
   getLlmConnection: () => null,
   getDefaultLlmConnection: () => null,
+  isHermesProvider: (providerType: string) => providerType === 'hermes',
+  assertRemoteEvaluateAllowed: () => {},
   resolveAuthEnvVars: () => ({}),
   getToolIconsDir: () => '/tmp/tool-icons',
   getMiniModel: () => 'claude-haiku-4-5-20251001',
@@ -149,6 +151,13 @@ mock.module('@craft-agent/shared/agent/backend', () => ({
     provider: mockedProvider,
     resolvedModel: mockedResolvedModel(),
     connection: { providerType: mockedProvider },
+    // supportsBranching always true here: this suite exercises branch
+    // preflight/rollback/inheritance paths, which sit behind the capability
+    // guard (real Hermes reports false and is rejected before them).
+    capabilities: {
+      needsHttpPoolServer: mockedProvider === 'hermes',
+      supportsBranching: true,
+    },
   }),
   createBackendFromResolvedContext: () => {
     throw new Error('not used in this test')
@@ -451,5 +460,37 @@ describe('session branch rollback on preflight failure', () => {
     expect(getOrCreateAgentCalled).toBe(true)
     expect(deletedIds).toEqual(['child-1'])
     expect(storedById.has('child-1')).toBe(false)
+  })
+})
+
+describe('SessionManager.cleanup', () => {
+  beforeEach(() => {
+    mockedProvider = 'anthropic'
+    idCounter = 0
+    storedById.clear()
+    deletedIds.length = 0
+  })
+
+  it('destroys active agents on shutdown, tolerating per-session failures', async () => {
+    const manager = new SessionManager()
+    const first = await manager.createSession('ws-1', {} as any)
+    const second = await manager.createSession('ws-1', {} as any)
+    const third = await manager.createSession('ws-1', {} as any)
+
+    const destroyed: string[] = []
+    ;(manager as any).sessions.get(first.id).agent = {
+      destroy: () => destroyed.push(first.id),
+    }
+    ;(manager as any).sessions.get(second.id).agent = {
+      destroy: () => {
+        throw new Error('destroy boom')
+      },
+    }
+    // third session has no agent — must be skipped without error
+
+    manager.cleanup()
+
+    expect(destroyed).toEqual([first.id])
+    expect((manager as any).sessions.get(third.id).agent ?? null).toBeNull()
   })
 })

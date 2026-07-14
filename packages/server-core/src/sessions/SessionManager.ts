@@ -7807,6 +7807,18 @@ export class SessionManager implements ISessionManager {
     this.pendingPermissionRequests.clear()
     this.adminRememberApprovals.clear()
 
+    // Destroy active agent backends so their subprocesses (Claude SDK, Pi,
+    // Hermes ACP adapter) don't outlive the server process.
+    for (const [sessionId, managed] of this.sessions) {
+      if (!managed.agent) continue
+      try {
+        managed.agent.destroy()
+        sessionLog.info(`Destroyed agent for session ${sessionId}`)
+      } catch (error) {
+        sessionLog.error(`Failed to destroy agent for session ${sessionId}:`, error)
+      }
+    }
+
     // Clean up session-scoped tool callbacks for all sessions
     for (const sessionId of this.sessions.keys()) {
       unregisterSessionScopedToolCallbacks(sessionId)
