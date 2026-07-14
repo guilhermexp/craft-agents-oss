@@ -119,8 +119,7 @@ export const MODEL_REGISTRY: ModelDefinition[] = [
   },
   // TODO(opus-4.6-sunset): remove this entry when Opus 4.6 is deprecated by
   // Anthropic or we stop offering it. Also drop the related 4.6 pieces in
-  // llm-connections.ts PI_PREFERRED_DEFAULTS and the restoreOpus46ToAnthropicConnections
-  // migration in storage.ts (grep for TODO(opus-4.6-sunset) to find them all).
+  // llm-connections.ts PI_PREFERRED_DEFAULTS (grep for TODO(opus-4.6-sunset)).
   {
     id: 'claude-opus-4-6',
     name: 'Opus 4.6',
