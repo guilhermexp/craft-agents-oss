@@ -2917,6 +2917,17 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const initialUrl = sourceUrl || popupWindow.webContents.getURL?.() || 'about:blank'
     mainLog.info(`[browser-pane] popup created parent=${parentInstance.id} popupWebContentsId=${popupWcId} url=${initialUrl}`)
 
+    // SECURITY (F7/R1): allowlist de esquemas também na navegação client-side
+    // do popup — a checagem do setWindowOpenHandler só cobre a URL de abertura.
+    popupWindow.webContents.on('will-navigate', (event, url) => {
+      if (!isAllowedTopLevelUrl(url)) {
+        event.preventDefault()
+        mainLog.warn(
+          `[browser-pane] popup navigation blocked parent=${parentInstance.id} popupWebContentsId=${popupWcId} reason=unsupported_scheme url=${url}`,
+        )
+      }
+    })
+
     popupWindow.webContents.on('did-navigate', (_event, urlFromEvent) => {
       const popupUrl = typeof popupWindow.webContents.getURL === 'function'
         ? popupWindow.webContents.getURL()
@@ -2925,6 +2936,16 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     popupWindow.webContents.on('did-redirect-navigation', (_event, popupUrl, isInPlace, isMainFrame) => {
+      // SECURITY (F7/R1): popups carregam conteúdo web — mesmo tratamento
+      // reativo do pageWc para redirects a esquemas proibidos.
+      if (isMainFrame && !isAllowedTopLevelUrl(popupUrl)) {
+        mainLog.warn(
+          `[browser-pane] popup redirect blocked parent=${parentInstance.id} popupWebContentsId=${popupWcId} reason=unsupported_scheme url=${popupUrl}`,
+        )
+        popupWindow.webContents.stop()
+        void popupWindow.webContents.loadURL('about:blank')
+        return
+      }
       mainLog.info(
         `[browser-pane] popup redirect parent=${parentInstance.id} popupWebContentsId=${popupWcId} url=${popupUrl} inPlace=${isInPlace} mainFrame=${isMainFrame}`,
       )
@@ -3359,6 +3380,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
     pageWc.on('did-redirect-navigation', (_event, url, isInPlace, isMainFrame) => {
       if (!isMainFrame) return
+      // SECURITY (F7/R1): redirect de servidor para esquema proibido — o evento
+      // não é cancelável, então a reação é parar o load e ir para about:blank.
+      if (!isAllowedTopLevelUrl(url)) {
+        mainLog.warn(`[browser-pane] redirect blocked id=${instance.id} reason=unsupported_scheme url=${url}`)
+        pageWc.stop()
+        void pageWc.loadURL('about:blank')
+        return
+      }
       mainLog.info(`[browser-pane] did-redirect-navigation id=${instance.id} url=${url} inPlace=${isInPlace}`)
     })
 
@@ -3459,6 +3488,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       if (url.startsWith(CRAFT_DEEPLINK_SCHEME_PREFIX)) {
         event.preventDefault()
         void this.handleDeepLinkUrl(url)
+        return
+      }
+      // SECURITY (F7/R1): a allowlist de esquemas também vale para navegação
+      // iniciada pela página (window.location, meta refresh) — sem isso, uma
+      // página comprometida contorna a checagem do call site `navigate`.
+      if (!isAllowedTopLevelUrl(url)) {
+        event.preventDefault()
+        mainLog.warn(`[browser-pane] navigation blocked id=${instance.id} reason=unsupported_scheme url=${url}`)
       }
     })
 

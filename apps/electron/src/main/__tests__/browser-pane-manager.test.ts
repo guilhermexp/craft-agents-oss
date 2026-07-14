@@ -316,6 +316,87 @@ describe('BrowserPaneManager', () => {
     expect(mockShellOpenExternal).toHaveBeenCalledWith('craftagents://settings')
   })
 
+  // F7/R1 — allowlist de esquema em navegação client-side e redirects
+  it('will-navigate blocks file:// navigation initiated by the page', () => {
+    manager.createInstance('nav-scheme-block')
+    const instance = (manager as any).instances.get('nav-scheme-block')
+
+    const event = { preventDefault: mock(() => {}) }
+    for (const cb of instance.pageView.webContents._listeners['will-navigate'] || []) {
+      cb(event, 'file:///etc/passwd')
+    }
+
+    expect(event.preventDefault).toHaveBeenCalled()
+  })
+
+  it('will-navigate does not block legitimate https navigation', () => {
+    manager.createInstance('nav-scheme-ok')
+    const instance = (manager as any).instances.get('nav-scheme-ok')
+
+    const event = { preventDefault: mock(() => {}) }
+    for (const cb of instance.pageView.webContents._listeners['will-navigate'] || []) {
+      cb(event, 'https://ok.com/')
+    }
+
+    expect(event.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('will-navigate still routes Craft deep links to the deep-link handler', () => {
+    manager.createInstance('nav-scheme-deeplink')
+    const instance = (manager as any).instances.get('nav-scheme-deeplink')
+    const deepLinkSpy = mock(async () => {})
+    ;(manager as any).handleDeepLinkUrl = deepLinkSpy
+
+    const event = { preventDefault: mock(() => {}) }
+    for (const cb of instance.pageView.webContents._listeners['will-navigate'] || []) {
+      cb(event, 'craftagents://settings')
+    }
+
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(deepLinkSpy).toHaveBeenCalledWith('craftagents://settings')
+  })
+
+  it('did-redirect-navigation to a forbidden scheme stops load and bails to about:blank', () => {
+    manager.createInstance('redirect-scheme-block')
+    const instance = (manager as any).instances.get('redirect-scheme-block')
+    const wc = instance.pageView.webContents
+    wc.loadURL.mockClear()
+
+    wc._emit('did-redirect-navigation', 'file:///Users/x/.aws/credentials', false, true)
+
+    expect(wc.stop).toHaveBeenCalled()
+    expect(wc.loadURL).toHaveBeenCalledWith('about:blank')
+  })
+
+  it('did-redirect-navigation to https does not interrupt the load', () => {
+    manager.createInstance('redirect-scheme-ok')
+    const instance = (manager as any).instances.get('redirect-scheme-ok')
+    const wc = instance.pageView.webContents
+    wc.loadURL.mockClear()
+
+    wc._emit('did-redirect-navigation', 'https://ok.com/next', false, true)
+
+    expect(wc.stop).not.toHaveBeenCalled()
+  })
+
+  it('popup will-navigate blocks forbidden schemes after opening', () => {
+    manager.createInstance('popup-nav-block')
+    const instance = (manager as any).instances.get('popup-nav-block')
+
+    const popupWindow = createMockWindow({ width: 520, height: 720 })
+    // did-create-window handlers receive (window, details) with no event arg
+    for (const cb of instance.pageView.webContents._listeners['did-create-window'] || []) {
+      cb(popupWindow, { url: 'https://accounts.google.com/signin' })
+    }
+
+    const event = { preventDefault: mock(() => {}) }
+    for (const cb of popupWindow.webContents._listeners['will-navigate'] || []) {
+      cb(event, 'file:///etc/passwd')
+    }
+
+    expect(event.preventDefault).toHaveBeenCalled()
+  })
+
   it('destroys child popups when parent instance is destroyed', () => {
     manager.createInstance('popup-parent')
     const instance = (manager as any).instances.get('popup-parent')
