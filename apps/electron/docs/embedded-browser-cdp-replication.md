@@ -304,10 +304,22 @@ Accessibility.getFullAXTree
 - assigns stable-looking refs such as `@e1`, `@e2`;
 - stores `ref -> backendDOMNodeId` in `refMap`;
 - stores semantic details in `refDetails`;
+- keeps a stable `backendDOMNodeId -> ref` map so re-snapshotting the same
+  document reuses the same ref for the same node;
 - returns `{ url, title, nodes }`.
 
-Only refs from the most recent snapshot are valid. If an action cannot find a
-ref, the tool tells the agent to run `snapshot` again.
+Only refs from the most recent snapshot of the current document are valid:
+
+- each snapshot rebuilds `refMap`, so refs from an older snapshot that no
+  longer resolve are rejected;
+- `did-navigate` and `did-navigate-in-page` (SPA route changes) clear all
+  three maps, so any pre-navigation ref is rejected until a new snapshot runs;
+- the ref counter is monotonic (never reset), so a pre-navigation ref number
+  is never reused by a post-navigation snapshot — a stale ref can never
+  silently resolve to a different element.
+
+Actions (`click`/`fill`/`select`/geometry/upload) resolve refs through a single
+helper that fails with a "stale ref — run browser_snapshot first" error.
 
 ### Element Geometry
 

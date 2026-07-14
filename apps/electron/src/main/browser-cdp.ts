@@ -106,6 +106,32 @@ export class BrowserCDP {
 
   constructor(webContents: WebContents) {
     this.webContents = webContents
+    // Refs are only meaningful inside the document they were snapshotted from.
+    // Navigation (full or in-page/SPA) invalidates every ref, including the
+    // stable backendNodeId→ref map — otherwise a post-navigation action can
+    // silently hit a recycled node. Listeners die with the webContents.
+    const invalidate = () => this.invalidateRefs()
+    webContents.on('did-navigate', invalidate)
+    webContents.on('did-navigate-in-page', invalidate)
+  }
+
+  private invalidateRefs(): void {
+    this.refMap.clear()
+    this.refDetails.clear()
+    this.backendNodeRefMap.clear()
+    // nextRefCounter is intentionally NOT reset: ref numbers are never reused,
+    // so a pre-navigation ref can never resolve against a newer snapshot.
+  }
+
+  private resolveRef(ref: string): number {
+    const backendNodeId = this.refMap.get(ref)
+    if (!backendNodeId) {
+      throw new Error(
+        `Element ${ref} not found — the ref is stale (page navigated or a newer snapshot replaced it). `
+        + 'Run browser_snapshot first to get current element refs.',
+      )
+    }
+    return backendNodeId
   }
 
   private async ensureAttached(): Promise<void> {
@@ -381,10 +407,7 @@ export class BrowserCDP {
   // ---------------------------------------------------------------------------
 
   async getElementGeometry(ref: string): Promise<ElementGeometry> {
-    const backendNodeId = this.refMap.get(ref)
-    if (!backendNodeId) {
-      throw new Error(`Element ${ref} not found. Run browser_snapshot first to get current element refs.`)
-    }
+    const backendNodeId = this.resolveRef(ref)
 
     const { model } = await this.send('DOM.getBoxModel', { backendNodeId })
     const content = model.content as number[]
@@ -830,10 +853,7 @@ export class BrowserCDP {
   }
 
   async clickElement(ref: string): Promise<ElementGeometry> {
-    const backendNodeId = this.refMap.get(ref)
-    if (!backendNodeId) {
-      throw new Error(`Element ${ref} not found. Run browser_snapshot first to get current element refs.`)
-    }
+    const backendNodeId = this.resolveRef(ref)
 
     try {
       // Resolve node to get objectId
@@ -861,10 +881,7 @@ export class BrowserCDP {
   }
 
   async fillElement(ref: string, value: string): Promise<ElementGeometry> {
-    const backendNodeId = this.refMap.get(ref)
-    if (!backendNodeId) {
-      throw new Error(`Element ${ref} not found. Run browser_snapshot first to get current element refs.`)
-    }
+    const backendNodeId = this.resolveRef(ref)
 
     try {
       // Focus the element first
@@ -908,10 +925,7 @@ export class BrowserCDP {
   }
 
   async selectOption(ref: string, value: string): Promise<ElementGeometry> {
-    const backendNodeId = this.refMap.get(ref)
-    if (!backendNodeId) {
-      throw new Error(`Element ${ref} not found. Run browser_snapshot first to get current element refs.`)
-    }
+    const backendNodeId = this.resolveRef(ref)
 
     try {
       const { object } = await this.send('DOM.resolveNode', { backendNodeId })
@@ -1096,10 +1110,7 @@ export class BrowserCDP {
   }
 
   async setFileInputFiles(ref: string, filePaths: string[]): Promise<ElementGeometry> {
-    const backendNodeId = this.refMap.get(ref)
-    if (!backendNodeId) {
-      throw new Error(`Element ${ref} not found. Run browser_snapshot first to get current element refs.`)
-    }
+    const backendNodeId = this.resolveRef(ref)
 
     try {
       await this.send('DOM.setFileInputFiles', {

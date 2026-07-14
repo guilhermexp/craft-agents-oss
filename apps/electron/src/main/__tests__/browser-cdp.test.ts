@@ -30,6 +30,7 @@ const { BrowserCDP } = await import('../browser-cdp')
 
 function createMockWebContents(sendCommandImpl?: (method: string, params?: any) => Promise<any>) {
   const listeners: Record<string, Function[]> = {}
+  const wcListeners: Record<string, Function[]> = {}
   return {
     debugger: {
       attach: mock((_version: string) => {}),
@@ -40,11 +41,18 @@ function createMockWebContents(sendCommandImpl?: (method: string, params?: any) 
         listeners[event].push(cb)
       }),
     },
+    on: mock((event: string, cb: Function) => {
+      if (!wcListeners[event]) wcListeners[event] = []
+      wcListeners[event].push(cb)
+    }),
     getURL: mock(() => 'https://example.com'),
     getTitle: mock(() => 'Example Page'),
     _debuggerListeners: listeners,
     _triggerDetach: () => {
       for (const cb of listeners['detach'] || []) cb()
+    },
+    _triggerNavigate: (event: 'did-navigate' | 'did-navigate-in-page' = 'did-navigate') => {
+      for (const cb of wcListeners[event] || []) cb()
     },
   }
 }
@@ -340,6 +348,79 @@ describe('BrowserCDP', () => {
       expect(scrollIndex).toBeGreaterThan(-1)
       expect(boxModelIndex).toBeGreaterThan(-1)
       expect(scrollIndex).toBeLessThan(boxModelIndex)
+    })
+  })
+
+  describe('ref invalidation on navigation (F2.3)', () => {
+    function createNavMockWebContents(nodesByCall?: (call: number) => any[]) {
+      let call = 0
+      return createMockWebContents(async (method) => {
+        if (method === 'Accessibility.getFullAXTree') {
+          call += 1
+          return {
+            nodes: nodesByCall?.(call) ?? [
+              { role: { value: 'button' }, name: { value: 'Submit' }, backendDOMNodeId: 100 + call },
+            ],
+          }
+        }
+        if (method === 'DOM.resolveNode') return { object: { objectId: 'obj' } }
+        if (method === 'DOM.getBoxModel') return { model: { content: [10, 10, 50, 10, 50, 50, 10, 50] } }
+        return {}
+      })
+    }
+
+    it('rejects a ref used after did-navigate without a fresh snapshot', async () => {
+      const wc = createNavMockWebContents()
+      const cdp = new BrowserCDP(wc as any)
+      await cdp.getAccessibilitySnapshot()
+
+      wc._triggerNavigate('did-navigate')
+
+      await expect(cdp.clickElement('@e1')).rejects.toThrow('stale')
+      await expect(cdp.fillElement('@e1', 'x')).rejects.toThrow('browser_snapshot')
+      await expect(cdp.selectOption('@e1', 'x')).rejects.toThrow('stale')
+    })
+
+    it('rejects a ref after in-page (SPA) navigation', async () => {
+      const wc = createNavMockWebContents()
+      const cdp = new BrowserCDP(wc as any)
+      await cdp.getAccessibilitySnapshot()
+
+      wc._triggerNavigate('did-navigate-in-page')
+
+      await expect(cdp.clickElement('@e1')).rejects.toThrow('stale')
+    })
+
+    it('never reuses pre-navigation ref numbers after a fresh snapshot', async () => {
+      const wc = createNavMockWebContents(() => [
+        // Same backendDOMNodeId across snapshots — without invalidation the
+        // stable map would hand the old ref back to the new document.
+        { role: { value: 'button' }, name: { value: 'Submit' }, backendDOMNodeId: 100 },
+      ])
+      const cdp = new BrowserCDP(wc as any)
+      const before = await cdp.getAccessibilitySnapshot()
+      expect(before.nodes[0].ref).toBe('@e1')
+
+      wc._triggerNavigate('did-navigate')
+      const after = await cdp.getAccessibilitySnapshot()
+
+      // Counter is monotonic: post-navigation snapshot allocates a new ref.
+      expect(after.nodes[0].ref).toBe('@e2')
+      await expect(cdp.clickElement('@e1')).rejects.toThrow('stale')
+      // Fresh ref from the current snapshot works.
+      await cdp.clickElement('@e2')
+    })
+
+    it('keeps refs stable across snapshots of the same document (no navigation)', async () => {
+      const wc = createNavMockWebContents(() => [
+        { role: { value: 'button' }, name: { value: 'Submit' }, backendDOMNodeId: 100 },
+      ])
+      const cdp = new BrowserCDP(wc as any)
+      const first = await cdp.getAccessibilitySnapshot()
+      const second = await cdp.getAccessibilitySnapshot()
+
+      expect(first.nodes[0].ref).toBe('@e1')
+      expect(second.nodes[0].ref).toBe('@e1')
     })
   })
 
