@@ -84,6 +84,66 @@ describe('CraftSessionToolsMcpServer', () => {
     }
   });
 
+  it('rejects requests with a non-loopback web Origin (DNS rebinding guard)', async () => {
+    const server = new CraftSessionToolsMcpServer({ sessionId, workspaceRootPath, workspaceId: 'ws-test' });
+    const url = await server.start();
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://evil.example.com' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'initialize', id: 1, params: {} }),
+      });
+      expect(res.status).toBe(403);
+
+      const rebound = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', host: 'attacker.example.com' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'initialize', id: 1, params: {} }),
+      });
+      expect(rebound.status).toBe(403);
+
+      const loopbackOrigin = await fetch(url, {
+        method: 'GET',
+        headers: { origin: `http://127.0.0.1:${server.port}` },
+      });
+      expect(loopbackOrigin.status).not.toBe(403);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it('enforces opt-in bearer auth when authToken is configured', async () => {
+    const server = new CraftSessionToolsMcpServer({
+      sessionId,
+      workspaceRootPath,
+      workspaceId: 'ws-test',
+      authToken: 'secret-token-123',
+    });
+    const url = await server.start();
+
+    try {
+      const noToken = await fetch(url, { method: 'GET' });
+      expect(noToken.status).toBe(401);
+
+      const wrongToken = await fetch(url, {
+        method: 'GET',
+        headers: { authorization: 'Bearer wrong' },
+      });
+      expect(wrongToken.status).toBe(401);
+
+      const client = new Client({ name: 'craft-session-tools-test', version: '0.0.1' });
+      await client.connect(new StreamableHTTPClientTransport(new URL(url), {
+        requestInit: { headers: { authorization: 'Bearer secret-token-123' } },
+      }));
+      const listed = await client.listTools();
+      expect(listed.tools.length).toBeGreaterThan(0);
+      await client.close().catch(() => {});
+    } finally {
+      await server.stop();
+    }
+  });
+
   it('executes call_llm through the session callback registry', async () => {
     const seenPrompts: string[] = [];
     mergeSessionScopedToolCallbacks(sessionId, {
