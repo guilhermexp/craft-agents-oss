@@ -119,6 +119,11 @@ that checkout as-is and skips the cache + patch step. Unset it before validating
 Craft's embedded update path. Production and daily local updates run through
 `NousResearch/hermes-agent` + `hermes-version.txt` + Craft overlay patches.
 
+The dashboard Update flow (`update-hermes-runtime.sh`) discards an inherited
+`HERMES_SRC` with a warning so it always builds from pin + overlay patches;
+set `HERMES_ALLOW_SRC_OVERRIDE=1` alongside `HERMES_SRC` to force the override
+through that path during active Hermes development.
+
 When syncing Craft upstream, preserve these Craft-side integration points:
 
 | Craft file | Craft-required behavior |
