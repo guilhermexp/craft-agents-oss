@@ -73,7 +73,8 @@ export class CraftOAuth {
   }> {
     const redirectUri = `http://localhost:${port}${CALLBACK_PATH}`;
 
-    const response = await fetch(registrationEndpoint, {
+    assertSafeOAuthEndpoint(registrationEndpoint, 'registration endpoint');
+    const response = await fetchWithTimeout(registrationEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -83,7 +84,7 @@ export class CraftOAuth {
         response_types: ['code'],
         token_endpoint_auth_method: 'none', // Public client
       }),
-    });
+    }, OAUTH_ENDPOINT_TIMEOUT_MS);
 
     if (!response.ok) {
       const error = await response.text();
@@ -114,11 +115,12 @@ export class CraftOAuth {
       code_verifier: codeVerifier,
     });
 
-    const response = await fetch(tokenEndpoint, {
+    assertSafeOAuthEndpoint(tokenEndpoint, 'token endpoint');
+    const response = await fetchWithTimeout(tokenEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString(),
-    });
+    }, OAUTH_ENDPOINT_TIMEOUT_MS);
 
     if (!response.ok) {
       const error = await response.text();
@@ -158,11 +160,12 @@ export class CraftOAuth {
       client_id: clientId,
     });
 
-    const response = await fetch(metadata.token_endpoint, {
+    assertSafeOAuthEndpoint(metadata.token_endpoint, 'token endpoint');
+    const response = await fetchWithTimeout(metadata.token_endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString(),
-    });
+    }, OAUTH_ENDPOINT_TIMEOUT_MS);
 
     if (!response.ok) {
       throw new Error('Failed to refresh token');
@@ -466,9 +469,10 @@ async function registerMcpOAuthClient(
   registrationEndpoint: string,
   redirectUri: string
 ): Promise<{ client_id: string; client_secret?: string }> {
+  assertSafeOAuthEndpoint(registrationEndpoint, 'registration endpoint');
   let response: Response;
   try {
-    response = await fetch(registrationEndpoint, {
+    response = await fetchWithTimeout(registrationEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -478,7 +482,7 @@ async function registerMcpOAuthClient(
         response_types: ['code'],
         token_endpoint_auth_method: 'none',
       }),
-    });
+    }, OAUTH_ENDPOINT_TIMEOUT_MS);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     throw new McpClientRegistrationError(`Failed to register OAuth client: ${message}`);
@@ -510,11 +514,12 @@ async function exchangeMcpCodeForTokens(
     code_verifier: codeVerifier,
   });
 
-  const response = await fetch(tokenEndpoint, {
+  assertSafeOAuthEndpoint(tokenEndpoint, 'token endpoint');
+  const response = await fetchWithTimeout(tokenEndpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),
-  });
+  }, OAUTH_ENDPOINT_TIMEOUT_MS);
 
   if (!response.ok) {
     const error = await response.text();
@@ -657,10 +662,23 @@ async function tryFetchAuthServerMetadata(
 ): Promise<OAuthMetadata | null> {
   try {
     onLog?.(`  Trying: ${url}`);
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (response.ok) {
       const data = await response.json() as OAuthMetadata;
       if (data.authorization_endpoint && data.token_endpoint) {
+        // SSRF protection: reject metadata whose fetchable endpoints point
+        // at private/internal addresses before any downstream fetch uses them.
+        for (const [label, endpoint] of [
+          ['token_endpoint', data.token_endpoint],
+          ['registration_endpoint', data.registration_endpoint],
+        ] as const) {
+          if (!endpoint) continue;
+          const endpointCheck = isUrlSafeToFetch(endpoint);
+          if (!endpointCheck.safe) {
+            onLog?.(`  ✗ Unsafe ${label} in metadata rejected: ${endpointCheck.reason}`);
+            return null;
+          }
+        }
         onLog?.(`  ✓ Found OAuth metadata at ${url}`);
         return data;
       }
@@ -788,25 +806,74 @@ function isProtectedResourceMetadata(data: unknown): data is ProtectedResourceMe
   return true;
 }
 
+/** Max redirect hops followed by fetchWithTimeout (each hop is SSRF-validated) */
+const MAX_OAUTH_REDIRECTS = 3;
+
+/** Timeout for OAuth endpoint calls (token exchange, client registration) */
+const OAUTH_ENDPOINT_TIMEOUT_MS = 30_000;
+
 /**
- * Fetch with timeout using AbortController
+ * Fetch with timeout using AbortController.
+ *
+ * SSRF protection: redirects are followed manually — each 3xx Location is
+ * validated with isUrlSafeToFetch before being followed, so a public server
+ * cannot redirect the request into a private/internal address.
  */
 async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
   timeoutMs: number = DISCOVERY_TIMEOUT_MS
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  let currentUrl = url;
+  for (let hop = 0; hop <= MAX_OAUTH_REDIRECTS; hop++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    return response;
-  } finally {
-    clearTimeout(timeoutId);
+    let response: Response;
+    try {
+      response = await fetch(currentUrl, {
+        ...options,
+        redirect: 'manual',
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (response.status < 300 || response.status >= 400) {
+      return response;
+    }
+
+    const location = response.headers.get('location');
+    if (!location) {
+      return response;
+    }
+
+    let nextUrl: string;
+    try {
+      nextUrl = new URL(location, currentUrl).toString();
+    } catch {
+      throw new Error(`Invalid redirect location from ${currentUrl}`);
+    }
+
+    const check = isUrlSafeToFetch(nextUrl);
+    if (!check.safe) {
+      throw new Error(`Redirect to unsafe URL blocked: ${check.reason}`);
+    }
+    currentUrl = nextUrl;
+  }
+  throw new Error(`Too many redirects fetching ${url}`);
+}
+
+/**
+ * SSRF guard for OAuth endpoints that come from (potentially attacker
+ * supplied) server metadata — token_endpoint / registration_endpoint must
+ * never point at private/internal addresses.
+ */
+function assertSafeOAuthEndpoint(endpointUrl: string, label: string): void {
+  const check = isUrlSafeToFetch(endpointUrl);
+  if (!check.safe) {
+    throw new Error(`Unsafe ${label} rejected: ${check.reason}`);
   }
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
-import { getMcpBaseUrl, discoverOAuthMetadata, prepareMcpOAuth, isUrlSafeToFetch } from '../oauth';
+import { getMcpBaseUrl, discoverOAuthMetadata, prepareMcpOAuth, exchangeMcpOAuth, isUrlSafeToFetch } from '../oauth';
 
 // ============================================================
 // Unit tests for internal helpers exported only for testing
@@ -1289,5 +1289,134 @@ describe('isUrlSafeToFetch IPv6 (R2)', () => {
 
   it('allows IPv4-mapped public addresses', () => {
     expect(isUrlSafeToFetch('https://[::ffff:1.1.1.1]/').safe).toBe(true);
+  });
+});
+
+// ============================================================
+// F7/R3 — SSRF: metadata endpoints validated + redirect re-validation
+// ============================================================
+describe('OAuth endpoint/redirect SSRF (R3)', () => {
+  const originalFetch = globalThis.fetch;
+  let mockFetch: ReturnType<typeof mock>;
+
+  beforeEach(() => {
+    mockFetch = mock(() => Promise.resolve(new Response('Not Found', { status: 404 })));
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('exchangeMcpOAuth rejects internal token endpoint before any fetch', async () => {
+    const result = await exchangeMcpOAuth({
+      tokenEndpoint: 'https://127.0.0.1/token',
+      code: 'code',
+      codeVerifier: 'verifier',
+      clientId: 'client',
+      redirectUri: 'http://localhost:1234/callback',
+    } as Parameters<typeof exchangeMcpOAuth>[0]);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Unsafe token endpoint');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('exchangeMcpOAuth rejects bracketed IPv6 loopback token endpoint', async () => {
+    const result = await exchangeMcpOAuth({
+      tokenEndpoint: 'https://[::1]/token',
+      code: 'code',
+      codeVerifier: 'verifier',
+      clientId: 'client',
+      redirectUri: 'http://localhost:1234/callback',
+    } as Parameters<typeof exchangeMcpOAuth>[0]);
+
+    expect(result.success).toBe(false);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('discovery rejects metadata whose token_endpoint is internal', async () => {
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (options?.method === 'HEAD') {
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }
+      if (url === 'https://example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(new Response(JSON.stringify({
+          authorization_endpoint: 'https://example.com/oauth/authorize',
+          token_endpoint: 'https://127.0.0.1/token',
+        }), { status: 200 }));
+      }
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    });
+
+    const result = await discoverOAuthMetadata('https://example.com/mcp');
+    expect(result).toBeNull();
+    // The internal token endpoint must never be fetched
+    const fetchedUrls = mockFetch.mock.calls.map((call: any[]) => call[0]);
+    expect(fetchedUrls).not.toContain('https://127.0.0.1/token');
+  });
+
+  it('discovery rejects metadata whose registration_endpoint is internal', async () => {
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (options?.method === 'HEAD') {
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }
+      if (url === 'https://example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(new Response(JSON.stringify({
+          authorization_endpoint: 'https://example.com/oauth/authorize',
+          token_endpoint: 'https://example.com/oauth/token',
+          registration_endpoint: 'https://[::1]/register',
+        }), { status: 200 }));
+      }
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    });
+
+    const result = await discoverOAuthMetadata('https://example.com/mcp');
+    expect(result).toBeNull();
+  });
+
+  it('blocks 302 redirect to an internal Location during discovery', async () => {
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (options?.method === 'HEAD') {
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }
+      if (url === 'https://example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(new Response(null, {
+          status: 302,
+          headers: { Location: 'https://169.254.169.254/latest/meta-data' },
+        }));
+      }
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    });
+
+    const result = await discoverOAuthMetadata('https://example.com/mcp');
+    expect(result).toBeNull();
+    const fetchedUrls = mockFetch.mock.calls.map((call: any[]) => call[0]);
+    expect(fetchedUrls).not.toContain('https://169.254.169.254/latest/meta-data');
+  });
+
+  it('follows 302 redirect to a public https Location', async () => {
+    const metadata = {
+      authorization_endpoint: 'https://sso.example.com/oauth/authorize',
+      token_endpoint: 'https://sso.example.com/oauth/token',
+    };
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (options?.method === 'HEAD') {
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }
+      if (url === 'https://example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(new Response(null, {
+          status: 302,
+          headers: { Location: 'https://sso.example.com/.well-known/oauth-authorization-server' },
+        }));
+      }
+      if (url === 'https://sso.example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(new Response(JSON.stringify(metadata), { status: 200 }));
+      }
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    });
+
+    const result = await discoverOAuthMetadata('https://example.com/mcp');
+    expect(result).toEqual(metadata);
   });
 });
