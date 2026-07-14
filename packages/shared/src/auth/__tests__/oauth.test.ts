@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
-import { getMcpBaseUrl, discoverOAuthMetadata, prepareMcpOAuth } from '../oauth';
+import { getMcpBaseUrl, discoverOAuthMetadata, prepareMcpOAuth, isUrlSafeToFetch } from '../oauth';
 
 // ============================================================
 // Unit tests for internal helpers exported only for testing
@@ -1251,5 +1251,43 @@ describe('prepareMcpOAuth', () => {
     });
 
     await expect(prepareMcpOAuth('https://example.com/mcp', { callbackPort: 8914 })).rejects.toThrow('Failed to register OAuth client: Server error');
+  });
+});
+
+// ============================================================
+// F7/R2 — isUrlSafeToFetch: IPv6 loopback/private/link-local
+// ============================================================
+describe('isUrlSafeToFetch IPv6 (R2)', () => {
+  it('rejects bracketed IPv6 loopback [::1]', () => {
+    expect(isUrlSafeToFetch('https://[::1]/').safe).toBe(false);
+  });
+
+  it('rejects IPv6 unspecified [::]', () => {
+    expect(isUrlSafeToFetch('https://[::]/').safe).toBe(false);
+  });
+
+  it('rejects IPv6 link-local fe80::/10', () => {
+    expect(isUrlSafeToFetch('https://[fe80::1]/').safe).toBe(false);
+    expect(isUrlSafeToFetch('https://[febf::1]/').safe).toBe(false);
+  });
+
+  it('rejects IPv6 ULA fc00::/7', () => {
+    expect(isUrlSafeToFetch('https://[fc00::1]/').safe).toBe(false);
+    expect(isUrlSafeToFetch('https://[fd12:3456::1]/').safe).toBe(false);
+  });
+
+  it('rejects IPv4-mapped private addresses in both forms', () => {
+    // WHATWG URL serializes ::ffff:127.0.0.1 to hex groups — cover both
+    expect(isUrlSafeToFetch('https://[::ffff:127.0.0.1]/').safe).toBe(false);
+    expect(isUrlSafeToFetch('https://[::ffff:7f00:1]/').safe).toBe(false);
+    expect(isUrlSafeToFetch('https://[::ffff:169.254.169.254]/').safe).toBe(false);
+  });
+
+  it('allows public IPv6 addresses', () => {
+    expect(isUrlSafeToFetch('https://[2606:4700::1111]/').safe).toBe(true);
+  });
+
+  it('allows IPv4-mapped public addresses', () => {
+    expect(isUrlSafeToFetch('https://[::ffff:1.1.1.1]/').safe).toBe(true);
   });
 });

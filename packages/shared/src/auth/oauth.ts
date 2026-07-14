@@ -687,10 +687,53 @@ interface ProtectedResourceMetadata {
 const DISCOVERY_TIMEOUT_MS = 5000;
 
 /**
- * Check if a URL is safe to fetch (SSRF protection).
- * Rejects private IPs, localhost, and non-HTTPS URLs.
+ * Check whether a dotted-quad IPv4 hostname falls in a private/reserved range.
+ * Catches: 0.x, 10.x, 127.x, 172.16-31.x, 192.168.x, 169.254.x
  */
-function isUrlSafeToFetch(urlString: string): { safe: boolean; reason?: string } {
+function isPrivateIPv4(hostname: string): boolean {
+  const ipMatch = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!ipMatch) return false;
+  const a = Number(ipMatch[1]);
+  const b = Number(ipMatch[2]);
+  return (
+    a === 0 ||                             // 0.0.0.0/8
+    a === 10 ||                            // 10.0.0.0/8
+    a === 127 ||                           // 127.0.0.0/8
+    (a === 172 && b >= 16 && b <= 31) ||   // 172.16.0.0/12
+    (a === 192 && b === 168) ||            // 192.168.0.0/16
+    (a === 169 && b === 254)               // 169.254.0.0/16 (link-local/AWS metadata)
+  );
+}
+
+/**
+ * Check whether an IPv6 hostname (already stripped of brackets, lowercase)
+ * is loopback/private/link-local. WHATWG URL serializes IPv4-mapped
+ * addresses as hex groups (`::ffff:7f00:1`), so both forms are handled.
+ */
+function isPrivateIPv6(v6: string): boolean {
+  if (v6 === '::1' || v6 === '::') return true;           // loopback / unspecified
+  if (v6.startsWith('fc') || v6.startsWith('fd')) return true; // fc00::/7 (ULA)
+  if (/^fe[89ab]/.test(v6)) return true;                  // fe80::/10 (link-local)
+  if (v6.startsWith('::ffff:')) {
+    // IPv4-mapped — extract the embedded IPv4 and reuse the IPv4 check
+    const tail = v6.slice('::ffff:'.length);
+    if (tail.includes('.')) return isPrivateIPv4(tail);
+    const groups = tail.split(':');
+    if (groups.length > 2) return true; // malformed — be conservative
+    const hi = parseInt(groups.length === 2 ? groups[0]! : '0', 16);
+    const lo = parseInt(groups[groups.length - 1]!, 16);
+    if (Number.isNaN(hi) || Number.isNaN(lo)) return true;
+    const mapped = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+    return isPrivateIPv4(mapped);
+  }
+  return false;
+}
+
+/**
+ * Check if a URL is safe to fetch (SSRF protection).
+ * Rejects private IPs (v4 and v6), localhost, and non-HTTPS URLs.
+ */
+export function isUrlSafeToFetch(urlString: string): { safe: boolean; reason?: string } {
   let url: URL;
   try {
     url = new URL(urlString);
@@ -711,22 +754,16 @@ function isUrlSafeToFetch(urlString: string): { safe: boolean; reason?: string }
     return { safe: false, reason: 'Localhost not allowed' };
   }
 
-  // Block private IP ranges (basic check - covers most cases)
-  // This catches: 10.x.x.x, 172.16-31.x.x, 192.168.x.x, 169.254.x.x
-  const ipMatch = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
-  if (ipMatch) {
-    const a = Number(ipMatch[1]);
-    const b = Number(ipMatch[2]);
-    if (
-      a === 0 ||                             // 0.0.0.0/8
-      a === 10 ||                           // 10.0.0.0/8
-      a === 127 ||                          // 127.0.0.0/8
-      (a === 172 && b >= 16 && b <= 31) ||  // 172.16.0.0/12
-      (a === 192 && b === 168) ||           // 192.168.0.0/16
-      (a === 169 && b === 254)              // 169.254.0.0/16 (link-local/AWS metadata)
-    ) {
-      return { safe: false, reason: 'Private IP range not allowed' };
+  // IPv6 — WHATWG URL keeps the brackets in url.hostname ('[::1]')
+  if (hostname.startsWith('[') && hostname.endsWith(']')) {
+    if (isPrivateIPv6(hostname.slice(1, -1))) {
+      return { safe: false, reason: 'Private IPv6 range not allowed' };
     }
+    return { safe: true };
+  }
+
+  if (isPrivateIPv4(hostname)) {
+    return { safe: false, reason: 'Private IP range not allowed' };
   }
 
   return { safe: true };
