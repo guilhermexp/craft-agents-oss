@@ -51,7 +51,7 @@ function createMockWebContents(sendCommandImpl?: (method: string, params?: any) 
     _triggerDetach: () => {
       for (const cb of listeners['detach'] || []) cb()
     },
-    _triggerNavigate: (event: 'did-navigate' | 'did-navigate-in-page' = 'did-navigate') => {
+    _triggerNavigate: (event: 'did-navigate' | 'did-navigate-in-page' | 'did-frame-navigate' = 'did-navigate') => {
       for (const cb of wcListeners[event] || []) cb()
     },
   }
@@ -389,6 +389,18 @@ describe('BrowserCDP', () => {
       wc._triggerNavigate('did-navigate-in-page')
 
       await expect(cdp.clickElement('@e1')).rejects.toThrow('stale')
+    })
+
+    it('rejects a ref after subframe navigation (F7/R4)', async () => {
+      const wc = createNavMockWebContents()
+      const cdp = new BrowserCDP(wc as any)
+      await cdp.getAccessibilitySnapshot()
+
+      // Only an iframe navigates — main frame stays put
+      wc._triggerNavigate('did-frame-navigate')
+
+      await expect(cdp.clickElement('@e1')).rejects.toThrow('stale')
+      await expect(cdp.fillElement('@e1', 'x')).rejects.toThrow('browser_snapshot')
     })
 
     it('never reuses pre-navigation ref numbers after a fresh snapshot', async () => {

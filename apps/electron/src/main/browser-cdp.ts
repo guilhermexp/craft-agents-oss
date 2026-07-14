@@ -113,6 +113,11 @@ export class BrowserCDP {
     const invalidate = () => this.invalidateRefs()
     webContents.on('did-navigate', invalidate)
     webContents.on('did-navigate-in-page', invalidate)
+    // Subframe navigation recycles backendNodeIds inside that frame — a ref
+    // snapshotted from an iframe must not survive the iframe reloading.
+    // ponytail: invalida tudo em qualquer did-frame-navigate; granularidade
+    // por frame se algum dia isso invalidar refs demais na prática.
+    webContents.on('did-frame-navigate', invalidate)
   }
 
   private invalidateRefs(): void {
