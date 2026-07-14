@@ -3393,15 +3393,15 @@ export class SessionManager implements ISessionManager {
             },
             getConsoleLogs: async (options) => {
               const instanceId = await resolveSessionBrowserInstance('browser_console')
-              return bpm.getConsoleLogs(instanceId, options)
+              return bpm.getConsoleLogsAsync(instanceId, options)
             },
             windowResize: async (options) => {
               const instanceId = await resolveSessionBrowserInstance('browser_window_resize')
-              return bpm.windowResize(instanceId, options.width, options.height)
+              return bpm.windowResizeAsync(instanceId, options.width, options.height)
             },
             getNetworkLogs: async (options) => {
               const instanceId = await resolveSessionBrowserInstance('browser_network')
-              return bpm.getNetworkLogs(instanceId, options)
+              return bpm.getNetworkLogsAsync(instanceId, options)
             },
             waitFor: async (options) => {
               const instanceId = await resolveSessionBrowserInstance('browser_wait')

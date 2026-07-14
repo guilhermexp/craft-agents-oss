@@ -423,7 +423,8 @@ not through the session abstraction.
 
 Sync vs async: ship sync local methods plus async twins for the remote bridge —
 `getOrCreateForSessionAsync`, `createForSessionAsync`, `getInstanceAsync`,
-`listInstancesAsync`, `focusBoundForSessionAsync`. The sync forms cannot survive
+`listInstancesAsync`, `focusBoundForSessionAsync`, `getConsoleLogsAsync`,
+`getNetworkLogsAsync`, `windowResizeAsync`. The sync forms cannot survive
 a remote (WebSocket) round-trip, so any remote-aware caller MUST use the async
 forms.
 

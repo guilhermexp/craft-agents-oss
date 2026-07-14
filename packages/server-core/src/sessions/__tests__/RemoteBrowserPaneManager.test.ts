@@ -184,4 +184,28 @@ describe('RemoteBrowserPaneManager — sync stubs', () => {
     expect(calls).toHaveLength(1)
     expect((calls[0]!.args[0] as BrowserCapabilityRequest).method).toBe('listInstances')
   })
+
+  it('console/network/resize async twins await the invoke result (sync forms drop it)', async () => {
+    const results: Record<string, unknown> = {
+      getConsoleLogs: [{ level: 'error', message: 'boom', timestamp: 1 }],
+      getNetworkLogs: [{ method: 'GET', url: 'https://x', status: 500, ok: false }],
+      windowResize: { width: 1024, height: 768 },
+    }
+    const { server, calls } = createFakeServer({
+      invokeImpl: (call) => results[(call.args[0] as BrowserCapabilityRequest).method],
+    })
+    const bridge = new RemoteBrowserPaneManager({
+      sessionId: 'sess-1',
+      workspaceId: 'ws-1',
+      rpcServer: server,
+      getHostClient: () => 'client-A',
+    })
+
+    expect(await bridge.getConsoleLogsAsync('inst-1', { level: 'error' })).toEqual(results.getConsoleLogs)
+    expect(await bridge.getNetworkLogsAsync('inst-1', { status: 'failed' })).toEqual(results.getNetworkLogs)
+    expect(await bridge.windowResizeAsync('inst-1', 1024, 768)).toEqual(results.windowResize as { width: number; height: number })
+
+    const methods = calls.map((c) => (c.args[0] as BrowserCapabilityRequest).method)
+    expect(methods).toEqual(['getConsoleLogs', 'getNetworkLogs', 'windowResize'])
+  })
 })

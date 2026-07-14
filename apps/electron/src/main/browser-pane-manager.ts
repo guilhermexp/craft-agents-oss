@@ -1303,6 +1303,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return filtered.slice(-limit)
   }
 
+  async getConsoleLogsAsync(id: string, options?: BrowserConsoleOptions): Promise<BrowserConsoleEntry[]> {
+    return this.getConsoleLogs(id, options)
+  }
+
   getNetworkLogs(id: string, options?: BrowserNetworkOptions): BrowserNetworkEntry[] {
     const instance = this.requireAliveInstance(id)
 
@@ -1325,6 +1329,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     return filtered.slice(-limit)
+  }
+
+  async getNetworkLogsAsync(id: string, options?: BrowserNetworkOptions): Promise<BrowserNetworkEntry[]> {
+    return this.getNetworkLogs(id, options)
   }
 
   async waitFor(id: string, args: BrowserWaitArgs): Promise<BrowserWaitResult> {
@@ -1462,6 +1470,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       width: Math.max(0, Math.floor(appliedContentWidth)),
       height: Math.max(0, Math.floor(appliedContentHeight - TOOLBAR_HEIGHT)),
     }
+  }
+
+  async windowResizeAsync(id: string, width: number, height: number): Promise<{ width: number; height: number }> {
+    return this.windowResize(id, width, height)
   }
 
   async evaluate(id: string, expression: string): Promise<unknown> {
