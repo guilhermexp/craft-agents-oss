@@ -12,7 +12,7 @@ import { setupI18n, i18n } from '@craft-agent/shared/i18n'
 setupI18n()
 
 import { join, delimiter } from 'path'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, chmodSync } from 'fs'
 import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@craft-agent/server-core/sessions'
 import { registerAllRpcHandlers } from './handlers/index'
@@ -979,10 +979,20 @@ app.whenReady().then(async () => {
       const { setNotificationEventSink } = await import('./notifications')
       setNotificationEventSink(moduleSink!, resolveClientId)
 
-      // Headless: print connection details
+      // Headless: print connection details. The bearer token stays out of
+      // stdout/logs by default — it lands in a 0600 file the operator reads;
+      // CRAFT_DEBUG_PRINT_TOKEN=1 opts back into the raw echo.
       if (isHeadless) {
         console.log(`CRAFT_SERVER_URL=${instance.protocol}://${instance.host}:${instance.port}`)
-        console.log(`CRAFT_SERVER_TOKEN=${instance.token}`)
+        if (process.env.CRAFT_DEBUG_PRINT_TOKEN === '1') {
+          console.log(`CRAFT_SERVER_TOKEN=${instance.token}`)
+        } else {
+          const { CONFIG_DIR } = await import('@craft-agent/shared/config')
+          const tokenFile = join(CONFIG_DIR, 'server-token')
+          writeFileSync(tokenFile, `${instance.token}\n`, { mode: 0o600 })
+          chmodSync(tokenFile, 0o600) // writeFileSync mode is ignored when the file already exists
+          console.log(`CRAFT_SERVER_TOKEN_FILE=${tokenFile}`)
+        }
       }
     }
 
