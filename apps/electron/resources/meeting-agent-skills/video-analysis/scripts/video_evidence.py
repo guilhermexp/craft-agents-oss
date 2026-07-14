@@ -12,8 +12,25 @@ import sys
 from pathlib import Path
 
 
-def run(command: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, check=check, text=True, capture_output=True)
+# Internal per-step budgets. They must stay below the TS caller's 180s
+# execFileAsync timeout so python enforces them first: python's subprocess.run
+# kills the ffmpeg child on timeout, while the TS timeout only kills python and
+# leaves ffmpeg orphaned decoding the whole video.
+FULL_DECODE_TIMEOUT = 120  # contact sheet / audio extraction decode the video
+QUICK_STEP_TIMEOUT = 30    # probe and seek-based single-frame extraction
+
+
+def run(
+    command: list[str], *, check: bool = True, timeout: float | None = None
+) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(command, check=check, text=True, capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # subprocess.run already killed the child. Best-effort callers
+        # (check=False) treat this as a failed step instead of aborting.
+        if check:
+            raise
+        return subprocess.CompletedProcess(command, returncode=124, stdout="", stderr="timeout")
 
 
 def require_tool(name: str) -> None:
@@ -36,7 +53,8 @@ def probe(video: Path) -> dict:
             "-show_format",
             "-show_streams",
             str(video),
-        ]
+        ],
+        timeout=QUICK_STEP_TIMEOUT,
     )
     return json.loads(result.stdout)
 
@@ -116,6 +134,7 @@ def extract_contact_sheet(video: Path, output: Path, duration: float) -> bool:
             str(output),
         ],
         check=False,
+        timeout=FULL_DECODE_TIMEOUT,
     )
     return result.returncode == 0 and output.exists() and output.stat().st_size > 0
 
@@ -144,6 +163,7 @@ def extract_frames(video: Path, frames_dir: Path, timestamps: list[float]) -> li
                 str(frame),
             ],
             check=False,
+            timeout=QUICK_STEP_TIMEOUT,
         )
         if result.returncode == 0 and frame.exists() and frame.stat().st_size > 0:
             paths.append(frame)
@@ -165,6 +185,7 @@ def extract_audio(video: Path, output: Path) -> bool:
             str(output),
         ],
         check=False,
+        timeout=FULL_DECODE_TIMEOUT,
     )
     return result.returncode == 0 and output.exists() and output.stat().st_size > 0
 
