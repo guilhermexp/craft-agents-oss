@@ -225,6 +225,18 @@ export function getAllowRemoteEvaluate(): boolean {
 }
 
 /**
+ * Throw if remote/agent-driven JS evaluation is disabled by config. Single
+ * source of the gate so both the local (SessionManager) and remote (dispatcher)
+ * agent paths enforce the same policy.
+ * SECURITY (auditoria 2026-07-14): fecha o bypass do path local do `evaluate`.
+ */
+export function assertRemoteEvaluateAllowed(): void {
+  if (!getAllowRemoteEvaluate()) {
+    throw new Error('browser_evaluate disabled by config (allowRemoteEvaluate=false)');
+  }
+}
+
+/**
  * Set whether remote agents may run `browser_tool evaluate` locally.
  */
 export function setAllowRemoteEvaluate(allowed: boolean): void {

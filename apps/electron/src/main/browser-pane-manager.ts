@@ -43,6 +43,25 @@ const EARLY_THEME_EXTRACTION_DELAY_MS = 100
 const BROWSER_EMPTY_STATE_PAGE = 'browser-empty-state.html'
 const CRAFT_DEEPLINK_SCHEME_PREFIX = `${process.env.CRAFT_DEEPLINK_SCHEME || 'craftagents'}://`
 
+/**
+ * SECURITY (auditoria 2026-07-14): navegação de topo e popups do browser
+ * agêntico são restritas a http/https (+ about:blank). Bloqueia `file:`,
+ * `chrome:`, etc. que um agente sob prompt-injection poderia usar para ler
+ * arquivos locais (~/.aws/credentials, .env, id_rsa) ou fazer SSRF.
+ * TODO(security): considerar bloquear loopback/link-local (169.254.169.254,
+ * localhost) — sem caso de uso legítimo do agente hoje.
+ */
+function isAllowedTopLevelUrl(rawUrl: string): boolean {
+  if (rawUrl === 'about:blank') return true
+  let parsed: URL
+  try {
+    parsed = new URL(rawUrl)
+  } catch {
+    return false
+  }
+  return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+}
+
 const THEME_COLOR_EXTRACTOR_FN = String.raw`
 () => {
   const toHex = (r, g, b) => '#' + [r, g, b].map(c => c.toString(16).padStart(2, '0')).join('');
@@ -365,7 +384,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private interactedCallback: ((id: string) => void) | null = null
   private profilesChangeCallback: ((settings: BrowserProfileSettings) => void) | null = null
   private profileManagementRequestCallback: ((instanceId: string) => void) | null = null
-  private partitionPermissionsInitialized = false
+  // SECURITY (auditoria 2026-07-14): dedup POR partition, não por instância.
+  // O guard booleano antigo só registrava o handler na 1ª partition; profiles
+  // secundários caíam no default permissivo do Electron. `session.fromPartition`
+  // devolve o mesmo objeto por partition, então o WeakSet dedupe por partition.
+  private readonly configuredPermissionSessions = new WeakSet<ElectronSession>()
   // Dedupe permission-denial logs: a page's service workers re-request the same
   // always-denied permissions (web-app-installation, background-sync) on a timer —
   // sometimes for many minutes after the pane is gone — which floods the log with
@@ -975,6 +998,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       } else {
         normalizedUrl = `https://duckduckgo.com/?q=${encodeURIComponent(normalizedUrl)}`
       }
+    }
+
+    if (!isAllowedTopLevelUrl(normalizedUrl)) {
+      const scheme = normalizedUrl.split(':')[0]
+      throw new Error(`Navigation blocked: scheme "${scheme}:" is not allowed (only http/https)`)
     }
 
     const timeoutMs = 30_000
@@ -3109,9 +3137,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   private setupSessionPermissions(ses: ElectronSession): void {
-    if (this.partitionPermissionsInitialized) return
-    this.partitionPermissionsInitialized = true
+    if (this.configuredPermissionSessions.has(ses)) return
+    this.configuredPermissionSessions.add(ses)
 
+    // SECURITY (auditoria 2026-07-14): clipboard-read e display-capture negados
+    // por default — revisável se forem features necessárias do browser agêntico.
     const allow = new Set([
       'fullscreen',
       'pointerLock',
@@ -3120,9 +3150,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       'geolocation',
       'media',
       'speaker-selection',
-      'display-capture',
       'screen-wake-lock',
-      'clipboard-read',
       'clipboard-sanitized-write',
       'idle-detection',
     ])
@@ -3447,16 +3475,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         return { action: 'deny' }
       }
 
-      let parsed: URL
-      try {
-        parsed = new URL(details.url)
-      } catch {
-        mainLog.warn(`[browser-pane] window-open denied id=${instance.id} reason=invalid_url url=${details.url}`)
-        return { action: 'deny' }
-      }
-
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        mainLog.warn(`[browser-pane] window-open denied id=${instance.id} reason=unsupported_protocol protocol=${parsed.protocol} url=${details.url}`)
+      if (!isAllowedTopLevelUrl(details.url)) {
+        mainLog.warn(`[browser-pane] window-open denied id=${instance.id} reason=unsupported_scheme url=${details.url}`)
         return { action: 'deny' }
       }
 

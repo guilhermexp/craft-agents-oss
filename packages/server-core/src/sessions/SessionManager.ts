@@ -88,6 +88,7 @@ import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlA
 import { loadAllSkills, loadSkillBySlug, invalidateSkillsCache, type LoadedSkill } from '@craft-agent/shared/skills'
 import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
 import { getToolIconsDir, getMiniModel, isHermesProvider } from '@craft-agent/shared/config'
+import { assertRemoteEvaluateAllowed } from '@craft-agent/shared/config'
 import { getDefaultSummarizationModel } from '@craft-agent/shared/config/models'
 import type { SummarizeCallback } from '@craft-agent/shared/sources'
 import { type ThinkingLevel, DEFAULT_THINKING_LEVEL, normalizeThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
@@ -3414,6 +3415,9 @@ export class SessionManager implements ISessionManager {
               return bpm.goForward(instanceId)
             },
             evaluate: async (expression) => {
+              // SECURITY (auditoria 2026-07-14): mesmo gate do path remoto —
+              // fecha o bypass de evaluate quando allowRemoteEvaluate=false.
+              assertRemoteEvaluateAllowed()
               const instanceId = await resolveSessionBrowserInstance('browser_evaluate')
               return bpm.evaluate(instanceId, expression)
             },
