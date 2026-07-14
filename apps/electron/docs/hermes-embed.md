@@ -798,6 +798,25 @@ recovery event. Now:
   `pendingProviderRestart` and applied in the `chatImpl` `finally` block once
   the turn ends.
 
+### Subprocess death no longer bricks the session
+
+`@mcpc-tech/acp-ai-provider@0.3.3` registers no `exit` listener on the spawned
+agent process, so a crashed Python runtime used to leave a stale
+connection/`agentProcess` — every following turn wrote into a dead pipe
+(opaque EPIPE) until the app restarted. Now:
+
+- After `provider.initSession()` the agent attaches a `once('exit')` observer
+  to the provider's `agentProcess` (idempotent per process; a stale exit from
+  an intentionally replaced provider is a no-op).
+- Observed exit while idle → provider-level `cleanup()` (force-kills the stale
+  process) + `provider = null`, so the next turn respawns clean.
+- Observed exit mid-turn → `pendingProviderRestart = true`; the existing
+  `chatImpl` `finally` reset applies once the turn ends.
+- Fallback: the streaming `catch` runs `isHermesSubprocessIoError(message)`
+  (EPIPE/ECONNRESET/stream-destroyed signatures) and flags the restart when the
+  exit event hasn't fired yet. Business errors (rate limits, auth) never tear
+  the provider down.
+
 ### `postInit` no longer double-syncs the MCP pool
 
 `SessionManager` already calls `mcpPool.sync(...)` before constructing the
@@ -823,6 +842,10 @@ updates `SourceManager` state.
   - No-op when descriptors unchanged.
   - Restart provider on descriptor change.
   - Defer restart while streaming, apply on stream completion.
+  - Subprocess exit recovery: idle exit drops the provider, mid-turn exit
+    defers via `pendingProviderRestart`, replaced-provider exit is a no-op,
+    and `isHermesSubprocessIoError` matches dead-pipe signatures but not
+    business errors.
   - `postInit` skips redundant pool sync when `poolServerUrl` is set.
   - `postInit` falls back to `setSourceServers` (with sync) when no pool URL.
 - `../hermes-agent/tests/acp/test_server.py`
