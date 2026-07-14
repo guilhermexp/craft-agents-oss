@@ -1144,4 +1144,75 @@ describe('BrowserPaneManager', () => {
       })
     })
   })
+
+  // SECURITY (auditoria 2026-07-14): browser agêntico endurecido contra a cadeia
+  // de exfiltração de credenciais via prompt-injection. Findings F1.1 e F1.3.
+  describe('agentic security hardening', () => {
+    it('navigate rejects file:// scheme (F1.1 — local file read)', async () => {
+      manager.createInstance('sec-file')
+      await expect(manager.navigate('sec-file', 'file:///etc/passwd')).rejects.toThrow(/scheme "file:" is not allowed/)
+      const instance = (manager as any).instances.get('sec-file')
+      expect(instance.pageView.webContents.loadURL).not.toHaveBeenCalledWith('file:///etc/passwd')
+    })
+
+    it('navigate rejects chrome:// scheme (F1.1)', async () => {
+      manager.createInstance('sec-chrome')
+      await expect(manager.navigate('sec-chrome', 'chrome://settings')).rejects.toThrow(/scheme "chrome:" is not allowed/)
+    })
+
+    it('navigate allows https (F1.1 — legit traffic unaffected)', async () => {
+      manager.createInstance('sec-https')
+      await manager.navigate('sec-https', 'https://example.com')
+      const instance = (manager as any).instances.get('sec-https')
+      expect(instance.pageView.webContents.loadURL).toHaveBeenCalledWith('https://example.com')
+    })
+
+    it('windowOpen denies non-http popup schemes (F1.1)', () => {
+      manager.createInstance('sec-popup')
+      const instance = (manager as any).instances.get('sec-popup')
+      const openHandler = instance.pageView.webContents.setWindowOpenHandler.mock.calls[0][0]
+
+      const result = openHandler({ url: 'file:///Users/victim/.aws/credentials', disposition: 'new-popup', frameName: '' })
+      expect(result).toEqual({ action: 'deny' })
+    })
+
+    it('registers permission handler for every distinct partition (F1.3)', () => {
+      const sesA = { setPermissionCheckHandler: mock(() => {}), setPermissionRequestHandler: mock(() => {}), setDisplayMediaRequestHandler: mock(() => {}) }
+      const sesB = { setPermissionCheckHandler: mock(() => {}), setPermissionRequestHandler: mock(() => {}), setDisplayMediaRequestHandler: mock(() => {}) }
+
+      ;(manager as any).setupSessionPermissions(sesA)
+      ;(manager as any).setupSessionPermissions(sesB)
+
+      // The old boolean guard only registered the FIRST partition; second fell
+      // through to Electron's permissive default. Both must register now.
+      expect(sesA.setPermissionRequestHandler).toHaveBeenCalledTimes(1)
+      expect(sesB.setPermissionRequestHandler).toHaveBeenCalledTimes(1)
+    })
+
+    it('is idempotent per partition (F1.3 — no double registration)', () => {
+      const ses = { setPermissionCheckHandler: mock(() => {}), setPermissionRequestHandler: mock(() => {}), setDisplayMediaRequestHandler: mock(() => {}) }
+      ;(manager as any).setupSessionPermissions(ses)
+      ;(manager as any).setupSessionPermissions(ses)
+      expect(ses.setPermissionRequestHandler).toHaveBeenCalledTimes(1)
+    })
+
+    it('denies clipboard-read and display-capture, allows geolocation (F1.3)', () => {
+      const ses = { setPermissionCheckHandler: mock(() => {}), setPermissionRequestHandler: mock(() => {}), setDisplayMediaRequestHandler: mock(() => {}) }
+      ;(manager as any).setupSessionPermissions(ses)
+
+      const requestHandler = (ses.setPermissionRequestHandler.mock.calls[0] as unknown[])[0] as (
+        wc: unknown, permission: string, cb: (allow: boolean) => void, details: unknown,
+      ) => void
+
+      const decide = (permission: string): boolean => {
+        let decision = false
+        requestHandler({}, permission, (allow: boolean) => { decision = allow }, { requestingOrigin: 'https://evil.example' })
+        return decision
+      }
+
+      expect(decide('clipboard-read')).toBe(false)
+      expect(decide('display-capture')).toBe(false)
+      expect(decide('geolocation')).toBe(true)
+    })
+  })
 })
