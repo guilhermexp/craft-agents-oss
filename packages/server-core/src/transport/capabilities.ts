@@ -134,6 +134,33 @@ export async function requestClientOpenFileDialog(
   return await server.invokeClient(clientId, CLIENT_OPEN_FILE_DIALOG, spec)
 }
 
+/** Default transport budget for browser invokes without an explicit action timeout. */
+const BROWSER_INVOKE_BASE_TIMEOUT_MS = 30_000
+/** Headroom over the action's own timeout so the client-side result wins the race. */
+const BROWSER_INVOKE_TIMEOUT_MARGIN_MS = 5_000
+/** Hard ceiling for the transport budget (runtime clamps action timeouts below this). */
+const BROWSER_INVOKE_MAX_TIMEOUT_MS = 150_000
+
+/**
+ * Derive the transport budget from the action's own `timeoutMs` (carried inside
+ * an options arg, e.g. clickElement/waitFor). The budget must exceed the action
+ * timeout: if the transport gives up first, the action (already executed on the
+ * desktop) gets replayed by the agent — double-submit.
+ */
+export function browserInvokeBudgetMs(req: BrowserCapabilityRequest): number {
+  let requested = 0
+  for (const arg of req.args) {
+    if (arg && typeof arg === 'object' && typeof (arg as { timeoutMs?: unknown }).timeoutMs === 'number') {
+      requested = Math.max(requested, (arg as { timeoutMs: number }).timeoutMs)
+    }
+  }
+  if (requested <= 0) return BROWSER_INVOKE_BASE_TIMEOUT_MS
+  return Math.min(
+    Math.max(requested + BROWSER_INVOKE_TIMEOUT_MARGIN_MS, BROWSER_INVOKE_BASE_TIMEOUT_MS),
+    BROWSER_INVOKE_MAX_TIMEOUT_MS,
+  )
+}
+
 /**
  * Ask the client to invoke a `BrowserPaneManager` method.
  *
@@ -145,5 +172,16 @@ export async function requestClientBrowserInvoke<T>(
   clientId: string,
   req: BrowserCapabilityRequest,
 ): Promise<T> {
-  return server.invokeClient(clientId, CLIENT_BROWSER_INVOKE, req) as Promise<T>
+  const budgetMs = browserInvokeBudgetMs(req)
+  try {
+    const result = server.invokeClientWithTimeout
+      ? server.invokeClientWithTimeout(clientId, CLIENT_BROWSER_INVOKE, budgetMs, req)
+      : server.invokeClient(clientId, CLIENT_BROWSER_INVOKE, req)
+    return await (result as Promise<T>)
+  } catch (err) {
+    if ((err as { code?: string })?.code === 'CLIENT_REQUEST_TIMEOUT' && err instanceof Error) {
+      err.message += ' — the browser action may still have executed on the desktop; run browser_snapshot to check the page state before retrying.'
+    }
+    throw err
+  }
 }

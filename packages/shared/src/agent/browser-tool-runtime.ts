@@ -271,6 +271,20 @@ function getOpenVisibilitySettlePollMs(override?: number): number {
   return 100;
 }
 
+/**
+ * Ceiling for agent-provided action timeouts (click navigation wait, wait
+ * command). Must stay below the remote bridge's transport budget ceiling
+ * (150s in server-core transport/capabilities.ts) minus its margin, so the
+ * transport never gives up before the action — a premature transport timeout
+ * makes the agent replay an already-executed action (double-submit).
+ */
+export const MAX_BROWSER_ACTION_TIMEOUT_MS = 120_000;
+
+export function clampBrowserTimeoutMs(timeoutMs: number | undefined): number | undefined {
+  if (timeoutMs === undefined) return undefined;
+  return Math.min(timeoutMs, MAX_BROWSER_ACTION_TIMEOUT_MS);
+}
+
 async function waitForForegroundOpenVisibility(args: {
   fns: BrowserPaneFns;
   instanceId: string;
@@ -926,7 +940,7 @@ async function executeSingleCommand(args: {
 
     const before = await getPageMetrics(fns);
     const started = Date.now();
-    await fns.click(ref, { waitFor, timeoutMs });
+    await fns.click(ref, { waitFor, timeoutMs: clampBrowserTimeoutMs(timeoutMs) });
     const elapsedMs = Date.now() - started;
     const after = await getPageMetrics(fns);
 
@@ -1441,7 +1455,7 @@ async function executeSingleCommand(args: {
     }
 
     const started = Date.now();
-    const result = await fns.waitFor({ kind, value, timeoutMs });
+    const result = await fns.waitFor({ kind, value, timeoutMs: clampBrowserTimeoutMs(timeoutMs) });
     const totalElapsed = Date.now() - started;
 
     return {
