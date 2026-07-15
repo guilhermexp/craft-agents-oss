@@ -119,6 +119,11 @@ that checkout as-is and skips the cache + patch step. Unset it before validating
 Craft's embedded update path. Production and daily local updates run through
 `NousResearch/hermes-agent` + `hermes-version.txt` + Craft overlay patches.
 
+The dashboard Update flow (`update-hermes-runtime.sh`) discards an inherited
+`HERMES_SRC` with a warning so it always builds from pin + overlay patches;
+set `HERMES_ALLOW_SRC_OVERRIDE=1` alongside `HERMES_SRC` to force the override
+through that path during active Hermes development.
+
 When syncing Craft upstream, preserve these Craft-side integration points:
 
 | Craft file | Craft-required behavior |
@@ -126,7 +131,7 @@ When syncing Craft upstream, preserve these Craft-side integration points:
 | `packages/shared/src/agent/hermes-agent.ts` | Hermes gets both `craft-sources` and `craft-session` MCP endpoints through ACP; source changes do not kill an active stream; model/session changes do not silently drop MCP config. Normal Hermes turns are prefixed with a hidden Craft session context envelope containing workspace, session labels, matching War Room channel metadata, and privacy rules so a session opened under `#client` starts with the right client/project context even outside the War Room orchestrator path. Before each subprocess spawn, calls `seedHermesAuthFromCraft` so embedded Hermes inherits the user's already-authenticated Craft OAuth/API-key credentials. ACP permission requests from Hermes are bridged into Craft's native `permission_request` event so the renderer shows the same approval UI and desktop notification used by Claude/Pi. |
 | `packages/shared/src/hermes/acp-config.ts` | Bundled runtime env (`CRAFT_HERMES_PYTHON`, `CRAFT_HERMES_ARGS`, `CRAFT_HERMES_HOME`) is treated as one coherent ACP command/config unit. In packaged builds, `CRAFT_HERMES_REQUIRE_BUNDLED=1` must fail closed instead of falling back to a system `hermes`. |
 | `packages/shared/src/hermes/auth-bridge.ts` | One-way seed (Craft → Hermes) at spawn: Craft Credential Manager / LLM connections are the source of truth. Claude OAuth → `CLAUDE_CODE_OAUTH_TOKEN`; ChatGPT Plus/Codex OAuth → `<HERMES_HOME>/auth.json` `providers["openai-codex"].tokens`; API-key connections → provider env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GOOGLE_API_KEY`/`GEMINI_API_KEY`, `XAI_API_KEY`, etc.) for the Hermes subprocess/dashboard. No separate Hermes `.env` secret store is required for the embedded app. |
-| `packages/shared/src/mcp/session-tools-server.ts` | Craft-native tools exposed to Hermes include browser, delegation/session, LLM, auth/config helpers, metadata, and automation; callbacks stay session-scoped. |
+| `packages/shared/src/mcp/session-tools-server.ts` | Craft-native tools exposed to Hermes include browser, delegation/session, LLM, auth/config helpers, metadata, and automation; callbacks stay session-scoped. Loopback requests are guarded against DNS rebinding (`Host` must be loopback; `Origin`, when present, must be loopback — see `loopback-guard.ts`); native MCP clients send no web `Origin` and pass unchanged. An opt-in `authToken` (bearer) option exists but is off by default — enabling it for Hermes requires first validating that the Hermes MCP client forwards headers configured via ACP `session.mcpServers[].headers`. |
 | `packages/server-core/src/handlers/rpc/hermes.ts` | Runtime detection, dashboard process launch, file/log/skill browsing, dashboard-delegated dev update env, update marker watching, and restart notification stay local-only and path-safe under app-scoped `HERMES_HOME`. Also watches `<HERMES_HOME>/auth.json` so that when Hermes refreshes a Codex (`openai-codex`) OAuth token the new tokens are written back into Craft's credential store via `setLlmOAuth('chatgpt-plus', …)`. In Electron GUI mode, `hermes:startDashboard` delegates the visual mount to `hermes-dashboard-host`. |
 | `apps/electron/src/main/hermes-dashboard-host/` | Owns the Electron visual host for the Hermes dashboard: creates/reuses/closes the dedicated BrowserPane instance, validates the active localhost dashboard origin, keeps navigation policy scoped to that origin plus supported Craft deep-links, and refuses query-string auth handoff. It does not start ACP sessions, own `HERMES_HOME`, or persist secrets. |
 | `apps/electron/src/renderer/pages/settings/HermesSettingsPage.tsx` | Settings remains an operational Hermes page with compact files/skills views, version line, dashboard launch delegated through `hermes:startDashboard`, and no giant raw session dump. It must not duplicate the dashboard's native update action or create BrowserPane instances directly for Hermes. |
@@ -798,6 +803,25 @@ recovery event. Now:
   `pendingProviderRestart` and applied in the `chatImpl` `finally` block once
   the turn ends.
 
+### Subprocess death no longer bricks the session
+
+`@mcpc-tech/acp-ai-provider@0.3.3` registers no `exit` listener on the spawned
+agent process, so a crashed Python runtime used to leave a stale
+connection/`agentProcess` — every following turn wrote into a dead pipe
+(opaque EPIPE) until the app restarted. Now:
+
+- After `provider.initSession()` the agent attaches a `once('exit')` observer
+  to the provider's `agentProcess` (idempotent per process; a stale exit from
+  an intentionally replaced provider is a no-op).
+- Observed exit while idle → provider-level `cleanup()` (force-kills the stale
+  process) + `provider = null`, so the next turn respawns clean.
+- Observed exit mid-turn → `pendingProviderRestart = true`; the existing
+  `chatImpl` `finally` reset applies once the turn ends.
+- Fallback: the streaming `catch` runs `isHermesSubprocessIoError(message)`
+  (EPIPE/ECONNRESET/stream-destroyed signatures) and flags the restart when the
+  exit event hasn't fired yet. Business errors (rate limits, auth) never tear
+  the provider down.
+
 ### `postInit` no longer double-syncs the MCP pool
 
 `SessionManager` already calls `mcpPool.sync(...)` before constructing the
@@ -823,6 +847,10 @@ updates `SourceManager` state.
   - No-op when descriptors unchanged.
   - Restart provider on descriptor change.
   - Defer restart while streaming, apply on stream completion.
+  - Subprocess exit recovery: idle exit drops the provider, mid-turn exit
+    defers via `pendingProviderRestart`, replaced-provider exit is a no-op,
+    and `isHermesSubprocessIoError` matches dead-pipe signatures but not
+    business errors.
   - `postInit` skips redundant pool sync when `poolServerUrl` is set.
   - `postInit` falls back to `setSourceServers` (with sync) when no pool URL.
 - `../hermes-agent/tests/acp/test_server.py`

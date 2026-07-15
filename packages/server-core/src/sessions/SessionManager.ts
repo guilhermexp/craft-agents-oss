@@ -88,6 +88,7 @@ import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlA
 import { loadAllSkills, loadSkillBySlug, invalidateSkillsCache, type LoadedSkill } from '@craft-agent/shared/skills'
 import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
 import { getToolIconsDir, getMiniModel, isHermesProvider } from '@craft-agent/shared/config'
+import { assertRemoteEvaluateAllowed } from '@craft-agent/shared/config'
 import { getDefaultSummarizationModel } from '@craft-agent/shared/config/models'
 import type { SummarizeCallback } from '@craft-agent/shared/sources'
 import { type ThinkingLevel, DEFAULT_THINKING_LEVEL, normalizeThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
@@ -1166,15 +1167,21 @@ export function createManagedSession(
 
 /**
  * Resolve supportsBranching for a managed session.
- * Prefers the live agent instance; falls back to true for all backends.
+ * Prefers the live agent instance; with a lazy agent (e.g. session restored
+ * after restart) falls back to the declarative capability of the resolved
+ * backend — a blind `true` here made restored Hermes sessions offer branches
+ * that silently lost all history (Hermes does not consume branchFrom*).
  */
-function resolveSupportsBranching(managed: ManagedSession): boolean {
+export function resolveSupportsBranching(managed: ManagedSession): boolean {
   // If agent is live, use its instance property (authoritative)
   if (managed.agent) {
     return managed.agent.supportsBranching
   }
 
-  return true // default: branching enabled for all backends
+  return resolveBackendContext({
+    sessionConnectionSlug: managed.llmConnection,
+    managedModel: managed.model,
+  }).capabilities.supportsBranching
 }
 
 const DEFAULT_TOKEN_USAGE = {
@@ -2574,6 +2581,17 @@ export class SessionManager implements ISessionManager {
     } | undefined
 
     if (options?.branchFromSessionId || options?.branchFromMessageId) {
+      // Backends without branching support (Hermes) never consume branchFrom* —
+      // accepting the request would create a branch with silent amnesia.
+      if (!targetBackendContext.capabilities.supportsBranching) {
+        sessionLog.warn('Branch validation failed: target backend does not support branching', {
+          workspaceId,
+          branchFromSessionId: options.branchFromSessionId,
+          targetProvider: targetBackendContext.provider,
+        })
+        throw new Error(`Branching is not supported for the ${targetBackendContext.provider} backend.`)
+      }
+
       if (!options.branchFromSessionId || !options.branchFromMessageId) {
         sessionLog.warn('Branch validation failed: missing branchFromSessionId or branchFromMessageId', {
           workspaceId,
@@ -3375,15 +3393,15 @@ export class SessionManager implements ISessionManager {
             },
             getConsoleLogs: async (options) => {
               const instanceId = await resolveSessionBrowserInstance('browser_console')
-              return bpm.getConsoleLogs(instanceId, options)
+              return bpm.getConsoleLogsAsync(instanceId, options)
             },
             windowResize: async (options) => {
               const instanceId = await resolveSessionBrowserInstance('browser_window_resize')
-              return bpm.windowResize(instanceId, options.width, options.height)
+              return bpm.windowResizeAsync(instanceId, options.width, options.height)
             },
             getNetworkLogs: async (options) => {
               const instanceId = await resolveSessionBrowserInstance('browser_network')
-              return bpm.getNetworkLogs(instanceId, options)
+              return bpm.getNetworkLogsAsync(instanceId, options)
             },
             waitFor: async (options) => {
               const instanceId = await resolveSessionBrowserInstance('browser_wait')
@@ -3414,6 +3432,9 @@ export class SessionManager implements ISessionManager {
               return bpm.goForward(instanceId)
             },
             evaluate: async (expression) => {
+              // SECURITY (auditoria 2026-07-14): mesmo gate do path remoto —
+              // fecha o bypass de evaluate quando allowRemoteEvaluate=false.
+              assertRemoteEvaluateAllowed()
               const instanceId = await resolveSessionBrowserInstance('browser_evaluate')
               return bpm.evaluate(instanceId, expression)
             },
@@ -7785,6 +7806,18 @@ export class SessionManager implements ISessionManager {
     this.pendingCredentialResolvers.clear()
     this.pendingPermissionRequests.clear()
     this.adminRememberApprovals.clear()
+
+    // Destroy active agent backends so their subprocesses (Claude SDK, Pi,
+    // Hermes ACP adapter) don't outlive the server process.
+    for (const [sessionId, managed] of this.sessions) {
+      if (!managed.agent) continue
+      try {
+        managed.agent.destroy()
+        sessionLog.info(`Destroyed agent for session ${sessionId}`)
+      } catch (error) {
+        sessionLog.error(`Failed to destroy agent for session ${sessionId}:`, error)
+      }
+    }
 
     // Clean up session-scoped tool callbacks for all sessions
     for (const sessionId of this.sessions.keys()) {

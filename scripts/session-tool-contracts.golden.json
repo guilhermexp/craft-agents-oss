@@ -1,0 +1,2714 @@
+{
+  "browser_tool": {
+    "apiVersion": "v1",
+    "description": "Run browser actions using a CLI-like command (string or array input).\n\nAll browser interactions use this single tool with strict validation and actionable feedback.\nString mode supports batching with semicolons: `fill @e1 value; fill @e2 value; click @e3`\nBatch stops after navigation commands (click, navigate, back, forward) since page state may change.\n\nArray mode bypasses string parsing and preserves raw arguments exactly (recommended for semicolons, tabs, and newlines):\n- `[\"evaluate\", \"var x = 1; var y = 2; x + y\"]`\n- `[\"paste\", \"Name\\tAge\\nAlice\\t30\"]`\n\nExamples:\n- `--help`\n- `open`\n- `navigate https://example.com`\n- `snapshot`\n- `find login button` — search elements by keyword\n- `click @e12`\n- `click-at 350 200` — click at pixel coordinates (for canvas elements)\n- `fill @e5 user@example.com`\n- `type Hello World` — type into currently focused element (no ref needed)\n- `select @e3 optionValue`\n- `select @e75 CNAME --assert-text Target --timeout 3000`\n- `set-clipboard Name\\tAge\\nAlice\\t30` — write text to clipboard\n- `get-clipboard` — read clipboard text content\n- `paste Name\\tAge\\nAlice\\t30` — set clipboard and trigger Ctrl/Cmd+V\n- `scroll down 800`\n- `evaluate document.title`\n- `console 50 error`\n- `screenshot` — raw screenshot\n- `screenshot --annotated` — screenshot with @eN labels overlaid on interactive elements\n- `screenshot-region 100 200 640 480`\n- `screenshot-region --ref @e12 --padding 8`\n- `screenshot-region --selector div[data-testid=\"chart\"]`\n- `window-resize 1440 900`\n- `network 50 failed`\n- `wait network-idle 8000`\n- `key Enter`\n- `key k meta`\n- `downloads wait 15000`\n- `focus [windowId]` — focus existing browser window (no new window)\n- `windows` — list current browser windows and ownership state\n- `release` — dismiss the agent control overlay when done\n- `close` — close and destroy the browser window\n- `hide` — hide the window while preserving state",
+    "executionMode": "backend",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "description": "Browser command as a string (e.g., \"click @e1\") or array (e.g., [\"evaluate\", \"var x = 1; x + 2\"]). Array mode preserves semicolons and whitespace in arguments."
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "type": "object"
+    },
+    "name": "browser_tool",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "allow"
+  },
+  "call_llm": {
+    "apiVersion": "v1",
+    "description": "Invoke a secondary LLM for focused subtasks. Use for:\n- Cost optimization: use a smaller model for simple tasks (summarization, classification)\n- Structured output: JSON schema compliance via prompt instructions\n- Parallel processing: call multiple times in one message - all run simultaneously\n- Context isolation: process content without polluting main context\n\nPut text/content directly in the 'prompt' parameter. Do NOT pass inline text via attachments.\nOnly use 'attachments' for existing file paths on disk - the tool loads file content automatically.\nFor large files (>2000 lines), use {path, startLine, endLine} to select a portion.",
+    "executionMode": "backend",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "attachments": {
+          "description": "File paths on disk to attach (max 20). NOT for inline text — put text in prompt instead. Use {path, startLine, endLine} for large files.",
+          "items": {
+            "anyOf": [
+              {
+                "description": "Simple file path",
+                "type": "string"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "endLine": {
+                    "description": "Last line (1-indexed)",
+                    "type": "number"
+                  },
+                  "path": {
+                    "description": "File path",
+                    "type": "string"
+                  },
+                  "startLine": {
+                    "description": "First line (1-indexed)",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "maxTokens": {
+          "description": "Max output tokens (1-64000). Defaults to 4096",
+          "type": "number"
+        },
+        "model": {
+          "description": "Model ID or short name. Defaults to a fast model.",
+          "type": "string"
+        },
+        "outputFormat": {
+          "description": "Predefined output format",
+          "enum": [
+            "summary",
+            "classification",
+            "extraction",
+            "analysis",
+            "comparison",
+            "validation"
+          ],
+          "type": "string"
+        },
+        "outputSchema": {
+          "additionalProperties": false,
+          "description": "Custom JSON Schema for structured output",
+          "properties": {
+            "properties": {
+              "additionalProperties": {},
+              "type": "object"
+            },
+            "required": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "object",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "properties"
+          ],
+          "type": "object"
+        },
+        "prompt": {
+          "description": "Instructions for the LLM",
+          "type": "string"
+        },
+        "systemPrompt": {
+          "description": "Optional system prompt",
+          "type": "string"
+        },
+        "temperature": {
+          "description": "Sampling temperature 0-1",
+          "type": "number"
+        },
+        "thinking": {
+          "description": "Enable extended thinking. Incompatible with outputFormat/outputSchema",
+          "type": "boolean"
+        },
+        "thinkingBudget": {
+          "description": "Token budget for thinking (1024-100000). Defaults to 10000",
+          "type": "number"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "name": "call_llm",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "readOnly": true,
+    "safeMode": "allow"
+  },
+  "channel_dispatch": {
+    "apiVersion": "v1",
+    "description": "Dispatch work to another participant in the current War Room channel.\n\nUse this from a channel lead/orchestrator session when another configured channel participant should handle a task in the same shared room. The dispatch is recorded durably, the task is appended to the channel log, and the participant's Craft session receives the work.\n\nProvide participantId and message. Omit channelId when the current session was created by channel routing; include it only when the runtime cannot infer the current channel.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "channelId": {
+          "description": "Channel id. Omit when the current session is already bound to a channel.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Task or message to route to the participant in the same channel",
+          "type": "string"
+        },
+        "parentMessageId": {
+          "description": "Optional channel message id this dispatch should be linked to",
+          "type": "string"
+        },
+        "participantId": {
+          "description": "Channel participant id to dispatch work to, e.g. \"reviewer\"",
+          "type": "string"
+        }
+      },
+      "required": [
+        "participantId",
+        "message"
+      ],
+      "type": "object"
+    },
+    "name": "channel_dispatch",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "block"
+  },
+  "config_validate": {
+    "apiVersion": "v1",
+    "description": "Validate Craft Agent configuration files.\n\nUse this after editing configuration files to check for errors before they take effect.\nReturns structured validation results with errors, warnings, and suggestions.\n\n**Targets:**\n- `config`: Validates config.json (workspaces, model, settings)\n- `sources`: Validates all source config.json files\n- `statuses`: Validates statuses config.json\n- `preferences`: Validates preferences.json\n- `permissions`: Validates permissions.json files\n- `automations`: Validates automations.json configuration\n- `tool-icons`: Validates tool-icons.json\n- `all`: Validates all configuration files",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "sourceSlug": {
+          "description": "Validate a specific source by slug",
+          "type": "string"
+        },
+        "target": {
+          "description": "Which config file(s) to validate",
+          "enum": [
+            "config",
+            "sources",
+            "statuses",
+            "preferences",
+            "permissions",
+            "automations",
+            "tool-icons",
+            "all"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    },
+    "name": "config_validate",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "readOnly": true,
+    "safeMode": "allow"
+  },
+  "get_session_info": {
+    "apiVersion": "v1",
+    "description": "Get metadata about the current session or a specific session by ID.\n\nReturns labels, status, name, permission mode, and other details.\nCall with no arguments to introspect your own session state.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "sessionId": {
+          "description": "Session ID to query. Omit to get info about the current session.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "get_session_info",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "readOnly": true,
+    "safeMode": "allow"
+  },
+  "list_messaging_channels": {
+    "apiVersion": "v1",
+    "description": "List messaging channels (Telegram, WhatsApp, Lark) bound to a session.\nShows which external chat apps are connected and can send/receive messages.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "sessionId": {
+          "description": "Session ID to list bindings for. Defaults to current session.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_messaging_channels",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "readOnly": true,
+    "safeMode": "allow"
+  },
+  "list_sessions": {
+    "apiVersion": "v1",
+    "description": "List sessions in the workspace. Returns total count + paginated results.\n\nUse filters (status, label, search) to narrow results instead of fetching everything. Default limit is 20 sessions.\nUse get_session_info for full details on a specific session (list-then-detail pattern).",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "label": {
+          "description": "Filter by label",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Max sessions to return (default 20, max 100)",
+          "type": "number"
+        },
+        "offset": {
+          "description": "Skip first N results (for pagination)",
+          "type": "number"
+        },
+        "search": {
+          "description": "Substring match on session name",
+          "type": "string"
+        },
+        "sortBy": {
+          "description": "Sort order (default: recent)",
+          "enum": [
+            "recent",
+            "name",
+            "status"
+          ],
+          "type": "string"
+        },
+        "status": {
+          "description": "Filter by status",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_sessions",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "readOnly": true,
+    "safeMode": "allow"
+  },
+  "memory_recall": {
+    "apiVersion": "v1",
+    "description": "Search persistent memory for relevant information from past sessions.\n\nReturns memories ranked by salience (relevance × reinforcement × recency).\nUse when you need context from previous conversations or to check what you know about the user/project.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "category": {
+          "description": "Filter by category",
+          "enum": [
+            "profile",
+            "event",
+            "knowledge",
+            "behavior",
+            "skill"
+          ],
+          "type": "string"
+        },
+        "limit": {
+          "description": "Max results (default 10)",
+          "type": "number"
+        },
+        "query": {
+          "description": "Search query to find relevant memories",
+          "type": "string"
+        },
+        "target": {
+          "description": "Filter by target",
+          "enum": [
+            "agent",
+            "user"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "memory_recall",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "readOnly": true,
+    "safeMode": "allow"
+  },
+  "memory_store": {
+    "apiVersion": "v1",
+    "description": "Save durable information to persistent memory that survives across sessions.\n\nWHEN TO SAVE (proactively, don't wait to be asked):\n- User corrects you or says \"remember this\"\n- User shares a preference, habit, or personal detail\n- You discover something about the environment (tools, project structure)\n- You learn a convention or workflow specific to this user's setup\n\nTWO TARGETS:\n- 'user': who the user is — name, role, preferences, communication style\n- 'agent': your notes — environment facts, project conventions, lessons learned\n\nACTIONS: add (new entry), replace (update existing via old_text), remove (delete via old_text).\nSkip trivial info, task progress, or temporary state.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "description": "Action: add new, replace existing, or remove entry",
+          "enum": [
+            "add",
+            "replace",
+            "remove"
+          ],
+          "type": "string"
+        },
+        "category": {
+          "description": "Memory category",
+          "enum": [
+            "profile",
+            "event",
+            "knowledge",
+            "behavior",
+            "skill"
+          ],
+          "type": "string"
+        },
+        "content": {
+          "description": "Entry content (required for add/replace)",
+          "type": "string"
+        },
+        "old_text": {
+          "description": "Unique substring to identify entry (required for replace/remove)",
+          "type": "string"
+        },
+        "tags": {
+          "description": "Tags for organization",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "target": {
+          "description": "'user' for user profile, 'agent' for agent notes",
+          "enum": [
+            "agent",
+            "user"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "target",
+        "category"
+      ],
+      "type": "object"
+    },
+    "name": "memory_store",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "block"
+  },
+  "mermaid_validate": {
+    "apiVersion": "v1",
+    "description": "Validate Mermaid diagram syntax before outputting.\n\nUse this when:\n- Creating complex diagrams with many nodes/relationships\n- Unsure about syntax for a specific diagram type\n- Debugging a diagram that failed to render\n\nReturns validation result with specific error messages if invalid.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "code": {
+          "description": "The mermaid diagram code to validate",
+          "type": "string"
+        },
+        "render": {
+          "description": "Also attempt to render (catches layout errors)",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "type": "object"
+    },
+    "name": "mermaid_validate",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "readOnly": true,
+    "safeMode": "allow"
+  },
+  "render_template": {
+    "apiVersion": "v1",
+    "description": "Render a source's HTML template with data.\n\nUse this when a source provides HTML templates for rich rendering of its data (e.g., issue detail views, email threads, ticket summaries).\n\n**Workflow:**\n1. Fetch data from the source (via MCP tools or API calls)\n2. Call `render_template` with the source slug, template ID, and data\n3. Output an `html-preview` block with the returned file path as `\"src\"`\n\n**Available templates** are documented in each source's `guide.md` under the \"Templates\" section.\n\nTemplates use Mustache syntax — the tool handles rendering and writes the output HTML to the session data folder.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "data": {
+          "additionalProperties": {},
+          "description": "JSON data to render into the template",
+          "type": "object"
+        },
+        "source": {
+          "description": "Source slug (e.g., \"linear\", \"gmail\")",
+          "type": "string"
+        },
+        "template": {
+          "description": "Template ID (e.g., \"issue-detail\", \"issue-list\")",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "template",
+        "data"
+      ],
+      "type": "object"
+    },
+    "name": "render_template",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "allow"
+  },
+  "script_sandbox": {
+    "apiVersion": "v1",
+    "description": "Run quick inline diagnostics in a sandboxed subprocess with network isolation.\n\nUse this for short Python/Node/Bun snippets when strict Explore-mode Bash parsing blocks inline diagnostics.\n\n**Behavior:**\n- Executes script source from `script` in a temporary file\n- Returns stdout/stderr, exit code, duration, and timeout status\n- Accepts optional input files and stdin\n- Requires enforced network and filesystem isolation; if unsupported or unusable, execution is blocked\n\n**Safety:**\n- Sensitive credential env vars are stripped\n- Input files are restricted to the current session directory\n- Filesystem writes are restricted to the current session directory\n- Timeout is capped (default 5000ms, max 15000ms)\n- Network/filesystem isolation is required in all permission modes; if unavailable, execution is blocked",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "inputFiles": {
+          "description": "Optional input file paths relative to the session directory.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "language": {
+          "description": "Script runtime to use",
+          "enum": [
+            "python3",
+            "node",
+            "bun"
+          ],
+          "type": "string"
+        },
+        "script": {
+          "description": "Inline script source to execute in a sandboxed subprocess.",
+          "type": "string"
+        },
+        "stdin": {
+          "description": "Optional stdin payload passed to the script process.",
+          "type": "string"
+        },
+        "timeoutMs": {
+          "description": "Optional timeout in milliseconds (default 5000, max 15000).",
+          "maximum": 15000,
+          "minimum": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "language",
+        "script"
+      ],
+      "type": "object"
+    },
+    "name": "script_sandbox",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "allow"
+  },
+  "send_agent_message": {
+    "apiVersion": "v1",
+    "description": "Send a message to another session. The message is delivered with your session ID so the target can reply back.\n\nUse this to coordinate with spawned sessions, send follow-up instructions, or relay information between sessions.\nUse list_sessions to find session IDs, or use the sessionId returned by spawn_session.\n\nThe target session receives your message with a sender envelope containing your session ID, so it can use send_agent_message to reply.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "attachments": {
+          "description": "Files to include with the message",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "description": "Display name (defaults to file basename)",
+                "type": "string"
+              },
+              "path": {
+                "description": "Absolute file path on disk",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "message": {
+          "description": "The message to send to the target session",
+          "type": "string"
+        },
+        "sessionId": {
+          "description": "Target session ID to send the message to",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "message"
+      ],
+      "type": "object"
+    },
+    "name": "send_agent_message",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "block"
+  },
+  "send_developer_feedback": {
+    "apiVersion": "v1",
+    "description": "Send freeform feedback to the Craft Agent development team.\n\nUse this to share anything that would help improve the product — issues you hit, ideas for better tools, suggestions for improved workflows, or patterns you notice. Write in markdown with as much detail as possible. This is your direct line to the developers.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "message": {
+          "description": "Freeform markdown feedback — be detailed, use headings, lists, code blocks. Include what happened, what you expected, what would help, or any ideas/suggestions.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "type": "object"
+    },
+    "name": "send_developer_feedback",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "allow"
+  },
+  "set_session_labels": {
+    "apiVersion": "v1",
+    "description": "Set labels on the current session or a specific session by ID. Replaces all existing labels.\n\nUse this to tag sessions for filtering or to trigger label-based automations (LabelAdd/LabelRemove events).\nPass an empty array to clear all labels. Omit sessionId to target the current session.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "labels": {
+          "description": "Labels to set (replaces all existing labels)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "description": "Session ID to update. Omit to update the current session.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "labels"
+      ],
+      "type": "object"
+    },
+    "name": "set_session_labels",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "block"
+  },
+  "set_session_status": {
+    "apiVersion": "v1",
+    "description": "Set the status of the current session or a specific session by ID (e.g., \"todo\", \"in_progress\", \"done\").\n\nUse this to signal completion or trigger status-based automations (SessionStatusChange events).\nOmit sessionId to target the current session.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "sessionId": {
+          "description": "Session ID to update. Omit to update the current session.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Status to set (e.g., \"todo\", \"in_progress\", \"done\")",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "name": "set_session_status",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "block"
+  },
+  "skill_validate": {
+    "apiVersion": "v1",
+    "description": "Validate a skill's SKILL.md file.\n\nChecks:\n- Slug format (lowercase alphanumeric with hyphens)\n- SKILL.md exists and is readable\n- YAML frontmatter is valid with required fields (name, description)\n- Content is non-empty after frontmatter\n- Icon format if present (svg/png/jpg)",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "skillSlug": {
+          "description": "The slug of the skill to validate",
+          "type": "string"
+        }
+      },
+      "required": [
+        "skillSlug"
+      ],
+      "type": "object"
+    },
+    "name": "skill_validate",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "readOnly": true,
+    "safeMode": "allow"
+  },
+  "source_credential_prompt": {
+    "apiVersion": "v1",
+    "description": "Prompt the user to enter credentials for a source.\n\nUse this when a source requires authentication that isn't OAuth.\nThe user will see a secure input UI with appropriate fields based on the auth mode.\n\n**Auth Modes:**\n- `bearer`: Single token field (Bearer Token, API Key)\n- `basic`: Username and Password fields\n- `header`: API Key with custom header name shown\n- `query`: API Key for query parameter auth\n- `multi-header`: Multiple API keys with custom header names\n\n**IMPORTANT:** After calling this tool, execution will be paused for user input.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "description": {
+          "description": "Description shown to user",
+          "type": "string"
+        },
+        "headerNames": {
+          "description": "Header names for multi-header auth (e.g., [\"DD-API-KEY\", \"DD-APPLICATION-KEY\"])",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hint": {
+          "description": "Hint about where to find credentials",
+          "type": "string"
+        },
+        "labels": {
+          "additionalProperties": false,
+          "description": "Custom field labels",
+          "properties": {
+            "credential": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string"
+            },
+            "username": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "mode": {
+          "description": "Type of credential input",
+          "enum": [
+            "bearer",
+            "basic",
+            "header",
+            "query",
+            "multi-header"
+          ],
+          "type": "string"
+        },
+        "passwordRequired": {
+          "description": "For basic auth: whether password is required",
+          "type": "boolean"
+        },
+        "sourceSlug": {
+          "description": "The slug of the source to authenticate",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceSlug",
+        "mode"
+      ],
+      "type": "object"
+    },
+    "name": "source_credential_prompt",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "block"
+  },
+  "source_google_oauth_trigger": {
+    "apiVersion": "v1",
+    "description": "Trigger Google OAuth authentication for a Google API source.\n\nOpens a browser window for the user to sign in with their Google account.\n\n**Supported services:** Gmail, Calendar, Drive, Docs, Sheets, YouTube, Search Console\n\n**IMPORTANT:** After calling this tool, execution will be paused while OAuth completes.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "sourceSlug": {
+          "description": "The slug of the source to authenticate",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceSlug"
+      ],
+      "type": "object"
+    },
+    "name": "source_google_oauth_trigger",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "block"
+  },
+  "source_microsoft_oauth_trigger": {
+    "apiVersion": "v1",
+    "description": "Trigger Microsoft OAuth authentication for a Microsoft API source.\n\nOpens a browser window for the user to sign in with their Microsoft account.\n\n**Supported services:** Outlook, Calendar, OneDrive, Teams, SharePoint\n\n**IMPORTANT:** After calling this tool, execution will be paused while OAuth completes.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "sourceSlug": {
+          "description": "The slug of the source to authenticate",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceSlug"
+      ],
+      "type": "object"
+    },
+    "name": "source_microsoft_oauth_trigger",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "block"
+  },
+  "source_oauth_trigger": {
+    "apiVersion": "v1",
+    "description": "Start OAuth authentication for an MCP source.\n\nThis tool initiates the OAuth 2.0 + PKCE flow for sources that require authentication.\n\n**Prerequisites:**\n- Source must exist in the current workspace\n- Source must be type 'mcp' with authType 'oauth'\n- Source must have a valid MCP URL\n\n**IMPORTANT:** After calling this tool, execution will be paused while OAuth completes.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "sourceSlug": {
+          "description": "The slug of the source to authenticate",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceSlug"
+      ],
+      "type": "object"
+    },
+    "name": "source_oauth_trigger",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "block"
+  },
+  "source_slack_oauth_trigger": {
+    "apiVersion": "v1",
+    "description": "Trigger Slack OAuth authentication for a Slack API source.\n\nOpens a browser window for the user to sign in with their Slack account.\n\n**IMPORTANT:** After calling this tool, execution will be paused while OAuth completes.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "sourceSlug": {
+          "description": "The slug of the source to authenticate",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceSlug"
+      ],
+      "type": "object"
+    },
+    "name": "source_slack_oauth_trigger",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "block"
+  },
+  "source_test": {
+    "apiVersion": "v1",
+    "description": "Validate, test, and (by default) activate a source configuration.\n\n**This tool performs:**\n1. **Schema validation**: Validates config.json structure\n2. **Icon handling**: Checks/downloads icon if configured\n3. **Completeness check**: Warns about missing guide.md/icon/tagline\n4. **Connection test**: Tests if the source is reachable\n5. **Auth status**: Checks if source is authenticated\n6. **Auto-enable** (default): If validation passes, flip `enabled: true` in config (if needed) and activate the source in the running session so its tools become available without a restart.\n\nPass `autoEnable: false` to keep pure validation behavior (no config or session mutations).",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "autoEnable": {
+          "description": "Automatically enable and activate the source in the current session on successful validation. Defaults to true. Pass false to keep pure validation behavior.",
+          "type": "boolean"
+        },
+        "sourceSlug": {
+          "description": "The slug of the source to test",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceSlug"
+      ],
+      "type": "object"
+    },
+    "name": "source_test",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "allow"
+  },
+  "spawn_session": {
+    "apiVersion": "v1",
+    "description": "Create a new session that runs independently with its own prompt, connection, model, and sources.\n\nUse this to delegate tasks to parallel sessions — research, analysis, drafts, or any work that benefits from separate context.\n\nCall with help=true first to discover available connections, models, and sources.\nWhen spawning, the 'prompt' parameter is required.\n\nOptional overrides: `model`, `llmConnection`, `permissionMode`, `thinkingLevel`, `enabledSourceSlugs`, `labels`, `workingDirectory`. Omitted fields inherit from the spawning session or the workspace default.\n\n`thinkingLevel` is silently ignored on non-reasoning models (e.g. gpt-4o, gemini-2.5-flash) — the SDK drops the reasoning param rather than erroring. Use it when you want to force deeper reasoning on a supported model, or set it to `off` when spawning a session that doesn't need to think.\n\nThe spawned session appears in the session list and runs fire-and-forget.\nOnly use 'attachments' for existing file paths on disk — the tool reads them automatically.",
+    "executionMode": "backend",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "attachments": {
+          "description": "Files to include with the prompt",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "description": "Display name (defaults to file basename)",
+                "type": "string"
+              },
+              "path": {
+                "description": "Absolute file path on disk",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "enabledSourceSlugs": {
+          "description": "Source slugs to enable in the new session",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "help": {
+          "description": "If true, returns available connections, models, and sources instead of creating a session",
+          "type": "boolean"
+        },
+        "labels": {
+          "description": "Labels for the new session",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "llmConnection": {
+          "description": "Connection slug (e.g., \"anthropic-api\", \"codex\")",
+          "type": "string"
+        },
+        "model": {
+          "description": "Model ID override",
+          "type": "string"
+        },
+        "name": {
+          "description": "Session name",
+          "type": "string"
+        },
+        "permissionMode": {
+          "description": "Permission mode for the new session",
+          "enum": [
+            "safe",
+            "ask",
+            "allow-all"
+          ],
+          "type": "string"
+        },
+        "prompt": {
+          "description": "Instructions for the new session (required when not in help mode)",
+          "type": "string"
+        },
+        "thinkingLevel": {
+          "description": "Reasoning level for the new session. Silently ignored on non-reasoning models (e.g. gpt-4o, gemini-2.5-flash). Omit to inherit the workspace default.",
+          "enum": [
+            "off",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "type": "string"
+        },
+        "workingDirectory": {
+          "description": "Working directory for the new session",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "spawn_session",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "block"
+  },
+  "SubmitPlan": {
+    "apiVersion": "v1",
+    "description": "Submit a plan for user review.\n\nCall this after you have written your plan to a markdown file using the Write tool.\nThe plan will be displayed to the user in a special formatted view.\n\n**IMPORTANT:** After calling this tool:\n- Execution will be **automatically paused** to present the plan to the user\n- No further tool calls or text output will be processed after this tool returns\n- The conversation will resume when the user responds (accept, modify, or reject the plan)\n- Do NOT include any text or tool calls after SubmitPlan - they will not be executed",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "planPath": {
+          "description": "Absolute path to the plan markdown file you wrote",
+          "type": "string"
+        }
+      },
+      "required": [
+        "planPath"
+      ],
+      "type": "object"
+    },
+    "name": "SubmitPlan",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "allow"
+  },
+  "transform_data": {
+    "apiVersion": "v1",
+    "description": "Transform data files using a script and write structured output for datatable/spreadsheet blocks, or extract HTML content for html-preview blocks.\n\nUse this tool when you need to transform large datasets (20+ rows) into structured JSON for display, or extract/decode content for rich previews. Write a transform script that reads the input file and produces an output file, then reference it via `\"src\"` in your datatable/spreadsheet/html-preview/pdf-preview/image-preview block.\n\n**Workflow:**\n1. Call `transform_data` with a script that reads input files and writes output\n2. Output a datatable/spreadsheet block with `\"src\": \"data/output.json\"`, an html-preview block with `\"src\": \"data/output.html\"`, a pdf-preview block with `\"src\": \"data/output.pdf\"`, or an image-preview block with `\"src\": \"data/output.png\"`\n\n**Script conventions:**\n- Input file paths are passed as command-line arguments (last arg = output file path)\n- Python: `sys.argv[1:-1]` = input files, `sys.argv[-1]` = output path\n- Node/Bun: `process.argv.slice(2, -1)` = input files, `process.argv.at(-1)` = output path\n- For datatable/spreadsheet: output must be valid JSON: `{\"title\": \"...\", \"columns\": [...], \"rows\": [...]}`\n- For html-preview: output is an HTML file (any valid HTML)\n\n**Security:** Runs in an isolated subprocess with no access to API keys or credentials. 30-second timeout.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "inputFiles": {
+          "description": "Input file paths relative to session dir (e.g., \"long_responses/stripe_txns.txt\")",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "language": {
+          "description": "Script runtime to use",
+          "enum": [
+            "python3",
+            "node",
+            "bun"
+          ],
+          "type": "string"
+        },
+        "outputFile": {
+          "description": "Output file name relative to session data/ dir (e.g., \"transactions.json\")",
+          "type": "string"
+        },
+        "script": {
+          "description": "Transform script source code. Receives input file paths as command-line args (sys.argv[1:] or process.argv.slice(2)), last arg is the output file path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "language",
+        "script",
+        "inputFiles",
+        "outputFile"
+      ],
+      "type": "object"
+    },
+    "name": "transform_data",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "allow"
+  },
+  "unbind_messaging_channel": {
+    "apiVersion": "v1",
+    "description": "Disconnect a messaging channel from the current session.\nMessages will no longer be forwarded between the chat app and this session.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "platform": {
+          "description": "Platform to unbind. If omitted, unbinds all.",
+          "enum": [
+            "telegram",
+            "whatsapp",
+            "lark"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "unbind_messaging_channel",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "block"
+  },
+  "update_user_preferences": {
+    "apiVersion": "v1",
+    "description": "Update stored user preferences. Use this when you learn information about the user that would be helpful to remember for future conversations. This includes their name, timezone, location, preferred language, or any other relevant notes. Only update fields you have confirmed information about - don't guess.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "city": {
+          "description": "The user's city",
+          "type": "string"
+        },
+        "country": {
+          "description": "The user's country",
+          "type": "string"
+        },
+        "includeCoAuthoredBy": {
+          "description": "Whether to include 'Co-Authored-By: Craft Agent' trailer on git commits. Defaults to true.",
+          "type": "boolean"
+        },
+        "language": {
+          "description": "The user's preferred language for responses",
+          "type": "string"
+        },
+        "name": {
+          "description": "The user's preferred name or how they'd like to be addressed",
+          "type": "string"
+        },
+        "notes": {
+          "description": "Additional notes about the user that would be helpful to remember (preferences, context, etc.). Replaces any existing notes.",
+          "type": "string"
+        },
+        "region": {
+          "description": "The user's state/region/province",
+          "type": "string"
+        },
+        "timezone": {
+          "description": "The user's timezone in IANA format (e.g., 'America/New_York', 'Europe/London')",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "update_user_preferences",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "block"
+  }
+}

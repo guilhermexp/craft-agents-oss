@@ -37,6 +37,7 @@ import {
 import { buildCallLlmRequest } from '../agent/llm-tool.ts';
 import { executeBrowserToolCommand } from '../agent/browser-tool-runtime.ts';
 import { getSessionPath } from '../sessions/storage.ts';
+import { enforceLoopbackRequest } from './loopback-guard.ts';
 import { FEATURE_FLAGS } from '../feature-flags.ts';
 import { getBrowserToolEnabled } from '../config/storage.ts';
 import { AUTOMATIONS_HISTORY_FILE } from '../automations/constants.ts';
@@ -53,6 +54,13 @@ export interface CraftSessionToolsMcpServerOptions {
   defaultLlmConnection?: string;
   defaultModel?: string;
   automationSystem?: Pick<AutomationSystem, 'reloadConfig'>;
+  /**
+   * Opt-in bearer auth (F4.3b). When set, every request must present
+   * `Authorization: Bearer <authToken>`. Left unset by default — enabling it
+   * for Hermes requires validating that its MCP client forwards the header
+   * configured via ACP `session.mcpServers[].headers`.
+   */
+  authToken?: string;
 }
 
 type McpContent =
@@ -169,6 +177,10 @@ export class CraftSessionToolsMcpServer {
     if (this.httpServer) return this.url;
 
     this.httpServer = createServer(async (req, res) => {
+      if (!enforceLoopbackRequest(req, res, { authToken: this.options.authToken, debug: (msg) => this.debug(msg) })) {
+        return;
+      }
+
       const url = new URL(req.url || '/', 'http://127.0.0.1');
       if (url.pathname !== '/mcp') {
         res.writeHead(404);

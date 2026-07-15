@@ -514,11 +514,13 @@ export async function shutdownHermesDashboard(timeoutMs = 3000): Promise<void> {
 }
 
 /**
- * Defensive cleanup for crash-leaked dashboards. Scans for live processes that
- * (a) run from `vendorPython` and (b) execute `hermes_cli.main dashboard ...`.
- * The launchd-managed gateway uses `gateway run --replace` (no `dashboard`
- * substring) and is therefore not matched. Best-effort; skips silently on
- * unsupported platforms.
+ * Defensive cleanup for crash-leaked Hermes children. Scans for live processes
+ * that run from `vendorPython` and execute either the dashboard
+ * (`hermes_cli.main dashboard ...`) or a session ACP adapter (`-m acp_adapter`)
+ * leaked by a previous Craft session that exited without cleanup. The
+ * launchd-managed gateway uses `gateway run --replace` (no `dashboard` /
+ * `acp_adapter` substring) and is therefore not matched. Best-effort; skips
+ * silently on unsupported platforms.
  */
 export async function cleanupHermesDashboardOrphans(vendorPython: string): Promise<number[]> {
   if (!vendorPython || process.platform === 'win32') return []
@@ -532,8 +534,9 @@ export async function cleanupHermesDashboardOrphans(vendorPython: string): Promi
   const pids: number[] = []
   for (const raw of stdout.split('\n')) {
     if (!raw.includes(vendorPython)) continue
-    if (!raw.includes('hermes_cli.main')) continue
-    if (!raw.includes(' dashboard')) continue
+    const isDashboard = raw.includes('hermes_cli.main') && raw.includes(' dashboard')
+    const isAcpAdapter = raw.includes('-m acp_adapter')
+    if (!isDashboard && !isAcpAdapter) continue
     const pid = Number.parseInt(raw.trim().split(/\s+/)[0], 10)
     if (!Number.isFinite(pid) || pid === process.pid) continue
     pids.push(pid)

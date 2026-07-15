@@ -16,12 +16,12 @@
     "@craft-agent/core": "workspace:*",
     "@craft-agent/shared": "workspace:*",
     "@craft-agent/server-core": "workspace:*",
-    "@larksuiteoapi/node-sdk": "^1.62.1",
-    "@whiskeysockets/baileys": "^6.7.0",
-    "grammy": "^1.35.0"
+    "@larksuiteoapi/node-sdk": "^1.71.1",
+    "@whiskeysockets/baileys": "^6.17.16",
+    "grammy": "^1.44.0"
   },
   "devDependencies": {
-    "typescript": "^5.8.2",
-    "@types/node": "^22.0.0"
+    "typescript": "^5.9.3",
+    "@types/node": "^22.20.1"
   }
 }

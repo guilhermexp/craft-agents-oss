@@ -90,3 +90,63 @@ jobs:
           files: apps/electron/release/Craft-Agents-*.{dmg,zip,exe,yml}
           fail_on_unmatched_files: false
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  # Partial releases are allowed (fail-fast: false) but must never look
+  # complete: flag the draft loudly when any platform artifact is missing.
+  finalize:
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Flag incomplete release draft
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = context.ref.replace('refs/tags/', '')
+            const { data: releases } = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            })
+            const draft = releases.find(r => r.tag_name === tag)
+            if (!draft) {
+              core.warning(`No release draft found for ${tag} — all builds may have failed before upload.`)
+              return
+            }
+            const assets = draft.assets.map(a => a.name)
+            const expected = [
+              { platform: 'macOS arm64 (.dmg)', test: /arm64\.dmg$/ },
+              { platform: 'macOS x64 (.dmg)', test: /x64\.dmg$/ },
+              { platform: 'Windows x64 (.exe)', test: /\.exe$/ },
+            ]
+            const missing = expected
+              .filter(e => !assets.some(name => e.test.test(name)))
+              .map(e => e.platform)
+            const MARKER_START = '<!-- release-completeness-start -->'
+            const MARKER_END = '<!-- release-completeness-end -->'
+            const stripped = (draft.body ?? '')
+              .replace(new RegExp(`${MARKER_START}[\\s\\S]*?${MARKER_END}\\n?`, 'g'), '')
+              .trim()
+            let body = stripped
+            let name = tag
+            if (missing.length > 0) {
+              const warning = [
+                MARKER_START,
+                `> [!WARNING]`,
+                `> ⚠️ **INCOMPLETE — missing: ${missing.join(', ')}**`,
+                `> Do not publish until every platform artifact is attached (or the gap is intentional and documented).`,
+                MARKER_END,
+              ].join('\n')
+              body = body ? `${warning}\n\n${body}` : warning
+              name = `${tag} ⚠️ INCOMPLETE — missing: ${missing.join(', ')}`
+              core.warning(`Release draft ${tag} is incomplete — missing: ${missing.join(', ')}`)
+            } else {
+              core.info(`Release draft ${tag} has all expected platform artifacts.`)
+            }
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: draft.id,
+              name,
+              body,
+            })

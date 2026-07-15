@@ -61,6 +61,18 @@ EOF
   echo "Persisted pin to $PIN_FILE"
 fi
 
+# The dashboard Update flow must always build from pin + overlay patches.
+# An inherited HERMES_SRC would make bundle-hermes.sh skip both silently —
+# drop it unless the caller explicitly opts in for active Hermes development.
+if [ -n "${HERMES_SRC:-}" ]; then
+  if [ "${HERMES_ALLOW_SRC_OVERRIDE:-0}" = "1" ]; then
+    echo "⚠ HERMES_ALLOW_SRC_OVERRIDE=1 — using HERMES_SRC=$HERMES_SRC (pin + overlay patches skipped)" >&2
+  else
+    echo "⚠ Ignoring inherited HERMES_SRC=$HERMES_SRC — update always uses the pin + overlay patches (set HERMES_ALLOW_SRC_OVERRIDE=1 to force)" >&2
+    unset HERMES_SRC
+  fi
+fi
+
 # Hand off to bundle. It clones/fetches upstream into the cache and applies
 # Craft overlay patches; the user's local fork (if any) is not used.
 HERMES_VERSION="$RUN_PIN" bash "$BUNDLE_SCRIPT"

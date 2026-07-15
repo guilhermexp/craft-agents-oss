@@ -38,6 +38,7 @@ export interface BackendResolutionContext {
   resolvedModel: string;
   capabilities: {
     needsHttpPoolServer: boolean;
+    supportsBranching: boolean;
   };
 }
 

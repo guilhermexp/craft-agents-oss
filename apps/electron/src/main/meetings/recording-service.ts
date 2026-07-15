@@ -1,4 +1,4 @@
-import { createWriteStream, mkdirSync, type WriteStream } from 'fs'
+import { createWriteStream, mkdirSync, unlinkSync, type WriteStream } from 'fs'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import type { BrowserPaneManager } from '../browser-pane-manager'
@@ -125,15 +125,33 @@ export class RecordingService {
     }
   }
 
-  abort(recordingId: string): void {
+  /**
+   * Abort discards the capture: removes the partial .webm from disk
+   * (best-effort, after the stream closes) and returns the owning ids so the
+   * caller can close the associated meeting record.
+   */
+  abort(recordingId: string): { meetingId?: string; workspaceId: string } | null {
     const recording = this.recordings.get(recordingId)
-    if (!recording) return
+    if (!recording) return null
     this.recordings.delete(recordingId)
-    try {
-      recording.stream.destroy()
-    } catch {
-      // ignore
+    const removePartialFile = () => {
+      try {
+        unlinkSync(recording.outputPath)
+      } catch {
+        // Best-effort cleanup; a missing/locked file must not break abort.
+      }
     }
-    mainLog.info(`[recording] aborted id=${recordingId}`)
+    try {
+      if (recording.stream.closed) {
+        removePartialFile()
+      } else {
+        recording.stream.once('close', removePartialFile)
+        recording.stream.destroy()
+      }
+    } catch {
+      removePartialFile()
+    }
+    mainLog.info(`[recording] aborted id=${recordingId}; partial file removed ${recording.outputPath}`)
+    return { meetingId: recording.meetingId, workspaceId: recording.workspaceId }
   }
 }

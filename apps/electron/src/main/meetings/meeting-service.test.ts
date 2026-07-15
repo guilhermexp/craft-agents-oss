@@ -525,6 +525,109 @@ describe('MeetingService storage', () => {
     expect(summaryRequests).toHaveLength(0)
   })
 
+  // Simulate the on-disk state left by a crash/quit mid-transcription: the
+  // meeting record has the recording metadata and the persisted transcript is
+  // still 'capturing' (completeRecording persists that status before the
+  // fire-and-forget transcribeRecording finishes).
+  function writeInterruptedTranscriptionFixture(workspaceRoot: string, options: { audioOnDisk: boolean }): { meetingId: string; meetingsDir: string } {
+    const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
+    metadataDirs.push(dirname(meetingsDir))
+    const meetingId = '44444444-4444-4444-4444-444444444444'
+    const recordingPath = join(meetingsDir, 'recordings', `${meetingId}.webm`)
+    if (options.audioOnDisk) {
+      mkdirSync(dirname(recordingPath), { recursive: true })
+      writeFileSync(recordingPath, 'audio')
+    }
+    mkdirSync(meetingsDir, { recursive: true })
+    writeFileSync(join(meetingsDir, 'meetings.json'), JSON.stringify({
+      version: 1,
+      meetings: [{
+        id: meetingId,
+        provider: 'google-meet',
+        captureMode: 'craft',
+        status: 'stopped',
+        url: 'https://meet.google.com/abc-defg-hij',
+        browserInstanceId: 'browser-1',
+        startedAt: Date.now() - 10_000,
+        updatedAt: Date.now() - 5_000,
+        endedAt: Date.now() - 5_000,
+        transcriptionProvider: 'deepgram',
+        transcriptionModel: 'nova-3',
+        recording: { path: recordingPath, mimeType: 'audio/webm', bytesWritten: 5, durationMs: 1000 },
+      }],
+    }))
+    mkdirSync(join(meetingsDir, 'transcripts'), { recursive: true })
+    writeFileSync(join(meetingsDir, 'transcripts', `${meetingId}.json`), JSON.stringify({
+      meetingId,
+      status: 'capturing',
+      transcript: [],
+      message: 'Transcrevendo o audio gravado com Deepgram.',
+      updatedAt: Date.now() - 5_000,
+    }))
+    return { meetingId, meetingsDir }
+  }
+
+  it('recovers an interrupted capturing transcript by re-dispatching transcription when the audio exists', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-recovery-'))
+    tempDirs.push(workspaceRoot)
+    const { meetingId } = writeInterruptedTranscriptionFixture(workspaceRoot, { audioOnDisk: true })
+
+    credentials.set(JSON.stringify({
+      type: 'meeting_transcription_api_key',
+      workspaceId: 'ws-test',
+      name: 'deepgram',
+    }), { value: 'dg-test-key' })
+
+    const service = new MeetingService(createBrowserPaneManager())
+    await service.recoverInterruptedTranscriptions('ws-test', workspaceRoot)
+
+    let transcript = service.transcript(workspaceRoot, meetingId)
+    for (let i = 0; i < 50 && transcript.status === 'capturing'; i += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      transcript = service.transcript(workspaceRoot, meetingId)
+    }
+
+    expect(transcript.status).toBe('ready')
+    expect(transcript.transcript.map(segment => segment.text)).toEqual([
+      'Guilherme will ship the follow-up fix tomorrow.',
+    ])
+  })
+
+  it('demotes an interrupted capturing transcript to unavailable when the audio is gone', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-recovery-gone-'))
+    tempDirs.push(workspaceRoot)
+    const { meetingId, meetingsDir } = writeInterruptedTranscriptionFixture(workspaceRoot, { audioOnDisk: false })
+
+    const service = new MeetingService(createBrowserPaneManager())
+    await service.recoverInterruptedTranscriptions('ws-test', workspaceRoot)
+
+    const transcript = service.transcript(workspaceRoot, meetingId)
+    expect(transcript.status).toBe('unavailable')
+    // i18n falls back to en in tests (no language set in this process)
+    expect(transcript.message).toContain('interrupted')
+    // The demotion must be persisted so a later reload does not resurrect 'capturing'.
+    const persisted = JSON.parse(readFileSync(join(meetingsDir, 'transcripts', `${meetingId}.json`), 'utf8')) as { status: string }
+    expect(persisted.status).toBe('unavailable')
+  })
+
+  it('demotes an interrupted capturing transcript to unavailable when the API key is missing', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-recovery-nokey-'))
+    tempDirs.push(workspaceRoot)
+    const { meetingId } = writeInterruptedTranscriptionFixture(workspaceRoot, { audioOnDisk: true })
+
+    const service = new MeetingService(createBrowserPaneManager())
+    await service.recoverInterruptedTranscriptions('ws-test', workspaceRoot)
+
+    let transcript = service.transcript(workspaceRoot, meetingId)
+    for (let i = 0; i < 50 && transcript.status === 'capturing'; i += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      transcript = service.transcript(workspaceRoot, meetingId)
+    }
+
+    expect(transcript.status).toBe('unavailable')
+    expect(transcript.message).toBe('Transcription API key not configured.')
+  })
+
   it('reconciles orphan video-analysis dirs on ensureLoaded and keeps owned ones', async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-va-orphans-'))
     tempDirs.push(workspaceRoot)

@@ -217,6 +217,16 @@ export class WsRpcServer implements RpcServer {
   }
 
   invokeClient(clientId: string, channel: string, ...args: any[]): Promise<any> {
+    return this.invokeClientWithTimeout(clientId, channel, 30_000, ...args)
+  }
+
+  /**
+   * invokeClient with a per-call timeout budget. Long-running client actions
+   * (e.g. browser_click waiting on navigation) must get a transport budget
+   * larger than the action timeout, or the server gives up while the action
+   * already executed on the desktop — and the agent replays it.
+   */
+  invokeClientWithTimeout(clientId: string, channel: string, timeoutMs: number, ...args: any[]): Promise<any> {
     return new Promise((resolve, reject) => {
       const client = this.clients.get(clientId)
 
@@ -239,10 +249,10 @@ export class WsRpcServer implements RpcServer {
       const id = randomUUID()
       const timeout = setTimeout(() => {
         this.pendingInvokes.delete(id)
-        const err = new Error(`Client request timeout: ${channel} (30000ms)`)
+        const err = new Error(`Client request timeout: ${channel} (${timeoutMs}ms)`)
         ;(err as any).code = 'CLIENT_REQUEST_TIMEOUT'
         reject(err)
-      }, 30_000)
+      }, timeoutMs)
 
       this.pendingInvokes.set(id, { clientId, resolve, reject, timeout })
 

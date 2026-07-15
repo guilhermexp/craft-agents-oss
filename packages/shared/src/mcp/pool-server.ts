@@ -28,6 +28,7 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { McpClientPool } from './mcp-pool.ts';
+import { enforceLoopbackRequest } from './loopback-guard.ts';
 
 export class McpPoolServer {
   private pool: McpClientPool;
@@ -37,9 +38,13 @@ export class McpPoolServer {
   private debugFn: ((msg: string) => void) | undefined;
   private _port = 0;
 
-  constructor(pool: McpClientPool, options?: { debug?: (msg: string) => void }) {
+  private authToken: string | undefined;
+
+  constructor(pool: McpClientPool, options?: { debug?: (msg: string) => void; authToken?: string }) {
     this.pool = pool;
     this.debugFn = options?.debug;
+    // Opt-in bearer auth (F4.3b) — unset by default; see loopback-guard.ts.
+    this.authToken = options?.authToken;
   }
 
   private debug(msg: string): void {
@@ -71,6 +76,10 @@ export class McpPoolServer {
     await this.mcpServer.connect(this.transport);
 
     this.httpServer = createServer(async (req, res) => {
+      if (!enforceLoopbackRequest(req, res, { authToken: this.authToken, debug: (msg) => this.debug(msg) })) {
+        return;
+      }
+
       const url = new URL(req.url || '/', `http://127.0.0.1`);
       if (url.pathname !== '/mcp') {
         res.writeHead(404);

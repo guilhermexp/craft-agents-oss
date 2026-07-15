@@ -35,7 +35,7 @@ function spawnConfig(
       connection: null,
       provider,
       resolvedModel: provider === 'anthropic' ? 'claude-sonnet-4-6' : '',
-      capabilities: { needsHttpPoolServer: false },
+      capabilities: { needsHttpPoolServer: false, supportsBranching: true },
       ...overrides,
     },
     coreConfig: {

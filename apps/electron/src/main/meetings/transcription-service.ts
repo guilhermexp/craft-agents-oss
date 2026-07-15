@@ -1,4 +1,6 @@
-import { readFile } from 'fs/promises'
+import { createReadStream } from 'fs'
+import { stat } from 'fs/promises'
+import { Readable } from 'stream'
 import { randomUUID } from 'crypto'
 import type { MeetingTranscriptSegment } from '@craft-agent/shared/protocol'
 import { mainLog } from '../logger'
@@ -15,10 +17,15 @@ export interface TranscribeOutput {
   text: string
 }
 
+// Upper bound for the whole upload + Deepgram processing round-trip. Without a
+// signal the fetch can hang forever and the transcript never leaves 'capturing'
+// while the app is alive.
+const FETCH_TIMEOUT_MS = 10 * 60_000
+
 export class TranscriptionService {
   async transcribe(input: TranscribeInput): Promise<TranscribeOutput> {
     const { filePath, model, apiKey, mimeType } = input
-    const audioData = await readFile(filePath)
+    const { size: audioBytes } = await stat(filePath)
 
     const url = new URL('https://api.deepgram.com/v1/listen')
     url.searchParams.set('model', model)
@@ -32,16 +39,22 @@ export class TranscriptionService {
     // yield an empty transcript. Strip to the audio container type.
     const contentType = toDeepgramContentType(mimeType)
 
-    mainLog.info(`[transcription] starting Deepgram transcription: model=${model} file=${filePath} size=${audioData.byteLength} contentType=${contentType}`)
+    mainLog.info(`[transcription] starting Deepgram transcription: model=${model} file=${filePath} size=${audioBytes} contentType=${contentType}`)
 
+    // Stream the file from disk: a multi-hour recording is 1-2GB and must not
+    // be buffered whole in main-process RAM.
+    const body = Readable.toWeb(createReadStream(filePath)) as unknown as ReadableStream
     const response = await fetch(url.toString(), {
       method: 'POST',
       headers: {
         'Authorization': `Token ${apiKey}`,
         'Content-Type': contentType,
       },
-      body: audioData,
-    })
+      body,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      // Node's fetch (undici) requires half-duplex for stream bodies; Bun ignores it.
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' })
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => '')

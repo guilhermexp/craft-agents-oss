@@ -90,8 +90,11 @@ export class NullBrowserPaneManager implements IBrowserPaneManager {
 
   // -- Monitoring --
   getConsoleLogs(_id: string, _options?: BrowserConsoleOptions): BrowserConsoleEntry[] { return [] }
+  async getConsoleLogsAsync(_id: string, _options?: BrowserConsoleOptions): Promise<BrowserConsoleEntry[]> { return [] }
   windowResize(_id: string, _width: number, _height: number): { width: number; height: number } { return unavailable('windowResize') }
+  async windowResizeAsync(_id: string, _width: number, _height: number): Promise<{ width: number; height: number }> { return unavailable('windowResize') }
   getNetworkLogs(_id: string, _options?: BrowserNetworkOptions): BrowserNetworkEntry[] { return [] }
+  async getNetworkLogsAsync(_id: string, _options?: BrowserNetworkOptions): Promise<BrowserNetworkEntry[]> { return [] }
   async waitFor(_id: string, _args: BrowserWaitArgs): Promise<BrowserWaitResult> { return unavailable('waitFor') }
   async getDownloads(_id: string, _options?: BrowserDownloadOptions): Promise<BrowserDownloadEntry[]> { return [] }
   async detectSecurityChallenge(_id: string): Promise<{ detected: boolean; provider: string; signals: string[] }> {

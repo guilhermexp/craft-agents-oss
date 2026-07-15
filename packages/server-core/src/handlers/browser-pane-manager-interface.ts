@@ -249,9 +249,24 @@ export interface IBrowserPaneManager {
 
   // -- Monitoring ----------------------------------------------------------
 
+  /** Sync; local-only. For remote-aware code use {@link getConsoleLogsAsync}. */
   getConsoleLogs(id: string, options?: BrowserConsoleOptions): BrowserConsoleEntry[]
+  /**
+   * Async equivalent of {@link getConsoleLogs} — required for the remote
+   * bridge, which can't synchronously return real data without a WS round-trip.
+   */
+  getConsoleLogsAsync(id: string, options?: BrowserConsoleOptions): Promise<BrowserConsoleEntry[]>
+  /** Sync; local-only. For remote-aware code use {@link windowResizeAsync}. */
   windowResize(id: string, width: number, height: number): { width: number; height: number }
+  /** Async equivalent of {@link windowResize} — required for the remote bridge. */
+  windowResizeAsync(id: string, width: number, height: number): Promise<{ width: number; height: number }>
+  /** Sync; local-only. For remote-aware code use {@link getNetworkLogsAsync}. */
   getNetworkLogs(id: string, options?: BrowserNetworkOptions): BrowserNetworkEntry[]
+  /**
+   * Async equivalent of {@link getNetworkLogs} — required for the remote
+   * bridge, which can't synchronously return real data without a WS round-trip.
+   */
+  getNetworkLogsAsync(id: string, options?: BrowserNetworkOptions): Promise<BrowserNetworkEntry[]>
   waitFor(id: string, args: BrowserWaitArgs): Promise<BrowserWaitResult>
   getDownloads(id: string, options?: BrowserDownloadOptions): Promise<BrowserDownloadEntry[]>
   detectSecurityChallenge(id: string): Promise<{ detected: boolean; provider: string; signals: string[] }>

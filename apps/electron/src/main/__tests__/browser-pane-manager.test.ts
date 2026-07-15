@@ -316,6 +316,87 @@ describe('BrowserPaneManager', () => {
     expect(mockShellOpenExternal).toHaveBeenCalledWith('craftagents://settings')
   })
 
+  // F7/R1 — allowlist de esquema em navegação client-side e redirects
+  it('will-navigate blocks file:// navigation initiated by the page', () => {
+    manager.createInstance('nav-scheme-block')
+    const instance = (manager as any).instances.get('nav-scheme-block')
+
+    const event = { preventDefault: mock(() => {}) }
+    for (const cb of instance.pageView.webContents._listeners['will-navigate'] || []) {
+      cb(event, 'file:///etc/passwd')
+    }
+
+    expect(event.preventDefault).toHaveBeenCalled()
+  })
+
+  it('will-navigate does not block legitimate https navigation', () => {
+    manager.createInstance('nav-scheme-ok')
+    const instance = (manager as any).instances.get('nav-scheme-ok')
+
+    const event = { preventDefault: mock(() => {}) }
+    for (const cb of instance.pageView.webContents._listeners['will-navigate'] || []) {
+      cb(event, 'https://ok.com/')
+    }
+
+    expect(event.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('will-navigate still routes Craft deep links to the deep-link handler', () => {
+    manager.createInstance('nav-scheme-deeplink')
+    const instance = (manager as any).instances.get('nav-scheme-deeplink')
+    const deepLinkSpy = mock(async () => {})
+    ;(manager as any).handleDeepLinkUrl = deepLinkSpy
+
+    const event = { preventDefault: mock(() => {}) }
+    for (const cb of instance.pageView.webContents._listeners['will-navigate'] || []) {
+      cb(event, 'craftagents://settings')
+    }
+
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(deepLinkSpy).toHaveBeenCalledWith('craftagents://settings')
+  })
+
+  it('did-redirect-navigation to a forbidden scheme stops load and bails to about:blank', () => {
+    manager.createInstance('redirect-scheme-block')
+    const instance = (manager as any).instances.get('redirect-scheme-block')
+    const wc = instance.pageView.webContents
+    wc.loadURL.mockClear()
+
+    wc._emit('did-redirect-navigation', 'file:///Users/x/.aws/credentials', false, true)
+
+    expect(wc.stop).toHaveBeenCalled()
+    expect(wc.loadURL).toHaveBeenCalledWith('about:blank')
+  })
+
+  it('did-redirect-navigation to https does not interrupt the load', () => {
+    manager.createInstance('redirect-scheme-ok')
+    const instance = (manager as any).instances.get('redirect-scheme-ok')
+    const wc = instance.pageView.webContents
+    wc.loadURL.mockClear()
+
+    wc._emit('did-redirect-navigation', 'https://ok.com/next', false, true)
+
+    expect(wc.stop).not.toHaveBeenCalled()
+  })
+
+  it('popup will-navigate blocks forbidden schemes after opening', () => {
+    manager.createInstance('popup-nav-block')
+    const instance = (manager as any).instances.get('popup-nav-block')
+
+    const popupWindow = createMockWindow({ width: 520, height: 720 })
+    // did-create-window handlers receive (window, details) with no event arg
+    for (const cb of instance.pageView.webContents._listeners['did-create-window'] || []) {
+      cb(popupWindow, { url: 'https://accounts.google.com/signin' })
+    }
+
+    const event = { preventDefault: mock(() => {}) }
+    for (const cb of popupWindow.webContents._listeners['will-navigate'] || []) {
+      cb(event, 'file:///etc/passwd')
+    }
+
+    expect(event.preventDefault).toHaveBeenCalled()
+  })
+
   it('destroys child popups when parent instance is destroyed', () => {
     manager.createInstance('popup-parent')
     const instance = (manager as any).instances.get('popup-parent')
@@ -1142,6 +1223,77 @@ describe('BrowserPaneManager', () => {
         ref: '@e3',
         status: 'failed',
       })
+    })
+  })
+
+  // SECURITY (auditoria 2026-07-14): browser agêntico endurecido contra a cadeia
+  // de exfiltração de credenciais via prompt-injection. Findings F1.1 e F1.3.
+  describe('agentic security hardening', () => {
+    it('navigate rejects file:// scheme (F1.1 — local file read)', async () => {
+      manager.createInstance('sec-file')
+      await expect(manager.navigate('sec-file', 'file:///etc/passwd')).rejects.toThrow(/scheme "file:" is not allowed/)
+      const instance = (manager as any).instances.get('sec-file')
+      expect(instance.pageView.webContents.loadURL).not.toHaveBeenCalledWith('file:///etc/passwd')
+    })
+
+    it('navigate rejects chrome:// scheme (F1.1)', async () => {
+      manager.createInstance('sec-chrome')
+      await expect(manager.navigate('sec-chrome', 'chrome://settings')).rejects.toThrow(/scheme "chrome:" is not allowed/)
+    })
+
+    it('navigate allows https (F1.1 — legit traffic unaffected)', async () => {
+      manager.createInstance('sec-https')
+      await manager.navigate('sec-https', 'https://example.com')
+      const instance = (manager as any).instances.get('sec-https')
+      expect(instance.pageView.webContents.loadURL).toHaveBeenCalledWith('https://example.com')
+    })
+
+    it('windowOpen denies non-http popup schemes (F1.1)', () => {
+      manager.createInstance('sec-popup')
+      const instance = (manager as any).instances.get('sec-popup')
+      const openHandler = instance.pageView.webContents.setWindowOpenHandler.mock.calls[0][0]
+
+      const result = openHandler({ url: 'file:///Users/victim/.aws/credentials', disposition: 'new-popup', frameName: '' })
+      expect(result).toEqual({ action: 'deny' })
+    })
+
+    it('registers permission handler for every distinct partition (F1.3)', () => {
+      const sesA = { setPermissionCheckHandler: mock(() => {}), setPermissionRequestHandler: mock(() => {}), setDisplayMediaRequestHandler: mock(() => {}) }
+      const sesB = { setPermissionCheckHandler: mock(() => {}), setPermissionRequestHandler: mock(() => {}), setDisplayMediaRequestHandler: mock(() => {}) }
+
+      ;(manager as any).setupSessionPermissions(sesA)
+      ;(manager as any).setupSessionPermissions(sesB)
+
+      // The old boolean guard only registered the FIRST partition; second fell
+      // through to Electron's permissive default. Both must register now.
+      expect(sesA.setPermissionRequestHandler).toHaveBeenCalledTimes(1)
+      expect(sesB.setPermissionRequestHandler).toHaveBeenCalledTimes(1)
+    })
+
+    it('is idempotent per partition (F1.3 — no double registration)', () => {
+      const ses = { setPermissionCheckHandler: mock(() => {}), setPermissionRequestHandler: mock(() => {}), setDisplayMediaRequestHandler: mock(() => {}) }
+      ;(manager as any).setupSessionPermissions(ses)
+      ;(manager as any).setupSessionPermissions(ses)
+      expect(ses.setPermissionRequestHandler).toHaveBeenCalledTimes(1)
+    })
+
+    it('denies clipboard-read and display-capture, allows geolocation (F1.3)', () => {
+      const ses = { setPermissionCheckHandler: mock(() => {}), setPermissionRequestHandler: mock(() => {}), setDisplayMediaRequestHandler: mock(() => {}) }
+      ;(manager as any).setupSessionPermissions(ses)
+
+      const requestHandler = (ses.setPermissionRequestHandler.mock.calls[0] as unknown[])[0] as (
+        wc: unknown, permission: string, cb: (allow: boolean) => void, details: unknown,
+      ) => void
+
+      const decide = (permission: string): boolean => {
+        let decision = false
+        requestHandler({}, permission, (allow: boolean) => { decision = allow }, { requestingOrigin: 'https://evil.example' })
+        return decision
+      }
+
+      expect(decide('clipboard-read')).toBe(false)
+      expect(decide('display-capture')).toBe(false)
+      expect(decide('geolocation')).toBe(true)
     })
   })
 })

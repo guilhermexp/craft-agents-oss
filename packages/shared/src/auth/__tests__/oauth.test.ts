@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
-import { getMcpBaseUrl, discoverOAuthMetadata, prepareMcpOAuth } from '../oauth';
+import { getMcpBaseUrl, discoverOAuthMetadata, prepareMcpOAuth, exchangeMcpOAuth, isUrlSafeToFetch } from '../oauth';
 
 // ============================================================
 // Unit tests for internal helpers exported only for testing
@@ -482,6 +482,34 @@ describe('discoverOAuthMetadata', () => {
 
       const result = await discoverOAuthMetadata('https://api.ahrefs.com/mcp/mcp');
       expect(result).toEqual(metadata);
+    });
+  });
+
+  describe('SSRF protection on mcpUrl (discovery entry point)', () => {
+    it('rejects link-local metadata endpoint without any fetch', async () => {
+      const result = await discoverOAuthMetadata('https://169.254.169.254/mcp');
+      expect(result).toBeNull();
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects localhost without any fetch', async () => {
+      const result = await discoverOAuthMetadata('https://localhost/mcp');
+      expect(result).toBeNull();
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects private IP ranges without any fetch', async () => {
+      for (const url of ['https://10.0.0.5/mcp', 'https://192.168.1.1/mcp', 'https://172.16.0.1/mcp']) {
+        const result = await discoverOAuthMetadata(url);
+        expect(result).toBeNull();
+      }
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-HTTPS mcpUrl without any fetch', async () => {
+      const result = await discoverOAuthMetadata('http://example.com/mcp');
+      expect(result).toBeNull();
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 
@@ -1223,5 +1251,172 @@ describe('prepareMcpOAuth', () => {
     });
 
     await expect(prepareMcpOAuth('https://example.com/mcp', { callbackPort: 8914 })).rejects.toThrow('Failed to register OAuth client: Server error');
+  });
+});
+
+// ============================================================
+// F7/R2 — isUrlSafeToFetch: IPv6 loopback/private/link-local
+// ============================================================
+describe('isUrlSafeToFetch IPv6 (R2)', () => {
+  it('rejects bracketed IPv6 loopback [::1]', () => {
+    expect(isUrlSafeToFetch('https://[::1]/').safe).toBe(false);
+  });
+
+  it('rejects IPv6 unspecified [::]', () => {
+    expect(isUrlSafeToFetch('https://[::]/').safe).toBe(false);
+  });
+
+  it('rejects IPv6 link-local fe80::/10', () => {
+    expect(isUrlSafeToFetch('https://[fe80::1]/').safe).toBe(false);
+    expect(isUrlSafeToFetch('https://[febf::1]/').safe).toBe(false);
+  });
+
+  it('rejects IPv6 ULA fc00::/7', () => {
+    expect(isUrlSafeToFetch('https://[fc00::1]/').safe).toBe(false);
+    expect(isUrlSafeToFetch('https://[fd12:3456::1]/').safe).toBe(false);
+  });
+
+  it('rejects IPv4-mapped private addresses in both forms', () => {
+    // WHATWG URL serializes ::ffff:127.0.0.1 to hex groups — cover both
+    expect(isUrlSafeToFetch('https://[::ffff:127.0.0.1]/').safe).toBe(false);
+    expect(isUrlSafeToFetch('https://[::ffff:7f00:1]/').safe).toBe(false);
+    expect(isUrlSafeToFetch('https://[::ffff:169.254.169.254]/').safe).toBe(false);
+  });
+
+  it('allows public IPv6 addresses', () => {
+    expect(isUrlSafeToFetch('https://[2606:4700::1111]/').safe).toBe(true);
+  });
+
+  it('allows IPv4-mapped public addresses', () => {
+    expect(isUrlSafeToFetch('https://[::ffff:1.1.1.1]/').safe).toBe(true);
+  });
+});
+
+// ============================================================
+// F7/R3 — SSRF: metadata endpoints validated + redirect re-validation
+// ============================================================
+describe('OAuth endpoint/redirect SSRF (R3)', () => {
+  const originalFetch = globalThis.fetch;
+  let mockFetch: ReturnType<typeof mock>;
+
+  beforeEach(() => {
+    mockFetch = mock(() => Promise.resolve(new Response('Not Found', { status: 404 })));
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('exchangeMcpOAuth rejects internal token endpoint before any fetch', async () => {
+    const result = await exchangeMcpOAuth({
+      tokenEndpoint: 'https://127.0.0.1/token',
+      code: 'code',
+      codeVerifier: 'verifier',
+      clientId: 'client',
+      redirectUri: 'http://localhost:1234/callback',
+    } as Parameters<typeof exchangeMcpOAuth>[0]);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Unsafe token endpoint');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('exchangeMcpOAuth rejects bracketed IPv6 loopback token endpoint', async () => {
+    const result = await exchangeMcpOAuth({
+      tokenEndpoint: 'https://[::1]/token',
+      code: 'code',
+      codeVerifier: 'verifier',
+      clientId: 'client',
+      redirectUri: 'http://localhost:1234/callback',
+    } as Parameters<typeof exchangeMcpOAuth>[0]);
+
+    expect(result.success).toBe(false);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('discovery rejects metadata whose token_endpoint is internal', async () => {
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (options?.method === 'HEAD') {
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }
+      if (url === 'https://example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(new Response(JSON.stringify({
+          authorization_endpoint: 'https://example.com/oauth/authorize',
+          token_endpoint: 'https://127.0.0.1/token',
+        }), { status: 200 }));
+      }
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    });
+
+    const result = await discoverOAuthMetadata('https://example.com/mcp');
+    expect(result).toBeNull();
+    // The internal token endpoint must never be fetched
+    const fetchedUrls = mockFetch.mock.calls.map((call: any[]) => call[0]);
+    expect(fetchedUrls).not.toContain('https://127.0.0.1/token');
+  });
+
+  it('discovery rejects metadata whose registration_endpoint is internal', async () => {
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (options?.method === 'HEAD') {
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }
+      if (url === 'https://example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(new Response(JSON.stringify({
+          authorization_endpoint: 'https://example.com/oauth/authorize',
+          token_endpoint: 'https://example.com/oauth/token',
+          registration_endpoint: 'https://[::1]/register',
+        }), { status: 200 }));
+      }
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    });
+
+    const result = await discoverOAuthMetadata('https://example.com/mcp');
+    expect(result).toBeNull();
+  });
+
+  it('blocks 302 redirect to an internal Location during discovery', async () => {
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (options?.method === 'HEAD') {
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }
+      if (url === 'https://example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(new Response(null, {
+          status: 302,
+          headers: { Location: 'https://169.254.169.254/latest/meta-data' },
+        }));
+      }
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    });
+
+    const result = await discoverOAuthMetadata('https://example.com/mcp');
+    expect(result).toBeNull();
+    const fetchedUrls = mockFetch.mock.calls.map((call: any[]) => call[0]);
+    expect(fetchedUrls).not.toContain('https://169.254.169.254/latest/meta-data');
+  });
+
+  it('follows 302 redirect to a public https Location', async () => {
+    const metadata = {
+      authorization_endpoint: 'https://sso.example.com/oauth/authorize',
+      token_endpoint: 'https://sso.example.com/oauth/token',
+    };
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (options?.method === 'HEAD') {
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }
+      if (url === 'https://example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(new Response(null, {
+          status: 302,
+          headers: { Location: 'https://sso.example.com/.well-known/oauth-authorization-server' },
+        }));
+      }
+      if (url === 'https://sso.example.com/.well-known/oauth-authorization-server') {
+        return Promise.resolve(new Response(JSON.stringify(metadata), { status: 200 }));
+      }
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    });
+
+    const result = await discoverOAuthMetadata('https://example.com/mcp');
+    expect(result).toEqual(metadata);
   });
 });

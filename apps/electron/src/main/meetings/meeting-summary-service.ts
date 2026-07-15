@@ -18,6 +18,7 @@
 import { mainLog } from '../logger'
 import { getLlmConnections, getDefaultLlmConnection, getLlmConnection } from '@craft-agent/shared/config'
 import { createBackendFromConnection } from '@craft-agent/shared/agent/backend'
+import { buildMeetingBackendHostRuntime } from './backend-host-runtime'
 import { loadSkill } from '@craft-agent/shared/skills'
 import type { AgentBackend } from '@craft-agent/shared/agent/backend'
 import type { MeetingRecord, MeetingTranscriptSegment } from '../../shared/types'
@@ -111,7 +112,7 @@ export async function generateMeetingSummaryMarkdown(input: MeetingSummaryInput)
         createdAt: 0,
       },
       isHeadless: true,
-    })
+    }, buildMeetingBackendHostRuntime())
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined
     const result = await Promise.race([
       backend.queryLlm({

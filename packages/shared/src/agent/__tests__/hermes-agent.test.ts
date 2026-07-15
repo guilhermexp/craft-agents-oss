@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import type { ACPProvider } from '@mcpc-tech/acp-ai-provider'
 import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
 
-import { HermesAgent, buildCraftSessionContextPrompt, extractHermesTextDelta, resolveHermesModelId } from '../hermes-agent.ts'
+import { HermesAgent, buildCraftSessionContextPrompt, extractHermesTextDelta, resolveHermesModelId, isHermesSubprocessIoError } from '../hermes-agent.ts'
 import { createMockBackendConfig, createMockSession, createMockWorkspace } from './test-utils.ts'
 import { AbortReason, type BackendConfig, type SdkMcpServerConfig } from '../backend/types.ts'
 import type { NormalizedHermesRuntimeConfig } from '../../hermes/acp-config.ts'
@@ -76,6 +76,9 @@ class TestableHermesAgent extends HermesAgent {
   }
   buildCraftSessionContextForTest(message: string): string | null {
     return (this as unknown as { buildCraftSessionContextForTurn: (message: string) => string | null }).buildCraftSessionContextForTurn(message)
+  }
+  observeProviderProcessExitForTest(provider: unknown): void {
+    ;(this as unknown as { observeProviderProcessExit: (provider: unknown) => void }).observeProviderProcessExit(provider)
   }
 }
 
@@ -303,6 +306,114 @@ describe('HermesAgent.setSourceServers', () => {
     expect(fresh.cleanupCount).toBe(1)
     expect(agent.getProviderForTest()).toBeNull()
     expect(agent.getPendingRestartForTest()).toBe(false)
+  })
+})
+
+describe('HermesAgent subprocess death recovery (F2.1)', () => {
+  type FakeProviderWithProcess = FakeProvider & {
+    model: { agentProcess: { once: (event: string, cb: () => void) => void } }
+    fireExit: () => void
+  }
+
+  function makeFakeProviderWithProcess(): FakeProviderWithProcess {
+    let exitListener: (() => void) | null = null
+    const provider = {
+      ...makeFakeProvider(),
+      model: {
+        agentProcess: {
+          once: (event: string, cb: () => void) => {
+            if (event === 'exit') exitListener = cb
+          },
+        },
+      },
+      fireExit: () => exitListener?.(),
+    }
+    // makeFakeProvider's cleanup closes over its own counter object; rebind.
+    provider.cleanup = () => { provider.cleanupCount += 1 }
+    return provider
+  }
+
+  let agent: TestableHermesAgent
+
+  beforeEach(() => {
+    agent = new TestableHermesAgent(createHermesConfig())
+  })
+
+  it('idle subprocess exit drops the stale provider so the next turn respawns', () => {
+    const provider = makeFakeProviderWithProcess()
+    agent.setProviderForTest(provider)
+    agent.observeProviderProcessExitForTest(provider)
+
+    provider.fireExit()
+
+    expect(provider.cleanupCount).toBe(1)
+    expect(agent.getProviderForTest()).toBeNull()
+  })
+
+  it('mid-turn subprocess exit defers the reset to the streaming finally block', () => {
+    const provider = makeFakeProviderWithProcess()
+    agent.setProviderForTest(provider)
+    agent.observeProviderProcessExitForTest(provider)
+    agent.setStreamingForTest(true)
+
+    provider.fireExit()
+
+    // Not torn down mid-stream — flagged for the finally reset.
+    expect(provider.cleanupCount).toBe(0)
+    expect(agent.getProviderForTest()).toBe(provider)
+    expect(agent.getPendingRestartForTest()).toBe(true)
+
+    agent.setStreamingForTest(false)
+    agent.applyPendingRestartForTest()
+
+    expect(provider.cleanupCount).toBe(1)
+    expect(agent.getProviderForTest()).toBeNull()
+  })
+
+  it('exit from an intentionally replaced provider is a no-op', () => {
+    const stale = makeFakeProviderWithProcess()
+    agent.setProviderForTest(stale)
+    agent.observeProviderProcessExitForTest(stale)
+
+    // Intentional teardown/replacement (e.g. runtime switch) before exit fires.
+    const fresh = makeFakeProviderWithProcess()
+    agent.setProviderForTest(fresh)
+
+    stale.fireExit()
+
+    expect(fresh.cleanupCount).toBe(0)
+    expect(agent.getProviderForTest()).toBe(fresh)
+    expect(agent.getPendingRestartForTest()).toBe(false)
+  })
+
+  it('registers the exit observer only once per subprocess', () => {
+    let onceCalls = 0
+    const provider = makeFakeProviderWithProcess()
+    const origOnce = provider.model.agentProcess.once
+    provider.model.agentProcess.once = (event, cb) => { onceCalls += 1; origOnce(event, cb) }
+    agent.setProviderForTest(provider)
+
+    agent.observeProviderProcessExitForTest(provider)
+    agent.observeProviderProcessExitForTest(provider)
+
+    expect(onceCalls).toBe(1)
+  })
+})
+
+describe('isHermesSubprocessIoError (F2.1)', () => {
+  it('matches dead-pipe I/O signatures', () => {
+    expect(isHermesSubprocessIoError('write EPIPE')).toBe(true)
+    expect(isHermesSubprocessIoError('read ECONNRESET')).toBe(true)
+    expect(isHermesSubprocessIoError('Cannot call write after a stream was destroyed [ERR_STREAM_DESTROYED]')).toBe(true)
+    expect(isHermesSubprocessIoError('write after end')).toBe(true)
+    expect(isHermesSubprocessIoError('Premature close')).toBe(true)
+  })
+
+  it('does not match business errors like rate limits', () => {
+    expect(isHermesSubprocessIoError('429 rate limit exceeded, retry after 30s')).toBe(false)
+    expect(isHermesSubprocessIoError('Invalid API key provided')).toBe(false)
+    expect(isHermesSubprocessIoError('model overloaded, please retry')).toBe(false)
+    expect(isHermesSubprocessIoError('context window exceeded')).toBe(false)
   })
 })
 

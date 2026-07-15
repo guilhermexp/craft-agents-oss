@@ -342,6 +342,28 @@ describe('createBrowserTools', () => {
       expect(result.content[0].text).toContain('waitFor=network-idle')
     })
 
+    it('clamps click timeoutMs to the action ceiling (F2.4 — remote replay guard)', async () => {
+      let receivedTimeout: number | undefined
+      mockFns.click = async (_ref, options) => { receivedTimeout = options?.timeoutMs }
+
+      await executeTool(tools, 'browser_tool', { command: 'click @e1 navigation 500000' })
+      expect(receivedTimeout).toBe(120_000)
+
+      await executeTool(tools, 'browser_tool', { command: 'click @e1 navigation 60000' })
+      expect(receivedTimeout).toBe(60_000)
+    })
+
+    it('clamps wait timeoutMs to the action ceiling (F2.4)', async () => {
+      let receivedTimeout: number | undefined
+      mockFns.waitFor = async (args) => {
+        receivedTimeout = args.timeoutMs
+        return { ok: true as const, kind: 'network-idle', elapsedMs: 1, detail: 'idle' }
+      }
+
+      await executeTool(tools, 'browser_tool', { command: 'wait network-idle 500000' })
+      expect(receivedTimeout).toBe(120_000)
+    })
+
     it('detects security challenge after click even when URL does not change', async () => {
       let releaseCalls = 0
       mockFns.detectChallenge = async () => ({

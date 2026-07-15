@@ -74,37 +74,37 @@
     "./resources": "./src/resources/index.ts"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.19.0",
+    "@agentclientprotocol/sdk": "^0.19.2",
     "@craft-agent/core": "workspace:*",
     "@craft-agent/session-tools-core": "workspace:*",
-    "@isaacs/ttlcache": "^2.1.4",
+    "@isaacs/ttlcache": "^2.1.5",
     "@leeoniya/ufuzzy": "^1.0.19",
     "@mariozechner/pi-agent-core": "0.70.6",
     "@mariozechner/pi-ai": "0.70.6",
     "@mariozechner/pi-coding-agent": "0.70.6",
-    "@mcpc-tech/acp-ai-provider": "^0.3.2",
-    "ai": "^6.0.161",
+    "@mcpc-tech/acp-ai-provider": "^0.3.3",
+    "ai": "^6.0.226",
     "bash-parser": "^0.5.0",
-    "better-sqlite3": "^12.2.0",
+    "better-sqlite3": "^12.11.1",
     "croner": "^10.0.1",
-    "date-fns": "^4.1.0",
+    "date-fns": "^4.4.0",
     "filtrex": "^3.1.0",
-    "glob": "^13.0.0",
+    "glob": "^13.0.6",
     "gray-matter": "^4.0.3",
-    "i18next": "^26.0.3",
+    "i18next": "^26.3.6",
     "incr-regex-package": "^1.0.4",
-    "marked": "^18.0.4",
-    "shell-quote": "^1.8.3",
-    "tar": "^7.5.15",
-    "yaml": "^2.8.3"
+    "marked": "^18.0.6",
+    "shell-quote": "^1.10.0",
+    "tar": "^7.5.20",
+    "yaml": "^2.9.0"
   },
   "peerDependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.170",
-    "@modelcontextprotocol/sdk": ">=1.0.0",
-    "zod": ">=3.0.0"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/shell-quote": "^1.7.5",
     "@types/uuid": "^11.0.0"
   }

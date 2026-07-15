@@ -5,6 +5,7 @@ import { promisify } from 'util'
 import type { FileAttachment } from '@craft-agent/shared/utils/files'
 import { getLlmConnections, getDefaultLlmConnection, getLlmConnection } from '@craft-agent/shared/config'
 import { createBackendFromConnection } from '@craft-agent/shared/agent/backend'
+import { buildMeetingBackendHostRuntime } from './backend-host-runtime'
 import { loadSkillBySlug } from '@craft-agent/shared/skills'
 import type { AgentBackend } from '@craft-agent/shared/agent/backend'
 import type { MeetingRecord, MeetingTranscriptSegment } from '../../shared/types'
@@ -297,7 +298,7 @@ export async function generateMeetingVideoAnalysisMarkdown(input: MeetingVideoAn
         createdAt: 0,
       },
       isHeadless: true,
-    })
+    }, buildMeetingBackendHostRuntime())
 
     // Inject the chosen connection's credentials/base-url before the first
     // chat() (the Claude SDK subprocess spawns lazily and reads process.env).

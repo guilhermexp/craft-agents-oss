@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -44,6 +44,37 @@ const nativeCatalog = getToolDefsAsJsonSchema({
   includeMemory: true,
 });
 const nativeByName = new Map(nativeCatalog.map((tool) => [tool.name, tool]));
+
+// Golden snapshot: the committed v1 contract. Any drift (schema, description,
+// name set) fails until the golden is regenerated explicitly — incompatible
+// changes to a public v1 tool require a new major version instead.
+const GOLDEN_PATH = 'scripts/session-tool-contracts.golden.json';
+const goldenCurrent = stableJson(Object.fromEntries(nativeCatalog.map((tool) => [tool.name, tool])));
+if (process.argv.includes('--update')) {
+  writeFileSync(GOLDEN_PATH, `${goldenCurrent}\n`);
+  console.log(`golden updated: ${GOLDEN_PATH} (${nativeCatalog.length} tools)`);
+} else if (!existsSync(GOLDEN_PATH)) {
+  errors.push(`missing golden file ${GOLDEN_PATH} — generate it with: bun scripts/check-session-tool-contracts.ts --update`);
+} else if (readFileSync(GOLDEN_PATH, 'utf-8').trim() !== goldenCurrent) {
+  const golden = JSON.parse(readFileSync(GOLDEN_PATH, 'utf-8')) as Record<string, unknown>;
+  const goldenNames = new Set(Object.keys(golden));
+  const currentNames = new Set(nativeCatalog.map((tool) => tool.name));
+  for (const name of goldenNames) {
+    if (!currentNames.has(name)) errors.push(`${name}: removed from catalog but present in golden`);
+  }
+  for (const tool of nativeCatalog) {
+    if (!goldenNames.has(tool.name)) {
+      errors.push(`${tool.name}: new tool not in golden`);
+    } else if (stableJson(golden[tool.name]) !== stableJson(tool)) {
+      errors.push(`${tool.name}: contract differs from golden snapshot`);
+    }
+  }
+  errors.push(
+    `v1 session tool contracts drifted from ${GOLDEN_PATH}. ` +
+    'Incompatible changes to a public v1 tool require a new major version; ' +
+    'if this change is intentional and compatible, regenerate with: bun scripts/check-session-tool-contracts.ts --update',
+  );
+}
 const workspaceRootPath = mkdtempSync(join(tmpdir(), 'craft-session-tool-contracts-'));
 const sessionId = 'contract-check-session';
 mkdirSync(join(workspaceRootPath, 'sessions', sessionId), { recursive: true });

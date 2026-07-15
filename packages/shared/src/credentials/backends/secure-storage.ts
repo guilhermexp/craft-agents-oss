@@ -42,7 +42,6 @@ import { credentialIdToAccount, accountToCredentialId } from '../types.ts';
 
 // File location
 const CREDENTIALS_DIR = join(homedir(), '.craft-agent');
-const CREDENTIALS_FILE = join(CREDENTIALS_DIR, 'credentials.enc');
 
 // File format constants
 const MAGIC_BYTES = Buffer.from('CRAFT01\0');
@@ -98,6 +97,25 @@ function getStableMachineId(): string {
   return `${userInfo().username}:${homedir()}`;
 }
 
+/**
+ * Optional OS-backed key protector (F4.2, opt-in).
+ *
+ * Implemented in the Electron main process via `electron.safeStorage`
+ * (Keychain / DPAPI / libsecret). When injected and available, the store is
+ * encrypted with a random master key kept OS-protected in a `credentials.key`
+ * sidecar instead of the machine-id-derived key. NOT enabled by default:
+ * `packages/shared` also runs in the headless server subprocess, which has no
+ * Electron — flipping the default would break credential reads there until
+ * main→server key distribution exists.
+ */
+export interface CredentialKeyProtector {
+  isAvailable(): boolean;
+  /** Encrypt the raw master key for at-rest storage (e.g. safeStorage.encryptString). */
+  protect(data: Buffer): Buffer;
+  /** Decrypt the stored master key. */
+  unprotect(data: Buffer): Buffer;
+}
+
 /** Internal credential store structure */
 interface CredentialStore {
   version: 1;
@@ -115,6 +133,18 @@ export class SecureStorageBackend implements CredentialBackend {
   private cachedStore: CredentialStore | null = null;
   private encryptionKey: Buffer | null = null;
   private salt: Buffer | null = null;
+  private masterKey: Buffer | null = null;
+  private readonly keyProtector: CredentialKeyProtector | undefined;
+  private readonly credentialsDir: string;
+  private readonly credentialsFile: string;
+  private readonly keyFile: string;
+
+  constructor(options?: { keyProtector?: CredentialKeyProtector; credentialsDir?: string }) {
+    this.keyProtector = options?.keyProtector;
+    this.credentialsDir = options?.credentialsDir ?? CREDENTIALS_DIR;
+    this.credentialsFile = join(this.credentialsDir, 'credentials.enc');
+    this.keyFile = join(this.credentialsDir, 'credentials.key');
+  }
 
   async isAvailable(): Promise<boolean> {
     // File backend is always available - we can always write to filesystem
@@ -199,11 +229,11 @@ export class SecureStorageBackend implements CredentialBackend {
     // Return cached store if available
     if (this.cachedStore) return this.cachedStore;
 
-    if (!existsSync(CREDENTIALS_FILE)) return null;
+    if (!existsSync(this.credentialsFile)) return null;
 
     let fileData: Buffer;
     try {
-      fileData = readFileSync(CREDENTIALS_FILE);
+      fileData = readFileSync(this.credentialsFile);
     } catch {
       return null;
     }
@@ -229,12 +259,32 @@ export class SecureStorageBackend implements CredentialBackend {
     // Extract encrypted data
     const encryptedData = fileData.subarray(HEADER_SIZE);
 
+    // Try the OS-protected master key first (F4.2 opt-in, sidecar present)
+    const masterKey = this.loadMasterKey();
+    if (masterKey) {
+      const masterStore = this.tryDecrypt(encryptedData, masterKey);
+      if (masterStore) {
+        this.cachedStore = masterStore;
+        return masterStore;
+      }
+    }
+
     // Try new stable key first (v2 - hardware UUID based)
     const newKey = this.getEncryptionKey(salt);
     let store = this.tryDecrypt(encryptedData, newKey);
 
     if (store) {
       this.cachedStore = store;
+      // Lazy migration: re-encrypt with the OS-protected master key when a
+      // protector is available (no-op otherwise — saveStoreSync picks the key).
+      // A failed migration must never break a successful read.
+      if (this.protectorAvailable()) {
+        try {
+          this.saveStoreSync(store);
+        } catch {
+          // keep serving the successfully decrypted store
+        }
+      }
       return store;
     }
 
@@ -250,9 +300,57 @@ export class SecureStorageBackend implements CredentialBackend {
       return store;
     }
 
-    // Both keys failed - file is truly corrupted
+    // A key sidecar exists but this process has no usable protector (e.g.
+    // headless server without Electron): the file is likely master-key
+    // encrypted, NOT corrupted — never delete the user's credentials here.
+    if (existsSync(this.keyFile) && !this.protectorAvailable()) {
+      return null;
+    }
+
+    // All keys failed - file is truly corrupted
     this.handleCorruptedFile();
     return null;
+  }
+
+  private protectorAvailable(): boolean {
+    try {
+      return Boolean(this.keyProtector?.isAvailable());
+    } catch {
+      return false;
+    }
+  }
+
+  /** Read and unprotect the master key sidecar. Null when absent/unusable. */
+  private loadMasterKey(): Buffer | null {
+    if (!this.protectorAvailable()) return null;
+    if (this.masterKey) return this.masterKey;
+    try {
+      if (!existsSync(this.keyFile)) return null;
+      const key = this.keyProtector!.unprotect(readFileSync(this.keyFile));
+      if (key.length !== KEY_SIZE) return null;
+      this.masterKey = key;
+      return key;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Master key for writes — creates and persists the sidecar on first use. */
+  private loadOrCreateMasterKey(): Buffer | null {
+    const existing = this.loadMasterKey();
+    if (existing) return existing;
+    if (!this.protectorAvailable()) return null;
+    try {
+      const key = randomBytes(KEY_SIZE);
+      if (!existsSync(this.credentialsDir)) {
+        mkdirSync(this.credentialsDir, { recursive: true, mode: 0o700 });
+      }
+      writeFileSync(this.keyFile, this.keyProtector!.protect(key), { mode: 0o600 });
+      this.masterKey = key;
+      return key;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -280,16 +378,17 @@ export class SecureStorageBackend implements CredentialBackend {
 
   private saveStoreSync(store: CredentialStore): void {
     // Ensure directory exists
-    if (!existsSync(CREDENTIALS_DIR)) {
-      mkdirSync(CREDENTIALS_DIR, { recursive: true, mode: 0o700 });
+    if (!existsSync(this.credentialsDir)) {
+      mkdirSync(this.credentialsDir, { recursive: true, mode: 0o700 });
     }
 
     // Use existing salt or generate new one
     const salt = this.salt || randomBytes(SALT_SIZE);
     this.salt = salt;
 
-    // Get encryption key
-    const key = this.getEncryptionKey(salt);
+    // Encryption key: OS-protected master key when a protector is available
+    // (F4.2 opt-in), machine-id derivation otherwise (current default)
+    const key = this.loadOrCreateMasterKey() ?? this.getEncryptionKey(salt);
 
     // Serialize payload
     const plaintext = Buffer.from(JSON.stringify(store), 'utf8');
@@ -312,7 +411,7 @@ export class SecureStorageBackend implements CredentialBackend {
     const fileData = Buffer.concat([header, iv, authTag, ciphertext]);
 
     // Write with restrictive permissions (owner read/write only)
-    writeFileSync(CREDENTIALS_FILE, fileData, { mode: 0o600 });
+    writeFileSync(this.credentialsFile, fileData, { mode: 0o600 });
     this.cachedStore = store;
   }
 
@@ -350,8 +449,8 @@ export class SecureStorageBackend implements CredentialBackend {
   private handleCorruptedFile(): void {
     // Delete corrupted file - user will need to re-enter credentials
     try {
-      if (existsSync(CREDENTIALS_FILE)) {
-        unlinkSync(CREDENTIALS_FILE);
+      if (existsSync(this.credentialsFile)) {
+        unlinkSync(this.credentialsFile);
       }
     } catch {
       // Ignore deletion errors
@@ -359,6 +458,7 @@ export class SecureStorageBackend implements CredentialBackend {
     this.cachedStore = null;
     this.encryptionKey = null;
     this.salt = null;
+    this.masterKey = null;
   }
 
   /** Clear cached data (for testing or forced refresh) */
@@ -366,5 +466,6 @@ export class SecureStorageBackend implements CredentialBackend {
     this.cachedStore = null;
     this.encryptionKey = null;
     this.salt = null;
+    this.masterKey = null;
   }
 }

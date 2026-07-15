@@ -621,10 +621,12 @@ export function createBackendFromConnection(
 export const BACKEND_CAPABILITIES: Record<AgentProvider, {
   /** Whether the backend needs an HTTP pool server (external subprocess can't access McpClientPool directly) */
   needsHttpPoolServer: boolean;
+  /** Whether the backend supports session branching (sdk-fork). Hermes does not consume branchFrom*. */
+  supportsBranching: boolean;
 }> = {
-  anthropic: { needsHttpPoolServer: false },
-  hermes: { needsHttpPoolServer: true },
-  pi: { needsHttpPoolServer: false },
+  anthropic: { needsHttpPoolServer: false, supportsBranching: true },
+  hermes: { needsHttpPoolServer: true, supportsBranching: false },
+  pi: { needsHttpPoolServer: false, supportsBranching: true },
 };
 
 // ============================================================

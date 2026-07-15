@@ -4,7 +4,7 @@ import type { HandlerDeps } from './handler-deps'
 import { MeetingService } from '../meetings/meeting-service'
 import { RecordingService } from '../meetings/recording-service'
 import { ipcMain } from 'electron'
-import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
+import { getWorkspaceByNameOrId, getWorkspaces } from '@craft-agent/shared/config'
 
 const MEETINGS_RESOLVE_WORKSPACE = 'meetings:resolve-workspace'
 const RECORDING_PREPARE = 'meetings:recording:prepare'
@@ -76,6 +76,16 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
 
   if (!meetingsIpcRegistered) {
     meetingsIpcRegistered = true
+
+    // Boot-time recovery: transcripts left in 'capturing' by a crash/quit
+    // during the fire-and-forget transcription would otherwise stay stuck
+    // forever (ensureLoaded reloads them as-is).
+    for (const workspace of getWorkspaces()) {
+      void meetingService!.recoverInterruptedTranscriptions(workspace.id, workspace.rootPath).catch((err) => {
+        platform.logger.error(`[meetings] transcription recovery failed for workspace ${workspace.id}:`, err)
+      })
+    }
+
     ipcMain.handle(MEETINGS_RESOLVE_WORKSPACE, (_event, browserInstanceId: string) => {
       const workspaceId = resolveBrowserInstanceWorkspaceId(browserInstanceId)
       if (!workspaceId) {
@@ -149,7 +159,14 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
     })
 
     ipcMain.handle(RECORDING_ABORT, (_event, recordingId: string) => {
-      recordingService!.abort(recordingId)
+      const aborted = recordingService!.abort(recordingId)
+      if (aborted?.meetingId) {
+        try {
+          meetingService!.stop(resolveWorkspaceRoot(aborted.workspaceId), aborted.meetingId)
+        } catch (err) {
+          platform.logger.error('[meetings] closing meeting record after abort failed:', err)
+        }
+      }
     })
 
     ipcMain.handle(RPC_NAMESPACES.meetings.ARCHIVE, (_event, workspaceIdOrId: string, maybeId?: string) => {

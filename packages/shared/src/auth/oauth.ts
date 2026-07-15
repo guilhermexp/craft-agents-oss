@@ -73,7 +73,8 @@ export class CraftOAuth {
   }> {
     const redirectUri = `http://localhost:${port}${CALLBACK_PATH}`;
 
-    const response = await fetch(registrationEndpoint, {
+    assertSafeOAuthEndpoint(registrationEndpoint, 'registration endpoint');
+    const response = await fetchWithTimeout(registrationEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -83,7 +84,7 @@ export class CraftOAuth {
         response_types: ['code'],
         token_endpoint_auth_method: 'none', // Public client
       }),
-    });
+    }, OAUTH_ENDPOINT_TIMEOUT_MS);
 
     if (!response.ok) {
       const error = await response.text();
@@ -114,11 +115,12 @@ export class CraftOAuth {
       code_verifier: codeVerifier,
     });
 
-    const response = await fetch(tokenEndpoint, {
+    assertSafeOAuthEndpoint(tokenEndpoint, 'token endpoint');
+    const response = await fetchWithTimeout(tokenEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString(),
-    });
+    }, OAUTH_ENDPOINT_TIMEOUT_MS);
 
     if (!response.ok) {
       const error = await response.text();
@@ -158,11 +160,12 @@ export class CraftOAuth {
       client_id: clientId,
     });
 
-    const response = await fetch(metadata.token_endpoint, {
+    assertSafeOAuthEndpoint(metadata.token_endpoint, 'token endpoint');
+    const response = await fetchWithTimeout(metadata.token_endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString(),
-    });
+    }, OAUTH_ENDPOINT_TIMEOUT_MS);
 
     if (!response.ok) {
       throw new Error('Failed to refresh token');
@@ -466,9 +469,10 @@ async function registerMcpOAuthClient(
   registrationEndpoint: string,
   redirectUri: string
 ): Promise<{ client_id: string; client_secret?: string }> {
+  assertSafeOAuthEndpoint(registrationEndpoint, 'registration endpoint');
   let response: Response;
   try {
-    response = await fetch(registrationEndpoint, {
+    response = await fetchWithTimeout(registrationEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -478,7 +482,7 @@ async function registerMcpOAuthClient(
         response_types: ['code'],
         token_endpoint_auth_method: 'none',
       }),
-    });
+    }, OAUTH_ENDPOINT_TIMEOUT_MS);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     throw new McpClientRegistrationError(`Failed to register OAuth client: ${message}`);
@@ -510,11 +514,12 @@ async function exchangeMcpCodeForTokens(
     code_verifier: codeVerifier,
   });
 
-  const response = await fetch(tokenEndpoint, {
+  assertSafeOAuthEndpoint(tokenEndpoint, 'token endpoint');
+  const response = await fetchWithTimeout(tokenEndpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),
-  });
+  }, OAUTH_ENDPOINT_TIMEOUT_MS);
 
   if (!response.ok) {
     const error = await response.text();
@@ -657,10 +662,23 @@ async function tryFetchAuthServerMetadata(
 ): Promise<OAuthMetadata | null> {
   try {
     onLog?.(`  Trying: ${url}`);
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (response.ok) {
       const data = await response.json() as OAuthMetadata;
       if (data.authorization_endpoint && data.token_endpoint) {
+        // SSRF protection: reject metadata whose fetchable endpoints point
+        // at private/internal addresses before any downstream fetch uses them.
+        for (const [label, endpoint] of [
+          ['token_endpoint', data.token_endpoint],
+          ['registration_endpoint', data.registration_endpoint],
+        ] as const) {
+          if (!endpoint) continue;
+          const endpointCheck = isUrlSafeToFetch(endpoint);
+          if (!endpointCheck.safe) {
+            onLog?.(`  ✗ Unsafe ${label} in metadata rejected: ${endpointCheck.reason}`);
+            return null;
+          }
+        }
         onLog?.(`  ✓ Found OAuth metadata at ${url}`);
         return data;
       }
@@ -687,10 +705,53 @@ interface ProtectedResourceMetadata {
 const DISCOVERY_TIMEOUT_MS = 5000;
 
 /**
- * Check if a URL is safe to fetch (SSRF protection).
- * Rejects private IPs, localhost, and non-HTTPS URLs.
+ * Check whether a dotted-quad IPv4 hostname falls in a private/reserved range.
+ * Catches: 0.x, 10.x, 127.x, 172.16-31.x, 192.168.x, 169.254.x
  */
-function isUrlSafeToFetch(urlString: string): { safe: boolean; reason?: string } {
+function isPrivateIPv4(hostname: string): boolean {
+  const ipMatch = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!ipMatch) return false;
+  const a = Number(ipMatch[1]);
+  const b = Number(ipMatch[2]);
+  return (
+    a === 0 ||                             // 0.0.0.0/8
+    a === 10 ||                            // 10.0.0.0/8
+    a === 127 ||                           // 127.0.0.0/8
+    (a === 172 && b >= 16 && b <= 31) ||   // 172.16.0.0/12
+    (a === 192 && b === 168) ||            // 192.168.0.0/16
+    (a === 169 && b === 254)               // 169.254.0.0/16 (link-local/AWS metadata)
+  );
+}
+
+/**
+ * Check whether an IPv6 hostname (already stripped of brackets, lowercase)
+ * is loopback/private/link-local. WHATWG URL serializes IPv4-mapped
+ * addresses as hex groups (`::ffff:7f00:1`), so both forms are handled.
+ */
+function isPrivateIPv6(v6: string): boolean {
+  if (v6 === '::1' || v6 === '::') return true;           // loopback / unspecified
+  if (v6.startsWith('fc') || v6.startsWith('fd')) return true; // fc00::/7 (ULA)
+  if (/^fe[89ab]/.test(v6)) return true;                  // fe80::/10 (link-local)
+  if (v6.startsWith('::ffff:')) {
+    // IPv4-mapped — extract the embedded IPv4 and reuse the IPv4 check
+    const tail = v6.slice('::ffff:'.length);
+    if (tail.includes('.')) return isPrivateIPv4(tail);
+    const groups = tail.split(':');
+    if (groups.length > 2) return true; // malformed — be conservative
+    const hi = parseInt(groups.length === 2 ? groups[0]! : '0', 16);
+    const lo = parseInt(groups[groups.length - 1]!, 16);
+    if (Number.isNaN(hi) || Number.isNaN(lo)) return true;
+    const mapped = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+    return isPrivateIPv4(mapped);
+  }
+  return false;
+}
+
+/**
+ * Check if a URL is safe to fetch (SSRF protection).
+ * Rejects private IPs (v4 and v6), localhost, and non-HTTPS URLs.
+ */
+export function isUrlSafeToFetch(urlString: string): { safe: boolean; reason?: string } {
   let url: URL;
   try {
     url = new URL(urlString);
@@ -711,22 +772,16 @@ function isUrlSafeToFetch(urlString: string): { safe: boolean; reason?: string }
     return { safe: false, reason: 'Localhost not allowed' };
   }
 
-  // Block private IP ranges (basic check - covers most cases)
-  // This catches: 10.x.x.x, 172.16-31.x.x, 192.168.x.x, 169.254.x.x
-  const ipMatch = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
-  if (ipMatch) {
-    const a = Number(ipMatch[1]);
-    const b = Number(ipMatch[2]);
-    if (
-      a === 0 ||                             // 0.0.0.0/8
-      a === 10 ||                           // 10.0.0.0/8
-      a === 127 ||                          // 127.0.0.0/8
-      (a === 172 && b >= 16 && b <= 31) ||  // 172.16.0.0/12
-      (a === 192 && b === 168) ||           // 192.168.0.0/16
-      (a === 169 && b === 254)              // 169.254.0.0/16 (link-local/AWS metadata)
-    ) {
-      return { safe: false, reason: 'Private IP range not allowed' };
+  // IPv6 — WHATWG URL keeps the brackets in url.hostname ('[::1]')
+  if (hostname.startsWith('[') && hostname.endsWith(']')) {
+    if (isPrivateIPv6(hostname.slice(1, -1))) {
+      return { safe: false, reason: 'Private IPv6 range not allowed' };
     }
+    return { safe: true };
+  }
+
+  if (isPrivateIPv4(hostname)) {
+    return { safe: false, reason: 'Private IP range not allowed' };
   }
 
   return { safe: true };
@@ -751,25 +806,74 @@ function isProtectedResourceMetadata(data: unknown): data is ProtectedResourceMe
   return true;
 }
 
+/** Max redirect hops followed by fetchWithTimeout (each hop is SSRF-validated) */
+const MAX_OAUTH_REDIRECTS = 3;
+
+/** Timeout for OAuth endpoint calls (token exchange, client registration) */
+const OAUTH_ENDPOINT_TIMEOUT_MS = 30_000;
+
 /**
- * Fetch with timeout using AbortController
+ * Fetch with timeout using AbortController.
+ *
+ * SSRF protection: redirects are followed manually — each 3xx Location is
+ * validated with isUrlSafeToFetch before being followed, so a public server
+ * cannot redirect the request into a private/internal address.
  */
 async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
   timeoutMs: number = DISCOVERY_TIMEOUT_MS
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  let currentUrl = url;
+  for (let hop = 0; hop <= MAX_OAUTH_REDIRECTS; hop++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    return response;
-  } finally {
-    clearTimeout(timeoutId);
+    let response: Response;
+    try {
+      response = await fetch(currentUrl, {
+        ...options,
+        redirect: 'manual',
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (response.status < 300 || response.status >= 400) {
+      return response;
+    }
+
+    const location = response.headers.get('location');
+    if (!location) {
+      return response;
+    }
+
+    let nextUrl: string;
+    try {
+      nextUrl = new URL(location, currentUrl).toString();
+    } catch {
+      throw new Error(`Invalid redirect location from ${currentUrl}`);
+    }
+
+    const check = isUrlSafeToFetch(nextUrl);
+    if (!check.safe) {
+      throw new Error(`Redirect to unsafe URL blocked: ${check.reason}`);
+    }
+    currentUrl = nextUrl;
+  }
+  throw new Error(`Too many redirects fetching ${url}`);
+}
+
+/**
+ * SSRF guard for OAuth endpoints that come from (potentially attacker
+ * supplied) server metadata — token_endpoint / registration_endpoint must
+ * never point at private/internal addresses.
+ */
+function assertSafeOAuthEndpoint(endpointUrl: string, label: string): void {
+  const check = isUrlSafeToFetch(endpointUrl);
+  if (!check.safe) {
+    throw new Error(`Unsafe ${label} rejected: ${check.reason}`);
   }
 }
 
@@ -958,6 +1062,15 @@ export async function discoverOAuthMetadata(
     return null;
   }
 
+  // SSRF protection: never probe internal/private endpoints during discovery.
+  // This covers the RFC 9728 probe of mcpUrl and the RFC 8414 candidates
+  // derived from its origin.
+  const mcpUrlCheck = isUrlSafeToFetch(mcpUrl);
+  if (!mcpUrlCheck.safe) {
+    onLog?.(`Unsafe MCP URL rejected for OAuth discovery: ${mcpUrlCheck.reason}`);
+    return null;
+  }
+
   onLog?.(`Discovering OAuth metadata for ${mcpUrl}`);
 
   // 1. Try RFC 9728 protected resource discovery first (handles Craft MCP and other compliant servers)
@@ -975,6 +1088,11 @@ export async function discoverOAuthMetadata(
   ];
 
   for (const candidate of candidates) {
+    const candidateCheck = isUrlSafeToFetch(candidate);
+    if (!candidateCheck.safe) {
+      onLog?.(`  ✗ Unsafe discovery URL rejected: ${candidateCheck.reason}`);
+      continue;
+    }
     const metadata = await tryFetchAuthServerMetadata(candidate, onLog);
     if (metadata) {
       return metadata;
