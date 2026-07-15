@@ -35,6 +35,7 @@ O sistema SHALL executar pipeline CI de release sempre que uma tag git `v*` (sem
 - **WHEN** o job Windows falha em `bun run electron:dist:win`
 - **THEN** os jobs macOS arm64 e macOS x64 continuam até o fim
 - **AND** os artefatos macOS são publicados na Release draft mesmo sem o `.exe`
+- **AND** o job `finalize` marca a draft como incompleta em vez de deixá-la parecer pronta
 
 ### Requirement: Toolchain do release reusa toolchain de validação
 
@@ -74,7 +75,7 @@ O pipeline SHALL produzir builds não-assinados (unsigned) por padrão, controla
 
 ### Requirement: Publicação como GitHub Release draft
 
-O pipeline SHALL anexar todos os artefatos gerados a uma GitHub Release **draft** (não publicada automaticamente), permitindo revisão humana antes da exposição pública.
+O pipeline SHALL anexar todos os artefatos gerados a uma GitHub Release **draft** (não publicada automaticamente), permitindo revisão humana antes da exposição pública. Uma release parcial (nem todas as plataformas produziram artefato) MAY existir como draft, mas MUST ser sinalizada visivelmente: um job `finalize` — que roda após todos os jobs de build, mesmo quando algum falha — confere os assets da draft contra o conjunto esperado de plataformas (macOS arm64 `.dmg`, macOS x64 `.dmg`, Windows x64 `.exe`) e marca nome e corpo da draft com um aviso "⚠️ INCOMPLETE — missing: <plataformas>" quando faltar artefato. Uma draft parcial MUST NOT parecer completa.
 
 #### Scenario: Artefatos esperados aparecem na Release draft
 
@@ -83,6 +84,20 @@ O pipeline SHALL anexar todos os artefatos gerados a uma GitHub Release **draft*
 - **THEN** uma Release draft com nome igual ao da tag (ex: `v0.8.13`) é criada
 - **AND** os artefatos `Craft-Agents-arm64.dmg`, `Craft-Agents-x64.dmg`, `Craft-Agents-arm64.zip`, `Craft-Agents-x64.zip`, `Craft-Agents-x64.exe` estão anexados
 - **AND** a Release está marcada como `draft: true` na UI do GitHub
+- **AND** o job `finalize` não encontra plataformas faltantes e a draft não carrega marca de incompletude
+
+#### Scenario: Release parcial é sinalizada, nunca silenciosa
+
+- **GIVEN** o job Windows falhou e a draft contém apenas os artefatos macOS
+- **WHEN** o job `finalize` roda (`if: always()`, após todos os builds)
+- **THEN** o nome da draft ganha o prefixo "⚠️ INCOMPLETE" e o corpo lista as plataformas faltantes (ex: `Windows x64 (.exe)`)
+- **AND** um humano revisando a draft vê a incompletude antes de publicar
+
+#### Scenario: Re-run completo limpa a marca de incompletude
+
+- **GIVEN** uma draft marcada como incompleta por um run anterior
+- **WHEN** a tag é re-empurrada e todos os builds produzem seus artefatos
+- **THEN** o job `finalize` remove o aviso do corpo e restaura o nome da draft para o da tag
 
 #### Scenario: Humano publica a Release manualmente
 

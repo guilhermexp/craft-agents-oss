@@ -153,3 +153,180 @@ The system SHALL block new session tools from being exposed unless they pass an 
 - **WHEN** a pull request exposes a session tool outside the canonical registration entry point
 - **THEN** the approval gate fails and reports that the tool must be registered through the frontier API contract
 
+### Requirement: Agentic browser navigation is restricted to safe top-level schemes
+
+O browser controlado por agente SHALL restringir a navegação de topo e a
+abertura de popups a esquemas `http:` e `https:` (mais `about:blank`),
+rejeitando `file:`, `chrome:`, e quaisquer outros esquemas. A rejeição SHALL
+produzir um erro claro citando o esquema bloqueado. A validação SHALL ser a
+mesma para `navigate` (ferramenta de agente) e para o handler de abertura de
+janelas (popups).
+
+#### Scenario: navigate para file:// é rejeitado
+
+- **GIVEN** um agente controla uma instância de browser
+- **WHEN** o agente chama `browser_tool navigate` com `file:///etc/passwd`
+- **THEN** a navegação é rejeitada com erro citando o esquema `file:`
+- **AND** a página local não é carregada no `webContents`
+
+#### Scenario: navigate para chrome:// é rejeitado
+
+- **GIVEN** um agente controla uma instância de browser
+- **WHEN** o agente chama `browser_tool navigate` com `chrome://settings`
+- **THEN** a navegação é rejeitada com erro citando o esquema `chrome:`
+
+#### Scenario: navigate para https é permitido
+
+- **GIVEN** um agente controla uma instância de browser
+- **WHEN** o agente chama `browser_tool navigate` com `https://example.com`
+- **THEN** a navegação prossegue normalmente
+
+#### Scenario: popup com esquema não-http é negado
+
+- **GIVEN** uma página tenta abrir uma janela via `window.open`
+- **WHEN** a URL alvo usa um esquema diferente de http/https/about:blank
+- **THEN** a abertura da janela é negada
+
+### Requirement: Remote evaluate gate applies to the local agent path
+
+O gate `allowRemoteEvaluate` SHALL ser aplicado também no path local
+(agente → SessionManager → browser pane), não apenas no path remoto
+(dispatcher). Quando `allowRemoteEvaluate` for `false`, `browser_tool evaluate`
+SHALL rejeitar com erro claro antes de executar qualquer JavaScript na página.
+
+#### Scenario: evaluate rejeitado quando config desabilita
+
+- **GIVEN** `allowRemoteEvaluate` está `false` na configuração do cliente
+- **WHEN** um agente chama `browser_tool evaluate` pelo path local
+- **THEN** a chamada é rejeitada com erro indicando que `browser_evaluate` está
+  desabilitado por config
+- **AND** nenhum JavaScript é executado na página
+
+### Requirement: Browser session permissions are per-partition and deny sensitive access by default
+
+O handler de permissões do browser agêntico SHALL ser registrado para **toda**
+partition/profile, não apenas a primeira. Permissões sensíveis
+(`clipboard-read`, `display-capture`) SHALL ser negadas por default sem prompt.
+
+#### Scenario: handler registrado em partitions secundárias
+
+- **GIVEN** o browser cria instâncias em dois profiles/partitions distintos
+- **WHEN** cada partition é inicializada
+- **THEN** o handler de permissões é registrado em ambas as partitions
+- **AND** nenhuma partition cai no default permissivo do Electron
+
+#### Scenario: clipboard-read e display-capture negados por default
+
+- **GIVEN** uma origem qualquer solicita `clipboard-read` ou `display-capture`
+- **WHEN** o handler de permissões avalia o pedido
+- **THEN** o pedido é negado
+- **AND** permissões como `geolocation` permanecem no allow-set default
+
+### Requirement: Browser element refs are invalidated by navigation
+
+Refs `@eN` do snapshot de acessibilidade SHALL ser válidas apenas dentro do
+documento em que foram capturadas. Navegação (`did-navigate`) e navegação
+in-page (`did-navigate-in-page`) SHALL invalidar todas as refs correntes
+(incluindo o mapa estável `backendNodeId → ref`). Ações (`click`/`fill`/
+`select`) com ref inválida ou stale SHALL falhar com erro instruindo a rodar
+`browser_snapshot` primeiro. Números de ref SHALL NOT ser reutilizados após
+invalidação (contador monotônico), de modo que uma ref pré-navegação nunca
+resolva para um elemento pós-navegação.
+
+#### Scenario: ref usada após navegação é rejeitada
+
+- **GIVEN** um snapshot capturou a ref `@e1` numa página
+- **WHEN** a página navega (full ou in-page) e o agente age sobre `@e1` sem novo snapshot
+- **THEN** a ação falha com erro de ref stale citando `browser_snapshot`
+
+#### Scenario: ref pré-navegação não colide após novo snapshot
+
+- **GIVEN** a página navegou e um novo snapshot foi capturado
+- **WHEN** o agente usa uma ref do snapshot antigo
+- **THEN** a ação falha com erro de ref stale (o número da ref antiga não foi reutilizado)
+
+#### Scenario: ref fresca funciona
+
+- **GIVEN** um snapshot recém-capturado do documento atual
+- **WHEN** o agente age sobre uma ref desse snapshot
+- **THEN** a ação resolve o elemento correto normalmente
+
+### Requirement: Remote browser bridge timeout never undercuts the action timeout
+
+O bridge de browser remoto (server → desktop client) SHALL usar um budget de
+transporte derivado do `timeoutMs` da ação (com margem e teto), de modo que o
+transporte nunca desista antes da ação remota completar — eliminando o replay
+de ação (double-submit). O `timeoutMs` aceito pelo runtime de browser tools
+SHALL ter teto. Quando o timeout de transporte ainda assim ocorrer, a mensagem
+de erro SHALL avisar que a ação pode ter sido executada e recomendar
+`browser_snapshot` antes de repetir.
+
+#### Scenario: click com timeout maior que o budget default não causa replay
+
+- **GIVEN** um agente remoto chama `browser_click … navigation 60000`
+- **WHEN** o bridge envia a invocação ao desktop client
+- **THEN** o budget de transporte é ≥ 60s + margem (não os 30s default)
+- **AND** o resultado real do click chega ao agente em vez de um timeout falso
+
+#### Scenario: timeoutMs acima do teto é clampado
+
+- **GIVEN** um agente passa `timeoutMs` acima do teto do runtime
+- **WHEN** a ação é executada
+- **THEN** o timeout efetivo é o teto (e o budget de transporte respeita seu próprio teto)
+
+#### Scenario: mensagem de timeout avisa sobre possível execução
+
+- **GIVEN** uma invocação de browser remota expira no transporte
+- **WHEN** o erro é propagado ao agente
+- **THEN** a mensagem contém o aviso de que a ação pode ter sido executada e a recomendação de rodar `browser_snapshot` antes de repetir
+
+### Requirement: Scheme allowlist covers client-side navigation and redirects
+
+A allowlist de esquemas do browser agêntico SHALL ser aplicada
+(http/https + `about:blank`) a toda navegação de topo, incluindo navegação iniciada
+pela própria página (`window.location`, meta refresh, formulários) e
+redirects de servidor — não apenas ao call site `navigate` do agente e à
+abertura de popups. Navegação client-side para esquema proibido SHALL ser
+cancelada antes de iniciar; redirect para esquema proibido SHALL ser
+interrompido reativamente (stop + about:blank). Deep links do Craft e
+navegação http/https legítima SHALL continuar funcionando.
+
+#### Scenario: página tenta window.location para file://
+
+- **GIVEN** uma instância de browser agêntico com uma página web carregada
+- **WHEN** a página dispara navegação de topo para `file:///etc/passwd`
+- **THEN** a navegação é cancelada (`preventDefault`) e logada
+- **AND** o conteúdo do arquivo local nunca carrega no `webContents`
+
+#### Scenario: navegação https legítima não é afetada
+
+- **GIVEN** uma instância de browser agêntico
+- **WHEN** a página navega para `https://ok.com`
+- **THEN** a navegação prossegue sem bloqueio
+
+#### Scenario: deep link do Craft continua tratado
+
+- **GIVEN** uma instância de browser agêntico
+- **WHEN** a página navega para `craftagents://…`
+- **THEN** o deep link é encaminhado ao handler do Craft (não bloqueado pela allowlist)
+
+#### Scenario: redirect de servidor para esquema proibido
+
+- **GIVEN** uma navegação main-frame em andamento
+- **WHEN** um redirect leva a uma URL de esquema proibido
+- **THEN** o carregamento é interrompido e o webContents vai para `about:blank`
+
+### Requirement: Element refs are invalidated on subframe navigation
+
+Os refs `@eN` de snapshot SHALL ser invalidados quando qualquer frame do
+`webContents` navega (`did-frame-navigate`), não apenas em navegação do main
+frame. Um ref capturado antes da navegação de um iframe SHALL resolver como
+stale, nunca para um backendNodeId reciclado.
+
+#### Scenario: iframe navega e refs anteriores viram stale
+
+- **GIVEN** um snapshot que inclui elementos dentro de um iframe
+- **WHEN** apenas o iframe navega/recarrega (`did-frame-navigate`)
+- **THEN** todos os mapas de refs são limpos
+- **AND** usar um ref antigo produz erro de ref stale pedindo novo snapshot
+

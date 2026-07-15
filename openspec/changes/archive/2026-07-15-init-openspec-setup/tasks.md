@@ -29,5 +29,5 @@
 
 - [x] 4.1 Rodar `openspec list` — confirmar que esta change aparece como ativa
 - [x] 4.2 Rodar `openspec validate init-openspec-setup --strict --no-interactive` — verde
-- [ ] 4.3 ~~Confirmar que `bun run validate:ci` continua passando~~ — TS error pré-existente bloqueia (não causado por esta change). Issue tracked separadamente (TaskList #5).
+- [x] 4.3 Confirmar que `bun run validate:ci` continua passando — RESOLVIDO 2026-07-15 (PR #3): o bloqueio não era TS error, eram 3 testes obsoletos `restoreOpus46` (função dead-code); removidos na F0. `validate:ci` exit 0.
 - [x] 4.4 Reportar: paths criados/modificados + saída de `openspec list` (reportado no chat de orquestração 2026-05-19)
