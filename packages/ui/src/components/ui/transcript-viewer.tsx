@@ -8,7 +8,7 @@ export interface CharacterAlignmentResponseModel {
 }
 
 interface TranscriptViewerContextValue {
-  audioRef: React.RefObject<HTMLAudioElement>
+  audioRef: React.RefObject<HTMLAudioElement | null>
   audioSrc: string
   audioType?: string
   alignment: CharacterAlignmentResponseModel
