@@ -21,7 +21,6 @@
       "@craft-agent/shared": ["../../packages/shared/src/index.ts"],
       "@craft-agent/shared/*": ["../../packages/shared/src/*"]
     },
-    "baseUrl": "."
   },
   "include": [
     "src/**/*.ts",
