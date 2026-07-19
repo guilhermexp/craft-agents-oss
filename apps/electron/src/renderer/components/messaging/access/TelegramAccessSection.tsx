@@ -19,14 +19,10 @@ import { motion, AnimatePresence } from 'motion/react'
 import { toast } from 'sonner'
 import { ChevronDown, ChevronRight, MessageSquare, Users } from 'lucide-react'
 import { messagingBindingsAtom } from '@/atoms/messaging'
-import {
-  AccessModeBanner,
-  OwnersListEditor,
-  PendingSendersList,
-  type PendingSender,
-  type PlatformAccessMode,
-  type PlatformOwner,
-} from './'
+import { AccessModeBanner } from './AccessModeBanner'
+import { OwnersListEditor } from './OwnersListEditor'
+import { PendingSendersList } from './PendingSendersList'
+import type { PendingSender, PlatformAccessMode, PlatformOwner } from './types'
 
 const ROW_ICON_SIZE = 22
 const SUB_ROW_ICON_SIZE = 16
@@ -220,6 +216,14 @@ function AllowedUsersCollapsible({
   // on the list; closed when empty (the banner / pending list handles the
   // "do something" prompt instead).
   const [isExpanded, setIsExpanded] = React.useState(owners.length > 0)
+  const hasAutoExpandedRef = React.useRef(owners.length > 0)
+  const hasUserToggledRef = React.useRef(false)
+
+  React.useEffect(() => {
+    if (owners.length === 0 || hasAutoExpandedRef.current || hasUserToggledRef.current) return
+    hasAutoExpandedRef.current = true
+    setIsExpanded(true)
+  }, [owners.length])
 
   const subtitle =
     accessMode === 'open'
@@ -232,7 +236,10 @@ function AllowedUsersCollapsible({
     <div>
       <button
         type="button"
-        onClick={() => setIsExpanded((v) => !v)}
+        onClick={() => {
+          hasUserToggledRef.current = true
+          setIsExpanded((v) => !v)
+        }}
         className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-foreground/[0.02]"
       >
         <SubRowIcon icon={Users} />

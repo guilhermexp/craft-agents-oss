@@ -12,6 +12,8 @@ credential storage, browser/RTK ou outras customizações do fork.
   fork nos runtimes Claude/Pi, session tools, configuração, storage e RPC.
 - Preservar o isolamento do Hermes e as proteções locais de credenciais/browser.
 - Restaurar os gates canônicos `validate:ci` e `electron:build`.
+- Corrigir regressões de concorrência, retry, acessibilidade e tratamento de
+  erros identificadas no review pré-push do renderer Electron.
 - Não alterar contratos públicos do session-tools MCP nem formatos persistidos.
 
 ## Capabilities

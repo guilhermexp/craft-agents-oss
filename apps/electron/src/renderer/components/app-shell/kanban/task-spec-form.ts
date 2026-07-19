@@ -59,7 +59,7 @@ export function quickAddChildToSubtask(child: {
 }
 
 export const slugify = (s: string): string =>
-  s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48)
+  s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+/g, '').slice(0, 48).replace(/-+$/g, '')
 
 /** Permission modes are fixed (safe|ask|allow-all); mirrored here to avoid a shared Node import in the renderer. */
 export type TaskPermissionMode = 'safe' | 'ask' | 'allow-all'

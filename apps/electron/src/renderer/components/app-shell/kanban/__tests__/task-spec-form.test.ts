@@ -6,12 +6,19 @@ import {
   quickAddNodeId,
   quickAddSessionId,
   quickAddChildToSubtask,
+  slugify,
   MAX_REPAIR_ATTEMPTS_CAP,
   type EditorSubtask,
   type SpecNode,
 } from '../task-spec-form'
 
 const noConn = new Map<string, string>()
+
+describe('slugify', () => {
+  it('cleans a separator exposed by the 48-character truncation boundary', () => {
+    expect(slugify(`${'a'.repeat(47)} -- trailing`)).toBe('a'.repeat(47))
+  })
+})
 
 describe('task-spec-form round-trip', () => {
   it('preserves generated node ids so ${nodes.<id>.output} references survive generate → edit → create', () => {

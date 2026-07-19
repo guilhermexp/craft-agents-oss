@@ -4,6 +4,7 @@ import {
   deriveSelectionFlags,
   deriveSortedRecent,
 } from '../use-working-directory-state'
+import { formatCompactPath, formatPathForDisplay } from '../working-directory-path'
 
 describe('deriveSortedRecent', () => {
   it('returns [] when recents is empty', () => {
@@ -122,5 +123,17 @@ describe('WORKING_DIR_FILTER_THRESHOLD', () => {
     // Pinned as a regression guard: the surfaces share this constant so
     // changing it here must be intentional and applied to both.
     expect(WORKING_DIR_FILTER_THRESHOLD).toBe(5)
+  })
+})
+
+describe('formatPathForDisplay', () => {
+  it('shortens the exact home directory and its descendants', () => {
+    expect(formatPathForDisplay('/Users/alice', '/Users/alice')).toBe('in /')
+    expect(formatPathForDisplay('/Users/alice/code', '/Users/alice')).toBe('in code')
+  })
+
+  it('does not shorten a sibling path that merely shares the home prefix', () => {
+    expect(formatPathForDisplay('/Users/alice-old/code', '/Users/alice')).toBe('in /Users/alice-old/code')
+    expect(formatCompactPath('/Users/alice-old/code', '/Users/alice')).toBe('/Users/alice-old/code')
   })
 })

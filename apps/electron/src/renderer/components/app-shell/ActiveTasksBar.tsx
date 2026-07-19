@@ -9,6 +9,7 @@ import React from 'react'
 import { useSetAtom } from 'jotai'
 import { TaskActionMenu, type TerminalOverlayData } from './TaskActionMenu'
 import { backgroundTasksAtomFamily, type BackgroundTask } from '@/atoms/sessions'
+import { shouldRetainBackgroundTask } from '@/lib/background-task-retention'
 
 // Re-exported for existing consumers (ActiveOptionBadges, ChatInputZone, TaskActionMenu)
 // so the single definition lives in atoms/sessions.ts.
@@ -20,9 +21,6 @@ export type { BackgroundTask } from '@/atoms/sessions'
  * orphaned chips linger a bit longer so the user actually notices that a task
  * died at turn end rather than silently vanishing.
  */
-const TERMINAL_LINGER_MS = 8_000
-const ORPHANED_LINGER_MS = 20_000
-
 export interface ActiveTasksBarProps {
   /** Active background tasks */
   tasks: BackgroundTask[]
@@ -55,12 +53,7 @@ export function ActiveTasksBar({ tasks, sessionId, onKillTask, onInsertMessage, 
     const interval = setInterval(() => {
       const now = Date.now()
       setTasks((prev) => {
-        const next = prev.filter((t) => {
-          if (t.status === 'running') return true
-          const age = now - (t.completedAt ?? now)
-          const linger = t.status === 'orphaned' ? ORPHANED_LINGER_MS : TERMINAL_LINGER_MS
-          return age < linger
-        })
+        const next = prev.filter((task) => shouldRetainBackgroundTask(task, now))
         return next.length === prev.length ? prev : next
       })
     }, 1000)

@@ -68,6 +68,7 @@ export function InlineColorPickerRow({
   clearLabel,
   customAriaLabel,
 }: InlineColorPickerRowProps) {
+  const effectiveCustomAriaLabel = customAriaLabel ?? 'Choose custom color'
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <CurrentValueIndicator value={value} />
@@ -78,11 +79,11 @@ export function InlineColorPickerRow({
       <ColorPicker
         value={value}
         onChange={onChange}
-        ariaLabel={customAriaLabel}
+        ariaLabel={effectiveCustomAriaLabel}
         trigger={
           <button
             type="button"
-            aria-label={customAriaLabel}
+            aria-label={effectiveCustomAriaLabel}
             className="h-5 w-5 rounded-full ring-1 ring-foreground/15 hover:ring-foreground/40 hover:scale-110 transition-all cursor-pointer"
             style={{ background: RAINBOW_GRADIENT }}
           />

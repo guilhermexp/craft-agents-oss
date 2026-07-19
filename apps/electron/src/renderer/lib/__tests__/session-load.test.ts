@@ -63,6 +63,18 @@ describe('deriveSessionMessagesLoadState', () => {
     expect(state.messagesLoading).toBe(false)
   })
 
+  it('does not assume a session is empty when neither source has a known count', () => {
+    const state = deriveSessionMessagesLoadState({
+      session: createSession({ messages: [] }),
+      sessionMeta: {},
+      messagesLoaded: false,
+    })
+
+    expect(state.isKnownEmptySession).toBe(false)
+    expect(state.messagesReady).toBe(false)
+    expect(state.messagesLoading).toBe(true)
+  })
+
   it('treats an empty loaded atom with expected messages as stale', () => {
     const state = deriveSessionMessagesLoadState({
       session: createSession({ messages: [], messageCount: 2 }),
@@ -70,6 +82,20 @@ describe('deriveSessionMessagesLoadState', () => {
       messagesLoaded: true,
     })
 
+    expect(state.hasStaleLoadedFlag).toBe(true)
+    expect(state.messagesReady).toBe(false)
+    expect(state.messagesLoading).toBe(true)
+  })
+
+  it('does not let a stale zero session count hide a positive metadata count', () => {
+    const state = deriveSessionMessagesLoadState({
+      session: createSession({ messages: [], messageCount: 0 }),
+      sessionMeta: { messageCount: 2 },
+      messagesLoaded: true,
+    })
+
+    expect(state.hasExpectedPersistedMessages).toBe(true)
+    expect(state.isKnownEmptySession).toBe(false)
     expect(state.hasStaleLoadedFlag).toBe(true)
     expect(state.messagesReady).toBe(false)
     expect(state.messagesLoading).toBe(true)

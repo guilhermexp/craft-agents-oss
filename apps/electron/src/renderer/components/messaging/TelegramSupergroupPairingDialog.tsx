@@ -14,6 +14,7 @@ import * as React from 'react'
 import { Copy, ExternalLink } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { isNewSupergroupPairing, type MessagingSupergroupSnapshot } from '@/lib/messaging-pairing'
 import {
   Dialog,
   DialogContent,
@@ -37,8 +38,16 @@ export function TelegramSupergroupPairingDialog({ open, onOpenChange, botUsernam
   const [expiresAt, setExpiresAt] = React.useState<number | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [secondsLeft, setSecondsLeft] = React.useState(0)
-  const onPairedRef = React.useRef(onPaired)
-  onPairedRef.current = onPaired
+  const [baselineSupergroup, setBaselineSupergroup] = React.useState<MessagingSupergroupSnapshot | null | undefined>(undefined)
+  const handlePairingSuccess = React.useEffectEvent(() => {
+    toast.success(
+      t('settings.messaging.telegram.supergroup.pairedToast', {
+        defaultValue: 'Supergroup paired',
+      }),
+    )
+    onPaired?.()
+    onOpenChange(false)
+  })
 
   // Generate a fresh code each time the dialog opens. Closing then re-opening
   // produces a new code rather than recycling — that matches user expectation
@@ -48,13 +57,17 @@ export function TelegramSupergroupPairingDialog({ open, onOpenChange, botUsernam
       setCode(null)
       setExpiresAt(null)
       setError(null)
+      setBaselineSupergroup(undefined)
       return
     }
     let cancelled = false
-    window.electronAPI
-      .generateMessagingSupergroupCode('telegram')
-      .then((res) => {
+    Promise.all([
+      window.electronAPI.getMessagingSupergroup(),
+      window.electronAPI.generateMessagingSupergroupCode('telegram'),
+    ])
+      .then(([baseline, res]) => {
         if (cancelled) return
+        setBaselineSupergroup(baseline)
         setCode(res.code)
         setExpiresAt(res.expiresAt)
       })
@@ -76,20 +89,14 @@ export function TelegramSupergroupPairingDialog({ open, onOpenChange, botUsernam
 
   // Poll for completion. Stop on close, on success, or when the code expires.
   React.useEffect(() => {
-    if (!open || !code) return
+    if (!open || !code || baselineSupergroup === undefined) return
     let cancelled = false
     const tick = async () => {
       try {
         const sg = await window.electronAPI.getMessagingSupergroup()
         if (cancelled) return
-        if (sg) {
-          toast.success(
-            t('settings.messaging.telegram.supergroup.pairedToast', {
-              defaultValue: 'Supergroup paired',
-            }),
-          )
-          onPairedRef.current?.()
-          onOpenChange(false)
+        if (isNewSupergroupPairing(baselineSupergroup, sg)) {
+          handlePairingSuccess()
         }
       } catch {
         // best-effort; keep polling
@@ -100,7 +107,7 @@ export function TelegramSupergroupPairingDialog({ open, onOpenChange, botUsernam
       cancelled = true
       clearInterval(interval)
     }
-  }, [open, code, t, onOpenChange])
+  }, [open, code, baselineSupergroup])
 
   const minutes = Math.floor(secondsLeft / 60)
   const seconds = secondsLeft % 60

@@ -22,6 +22,7 @@ export function NewTaskComposer({ onCreate, className }: NewTaskComposerProps) {
   const [composing, setComposing] = React.useState(false)
   const [draft, setDraft] = React.useState('')
   const inputRef = React.useRef<HTMLTextAreaElement>(null)
+  const discardOnBlurRef = React.useRef(false)
 
   React.useEffect(() => {
     if (composing) inputRef.current?.focus()
@@ -41,7 +42,10 @@ export function NewTaskComposer({ onCreate, className }: NewTaskComposerProps) {
     return (
       <button
         type="button"
-        onClick={() => setComposing(true)}
+        onClick={() => {
+          discardOnBlurRef.current = false
+          setComposing(true)
+        }}
         className={cn(
           'flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/70 py-2',
           'text-[11px] font-medium text-foreground/50 transition-colors',
@@ -66,11 +70,18 @@ export function NewTaskComposer({ onCreate, className }: NewTaskComposerProps) {
           commit(true)
         } else if (e.key === 'Escape') {
           e.preventDefault()
+          discardOnBlurRef.current = true
           setDraft('')
           setComposing(false)
         }
       }}
-      onBlur={() => commit(false)}
+      onBlur={() => {
+        if (discardOnBlurRef.current) {
+          discardOnBlurRef.current = false
+          return
+        }
+        commit(false)
+      }}
       rows={1}
       placeholder={t('kanban.newTaskTitle')}
       className={cn(

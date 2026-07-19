@@ -22,6 +22,7 @@ import {
 import type { KanbanModelProviderGroup, TaskEditorTarget } from './types'
 import { uid, buildSpec, specToSubtasks, canDependOn, quickAddNodeId, quickAddChildToSubtask, DEFAULT_REPAIR_ATTEMPTS, MAX_REPAIR_ATTEMPTS_CAP, type EditorSubtask, type TaskPermissionMode } from './task-spec-form'
 import { resolveNodeStatePill } from './node-state-pill'
+import { ensureCreatedTask } from './task-submit-state'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
 import { SourceSelectorPopover } from '@/components/ui/SourceSelectorPopover'
@@ -71,6 +72,7 @@ export type { TaskEditorTarget } from './types'
 
 /** Storage-backed run results (shape inferred from the electronAPI so no shared import is needed). */
 type TaskResults = Awaited<ReturnType<typeof window.electronAPI.getTaskResults>>
+type CreatedTask = Awaited<ReturnType<typeof window.electronAPI.createTask>>
 
 // ---------------------------------------------------------------------------
 // Small inline controls (presentational)
@@ -539,6 +541,12 @@ export function TaskEditor({
   const [sourceSlugs, setSourceSlugs] = React.useState<string[]>([])
   const [skillSlugs, setSkillSlugs] = React.useState<string[]>([])
   const [busy, setBusy] = React.useState(false)
+  const createdTaskForRetryRef = React.useRef<{ created: CreatedTask; projectId?: string } | null>(null)
+
+  const handleClose = React.useCallback(() => {
+    createdTaskForRetryRef.current = null
+    onClose()
+  }, [onClose])
 
   // Pickable catalogs from the active workspace (AppShell keeps these atoms populated).
   const workspaceSources = useAtomValue(sourcesAtom)
@@ -855,35 +863,48 @@ export function TaskEditor({
     try {
       // Edit mode binds the authored spec onto the tile's existing session; create mode reuses
       // a generate draft if present, else mints a fresh orchestrator.
-      const created = await window.electronAPI.createTask(workspaceId, {
-        yaml,
-        ...(isEdit && editSessionId
-          ? { attachToExistingSession: editSessionId }
-          : { orchestratorSessionId: draftId ?? undefined }),
-      })
+      const existingCreated = createdTaskForRetryRef.current?.created ?? null
+      const created = await ensureCreatedTask(existingCreated, () =>
+        window.electronAPI.createTask(workspaceId, {
+          yaml,
+          ...(isEdit && editSessionId
+            ? { attachToExistingSession: editSessionId }
+            : { orchestratorSessionId: draftId ?? undefined }),
+        }),
+      )
       if (!created.validation.valid) {
         const first = created.validation.errors[0]
         toast.error(t('tasks.toastInvalid'), { description: first ? `${first.path}: ${first.message}` : undefined })
         return
       }
-      // Resolve the draft: if the server reused it, it's now a live orchestrator — stop tracking it.
-      // If it minted a fresh session instead (draft gone server-side), discard the orphan.
-      if (draftId) {
-        if (created.orchestratorSessionId !== draftId) discardDraft(draftId)
-        generatedDraftRef.current = null
+      if (!existingCreated) {
+        // Persist the successful create across a failed tasks:run call. A retry must run this
+        // exact task/orchestrator rather than creating a duplicate board tile.
+        createdTaskForRetryRef.current = {
+          created,
+          projectId: projectId || undefined,
+        }
+        // Resolve the draft: if the server reused it, it's now a live orchestrator — stop tracking it.
+        // If it minted a fresh session instead (draft gone server-side), discard the orphan.
+        if (draftId) {
+          if (created.orchestratorSessionId !== draftId) discardDraft(draftId)
+          generatedDraftRef.current = null
+        }
       }
       // After a successful CREATE, hand off to the host so it can land the user on the
       // task-scoped session list (edit-mode saves stay on the board).
+      const createdProjectId = createdTaskForRetryRef.current?.projectId
       const notifyCreated = () => {
         if (isEdit) return
         onCreated?.({
           sessionId: created.orchestratorSessionId,
           taskLabelId: created.taskLabelId,
-          projectId: projectId || undefined,
+          projectId: createdProjectId,
         })
       }
       if (!run) {
         toast.success(t('tasks.toastCreated'), { description: t('tasks.toastCreatedDesc', { slug: created.slug }) })
+        createdTaskForRetryRef.current = null
         onClose()
         notifyCreated()
         return
@@ -895,10 +916,16 @@ export function TaskEditor({
       toast.success(t('tasks.toastStarted'), {
         description: t('tasks.toastStartedDesc', { slug: created.slug, runId: runResult.runId, count: runResult.nodes.length }),
       })
+      createdTaskForRetryRef.current = null
       onClose()
       notifyCreated()
     } catch (err) {
-      toast.error(t('tasks.toastCreateFailed'), { description: err instanceof Error ? err.message : String(err) })
+      toast.error(
+        createdTaskForRetryRef.current
+          ? t('tasks.toastRunFailed')
+          : t('tasks.toastCreateFailed'),
+        { description: err instanceof Error ? err.message : String(err) },
+      )
     } finally {
       setBusy(false)
     }
@@ -908,7 +935,7 @@ export function TaskEditor({
     <div className="flex h-full flex-col gap-3 bg-background p-3 text-foreground">
       {/* Header */}
       <div className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2.5 shadow-minimal">
-        <Btn variant="ghost" className="px-2" onClick={onClose}>
+        <Btn variant="ghost" className="px-2" onClick={handleClose}>
           <ChevronLeft className="h-4 w-4" strokeWidth={2} /> {t('kanban.board')}
         </Btn>
         <span className="text-foreground/25">/</span>
@@ -940,7 +967,7 @@ export function TaskEditor({
           )}
           {tab === 'definition' && (
             <>
-              <Btn variant="secondary" onClick={onClose} disabled={busy}>
+              <Btn variant="secondary" onClick={handleClose} disabled={busy}>
                 {t('common.cancel')}
               </Btn>
               <Btn variant="secondary" onClick={() => submit(false)} disabled={busy}>

@@ -655,7 +655,11 @@ const mockElectronAPI = {
     playgroundAllowListHandle.setOwners(platform, nextOwners)
     playgroundAllowListHandle.setPending(
       platform,
-      state.pending.filter((p) => p.userId !== userId),
+      state.pending.filter((pending) => !(
+        pending.userId === match.userId
+        && (pending.reason ?? 'not-owner') === reason
+        && (pending.bindingId ?? null) === (match.bindingId ?? null)
+      )),
     )
     return { owners: nextOwners }
   },
@@ -896,4 +900,3 @@ export const mockAttachmentCallbacks = {
     console.log('[Playground] Open file:', path)
   },
 }
-

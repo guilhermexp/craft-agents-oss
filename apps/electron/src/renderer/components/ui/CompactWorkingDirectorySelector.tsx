@@ -13,8 +13,9 @@ import {
 import { FreeFormInputContextBadge } from '../app-shell/input/FreeFormInputContextBadge'
 import { useWorkingDirectoryState } from '../app-shell/input/use-working-directory-state'
 import { ServerDirectoryBrowser } from '@/components/ServerDirectoryBrowser'
-import { PATH_SEP, getPathBasename } from '@/lib/platform'
+import { getPathBasename } from '@/lib/platform'
 import { cn } from '@/lib/utils'
+import { formatCompactPath } from '../app-shell/input/working-directory-path'
 
 export interface CompactWorkingDirectorySelectorProps {
   workingDirectory?: string
@@ -102,7 +103,7 @@ export function CompactWorkingDirectorySelector({
           hasFolder ? (
             <span className="flex flex-col gap-0.5">
               <span className="font-medium">{t('chat.workingDirectory')}</span>
-              <span className="text-xs opacity-70">{formatPath(workingDirectory, homeDir)}</span>
+              <span className="text-xs opacity-70">{formatCompactPath(workingDirectory, homeDir)}</span>
               {gitBranch && (
                 <span className="text-xs opacity-70">{t('chat.onBranch', { branch: gitBranch })}</span>
               )}
@@ -142,7 +143,7 @@ export function CompactWorkingDirectorySelector({
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">{displayFolderName}</div>
                   <div className="text-xs text-foreground/50 truncate">
-                    {formatPath(workingDirectory, homeDir)}
+                    {formatCompactPath(workingDirectory, homeDir)}
                   </div>
                   {gitBranch && (
                     <div className="text-xs text-foreground/50 truncate">
@@ -164,29 +165,36 @@ export function CompactWorkingDirectorySelector({
                 const recentFolderName = getPathBasename(path) || 'Folder'
                 return (
                   <DrawerClose asChild key={path}>
-                    <button
-                      type="button"
+                    <div
+                      role="button"
+                      tabIndex={0}
                       onClick={() => handleSelectRecent(path)}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return
+                        event.preventDefault()
+                        handleSelectRecent(path)
+                      }}
                       className={cn(
-                        'flex items-center gap-3 px-3 py-3 rounded-[10px] text-left transition-colors hover:bg-foreground/5 group/row',
+                        'flex items-center gap-3 px-3 py-3 rounded-[10px] text-left transition-colors hover:bg-foreground/5 group/row cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring',
                       )}
                     >
                       <Icon_Folder className="h-5 w-5 shrink-0 text-foreground/60" />
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium truncate">{recentFolderName}</div>
                         <div className="text-xs text-foreground/50 truncate">
-                          {formatPath(path, homeDir)}
+                          {formatCompactPath(path, homeDir)}
                         </div>
                       </div>
                       <button
                         type="button"
                         aria-label={t('common.remove')}
                         onClick={(e) => handleRemoveRecent(e, path)}
+                        onKeyDown={(event) => event.stopPropagation()}
                         className="shrink-0 h-7 w-7 rounded-[6px] flex items-center justify-center text-foreground/30 hover:text-foreground/70 hover:bg-foreground/5 transition-colors"
                       >
                         <X className="h-4 w-4" />
                       </button>
-                    </button>
+                    </div>
                   </DrawerClose>
                 )
               })
@@ -226,17 +234,4 @@ export function CompactWorkingDirectorySelector({
       />
     </>
   )
-}
-
-// Local path formatter — bare path (no "in " prefix). The desktop badge uses
-// "in <path>" for the tooltip; drawer rows show the path on its own line so
-// the preposition would read oddly.
-function formatPath(path: string | undefined, homeDir: string): string {
-  if (!path) return ''
-  if (homeDir && path.startsWith(homeDir)) {
-    const relativePath = path.slice(homeDir.length)
-    if (!relativePath || relativePath === PATH_SEP) return '~'
-    return '~' + (relativePath.startsWith(PATH_SEP) ? relativePath : PATH_SEP + relativePath)
-  }
-  return path
 }

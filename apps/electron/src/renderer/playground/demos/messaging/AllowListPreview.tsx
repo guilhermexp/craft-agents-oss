@@ -113,6 +113,12 @@ function presetToAccessMode(preset: AccessModePreset): PlatformAccessMode {
   return preset === 'open' ? 'open' : 'owner-only'
 }
 
+function samePendingRow(a: PendingSender, b: PendingSender): boolean {
+  return a.userId === b.userId
+    && (a.reason ?? 'not-owner') === (b.reason ?? 'not-owner')
+    && (a.bindingId ?? null) === (b.bindingId ?? null)
+}
+
 export interface AllowListPreviewProps {
   accessMode: AccessModePreset
   pending: PendingPreset
@@ -189,21 +195,12 @@ export function AllowListPreview({
         addedAt: Date.now(),
       },
     ])
-    setPendingList((prev) => prev.filter((s) => s.userId !== sender.userId))
+    setPendingList((prev) => prev.filter((pendingSender) => !samePendingRow(pendingSender, sender)))
     toast.success(`Allowed ${sender.displayName || sender.username || sender.userId}`)
   }
 
   const handleIgnore = (sender: PendingSender) => {
-    setPendingList((prev) =>
-      prev.filter(
-        (s) =>
-          !(
-            s.userId === sender.userId &&
-            (s.reason ?? 'not-owner') === (sender.reason ?? 'not-owner') &&
-            (s.bindingId ?? null) === (sender.bindingId ?? null)
-          ),
-      ),
-    )
+    setPendingList((prev) => prev.filter((pendingSender) => !samePendingRow(pendingSender, sender)))
   }
 
   return (

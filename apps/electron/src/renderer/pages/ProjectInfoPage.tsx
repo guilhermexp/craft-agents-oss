@@ -24,6 +24,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
+import { uint8ArrayToBase64 } from '@/lib/base64'
 import { PROJECT_COLOR_PALETTE } from '@/utils/project-colors'
 import { InlineColorPickerRow } from '@/components/ui/inline-color-picker-row'
 import type { LoadedProject, ProjectAsset } from '@craft-agent/shared/projects/types'
@@ -180,7 +181,7 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
     if (!workspaceId || !project) return
     try {
       const arrayBuffer = await file.arrayBuffer()
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
+      const base64 = uint8ArrayToBase64(new Uint8Array(arrayBuffer))
       await window.electronAPI.uploadProjectAsset(workspaceId, project.config.slug, {
         filename: file.name,
         base64,

@@ -34,6 +34,7 @@ export function SubtaskProgress({ subtasks, total: totalProp, accent = 'var(--pr
       <div
         className="flex flex-1 gap-0.5"
         role="progressbar"
+        aria-label={`Subtask progress: ${done} of ${total} complete`}
         aria-valuenow={done}
         aria-valuemin={0}
         aria-valuemax={total}

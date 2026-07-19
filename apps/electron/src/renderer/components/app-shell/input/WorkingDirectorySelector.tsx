@@ -7,26 +7,16 @@ import { Icon_Folder } from '@craft-agent/ui'
 import { ServerDirectoryBrowser } from '@/components/ServerDirectoryBrowser'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import { PATH_SEP, getPathBasename } from '@/lib/platform'
+import { getPathBasename } from '@/lib/platform'
 import { useWorkingDirectoryState } from './use-working-directory-state'
+import { formatPathForDisplay } from './working-directory-path'
+
+export { formatPathForDisplay } from './working-directory-path'
 
 /**
  * Format a path for display with the home directory shortened, e.g.
  * "in Workspace/kanban-view". Returns "" for an empty path.
  */
-export function formatPathForDisplay(path: string | undefined, homeDir: string): string {
-  if (!path) return ''
-  let displayPath = path
-  if (homeDir && path.startsWith(homeDir)) {
-    const relativePath = path.slice(homeDir.length)
-    // Remove leading separator if present, show root separator if empty
-    displayPath = relativePath.startsWith(PATH_SEP)
-      ? relativePath.slice(1)
-      : (relativePath || PATH_SEP)
-  }
-  return `in ${displayPath}`
-}
-
 /** State handed to {@link WorkingDirectorySelectorProps.renderTrigger}. */
 export interface WorkingDirectoryTriggerState {
   /** Whether the popover is currently open. */
