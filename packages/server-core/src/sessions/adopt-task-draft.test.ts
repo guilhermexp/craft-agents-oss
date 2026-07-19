@@ -149,4 +149,40 @@ describe('adopt/bind route changed fields through canonical live-update mutators
     expect(calls.cwd).toEqual([])
     expect(calls.mode).toEqual([])
   })
+
+  // TaskEditor retry: create succeeds, run fails, the user edits the title/model/etc. and retries.
+  // The retry re-binds to the *same* slug — that must reconcile the edits, not silently no-op.
+  it('bind reconciles changed fields on a retry re-bind of the same already-bound slug', async () => {
+    const { sm, calls, events } = harness({ taskDraft: false, taskSlug: 'slug' })
+    expect(await sm.bindExistingSessionToTask('s', 'slug', { ...CHANGED, name: 'Edited title' })).toBe(true)
+    expect(calls.model).toEqual(['new-model'])
+    expect(calls.cwd).toEqual(['/new/dir'])
+    expect(calls.mode).toEqual(['allow-all'])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const session = (sm as any).sessions.get('s')
+    expect(session.name).toBe('Edited title')
+    expect(session.llmConnection).toBe('new-conn')
+    expect(events).toContain('name_changed')
+    expect(events).toContain('connection_changed')
+    expect(events).toContain('session_metadata_changed')
+  })
+
+  it('adopt reconciles changed fields on a retry re-adopt of the same already-bound slug', async () => {
+    const { sm, calls } = harness({ taskDraft: false, taskSlug: 'slug' })
+    expect(await sm.adoptGeneratedTaskOrchestrator('s', 'slug', { ...CHANGED, name: 'Edited title' })).toBe(true)
+    expect(calls.model).toEqual(['new-model'])
+    expect(calls.cwd).toEqual(['/new/dir'])
+    expect(calls.mode).toEqual(['allow-all'])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((sm as any).sessions.get('s').name).toBe('Edited title')
+  })
+
+  it('bind stays a true no-op (no mutator/event calls) on a retry re-bind with nothing changed', async () => {
+    const { sm, calls, events } = harness({ taskDraft: false, taskSlug: 'slug' })
+    expect(await sm.bindExistingSessionToTask('s', 'slug')).toBe(true)
+    expect(calls.model).toEqual([])
+    expect(calls.cwd).toEqual([])
+    expect(calls.mode).toEqual([])
+    expect(events).toEqual([])
+  })
 })

@@ -7515,18 +7515,20 @@ export class SessionManager implements ISessionManager {
       sessionLog.warn('adoptGeneratedTaskOrchestrator: session not found', { sessionId, taskSlug })
       return false
     }
-    // Idempotency: already bound to this slug → no-op success. Bound to a different slug → refuse,
-    // so a stale draft ref can't hijack an unrelated orchestrator.
-    if (managed.taskSlug) {
-      if (managed.taskSlug === taskSlug) return true
+    // Idempotency: already bound to this slug → reconcile below instead of a blind no-op, so a
+    // retry after edits still lands them. Bound to a different slug → refuse, so a stale draft ref
+    // can't hijack an unrelated orchestrator.
+    const alreadyBound = managed.taskSlug === taskSlug
+    if (managed.taskSlug && !alreadyBound) {
       sessionLog.warn('adoptGeneratedTaskOrchestrator: slug mismatch, refusing to rebind', {
         sessionId, existing: managed.taskSlug, requested: taskSlug,
       })
       return false
     }
-    // Only hidden generate-time drafts are eligible. A non-draft session without a slug isn't a
-    // generate orchestrator and must not be silently captured.
-    if (!managed.taskDraft) {
+    // Only hidden generate-time drafts are eligible for a *first* adoption. A non-draft session
+    // without a slug isn't a generate orchestrator and must not be silently captured. Already-bound
+    // sessions skip this guard — `taskDraft` was already cleared by the adoption that bound them.
+    if (!alreadyBound && !managed.taskDraft) {
       sessionLog.warn('adoptGeneratedTaskOrchestrator: session is not a task draft', { sessionId, taskSlug })
       return false
     }
@@ -7539,6 +7541,14 @@ export class SessionManager implements ISessionManager {
     )
     const cwdChanged = Boolean(reconcile?.workingDirectory && reconcile.workingDirectory !== managed.workingDirectory)
     const modeChanged = Boolean(reconcile?.permissionMode && reconcile.permissionMode !== managed.permissionMode)
+    const renamed = Boolean(reconcile?.name && reconcile.name !== managed.name)
+    const projectIdChanged = reconcile?.projectId !== undefined && reconcile.projectId !== managed.projectId
+
+    // A retry re-adopt of the same slug with nothing to reconcile is a true no-op — skip persistence
+    // and event emission entirely rather than touch an already-consistent session.
+    if (alreadyBound && !modelChanged && !connectionChanged && !cwdChanged && !modeChanged && !renamed && !projectIdChanged) {
+      return true
+    }
 
     // Promote task metadata (no canonical mutator for these). Connection is set directly because
     // setSessionConnection() refuses a session that has already sent messages (a generate draft has);
@@ -7547,7 +7557,6 @@ export class SessionManager implements ISessionManager {
     managed.taskDraft = false
     if (reconcile?.projectId !== undefined) managed.projectId = reconcile.projectId
     if (connectionChanged) managed.llmConnection = reconcile!.llmConnection
-    const renamed = Boolean(reconcile?.name && reconcile.name !== managed.name)
     if (renamed) managed.name = reconcile!.name!
 
     // Route model / cwd / permission mode through the canonical mutators so the LIVE agent, caches,
@@ -7610,8 +7619,8 @@ export class SessionManager implements ISessionManager {
       sessionLog.warn('bindExistingSessionToTask: session not found', { sessionId, taskSlug })
       return false
     }
-    if (managed.taskSlug) {
-      if (managed.taskSlug === taskSlug) return true
+    const alreadyBound = managed.taskSlug === taskSlug
+    if (managed.taskSlug && !alreadyBound) {
       sessionLog.warn('bindExistingSessionToTask: slug mismatch, refusing to rebind', {
         sessionId, existing: managed.taskSlug, requested: taskSlug,
       })
@@ -7626,6 +7635,15 @@ export class SessionManager implements ISessionManager {
     )
     const cwdChanged = Boolean(reconcile?.workingDirectory && reconcile.workingDirectory !== managed.workingDirectory)
     const modeChanged = Boolean(reconcile?.permissionMode && reconcile.permissionMode !== managed.permissionMode)
+    const renamed = Boolean(reconcile?.name && reconcile.name !== managed.name)
+    const projectIdChanged = reconcile?.projectId !== undefined && reconcile.projectId !== managed.projectId
+
+    // A retry re-bind of the same slug (e.g. TaskEditor resubmitting after a failed run) with
+    // nothing to reconcile is a true no-op — skip persistence and event emission entirely rather
+    // than touch an already-consistent session.
+    if (alreadyBound && !modelChanged && !connectionChanged && !cwdChanged && !modeChanged && !renamed && !projectIdChanged) {
+      return true
+    }
 
     // Promote task metadata (no canonical mutator for these). Connection is set directly because
     // setSessionConnection() refuses a session that has already sent messages (a quick-add tile has);
@@ -7634,7 +7652,6 @@ export class SessionManager implements ISessionManager {
     managed.taskDraft = false
     if (reconcile?.projectId !== undefined) managed.projectId = reconcile.projectId
     if (connectionChanged) managed.llmConnection = reconcile!.llmConnection
-    const renamed = Boolean(reconcile?.name && reconcile.name !== managed.name)
     if (renamed) managed.name = reconcile!.name!
 
     // Route model / cwd / permission mode through the canonical mutators so the LIVE agent, caches,
