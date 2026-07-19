@@ -454,7 +454,7 @@
   },
   "get_session_info": {
     "apiVersion": "v1",
-    "description": "Get metadata about the current session or a specific session by ID.\n\nReturns labels, status, name, permission mode, and other details.\nCall with no arguments to introspect your own session state.",
+    "description": "Get metadata about the current session or a specific session by ID.\n\nReturns labels, status, name, permission mode, projectId (if the session is bound to a project), workingDirectory, and other details.\nCall with no arguments to introspect your own session state.",
     "executionMode": "registry",
     "exposure": "native-and-mcp",
     "inputSchema": {
@@ -1494,7 +1494,7 @@
   },
   "set_session_status": {
     "apiVersion": "v1",
-    "description": "Set the status of the current session or a specific session by ID (e.g., \"todo\", \"in_progress\", \"done\").\n\nUse this to signal completion or trigger status-based automations (SessionStatusChange events).\nOmit sessionId to target the current session.",
+    "description": "Set the status of the current session or a specific session by ID (e.g., \"todo\", \"in_progress\").\n\nUse this to reflect progress or trigger status-based automations (SessionStatusChange events).\nOmit sessionId to target the current session.\n\nIMPORTANT: never move a task into a closed status (such as \"done\" or \"cancelled\") yourself — closing a task is the user's decision, made on the board. You may prepare and hand off work by setting an open status like \"needs-review\"; the user reviews and closes it. Closed-status calls are rejected.",
     "executionMode": "registry",
     "exposure": "native-and-mcp",
     "inputSchema": {
@@ -2608,7 +2608,7 @@
   },
   "update_user_preferences": {
     "apiVersion": "v1",
-    "description": "Update stored user preferences. Use this when you learn information about the user that would be helpful to remember for future conversations. This includes their name, timezone, location, preferred language, or any other relevant notes. Only update fields you have confirmed information about - don't guess.",
+    "description": "Update stored user preferences. Use this when you learn information about the user that would be helpful to remember for future conversations. This includes their name, timezone, location, or any other relevant notes. Only update fields you have confirmed information about - don't guess.",
     "executionMode": "registry",
     "exposure": "native-and-mcp",
     "inputSchema": {
@@ -2624,10 +2624,6 @@
         "includeCoAuthoredBy": {
           "description": "Whether to include 'Co-Authored-By: Craft Agent' trailer on git commits. Defaults to true.",
           "type": "boolean"
-        },
-        "language": {
-          "description": "The user's preferred language for responses",
-          "type": "string"
         },
         "name": {
           "description": "The user's preferred name or how they'd like to be addressed",
