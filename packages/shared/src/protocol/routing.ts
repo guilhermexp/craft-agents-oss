@@ -314,6 +314,28 @@ export const REMOTE_ELIGIBLE_NAMESPACES = new Set<string>([
 
   // tasks — workspace content
   RPC_NAMESPACES.tasks.GET_OUTPUT,
+  RPC_NAMESPACES.tasks.VALIDATE,
+  RPC_NAMESPACES.tasks.CREATE,
+  RPC_NAMESPACES.tasks.GENERATE,
+  RPC_NAMESPACES.tasks.GENERATED,
+  RPC_NAMESPACES.tasks.RUN,
+  RPC_NAMESPACES.tasks.PAUSE,
+  RPC_NAMESPACES.tasks.RESUME,
+  RPC_NAMESPACES.tasks.STOP,
+  RPC_NAMESPACES.tasks.GET,
+  RPC_NAMESPACES.tasks.LIST,
+  RPC_NAMESPACES.tasks.GET_RESULTS,
+
+  // projects — workspace content
+  RPC_NAMESPACES.projects.GET,
+  RPC_NAMESPACES.projects.GET_ONE,
+  RPC_NAMESPACES.projects.CREATE,
+  RPC_NAMESPACES.projects.UPDATE,
+  RPC_NAMESPACES.projects.DELETE,
+  RPC_NAMESPACES.projects.LIST_ASSETS,
+  RPC_NAMESPACES.projects.UPLOAD_ASSET,
+  RPC_NAMESPACES.projects.DELETE_ASSET,
+  RPC_NAMESPACES.projects.CHANGED,
 
   // file — workspace files (not openDialog which is native)
   RPC_NAMESPACES.file.READ,
