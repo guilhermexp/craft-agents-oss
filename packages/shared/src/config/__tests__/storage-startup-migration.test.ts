@@ -3,6 +3,16 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { pathToFileURL } from 'url'
+import { getPiModelsForAuthProvider } from '../models-pi.ts'
+
+const PI_ANTHROPIC_OPUS_DEFAULT = getPiModelsForAuthProvider('anthropic').some(m => m.id === 'pi/claude-opus-4-8')
+  ? 'pi/claude-opus-4-8'
+  : 'pi/claude-opus-4-7'
+const PI_ANTHROPIC_OPUS_DEFAULT_NAME = PI_ANTHROPIC_OPUS_DEFAULT.endsWith('4-8') ? 'Opus 4.8' : 'Opus 4.7'
+const PI_BEDROCK_OPUS_DEFAULT = getPiModelsForAuthProvider('amazon-bedrock').some(m => m.id === 'pi/us.anthropic.claude-opus-4-8')
+  ? 'pi/us.anthropic.claude-opus-4-8'
+  : 'pi/us.anthropic.claude-opus-4-7'
+const PI_BEDROCK_OPUS_DEFAULT_NAME = PI_BEDROCK_OPUS_DEFAULT.endsWith('4-8') ? 'Opus 4.8' : 'Opus 4.7'
 
 const STORAGE_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', 'storage.ts')).href
 const PI_RESOLVER_SETUP_PATH = pathToFileURL(join(import.meta.dir, '..', '..', '..', 'tests', 'setup', 'register-pi-model-resolver.ts')).href
@@ -115,6 +125,7 @@ describe('startup migration (integration)', () => {
   it('preserves userDefined3Tier model subsets during startup migration', () => {
     const { configDir, workspaceRoot, configPath } = setupWorkspaceConfigDir()
     const userDefinedModels = ['pi/claude-opus-4-6', 'pi/claude-sonnet-4-6', 'pi/claude-haiku-4-5']
+    const migratedModels = [PI_ANTHROPIC_OPUS_DEFAULT, 'pi/claude-sonnet-4-6', 'pi/claude-haiku-4-5']
 
     writeRootConfig(configPath, workspaceRoot, [
       {
@@ -135,8 +146,8 @@ describe('startup migration (integration)', () => {
     const connection = readPiApiKeyConnection(configPath)
     expect(connection).toBeDefined()
     expect(connection.modelSelectionMode).toBe('userDefined3Tier')
-    expect(connection.models).toEqual(userDefinedModels)
-    expect(connection.defaultModel).toBe(userDefinedModels[0])
+    expect(connection.models).toEqual(migratedModels)
+    expect(connection.defaultModel).toBe(migratedModels[0])
   })
 
   it('normalizes auto mode model set back to provider defaults', () => {
@@ -163,7 +174,7 @@ describe('startup migration (integration)', () => {
     expect(connection.modelSelectionMode).toBe('automaticallySyncedFromProvider')
     const modelIds = getModelIds(connection)
     expect(modelIds.length).toBeGreaterThan(1)
-    expect(modelIds).toContain('pi/claude-opus-4-6')
+    expect(modelIds).toContain(PI_ANTHROPIC_OPUS_DEFAULT)
     expect(modelIds).toContain(connection.defaultModel)
   })
 
@@ -189,8 +200,8 @@ describe('startup migration (integration)', () => {
     const connection = readPiApiKeyConnection(configPath)
     expect(connection).toBeDefined()
     expect(connection.modelSelectionMode).toBe('userDefined3Tier')
-    expect(connection.models).toEqual(['pi/claude-opus-4-6', 'pi/claude-haiku-4-5'])
-    expect(connection.defaultModel).toBe('pi/claude-opus-4-6')
+    expect(connection.models).toEqual([PI_ANTHROPIC_OPUS_DEFAULT, 'pi/claude-haiku-4-5'])
+    expect(connection.defaultModel).toBe(PI_ANTHROPIC_OPUS_DEFAULT)
   })
 
   it('falls back to provider defaults when userDefined3Tier becomes empty after filtering', () => {
@@ -217,13 +228,24 @@ describe('startup migration (integration)', () => {
     expect(connection.modelSelectionMode).toBe('userDefined3Tier')
     const modelIds = getModelIds(connection)
     expect(modelIds.length).toBeGreaterThan(1)
-    expect(modelIds).toContain('pi/claude-opus-4-6')
+    expect(modelIds).toContain(PI_ANTHROPIC_OPUS_DEFAULT)
     expect(modelIds).not.toContain('pi/not-real-1')
     expect(connection.defaultModel).toBe(modelIds[0])
   })
 
   it('normalizes legacy unprefixed userDefined3Tier model IDs instead of resetting', () => {
     const { configDir, workspaceRoot, configPath } = setupWorkspaceConfigDir()
+
+    // Derive currently-valid OpenRouter IDs from the live Pi catalog. The migration
+    // normalizes (pi/-prefixes) known IDs and drops unknown ones, so hardcoding a
+    // specific model here makes the test brittle when models.dev drifts across Pi
+    // SDK uplifts (e.g. x-ai/grok-4 aged out by 0.79.x).
+    const openrouterIds = getPiModelsForAuthProvider('openrouter').map(m => m.id)
+    expect(openrouterIds).toContain('pi/openrouter/auto')
+    const otherPrefixed = openrouterIds.find(id => id !== 'pi/openrouter/auto')
+    if (!otherPrefixed) throw new Error('expected at least two OpenRouter models in catalog')
+    const expectedPrefixed = ['pi/openrouter/auto', otherPrefixed]
+    const legacyUnprefixed = expectedPrefixed.map(id => id.slice('pi/'.length))
 
     writeRootConfig(configPath, workspaceRoot, [
       {
@@ -234,8 +256,8 @@ describe('startup migration (integration)', () => {
         piAuthProvider: 'openrouter',
         modelSelectionMode: 'userDefined3Tier',
         createdAt: Date.now(),
-        models: ['x-ai/grok-4', 'openrouter/auto'],
-        defaultModel: 'x-ai/grok-4',
+        models: legacyUnprefixed,
+        defaultModel: legacyUnprefixed[0],
       },
     ])
 
@@ -245,7 +267,7 @@ describe('startup migration (integration)', () => {
     expect(connection).toBeDefined()
     expect(connection.modelSelectionMode).toBe('userDefined3Tier')
     const modelIds = getModelIds(connection)
-    expect(modelIds).toEqual(['pi/x-ai/grok-4', 'pi/openrouter/auto'])
-    expect(connection.defaultModel).toBe('pi/x-ai/grok-4')
+    expect(modelIds).toEqual(expectedPrefixed)
+    expect(connection.defaultModel).toBe(expectedPrefixed[0])
   })
 })

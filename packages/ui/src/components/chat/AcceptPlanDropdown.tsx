@@ -1,18 +1,26 @@
 import * as React from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import * as ReactDOM from 'react-dom'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  StyledDropdownMenuContent,
+  StyledDropdownMenuItem,
+} from '../ui/StyledDropdown'
 
 /**
- * AcceptPlanDropdown - Dropdown for accepting plans with or without compaction
+ * AcceptPlanDropdown — Accept-Plan trigger with two options.
  *
- * Provides two options:
- * 1. Accept - Execute the plan immediately
- * 2. Accept & Compact - Summarize conversation first, then execute
+ * Uses Radix `DropdownMenu` so positioning is handled by Floating UI (correct
+ * under `@container/*` ancestors, transformed parents, and inside scroll
+ * containers — issues that bit a previous hand-rolled `position: fixed` portal
+ * in WebUI mobile / auto-compact).
  *
- * The compact option is useful when context is running low after a long planning session.
+ * Options:
+ *  - "Accept" — execute the plan immediately
+ *  - "Accept & Compact" — summarize conversation first, then execute (useful
+ *    when context is running low after a long planning session)
  */
 
 interface AcceptPlanDropdownProps {
@@ -140,51 +148,25 @@ export function AcceptPlanDropdown({
         )} />
       </button>
 
-      {/* Dropdown menu - rendered via portal */}
-      {isOpen && position && ReactDOM.createPortal(
-        <div
-          ref={menuRef}
-          className={cn(
-            "fixed z-50 min-w-[280px] p-1.5",
-            "bg-background rounded-[8px] shadow-strong border border-border/50",
-            "animate-in fade-in-0 zoom-in-95 duration-100"
-          )}
-          style={{ top: position.top, left: position.left }}
-        >
-          {/* Option 1: Accept (execute immediately) */}
-          <button
-            type="button"
-            onClick={handleSelectAccept}
-            className={cn(
-              "flex flex-col w-full px-3 py-2 text-left rounded-[6px]",
-              "hover:bg-foreground/[0.05] focus:bg-foreground/[0.05] focus:outline-none",
-              "transition-colors"
-            )}
-          >
-            <span className="text-[13px] font-medium">{effectiveAcceptOptionLabel}</span>
-            <span className="text-xs text-muted-foreground">
+      <StyledDropdownMenuContent align="end" minWidth="min-w-64" sideOffset={6}>
+        <StyledDropdownMenuItem onSelect={() => onAccept()} className="items-start py-2">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[13px] leading-tight">{effectiveAcceptOptionLabel}</span>
+            <span className="max-w-[220px] whitespace-normal text-xs leading-tight text-muted-foreground">
               {t('plan.executeImmediately')}
             </span>
-          </button>
+          </div>
+        </StyledDropdownMenuItem>
 
-          {/* Option 2: Accept & Compact */}
-          <button
-            type="button"
-            onClick={handleSelectCompact}
-            className={cn(
-              "flex flex-col w-full px-3 py-2 text-left rounded-[6px]",
-              "hover:bg-foreground/[0.05] focus:bg-foreground/[0.05] focus:outline-none",
-              "transition-colors"
-            )}
-          >
-            <span className="text-[13px] font-medium">{t('plan.acceptAndCompact')}</span>
-            <span className="text-xs text-muted-foreground">
+        <StyledDropdownMenuItem onSelect={() => onAcceptWithCompact()} className="items-start py-2">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[13px] leading-tight">{t('plan.acceptAndCompact')}</span>
+            <span className="max-w-[220px] whitespace-normal text-xs leading-tight text-muted-foreground">
               {t('plan.worksForComplex')}
             </span>
-          </button>
-        </div>,
-        document.body
-      )}
-    </>
+          </div>
+        </StyledDropdownMenuItem>
+      </StyledDropdownMenuContent>
+    </DropdownMenu>
   )
 }

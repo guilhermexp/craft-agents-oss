@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
 import { codeToHtml, bundledLanguages, type BundledLanguage } from 'shiki'
 import { cn } from '../../lib/utils'
 import { useShikiTheme } from '../../context/ShikiThemeContext'
@@ -277,7 +278,7 @@ export function CodeBlock({ code, language = 'text', className, mode = 'full', f
           type="button"
           onClick={handleCopy}
           className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
-          aria-label="Copy code"
+          aria-label={t('common.copyCode')}
         >
           {copied ? (
             <svg className="size-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">

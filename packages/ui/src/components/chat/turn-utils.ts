@@ -360,7 +360,7 @@ export interface GroupTurnsOptions {
 export function groupMessagesByTurn(messages: Message[], options: GroupTurnsOptions = {}): Turn[] {
   // Sort by timestamp for correct chronological order
   // This ensures correct turn grouping even if messages are added out of order during streaming
-  const sortedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp)
+  const sortedMessages = [...visibleMessages].sort((a, b) => a.timestamp - b.timestamp)
 
   const turns: Turn[] = []
   let currentTurn: AssistantTurn | null = null

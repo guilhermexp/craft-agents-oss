@@ -13,6 +13,7 @@ import type {
   UpdateInfo,
   BrowserInstanceInfo,
   DeepLinkNavigation,
+  TaskGenerateResult,
 } from './dto'
 import type { BrowserProfileSettings } from '../config/types'
 

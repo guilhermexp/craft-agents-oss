@@ -165,6 +165,12 @@ export const LOCAL_ONLY_NAMESPACES = new Set<string>([
   RPC_NAMESPACES.rtk.GET_STATUS,
   RPC_NAMESPACES.rtk.GET_GAIN,
 
+  // rtk — token-optimization opt-in
+  RPC_CHANNELS.rtk.GET_ENABLED,
+  RPC_CHANNELS.rtk.SET_ENABLED,
+  RPC_CHANNELS.rtk.GET_STATUS,
+  RPC_CHANNELS.rtk.GET_GAIN,
+
   // tools — local tool settings
   RPC_NAMESPACES.tools.GET_BROWSER_TOOL_ENABLED,
   RPC_NAMESPACES.tools.SET_BROWSER_TOOL_ENABLED,
@@ -463,6 +469,17 @@ export const REMOTE_ELIGIBLE_NAMESPACES = new Set<string>([
   RPC_NAMESPACES.automations.GET_LAST_EXECUTED,
   RPC_NAMESPACES.automations.REPLAY,
   RPC_NAMESPACES.automations.CHANGED,
+
+  // projects — workspace projects
+  RPC_CHANNELS.projects.GET,
+  RPC_CHANNELS.projects.GET_ONE,
+  RPC_CHANNELS.projects.CREATE,
+  RPC_CHANNELS.projects.UPDATE,
+  RPC_CHANNELS.projects.DELETE,
+  RPC_CHANNELS.projects.LIST_ASSETS,
+  RPC_CHANNELS.projects.UPLOAD_ASSET,
+  RPC_CHANNELS.projects.DELETE_ASSET,
+  RPC_CHANNELS.projects.CHANGED,
 
   // git — workspace filesystem
   RPC_NAMESPACES.git.GET_BRANCH,

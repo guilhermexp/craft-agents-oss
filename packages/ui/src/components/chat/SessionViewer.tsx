@@ -86,7 +86,9 @@ export function SessionViewer({
   footer,
   sessionFolderPath,
 }: SessionViewerProps) {
-  // Convert StoredMessage[] to Message[] and group into turns
+  // Convert StoredMessage[] to Message[] and group into turns.
+  // Viewer is always a snapshot of a finished session, so we mark it as not processing
+  // to force the open turn (if any) to flush with the intermediate-text fallback applied.
   const turns = useMemo(
     // Static viewer — session is never processing, so mark turns that ended on
     // a tool call complete (avoids a stale "Thinking…" on saved sessions).

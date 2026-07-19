@@ -82,6 +82,7 @@ import { useAnnotationIslandEvents } from '../annotations/use-annotation-island-
 import { useAnnotationCancelRestore } from '../annotations/use-annotation-cancel-restore'
 import { DocumentFormattedMarkdownOverlay } from '../overlay/DocumentFormattedMarkdownOverlay'
 import { AcceptPlanDropdown } from './AcceptPlanDropdown'
+import { CompactAcceptPlanDrawer } from './CompactAcceptPlanDrawer'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -350,7 +351,9 @@ export interface TurnCardProps {
   displayMode?: 'informative' | 'detailed'
   /** Animate response appearance (for playground demos) */
   animateResponse?: boolean
-  /** Hide footers for compact embedding (EditPopover) */
+  /** Compact-footer layout. Used by EditPopover (popover embedding) and ChatPage in
+   *  auto-compact / WebUI mobile. Hides Copy / Markdown / Branch actions; keeps the
+   *  Accept Plan dropdown when a plan is the last response. */
   compactMode?: boolean
   /** Callback to branch the session from a specific message */
   onBranch?: (messageId: string, options?: { newPanel?: boolean }) => void
@@ -729,7 +732,7 @@ function getPreviewText(
   if (isStreaming && hasResponse) return i18n.t('turnCard.responding')
 
   // Find running Task tools and show their description
-  const runningTask = activities.find(a => a.toolName === 'Task' && a.status === 'running')
+  const runningTask = activities.find(a => isParentTaskTool(a.toolName ?? '') && a.status === 'running')
   if (runningTask?.toolInput?.description) {
     return runningTask.toolInput.description as string
   }
@@ -758,7 +761,7 @@ function getPreviewText(
   }
 
   // When complete, show first Task's description if available
-  const firstTask = activities.find(a => a.toolName === 'Task')
+  const firstTask = activities.find(a => isParentTaskTool(a.toolName ?? ''))
   if (firstTask?.toolInput?.description) {
     const errorSuffix = errorCount > 0
       ? i18n.t('turnCard.errorCount', { count: errorCount })
@@ -1426,7 +1429,8 @@ export interface ResponseCardProps {
   isLastResponse?: boolean
   /** Whether to show the Accept Plan button (default: true) */
   showAcceptPlan?: boolean
-  /** Hide footer for compact embedding (EditPopover) */
+  /** Compact-footer layout. Hides Copy / Markdown / Branch in the response footer;
+   *  keeps the Accept Plan dropdown when a plan is the last response. */
   compactMode?: boolean
   /** Callback to branch the session from this response */
   onBranch?: (options?: { newPanel?: boolean }) => void
@@ -1825,6 +1829,24 @@ export function ResponseCard({
       return
     }
 
+    const computeGeometry = () => {
+      if (!renderedAnnotations.length) return { rects: [], chips: [] }
+      const geometry = computeAnnotationOverlayGeometry({
+        root,
+        renderedAnnotations,
+        persistedAnnotations: annotations,
+      })
+      if (process.env.NODE_ENV !== 'production' && geometry.unresolved.length > 0) {
+        console.debug('[annotations] unresolved annotations', {
+          count: geometry.unresolved.length,
+          ids: geometry.unresolved.map(item => item.annotation.id),
+          reasons: geometry.unresolved.map(item => item.reason),
+        })
+      }
+      return { rects: geometry.rects, chips: geometry.chips }
+    }
+
+    // Full recompute: rewrites block-marker DOM. Used for content/annotation changes.
     const recomputeOverlay = () => {
       clearAnnotationMarks(root)
       clearBlockAnnotationMarkers(root)
@@ -1834,17 +1856,18 @@ export function ResponseCard({
         return
       }
 
-      const geometry = computeAnnotationOverlayGeometry({
-        root,
-        renderedAnnotations,
-        persistedAnnotations: annotations,
-      })
-
+      const next = computeGeometry()
       for (const annotation of renderedAnnotations) {
         applyBlockAnnotationMarker(root, annotation)
       }
+      setAnnotationOverlay(next)
+    }
 
-      setAnnotationOverlay({ rects: geometry.rects, chips: geometry.chips })
+    // Fast path: coordinates only, no DOM mutation. Used by scroll/resize.
+    const recomputeOverlayCoords = () => {
+      if (!renderedAnnotations.length) return
+      setAnnotationOverlay(computeGeometry())
+    }
 
       if (window.location.hostname === 'localhost' && geometry.unresolved.length > 0) {
         console.debug('[annotations] unresolved annotations', {
@@ -1856,9 +1879,15 @@ export function ResponseCard({
     }
 
     recomputeOverlay()
-    window.addEventListener('resize', recomputeOverlay)
+    window.addEventListener('resize', scheduleCoordsRecompute)
+    // Capture-phase: scroll events don't bubble, but capture-phase listeners on
+    // ancestors fire for descendant scrolls — so this catches the overflow-auto
+    // viewport inside MarkdownDocBlock (and any future nested scroll surface).
+    root.addEventListener('scroll', scheduleCoordsRecompute, { capture: true, passive: true })
     return () => {
-      window.removeEventListener('resize', recomputeOverlay)
+      if (rafId != null) cancelAnimationFrame(rafId)
+      window.removeEventListener('resize', scheduleCoordsRecompute)
+      root.removeEventListener('scroll', scheduleCoordsRecompute, { capture: true } as EventListenerOptions)
     }
   }, [annotations, renderedAnnotations, text, displayedText, isStreaming])
 
@@ -2492,7 +2521,8 @@ export function ResponseCard({
             </div>
           </div>
 
-          {/* Footer with actions - hidden in compact mode */}
+          {/* Desktop footer with actions (Copy / Markdown / Accept Plan / Branch).
+              Compact mode falls through to the slim Accept-Plan-only footer below. */}
           {!compactMode && (
             <div className={cn(
               "pl-4 pr-2.5 py-2 border-t border-border/30 flex items-center justify-between bg-muted/20",
@@ -2561,6 +2591,26 @@ export function ResponseCard({
               </div>
             </div>
           )}
+
+          {/* Compact footer — Accept Plan only (mobile / auto-compact / popover).
+              Uses a bottom-sheet drawer to match the CompactPermissionModeSelector
+              / CompactModelSelector pattern. Guarded by isLastResponse so older
+              plans don't render an empty strip with a hidden-but-focusable button. */}
+          {compactMode && isPlan && showAcceptPlan && isLastResponse && onAccept && onAcceptWithCompact && (
+            <div
+              className={cn(
+                "pl-3 pr-2 py-1.5 border-t border-border/30 flex items-center justify-end bg-muted/20",
+                SIZE_CONFIG.fontSize
+              )}
+            >
+              <CompactAcceptPlanDrawer
+                onAccept={onAccept}
+                onAcceptWithCompact={onAcceptWithCompact}
+                acceptLabel={hasActiveFollowUpAnnotations ? t('plan.acceptAndSendFollowups') : t('plan.acceptPlan')}
+                acceptOptionLabel={hasActiveFollowUpAnnotations ? t('plan.acceptAndSendFollowups') : t('plan.accept')}
+              />
+            </div>
+          )}
         </div>
 
         {/* Fullscreen overlay for reading/annotating response and plan content. */}
@@ -2620,7 +2670,8 @@ export function ResponseCard({
           </div>
         </div>
 
-        {/* Footer - hidden in compact mode */}
+        {/* Desktop streaming footer; compact mode renders nothing here
+            (the Accept-Plan footer only applies to completed plans). */}
         {!compactMode && (
           <div className={cn("px-4 py-2 border-t border-border/30 flex items-center bg-muted/20", SIZE_CONFIG.fontSize)}>
             <div className="flex items-center gap-2 text-muted-foreground">
@@ -2867,7 +2918,7 @@ export const TurnCard = React.memo(function TurnCard({
 
   // Check if we have any Task subagents - if so, use grouped view
   const hasTaskSubagents = useMemo(
-    () => sortedActivities.some(a => a.toolName === 'Task'),
+    () => sortedActivities.some(a => isParentTaskTool(a.toolName ?? '')),
     [sortedActivities]
   )
 
@@ -3233,6 +3284,9 @@ export const TurnCard = React.memo(function TurnCard({
 
   // Re-render if displayMode changed
   if (prev.displayMode !== next.displayMode) return false
+
+  // Re-render if compactMode changed (affects ResponseCard footer rendering)
+  if (prev.compactMode !== next.compactMode) return false
 
   // Re-render if annotation interaction mode changed (interactive vs tooltip-only)
   if (prev.annotationInteractionMode !== next.annotationInteractionMode) return false
