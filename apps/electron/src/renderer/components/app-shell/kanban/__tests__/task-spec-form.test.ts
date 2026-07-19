@@ -66,6 +66,22 @@ describe('task-spec-form round-trip', () => {
     expect('skills' in empty).toBe(false)
   })
 
+  it('pins the id via fixedId so a title edit between a failed run and its retry does not fork the slug', () => {
+    const subtasks = specToSubtasks([{ id: 'a', title: 'A', prompt: 'p' }], 'm')
+    const firstAttempt = buildSpec(
+      { title: 'Original title', goal: 'g', projectId: '', orchModel: '', subtasks },
+      noConn,
+    )
+    // Simulate: create succeeded (yielding firstAttempt.id as the bound slug), run failed, the
+    // user edits the title, then retries — the retry must reuse the already-bound slug.
+    const retryAttempt = buildSpec(
+      { title: 'Edited title', goal: 'g', projectId: '', orchModel: '', subtasks, fixedId: firstAttempt.id as string },
+      noConn,
+    )
+    expect(retryAttempt.id).toBe(firstAttempt.id)
+    expect(retryAttempt.title).toBe('Edited title')
+  })
+
   it('preserves multi-dependency (fan-in) edges that the single-dependency editor would otherwise drop', () => {
     const generated: SpecNode[] = [
       { id: 'a', title: 'A', prompt: 'pa' },

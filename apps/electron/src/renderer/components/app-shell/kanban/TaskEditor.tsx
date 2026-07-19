@@ -22,7 +22,6 @@ import {
 import type { KanbanModelProviderGroup, TaskEditorTarget } from './types'
 import { uid, buildSpec, specToSubtasks, canDependOn, quickAddNodeId, quickAddChildToSubtask, DEFAULT_REPAIR_ATTEMPTS, MAX_REPAIR_ATTEMPTS_CAP, type EditorSubtask, type TaskPermissionMode } from './task-spec-form'
 import { resolveNodeStatePill } from './node-state-pill'
-import { ensureCreatedTask } from './task-submit-state'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
 import { SourceSelectorPopover } from '@/components/ui/SourceSelectorPopover'
@@ -835,7 +834,10 @@ export function TaskEditor({
       return
     }
     // Edit mode pins the existing slug so the title can change without forking a new task folder
-    // and orphaning the bound orchestrator session.
+    // and orphaning the bound orchestrator session. A retry after a partial success (create
+    // succeeded, run failed) pins to that same slug for the same reason — otherwise a title edit
+    // between attempts would derive a new slug and orphan the already-created orchestrator.
+    const existingCreated = createdTaskForRetryRef.current?.created ?? null
     const spec = buildSpec(
       {
         title,
@@ -851,7 +853,7 @@ export function TaskEditor({
         cwd,
         sourceSlugs,
         skillSlugs,
-        fixedId: editSlug,
+        fixedId: editSlug ?? existingCreated?.slug,
       },
       modelToConnection,
     )
@@ -861,17 +863,17 @@ export function TaskEditor({
     const draftId = generatedDraftRef.current
     setBusy(true)
     try {
-      // Edit mode binds the authored spec onto the tile's existing session; create mode reuses
-      // a generate draft if present, else mints a fresh orchestrator.
-      const existingCreated = createdTaskForRetryRef.current?.created ?? null
-      const created = await ensureCreatedTask(existingCreated, () =>
-        window.electronAPI.createTask(workspaceId, {
-          yaml,
-          ...(isEdit && editSessionId
+      // Re-save on every attempt so a retry after a failed run picks up any edits made in
+      // between — binding to an already-bound slug is a no-op server-side, so this never
+      // duplicates the orchestrator.
+      const created = await window.electronAPI.createTask(workspaceId, {
+        yaml,
+        ...(existingCreated
+          ? { attachToExistingSession: existingCreated.orchestratorSessionId }
+          : isEdit && editSessionId
             ? { attachToExistingSession: editSessionId }
             : { orchestratorSessionId: draftId ?? undefined }),
-        }),
-      )
+      })
       if (!created.validation.valid) {
         const first = created.validation.errors[0]
         toast.error(t('tasks.toastInvalid'), { description: first ? `${first.path}: ${first.message}` : undefined })

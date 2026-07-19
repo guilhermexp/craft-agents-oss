@@ -76,6 +76,22 @@ export function registerMessagingHandlers(server: RpcServer, deps: HandlerDeps):
     return { success: registry.unbindBinding(ctx.workspaceId, bindingId) }
   })
 
+  server.handle(RPC_NAMESPACES.messaging.GENERATE_SUPERGROUP_CODE, async (ctx, platform: string) => {
+    if (!ctx.workspaceId) throw new Error('Missing workspaceId')
+    return registry.generateSupergroupPairingCode(ctx.workspaceId, platform)
+  })
+
+  server.handle(RPC_NAMESPACES.messaging.GET_SUPERGROUP, async (ctx) => {
+    if (!ctx.workspaceId) throw new Error('Missing workspaceId')
+    return registry.getWorkspaceSupergroup(ctx.workspaceId)
+  })
+
+  server.handle(RPC_NAMESPACES.messaging.UNBIND_SUPERGROUP, async (ctx) => {
+    if (!ctx.workspaceId) throw new Error('Missing workspaceId')
+    await registry.unbindWorkspaceSupergroup(ctx.workspaceId)
+    return { success: true }
+  })
+
   server.handle(RPC_NAMESPACES.messaging.WA_START_CONNECT, async (ctx) => {
     if (!ctx.workspaceId) throw new Error('Missing workspaceId')
     await registry.startWhatsAppConnect(ctx.workspaceId)

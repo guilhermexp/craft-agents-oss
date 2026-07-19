@@ -485,6 +485,7 @@ export const REMOTE_ELIGIBLE_NAMESPACES = new Set<string>([
   RPC_NAMESPACES.messaging.WA_DISCONNECT,
   RPC_NAMESPACES.messaging.BINDING_CHANGED,
   RPC_NAMESPACES.messaging.PLATFORM_STATUS,
+  RPC_NAMESPACES.messaging.PENDING_CHANGED,
   RPC_NAMESPACES.messaging.GET_CONFIG,
   RPC_NAMESPACES.messaging.UPDATE_CONFIG,
   RPC_NAMESPACES.messaging.TEST_TELEGRAM,
@@ -496,9 +497,22 @@ export const REMOTE_ELIGIBLE_NAMESPACES = new Set<string>([
   RPC_NAMESPACES.messaging.GENERATE_CODE,
   RPC_NAMESPACES.messaging.UNBIND,
   RPC_NAMESPACES.messaging.UNBIND_BINDING,
+  RPC_NAMESPACES.messaging.GENERATE_SUPERGROUP_CODE,
+  RPC_NAMESPACES.messaging.GET_SUPERGROUP,
+  RPC_NAMESPACES.messaging.UNBIND_SUPERGROUP,
   RPC_NAMESPACES.messaging.WA_START_CONNECT,
   RPC_NAMESPACES.messaging.WA_SUBMIT_PHONE,
   RPC_NAMESPACES.messaging.WA_UI_EVENT,
+
+  // messaging — access control (per-platform owners + per-binding allow-list); config lives with the gateway on the workspace server
+  RPC_NAMESPACES.messaging.GET_PLATFORM_OWNERS,
+  RPC_NAMESPACES.messaging.SET_PLATFORM_OWNERS,
+  RPC_NAMESPACES.messaging.GET_PLATFORM_ACCESS_MODE,
+  RPC_NAMESPACES.messaging.SET_PLATFORM_ACCESS_MODE,
+  RPC_NAMESPACES.messaging.GET_PENDING_SENDERS,
+  RPC_NAMESPACES.messaging.DISMISS_PENDING_SENDER,
+  RPC_NAMESPACES.messaging.ALLOW_PENDING_SENDER,
+  RPC_NAMESPACES.messaging.SET_BINDING_ACCESS,
 ])
 
 // ---------------------------------------------------------------------------

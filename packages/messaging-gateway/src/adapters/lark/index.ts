@@ -10,7 +10,7 @@
  * interactive cards, attachments, and Markdown→post rich-text formatting.
  */
 
-import { writeFileSync } from 'node:fs'
+import { writeFileSync, statSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { extname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
@@ -751,6 +751,10 @@ export class LarkAdapter implements PlatformAdapter {
       // a plain Node Readable. Handle the common shapes.
       if (typeof sdkResource.writeFile === 'function') {
         await sdkResource.writeFile(localPath)
+        if (statSync(localPath).size > MAX_ATTACHMENT_BYTES) {
+          unlinkSync(localPath)
+          throw new Error(`attachment exceeds ${MAX_ATTACHMENT_BYTES} bytes`)
+        }
       } else if (sdkResource.file instanceof Buffer) {
         const buf = sdkResource.file
         if (buf.length > MAX_ATTACHMENT_BYTES) {

@@ -9,6 +9,7 @@
  */
 
 import { describe, it, expect } from 'bun:test'
+import { existsSync, writeFileSync } from 'node:fs'
 import { LarkAdapter, parseLarkCredentials } from '../index'
 
 describe('parseLarkCredentials', () => {
@@ -50,5 +51,39 @@ describe('LarkAdapter shell', () => {
     expect(adapter.capabilities.markdown).toBe('lark-post')
     expect(adapter.capabilities.webhookSupport).toBe(false)
     expect(adapter.isConnected()).toBe(false)
+  })
+})
+
+describe('LarkAdapter — downloadResource size cap (sdkResource.writeFile path)', () => {
+  it('deletes and rejects a file that exceeds MAX_ATTACHMENT_BYTES', async () => {
+    const adapter = new LarkAdapter()
+    let writtenPath: string | undefined
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(adapter as any).client = {
+      im: {
+        message: {
+          resource: {
+            get: async () => ({
+              writeFile: async (path: string) => {
+                writtenPath = path
+                writeFileSync(path, Buffer.alloc(21 * 1024 * 1024))
+              },
+            }),
+          },
+        },
+      },
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await (adapter as any).downloadResource({
+      messageId: 'm1',
+      fileKey: 'f1',
+      filename: 'big.bin',
+      isImage: false,
+    })
+
+    expect(result).toBeNull()
+    expect(writtenPath).toBeDefined()
+    expect(existsSync(writtenPath!)).toBe(false)
   })
 })

@@ -63,7 +63,7 @@ export interface ParsedCompoundRoute {
  * Known prefixes that indicate a compound route
  */
 const COMPOUND_ROUTE_PREFIXES = [
-  'allSessions', 'flagged', 'archived', 'state', 'label', 'view', 'sources', 'skills', 'automations', 'meetings', 'settings'
+  'allSessions', 'flagged', 'archived', 'state', 'label', 'view', 'sources', 'skills', 'automations', 'meetings', 'projects', 'settings'
 ]
 
 /**
@@ -172,6 +172,23 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
       return {
         navigator: 'skills',
         details: { type: 'skill', id: segments[2] },
+      }
+    }
+
+    return null
+  }
+
+  // Projects navigator
+  if (first === 'projects') {
+    if (segments.length === 1) {
+      return { navigator: 'projects', details: null }
+    }
+
+    // projects/project/{projectSlug}
+    if (segments[1] === 'project' && segments[2]) {
+      return {
+        navigator: 'projects',
+        details: { type: 'project', id: segments[2] },
       }
     }
 
@@ -325,6 +342,11 @@ export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
     return `meetings/meeting/${encodeURIComponent(parsed.details.id)}`
   }
 
+  if (parsed.navigator === 'projects') {
+    if (!parsed.details) return 'projects'
+    return `projects/project/${parsed.details.id}`
+  }
+
   // Sessions navigator
   // Board is a standalone view of all sessions; emit its own prefix.
   if (parsed.viewMode === 'board') return 'board'
@@ -457,6 +479,14 @@ function convertCompoundToViewRoute(compound: ParsedCompoundRoute): ParsedRoute 
       return { type: 'view', name: 'meeting-info', id: compound.details.id, params: {} }
     }
     return { type: 'view', name: 'meetings', params: {} }
+  }
+
+  // Projects
+  if (compound.navigator === 'projects') {
+    if (!compound.details) {
+      return { type: 'view', name: 'projects', params: {} }
+    }
+    return { type: 'view', name: 'project-info', id: compound.details.id, params: {} }
   }
 
   // Sessions
@@ -599,6 +629,14 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
     return {
       navigator: 'meetings',
       details: compound.details ? { type: 'meeting', meetingId: compound.details.id } : null,
+    }
+  }
+
+  // Projects
+  if (compound.navigator === 'projects') {
+    return {
+      navigator: 'projects',
+      details: compound.details ? { type: 'project', projectSlug: compound.details.id } : null,
     }
   }
 
