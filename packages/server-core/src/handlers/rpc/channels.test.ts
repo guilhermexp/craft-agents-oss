@@ -5,8 +5,10 @@ import { join } from 'path'
 
 import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { createChannel } from '@craft-agent/shared/channels/crud'
-import { listChannelDispatches } from '@craft-agent/shared/channels/dispatches'
+import { createChannelDispatch, listChannelDispatches } from '@craft-agent/shared/channels/dispatches'
 import { listChannelMessages } from '@craft-agent/shared/channels/messages'
+import { getChannelParticipantSession } from '@craft-agent/shared/channels/session-bindings'
+import { loadChannelKanbanWatch } from '@craft-agent/shared/channels/kanban-watches'
 import { saveLabelConfig } from '@craft-agent/shared/labels/storage'
 import { unregisterSessionScopedToolCallbacks } from '@craft-agent/shared/agent'
 import { getSessionScopedToolCallbacks } from '@craft-agent/shared/agent/session-scoped-tools'
@@ -24,15 +26,78 @@ mock.module('@craft-agent/shared/config', () => ({
   ),
 }))
 
+interface MockKanbanTask {
+  id: string
+  title: string
+  assignee: string | null
+  status: string
+  result: string | null
+  createdAt: number
+  completedAt: number | null
+}
+
+// `node:sqlite` (used by the real hermes-kanban.ts reader) is not available under
+// Bun's runtime, so the boot re-arm test drives the Kanban reader through this
+// in-memory fake instead of a real database file.
+let mockKanbanTasks: MockKanbanTask[] = []
+
+mock.module('../../channels/hermes-kanban', () => ({
+  getHermesKanbanHome: () => '/tmp/mock-hermes-home',
+  getHermesKanbanDbPath: () => '/tmp/mock-hermes-home/kanban.db',
+  listKanbanTasksCreatedSince: (unixSeconds: number) => mockKanbanTasks.filter(task => task.createdAt > unixSeconds),
+  listKanbanTasksByIds: (taskIds: string[]) => mockKanbanTasks.filter(task => taskIds.includes(task.id)),
+  isTerminalKanbanStatus: (status: string) => status === 'done' || status === 'blocked' || status === 'archived',
+}))
+
 const { registerChannelsHandlers } = await import('./channels')
 
-function createHarness() {
-  const handlers = new Map<string, HandlerFn>()
-  const pushed: Array<{ channel: string; args: unknown[] }> = []
+/**
+ * Backs `HandlerDeps['sessionManager']` for a harness. Kept separate from
+ * `createHarness` so a restart can be simulated by reusing the same session
+ * store (representing durable on-disk session state) across two independently
+ * constructed `ChannelManager`/`RpcServer` instances.
+ */
+function createSessionStore() {
   const createdSessions: unknown[] = []
   const sentMessages: Array<{ sessionId: string; message: string }> = []
   const sessionMessages = new Map<string, Array<{ id: string; role: 'user' | 'assistant'; content: string; timestamp: number; isIntermediate?: boolean }>>()
+  const deletedSessionIds = new Set<string>()
   let nextSession = 1
+
+  const sessionManager: HandlerDeps['sessionManager'] = {
+    async createSession(_workspaceId: string, options) {
+      createdSessions.push(options ?? {})
+      const id = `session-${nextSession++}`
+      sessionMessages.set(id, [])
+      return { id } as Awaited<ReturnType<HandlerDeps['sessionManager']['createSession']>>
+    },
+    async getSession(sessionId: string) {
+      if (deletedSessionIds.has(sessionId) || !sessionMessages.has(sessionId)) return null
+      return {
+        id: sessionId,
+        messages: sessionMessages.get(sessionId) ?? [],
+      } as Awaited<ReturnType<HandlerDeps['sessionManager']['getSession']>>
+    },
+    async sendMessage(sessionId: string, message: string) {
+      sentMessages.push({ sessionId, message })
+      const messages = sessionMessages.get(sessionId) ?? []
+      messages.push({
+        id: `${sessionId}-assistant-${messages.length + 1}`,
+        role: 'assistant',
+        content: `assistant response for ${sessionId}`,
+        timestamp: Date.now(),
+      })
+      sessionMessages.set(sessionId, messages)
+    },
+  } as HandlerDeps['sessionManager']
+
+  return { sessionManager, createdSessions, sentMessages, deletedSessionIds }
+}
+
+function createHarness(shared: ReturnType<typeof createSessionStore> = createSessionStore()) {
+  const handlers = new Map<string, HandlerFn>()
+  const pushed: Array<{ channel: string; args: unknown[] }> = []
+  const { createdSessions, sentMessages } = shared
 
   const server: RpcServer = {
     handle(channel, handler) {
@@ -55,31 +120,7 @@ function createHarness() {
   const deps: HandlerDeps = {
     platform: {} as HandlerDeps['platform'],
     oauthFlowStore: {} as HandlerDeps['oauthFlowStore'],
-    sessionManager: {
-      async createSession(_workspaceId: string, options) {
-        createdSessions.push(options ?? {})
-        const id = `session-${nextSession++}`
-        sessionMessages.set(id, [])
-        return { id } as Awaited<ReturnType<HandlerDeps['sessionManager']['createSession']>>
-      },
-      async getSession(sessionId: string) {
-        return {
-          id: sessionId,
-          messages: sessionMessages.get(sessionId) ?? [],
-        } as Awaited<ReturnType<HandlerDeps['sessionManager']['getSession']>>
-      },
-      async sendMessage(sessionId: string, message: string) {
-        sentMessages.push({ sessionId, message })
-        const messages = sessionMessages.get(sessionId) ?? []
-        messages.push({
-          id: `${sessionId}-assistant-${messages.length + 1}`,
-          role: 'assistant',
-          content: `assistant response for ${sessionId}`,
-          timestamp: Date.now(),
-        })
-        sessionMessages.set(sessionId, messages)
-      },
-    } as HandlerDeps['sessionManager'],
+    sessionManager: shared.sessionManager,
   }
 
   registerChannelsHandlers(server, deps)
@@ -98,6 +139,7 @@ beforeEach(() => {
   workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-channel-rpc-test-'))
   process.env.CRAFT_HERMES_HOME = join(workspaceRoot, 'hermes-home')
   saveLabelConfig(workspaceRoot, { version: 1, labels: [] })
+  mockKanbanTasks = []
   for (const sessionId of ['session-1', 'session-2', 'session-3']) unregisterSessionScopedToolCallbacks(sessionId)
 })
 
@@ -278,5 +320,118 @@ describe('registerChannelsHandlers messages', () => {
 
     expect(messages.map((message: { text: string }) => message.text)).toEqual(['só uma nota'])
     expect(createdSessions).toEqual([])
+  })
+})
+
+describe('ChannelManager durability across a simulated restart (Fase 1)', () => {
+  it('reuses a persisted participant session when the backing session still exists', async () => {
+    createChannel(workspaceRoot, {
+      name: 'Architecture',
+      participants: [{ id: 'hermes-lead', displayName: 'Hermes Lead', llmConnection: 'hermes', hermesProfile: 'lead' }],
+    })
+
+    const shared = createSessionStore()
+    const first = createHarness(shared)
+    await first.handlers.get(RPC_NAMESPACES.channels.SEND_MESSAGE)!(first.ctx, 'ws-1', {
+      channelId: 'architecture',
+      text: '@hermes-lead cria um plano',
+    })
+    expect(shared.createdSessions).toHaveLength(1)
+    expect(getChannelParticipantSession(workspaceRoot, 'architecture', 'hermes-lead')).toBe('session-1')
+
+    // Simulate an app restart: a brand-new ChannelManager/RpcServer over the same
+    // workspace root and the same durable session store.
+    const second = createHarness(shared)
+    await second.handlers.get(RPC_NAMESPACES.channels.SEND_MESSAGE)!(second.ctx, 'ws-1', {
+      channelId: 'architecture',
+      text: '@hermes-lead continue o plano',
+    })
+
+    expect(shared.createdSessions).toHaveLength(1)
+    expect(shared.sentMessages.map(message => message.sessionId)).toEqual(['session-1', 'session-1'])
+  })
+
+  it('creates and rebinds a new session when a persisted binding session no longer exists', async () => {
+    createChannel(workspaceRoot, {
+      name: 'Architecture',
+      participants: [{ id: 'hermes-lead', displayName: 'Hermes Lead', llmConnection: 'hermes', hermesProfile: 'lead' }],
+    })
+
+    const shared = createSessionStore()
+    const first = createHarness(shared)
+    await first.handlers.get(RPC_NAMESPACES.channels.SEND_MESSAGE)!(first.ctx, 'ws-1', {
+      channelId: 'architecture',
+      text: '@hermes-lead cria um plano',
+    })
+    expect(getChannelParticipantSession(workspaceRoot, 'architecture', 'hermes-lead')).toBe('session-1')
+    shared.deletedSessionIds.add('session-1')
+
+    const second = createHarness(shared)
+    await second.handlers.get(RPC_NAMESPACES.channels.SEND_MESSAGE)!(second.ctx, 'ws-1', {
+      channelId: 'architecture',
+      text: '@hermes-lead continue o plano',
+    })
+
+    expect(shared.createdSessions).toHaveLength(2)
+    expect(shared.sentMessages.map(message => message.sessionId)).toEqual(['session-1', 'session-2'])
+    expect(getChannelParticipantSession(workspaceRoot, 'architecture', 'hermes-lead')).toBe('session-2')
+  })
+
+  it('reconciles dispatches orphaned by a previous process to failed on restart', async () => {
+    createChannel(workspaceRoot, {
+      name: 'Architecture',
+      participants: [{ id: 'hermes-lead', displayName: 'Hermes Lead', llmConnection: 'hermes', hermesProfile: 'lead' }],
+    })
+    createChannelDispatch(workspaceRoot, {
+      channelId: 'architecture',
+      participantId: 'hermes-lead',
+      sourceMessageId: 'message-orphan',
+    })
+
+    const second = createHarness()
+    const dispatches = await second.handlers.get(RPC_NAMESPACES.channels.LIST_DISPATCHES)!(second.ctx, 'ws-1', 'architecture')
+
+    expect(dispatches).toHaveLength(1)
+    expect(dispatches[0].status).toBe('failed')
+    expect(dispatches[0].error).toContain('restart')
+  })
+
+  it('re-arms a persisted Kanban watcher on restart and flows an already-terminal task into the channel', async () => {
+    createChannel(workspaceRoot, {
+      name: 'Architecture',
+      participants: [{ id: 'hermes-lead', displayName: 'Hermes Lead', llmConnection: 'hermes', hermesProfile: 'lead' }],
+    })
+
+    const futureCreatedAt = Math.floor(Date.now() / 1000) + 60
+    mockKanbanTasks.push({
+      id: 'task-1',
+      title: 'Investigar bug',
+      assignee: 'lead',
+      status: 'in_progress',
+      result: null,
+      createdAt: futureCreatedAt,
+      completedAt: null,
+    })
+
+    const shared = createSessionStore()
+    const first = createHarness(shared)
+    await first.handlers.get(RPC_NAMESPACES.channels.SEND_MESSAGE)!(first.ctx, 'ws-1', {
+      channelId: 'architecture',
+      text: '@hermes-lead delega isso pro kanban',
+    })
+
+    expect(loadChannelKanbanWatch(workspaceRoot, 'architecture')).toEqual(['task-1'])
+
+    // Task reaches a terminal status while the app is closed.
+    const task = mockKanbanTasks.find(item => item.id === 'task-1')!
+    task.status = 'done'
+    task.completedAt = futureCreatedAt + 5
+
+    const second = createHarness(shared)
+    await second.handlers.get(RPC_NAMESPACES.channels.LIST_MESSAGES)!(second.ctx, 'ws-1', 'architecture')
+
+    expect(loadChannelKanbanWatch(workspaceRoot, 'architecture')).toEqual([])
+    const messages = listChannelMessages(workspaceRoot, 'architecture')
+    expect(messages.some(message => message.authorId === 'hermes-kanban' && message.text.includes('task-1'))).toBe(true)
   })
 })

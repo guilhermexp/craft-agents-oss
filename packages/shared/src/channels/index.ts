@@ -13,3 +13,5 @@ export { warRoomChannelId } from './types.ts';
 export type { DeleteChannelOptions, DeleteChannelResult } from './crud.ts';
 export type { ChannelMessage, AppendChannelMessageInput } from './messages.ts';
 export type { CreateChannelDispatchInput, UpdateChannelDispatchInput } from './dispatches.ts';
+export type { ChannelSessionBindings } from './session-bindings.ts';
+export type { ChannelKanbanWatch } from './kanban-watches.ts';
