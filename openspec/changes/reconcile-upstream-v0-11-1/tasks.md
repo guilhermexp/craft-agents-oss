@@ -3,6 +3,7 @@
 - [x] 1.1 Reconciliar session-tools-core e validação Mermaid sem mudar o contrato público v1
 - [x] 1.2 Reconciliar drivers/modelos Claude e Pi preservando isolamento Hermes e computer-use Pi-only
 - [x] 1.3 Reconciliar exports RTK, storage, RPC e limites de contexto sem remover hardening local
+- [x] 1.4 Eliminar registros RPC duplicados de RTK e cobrir o registro completo de canais
 
 ## 2. Validar
 

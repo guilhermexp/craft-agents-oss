@@ -319,29 +319,6 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
     setEnable1MContext(enabled)
   })
 
-  // RTK Bash-output compression — opt-in toggle
-  server.handle(RPC_NAMESPACES.rtk.GET_ENABLED, async () => {
-    const { getRtkEnabled } = await import('@craft-agent/shared/config/storage')
-    return getRtkEnabled()
-  })
-
-  server.handle(RPC_NAMESPACES.rtk.SET_ENABLED, async (_ctx, enabled: boolean) => {
-    const { setRtkEnabled } = await import('@craft-agent/shared/config/storage')
-    setRtkEnabled(enabled)
-  })
-
-  // RTK binary detection status (installed/path/version) for the Settings UI
-  server.handle(RPC_NAMESPACES.rtk.GET_STATUS, async () => {
-    const { getRtkStatus } = await import('@craft-agent/shared/agent')
-    return getRtkStatus({ forceRecheck: true })
-  })
-
-  // RTK token-savings stats (`rtk gain --format json`); null when unavailable
-  server.handle(RPC_NAMESPACES.rtk.GET_GAIN, async () => {
-    const { getRtkGain } = await import('@craft-agent/shared/agent')
-    return getRtkGain()
-  })
-
   // Get auto-expand chat activities setting
   server.handle(RPC_NAMESPACES.appearance.GET_AUTO_EXPAND_ACTIVITIES, async () => {
     const { getAutoExpandActivities } = await import('@craft-agent/shared/config/storage')
@@ -373,7 +350,9 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
   // Detect rtk installation (used by Settings UI to swap install prompt ↔ toggle)
   server.handle(RPC_NAMESPACES.rtk.GET_STATUS, async (_ctx, opts?: { forceRecheck?: boolean }) => {
     const { getRtkStatus } = await import('@craft-agent/shared/agent')
-    return getRtkStatus(opts)
+    // Preserve the fork's fresh-on-open behavior while accepting the upstream
+    // explicit recheck option for clients that expose a Recheck action.
+    return getRtkStatus({ forceRecheck: opts?.forceRecheck ?? true })
   })
 
   // Token-savings summary from `rtk gain --format json` (efficiency meter)
