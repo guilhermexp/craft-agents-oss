@@ -283,16 +283,24 @@ export interface ISessionManager {
    */
   refreshConnectionRuntime(connectionSlug: string): Promise<void>
   completeAuthRequest(sessionId: string, result: AuthResult): Promise<void>
-  executePromptAutomation(
-    workspaceId: string,
-    workspaceRootPath: string,
-    prompt: string,
-    labels?: string[],
-    permissionMode?: PermissionMode,
-    mentions?: string[],
-    llmConnection?: string,
-    model?: string,
-    thinkingLevel?: ThinkingLevel,
-    automationName?: string,
-  ): Promise<{ sessionId: string }>
+  executePromptAutomation(input: ExecutePromptAutomationInput): Promise<{ sessionId: string }>
+
+  setAutomationBinder?(
+    fn: (input: { workspaceId: string; sessionId: string; topicName: string }) => Promise<void>,
+  ): void
+}
+
+export interface ExecutePromptAutomationInput {
+  workspaceId: string
+  workspaceRootPath: string
+  prompt: string
+  labels?: string[]
+  permissionMode?: PermissionMode
+  mentions?: string[]
+  llmConnection?: string
+  model?: string
+  thinkingLevel?: ThinkingLevel
+  automationName?: string
+  telegramTopic?: string
+  waitForCompletion?: boolean
 }

@@ -133,7 +133,7 @@ export function useDismissibleLayerRegistry() {
   return context
 }
 
-function useRegisterDismissibleLayer(layer: DismissibleLayerRegistration | null) {
+export function useRegisterDismissibleLayer(layer: DismissibleLayerRegistration | null) {
   const { registerLayer } = useDismissibleLayerRegistry()
 
   React.useEffect(() => {

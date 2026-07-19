@@ -13,6 +13,7 @@ import type {
   BindingConfig,
   IncomingMessage,
   MessagingConfig,
+  MessagingChannelId,
   MessagingLogger,
   PlatformAccessMode,
   PlatformAdapter,
@@ -141,7 +142,7 @@ export function readPlatformOwners(
  */
 export interface RejectableSender {
   platform: PlatformType
-  channelId: string
+  messagingChannelId: MessagingChannelId
   threadId?: number
   senderId: string
   senderName?: string
@@ -174,7 +175,7 @@ export async function executeRejection(
     event: 'access_rejected',
     reason,
     platform: sender.platform,
-    channelId: sender.channelId,
+    messagingChannelId: sender.messagingChannelId,
     threadId: sender.threadId,
     senderId: sender.senderId,
     senderUsername: sender.senderUsername,
@@ -196,7 +197,7 @@ export async function executeRejection(
       reason: pendingReason,
       ...(extra.bindingId ? { bindingId: extra.bindingId } : {}),
       ...(extra.sessionId ? { sessionId: extra.sessionId } : {}),
-      ...(sender.channelId ? { channelId: sender.channelId } : {}),
+      ...(sender.messagingChannelId ? { channelId: sender.messagingChannelId } : {}),
       ...(sender.threadId !== undefined ? { threadId: sender.threadId } : {}),
     })
   }
@@ -210,14 +211,14 @@ export async function executeRejection(
   ctx.recentRejectReplies.set(key, Date.now())
 
   try {
-    await adapter.sendText(sender.channelId, replyText, {
+    await adapter.sendText(sender.messagingChannelId, replyText, {
       ...(sender.threadId !== undefined ? { threadId: sender.threadId } : {}),
     })
   } catch (err) {
     log.warn('failed to send rejection reply (non-fatal)', {
       event: 'reject_reply_failed',
       platform: sender.platform,
-      channelId: sender.channelId,
+      messagingChannelId: sender.messagingChannelId,
       error: err,
     })
   }

@@ -1,4 +1,4 @@
-import { query, createSdkMcpServer, tool, AbortError, type Query, type SDKUserMessage, type SDKAssistantMessageError, type Options } from '@anthropic-ai/claude-agent-sdk';
+import { query, createSdkMcpServer, tool, AbortError, type Query, type SDKMessage, type SDKUserMessage, type SDKAssistantMessageError, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { getDefaultOptions } from './options.ts';
 import { ensureDefaultClaudeConfigValid } from './native/claude-config-manager.ts';
 // Local type for SDK user message content blocks (text, image, document)
@@ -23,6 +23,7 @@ import {
 } from '../config/llm-connections.ts';
 import type { McpClientPool } from '../mcp/mcp-pool.ts';
 import { loadPlanFromPath, type SessionConfig as Session } from '../sessions/storage.ts';
+import { loadProjectById, getProjectAssetsPath, listProjectAssets, getProjectMemoryPath, loadProjectMemory } from '../projects/storage.ts';
 import { DEFAULT_MODEL, isClaudeModel, isAdaptiveThinkingAlwaysOnModel, getDefaultSummarizationModel, getModelContextWindow } from '../config/models.ts';
 import { getCredentialManager } from '../credentials/index.ts';
 import { loadPreferences, formatPreferencesForPrompt, getCoAuthorPreference } from '../config/preferences.ts';
@@ -672,6 +673,34 @@ export class ClaudeAgent extends BaseAgent {
    */
   private get workspaceRootPath(): string {
     return this.config.workspace.rootPath;
+  }
+
+  /** Resolve the project bound to this session for system-prompt injection. */
+  private resolveProjectContext(): import('../projects/types.ts').ProjectPromptContext | null {
+    const projectId = this.config.session?.projectId;
+    if (!projectId) return null;
+
+    try {
+      const project = loadProjectById(this.workspaceRootPath, projectId);
+      if (!project) return null;
+      const slug = project.config.slug;
+      return {
+        name: project.config.name,
+        description: project.config.description,
+        details: project.config.details,
+        assetsPath: getProjectAssetsPath(this.workspaceRootPath, slug),
+        assets: listProjectAssets(this.workspaceRootPath, slug).map((asset) => ({
+          filename: asset.filename,
+          mimeType: asset.mimeType,
+          sizeBytes: asset.sizeBytes,
+        })),
+        memoryPath: getProjectMemoryPath(this.workspaceRootPath, slug),
+        memoryContent: loadProjectMemory(this.workspaceRootPath, slug) ?? undefined,
+      };
+    } catch (error) {
+      debug(`[resolveProjectContext] Failed to load project ${projectId}:`, error);
+      return null;
+    }
   }
 
   protected getSessionToolOptionsForCurrentAgent(): Parameters<typeof getSessionScopedTools>[3] {

@@ -256,6 +256,8 @@ export interface PendingPrompt {
   model?: string;
   /** Thinking level for the created session (falls back to workspace default when omitted) */
   thinkingLevel?: ThinkingLevel;
+  /** Optional Telegram forum topic for sessions spawned by this automation. */
+  telegramTopic?: string;
 }
 
 export interface AutomationResult {

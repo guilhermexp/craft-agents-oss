@@ -96,7 +96,7 @@ import { parseError, type AgentError } from './errors.ts';
 import { runPreToolUseChecks, type PreToolUseCheckResult } from './core/pre-tool-use.ts';
 import { getRtkPath } from './core/rtk-detector.ts';
 import type { RtkContext } from './core/rtk-rewrite.ts';
-import { getRtkEnabled } from '../config/storage.ts';
+import { getRtkEnabled, getBrowserToolEnabled } from '../config/storage.ts';
 
 // Workspace slug extraction for skill qualification
 import { extractWorkspaceSlug } from '../utils/workspace.ts';

@@ -58,6 +58,7 @@ function makeInstance(id: string, overrides?: Partial<BrowserInstanceInfo>): Bro
     canGoBack: false,
     canGoForward: false,
     boundSessionId: null,
+    profileId: 'default',
     ownerType: 'manual',
     ownerSessionId: null,
     isVisible: true,

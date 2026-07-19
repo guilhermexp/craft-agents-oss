@@ -12,7 +12,7 @@
  * The legacy `tasks:getOutput` (background-task remnant) is handled in sessions.ts
  * and intentionally left untouched; retiring it is a separate cleanup.
  */
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import type {
   TaskCreateRequest,
   TaskCreateResult,
@@ -49,16 +49,16 @@ import { TaskRunner } from '../../tasks'
 const tasksLog = createLogger('tasks-generate')
 
 export const HANDLED_CHANNELS = [
-  RPC_CHANNELS.tasks.VALIDATE,
-  RPC_CHANNELS.tasks.CREATE,
-  RPC_CHANNELS.tasks.GENERATE,
-  RPC_CHANNELS.tasks.RUN,
-  RPC_CHANNELS.tasks.PAUSE,
-  RPC_CHANNELS.tasks.RESUME,
-  RPC_CHANNELS.tasks.STOP,
-  RPC_CHANNELS.tasks.GET,
-  RPC_CHANNELS.tasks.LIST,
-  RPC_CHANNELS.tasks.GET_RESULTS,
+  RPC_NAMESPACES.tasks.VALIDATE,
+  RPC_NAMESPACES.tasks.CREATE,
+  RPC_NAMESPACES.tasks.GENERATE,
+  RPC_NAMESPACES.tasks.RUN,
+  RPC_NAMESPACES.tasks.PAUSE,
+  RPC_NAMESPACES.tasks.RESUME,
+  RPC_NAMESPACES.tasks.STOP,
+  RPC_NAMESPACES.tasks.GET,
+  RPC_NAMESPACES.tasks.LIST,
+  RPC_NAMESPACES.tasks.GET_RESULTS,
 ] as const
 
 /** Map a shared ValidationResult (+ parsed spec) onto the wire DTO. */
@@ -111,12 +111,12 @@ export function registerTasksHandlers(server: RpcServer, deps: HandlerDeps): voi
   }
 
   // tasks:validate — lint/dry-run; no side effects.
-  server.handle(RPC_CHANNELS.tasks.VALIDATE, async (_ctx, _workspaceId: string, yaml: string): Promise<TaskValidationResultDto> => {
+  server.handle(RPC_NAMESPACES.tasks.VALIDATE, async (_ctx, _workspaceId: string, yaml: string): Promise<TaskValidationResultDto> => {
     return toValidationDto(parseTaskYaml(yaml))
   })
 
   // tasks:create — write task.yaml + create the orchestrator parent session.
-  server.handle(RPC_CHANNELS.tasks.CREATE, async (_ctx, workspaceId: string, req: TaskCreateRequest): Promise<TaskCreateResult> => {
+  server.handle(RPC_NAMESPACES.tasks.CREATE, async (_ctx, workspaceId: string, req: TaskCreateRequest): Promise<TaskCreateResult> => {
     const ws = workspaceOrThrow(workspaceId)
     const parsed = parseTaskYaml(req.yaml)
     const validation = toValidationDto(parsed)
@@ -214,7 +214,7 @@ export function registerTasksHandlers(server: RpcServer, deps: HandlerDeps): voi
   // session is a hidden taskDraft (off the board) until adopted by tasks:create; the editor
   // discards an unadopted draft on close, and because drafts are hidden a give-up-early client
   // never leaves a visible orphan tile.
-  server.handle(RPC_CHANNELS.tasks.GENERATE, async (_ctx, workspaceId: string, req: TaskGenerateRequest): Promise<TaskGenerateAck> => {
+  server.handle(RPC_NAMESPACES.tasks.GENERATE, async (_ctx, workspaceId: string, req: TaskGenerateRequest): Promise<TaskGenerateAck> => {
     workspaceOrThrow(workspaceId) // validate the workspace exists; generate no longer writes task.yaml
     const orchestrator = await deps.sessionManager.createSession(workspaceId, {
       name: req.title?.trim() || 'New task',
@@ -305,7 +305,7 @@ export function registerTasksHandlers(server: RpcServer, deps: HandlerDeps): voi
           elapsedMs: Date.now() - startedAt,
           slug: parsed.spec?.id ?? '',
         })
-        pushTyped(server, RPC_CHANNELS.tasks.GENERATED, { to: 'workspace', workspaceId }, workspaceId, {
+        pushTyped(server, RPC_NAMESPACES.tasks.GENERATED, { to: 'workspace', workspaceId }, workspaceId, {
           orchestratorSessionId: sessionId,
           slug: parsed.spec?.id ?? '',
           spec: parsed.spec,
@@ -318,7 +318,7 @@ export function registerTasksHandlers(server: RpcServer, deps: HandlerDeps): voi
         // Deliver the failure so the client can stop its spinner and surface a toast. The
         // orchestrator stays a hidden taskDraft (never shown on the board); the editor discards
         // it on close, so a failed generation leaves nothing for the user to clean up.
-        pushTyped(server, RPC_CHANNELS.tasks.GENERATED, { to: 'workspace', workspaceId }, workspaceId, {
+        pushTyped(server, RPC_NAMESPACES.tasks.GENERATED, { to: 'workspace', workspaceId }, workspaceId, {
           orchestratorSessionId: sessionId,
           slug: '',
           yaml: '',
@@ -332,7 +332,7 @@ export function registerTasksHandlers(server: RpcServer, deps: HandlerDeps): voi
   })
 
   // tasks:run — start a run.
-  server.handle(RPC_CHANNELS.tasks.RUN, async (_ctx, workspaceId: string, req: TaskRunRequest) => {
+  server.handle(RPC_NAMESPACES.tasks.RUN, async (_ctx, workspaceId: string, req: TaskRunRequest) => {
     return runnerFor(workspaceId).run(req.slug, {
       runId: req.runId,
       orchestratorSessionId: req.orchestratorSessionId,
@@ -340,20 +340,20 @@ export function registerTasksHandlers(server: RpcServer, deps: HandlerDeps): voi
     })
   })
 
-  server.handle(RPC_CHANNELS.tasks.PAUSE, async (_ctx, workspaceId: string, slug: string, runId: string) => {
+  server.handle(RPC_NAMESPACES.tasks.PAUSE, async (_ctx, workspaceId: string, slug: string, runId: string) => {
     runnerFor(workspaceId).pause(slug, runId)
   })
 
-  server.handle(RPC_CHANNELS.tasks.RESUME, async (_ctx, workspaceId: string, slug: string, runId: string) => {
+  server.handle(RPC_NAMESPACES.tasks.RESUME, async (_ctx, workspaceId: string, slug: string, runId: string) => {
     runnerFor(workspaceId).resume(slug, runId)
   })
 
-  server.handle(RPC_CHANNELS.tasks.STOP, async (_ctx, workspaceId: string, slug: string, runId: string) => {
+  server.handle(RPC_NAMESPACES.tasks.STOP, async (_ctx, workspaceId: string, slug: string, runId: string) => {
     await runnerFor(workspaceId).stop(slug, runId)
   })
 
   // tasks:get — spec + (optional) active run-state.
-  server.handle(RPC_CHANNELS.tasks.GET, async (_ctx, workspaceId: string, slug: string, runId?: string): Promise<TaskGetResult> => {
+  server.handle(RPC_NAMESPACES.tasks.GET, async (_ctx, workspaceId: string, slug: string, runId?: string): Promise<TaskGetResult> => {
     const ws = workspaceOrThrow(workspaceId)
     const loaded = loadTaskSpec(ws.rootPath, slug)
     if (!loaded) {
@@ -368,14 +368,14 @@ export function registerTasksHandlers(server: RpcServer, deps: HandlerDeps): voi
   })
 
   // tasks:list — slugs with a task.yaml.
-  server.handle(RPC_CHANNELS.tasks.LIST, async (_ctx, workspaceId: string): Promise<string[]> => {
+  server.handle(RPC_NAMESPACES.tasks.LIST, async (_ctx, workspaceId: string): Promise<string[]> => {
     return listTaskSlugs(workspaceOrThrow(workspaceId).rootPath)
   })
 
   // tasks:getResults — storage-backed read of a run's outcome (verdict + per-node output).
   // Reads the durable artifacts (run-log.jsonl, nodes/<id>.json, per-run spec.json snapshot), so it
   // works after restart and without an active in-memory run — unlike tasks:get's run snapshot.
-  server.handle(RPC_CHANNELS.tasks.GET_RESULTS, async (_ctx, workspaceId: string, slug: string, runId?: string): Promise<TaskResultsDto> => {
+  server.handle(RPC_NAMESPACES.tasks.GET_RESULTS, async (_ctx, workspaceId: string, slug: string, runId?: string): Promise<TaskResultsDto> => {
     const root = workspaceOrThrow(workspaceId).rootPath
     const runIds = listRunIds(root, slug)
     const chosen = runId ?? runIds.at(-1) ?? null

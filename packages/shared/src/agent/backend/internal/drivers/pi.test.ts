@@ -8,7 +8,7 @@ describe('piDriver.buildRuntime custom endpoint models', () => {
         provider: 'pi',
         authType: 'api_key',
         resolvedModel: 'vision-model',
-        capabilities: { needsHttpPoolServer: false },
+        capabilities: { needsHttpPoolServer: false, supportsBranching: true },
         connection: {
           slug: 'custom-endpoint',
           name: 'Custom Endpoint',

@@ -6,6 +6,7 @@
 import type { ThemeOverrides } from '../config/index'
 import type { LoadedSource } from '../sources/types'
 import type { LoadedSkill } from '../skills/types'
+import type { LoadedProject } from '../projects/types'
 import { RPC_NAMESPACES } from './channels'
 import type {
   SessionEvent,
@@ -31,6 +32,8 @@ export interface BroadcastEventMap {
   [RPC_NAMESPACES.statuses.CHANGED]: [workspaceId: string]
   [RPC_NAMESPACES.automations.CHANGED]: [workspaceId: string]
   [RPC_NAMESPACES.skills.CHANGED]: [workspaceId: string, skills: LoadedSkill[]]
+  [RPC_NAMESPACES.projects.CHANGED]: [workspaceId: string, projects: LoadedProject[]]
+  [RPC_NAMESPACES.tasks.GENERATED]: [workspaceId: string, result: TaskGenerateResult]
   [RPC_NAMESPACES.llmConnections.CHANGED]: []
   [RPC_NAMESPACES.permissions.DEFAULTS_CHANGED]: [value: null]
 

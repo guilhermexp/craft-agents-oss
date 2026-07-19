@@ -115,6 +115,15 @@ export function estimateTokensDensityAware(text: string): number {
   return estimateTokens(text);
 }
 
+/** Scale the per-result threshold to the active model's context window. */
+export function tokenLimitFor(contextWindow: number | undefined): number {
+  if (!contextWindow || contextWindow <= 0) return TOKEN_LIMIT;
+  return Math.max(
+    TOKEN_LIMIT_FLOOR,
+    Math.min(TOKEN_LIMIT, Math.floor(contextWindow * PER_RESULT_CONTEXT_FRACTION)),
+  );
+}
+
 // ============================================================
 // Save to Disk
 // ============================================================
@@ -598,7 +607,7 @@ export async function guardLargeResult(
 export async function handleLargeResponse(
   opts: HandleLargeResponseOptions
 ): Promise<HandleLargeResponseResult | null> {
-  const { text, sessionPath, context, summarize } = opts;
+  const { text, sessionPath, context, summarize, contextWindow } = opts;
   const estimatedTokens = estimateTokensDensityAware(text);
 
   if (estimatedTokens <= tokenLimitFor(contextWindow)) {

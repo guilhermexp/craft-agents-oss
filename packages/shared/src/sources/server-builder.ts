@@ -24,7 +24,6 @@ import { debug } from '../utils/debug.ts';
  */
 export const SERVER_BUILD_ERRORS = {
   AUTH_REQUIRED: 'Authentication required',
-  TOKEN_EXPIRED: 'Token expired',
   CREDENTIALS_NEEDED: 'Credentials needed',
   TOKEN_EXPIRED: 'Token expired',
 } as const;

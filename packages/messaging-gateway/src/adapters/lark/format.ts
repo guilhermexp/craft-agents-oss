@@ -107,29 +107,10 @@ export function wrapAsTrivialPost(text: string): LarkPost {
 // ---------------------------------------------------------------------------
 
 function splitParagraphs(input: string): string[] {
-  // Paragraph break = two or more newlines — except inside a fenced code
-  // block, where blank lines are content (splitting there would prevent
-  // matchCodeBlock from ever seeing the closing fence). Trim trailing
-  // whitespace per paragraph but keep internal single-newlines (Lark wraps
-  // within a `text`).
-  const paragraphs: string[] = []
-  let current: string[] = []
-  let inFence = false
-  const flush = () => {
-    const p = current.join('\n').trimEnd()
-    if (p.length > 0) paragraphs.push(p)
-    current = []
-  }
-  for (const line of input.split('\n')) {
-    if (line === '' && !inFence) {
-      flush()
-      continue
-    }
-    if (line.startsWith('```')) inFence = !inFence
-    current.push(line)
-  }
-  flush()
-  return paragraphs
+  // Paragraph break = two or more newlines. Trim trailing whitespace per
+  // paragraph but keep internal single-newlines (Lark wraps within a `text`).
+  const raw = input.split(/\n{2,}/)
+  return raw.map((p) => p.trimEnd()).filter((p) => p.length > 0)
 }
 
 function matchCodeBlock(para: string): { language: string | undefined; text: string } | null {

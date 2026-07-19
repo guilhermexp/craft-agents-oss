@@ -14,6 +14,22 @@ import { SessionArtifactRenderer } from '../../sessions/session-artifact-rendere
 
 const sessionArtifactRenderer = new SessionArtifactRenderer()
 
+const SESSION_GET_LOG_ID_LIMIT = 25
+
+function summarizeIds(ids: Iterable<string>, limit = SESSION_GET_LOG_ID_LIMIT) {
+  const all = Array.from(ids)
+  return { count: all.length, ids: all.slice(0, limit), truncated: all.length > limit }
+}
+
+function sessionWorkspaceDistribution(sessions: Array<{ workspaceId?: string }>): Record<string, number> {
+  const distribution: Record<string, number> = {}
+  for (const session of sessions) {
+    const key = session.workspaceId || '(missing)'
+    distribution[key] = (distribution[key] ?? 0) + 1
+  }
+  return distribution
+}
+
 export async function syncMermaidDiagramArtifacts(sessionPath: string): Promise<void> {
   await sessionArtifactRenderer.syncSessionArtifacts(sessionPath)
 }

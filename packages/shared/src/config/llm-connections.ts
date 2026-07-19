@@ -773,7 +773,8 @@ export function isValidProviderAuthCombination(
 const BEDROCK_MODEL_MAP: Record<string, string> = {
   'claude-opus-4-8': 'us.anthropic.claude-opus-4-8',
   'claude-fable-5': 'us.anthropic.claude-fable-5',
-  'claude-opus-4-7': 'us.anthropic.claude-opus-4-7-v1',
+  'claude-opus-4-7': 'us.anthropic.claude-opus-4-7',
+  'claude-sonnet-5': 'us.anthropic.claude-sonnet-5',
   'claude-sonnet-4-6': 'us.anthropic.claude-sonnet-4-6',
   'claude-haiku-4-5-20251001': 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
   // Older models (for migration of existing connections)
@@ -782,7 +783,9 @@ const BEDROCK_MODEL_MAP: Record<string, string> = {
   // Also map base IDs (without region prefix) to US inference profiles
   'anthropic.claude-opus-4-8': 'us.anthropic.claude-opus-4-8',
   'anthropic.claude-fable-5': 'us.anthropic.claude-fable-5',
+  'anthropic.claude-opus-4-7': 'us.anthropic.claude-opus-4-7',
   'anthropic.claude-opus-4-7-v1': 'us.anthropic.claude-opus-4-7-v1',
+  'anthropic.claude-sonnet-5': 'us.anthropic.claude-sonnet-5',
   'anthropic.claude-opus-4-6-v1': 'us.anthropic.claude-opus-4-6-v1',
   'anthropic.claude-sonnet-4-6': 'us.anthropic.claude-sonnet-4-6',
   'anthropic.claude-haiku-4-5-20251001-v1:0': 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
@@ -795,6 +798,7 @@ const BEDROCK_REVERSE_MAP: Record<string, string> = {
   // US inference profiles
   'us.anthropic.claude-opus-4-8': 'claude-opus-4-8',
   'us.anthropic.claude-fable-5': 'claude-fable-5',
+  'us.anthropic.claude-opus-4-7': 'claude-opus-4-7',
   'us.anthropic.claude-opus-4-7-v1': 'claude-opus-4-7',
   'us.anthropic.claude-sonnet-5': 'claude-sonnet-5',
   'us.anthropic.claude-sonnet-4-6': 'claude-sonnet-4-6',
@@ -804,6 +808,7 @@ const BEDROCK_REVERSE_MAP: Record<string, string> = {
   // EU inference profiles
   'eu.anthropic.claude-opus-4-8': 'claude-opus-4-8',
   'eu.anthropic.claude-fable-5': 'claude-fable-5',
+  'eu.anthropic.claude-opus-4-7': 'claude-opus-4-7',
   'eu.anthropic.claude-opus-4-7-v1': 'claude-opus-4-7',
   'eu.anthropic.claude-sonnet-5': 'claude-sonnet-5',
   'eu.anthropic.claude-sonnet-4-6': 'claude-sonnet-4-6',
@@ -813,6 +818,7 @@ const BEDROCK_REVERSE_MAP: Record<string, string> = {
   // Global inference profiles
   'global.anthropic.claude-opus-4-8': 'claude-opus-4-8',
   'global.anthropic.claude-fable-5': 'claude-fable-5',
+  'global.anthropic.claude-opus-4-7': 'claude-opus-4-7',
   'global.anthropic.claude-opus-4-7-v1': 'claude-opus-4-7',
   'global.anthropic.claude-sonnet-5': 'claude-sonnet-5',
   'global.anthropic.claude-sonnet-4-6': 'claude-sonnet-4-6',
@@ -820,6 +826,7 @@ const BEDROCK_REVERSE_MAP: Record<string, string> = {
   // Base IDs (no region prefix)
   'anthropic.claude-opus-4-8': 'claude-opus-4-8',
   'anthropic.claude-fable-5': 'claude-fable-5',
+  'anthropic.claude-opus-4-7': 'claude-opus-4-7',
   'anthropic.claude-opus-4-7-v1': 'claude-opus-4-7',
   'anthropic.claude-sonnet-5': 'claude-sonnet-5',
   'anthropic.claude-sonnet-4-6': 'claude-sonnet-4-6',

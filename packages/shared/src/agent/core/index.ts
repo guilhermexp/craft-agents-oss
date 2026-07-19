@@ -136,9 +136,6 @@ export {
   shouldPromptInAskMode,
 } from './pre-tool-use.ts';
 
-// RTK detector
-export { getRtkPath, getRtkStatus, getRtkGain, resetRtkPathCache } from './rtk-detector.ts';
-export type { RtkStatus, RtkGainStats } from './rtk-detector.ts';
 
 // Prerequisite Manager
 export { PrerequisiteManager } from './prerequisite-manager.ts';

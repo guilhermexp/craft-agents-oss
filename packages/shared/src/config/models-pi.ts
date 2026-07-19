@@ -139,7 +139,7 @@ export function getAllPiModels(): ModelDefinition[] {
   const allModels: ModelDefinition[] = [];
   for (const provider of getProviders()) {
     try {
-      const models = getModels(provider);
+      const models = getModels(provider as Parameters<typeof getModels>[0]);
       allModels.push(...models
         .filter(m => !isExcludedPiModel(m.id))
         .filter(m => isAllowedForProvider(provider, m.id))

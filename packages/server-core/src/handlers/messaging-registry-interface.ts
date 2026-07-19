@@ -11,6 +11,7 @@ export interface MessagingBindingInfo {
   sessionId: string
   platform: string
   messagingChannelId: string
+  threadId?: number
   channelName?: string
   enabled: boolean
   createdAt: number

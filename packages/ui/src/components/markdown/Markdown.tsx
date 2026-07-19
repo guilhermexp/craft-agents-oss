@@ -39,6 +39,12 @@ import { buildPdfPreviewCodeFromPlainPath } from './pdf-path-preview'
 import { buildTabularPreviewCodeFromPlainPath } from './tabular-preview'
 import { prefixFolderContext } from './folder-context-prefix'
 
+export type DisablablePreviewBlock =
+  | 'markdown-preview'
+  | 'html-preview'
+  | 'pdf-preview'
+  | 'image-preview'
+
 /**
  * Render modes for markdown content:
  *

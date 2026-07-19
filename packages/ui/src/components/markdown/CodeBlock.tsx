@@ -133,6 +133,7 @@ function isValidLanguage(lang: string): lang is BundledLanguage {
  * Lazy-loads highlighting and caches results for performance.
  */
 export function CodeBlock({ code, language = 'text', className, mode = 'full', forcedTheme, onUrlClick, onFileClick }: CodeBlockProps) {
+  const { t } = useTranslation()
   const [highlighted, setHighlighted] = React.useState<string | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
   const [copied, setCopied] = React.useState(false)

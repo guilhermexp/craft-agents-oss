@@ -86,7 +86,7 @@ export interface SessionScopedToolCallbacks {
   /** Resolve a status display name to its ID. */
   resolveStatusFn?: (status: string) => import('@craft-agent/session-tools-core').ResolvedStatusResult;
   /** Send a message to another session (inter-session messaging). */
-  sendAgentMessageFn?: (sessionId: string, message: string, attachments?: Array<{ path: string; name?: string }>) => Promise<void>;
+  sendAgentMessageFn?: (sessionId: string, message: string, attachments?: Array<{ path: string; name?: string }>) => Promise<import('@craft-agent/session-tools-core').SendAgentMessageResult>;
   /** Dispatch work to a participant in the same War Room channel. */
   channelDispatchFn?: (request: import('@craft-agent/session-tools-core').ChannelDispatchRequest) => Promise<import('@craft-agent/session-tools-core').ChannelDispatchResult>;
   /**

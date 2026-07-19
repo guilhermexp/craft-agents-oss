@@ -236,7 +236,7 @@ export function MainContentPanel({
 
   // Settings navigator - uses component map from settings-pages.ts
   if (isSettingsNavigation(navState)) {
-    const SettingsPageComponent = getSettingsPageComponent(navState.subpage)
+    const SettingsPageComponent = getSettingsPageComponent(navState.subpage ?? 'app')
     return wrapWithStoplight(
       <Panel variant="grow" className={className}>
         <SettingsPageComponent />

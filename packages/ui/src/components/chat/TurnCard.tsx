@@ -1,9 +1,10 @@
 import * as React from 'react'
-import { useMemo, useEffect, useRef, useCallback, useState } from 'react'
+import { useMemo, useEffect, useEffectEvent, useRef, useCallback, useState } from 'react'
 import i18n from 'i18next'
 import { useTranslation } from 'react-i18next'
 import type { ToolDisplayMeta, AnnotationV1 } from '@craft-agent/core'
 import { normalizePath, pathStartsWith, stripPathPrefix } from '@craft-agent/core/utils'
+import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
 import { LazyMotion, m, AnimatePresence, domAnimation } from 'motion/react'
 import {
   ChevronRight,
@@ -1869,13 +1870,13 @@ export function ResponseCard({
       setAnnotationOverlay(computeGeometry())
     }
 
-      if (window.location.hostname === 'localhost' && geometry.unresolved.length > 0) {
-        console.debug('[annotations] unresolved annotations', {
-          count: geometry.unresolved.length,
-          ids: geometry.unresolved.map(item => item.annotation.id),
-          reasons: geometry.unresolved.map(item => item.reason),
-        })
-      }
+    let rafId: number | null = null
+    const scheduleCoordsRecompute = () => {
+      if (rafId != null) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        recomputeOverlayCoords()
+      })
     }
 
     recomputeOverlay()
@@ -1906,48 +1907,48 @@ export function ResponseCard({
     lastPointerRef.current = null
   }, [sessionId, closeSelectionMenu, resetPresentation])
 
+  const handleSelectionChangeEffect = useEffectEvent(() => {
+    if (Date.now() - selectionMenuOpenedAtRef.current < 180) {
+      return
+    }
+
+    const root = contentLayerRef.current
+    if (!root) {
+      closeSelectionMenu()
+      return
+    }
+
+    const selection = window.getSelection()
+    // Keep the island open if selection was programmatically cleared by a render update.
+    // This happens during streaming/DOM reconciliation and should not dismiss follow-up UI.
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return
+    }
+
+    const range = selection.getRangeAt(0)
+    const common = range.commonAncestorContainer
+    const commonElement = common.nodeType === Node.ELEMENT_NODE
+      ? common as Element
+      : common.parentElement
+
+    // Selecting text inside the island (e.g. follow-up textarea) should not close it.
+    if (commonElement && isTargetInsideAnnotationIsland(commonElement)) {
+      return
+    }
+
+    if (!root.contains(common)) {
+      closeSelectionMenu()
+    }
+  })
+
   useEffect(() => {
     if (!hasAnnotationInteraction(interactionState) || !isSelectionMenuVisible) return
 
-    const handleSelectionChange = () => {
-      if (Date.now() - selectionMenuOpenedAtRef.current < 180) {
-        return
-      }
-
-      const root = contentLayerRef.current
-      if (!root) {
-        closeSelectionMenu()
-        return
-      }
-
-      const selection = window.getSelection()
-      // Keep the island open if selection was programmatically cleared by a render update.
-      // This happens during streaming/DOM reconciliation and should not dismiss follow-up UI.
-      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-        return
-      }
-
-      const range = selection.getRangeAt(0)
-      const common = range.commonAncestorContainer
-      const commonElement = common.nodeType === Node.ELEMENT_NODE
-        ? common as Element
-        : common.parentElement
-
-      // Selecting text inside the island (e.g. follow-up textarea) should not close it.
-      if (commonElement && isTargetInsideAnnotationIsland(commonElement)) {
-        return
-      }
-
-      if (!root.contains(common)) {
-        closeSelectionMenu()
-      }
-    }
-
-    document.addEventListener('selectionchange', handleSelectionChange)
+    document.addEventListener('selectionchange', handleSelectionChangeEffect)
     return () => {
-      document.removeEventListener('selectionchange', handleSelectionChange)
+      document.removeEventListener('selectionchange', handleSelectionChangeEffect)
     }
-  }, [interactionState, isSelectionMenuVisible, closeSelectionMenu, isTargetInsideAnnotationIsland, selectionMenuOpenedAtRef])
+  }, [interactionState, isSelectionMenuVisible])
 
   const handleOpenFollowUpView = useCallback(() => {
     if (!pendingSelection) return
@@ -2328,37 +2329,37 @@ export function ResponseCard({
     showSelectionMenuFromCurrentSelection()
   }, [canAnnotate, onAddAnnotation, messageId, annotations, showSelectionMenuFromCurrentSelection, closeSelectionMenu])
 
+  const handleDocumentMouseUpEffect = useEffectEvent((event: MouseEvent) => {
+    if (!selectionStartedInContentRef.current) return
+    selectionStartedInContentRef.current = false
+
+    // Mouseup location reflects the user's final intent for popup anchoring.
+    lastPointerRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      ts: Date.now(),
+    }
+
+    const root = contentLayerRef.current
+    if (!root) return
+
+    const target = event.target as Node | null
+    if (target && root.contains(target)) {
+      // In-bounds mouseup is already handled by onMouseUp on the content container.
+      return
+    }
+
+    showSelectionMenuFromCurrentSelection()
+  })
+
   useEffect(() => {
     if (!canAnnotate || !onAddAnnotation || !messageId) return
 
-    const handleDocumentMouseUp = (event: MouseEvent) => {
-      if (!selectionStartedInContentRef.current) return
-      selectionStartedInContentRef.current = false
-
-      // Mouseup location reflects the user's final intent for popup anchoring.
-      lastPointerRef.current = {
-        x: event.clientX,
-        y: event.clientY,
-        ts: Date.now(),
-      }
-
-      const root = contentLayerRef.current
-      if (!root) return
-
-      const target = event.target as Node | null
-      if (target && root.contains(target)) {
-        // In-bounds mouseup is already handled by onMouseUp on the content container.
-        return
-      }
-
-      showSelectionMenuFromCurrentSelection()
-    }
-
-    document.addEventListener('mouseup', handleDocumentMouseUp)
+    document.addEventListener('mouseup', handleDocumentMouseUpEffect)
     return () => {
-      document.removeEventListener('mouseup', handleDocumentMouseUp)
+      document.removeEventListener('mouseup', handleDocumentMouseUpEffect)
     }
-  }, [canAnnotate, onAddAnnotation, messageId, showSelectionMenuFromCurrentSelection])
+  }, [canAnnotate, onAddAnnotation, messageId])
 
   const handleSelectionMenuRequestBack = useCallback((): boolean => {
     if (selectionMenuView !== 'compact') {

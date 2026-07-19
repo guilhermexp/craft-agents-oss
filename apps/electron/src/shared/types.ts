@@ -169,6 +169,16 @@ import type {
   Session,
   UnreadSummary,
   CreateSessionOptions,
+  TaskValidationResultDto,
+  TaskCreateRequest,
+  TaskCreateResult,
+  TaskGenerateRequest,
+  TaskGenerateAck,
+  TaskGenerateResult,
+  TaskRunRequest,
+  TaskRunSnapshotDto,
+  TaskGetResult,
+  TaskResultsDto,
   FileAttachment,
   SendMessageOptions,
   SessionEvent,
@@ -235,6 +245,21 @@ export interface ElectronAPI {
   cancelProcessing(sessionId: string, silent?: boolean): Promise<void>
   killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
   getTaskOutput(taskId: string): Promise<string | null>
+
+  // Tasks (Conductor)
+  validateTask(workspaceId: string, yaml: string): Promise<TaskValidationResultDto>
+  createTask(workspaceId: string, req: TaskCreateRequest): Promise<TaskCreateResult>
+  generateTask(workspaceId: string, req: TaskGenerateRequest): Promise<TaskGenerateAck>
+  /** Async generate result (or error), keyed by orchestratorSessionId. Subscribe before/after generateTask. */
+  onTaskGenerated(callback: (workspaceId: string, result: TaskGenerateResult) => void): () => void
+  runTask(workspaceId: string, req: TaskRunRequest): Promise<TaskRunSnapshotDto>
+  pauseTask(workspaceId: string, slug: string, runId: string): Promise<void>
+  resumeTask(workspaceId: string, slug: string, runId: string): Promise<void>
+  stopTask(workspaceId: string, slug: string, runId: string): Promise<void>
+  getTask(workspaceId: string, slug: string, runId?: string): Promise<TaskGetResult>
+  listTasks(workspaceId: string): Promise<string[]>
+  getTaskResults(workspaceId: string, slug: string, runId?: string): Promise<TaskResultsDto>
+
   respondToPermission(sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean, options?: PermissionResponseOptions): Promise<boolean>
   respondToCredential(sessionId: string, requestId: string, response: CredentialResponse): Promise<boolean>
 
@@ -718,6 +743,17 @@ export interface ElectronAPI {
   setDefaultThinkingLevel(level: ThinkingLevel): Promise<{ success: boolean; error?: string }>
   setWorkspaceDefaultLlmConnection(workspaceId: string, slug: string | null): Promise<{ success: boolean; error?: string }>
 
+  // Projects (workspace-scoped)
+  getProjects(workspaceId: string): Promise<unknown>
+  getProject(workspaceId: string, projectIdOrSlug: string): Promise<unknown | null>
+  createProject(workspaceId: string, input: import('@craft-agent/shared/projects/types').CreateProjectInput): Promise<import('@craft-agent/shared/projects/types').ProjectConfig>
+  updateProject(workspaceId: string, projectSlug: string, patch: Partial<Omit<import('@craft-agent/shared/projects/types').ProjectConfig, 'id' | 'slug' | 'createdAt'>>): Promise<import('@craft-agent/shared/projects/types').ProjectConfig>
+  deleteProject(workspaceId: string, projectSlug: string): Promise<void>
+  listProjectAssets(workspaceId: string, projectSlug: string): Promise<unknown>
+  uploadProjectAsset(workspaceId: string, projectSlug: string, input: { filename: string; base64?: string; text?: string; sourcePath?: string }): Promise<import('@craft-agent/shared/projects/types').ProjectAsset>
+  deleteProjectAsset(workspaceId: string, projectSlug: string, filename: string): Promise<void>
+  onProjectsChanged(callback: (workspaceId: string, projects: unknown) => void): () => void
+
   // Automations
   getAutomations(workspaceId: string): Promise<unknown>
 
@@ -745,7 +781,7 @@ export interface ElectronAPI {
   // Messaging gateway — workspaceId is taken from the client handshake (ctx.workspaceId)
   getMessagingConfig(): Promise<{
     enabled: boolean
-    platforms: Record<string, { enabled: boolean } | undefined>
+    platforms: Record<string, { enabled: boolean; accessMode?: MessagingPlatformAccessMode; owners?: MessagingPlatformOwnerInfo[] } | undefined>
     runtime: Record<string, MessagingPlatformRuntimeInfo | undefined>
   } | null>
   updateMessagingConfig(config: Record<string, unknown>): Promise<void>
@@ -754,8 +790,14 @@ export interface ElectronAPI {
   saveLarkCredentials(credentialsJson: string): Promise<void>
   disconnectMessagingPlatform(platform: string): Promise<void>
   forgetMessagingPlatform(platform: string): Promise<void>
-  getMessagingBindings(): Promise<Array<{ id: string; workspaceId: string; sessionId: string; platform: string; channelId: string; channelName?: string; enabled: boolean; createdAt: number }>>
+  getMessagingBindings(): Promise<Array<{ id: string; workspaceId: string; sessionId: string; platform: string; channelId: string; threadId?: number; channelName?: string; enabled: boolean; createdAt: number; accessMode?: MessagingBindingAccessMode; allowedSenderIds?: string[] }>>
   generateMessagingPairingCode(sessionId: string, platform: string): Promise<{ code: string; expiresAt: number; botUsername?: string }>
+  /** Telegram supergroup pairing — returns a code typed in the supergroup to capture its chatId. */
+  generateMessagingSupergroupCode(platform: string): Promise<{ code: string; expiresAt: number; botUsername?: string }>
+  /** Read the workspace's currently paired Telegram supergroup, if any. */
+  getMessagingSupergroup(): Promise<{ chatId: string; title: string; capturedAt: number } | null>
+  /** Forget the paired Telegram supergroup (existing topic bindings stay on disk but stop matching). */
+  unbindMessagingSupergroup(): Promise<{ success: boolean }>
   unbindMessagingSession(sessionId: string, platform?: string): Promise<void>
   unbindMessagingBinding(bindingId: string): Promise<{ success: boolean }>
   onMessagingBindingChanged(callback: (workspaceId: string) => void): () => void
@@ -764,6 +806,20 @@ export interface ElectronAPI {
   startWhatsAppConnect(): Promise<{ success: boolean }>
   submitWhatsAppPhone(phoneNumber: string): Promise<{ success: boolean }>
   onWhatsAppEvent(callback: (payload: { workspaceId: string; event: WhatsAppUiEvent }) => void): () => void
+  // Messaging access control (Phase 3)
+  getMessagingPlatformOwners(platform: string): Promise<MessagingPlatformOwnerInfo[]>
+  setMessagingPlatformOwners(platform: string, owners: MessagingPlatformOwnerInfo[]): Promise<MessagingPlatformOwnerInfo[]>
+  getMessagingPlatformAccessMode(platform: string): Promise<MessagingPlatformAccessMode>
+  setMessagingPlatformAccessMode(platform: string, mode: MessagingPlatformAccessMode): Promise<{ success: boolean }>
+  getMessagingPendingSenders(platform?: string): Promise<MessagingPendingSenderInfo[]>
+  dismissMessagingPendingSender(platform: string, userId: string, opts?: { reason?: MessagingPendingRejectReason; bindingId?: string }): Promise<{ success: boolean }>
+  allowMessagingPendingSender(
+    platform: string,
+    userId: string,
+    entryKey?: { reason?: MessagingPendingRejectReason; bindingId?: string },
+  ): Promise<{ owners: MessagingPlatformOwnerInfo[]; bindingId?: string }>
+  setMessagingBindingAccess(bindingId: string, access: { mode: MessagingBindingAccessMode; allowedSenderIds?: string[] }): Promise<{ success: boolean }>
+  onMessagingPendingChanged(callback: (workspaceId: string) => void): () => void
 }
 
 export interface MessagingPlatformRuntimeInfo {
@@ -774,6 +830,38 @@ export interface MessagingPlatformRuntimeInfo {
   identity?: string
   lastError?: string
   updatedAt: number
+}
+
+/**
+ * Workspace-level access policy for a messaging platform.
+ * Mirrors the canonical type in `@craft-agent/messaging-gateway`.
+ */
+export type MessagingPlatformAccessMode = 'open' | 'owner-only'
+
+/** Per-binding access policy. */
+export type MessagingBindingAccessMode = 'inherit' | 'allow-list' | 'open'
+
+export interface MessagingPlatformOwnerInfo {
+  userId: string
+  displayName?: string
+  username?: string
+  addedAt: number
+}
+
+export type MessagingPendingRejectReason = 'not-owner' | 'not-on-binding-allowlist'
+
+export interface MessagingPendingSenderInfo {
+  platform: string
+  userId: string
+  displayName?: string
+  username?: string
+  lastAttemptAt: number
+  attemptCount: number
+  reason?: MessagingPendingRejectReason
+  bindingId?: string
+  sessionId?: string
+  channelId?: string
+  threadId?: number
 }
 
 /** Event payloads broadcast from the WhatsApp subprocess to the UI. */
@@ -823,6 +911,12 @@ export interface SessionsNavigationState {
   filter: SessionFilter
   details: { type: 'session'; sessionId: string } | null
   rightSidebar?: RightSidebarPanel
+  /**
+   * Presentation mode for the sessions navigator. `'board'` renders the Kanban
+   * board (all sessions, grouped into To Do / In Progress / Done columns) in the
+   * content area instead of the list + chat. Absent/`'list'` is the default.
+   */
+  viewMode?: 'list' | 'board'
 }
 
 /**
@@ -853,10 +947,14 @@ export interface SourcesNavigationState {
 
 /**
  * Settings navigation state
+ *
+ * `subpage: null` means the bare `settings` route — navigator-only view in compact
+ * mode. On desktop, the content panel falls back to the App page so it isn't empty.
+ * Sources/Skills/Automations use `details: null` for the same purpose.
  */
 export interface SettingsNavigationState {
   navigator: 'settings'
-  subpage: SettingsSubpage
+  subpage: SettingsSubpage | null
   rightSidebar?: RightSidebarPanel
 }
 
@@ -886,6 +984,15 @@ export interface MeetingsNavigationState {
 }
 
 /**
+ * Projects navigation state
+ */
+export interface ProjectsNavigationState {
+  navigator: 'projects'
+  details: { type: 'project'; projectSlug: string } | null
+  rightSidebar?: RightSidebarPanel
+}
+
+/**
  * Unified navigation state
  */
 export type NavigationState =
@@ -895,6 +1002,7 @@ export type NavigationState =
   | SkillsNavigationState
   | AutomationsNavigationState
   | MeetingsNavigationState
+  | ProjectsNavigationState
 
 export const isSessionsNavigation = (
   state: NavigationState
@@ -919,6 +1027,10 @@ export const isAutomationsNavigation = (
 export const isMeetingsNavigation = (
   state: NavigationState
 ): state is MeetingsNavigationState => state.navigator === 'meetings'
+
+export const isProjectsNavigation = (
+  state: NavigationState
+): state is ProjectsNavigationState => state.navigator === 'projects'
 
 export const DEFAULT_NAVIGATION_STATE: NavigationState = {
   navigator: 'sessions',

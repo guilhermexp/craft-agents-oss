@@ -222,6 +222,8 @@ export interface AutomationListItem {
   conditions?: AutomationConditionUI[]
   /** The actions this automation performs */
   actions: AutomationAction[]
+  /** Optional Telegram forum topic used for sessions spawned by this automation. */
+  telegramTopic?: string
   /** Timestamp of last execution (ms since epoch) */
   lastExecutedAt?: number
 }

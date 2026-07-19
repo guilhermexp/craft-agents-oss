@@ -312,9 +312,9 @@ function getFirstMermaidDiagramLine(code: string): string {
  * Basic mermaid syntax validation (no rendering).
  * Checks for common syntax errors without requiring a browser.
  */
-function validateMermaidSyntax(code: string): ValidationResult {
-  const lines = code.trim().split('\n');
-  const firstLine = lines[0]?.trim() ?? '';
+export function validateMermaidSyntax(code: string): ValidationResult {
+  const normalizedCode = normalizeMermaidSource(code);
+  const firstLine = getFirstMermaidDiagramLine(code);
 
   // Check diagram type declaration
   const hasValidType = MERMAID_DIAGRAM_TYPES.some(type =>

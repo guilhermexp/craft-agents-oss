@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { SessionManager } from './SessionManager.ts'
 
 // Locks the session_created emit primitive used by createSession's default announcement.
@@ -16,7 +16,7 @@ describe('notifySessionCreated', () => {
     sm.notifySessionCreated('ws-1', 'sess-1')
 
     expect(calls).toHaveLength(1)
-    expect(calls[0]!.channel).toBe(RPC_CHANNELS.sessions.EVENT)
+    expect(calls[0]!.channel).toBe(RPC_NAMESPACES.sessions.EVENT)
     expect(calls[0]!.target).toEqual({ to: 'workspace', workspaceId: 'ws-1' })
     expect(calls[0]!.payload[0]).toEqual({ type: 'session_created', sessionId: 'sess-1' })
   })

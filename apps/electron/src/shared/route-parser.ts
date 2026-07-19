@@ -35,7 +35,7 @@ export interface ParsedRoute {
 // Compound Route Types (new format)
 // =============================================================================
 
-export type NavigatorType = 'sessions' | 'sources' | 'skills' | 'automations' | 'meetings' | 'settings'
+export type NavigatorType = 'sessions' | 'sources' | 'skills' | 'automations' | 'meetings' | 'projects' | 'settings'
 
 export interface ParsedCompoundRoute {
   /** The navigator type */
@@ -46,6 +46,8 @@ export interface ParsedCompoundRoute {
   sourceFilter?: SourceFilter
   /** Automation filter (only for automations navigator) */
   automationFilter?: AutomationFilter
+  /** Sessions presentation mode (only for sessions navigator). 'board' = Kanban view. */
+  viewMode?: 'list' | 'board'
   /** Details page info (null for empty state) */
   details: {
     type: string
@@ -85,18 +87,37 @@ function isCompoundRoute(route: string): boolean {
  *   'sources/local' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'local' }, details: null }
  *   'sources/source/github' -> { navigator: 'sources', details: { type: 'source', id: 'github' } }
  *   'sources/api/source/gmail' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'api' }, details: { type: 'source', id: 'gmail' } }
- *   'settings' -> { navigator: 'settings', details: { type: 'app', id: 'app' } }
+ *   'settings' -> { navigator: 'settings', details: null }  // navigator-only view
  *   'settings/shortcuts' -> { navigator: 'settings', details: { type: 'shortcuts', id: 'shortcuts' } }
  */
 export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
-  const segments = route.split('/').filter(Boolean)
+  // Compound routes are pure slash-segment paths; defensively strip any query tail
+  // so a stray `?x=y` never leaks into segment parsing (e.g. into a labelId).
+  const [pathPart] = route.split('?')
+  const segments = pathPart.split('/').filter(Boolean)
   if (segments.length === 0) return null
 
   const first = segments[0]
 
+  // Kanban board — standalone route. A view of all sessions in board mode.
+  // Encoded as its own prefix (not `allSessions/board`) so it never collides
+  // with the positional `{filter}/session/{id}` detail parsing below.
+  if (first === 'board') {
+    return {
+      navigator: 'sessions',
+      sessionFilter: { kind: 'allSessions' },
+      viewMode: 'board',
+      details: null,
+    }
+  }
+
   // Settings navigator
   if (first === 'settings') {
-    const subpage = segments[1] || 'app'
+    const subpage = segments[1]
+    if (subpage === undefined) {
+      // Bare `settings` route — navigator-only view (compact) / App fallback (desktop).
+      return { navigator: 'settings', details: null }
+    }
     if (!isValidSettingsSubpage(subpage)) return null
     return {
       navigator: 'settings',
@@ -270,8 +291,8 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
  */
 export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
   if (parsed.navigator === 'settings') {
-    const detailsType = parsed.details?.type || 'app'
-    return `settings/${detailsType}`
+    if (!parsed.details) return 'settings'
+    return `settings/${parsed.details.type}`
   }
 
   if (parsed.navigator === 'sources') {
@@ -305,6 +326,9 @@ export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
   }
 
   // Sessions navigator
+  // Board is a standalone view of all sessions; emit its own prefix.
+  if (parsed.viewMode === 'board') return 'board'
+
   let base: string
   const filter = parsed.sessionFilter
   if (!filter) return 'allSessions'
@@ -521,8 +545,10 @@ export function parseRouteToNavigationState(
 function convertCompoundToNavigationState(compound: ParsedCompoundRoute): NavigationState {
   // Settings
   if (compound.navigator === 'settings') {
-    const subpage = (compound.details?.type || 'app') as SettingsSubpage
-    return { navigator: 'settings', subpage }
+    if (!compound.details) {
+      return { navigator: 'settings', subpage: null }
+    }
+    return { navigator: 'settings', subpage: compound.details.type as SettingsSubpage }
   }
 
   // Sources - include filter if present
@@ -588,6 +614,7 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
   return {
     navigator: 'sessions',
     filter,
+    viewMode: compound.viewMode,
     details: null,
   }
 }
@@ -653,6 +680,16 @@ function convertParsedRouteToNavigationState(parsed: ParsedRoute): NavigationSta
         }
       }
       return { navigator: 'automations', details: null }
+    case 'projects':
+      return { navigator: 'projects', details: null }
+    case 'project-info':
+      if (parsed.id) {
+        return {
+          navigator: 'projects',
+          details: { type: 'project', projectSlug: parsed.id },
+        }
+      }
+      return { navigator: 'projects', details: null }
     case 'session':
       if (parsed.id) {
         // Reconstruct filter from params
@@ -729,6 +766,9 @@ function convertParsedRouteToNavigationState(parsed: ParsedRoute): NavigationSta
  */
 function navigationStateToCompoundRoute(state: NavigationState): ParsedCompoundRoute {
   if (state.navigator === 'settings') {
+    if (state.subpage === null) {
+      return { navigator: 'settings', details: null }
+    }
     return {
       navigator: 'settings',
       details: { type: state.subpage, id: state.subpage },
@@ -758,6 +798,13 @@ function navigationStateToCompoundRoute(state: NavigationState): ParsedCompoundR
     }
   }
 
+  if (state.navigator === 'projects') {
+    return {
+      navigator: 'projects',
+      details: state.details ? { type: 'project', id: state.details.projectSlug } : null,
+    }
+  }
+
   if (state.navigator === 'meetings') {
     return {
       navigator: 'meetings',
@@ -769,6 +816,7 @@ function navigationStateToCompoundRoute(state: NavigationState): ParsedCompoundR
   return {
     navigator: 'sessions',
     sessionFilter: state.filter,
+    viewMode: state.viewMode,
     details: state.details ? { type: 'session', id: state.details.sessionId } : null,
   }
 }

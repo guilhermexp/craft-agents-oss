@@ -1,6 +1,6 @@
 import type { EventSink, RpcServer } from '@craft-agent/server-core/transport'
 import { CLIENT_BROWSER_INVOKE } from '@craft-agent/server-core/transport'
-import type { ISessionManager, IBrowserPaneManager } from '@craft-agent/server-core/handlers'
+import type { ISessionManager, IBrowserPaneManager, ExecutePromptAutomationInput } from '@craft-agent/server-core/handlers'
 import { RemoteBrowserPaneManager } from './RemoteBrowserPaneManager'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
 import { createScopedLogger, CONSOLE_LOGGER, type PlatformServices, type Logger } from '@craft-agent/server-core/runtime'
@@ -22,7 +22,7 @@ import {
   type BackendHostRuntimeContext,
   type PostInitResult,
 } from '@craft-agent/shared/agent/backend'
-import { getActiveHermesProfile, getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, resetManagedAnthropicAuthEnvVars } from '@craft-agent/shared/config'
+import { getActiveHermesProfile, getLlmConnection, getLlmConnections, getDefaultLlmConnection, getDefaultThinkingLevel, resetManagedAnthropicAuthEnvVars, resolveMidStreamBehavior, getPersistedUiLanguage, resolveTitleLanguageName } from '@craft-agent/shared/config'
 import { PrivilegedExecutionBroker } from '@craft-agent/server-core/services'
 import { isValidWorkingDirectory } from '../utils/path-validation'
 import { InitGate } from '@craft-agent/server-core/domain'
@@ -83,7 +83,7 @@ import { restoreFiles } from '@craft-agent/shared/utils/bundle-files'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { CraftMcpClient, McpClientPool, McpPoolServer } from '@craft-agent/shared/mcp'
 import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type UnreadSummary, type RemoteSessionTransferPayload, type ImportRemoteSessionTransferResult, RPC_NAMESPACES, generateMessageId } from '@craft-agent/shared/protocol'
-import { storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta } from '@craft-agent/core/types'
+import { storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta, type TokenUsage } from '@craft-agent/core/types'
 import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlAsync, getEmojiIcon, resetSummarizationClient, resolveToolIcon, readFileAttachment, selectSpreadMessages, normalizePath } from '@craft-agent/shared/utils'
 import { loadAllSkills, loadSkillBySlug, invalidateSkillsCache, type LoadedSkill } from '@craft-agent/shared/skills'
 import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
@@ -99,6 +99,7 @@ import { ensureLabelsExist, ensureTaskItemLabel } from '@craft-agent/shared/labe
 import { loadStatusConfig } from '@craft-agent/shared/statuses/storage'
 import { AutomationSystem, createPromptHistoryEntry, appendAutomationHistoryEntry, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
 import { isValidHermesProfileName } from '@craft-agent/shared/hermes/acp-config'
+import { buildBackendRuntimeSignature, buildRestartRequiredSignature, filterAttachmentsForModelInput } from './runtime-config'
 
 // Import from server-core domain utilities
 import { sanitizeForTitle, shouldActivateBrowserOverlay, normalizeBrowserToolName, rollbackFailedBranchCreation, releaseBrowserOwnershipOnForcedStop } from '@craft-agent/server-core/domain'
@@ -594,8 +595,6 @@ async function buildServersFromSources(
       sessionLog.info(`Marked source ${error.sourceSlug} as needing re-auth`)
     }
 
-    credManager.markSourceNeedsReauth(source, 'Token missing or expired')
-    sessionLog.info(`Marked source ${error.sourceSlug} as needing re-auth`)
   }
 
   span.end()
@@ -941,6 +940,22 @@ function createSessionBackendFromConnection(
   }
 
   return createBackendFromConnection(connectionSlug, baseConfig, hostRuntime, providerOptions)
+}
+
+type BackgroundTaskStatus = 'running' | 'completed' | 'failed' | 'stopped' | 'orphaned'
+
+interface RunningBackgroundTask {
+  taskId: string
+  toolUseId?: string
+  intent?: string
+  startTime: number
+  lastProgressAt?: number
+  elapsedSeconds?: number
+  status: BackgroundTaskStatus
+  completedAt?: number
+  turnId?: string
+  workflowId?: string
+  agentsCompleted?: number
 }
 
 interface ManagedSession {
@@ -1958,15 +1973,16 @@ export class SessionManager implements ISessionManager {
               this.executePromptAutomation({
                 workspaceId,
                 workspaceRootPath,
-                pending.prompt,
-                pending.labels,
-                pending.permissionMode,
-                pending.mentions,
-                pending.llmConnection,
-                pending.model,
-                pending.thinkingLevel,
-                pending.automationName,
-              )
+                prompt: pending.prompt,
+                labels: pending.labels,
+                permissionMode: pending.permissionMode,
+                mentions: pending.mentions,
+                llmConnection: pending.llmConnection,
+                model: pending.model,
+                thinkingLevel: pending.thinkingLevel,
+                automationName: pending.automationName,
+                telegramTopic: pending.telegramTopic,
+              })
             )
           )
 
@@ -2692,7 +2708,11 @@ export class SessionManager implements ISessionManager {
     return this.artifacts.scanSessionFiles(sessionPath)
   }
 
-  async createSession(workspaceId: string, options?: import('@craft-agent/shared/protocol').CreateSessionOptions): Promise<Session> {
+  async createSession(
+    workspaceId: string,
+    options?: import('@craft-agent/shared/protocol').CreateSessionOptions,
+    internal?: { emitCreatedEvent?: boolean },
+  ): Promise<Session> {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) {
       throw new Error(`Workspace ${workspaceId} not found`)
@@ -2807,6 +2827,7 @@ export class SessionManager implements ISessionManager {
       branchFromSessionPath?: string
       branchFromSdkCwd?: string
       branchFromSdkTurnId?: string
+      sourceProvider?: 'anthropic' | 'pi'
       hermesProfile?: string
     } | undefined
 
@@ -3609,7 +3630,7 @@ export class SessionManager implements ISessionManager {
         managed.branchFromSdkTurnId = undefined
         sessionLog.info(`Branch fork invalidated for ${managed.id}: cleared all fork metadata`)
         this.persistSession(managed)
-        sessionPersistenceQueue.flush(managed.id)
+        void this.store.flush(managed.id)
       }
 
       const getRecoveryMessages = () => {
@@ -8654,16 +8675,7 @@ export class SessionManager implements ISessionManager {
    * workspace default (then DEFAULT_THINKING_LEVEL).
    */
   async executePromptAutomation(
-    workspaceId: string,
-    workspaceRootPath: string,
-    prompt: string,
-    labels?: string[],
-    permissionMode?: PermissionMode,
-    mentions?: string[],
-    llmConnection?: string,
-    model?: string,
-    thinkingLevel?: ThinkingLevel,
-    automationName?: string,
+    input: ExecutePromptAutomationInput,
   ): Promise<{ sessionId: string }> {
     const {
       workspaceId,

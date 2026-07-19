@@ -93,7 +93,7 @@ export function registerMessagingHandlers(server: RpcServer, deps: HandlerDeps):
   // -------------------------------------------------------------------------
 
   server.handle(
-    RPC_CHANNELS.messaging.GET_PLATFORM_OWNERS,
+    RPC_NAMESPACES.messaging.GET_PLATFORM_OWNERS,
     async (ctx, platform: string) => {
       if (!ctx.workspaceId) throw new Error('Missing workspaceId')
       return registry.getPlatformOwners(ctx.workspaceId, platform)
@@ -101,7 +101,7 @@ export function registerMessagingHandlers(server: RpcServer, deps: HandlerDeps):
   )
 
   server.handle(
-    RPC_CHANNELS.messaging.SET_PLATFORM_OWNERS,
+    RPC_NAMESPACES.messaging.SET_PLATFORM_OWNERS,
     async (ctx, platform: string, owners: MessagingPlatformOwnerInfo[]) => {
       if (!ctx.workspaceId) throw new Error('Missing workspaceId')
       return registry.setPlatformOwners(ctx.workspaceId, platform, owners)
@@ -109,7 +109,7 @@ export function registerMessagingHandlers(server: RpcServer, deps: HandlerDeps):
   )
 
   server.handle(
-    RPC_CHANNELS.messaging.GET_PLATFORM_ACCESS_MODE,
+    RPC_NAMESPACES.messaging.GET_PLATFORM_ACCESS_MODE,
     async (ctx, platform: string) => {
       if (!ctx.workspaceId) throw new Error('Missing workspaceId')
       return registry.getPlatformAccessMode(ctx.workspaceId, platform)
@@ -117,7 +117,7 @@ export function registerMessagingHandlers(server: RpcServer, deps: HandlerDeps):
   )
 
   server.handle(
-    RPC_CHANNELS.messaging.SET_PLATFORM_ACCESS_MODE,
+    RPC_NAMESPACES.messaging.SET_PLATFORM_ACCESS_MODE,
     async (ctx, platform: string, mode: MessagingPlatformAccessMode) => {
       if (!ctx.workspaceId) throw new Error('Missing workspaceId')
       registry.setPlatformAccessMode(ctx.workspaceId, platform, mode)
@@ -126,7 +126,7 @@ export function registerMessagingHandlers(server: RpcServer, deps: HandlerDeps):
   )
 
   server.handle(
-    RPC_CHANNELS.messaging.GET_PENDING_SENDERS,
+    RPC_NAMESPACES.messaging.GET_PENDING_SENDERS,
     async (ctx, platform?: string) => {
       if (!ctx.workspaceId) throw new Error('Missing workspaceId')
       return registry.getPendingSenders(ctx.workspaceId, platform)
@@ -134,7 +134,7 @@ export function registerMessagingHandlers(server: RpcServer, deps: HandlerDeps):
   )
 
   server.handle(
-    RPC_CHANNELS.messaging.DISMISS_PENDING_SENDER,
+    RPC_NAMESPACES.messaging.DISMISS_PENDING_SENDER,
     async (ctx, platform: string, userId: string) => {
       if (!ctx.workspaceId) throw new Error('Missing workspaceId')
       return { success: registry.dismissPendingSender(ctx.workspaceId, platform, userId) }
@@ -142,7 +142,7 @@ export function registerMessagingHandlers(server: RpcServer, deps: HandlerDeps):
   )
 
   server.handle(
-    RPC_CHANNELS.messaging.ALLOW_PENDING_SENDER,
+    RPC_NAMESPACES.messaging.ALLOW_PENDING_SENDER,
     async (
       ctx,
       platform: string,
@@ -155,7 +155,7 @@ export function registerMessagingHandlers(server: RpcServer, deps: HandlerDeps):
   )
 
   server.handle(
-    RPC_CHANNELS.messaging.SET_BINDING_ACCESS,
+    RPC_NAMESPACES.messaging.SET_BINDING_ACCESS,
     async (
       ctx,
       bindingId: string,
