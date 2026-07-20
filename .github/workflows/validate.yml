@@ -29,7 +29,7 @@ jobs:
 
       - name: Reject Windows-illegal filenames
         run: |
-          BAD=$(git ls-files | grep -E '[<>:"|?*]' || true)
+          BAD=$(git -c core.quotePath=false ls-files | grep -E '[<>:"|?*]' || true)
           if [ -n "$BAD" ]; then
             echo "::error::Files with characters illegal on Windows:"
             echo "$BAD"
