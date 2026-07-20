@@ -120,7 +120,7 @@ O desktop pode operar como UI local completa ou thin client conectado a servidor
 ### Backends de agente
 
 - Claude: usa `@anthropic-ai/claude-agent-sdk`, suporta Anthropic API key/OAuth e endpoints customizados compativeis.
-- Pi: usa SDKs `@mariozechner/pi-*`, cobre Google AI Studio, ChatGPT Plus/Codex OAuth, GitHub Copilot OAuth, OpenAI API key e computer-use.
+- Pi: usa SDKs `@earendil-works/pi-*`, cobre Google AI Studio, ChatGPT Plus/Codex OAuth, GitHub Copilot OAuth, OpenAI API key e computer-use.
 - Hermes: backend Python/ACP separado, vendorizado no app Electron, configurado por `packages/shared/src/hermes/acp-config.ts` e implementado em `packages/shared/src/agent/hermes-agent.ts`.
 
 Hermes deve permanecer isolado:

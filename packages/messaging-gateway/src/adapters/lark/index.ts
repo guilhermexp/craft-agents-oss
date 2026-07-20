@@ -10,10 +10,11 @@
  * interactive cards, attachments, and Markdown→post rich-text formatting.
  */
 
-import { statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { writeFileSync, statSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { extname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import * as lark from '@larksuiteoapi/node-sdk'
 import type {
   PlatformAdapter,
   PlatformConfig,
@@ -25,15 +26,9 @@ import type {
   ButtonPress,
   MessagingLogger,
   MessagingChannelId,
+  SendOptions,
 } from '../../types'
 import { messagingChannelId } from '../../types'
-
-/**
- * Type-only handle to the Lark SDK. The heavy module (~250k lines of types) is
- * loaded lazily via a dynamic `import()` inside `initialize`, so workspaces
- * that never configure Lark don't pay for it at module-load time.
- */
-type LarkModule = typeof import('@larksuiteoapi/node-sdk')
 import {
   formatForLarkPost,
   wrapAsTrivialPost,
@@ -108,10 +103,9 @@ export function parseLarkCredentials(token: string | undefined): LarkCredentials
 }
 
 /**
- * Map our `'lark' | 'feishu'` selector to the SDK's `Domain` enum. Takes the
- * lazily-loaded SDK module so it stays a pure function with no top-level import.
+ * Map our `'lark' | 'feishu'` selector to the SDK's `Domain` enum.
  */
-function resolveLarkDomain(lark: LarkModule, domain: 'lark' | 'feishu') {
+function resolveLarkDomain(domain: 'lark' | 'feishu'): lark.Domain {
   return domain === 'feishu' ? lark.Domain.Feishu : lark.Domain.Lark
 }
 
@@ -213,7 +207,7 @@ export class LarkAdapter implements PlatformAdapter {
   }
 
   private client: LarkClient | null = null
-  private wsClient: InstanceType<LarkModule['WSClient']> | null = null
+  private wsClient: lark.WSClient | null = null
   private messageHandler: ((msg: IncomingMessage) => Promise<void>) | null = null
   private buttonHandler: ((press: ButtonPress) => Promise<void>) | null = null
   private connected = false
@@ -245,10 +239,7 @@ export class LarkAdapter implements PlatformAdapter {
   async initialize(config: PlatformConfig): Promise<void> {
     this.log = config.logger ?? NOOP_LOGGER
     const creds = parseLarkCredentials(config.token)
-
-    // Lazily load the heavy SDK only now that a Lark connection is being set up.
-    const lark = await import('@larksuiteoapi/node-sdk')
-    const sdkDomain = resolveLarkDomain(lark, creds.domain)
+    const sdkDomain = resolveLarkDomain(creds.domain)
 
     // Construct REST client (sends + lookups go through this).
     this.client = new lark.Client({
@@ -300,7 +291,7 @@ export class LarkAdapter implements PlatformAdapter {
         // visual cleanup async via the binding's existing post-press flow.
         return {}
       },
-    } as unknown as Parameters<InstanceType<LarkModule['EventDispatcher']>['register']>[0])
+    } as unknown as Parameters<lark.EventDispatcher['register']>[0])
 
     await this.wsClient.start({ eventDispatcher })
     this.connected = true
@@ -336,7 +327,7 @@ export class LarkAdapter implements PlatformAdapter {
   // Outbound — sends, edits, files, cards
   // -------------------------------------------------------------------------
 
-  async sendText(channelId: string, text: string): Promise<SentMessage> {
+  async sendText(messagingChannelId: MessagingChannelId, text: string, _opts?: SendOptions): Promise<SentMessage> {
     if (!this.client) throw new Error('Lark adapter is not connected')
     const formatted = formatForLarkPost(text)
     const { msgType, content } =
@@ -346,17 +337,18 @@ export class LarkAdapter implements PlatformAdapter {
 
     const result = await this.client.im.message.create({
       params: { receive_id_type: 'chat_id' },
-      data: { receive_id: channelId, msg_type: msgType, content },
+      data: { receive_id: messagingChannelId, msg_type: msgType, content },
     })
     const messageId = result?.data?.message_id ?? ''
     if (messageId) this.sentMsgTypes.set(messageId, msgType)
-    return { platform: 'lark', messagingChannelId: messagingChannelId(channelId), messageId }
+    return { platform: 'lark', messagingChannelId, messageId }
   }
 
   async editMessage(
-    channelId: string,
+    messagingChannelId: MessagingChannelId,
     messageId: string,
     text: string,
+    _opts?: SendOptions,
   ): Promise<void> {
     if (!this.client) throw new Error('Lark adapter is not connected')
     const originalType = this.sentMsgTypes.get(messageId) ?? 'text'
@@ -406,9 +398,10 @@ export class LarkAdapter implements PlatformAdapter {
   }
 
   async sendButtons(
-    channelId: string,
+    messagingChannelId: MessagingChannelId,
     text: string,
     buttons: InlineButton[],
+    _opts?: SendOptions,
   ): Promise<SentMessage> {
     if (!this.client) throw new Error('Lark adapter is not connected')
     if (buttons.length > LARK_MAX_BUTTONS) {
@@ -439,7 +432,7 @@ export class LarkAdapter implements PlatformAdapter {
       const result = await this.client.im.message.create({
         params: { receive_id_type: 'chat_id' },
         data: {
-          receive_id: channelId,
+          receive_id: messagingChannelId,
           msg_type: 'interactive',
           content: cardJson,
         },
@@ -447,7 +440,7 @@ export class LarkAdapter implements PlatformAdapter {
       messageId = result?.data?.message_id ?? ''
       this.log.info('[lark] sent card', {
         event: 'lark_send_card_ok',
-        chatId: channelId,
+        chatId: messagingChannelId,
         messageId,
         buttonCount: Math.min(buttons.length, LARK_MAX_BUTTONS),
       })
@@ -466,7 +459,7 @@ export class LarkAdapter implements PlatformAdapter {
         | null
       this.log.error('[lark] failed to send card', {
         event: 'lark_send_card_failed',
-        chatId: channelId,
+        chatId: messagingChannelId,
         httpStatus: typeof errObj.response?.status === 'number' ? errObj.response.status : undefined,
         larkCode:
           typeof responseData?.code === 'number'
@@ -490,8 +483,9 @@ export class LarkAdapter implements PlatformAdapter {
       // Failures here are non-fatal — we still re-throw the original card error.
       try {
         await this.sendText(
-          channelId,
+          messagingChannelId,
           `${text}\n\n(Open the desktop app to respond — the in-chat buttons couldn't be sent.)`,
+          _opts,
         )
       } catch {
         // Swallowed — the renderer's outer handler will see the original throw.
@@ -521,12 +515,12 @@ export class LarkAdapter implements PlatformAdapter {
         }
       }
     }
-    return { platform: 'lark', messagingChannelId: messagingChannelId(channelId), messageId }
+    return { platform: 'lark', messagingChannelId, messageId }
   }
 
-  async clearButtons(channelId: string, messageId: string): Promise<void> {
+  async clearButtons(messagingChannelId: MessagingChannelId, messageId: string, _opts?: SendOptions): Promise<void> {
     if (!this.client) return
-    void channelId
+    void messagingChannelId
     try {
       await this.client.im.message.patch({
         path: { message_id: messageId },
@@ -542,15 +536,16 @@ export class LarkAdapter implements PlatformAdapter {
     }
   }
 
-  async sendTyping(_channelId: string): Promise<void> {
+  async sendTyping(_channelId: string, _opts?: SendOptions): Promise<void> {
     // Lark has no typing-indicator API. No-op.
   }
 
   async sendFile(
-    channelId: string,
+    messagingChannelId: MessagingChannelId,
     file: Buffer,
     filename: string,
     caption?: string,
+    _opts?: SendOptions,
   ): Promise<SentMessage> {
     if (!this.client) throw new Error('Lark adapter is not connected')
 
@@ -578,14 +573,14 @@ export class LarkAdapter implements PlatformAdapter {
 
     const result = await this.client.im.message.create({
       params: { receive_id_type: 'chat_id' },
-      data: { receive_id: channelId, msg_type: msgType, content },
+      data: { receive_id: messagingChannelId, msg_type: msgType, content },
     })
     const messageId = result?.data?.message_id ?? ''
 
     // Lark can't combine caption + file in one message. If the caller wants a
     // caption, send it as a follow-up text message (best-effort).
     if (caption) {
-      this.sendText(channelId, caption).catch((err) => {
+      this.sendText(messagingChannelId, caption).catch((err) => {
         this.log.warn('[lark] caption follow-up failed', {
           event: 'lark_caption_failed',
           messageId,
@@ -594,7 +589,7 @@ export class LarkAdapter implements PlatformAdapter {
       })
     }
 
-    return { platform: 'lark', messagingChannelId: messagingChannelId(channelId), messageId }
+    return { platform: 'lark', messagingChannelId, messageId }
   }
 
   // -------------------------------------------------------------------------
@@ -756,9 +751,8 @@ export class LarkAdapter implements PlatformAdapter {
       // a plain Node Readable. Handle the common shapes.
       if (typeof sdkResource.writeFile === 'function') {
         await sdkResource.writeFile(localPath)
-        // The SDK gives no size metadata up front — enforce the cap post-write.
         if (statSync(localPath).size > MAX_ATTACHMENT_BYTES) {
-          try { unlinkSync(localPath) } catch { /* best-effort cleanup */ }
+          unlinkSync(localPath)
           throw new Error(`attachment exceeds ${MAX_ATTACHMENT_BYTES} bytes`)
         }
       } else if (sdkResource.file instanceof Buffer) {
@@ -788,10 +782,10 @@ export class LarkAdapter implements PlatformAdapter {
     // cards only emit `card.action.trigger` events when the app has the
     // **Card Callback Communication** subscription enabled under
     // Events & Callbacks (separate from `im.message.receive_v1`).
-    const channelId = data.context?.open_chat_id ?? data.open_chat_id ?? ''
+    const rawMessagingChannelId = data.context?.open_chat_id ?? data.open_chat_id ?? ''
     this.log.info('[lark] card action received', {
       event: 'lark_card_action_received',
-      chatId: channelId,
+      chatId: rawMessagingChannelId,
       tag: data.action?.tag,
       hasValue: data.action?.value !== undefined,
     })
@@ -807,20 +801,12 @@ export class LarkAdapter implements PlatformAdapter {
       })
       return
     }
-    if (!channelId) {
-      this.log.warn('[lark] card action missing chat id', {
-        event: 'lark_card_action_no_chat_id',
-        buttonId: value.buttonId,
-        messageId: value.messageId,
-      })
-      return
-    }
     const operator = data.operator
     const senderId = operator?.user_id ?? operator?.open_id ?? operator?.union_id ?? ''
 
     const press: ButtonPress = {
       platform: 'lark',
-      messagingChannelId: messagingChannelId(channelId),
+      messagingChannelId: messagingChannelId(rawMessagingChannelId),
       messageId: value.messageId,
       buttonId: value.buttonId,
       senderId,

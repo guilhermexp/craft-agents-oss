@@ -88,7 +88,7 @@ Three-tier monorepo: thin clients (Electron / CLI / WebUI / Viewer) → server (
 The `CraftAgent` abstraction routes between three backends depending on the LLM connection:
 
 - **Claude backend** — `@anthropic-ai/claude-agent-sdk`. Handles Anthropic API key, Claude Max/Pro OAuth, and any third-party endpoint surfaced through the “Claude / Anthropic API Key” connection (OpenRouter, Vercel AI Gateway, Ollama, custom).
-- **Pi backend** — `@mariozechner/pi-coding-agent` driven by `packages/pi-agent-server`. Handles Google AI Studio, ChatGPT Plus (Codex OAuth), GitHub Copilot OAuth, and OpenAI API key.
+- **Pi backend** — `@earendil-works/pi-coding-agent` driven by `packages/pi-agent-server`. Handles Google AI Studio, ChatGPT Plus (Codex OAuth), GitHub Copilot OAuth, and OpenAI API key.
 - **Hermes backend** — embedded NousResearch Hermes runtime consumed as a pinned upstream dependency plus Craft overlay patches (see below). A third backend launched as a subprocess with its own ACP adapter.
 
 When changing agent code, identify which backend(s) are affected — the Pi and Hermes paths each have separate subprocess bundles that must be rebuilt (`server:build:subprocess`, `electron:bundle:hermes`).

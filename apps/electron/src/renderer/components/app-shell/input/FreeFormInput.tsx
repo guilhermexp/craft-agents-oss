@@ -54,7 +54,7 @@ import {
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { coerceInputText } from '@/lib/input-text'
-import { isMac, PATH_SEP, getPathBasename } from '@/lib/platform'
+import { isMac, getPathBasename } from '@/lib/platform'
 import { applySmartTypography } from '@/lib/smart-typography'
 import { AttachmentPreview } from '../AttachmentPreview'
 import { ANTHROPIC_MODELS, getModelShortName, getModelDisplayName, getModelContextWindow, type ModelDefinition } from '@config/models'
@@ -82,6 +82,7 @@ import {
 } from './working-directory-history'
 import { CompactPermissionModeSelector } from './CompactPermissionModeSelector'
 import { getHermesProfileModel, getHermesProfileSelectorLabel, mergeHermesProfileModels, resolveHermesProfileSelection } from './hermes-profile-badge'
+import { formatPathForDisplay } from './working-directory-path'
 
 /**
  * Format token count for display (e.g., 1500 -> "1.5k", 200000 -> "200k")
@@ -2409,21 +2410,6 @@ export function FreeFormInput({
     </form>
     </LazyMotion>
   )
-}
-
-/**
- * Format path for display, with home directory shortened
- */
-function formatPathForDisplay(path: string, homeDir: string): string {
-  let displayPath = path
-  if (homeDir && path.startsWith(homeDir)) {
-    const relativePath = path.slice(homeDir.length)
-    // Remove leading separator if present, show root separator if empty
-    displayPath = relativePath.startsWith(PATH_SEP)
-      ? relativePath.slice(1)
-      : (relativePath || PATH_SEP)
-  }
-  return `in ${displayPath}`
 }
 
 /**

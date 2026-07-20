@@ -14,6 +14,22 @@ import { SessionArtifactRenderer } from '../../sessions/session-artifact-rendere
 
 const sessionArtifactRenderer = new SessionArtifactRenderer()
 
+const SESSION_GET_LOG_ID_LIMIT = 25
+
+function summarizeIds(ids: Iterable<string>, limit = SESSION_GET_LOG_ID_LIMIT) {
+  const all = Array.from(ids)
+  return { count: all.length, ids: all.slice(0, limit), truncated: all.length > limit }
+}
+
+function sessionWorkspaceDistribution(sessions: Array<{ workspaceId?: string }>): Record<string, number> {
+  const distribution: Record<string, number> = {}
+  for (const session of sessions) {
+    const key = session.workspaceId || '(missing)'
+    distribution[key] = (distribution[key] ?? 0) + 1
+  }
+  return distribution
+}
+
 export async function syncMermaidDiagramArtifacts(sessionPath: string): Promise<void> {
   await sessionArtifactRenderer.syncSessionArtifacts(sessionPath)
 }
@@ -59,9 +75,23 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
       log.error('GET_SESSIONS continuing after initialization failure:', error)
     }
     const end = perf.start('rpc.getSessions')
-    const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
+    const windowWorkspaceId = ctx.webContentsId != null
+      ? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId)
+      : undefined
+    const workspaceId = ctx.workspaceId ?? windowWorkspaceId
     const sessions = sessionManager.getSessions(workspaceId ?? undefined)
     end()
+
+    log.info('[sessions:get] result', {
+      ctxWorkspaceId: ctx.workspaceId,
+      webContentsId: ctx.webContentsId,
+      windowWorkspaceId,
+      resolvedWorkspaceId: workspaceId,
+      returnedCount: sessions.length,
+      returnedWorkspaceIds: sessionWorkspaceDistribution(sessions),
+      returnedIds: summarizeIds(sessions.map(s => s.id)),
+    })
+
     return sessions
   })
 
@@ -90,7 +120,9 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // Create a new session
   server.handle(RPC_NAMESPACES.sessions.CREATE, async (_ctx, workspaceId: string, options?: import('@craft-agent/shared/protocol').CreateSessionOptions) => {
     const end = perf.start('rpc.createSession', { workspaceId })
-    const session = await sessionManager.createSession(workspaceId, options)
+    // The renderer adds the session synchronously from this return value (App.tsx handleCreateSession),
+    // so suppress the broadcast to avoid a redundant hydrate round-trip.
+    const session = await sessionManager.createSession(workspaceId, options, { emitCreatedEvent: false })
     end()
     return session
   })
@@ -100,9 +132,18 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
     return sessionManager.deleteSession(sessionId)
   })
 
-  // Send a message to a session (with optional file attachments)
-  // Note: We intentionally don't await here - the response is streamed via events.
-  // The IPC handler returns immediately, and results come through SESSION_EVENT channel.
+  // Send a message to a session (with optional file attachments).
+  //
+  // Behavior:
+  //   - Awaits until the user message is persisted to disk, then returns
+  //     `{ accepted: true, messageId }`. This guarantees the message survives
+  //     a mid-stream crash (#616).
+  //   - The actual model-streaming work continues in the background; results
+  //     flow back via SESSION_EVENT as before.
+  //   - Pre-persist errors (session not found, etc.) reject the RPC so the
+  //     caller can show a synchronous error.
+  //   - Post-persist errors (model API failures, etc.) are routed via the
+  //     event stream as today.
   // attachments: FileAttachment[] for Claude (has content), storedAttachments: StoredAttachment[] for persistence (has thumbnailBase64)
   server.handle(RPC_NAMESPACES.sessions.SEND_MESSAGE, async (ctx, sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachment[], options?: SendMessageOptions) => {
     return sessionManager.sendMessageFromClient(ctx.clientId, sessionId, message, attachments, storedAttachments, options)
@@ -185,6 +226,10 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
         return sessionManager.setSessionSources(sessionId, command.sourceSlugs)
       case 'setLabels':
         return sessionManager.setSessionLabels(sessionId, command.labels)
+      case 'setProjectId':
+        return sessionManager.setSessionProjectId(sessionId, command.projectId)
+      case 'setKanbanColumn':
+        return sessionManager.setKanbanColumn(sessionId, command.column)
       case 'showInFinder': {
         const sessionPath = sessionManager.getSessionPath(sessionId)
         if (sessionPath) {

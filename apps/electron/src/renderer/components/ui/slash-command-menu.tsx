@@ -5,6 +5,7 @@ import { Check, Minimize2 } from 'lucide-react'
 import { Icon_Folder } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
 import { PERMISSION_MODE_CONFIG, PERMISSION_MODE_ORDER, type PermissionMode } from '@craft-agent/shared/agent/modes'
+import { formatCompactPath } from '../app-shell/input/working-directory-path'
 
 // ============================================================================
 // Types
@@ -518,16 +519,6 @@ export interface SlashCommandInputElement {
 }
 
 /**
- * Format path for display, shortening home directory
- */
-function formatPathForDisplay(path: string, homeDir?: string): string {
-  if (homeDir && path.startsWith(homeDir)) {
-    return '~' + path.slice(homeDir.length)
-  }
-  return path
-}
-
-/**
  * Get folder name from path
  */
 function getFolderName(path: string): string {
@@ -604,7 +595,7 @@ export function useInlineSlashCommand({
           id: path,
           type: 'folder' as const,
           label: getFolderName(path),
-          description: formatPathForDisplay(path, homeDir),
+          description: formatCompactPath(path, homeDir ?? ''),
           path,
         })),
       })

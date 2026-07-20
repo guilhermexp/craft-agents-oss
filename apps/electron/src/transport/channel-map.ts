@@ -28,6 +28,19 @@ export const CHANNEL_MAP = {
   cancelProcessing: invoke(RPC_NAMESPACES.sessions.CANCEL),
   killShell: invoke(RPC_NAMESPACES.sessions.KILL_SHELL),
   getTaskOutput: invoke(RPC_NAMESPACES.tasks.GET_OUTPUT),
+
+  // Tasks (Conductor)
+  validateTask: invoke(RPC_NAMESPACES.tasks.VALIDATE),
+  createTask: invoke(RPC_NAMESPACES.tasks.CREATE),
+  generateTask: invoke(RPC_NAMESPACES.tasks.GENERATE),
+  runTask: invoke(RPC_NAMESPACES.tasks.RUN),
+  pauseTask: invoke(RPC_NAMESPACES.tasks.PAUSE),
+  resumeTask: invoke(RPC_NAMESPACES.tasks.RESUME),
+  stopTask: invoke(RPC_NAMESPACES.tasks.STOP),
+  getTask: invoke(RPC_NAMESPACES.tasks.GET),
+  listTasks: invoke(RPC_NAMESPACES.tasks.LIST),
+  getTaskResults: invoke(RPC_NAMESPACES.tasks.GET_RESULTS),
+  onTaskGenerated: listener(RPC_NAMESPACES.tasks.GENERATED),
   respondToPermission: invoke(RPC_NAMESPACES.sessions.RESPOND_TO_PERMISSION),
   respondToCredential: invoke(RPC_NAMESPACES.sessions.RESPOND_TO_CREDENTIAL),
   sessionCommand: invoke(RPC_NAMESPACES.sessions.COMMAND),
@@ -430,6 +443,17 @@ export const CHANNEL_MAP = {
   setDefaultLlmConnection: invoke(RPC_NAMESPACES.llmConnections.SET_DEFAULT),
   setWorkspaceDefaultLlmConnection: invoke(RPC_NAMESPACES.llmConnections.SET_WORKSPACE_DEFAULT),
 
+  // Projects
+  getProjects: invoke(RPC_NAMESPACES.projects.GET),
+  getProject: invoke(RPC_NAMESPACES.projects.GET_ONE),
+  createProject: invoke(RPC_NAMESPACES.projects.CREATE),
+  updateProject: invoke(RPC_NAMESPACES.projects.UPDATE),
+  deleteProject: invoke(RPC_NAMESPACES.projects.DELETE),
+  listProjectAssets: invoke(RPC_NAMESPACES.projects.LIST_ASSETS),
+  uploadProjectAsset: invoke(RPC_NAMESPACES.projects.UPLOAD_ASSET),
+  deleteProjectAsset: invoke(RPC_NAMESPACES.projects.DELETE_ASSET),
+  onProjectsChanged: listener(RPC_NAMESPACES.projects.CHANGED),
+
   // Automations
   getAutomations: invoke(RPC_NAMESPACES.automations.GET),
   testAutomation: invoke(RPC_NAMESPACES.automations.TEST),
@@ -455,6 +479,9 @@ export const CHANNEL_MAP = {
   forgetMessagingPlatform: invoke(RPC_NAMESPACES.messaging.FORGET),
   getMessagingBindings: invoke(RPC_NAMESPACES.messaging.GET_BINDINGS),
   generateMessagingPairingCode: invoke(RPC_NAMESPACES.messaging.GENERATE_CODE),
+  generateMessagingSupergroupCode: invoke(RPC_NAMESPACES.messaging.GENERATE_SUPERGROUP_CODE),
+  getMessagingSupergroup: invoke(RPC_NAMESPACES.messaging.GET_SUPERGROUP),
+  unbindMessagingSupergroup: invoke(RPC_NAMESPACES.messaging.UNBIND_SUPERGROUP),
   unbindMessagingSession: invoke(RPC_NAMESPACES.messaging.UNBIND),
   unbindMessagingBinding: invoke(RPC_NAMESPACES.messaging.UNBIND_BINDING),
   onMessagingBindingChanged: listener(RPC_NAMESPACES.messaging.BINDING_CHANGED),
@@ -462,4 +489,15 @@ export const CHANNEL_MAP = {
   startWhatsAppConnect: invoke(RPC_NAMESPACES.messaging.WA_START_CONNECT),
   submitWhatsAppPhone: invoke(RPC_NAMESPACES.messaging.WA_SUBMIT_PHONE),
   onWhatsAppEvent: listener(RPC_NAMESPACES.messaging.WA_UI_EVENT),
+
+  // Messaging access control
+  getMessagingPlatformOwners: invoke(RPC_NAMESPACES.messaging.GET_PLATFORM_OWNERS),
+  setMessagingPlatformOwners: invoke(RPC_NAMESPACES.messaging.SET_PLATFORM_OWNERS),
+  getMessagingPlatformAccessMode: invoke(RPC_NAMESPACES.messaging.GET_PLATFORM_ACCESS_MODE),
+  setMessagingPlatformAccessMode: invoke(RPC_NAMESPACES.messaging.SET_PLATFORM_ACCESS_MODE),
+  getMessagingPendingSenders: invoke(RPC_NAMESPACES.messaging.GET_PENDING_SENDERS),
+  dismissMessagingPendingSender: invoke(RPC_NAMESPACES.messaging.DISMISS_PENDING_SENDER),
+  allowMessagingPendingSender: invoke(RPC_NAMESPACES.messaging.ALLOW_PENDING_SENDER),
+  setMessagingBindingAccess: invoke(RPC_NAMESPACES.messaging.SET_BINDING_ACCESS),
+  onMessagingPendingChanged: listener(RPC_NAMESPACES.messaging.PENDING_CHANGED),
 } satisfies ChannelMap

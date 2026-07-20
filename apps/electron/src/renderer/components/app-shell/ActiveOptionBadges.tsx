@@ -240,7 +240,7 @@ export function ActiveOptionBadges({
  * Format a raw value for display based on the label's valueType.
  * Dates render as locale short format; numbers and strings pass through.
  */
-function formatDisplayValue(rawValue: string, valueType?: 'string' | 'number' | 'date'): string {
+function formatDisplayValue(rawValue: string, valueType?: 'string' | 'number' | 'date' | 'link'): string {
   if (valueType === 'date') {
     const date = new Date(rawValue.includes('T') ? rawValue + ':00Z' : rawValue + 'T00:00:00Z')
     if (!isNaN(date.getTime())) {
@@ -521,4 +521,3 @@ function PermissionModeDropdown({ permissionMode, onPermissionModeChange, sessio
     </Popover>
   )
 }
-

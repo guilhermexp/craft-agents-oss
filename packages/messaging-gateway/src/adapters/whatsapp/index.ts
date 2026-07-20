@@ -31,6 +31,8 @@ import type {
   PlatformConfig,
   AdapterCapabilities,
   IncomingMessage,
+  IncomingAttachment,
+  SendOptions,
   SentMessage,
   InlineButton,
   ButtonPress,
@@ -277,7 +279,8 @@ export class WhatsAppAdapter implements PlatformAdapter {
     this.sendCommand({ type: 'submit_pairing_phone', phoneNumber })
   }
 
-  async sendText(messagingChannelId: MessagingChannelId, text: string): Promise<SentMessage> {
+  async sendText(messagingChannelId: MessagingChannelId, text: string, _opts?: SendOptions): Promise<SentMessage> {
+    // _opts (threadId) is Telegram-specific; ignored on WhatsApp.
     const id = String(this.nextCmdId++)
     const result = await this.sendWithResult({ id, type: 'send_text', whatsAppChannelId: whatsAppChannelId(messagingChannelId), text })
     if (!result.ok) throw new Error(result.error ?? 'Send failed')
@@ -288,7 +291,12 @@ export class WhatsAppAdapter implements PlatformAdapter {
     }
   }
 
-  async editMessage(_channelId: MessagingChannelId, _messageId: string, _text: string): Promise<void> {
+  async editMessage(
+    _channelId: string,
+    _messageId: string,
+    _text: string,
+    _opts?: SendOptions,
+  ): Promise<void> {
     throw new Error('WhatsApp edit not supported in this adapter')
   }
 
@@ -296,6 +304,7 @@ export class WhatsAppAdapter implements PlatformAdapter {
     messagingChannelId: MessagingChannelId,
     text: string,
     buttons: InlineButton[],
+    _opts?: SendOptions,
   ): Promise<SentMessage> {
     const numbered = buttons
       .map((b, i) => `${i + 1}. ${b.label}`)
@@ -304,7 +313,7 @@ export class WhatsAppAdapter implements PlatformAdapter {
     return this.sendText(messagingChannelId, combined)
   }
 
-  async sendTyping(_channelId: MessagingChannelId): Promise<void> {
+  async sendTyping(_channelId: string, _opts?: SendOptions): Promise<void> {
     // No-op — omitting "typing" presence updates avoids an extra round-trip
     // through the worker; UX remains acceptable without it.
   }
@@ -314,6 +323,7 @@ export class WhatsAppAdapter implements PlatformAdapter {
     file: Buffer,
     filename: string,
     caption?: string,
+    _opts?: SendOptions,
   ): Promise<SentMessage> {
     const id = String(this.nextCmdId++)
     const result = await this.sendWithResult({
@@ -444,6 +454,18 @@ export class WhatsAppAdapter implements PlatformAdapter {
         return
       case 'incoming':
         if (this.messageHandler) {
+          // WhatsApp has no separate file_id like Telegram; reuse messageId
+          // for traceability. The worker has already written the bytes to
+          // `localPath`, so the router can wrap each attachment via
+          // `readFileAttachment()` directly.
+          const attachments: IncomingAttachment[] | undefined = ev.attachments?.map((a) => ({
+            type: a.type,
+            fileId: ev.messageId,
+            fileName: a.fileName,
+            mimeType: a.mimeType,
+            fileSize: a.fileSize,
+            localPath: a.localPath,
+          }))
           const msg: IncomingMessage = {
             platform: 'whatsapp',
             messagingChannelId: messagingChannelId(ev.whatsAppChannelId),
@@ -451,17 +473,7 @@ export class WhatsAppAdapter implements PlatformAdapter {
             senderId: ev.senderId,
             senderName: ev.senderName,
             text: ev.text,
-            // The worker has already decrypted+downloaded media to disk; the
-            // router forwards each `localPath` as a FileAttachment. `fileId` is
-            // unused for WhatsApp (no lazy server-side fetch) so we leave it empty.
-            attachments: ev.attachments?.map((a) => ({
-              type: a.type,
-              fileId: '',
-              fileName: a.fileName,
-              mimeType: a.mimeType,
-              fileSize: a.fileSize,
-              localPath: a.localPath,
-            })),
+            attachments,
             timestamp: ev.timestamp,
             raw: ev,
           }

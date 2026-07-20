@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 import { cn } from "../../lib/utils"
 
 /**
@@ -40,6 +41,7 @@ export interface SpinnerProps {
  * ```
  */
 export function Spinner({ className }: SpinnerProps) {
+  const { t } = useTranslation()
   return (
     <output
       className={cn("spinner", className)}

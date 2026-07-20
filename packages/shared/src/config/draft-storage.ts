@@ -7,7 +7,7 @@ import { ensureConfigDir } from './storage.ts';
 const DRAFTS_FILE = join(CONFIG_DIR, 'drafts.json');
 
 export interface DraftAttachmentContent {
-  type: 'image' | 'pdf' | 'text' | 'office' | 'unknown';
+  type: 'image' | 'audio' | 'pdf' | 'text' | 'office' | 'unknown';
   mimeType: string;
   size: number;
   base64?: string;

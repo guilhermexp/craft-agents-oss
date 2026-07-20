@@ -107,6 +107,7 @@ function handleBackgroundTaskEvent(
           startTime: Date.now(),
           elapsedSeconds: 0,
           intent: evt.intent as string | undefined,
+          status: 'running',
         },
       ])
     }
@@ -123,6 +124,7 @@ function handleBackgroundTaskEvent(
           startTime: Date.now(),
           elapsedSeconds: 0,
           intent: evt.intent as string | undefined,
+          status: 'running',
         },
       ])
     }

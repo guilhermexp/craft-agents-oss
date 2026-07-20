@@ -206,6 +206,15 @@ export const routes = {
       subpage
         ? `settings/${subpage}` as const
         : 'settings' as const,
+
+    /** Projects view (projects navigator) */
+    projects: (projectSlug?: string) =>
+      projectSlug
+        ? `projects/project/${projectSlug}` as const
+        : 'projects' as const,
+
+    /** Kanban board view (sessions navigator, board view mode, all sessions) */
+    board: () => 'board' as const,
   },
 } as const
 

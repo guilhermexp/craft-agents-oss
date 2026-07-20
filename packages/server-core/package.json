@@ -29,7 +29,7 @@
     "@craft-agent/core": "workspace:*",
     "@craft-agent/shared": "workspace:*",
     "@kenjiuno/msgreader": "^1.28.0",
-    "@mariozechner/pi-ai": "0.70.6",
+    "@earendil-works/pi-ai": "0.80.6",
     "axios": "^1.18.1",
     "exiftool-vendored": "^35.21.0",
     "fluent-ffmpeg": "^2.1.3",

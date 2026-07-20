@@ -18,8 +18,14 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { ExternalMessagingChannelBinding, MessagingLogger, PlatformType } from './types'
-import { messagingChannelId, normalizeBindingConfig } from './types'
+import type {
+  ChannelBinding,
+  ExternalMessagingChannelBinding,
+  MessagingChannelId,
+  MessagingLogger,
+  PlatformType,
+} from './types'
+import { messagingChannelId as toMessagingChannelId, normalizeBindingConfig } from './types'
 
 const NOOP_LOGGER: MessagingLogger = {
   info: () => {},
@@ -57,10 +63,21 @@ export class BindingStore {
   // Query
   // -------------------------------------------------------------------------
 
-  findByMessagingChannel(platform: PlatformType, channelId: string): ExternalMessagingChannelBinding | undefined {
-    const targetChannelId = messagingChannelId(channelId)
+  /**
+   * Find the active binding for a (platform, messagingChannelId, threadId) tuple.
+   * `threadId` distinguishes Telegram supergroup forum topics from each
+   * other and from the supergroup's General topic / DMs (undefined).
+   *
+   * Bindings created without `threadId` (DMs, pre-topics-feature data)
+   * only match calls passing `threadId === undefined`.
+   */
+  findByChannel(platform: PlatformType, messagingChannelId: MessagingChannelId, threadId?: number): ChannelBinding | undefined {
     return this.bindings.find(
-      (b) => b.platform === platform && b.messagingChannelId === targetChannelId && b.enabled,
+      (b) =>
+        b.platform === platform &&
+        b.messagingChannelId === messagingChannelId &&
+        (b.threadId ?? undefined) === threadId &&
+        b.enabled,
     )
   }
 
@@ -80,13 +97,16 @@ export class BindingStore {
     workspaceId: string,
     sessionId: string,
     platform: PlatformType,
-    channelId: string,
+    messagingChannelId: MessagingChannelId,
     channelName?: string,
-    config?: Partial<ExternalMessagingChannelBinding['config']>,
-  ): ExternalMessagingChannelBinding {
-    // One channel → one session: evict any existing binding for the channel.
+    config?: Partial<ChannelBinding['config']>,
+    threadId?: number,
+  ): ChannelBinding {
+    // One channel → one session: evict any existing binding for the
+    // (platform, messagingChannelId, threadId) tuple. Different topics in the same
+    // supergroup are independently bindable.
     this.bindings = this.bindings.filter(
-      (b) => !(b.platform === platform && b.messagingChannelId === channelId),
+      (b) => !(b.platform === platform && b.messagingChannelId === messagingChannelId && (b.threadId ?? undefined) === threadId),
     )
 
     const binding: ExternalMessagingChannelBinding = {
@@ -94,7 +114,8 @@ export class BindingStore {
       workspaceId,
       sessionId,
       platform,
-      messagingChannelId: messagingChannelId(channelId),
+      messagingChannelId,
+      ...(threadId !== undefined ? { threadId } : {}),
       channelName,
       enabled: true,
       createdAt: Date.now(),
@@ -108,24 +129,54 @@ export class BindingStore {
       workspaceId,
       sessionId,
       platform,
-      messagingChannelId: messagingChannelId(channelId),
+      messagingChannelId,
+      threadId,
       bindingId: binding.id,
       channelName,
     })
     return binding
   }
 
-  unbind(platform: PlatformType, channelId: string): boolean {
+  /**
+   * Update a binding's `BindingConfig` in place — preserves `id`,
+   * `createdAt`, `messagingChannelId`, etc. Returns the updated binding (or null
+   * if the id wasn't found).
+   *
+   * Use this instead of `bind()` when you only need to change config
+   * fields like `accessMode` or `allowedSenderIds`. `bind()` evicts and
+   * re-creates with a fresh UUID, which silently rotates the binding id
+   * and breaks anything keyed on it (audit logs, deep links, stale UI
+   * closures).
+   */
+  updateBindingConfig(bindingId: string, patch: Partial<ChannelBinding['config']>): ChannelBinding | null {
+    const binding = this.bindings.find((b) => b.id === bindingId)
+    if (!binding) return null
+    binding.config = normalizeBindingConfig(binding.platform, {
+      ...binding.config,
+      ...patch,
+    })
+    this.save()
+    this.log.info('binding config updated', {
+      event: 'binding_config_updated',
+      bindingId,
+      platform: binding.platform,
+      patchedKeys: Object.keys(patch),
+    })
+    return binding
+  }
+
+  unbind(platform: PlatformType, messagingChannelId: MessagingChannelId, threadId?: number): boolean {
     const before = this.bindings.length
     this.bindings = this.bindings.filter(
-      (b) => !(b.platform === platform && b.messagingChannelId === channelId),
+      (b) => !(b.platform === platform && b.messagingChannelId === messagingChannelId && (b.threadId ?? undefined) === threadId),
     )
     if (this.bindings.length !== before) {
       this.save()
       this.log.info('binding removed by channel', {
         event: 'binding_removed',
         platform,
-        messagingChannelId: messagingChannelId(channelId),
+        messagingChannelId,
+        threadId,
       })
       return true
     }
@@ -240,7 +291,8 @@ export class BindingStore {
 // Migration helpers
 // ---------------------------------------------------------------------------
 
-type PersistedExternalMessagingBinding = ExternalMessagingChannelBinding & {
+type PersistedExternalMessagingBinding = Omit<ExternalMessagingChannelBinding, 'messagingChannelId' | 'config'> & {
+  messagingChannelId?: string
   channelId?: string
   config?: Partial<ExternalMessagingChannelBinding['config']> & {
     approvalChannel?: ExternalMessagingChannelBinding['config']['approvalSurface']
@@ -248,13 +300,15 @@ type PersistedExternalMessagingBinding = ExternalMessagingChannelBinding & {
 }
 
 function normalizeBinding(raw: PersistedExternalMessagingBinding): ExternalMessagingChannelBinding {
-  const legacyConfig = raw.config?.approvalChannel !== undefined
-    ? { ...raw.config, approvalSurface: raw.config.approvalChannel }
-    : raw.config
-  const channelId = raw.messagingChannelId ?? raw.channelId ?? ''
+  const legacyConfig = raw.config?.approvalSurface !== undefined
+    ? raw.config
+    : raw.config?.approvalChannel !== undefined
+      ? { ...raw.config, approvalSurface: raw.config.approvalChannel }
+      : raw.config
+  const rawMessagingChannelId = raw.messagingChannelId ?? raw.channelId ?? ''
   return {
     ...raw,
-    messagingChannelId: messagingChannelId(channelId),
+    messagingChannelId: toMessagingChannelId(rawMessagingChannelId),
     config: normalizeBindingConfig(raw.platform, legacyConfig ?? {}),
   }
 }

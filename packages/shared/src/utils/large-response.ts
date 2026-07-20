@@ -42,6 +42,17 @@ export const MAX_SUMMARIZATION_INPUT = 100000;
 /** Canonical subfolder under session dir for full tool results */
 export const LONG_RESPONSES_DIR = 'long_responses';
 
+/**
+ * Floor for the model-aware per-result threshold. Below this size the
+ * file-reference + summary message is roughly the same size as the original
+ * content, so summarization stops paying off.
+ */
+const TOKEN_LIMIT_FLOOR = 2_000;
+
+/** Fraction of the model's context window allocated to a single tool result
+ *  before we summarize. 10% lets ~4 results fit before tightening. */
+const PER_RESULT_CONTEXT_FRACTION = 0.10;
+
 // ============================================================
 // Token Estimation
 // ============================================================
@@ -102,6 +113,15 @@ export function estimateTokensDensityAware(text: string): number {
     return Math.ceil(text.length / BASE64_CHARS_PER_TOKEN);
   }
   return estimateTokens(text);
+}
+
+/** Scale the per-result threshold to the active model's context window. */
+export function tokenLimitFor(contextWindow: number | undefined): number {
+  if (!contextWindow || contextWindow <= 0) return TOKEN_LIMIT;
+  return Math.max(
+    TOKEN_LIMIT_FLOOR,
+    Math.min(TOKEN_LIMIT, Math.floor(contextWindow * PER_RESULT_CONTEXT_FRACTION)),
+  );
 }
 
 // ============================================================
@@ -480,6 +500,8 @@ export interface HandleLargeResponseOptions {
   context: SummarizationContext;
   /** Optional summarize callback — typically agent.runMiniCompletion.bind(agent) */
   summarize?: (prompt: string) => Promise<string | null>;
+  /** Active model's context window — see {@link guardLargeResult}. */
+  contextWindow?: number;
 }
 
 export interface HandleLargeResponseResult {
@@ -513,6 +535,10 @@ export async function guardLargeResult(
     input?: Record<string, unknown>;
     intent?: string;
     summarize?: (prompt: string) => Promise<string | null>;
+    /** Active model's context window — when provided, the per-result
+     *  summarization threshold scales via {@link tokenLimitFor}. Omit at
+     *  call sites without model knowledge to retain the fixed default. */
+    contextWindow?: number;
   }
 ): Promise<string | null> {
   // 1. Binary detection — check before any text processing
@@ -564,6 +590,7 @@ export async function guardLargeResult(
     sessionPath: opts.sessionPath,
     context: { toolName: opts.toolName, input: opts.input, intent: opts.intent },
     summarize: opts.summarize,
+    contextWindow: opts.contextWindow,
   });
   return result?.message ?? null;
 }
@@ -580,10 +607,10 @@ export async function guardLargeResult(
 export async function handleLargeResponse(
   opts: HandleLargeResponseOptions
 ): Promise<HandleLargeResponseResult | null> {
-  const { text, sessionPath, context, summarize } = opts;
+  const { text, sessionPath, context, summarize, contextWindow } = opts;
   const estimatedTokens = estimateTokensDensityAware(text);
 
-  if (estimatedTokens <= TOKEN_LIMIT) {
+  if (estimatedTokens <= tokenLimitFor(contextWindow)) {
     return null; // Not large enough — caller should return as-is
   }
 

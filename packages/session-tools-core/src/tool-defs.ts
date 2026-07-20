@@ -126,7 +126,6 @@ export const UpdatePreferencesSchema = z.object({
   city: z.string().optional().describe("The user's city"),
   region: z.string().optional().describe("The user's state/region/province"),
   country: z.string().optional().describe("The user's country"),
-  language: z.string().optional().describe("The user's preferred language for responses"),
   notes: z.string().optional().describe('Additional notes about the user that would be helpful to remember (preferences, context, etc.). Replaces any existing notes.'),
   includeCoAuthoredBy: z.boolean().optional().describe("Whether to include 'Co-Authored-By: Craft Agent' trailer on git commits. Defaults to true."),
 });
@@ -356,7 +355,7 @@ The user will see a secure input UI with appropriate fields based on the auth mo
 
 **IMPORTANT:** After calling this tool, execution will be paused for user input.`,
 
-  update_user_preferences: `Update stored user preferences. Use this when you learn information about the user that would be helpful to remember for future conversations. This includes their name, timezone, location, preferred language, or any other relevant notes. Only update fields you have confirmed information about - don't guess.`,
+  update_user_preferences: `Update stored user preferences. Use this when you learn information about the user that would be helpful to remember for future conversations. This includes their name, timezone, location, or any other relevant notes. Only update fields you have confirmed information about - don't guess.`,
 
   transform_data: `Transform data files using a script and write structured output for datatable/spreadsheet blocks, or extract HTML content for html-preview blocks.
 
@@ -483,14 +482,16 @@ Use this to share anything that would help improve the product — issues you hi
 Use this to tag sessions for filtering or to trigger label-based automations (LabelAdd/LabelRemove events).
 Pass an empty array to clear all labels. Omit sessionId to target the current session.`,
 
-  set_session_status: `Set the status of the current session or a specific session by ID (e.g., "todo", "in_progress", "done").
+  set_session_status: `Set the status of the current session or a specific session by ID (e.g., "todo", "in_progress").
 
-Use this to signal completion or trigger status-based automations (SessionStatusChange events).
-Omit sessionId to target the current session.`,
+Use this to reflect progress or trigger status-based automations (SessionStatusChange events).
+Omit sessionId to target the current session.
+
+IMPORTANT: never move a task into a closed status (such as "done" or "cancelled") yourself — closing a task is the user's decision, made on the board. You may prepare and hand off work by setting an open status like "needs-review"; the user reviews and closes it. Closed-status calls are rejected.`,
 
   get_session_info: `Get metadata about the current session or a specific session by ID.
 
-Returns labels, status, name, permission mode, and other details.
+Returns labels, status, name, permission mode, projectId (if the session is bound to a project), workingDirectory, and other details.
 Call with no arguments to introspect your own session state.`,
 
   list_sessions: `List sessions in the workspace. Returns total count + paginated results.
