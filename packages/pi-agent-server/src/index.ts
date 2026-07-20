@@ -61,6 +61,10 @@ setBedrockProviderModule(bedrockProviderModule);
 import { resolvePiModel, isDeniedMiniModelId, isModelNotFoundError } from './model-resolution.ts';
 import { pickProviderAppropriateMiniModel } from './pick-mini-model.ts';
 import { buildCustomEndpointModelDef, type CustomEndpointModelOverrides } from './custom-endpoint-models.ts';
+import {
+  decideOverflowSuppression,
+  isContextOverflowErrorMessage,
+} from './overflow-recovery.ts';
 
 // Direct source imports from shared (bundled by bun build)
 import { handleLargeResponse, estimateTokens, TOKEN_LIMIT } from '../../shared/src/utils/large-response.ts';
@@ -230,6 +234,8 @@ let currentPromptImages: Array<{ type: 'image'; data: string; mimeType: string }
 let pendingContextOverflowRecoveryError: string | null = null;
 let overflowRecoveryInProgress = false;
 let overflowRecoveryAttemptedForCurrentPrompt = false;
+let overflowRetryPhase = false;
+let overflowTerminalErrorEmitted = false;
 
 // Continuation prompt used after a context-overflow compaction. Re-sending the
 // original user message makes the model redo the same work (e.g. re-fan-out
@@ -241,6 +247,14 @@ const OVERFLOW_CONTINUATION_NUDGE =
   'Do NOT re-run tools or re-fetch any pages already retrieved. ' +
   "Using only the information already gathered above, complete the user's original request now. " +
   'If some data is missing, state briefly what is missing and answer with what you already have.';
+
+// Single user-facing message when a context-overflow compaction+retry still
+// overflows (or otherwise fails). Replaces the raw SDK plumbing errors
+// ("Already compacted", "Compaction failed: ...", "Bad Request") that used to
+// pile up three-deep in the UI with one actionable line.
+const OVERFLOW_UNRECOVERABLE_MESSAGE =
+  'The response exceeded the model context window even after automatic compaction. ' +
+  'Try a shorter request, remove large attachments or pages, or start a new session.';
 
 // Pending promises for async handshakes
 const pendingPreToolUse = new Map<string, { resolve: (response: { action: string; input?: Record<string, unknown>; reason?: string }) => void }>();
@@ -1144,6 +1158,26 @@ function handleSessionEvent(event: AgentSessionEvent): void {
     return;
   }
 
+  // While an overflow compact+retry is in flight, collapse the SDK's redundant
+  // failure events into a single clean terminal error. The retry can overflow
+  // AGAIN (the model re-runs tools despite OVERFLOW_CONTINUATION_NUDGE), which
+  // otherwise surfaces up to three stacked errors in the UI: a compaction_end
+  // failure ("Compaction failed: Already compacted"), the raw provider error
+  // (context_length_exceeded / Bad Request), and this wrapper's own
+  // recovery-failed error. Suppress the noisy plumbing events here and let
+  // emitOverflowTerminalError() surface exactly one actionable message.
+  if (overflowRecoveryInProgress) {
+    const decision = decideOverflowSuppression(event, {
+      inProgress: overflowRecoveryInProgress,
+      retryPhase: overflowRetryPhase,
+    });
+    if (decision.action === 'suppress') {
+      debugLog(`Suppressing redundant ${event.type} during overflow recovery`);
+      if (decision.terminal) emitOverflowTerminalError();
+      return;
+    }
+  }
+
   // Log API errors for debugging and attach provider-native turn anchor for branch cutoffs.
   if (event.type === 'message_end') {
     const msg = event.message as { role?: string; stopReason?: string; errorMessage?: string } | undefined;
@@ -1275,17 +1309,6 @@ async function handleInit(msg: Extract<InboundMessage, { type: 'init' }>): Promi
   });
 }
 
-function isContextOverflowErrorMessage(message: string): boolean {
-  const normalized = message.toLowerCase();
-  return (
-    normalized.includes('context_length_exceeded') ||
-    normalized.includes('exceeds the context window') ||
-    normalized.includes('context window') && normalized.includes('exceed') ||
-    normalized.includes('too many tokens') ||
-    normalized.includes('token limit exceeded')
-  );
-}
-
 /**
  * Wait for any in-flight compaction to finish before sending a prompt.
  * Prevents a race in the Pi SDK where concurrent _runAutoCompaction calls
@@ -1307,6 +1330,20 @@ async function waitForCompaction(session: { isCompacting: boolean }, timeoutMs =
   }
 }
 
+// Emit a single, deduped, user-facing terminal error for a failed overflow
+// recovery. Guarded by overflowTerminalErrorEmitted so the compaction_end
+// handler, the message_end handler, and the catch below can all call it while
+// only one error reaches the UI per prompt.
+function emitOverflowTerminalError(message: string = OVERFLOW_UNRECOVERABLE_MESSAGE): void {
+  if (overflowTerminalErrorEmitted) return;
+  overflowTerminalErrorEmitted = true;
+  send({
+    type: 'error',
+    message,
+    code: 'prompt_overflow_recovery_failed',
+  });
+}
+
 async function recoverFromContextOverflow(source: string, errorMsg: string): Promise<void> {
   if (overflowRecoveryInProgress || overflowRecoveryAttemptedForCurrentPrompt) {
     debugLog(
@@ -1321,28 +1358,49 @@ async function recoverFromContextOverflow(source: string, errorMsg: string): Pro
 
   try {
     const session = await ensureSession();
-    await session.compact();
-    await waitForCompaction(session);
+    // The manual compact races the SDK's own auto-compaction (enabled for
+    // resilience). If the SDK already compacted, compact() throws
+    // "Already compacted"/"Nothing to compact" — treat that as success and go
+    // straight to the retry instead of failing the whole recovery.
+    try {
+      await session.compact();
+      await waitForCompaction(session);
+    } catch (compactError) {
+      const compactMsg = compactError instanceof Error ? compactError.message : String(compactError);
+      if (!/already compacted|nothing to compact/i.test(compactMsg)) {
+        throw compactError;
+      }
+      debugLog(`${source} manual compact skipped (${compactMsg}); context already compacted`);
+    }
     // The original user message is still in history after compaction. Continue
     // from the compacted context with a nudge instead of re-sending it, so the
     // model answers rather than redoing the work that overflowed (see
-    // OVERFLOW_CONTINUATION_NUDGE).
-    await session.prompt(OVERFLOW_CONTINUATION_NUDGE, {
-      streamingBehavior: 'followUp',
-      images: currentPromptImages,
-    });
-    debugLog(`${source} compact+retry queued after overflow`);
+    // OVERFLOW_CONTINUATION_NUDGE). overflowRetryPhase gates the redundant-error
+    // suppression in handleSessionEvent so a retry that overflows AGAIN yields
+    // a single clean error instead of a three-error pile.
+    overflowRetryPhase = true;
+    try {
+      await session.prompt(OVERFLOW_CONTINUATION_NUDGE, {
+        streamingBehavior: 'followUp',
+        images: currentPromptImages,
+      });
+    } finally {
+      overflowRetryPhase = false;
+    }
+    debugLog(`${source} compact+retry completed after overflow`);
   } catch (retryError) {
     const retryMsg = retryError instanceof Error ? retryError.message : String(retryError);
     debugLog(`${source} compact+retry failed: ${retryMsg}`);
-    send({
-      type: 'error',
-      message: `Prompt overflow recovery failed: ${retryMsg}`,
-      code: 'prompt_overflow_recovery_failed',
-    });
+    const isOverflowFamily =
+      isContextOverflowErrorMessage(retryMsg) ||
+      /already compacted|nothing to compact|compaction failed/i.test(retryMsg);
+    emitOverflowTerminalError(
+      isOverflowFamily ? OVERFLOW_UNRECOVERABLE_MESSAGE : `Automatic context recovery failed: ${retryMsg}`,
+    );
     send({ type: 'event', event: { type: 'agent_end', messages: [], willRetry: false } });
   } finally {
     overflowRecoveryInProgress = false;
+    overflowRetryPhase = false;
   }
 }
 
@@ -1352,6 +1410,8 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
   pendingContextOverflowRecoveryError = null;
   overflowRecoveryInProgress = false;
   overflowRecoveryAttemptedForCurrentPrompt = false;
+  overflowRetryPhase = false;
+  overflowTerminalErrorEmitted = false;
 
   try {
     // If proxy tools changed since last session creation, dispose and recreate.
