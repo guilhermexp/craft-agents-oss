@@ -79,10 +79,7 @@ export function DataTable<TData, TValue>({
   defaultExpanded = true,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
-  // columnFilters is derived directly from props — no state needed
-  const columnFilters: ColumnFiltersState = filterColumn
-    ? filterValue !== undefined ? [{ id: filterColumn, value: filterValue }] : []
-    : []
+  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
   const [columnSizing, setColumnSizing] = React.useState<ColumnSizingState>({})
   const [internalGlobalFilter, setInternalGlobalFilter] = React.useState('')
   const [pagination, setPagination] = React.useState<PaginationState>({
@@ -105,6 +102,15 @@ export function DataTable<TData, TValue>({
     }
   }, [globalFilter, paginationEnabled])
 
+  // Update column filter when filterValue changes
+  React.useEffect(() => {
+    if (filterColumn && filterValue !== undefined) {
+      setColumnFilters([{ id: filterColumn, value: filterValue }])
+    } else if (filterColumn) {
+      setColumnFilters([])
+    }
+  }, [filterValue, filterColumn])
+
   const table = useReactTable({
     data,
     columns,
@@ -115,6 +121,7 @@ export function DataTable<TData, TValue>({
     // Tree/expand support: only enabled when getSubRows is provided
     ...(getSubRows && { getExpandedRowModel: getExpandedRowModel(), getSubRows }),
     onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
     onColumnSizingChange: setColumnSizing,
     onGlobalFilterChange: setInternalGlobalFilter,
     ...(paginationEnabled && { onPaginationChange: setPagination }),
