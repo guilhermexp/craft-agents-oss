@@ -20,8 +20,8 @@
       s.src = 'http://localhost:8097';
       s.onerror = () => {};
       document.head.appendChild(s);
-    } else if (location.protocol === 'file:' || location.hostname === 'localhost') {
-      // Keep the Electron dev console clean by hiding React's generic
+    } else if (location.protocol === 'file:') {
+      // Keep the packaged Electron console clean by hiding React's generic
       // "Download the React DevTools" prompt. The standalone DevTools remain
       // available via the localStorage opt-in above.
       window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
