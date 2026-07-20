@@ -72,7 +72,18 @@ import {
 import { SessionList, type ChatGroupingMode } from "./SessionList"
 import { MainContentPanel } from "./MainContentPanel"
 import { PanelStackContainer } from "./PanelStackContainer"
-import { SessionInfoPopoverContent } from "./SessionInfoPopover"
+import { InlineFilePreviewPanel, SessionInfoPopoverContent } from "./SessionInfoPopover"
+import { getRightSidebarFilePaneLayout } from "../right-sidebar/SessionFilesSection"
+import {
+  getRightSidebarEffectiveWidth,
+  getRightSidebarResizeWidth,
+  RIGHT_SIDEBAR_MIN_WIDTH,
+  RIGHT_SIDEBAR_SPLIT_MIN_WIDTH,
+} from "./right-sidebar-sizing"
+import {
+  getActiveRightSidebarPreviewPath,
+  type RightSidebarPreviewSelection,
+} from "./right-sidebar-preview-state"
 import type { ChatDisplayHandle } from "./ChatDisplay"
 import { LeftSidebar } from "./LeftSidebar"
 import { useSession } from "@/hooks/useSession"
@@ -557,7 +568,7 @@ function AppShellContent({
   const [sessionListWidth, setSessionListWidth] = React.useState(() => {
     return storage.get(storage.KEYS.sessionListWidth, 300)
   })
-  const [rightSidebarWidth, setRightSidebarWidth] = React.useState(() => {
+  const [rightSidebarPreferredWidth, setRightSidebarPreferredWidth] = React.useState(() => {
     return storage.get(storage.KEYS.rightSidebarWidth, 320)
   })
 
@@ -617,6 +628,31 @@ function AppShellContent({
   const rightSidebarSession = useAtomValue(sessionAtomFamily(rightSidebarSessionId ?? ''))
   const rightSidebarPanel = navState.rightSidebar
   const isRightSidebarVisible = !isAutoCompact && rightSidebarPanel?.type === 'session-info' && !!rightSidebarSessionId
+  const [rightSidebarPreviewSelection, setRightSidebarPreviewSelection] = React.useState<RightSidebarPreviewSelection | null>(null)
+  const rightSidebarPreviewPath = getActiveRightSidebarPreviewPath({
+    selection: rightSidebarPreviewSelection,
+    sessionId: rightSidebarSessionId ?? null,
+    isVisible: isRightSidebarVisible,
+  })
+  const rightSidebarFilePaneLayout = getRightSidebarFilePaneLayout(rightSidebarPreviewPath)
+  const rightSidebarWidth = getRightSidebarEffectiveWidth({
+    width: rightSidebarPreferredWidth,
+    windowWidth: shellWidth > 0
+      ? shellWidth
+      : typeof window === 'undefined'
+        ? 1440
+        : window.innerWidth,
+    edgeInset: PANEL_EDGE_INSET,
+    minWidth: RIGHT_SIDEBAR_MIN_WIDTH,
+    requiredMinWidth: rightSidebarPreviewPath
+      ? RIGHT_SIDEBAR_SPLIT_MIN_WIDTH
+      : RIGHT_SIDEBAR_MIN_WIDTH,
+  })
+
+  const handleRightSidebarPreviewFile = React.useCallback((filePath: string) => {
+    if (!rightSidebarSessionId) return
+    setRightSidebarPreviewSelection({ sessionId: rightSidebarSessionId, filePath })
+  }, [rightSidebarSessionId])
 
   // Navigate the focused panel to a session.
   // If the session is already open in another panel, focus that panel instead.
@@ -1289,8 +1325,15 @@ function AppShellContent({
           setSessionListHandleY(e.clientY - rect.top)
         }
       } else if (isResizing === 'right-sidebar') {
-        const newWidth = Math.min(Math.max(window.innerWidth - e.clientX - PANEL_EDGE_INSET, 260), 520)
-        setRightSidebarWidth(newWidth)
+        const newWidth = getRightSidebarResizeWidth({
+          windowWidth: window.innerWidth,
+          clientX: e.clientX,
+          edgeInset: PANEL_EDGE_INSET,
+          minWidth: rightSidebarPreviewPath
+            ? RIGHT_SIDEBAR_SPLIT_MIN_WIDTH
+            : RIGHT_SIDEBAR_MIN_WIDTH,
+        })
+        setRightSidebarPreferredWidth(newWidth)
         if (rightSidebarHandleRef.current) {
           const rect = rightSidebarHandleRef.current.getBoundingClientRect()
           setRightSidebarHandleY(e.clientY - rect.top)
@@ -1324,6 +1367,7 @@ function AppShellContent({
     sidebarWidth,
     sessionListWidth,
     rightSidebarWidth,
+    rightSidebarPreviewPath,
     isSidebarVisible,
   ])
 
@@ -3588,15 +3632,38 @@ function AppShellContent({
                     <PanelHeaderCenterButton
                       icon={<X className="size-4" />}
                       tooltip={t("common.close")}
-                      onClick={() => updateRightSidebar(undefined)}
+                      onClick={() => {
+                        setRightSidebarPreviewSelection(null)
+                        updateRightSidebar(undefined)
+                      }}
                     />
                   )}
                 />
                 <div className="flex-1 min-h-0 overflow-hidden">
-                  <SessionInfoPopoverContent
-                    sessionId={rightSidebarSessionId}
-                    sessionFolderPath={rightSidebarSession?.sessionFolderPath}
-                  />
+                  <div className={cn(
+                    "h-full min-h-0",
+                    rightSidebarFilePaneLayout.mode === 'split' ? "grid grid-cols-[minmax(220px,0.85fr)_1px_minmax(320px,1.25fr)]" : "block",
+                  )}>
+                    <div className="min-h-0 min-w-0 overflow-hidden">
+                      <SessionInfoPopoverContent
+                        sessionId={rightSidebarSessionId}
+                        sessionFolderPath={rightSidebarSession?.sessionFolderPath}
+                        onPreviewFileInline={handleRightSidebarPreviewFile}
+                      />
+                    </div>
+                    {rightSidebarFilePaneLayout.showPreview && rightSidebarPreviewPath ? (
+                      <>
+                        <div className="bg-border/60" />
+                        <div className="min-h-0 min-w-0 overflow-hidden">
+                          <InlineFilePreviewPanel
+                            filePath={rightSidebarPreviewPath}
+                            onBack={() => setRightSidebarPreviewSelection(null)}
+                            onOpenDialog={handleContextOpenFile}
+                          />
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </m.aside>

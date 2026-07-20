@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils'
 import * as storage from '@/lib/local-storage'
 import { useAppShellContext, useSession } from '@/context/AppShellContext'
 import { getFileManagerName } from '@/lib/platform'
+import { canPreviewFileInline } from '../app-shell/right-sidebar-preview-state'
 import { restoreSessionFileWatch } from './session-files-watch'
 
 /**
@@ -75,6 +76,33 @@ export interface SessionFilesSectionProps {
   sessionFolderPath?: string
   /** Hide section header when embedded inside compact containers (e.g. popovers) */
   hideHeader?: boolean
+  /** Optional inline preview target used when embedded in the persistent right sidebar. */
+  onPreviewFileInline?: (path: string) => void
+}
+
+type SessionFileOpenMode = 'directory' | 'inline-preview' | 'app-open-file'
+
+export function getSessionFileOpenMode({
+  type,
+  filePath,
+  canPreviewInline,
+}: {
+  type: SessionFile['type']
+  filePath: string
+  canPreviewInline: boolean
+}): SessionFileOpenMode {
+  if (type === 'directory') return 'directory'
+  return canPreviewInline && canPreviewFileInline(filePath) ? 'inline-preview' : 'app-open-file'
+}
+
+export function getRightSidebarFilePaneLayout(previewFilePath: string | null): {
+  mode: 'tree-only' | 'split'
+  showTree: true
+  showPreview: boolean
+} {
+  return previewFilePath
+    ? { mode: 'split', showTree: true, showPreview: true }
+    : { mode: 'tree-only', showTree: true, showPreview: false }
 }
 
 /**
@@ -179,7 +207,7 @@ const WEB_PREVIEWABLE_EXTENSIONS = new Set([
  *  Guarded because this evaluates at module load — in pure web bundles or
  *  during HMR before the preload bridge is ready, `electronAPI` may be
  *  undefined and dereferencing it would crash the entire renderer. */
-const isWebMode = window.electronAPI?.getRuntimeEnvironment?.() !== 'electron'
+const isWebMode = typeof window === 'undefined' || window.electronAPI?.getRuntimeEnvironment?.() !== 'electron'
 
 /**
  * Constructs a thumbnail:// protocol URL for a given file path.
@@ -478,7 +506,7 @@ function FileTreeItem({
 /**
  * Section displaying session files as a tree
  */
-export function SessionFilesSection({ sessionId, className, sessionFolderPath, hideHeader = false }: SessionFilesSectionProps) {
+export function SessionFilesSection({ sessionId, className, sessionFolderPath, hideHeader = false, onPreviewFileInline }: SessionFilesSectionProps) {
   const { t } = useTranslation()
   const [files, setFiles] = useState<SessionFile[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -591,17 +619,27 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
     window.electronAPI.showInFolder(path)
   }, [])
 
-  // Handle file click — preview in-app if possible, open directory in file manager
-  const handleFileClick = useCallback((file: SessionFile) => {
-    if (file.type === 'directory') {
+  const openFile = useCallback((file: SessionFile) => {
+    const mode = getSessionFileOpenMode({
+      type: file.type,
+      filePath: file.path,
+      canPreviewInline: Boolean(onPreviewFileInline),
+    })
+
+    if (mode === 'directory') {
       // eslint-disable-next-line craft-links/no-direct-file-open -- directories can't be previewed in-app
       window.electronAPI.openFile(file.path)
+    } else if (mode === 'inline-preview') {
+      onPreviewFileInline?.(file.path)
     } else {
       onOpenFile(file.path)
     }
-  }, [onOpenFile])
+  }, [onOpenFile, onPreviewFileInline])
 
-  // Handle double-click — same as single click (interceptor decides preview vs external)
+  const handleFileClick = useCallback((file: SessionFile) => {
+    openFile(file)
+  }, [openFile])
+
   const handleFileDoubleClick = useCallback((file: SessionFile) => {
     if (file.type === 'directory') {
       // eslint-disable-next-line craft-links/no-direct-file-open -- directories can't be previewed in-app
@@ -692,7 +730,7 @@ function updateTreeNode(entries: SessionFile[], path: string, children: SessionF
   })
 }
 
-export function WorkspaceFilesSection({ sessionId, className }: { sessionId?: string; className?: string }) {
+export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInline }: { sessionId?: string; className?: string; onPreviewFileInline?: (path: string) => void }) {
   const { t } = useTranslation()
   const session = useSession(sessionId || '')
   const { workspaces, activeWorkspaceId, onOpenFile } = useAppShellContext()
@@ -776,22 +814,29 @@ export function WorkspaceFilesSection({ sessionId, className }: { sessionId?: st
     }
   }, [loadDirectory])
 
-  const handleFileClick = useCallback((file: SessionFile) => {
-    if (file.type === 'directory') {
+  const openFile = useCallback((file: SessionFile) => {
+    const mode = getSessionFileOpenMode({
+      type: file.type,
+      filePath: file.path,
+      canPreviewInline: Boolean(onPreviewFileInline),
+    })
+
+    if (mode === 'directory') {
       if (file.hasChildren) handleDirectoryExpand(file)
       handleToggleExpand(file.path)
-      return
-    }
-
-    onOpenFile(file.path)
-  }, [handleDirectoryExpand, handleToggleExpand, onOpenFile])
-
-  const handleFileDoubleClick = useCallback((file: SessionFile) => {
-    if (file.type === 'directory') {
-      onOpenFile(file.path)
+    } else if (mode === 'inline-preview') {
+      onPreviewFileInline?.(file.path)
     } else {
       onOpenFile(file.path)
     }
+  }, [handleDirectoryExpand, handleToggleExpand, onOpenFile, onPreviewFileInline])
+
+  const handleFileClick = useCallback((file: SessionFile) => {
+    openFile(file)
+  }, [openFile])
+
+  const handleFileDoubleClick = useCallback((file: SessionFile) => {
+    onOpenFile(file.path)
   }, [onOpenFile])
 
   if (!sessionId) return null

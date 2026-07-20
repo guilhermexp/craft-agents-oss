@@ -4,9 +4,16 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ArrowLeft, Copy, ExternalLink, FolderOpen, Maximize2 } from 'lucide-react'
+import { classifyFile } from '@craft-agent/ui/file-classification'
+import { Markdown } from '@craft-agent/ui/markdown'
+import { ShikiCodeViewer } from '@/components/shiki/ShikiCodeViewer'
 import { useAppShellContext, useSession } from '@/context/AppShellContext'
+import { getLanguageFromPath } from '@/lib/file-utils'
 import { cn } from '@/lib/utils'
+import { getFileManagerName } from '@/lib/platform'
 import { SessionFilesSection, WorkspaceFilesSection } from '../right-sidebar/SessionFilesSection'
+import { getInlinePreviewLoadState } from './right-sidebar-preview-state'
 
 interface SessionInfoPopoverProps {
   sessionId: string
@@ -98,7 +105,7 @@ export function SessionInfoPopover({
   )
 }
 
-export function SessionInfoPopoverContent({ sessionId, sessionFolderPath }: { sessionId: string; sessionFolderPath?: string }) {
+export function SessionInfoPopoverContent({ sessionId, sessionFolderPath, onPreviewFileInline }: { sessionId: string; sessionFolderPath?: string; onPreviewFileInline?: (path: string) => void }) {
   const { t } = useTranslation()
   const session = useSession(sessionId)
   const { onRenameSession } = useAppShellContext()
@@ -163,15 +170,159 @@ export function SessionInfoPopoverContent({ sessionId, sessionFolderPath }: { se
             sessionFolderPath={sessionFolderPath}
             hideHeader={false}
             className="h-full min-h-0"
+            onPreviewFileInline={onPreviewFileInline}
           />
         </TabsContent>
         <TabsContent value="workspace" className="m-0 flex-1 min-h-0 overflow-hidden">
           <WorkspaceFilesSection
             sessionId={sessionId}
             className="h-full min-h-0"
+            onPreviewFileInline={onPreviewFileInline}
           />
         </TabsContent>
       </Tabs>
+    </div>
+  )
+}
+
+function getFileName(filePath: string): string {
+  return filePath.split(/[\\/]/).pop() || filePath
+}
+
+export function InlineFilePreviewPanel({
+  filePath,
+  onBack,
+  onOpenDialog,
+}: {
+  filePath: string
+  onBack: () => void
+  onOpenDialog: (path: string) => void
+}) {
+  const { t } = useTranslation()
+  const { onOpenFile, onOpenUrl } = useAppShellContext()
+  const fileManagerName = getFileManagerName()
+  const fileName = getFileName(filePath)
+  const classification = React.useMemo(() => classifyFile(filePath), [filePath])
+  const previewType = classification.type
+  const previewLoadState = React.useMemo(() => getInlinePreviewLoadState(filePath), [filePath])
+  const [content, setContent] = React.useState('')
+  const [dataUrl, setDataUrl] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
+  const [loading, setLoading] = React.useState(false)
+
+  React.useEffect(() => {
+    let cancelled = false
+    setContent('')
+    setDataUrl(null)
+    setError(null)
+    setLoading(previewLoadState.loading)
+
+    if (previewLoadState.kind === 'unsupported') return
+
+    if (previewLoadState.kind === 'image') {
+      window.electronAPI.readFileDataUrl(filePath)
+        .then((url) => {
+          if (!cancelled) setDataUrl(url)
+        })
+        .catch((err) => {
+          if (!cancelled) setError(err instanceof Error ? err.message : String(err))
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
+      return () => { cancelled = true }
+    }
+
+    if (previewLoadState.kind === 'text') {
+      window.electronAPI.readFile(filePath)
+        .then((text) => {
+          if (!cancelled) setContent(text)
+        })
+        .catch((err) => {
+          if (!cancelled) setError(err instanceof Error ? err.message : String(err))
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
+      return () => { cancelled = true }
+    }
+  }, [filePath, previewLoadState.kind, previewLoadState.loading])
+
+  const openExternal = React.useCallback(() => {
+    void window.electronAPI.openFile(filePath)
+  }, [filePath])
+
+  const reveal = React.useCallback(() => {
+    void window.electronAPI.showInFolder(filePath)
+  }, [filePath])
+
+  const copyPath = React.useCallback(() => {
+    void navigator.clipboard?.writeText(filePath)
+  }, [filePath])
+
+  return (
+    <div className="h-full min-h-0 flex flex-col">
+      <div className="shrink-0 border-b border-border/50 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onBack}
+            className="size-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-foreground/5"
+            title={t('common.back')}
+          >
+            <ArrowLeft className="size-4" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium">{fileName}</div>
+            <div className="truncate text-[11px] text-muted-foreground">{filePath}</div>
+          </div>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <button type="button" onClick={() => onOpenDialog(filePath)} className="h-7 rounded-md px-2 text-xs text-foreground/80 hover:bg-foreground/5 flex items-center gap-1">
+            <Maximize2 className="size-3.5" />
+            {t('chat.openInPreviewDialog')}
+          </button>
+          <button type="button" onClick={openExternal} className="h-7 rounded-md px-2 text-xs text-foreground/80 hover:bg-foreground/5 flex items-center gap-1">
+            <ExternalLink className="size-3.5" />
+            {t('common.open')}
+          </button>
+          <button type="button" onClick={reveal} className="h-7 rounded-md px-2 text-xs text-foreground/80 hover:bg-foreground/5 flex items-center gap-1">
+            <FolderOpen className="size-3.5" />
+            {t('chat.showInFileManager', { fileManager: fileManagerName })}
+          </button>
+          <button type="button" onClick={copyPath} className="h-7 rounded-md px-2 text-xs text-foreground/80 hover:bg-foreground/5 flex items-center gap-1">
+            <Copy className="size-3.5" />
+            {t('common.copyPath')}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-auto bg-foreground-3">
+        {loading ? (
+          <div className="p-4 text-xs text-muted-foreground">{t('common.loading')}</div>
+        ) : error ? (
+          <div className="p-4 text-xs text-destructive">{error}</div>
+        ) : previewType === 'image' && dataUrl ? (
+          <div className="flex min-h-full items-center justify-center p-4">
+            <img src={dataUrl} alt={fileName} className="max-h-full max-w-full rounded-md object-contain shadow-minimal" />
+          </div>
+        ) : previewType === 'markdown' ? (
+          <div className="p-4 text-sm">
+            <Markdown mode="full" onUrlClick={onOpenUrl} onFileClick={onOpenFile}>{content}</Markdown>
+          </div>
+        ) : previewLoadState.kind === 'text' ? (
+          <ShikiCodeViewer
+            code={content}
+            filePath={filePath}
+            language={previewType === 'code' ? getLanguageFromPath(filePath) : previewType === 'json' ? 'json' : 'text'}
+            className="min-w-full"
+          />
+        ) : (
+          <div className="p-4 text-xs text-muted-foreground">
+            {t('chat.inlinePreviewUsesDialog')}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
