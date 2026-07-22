@@ -1,4 +1,4 @@
-import LinkifyIt from 'linkify-it'
+import { LinkifyIt } from 'linkify-it'
 import { FILE_EXTENSIONS_PATTERN } from '../../lib/file-classification'
 
 /**
@@ -261,7 +261,7 @@ export function preprocessLinks(text: string): string {
   text = stripPlaceholderLinks(text)
 
   // Quick check - if no potential links, return early
-  if (!linkify.pretest(text) && !FILE_PATH_PRETEST_REGEX.test(text) && !QUOTED_FILE_PATH_PRETEST_REGEX.test(text)) {
+  if (!linkify.test(text) && !FILE_PATH_PRETEST_REGEX.test(text) && !QUOTED_FILE_PATH_PRETEST_REGEX.test(text)) {
     return text
   }
 
@@ -304,7 +304,7 @@ export function preprocessLinks(text: string): string {
  * Useful for optimization - skip preprocessing if no links present
  */
 export function hasLinks(text: string): boolean {
-  return linkify.pretest(text) || FILE_PATH_PRETEST_REGEX.test(text) || QUOTED_FILE_PATH_PRETEST_REGEX.test(text)
+  return linkify.test(text) || FILE_PATH_PRETEST_REGEX.test(text) || QUOTED_FILE_PATH_PRETEST_REGEX.test(text)
 }
 
 /**

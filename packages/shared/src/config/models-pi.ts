@@ -14,7 +14,7 @@
  */
 
 import { getProviders, getModels } from '@earendil-works/pi-ai/compat';
-import type { KnownProvider, Model, Api } from '@earendil-works/pi-ai';
+import type { Model, Api } from '@earendil-works/pi-ai';
 import type { ModelDefinition } from './models.ts';
 
 // ============================================
@@ -89,14 +89,22 @@ function isExcludedPiModel(modelId: string): boolean {
  * dropped. Used to keep the ChatGPT Plus (Codex OAuth) surface restricted to the
  * models the ChatGPT backend actually accepts.
  */
-const PI_PROVIDER_MODEL_ALLOWLIST: Partial<Record<string, ReadonlySet<string>>> = {
-  'openai-codex': new Set(['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini']),
+const PI_PROVIDER_MODEL_ALLOWLIST: Partial<Record<string, Record<string, true>>> = {
+  'openai-codex': {
+    'gpt-5.6-sol': true,
+    'gpt-5.6-terra': true,
+    'gpt-5.6-luna': true,
+    'gpt-5.5': true,
+    'gpt-5.4': true,
+    'gpt-5.4-mini': true,
+    'gpt-5.3-codex-spark': true,
+  },
 };
 
 function isAllowedForProvider(piAuthProvider: string, modelId: string): boolean {
   const allowlist = PI_PROVIDER_MODEL_ALLOWLIST[piAuthProvider];
   if (!allowlist) return true;
-  return allowlist.has(modelId);
+  return allowlist[modelId] === true;
 }
 
 /**
@@ -115,7 +123,7 @@ function isBareBedrockClaudeModel(modelId: string): boolean {
  */
 export function getPiModelsForAuthProvider(piAuthProvider: string): ModelDefinition[] {
   try {
-    const models = getModels(piAuthProvider as KnownProvider);
+    const models = getModels(piAuthProvider as Parameters<typeof getModels>[0]);
     if (models.length > 0) {
       return models
         .filter(m => !isExcludedPiModel(m.id))

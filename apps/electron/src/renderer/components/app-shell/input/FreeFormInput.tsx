@@ -9,13 +9,10 @@ import {
   Square,
   Check,
   DatabaseZap,
-  ChevronDown,
-  AlertCircle,
   X,
 } from 'lucide-react'
-import { Icon_Home, Icon_Folder, Spinner } from '@craft-agent/ui'
+import { Icon_Home, Icon_Folder } from '@craft-agent/ui'
 
-import * as storage from '@/lib/local-storage'
 import { useDirectoryPicker } from '@/hooks/useDirectoryPicker'
 import { ServerDirectoryBrowser } from '@/components/ServerDirectoryBrowser'
 import { Button } from '@/components/ui/button'
@@ -38,37 +35,21 @@ import type { LabelConfig } from '@craft-agent/shared/labels'
 import { parseMentions } from '@/lib/mentions'
 import { RichTextInput, type RichTextInputHandle } from '@/components/ui/rich-text-input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@craft-agent/ui'
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuPortal,
-} from '@/components/ui/dropdown-menu'
-import {
-  StyledDropdownMenuContent,
-  StyledDropdownMenuItem,
-  StyledDropdownMenuSeparator,
-  StyledDropdownMenuSubTrigger,
-  StyledDropdownMenuSubContent,
-} from '@/components/ui/styled-dropdown'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { coerceInputText } from '@/lib/input-text'
 import { isMac, getPathBasename } from '@/lib/platform'
 import { applySmartTypography } from '@/lib/smart-typography'
 import { AttachmentPreview } from '../AttachmentPreview'
-import { ANTHROPIC_MODELS, getModelShortName, getModelDisplayName, getModelContextWindow, type ModelDefinition } from '@config/models'
-import { resolveEffectiveConnectionSlug, isCompatProvider, isLocalConnection } from '@config/llm-connections'
+import { getModelContextWindow } from '@config/models'
 import { useOptionalAppShellContext } from '@/context/AppShellContext'
 import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 import { SourceSelectorPopover } from '@/components/ui/SourceSelectorPopover'
-import { ConnectionIcon } from '@/components/icons/ConnectionIcon'
 import { FreeFormInputContextBadge } from './FreeFormInputContextBadge'
 import type { FileAttachment, LoadedSource, LoadedSkill } from '../../../../shared/types'
-import type { HermesProfileInfo } from '@craft-agent/shared/protocol'
 import type { PermissionMode } from '@craft-agent/shared/agent/modes'
-import { type ThinkingLevel, THINKING_LEVELS, getThinkingLevelNameKey } from '@craft-agent/shared/agent/thinking-levels'
+import { type ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
 import { useEscapeInterrupt } from '@/context/EscapeInterruptContext'
 import { hasOpenOverlay } from '@/lib/overlay-detection'
 import { ToolbarStatusSlot } from './ToolbarStatusSlot'
@@ -81,7 +62,6 @@ import {
   removeRecentWorkingDir,
 } from './working-directory-history'
 import { CompactPermissionModeSelector } from './CompactPermissionModeSelector'
-import { getHermesProfileModel, getHermesProfileSelectorLabel, mergeHermesProfileModels, resolveHermesProfileSelection } from './hermes-profile-badge'
 import { formatPathForDisplay } from './working-directory-path'
 
 /**
@@ -348,178 +328,6 @@ export function FreeFormInput({
   const llmConnections = appShellCtx?.llmConnections ?? []
   const workspaceDefaultConnection = appShellCtx?.workspaceDefaultLlmConnection
 
-  // Derive connectionDefaultModel per-session from the effective connection.
-  // Only non-null for compat providers (custom endpoints with fixed models).
-  // Standard providers (anthropic, pi) → null → normal model picker.
-  const connectionDefaultModel = React.useMemo(() => {
-    const effectiveSlug = resolveEffectiveConnectionSlug(currentConnection, workspaceDefaultConnection, llmConnections)
-    const conn = llmConnections.find(c => c.slug === effectiveSlug)
-    if (!conn) return null
-    if (!isCompatProvider(conn.providerType)) return null
-    // Allow model switching when connection has multiple models
-    if (conn.models && conn.models.length > 1) return null
-    return conn.defaultModel ?? null
-  }, [currentConnection, workspaceDefaultConnection, llmConnections])
-
-  // Compute available models from the effective connection.
-  // All connections have models populated by backfillAllConnectionModels().
-  const availableModels = React.useMemo(() => {
-    // Connection removed — don't fall through to another connection's models
-    if (connectionUnavailable) return []
-
-    // Determine effective connection using the canonical fallback chain
-    const effectiveSlug = resolveEffectiveConnectionSlug(currentConnection, workspaceDefaultConnection, llmConnections)
-    const connection = llmConnections.find(c => c.slug === effectiveSlug)
-
-    if (!connection) {
-      return ANTHROPIC_MODELS // Safety net — shouldn't happen
-    }
-
-    return connection.models || ANTHROPIC_MODELS
-  }, [llmConnections, currentConnection, workspaceDefaultConnection, connectionUnavailable])
-
-  const availableThinkingLevels = THINKING_LEVELS
-
-  // Group connections by provider type for hierarchical dropdown
-  // Each provider (Anthropic, Pi, Hermes) can have multiple connections (API Key, OAuth, etc.)
-  const connectionsByProvider = React.useMemo(() => {
-    const groups: Record<string, typeof llmConnections> = {
-      'Anthropic': [],
-      'Local': [],
-      'Craft Agents Backend': [],
-      'Hermes': [],
-    }
-    for (const conn of llmConnections) {
-      const provider = conn.providerType || 'anthropic'
-      // Group by SDK/runtime
-      if (provider === 'anthropic') {
-        groups['Anthropic'].push(conn)
-      } else if (provider === 'pi_compat' && isLocalConnection(conn)) {
-        groups['Local'].push(conn)
-      } else if (provider === 'pi' || provider === 'pi_compat') {
-        groups['Craft Agents Backend'].push(conn)
-      } else if (provider === 'hermes') {
-        groups['Hermes'].push(conn)
-      }
-    }
-    // Return only non-empty groups
-    return Object.entries(groups).filter(([, conns]) => conns.length > 0)
-  }, [llmConnections])
-
-  // Find current connection details for display
-  const currentConnectionDetails = React.useMemo(() => {
-    if (!currentConnection) return null
-    return llmConnections.find(c => c.slug === currentConnection) ?? null
-  }, [llmConnections, currentConnection])
-
-  // Effective connection: canonical fallback chain (session → workspace default → global default → first)
-  const effectiveConnection = resolveEffectiveConnectionSlug(currentConnection, workspaceDefaultConnection, llmConnections)
-
-  // Effective connection details (with fallbacks) for model list
-  // Unlike currentConnectionDetails which is null when no explicit connection is set,
-  // this resolves to the actual connection being used (including workspace default)
-  const effectiveConnectionDetails = React.useMemo(() => {
-    if (!effectiveConnection) return null
-    return llmConnections.find(c => c.slug === effectiveConnection) ?? null
-  }, [llmConnections, effectiveConnection])
-
-  const isHermesConnection = effectiveConnectionDetails?.providerType === 'hermes'
-  const [hermesProfiles, setHermesProfiles] = React.useState<HermesProfileInfo[]>([])
-  const [hermesProfilesLoading, setHermesProfilesLoading] = React.useState(false)
-  const [hermesProfilesLoaded, setHermesProfilesLoaded] = React.useState(false)
-  const [hermesProfileDropdownOpen, setHermesProfileDropdownOpen] = React.useState(false)
-  const [changingHermesProfile, setChangingHermesProfile] = React.useState<string | null>(null)
-
-  const activeHermesProfile = React.useMemo(
-    () => hermesProfiles.find(profile => profile.isActive)?.name ?? null,
-    [hermesProfiles]
-  )
-  const selectedHermesProfile = resolveHermesProfileSelection(hermesProfile, activeHermesProfile) ?? 'default'
-  const hermesProfileSelectorLabel = getHermesProfileSelectorLabel(
-    effectiveConnectionDetails?.providerType,
-    hermesProfile,
-    activeHermesProfile,
-    hermesProfilesLoading || (!hermesProfilesLoaded && !hermesProfile),
-  )
-  const effectiveAvailableModels = React.useMemo(() => {
-    if (!isHermesConnection) return availableModels
-    return mergeHermesProfileModels(availableModels, hermesProfiles)
-  }, [availableModels, hermesProfiles, isHermesConnection])
-  const selectedHermesProfileModel = React.useMemo(
-    () => getHermesProfileModel(hermesProfiles, selectedHermesProfile),
-    [hermesProfiles, selectedHermesProfile],
-  )
-
-  // Disable thinking selector when the current model explicitly doesn't support it
-  const thinkingDisabled = React.useMemo(() => {
-    const model = effectiveAvailableModels.find(m => typeof m !== 'string' && m.id === currentModel)
-    return typeof model !== 'string' && model?.supportsThinking === false
-  }, [effectiveAvailableModels, currentModel])
-
-  // Get display name for current model (full name, not short name)
-  const currentModelDisplayName = React.useMemo(() => {
-    const modelToDisplay = connectionDefaultModel ?? selectedHermesProfileModel ?? currentModel
-    const model = effectiveAvailableModels.find(m =>
-      typeof m === 'string' ? m === modelToDisplay : m.id === modelToDisplay
-    )
-    if (!model) {
-      // Fallback: use helper function to format unknown model IDs nicely
-      return stripPiPrefixForDisplay(getModelDisplayName(modelToDisplay))
-    }
-    return typeof model === 'string' ? stripPiPrefixForDisplay(getModelDisplayName(model)) : model.name
-  }, [effectiveAvailableModels, currentModel, connectionDefaultModel, selectedHermesProfileModel])
-
-  const loadHermesProfiles = React.useCallback(async () => {
-    if (!isHermesConnection) return
-    setHermesProfilesLoading(true)
-    try {
-      const result = await window.electronAPI.listHermesProfiles()
-      if (!result.success) {
-        toast.error('Failed to list Hermes profiles', { description: result.error })
-        return
-      }
-      setHermesProfiles(result.profiles)
-    } catch (error) {
-      toast.error('Failed to list Hermes profiles', { description: error instanceof Error ? error.message : String(error) })
-    } finally {
-      setHermesProfilesLoaded(true)
-      setHermesProfilesLoading(false)
-    }
-  }, [isHermesConnection])
-
-  React.useEffect(() => {
-    if (!isHermesConnection) {
-      setHermesProfilesLoaded(false)
-      setHermesProfiles([])
-      return
-    }
-    if (compactMode) return
-    void loadHermesProfiles()
-  }, [compactMode, isHermesConnection, loadHermesProfiles])
-
-  const handleHermesProfileDropdownOpenChange = React.useCallback((open: boolean) => {
-    setHermesProfileDropdownOpen(open)
-    if (open) void loadHermesProfiles()
-  }, [loadHermesProfiles])
-
-  const handleHermesProfileSelect = React.useCallback(async (profileName: string) => {
-    if (profileName === selectedHermesProfile || changingHermesProfile) return
-    if (!onHermesProfileChange) return
-
-    setChangingHermesProfile(profileName)
-    try {
-      await onHermesProfileChange(profileName)
-      const profileModel = getHermesProfileModel(hermesProfiles, profileName)
-      if (profileModel && profileModel !== currentModel) {
-        onModelChange(profileModel, effectiveConnection)
-      }
-      toast.success(`Hermes profile: ${profileName}`)
-    } catch (error) {
-      toast.error('Failed to change Hermes profile', { description: error instanceof Error ? error.message : String(error) })
-    } finally {
-      setChangingHermesProfile(null)
-    }
-  }, [changingHermesProfile, currentModel, effectiveConnection, hermesProfiles, onHermesProfileChange, onModelChange, selectedHermesProfile])
 
   // Access sessionStatuses and onSessionStatusChange from context for the # menu state picker
   const sessionStatuses = appShellCtx?.sessionStatuses ?? []
@@ -671,7 +479,6 @@ export function FreeFormInput({
   const [sourceDropdownOpen, setSourceDropdownOpen] = React.useState(false)
   const [isFocused, setIsFocused] = React.useState(false)
   const [inputMaxHeight, setInputMaxHeight] = React.useState(() => Math.min(Math.floor(window.innerHeight * 0.66), 540))
-  const [modelDropdownOpen, setModelDropdownOpen] = React.useState(false)
 
   // Input settings (loaded from config)
   const [autoCapitalisation, setAutoCapitalisation] = React.useState(true)
@@ -1779,36 +1586,6 @@ export function FreeFormInput({
           )}
         </AnimatePresence>
 
-        {/* Rich Text Input with inline mention badges */}
-        {/* In compact mode, hide input while processing (collapses to just bottom bar) */}
-        {!(compactMode && isProcessing) && (
-        <RichTextInput
-          ref={richInputRef}
-          value={input}
-          onChange={handleInputChange}
-          onInput={handleRichInput}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          onLongTextPaste={handleLongTextPaste}
-          onFocus={() => { setIsFocused(true); onFocusChange?.(true) }}
-          onBlur={() => {
-            // Save caret position before losing focus (for restoration via craft:focus-input)
-            lastCaretPositionRef.current = richInputRef.current?.selectionStart ?? null
-            setIsFocused(false)
-            onFocusChange?.(false)
-          }}
-          placeholder={effectivePlaceholder}
-          disabled={disabled}
-          skills={skills}
-          sources={sources}
-          workspaceId={workspaceSlug}
-          className="pl-5 pr-4 pt-4 pb-3 overflow-y-auto min-h-[88px]"
-          style={{ maxHeight: inputMaxHeight }}
-          data-tutorial="chat-input"
-          spellCheck={spellCheck}
-        />
-        )}
-
         {/* Bottom Row: Controls - wrapped in relative container for status slot overlay */}
         <div className="relative">
           {/* Status slot overlay - escape interrupt (highest priority), browser status, etc. */}
@@ -1817,7 +1594,7 @@ export function FreeFormInput({
             sessionId={sessionId}
           />
 
-          <div className={cn("flex items-center gap-1 px-2 py-2", !compactMode && "border-t border-border/50")}>
+          <div className="flex items-end gap-1 px-2.5 py-2.5">
           {/* Hidden file input for attach button (shared by compact and desktop) */}
           <input
             ref={fileInputRef}
@@ -1936,7 +1713,7 @@ export function FreeFormInput({
 
           {/* Desktop: full badges row with labels and working directory */}
           {!compactMode && (
-          <div className="flex items-center gap-1 min-w-32 shrink overflow-hidden">
+          <div className="flex items-end gap-1 shrink-0 min-w-0 overflow-hidden">
           {/* 1. Attach Files Badge */}
           <FreeFormInputContextBadge
             icon={<Paperclip className="size-4" />}
@@ -1944,7 +1721,7 @@ export function FreeFormInput({
               ? t("chat.filesCount", { count: attachments.length })
               : t("chat.attachFiles")
             }
-            isExpanded={isEmptySession}
+            isExpanded={false}
             hasSelection={attachments.length > 0}
             showChevron={false}
             onClick={handleAttachClick}
@@ -2001,7 +1778,7 @@ export function FreeFormInput({
                         return t("chat.sourcesCount", { count: enabledSources.length })
                       })()
                 }
-                isExpanded={isEmptySession}
+                isExpanded={false}
                 hasSelection={optimisticSourceSlugs.length > 0}
                 showChevron={true}
                 isOpen={sourceDropdownOpen}
@@ -2035,298 +1812,47 @@ export function FreeFormInput({
               workingDirectory={workingDirectory}
               onWorkingDirectoryChange={onWorkingDirectoryChange}
               sessionFolderPath={sessionFolderPath}
-              isEmptySession={isEmptySession}
+              isEmptySession={false}
               workspaceId={workspaceId}
             />
           )}
           </div>
           )}
 
-          {/* Spacer */}
-          <div className="flex-1" />
+          {/* Rich text input grows to fill the row */}
+          {!(compactMode && isProcessing) ? (
+            <div className="flex-1 min-w-0">
+            <RichTextInput
+              ref={richInputRef}
+              value={input}
+              onChange={handleInputChange}
+              onInput={handleRichInput}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              onLongTextPaste={handleLongTextPaste}
+              onFocus={() => { setIsFocused(true); onFocusChange?.(true) }}
+              onBlur={() => {
+                lastCaretPositionRef.current = richInputRef.current?.selectionStart ?? null
+                setIsFocused(false)
+                onFocusChange?.(false)
+              }}
+              placeholder={effectivePlaceholder}
+              disabled={disabled}
+              skills={skills}
+              sources={sources}
+              workspaceId={workspaceSlug}
+              className="w-full px-2 py-1.5 overflow-y-auto min-h-[28px]"
+              style={{ maxHeight: inputMaxHeight }}
+              data-tutorial="chat-input"
+              spellCheck={spellCheck}
+            />
+            </div>
+          ) : (
+            <div className="flex-1" />
+          )}
 
           {/* Right side: Model + Send - never shrink so they're always visible */}
           <div className="flex items-center shrink-0">
-            {hermesProfileSelectorLabel && !compactMode && (
-              <DropdownMenu open={hermesProfileDropdownOpen} onOpenChange={handleHermesProfileDropdownOpenChange}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        className={cn(
-                          "input-toolbar-btn inline-flex items-center h-7 px-2 mr-1 gap-1 text-[12px] font-medium text-muted-foreground rounded-[6px] border border-foreground/10 bg-foreground/[0.03] hover:bg-foreground/5 transition-colors select-none",
-                          hermesProfileDropdownOpen && "bg-foreground/5",
-                        )}
-	                        disabled={!onHermesProfileChange}
-	                      >
-	                        {isHermesConnection && effectiveConnectionDetails && llmConnections.length > 1 && storage.get(storage.KEYS.showConnectionIcons, true) && (
-	                          <ConnectionIcon connection={effectiveConnectionDetails} size={14} showTooltip />
-	                        )}
-	                        <span className="max-w-[160px] truncate">{hermesProfileSelectorLabel}</span>
-	                        {changingHermesProfile ? <Spinner className="size-3" /> : <ChevronDown className="size-3 opacity-60" />}
-	                      </button>
-                    </DropdownMenuTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    Hermes profile for this session
-                  </TooltipContent>
-                </Tooltip>
-                <StyledDropdownMenuContent side="top" align="end" sideOffset={8} className="min-w-[240px] max-h-[300px] overflow-y-auto">
-                  {hermesProfilesLoading ? (
-                    <StyledDropdownMenuItem disabled>
-                      <Spinner className="size-3.5" />
-                      Loading profiles…
-                    </StyledDropdownMenuItem>
-                  ) : hermesProfiles.length === 0 ? (
-                    <StyledDropdownMenuItem disabled>
-                      No Hermes profiles found
-                    </StyledDropdownMenuItem>
-                  ) : (
-                    hermesProfiles.map((profile) => {
-                      const isSelected = profile.name === selectedHermesProfile
-                      const isChanging = changingHermesProfile === profile.name
-                      const modelText = profile.model
-                        ? profile.provider ? `${profile.model} (${profile.provider})` : profile.model
-                        : 'No model configured'
-                      return (
-                        <StyledDropdownMenuItem
-                          key={profile.name}
-                          disabled={!!changingHermesProfile}
-                          onSelect={() => void handleHermesProfileSelect(profile.name)}
-                          className="min-w-0 items-start py-2"
-                        >
-                          {isChanging ? <Spinner className="mt-0.5 size-3.5" /> : <Check className={cn("mt-0.5 size-3.5", isSelected ? "opacity-100" : "opacity-0")} />}
-                          <span className="min-w-0 flex-1">
-                            <span className={cn("block truncate text-[13px]", isSelected && "font-medium text-accent")}>{profile.name}</span>
-                            <span className="block max-w-[190px] truncate text-[11px] text-muted-foreground">{modelText}</span>
-                          </span>
-                        </StyledDropdownMenuItem>
-                      )
-                    })
-                  )}
-                </StyledDropdownMenuContent>
-              </DropdownMenu>
-            )}
-            {/* 5. Model/Connection Selector - Hidden in compact mode (EditPopover embedding) */}
-          {!compactMode && (
-          <DropdownMenu open={modelDropdownOpen} onOpenChange={setModelDropdownOpen}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      "input-toolbar-btn inline-flex items-center h-7 px-1.5 gap-0.5 text-[13px] shrink-0 rounded-[6px] hover:bg-foreground/5 transition-colors select-none",
-                      modelDropdownOpen && "bg-foreground/5",
-                      connectionUnavailable && "text-destructive",
-                    )}
-                  >
-                    {connectionUnavailable ? (
-                      <>
-                        <AlertCircle className="size-3.5 shrink-0" />
-                        {t('common.unavailable')}
-                      </>
-	                    ) : (
-	                      <>
-	                        {!isHermesConnection && effectiveConnectionDetails && llmConnections.length > 1 && storage.get(storage.KEYS.showConnectionIcons, true) && <ConnectionIcon connection={effectiveConnectionDetails} size={14} showTooltip />}
-	                        {currentModelDisplayName}
-	                        {!connectionDefaultModel && <ChevronDown className="size-3 opacity-50 shrink-0" />}
-	                      </>
-                    )}
-                  </button>
-                </DropdownMenuTrigger>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                {t('common.model')}
-              </TooltipContent>
-            </Tooltip>
-            <StyledDropdownMenuContent side="top" align="end" sideOffset={8} className="min-w-[260px]">
-              {/* Connection unavailable message */}
-              {connectionUnavailable ? (
-                <div className="flex flex-col items-center justify-center py-6 px-4 text-center">
-                  <AlertCircle className="size-8 text-destructive mb-2" />
-                  <div className="font-medium text-sm mb-1">{t('chat.connectionUnavailable')}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {t('chat.connectionUnavailableDescription')}
-                  </div>
-                </div>
-              ) : connectionDefaultModel ? (
-                <StyledDropdownMenuItem
-                  disabled
-                  className="flex items-center justify-between px-2 py-2 rounded-lg"
-                >
-                  <div className="text-left">
-                    <div className="font-medium text-sm">{stripPiPrefixForDisplay(connectionDefaultModel)}</div>
-                    <div className="text-xs text-muted-foreground">{t('chat.connectionDefault')}</div>
-                  </div>
-                  <Check className="size-3 text-foreground shrink-0 ml-3" />
-                </StyledDropdownMenuItem>
-              ) : isEmptySession && llmConnections.length > 1 ? (
-                /* Hierarchical view: Provider → Connection → Models (for new sessions with multiple connections) */
-                connectionsByProvider.map(([providerName, connections], index) => (
-                  <React.Fragment key={providerName}>
-                    {/* Provider group label */}
-                    <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide select-none">
-                      {providerName}
-                    </div>
-                    {connections.map((conn) => {
-                      const isCurrentConnection = effectiveConnection === conn.slug
-                      const isAuthenticated = conn.isAuthenticated
-                      return (
-                        <DropdownMenuSub key={conn.slug}>
-                          <StyledDropdownMenuSubTrigger
-                            disabled={!isAuthenticated}
-                            className={cn(
-                              "flex items-center justify-between px-2 py-2 rounded-lg",
-                              isCurrentConnection && "bg-foreground/5"
-                            )}
-                          >
-                            <div className="text-left flex-1">
-                              <div className="font-medium text-sm flex items-center gap-1.5">
-                                <ConnectionIcon connection={conn} size={14} />
-                                {conn.name}
-                                {isCurrentConnection && <Check className="size-3 text-foreground" />}
-                              </div>
-                              {!isAuthenticated && (
-                                <div className="text-xs text-muted-foreground">{t('settings.ai.notAuthenticated')}</div>
-                              )}
-                            </div>
-                          </StyledDropdownMenuSubTrigger>
-                          {isAuthenticated && (
-                            <StyledDropdownMenuSubContent className="min-w-[220px]">
-                              {(conn.providerType === 'hermes'
-                                ? mergeHermesProfileModels(conn.models || ANTHROPIC_MODELS, hermesProfiles)
-                                : (conn.models || ANTHROPIC_MODELS)
-                              ).map((model) => {
-                                const modelId = typeof model === 'string' ? model : model.id
-                                const modelName = typeof model === 'string' ? stripPiPrefixForDisplay(getModelShortName(model)) : model.name
-                                const isSelectedModel = isCurrentConnection && (selectedHermesProfileModel ?? currentModel) === modelId
-                                return (
-                                  <StyledDropdownMenuItem
-                                    key={modelId}
-                                    onSelect={() => {
-                                      if (!isCurrentConnection && onConnectionChange) {
-                                        onConnectionChange(conn.slug)
-                                      }
-                                      onModelChange(modelId, conn.slug)
-                                    }}
-                                    className="flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer"
-                                  >
-                                    <div className="font-medium text-sm">{modelName}</div>
-                                    {isSelectedModel && (
-                                      <Check className="size-3 text-foreground shrink-0 ml-3" />
-                                    )}
-                                  </StyledDropdownMenuItem>
-                                )
-                              })}
-                            </StyledDropdownMenuSubContent>
-                          )}
-                        </DropdownMenuSub>
-                      )
-                    })}
-                    {index < connectionsByProvider.length - 1 && (
-                      <StyledDropdownMenuSeparator className="my-1" />
-                    )}
-                  </React.Fragment>
-                ))
-              ) : (
-                /* Flat model list (single connection or session started) */
-                <>
-                  {/* Indicator showing which connection is being used */}
-                  {!isEmptySession && currentConnectionDetails && llmConnections.length > 1 && (
-                    <>
-                      <div className="flex items-center gap-2 px-2 py-1.5 text-xs select-none text-muted-foreground">
-                        <span>{t('chat.usingConnection', { name: currentConnectionDetails.name })}</span>
-                      </div>
-                      <StyledDropdownMenuSeparator className="my-1" />
-                    </>
-                  )}
-                  {/* Model options based on effective connection's provider type */}
-                  {effectiveAvailableModels.map((model) => {
-                    const modelId = typeof model === 'string' ? model : model.id
-                    const modelName = typeof model === 'string' ? stripPiPrefixForDisplay(getModelShortName(model)) : model.name
-                    const isSelected = (selectedHermesProfileModel ?? currentModel) === modelId
-                    const descriptionKey = typeof model !== 'string' && 'descriptionKey' in model ? (model.descriptionKey as string) : undefined
-                    const description = descriptionKey ? t(descriptionKey) : (typeof model !== 'string' && 'description' in model ? (model.description as string) : '')
-                    return (
-                      <StyledDropdownMenuItem
-                        key={modelId}
-                        onSelect={() => onModelChange(modelId, effectiveConnection)}
-                        className="flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer"
-                      >
-                        <div className="text-left">
-                          <div className="font-medium text-sm">{modelName}</div>
-                          {description && (
-                            <div className="text-xs text-muted-foreground">{description}</div>
-                          )}
-                        </div>
-                        {isSelected && (
-                          <Check className="size-3 text-foreground shrink-0 ml-3" />
-                        )}
-                      </StyledDropdownMenuItem>
-                    )
-                  })}
-                </>
-              )}
-
-              {/* Thinking level selector — only shown when thinking levels are available
-                  (Claude supports extended thinking, OpenAI backends may not) */}
-              {availableThinkingLevels.length > 0 && (
-                <>
-                  <StyledDropdownMenuSeparator className="my-1" />
-
-                  <DropdownMenuSub>
-                    <StyledDropdownMenuSubTrigger disabled={thinkingDisabled} className={cn("flex items-center justify-between px-2 py-2 rounded-lg", thinkingDisabled && "opacity-50 cursor-not-allowed")}>
-                      <div className="text-left flex-1">
-                        <div className="font-medium text-sm">{t(getThinkingLevelNameKey(thinkingLevel))}</div>
-                        <div className="text-xs text-muted-foreground">{thinkingDisabled ? t('thinking.notSupported') : t('thinking.extendedDesc')}</div>
-                      </div>
-                    </StyledDropdownMenuSubTrigger>
-                    <StyledDropdownMenuSubContent className="min-w-[220px]">
-                      {availableThinkingLevels.map(({ id, nameKey, descriptionKey }) => {
-                        const isSelected = thinkingLevel === id
-                        return (
-                          <StyledDropdownMenuItem
-                            key={id}
-                            onSelect={() => onThinkingLevelChange?.(id)}
-                            className="flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer"
-                          >
-                            <div className="text-left">
-                              <div className="font-medium text-sm">{t(nameKey)}</div>
-                              <div className="text-xs text-muted-foreground">{t(descriptionKey)}</div>
-                            </div>
-                            {isSelected && (
-                              <Check className="size-3 text-foreground shrink-0 ml-3" />
-                            )}
-                          </StyledDropdownMenuItem>
-                        )
-                      })}
-                    </StyledDropdownMenuSubContent>
-                  </DropdownMenuSub>
-                </>
-              )}
-
-              {/* Context usage footer - only show when we have token data */}
-              {contextStatus?.inputTokens != null && contextStatus.inputTokens > 0 && (
-                <>
-                  <StyledDropdownMenuSeparator className="my-1" />
-                  <div className="px-2 py-1.5 select-none">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{t('chat.context')}</span>
-                      <span className="flex items-center gap-1.5">
-                        {contextStatus.isCompacting && (
-                          <Spinner className="size-3" />
-                        )}
-                        {t('chat.tokensUsed', { displayCount: formatTokenCount(contextStatus.inputTokens) })}
-                      </span>
-                    </div>
-                  </div>
-                </>
-              )}
-            </StyledDropdownMenuContent>
-          </DropdownMenu>
-          )}
 
           {/* 5.5 Context Usage Warning Badge - shows when approaching auto-compaction threshold */}
           {(() => {

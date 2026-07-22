@@ -2,6 +2,7 @@ import * as React from "react"
 import { useTranslation, Trans } from "react-i18next"
 import { useRef, useState, useEffect, useCallback, useMemo } from "react"
 import { useAtomValue, useStore } from "jotai"
+import { selectAtom } from "jotai/utils"
 import { LazyMotion, m, AnimatePresence, domAnimation } from "motion/react"
 import {
   Archive,
@@ -625,7 +626,19 @@ function AppShellContent({
   const panelCount = useAtomValue(panelCountAtom)
   const focusedSessionId = useAtomValue(focusedSessionIdAtom)
   const rightSidebarSessionId = focusedSessionId ?? session.selected
-  const rightSidebarSession = useAtomValue(sessionAtomFamily(rightSidebarSessionId ?? ''))
+  // Granular subscription: only the 3 scalar path fields the sidebar reads.
+  // The whole session object changes on every streaming text_delta, so
+  // subscribing to it here re-rendered the AppShell root + entire right sidebar
+  // per token. selectAtom + tuple equality confines re-renders to path changes.
+  const rightSidebarPathsAtom = React.useMemo(
+    () => selectAtom(
+      sessionAtomFamily(rightSidebarSessionId ?? ''),
+      (s) => [s?.workingDirectory, s?.sdkCwd, s?.sessionFolderPath] as const,
+      (a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2],
+    ),
+    [rightSidebarSessionId],
+  )
+  const [rbWorkingDirectory, rbSdkCwd, rbSessionFolderPath] = useAtomValue(rightSidebarPathsAtom)
   const rightSidebarPanel = navState.rightSidebar
   const isRightSidebarVisible = !isAutoCompact && rightSidebarPanel?.type === 'session-info' && !!rightSidebarSessionId
   const [rightSidebarPreviewSelection, setRightSidebarPreviewSelection] = React.useState<RightSidebarPreviewSelection | null>(null)
@@ -1677,10 +1690,10 @@ function AppShellContent({
   const handleContextOpenFile = useCallback((path: string) => {
     const targetSessionId = focusedSessionId ?? session.selected ?? null
     const targetSessionMeta = targetSessionId ? sessionMetaMap.get(targetSessionId) : undefined
-    const workingDirectory = rightSidebarSession?.workingDirectory ?? targetSessionMeta?.workingDirectory ?? activeSessionWorkingDirectory
-    const sdkCwd = rightSidebarSession?.sdkCwd ?? targetSessionMeta?.sdkCwd
+    const workingDirectory = rbWorkingDirectory ?? targetSessionMeta?.workingDirectory ?? activeSessionWorkingDirectory
+    const sdkCwd = rbSdkCwd ?? targetSessionMeta?.sdkCwd
     const workspaceRootPath = activeWorkspace?.rootPath
-    const sessionFolderPath = rightSidebarSession?.sessionFolderPath
+    const sessionFolderPath = rbSessionFolderPath
       ?? (workspaceRootPath && targetSessionId ? `${workspaceRootPath}/sessions/${targetSessionId}` : undefined)
 
     void resolveOpenFilePath({
@@ -1704,9 +1717,9 @@ function AppShellContent({
     activeWorkspace?.rootPath,
     contextValue,
     focusedSessionId,
-    rightSidebarSession?.sessionFolderPath,
-    rightSidebarSession?.sdkCwd,
-    rightSidebarSession?.workingDirectory,
+    rbSessionFolderPath,
+    rbSdkCwd,
+    rbWorkingDirectory,
     session.selected,
     sessionMetaMap,
   ])
@@ -3642,12 +3655,12 @@ function AppShellContent({
                 <div className="flex-1 min-h-0 overflow-hidden">
                   <div className={cn(
                     "h-full min-h-0",
-                    rightSidebarFilePaneLayout.mode === 'split' ? "grid grid-cols-[minmax(220px,0.85fr)_1px_minmax(320px,1.25fr)]" : "block",
+                    rightSidebarFilePaneLayout.mode === 'split' ? "grid grid-cols-[minmax(180px,0.35fr)_1px_minmax(360px,1.65fr)]" : "block",
                   )}>
                     <div className="min-h-0 min-w-0 overflow-hidden">
                       <SessionInfoPopoverContent
                         sessionId={rightSidebarSessionId}
-                        sessionFolderPath={rightSidebarSession?.sessionFolderPath}
+                        sessionFolderPath={rbSessionFolderPath}
                         onPreviewFileInline={handleRightSidebarPreviewFile}
                       />
                     </div>

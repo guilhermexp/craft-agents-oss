@@ -97,5 +97,8 @@ export { EventQueue } from './event-queue.ts';
 export { ClaudeEventAdapter } from './claude/event-adapter.ts';
 export { PiEventAdapter } from './pi/event-adapter.ts';
 
+// Copilot OAuth (Pi SDK ≥0.80.8 removed the pi-ai/oauth runtime exports)
+export { loginGitHubCopilot, refreshGitHubCopilotToken } from './pi/copilot-oauth.ts';
+
 // Agent implementations are imported directly by factory.ts
 // Consumers should use createAgent() / createBackend() instead of concrete classes

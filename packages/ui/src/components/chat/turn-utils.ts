@@ -1205,3 +1205,76 @@ export function countTotalActivities(items: (ActivityItem | ActivityGroup)[]): n
   }
   return count
 }
+
+// ============================================================================
+// Structural Sharing (streaming re-render optimization)
+// ============================================================================
+
+/**
+ * Value-equality between two turns, used to decide whether a previous turn
+ * object can be reused (preserving reference identity for React.memo).
+ *
+ * Only completed, non-streaming assistant turns are eligible for reuse — active
+ * turns must always take the fresh object so their updates render. User/system/
+ * auth turns wrap a single immutable message, so reference equality on that
+ * message is sufficient.
+ *
+ * Activities are rebuilt on every grouping pass so their references always
+ * differ, but they derive purely from immutable messages — unchanged ones
+ * compare field-equal.
+ */
+function isSameTurnValue(a: Turn, b: Turn): boolean {
+  if (a.type !== b.type) return false
+  if (a.type !== 'assistant' || b.type !== 'assistant') {
+    return (a as UserTurn).message === (b as UserTurn).message
+  }
+  // Streaming/incomplete turns must always take the fresh object
+  if (a.isStreaming || b.isStreaming || !a.isComplete || !b.isComplete) return false
+  if (a.intent !== b.intent) return false
+  const ra = a.response
+  const rb = b.response
+  if ((ra == null) !== (rb == null)) return false
+  if (ra && rb && (ra.messageId !== rb.messageId || ra.text !== rb.text || ra.annotations !== rb.annotations)) return false
+  if (a.activities.length !== b.activities.length) return false
+  for (const [i, x] of a.activities.entries()) {
+    const y = b.activities[i]
+    if (!y) return false
+    if (
+      x.id !== y.id
+      || x.type !== y.type
+      || x.status !== y.status
+      || x.timestamp !== y.timestamp
+      || x.content !== y.content
+      || x.toolName !== y.toolName
+      || x.error !== y.error
+      || x.intent !== y.intent
+      || x.messageId !== y.messageId
+      || x.annotations !== y.annotations
+    ) return false
+  }
+  return true
+}
+
+/**
+ * Reconciles a freshly grouped turn list against the previous one, reusing
+ * previous Turn objects whose value is unchanged. This keeps React.memo on
+ * TurnCard effective during streaming: only the active (streaming) turn gets a
+ * new object, so completed turns skip re-rendering (and re-parsing markdown) on
+ * every token.
+ *
+ * Returns the previous array itself when nothing changed, preserving useMemo
+ * identity for downstream consumers.
+ */
+export function reconcileTurns(prev: Turn[], next: Turn[], keyOf: (turn: Turn) => string): Turn[] {
+  if (prev.length === 0) return next
+  const prevByKey = new Map<string, Turn>()
+  for (const turn of prev) prevByKey.set(keyOf(turn), turn)
+  let changed = prev.length !== next.length
+  const result = next.map((turn, index) => {
+    const prevTurn = prevByKey.get(keyOf(turn))
+    const reused = prevTurn && isSameTurnValue(prevTurn, turn) ? prevTurn : turn
+    if (reused !== prev[index]) changed = true
+    return reused
+  })
+  return changed ? result : prev
+}

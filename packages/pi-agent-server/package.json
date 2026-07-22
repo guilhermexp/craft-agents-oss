@@ -14,13 +14,13 @@
     "validate": "bun run typecheck && bun run build"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.80.6",
-    "@earendil-works/pi-agent-core": "0.80.6",
-    "@earendil-works/pi-ai": "0.80.6",
-    "duck-duck-scrape": "^2.2.7",
+    "@earendil-works/pi-agent-core": "0.80.10",
+    "@earendil-works/pi-ai": "0.80.10",
+    "@earendil-works/pi-coding-agent": "0.80.10",
     "@sinclair/typebox": "^0.34.52",
-    "node-html-parser": "^6.1.13",
-    "pdfjs-dist": "^5.7.284",
+    "duck-duck-scrape": "^2.2.7",
+    "node-html-parser": "^9.0.0",
+    "pdfjs-dist": "^6.1.200",
     "turndown": "^7.2.4"
   },
   "devDependencies": {

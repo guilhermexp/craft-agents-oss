@@ -50,6 +50,7 @@ import {
   TurnCard,
   UserMessageBubble,
   groupMessagesByTurn,
+  reconcileTurns,
   formatTurnAsMarkdown,
   formatActivityAsMarkdown,
   getAssistantTurnUiKey,
@@ -523,9 +524,12 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const [visibleTurnCount, setVisibleTurnCount] = React.useState(TURNS_PER_PAGE)
   // Sticky-bottom: When true, auto-scroll on content changes. Toggled by user scroll behavior.
   const isStickToBottomRef = React.useRef(true)
-  // Mirror isFocusedPanel into a ref so the ResizeObserver closure reads the latest value
+  // Mirror isFocusedPanel into a ref so long-lived closures read the latest value.
+  // Sync after commit so render stays pure under React's replayable render model.
   const isFocusedPanelRef = React.useRef(isFocusedPanel)
-  isFocusedPanelRef.current = isFocusedPanel
+  React.useLayoutEffect(() => {
+    isFocusedPanelRef.current = isFocusedPanel
+  }, [isFocusedPanel])
   // Skip smooth scroll briefly after session switch (instant scroll already happened)
   const skipSmoothScrollUntilRef = React.useRef(0)
   // Track message commit boundaries so we can auto-scroll when a new user message
@@ -555,14 +559,16 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
   // Register as focus zone - when zone gains focus, focus the textarea
   // Guard with isFocusedPanelRef so only the focused panel responds in multi-panel layouts
+  const focusChatInput = React.useCallback(() => {
+    if (isFocusedPanelRef.current) {
+      textareaRef.current?.focus()
+    }
+  }, [textareaRef])
+
   const { zoneRef, isFocused } = useFocusZone({
     zoneId: 'chat',
     enabled: isFocusedPanel,
-    focusFirst: () => {
-      if (isFocusedPanelRef.current) {
-        textareaRef.current?.focus()
-      }
-    },
+    focusFirst: focusChatInput,
   })
 
   // Background tasks management
@@ -939,24 +945,20 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // Navigate to next match (no looping - stops at last match)
   const goToNextMatch = useCallback(() => {
     if (validMatches.length === 0) return
-    setCurrentMatchIndex(prev => {
-      // Don't loop - stop at last match
-      if (prev >= validMatches.length - 1) return prev
-      shouldScrollToMatchRef.current = true
-      return prev + 1
-    })
-  }, [validMatches])
+    const nextIndex = Math.min(currentMatchIndex + 1, validMatches.length - 1)
+    if (nextIndex === currentMatchIndex) return
+    shouldScrollToMatchRef.current = true
+    setCurrentMatchIndex(nextIndex)
+  }, [currentMatchIndex, validMatches.length])
 
   // Navigate to previous match (no looping - stops at first match)
   const goToPrevMatch = useCallback(() => {
     if (validMatches.length === 0) return
-    setCurrentMatchIndex(prev => {
-      // Don't loop - stop at first match
-      if (prev <= 0) return prev
-      shouldScrollToMatchRef.current = true
-      return prev - 1
-    })
-  }, [validMatches])
+    const nextIndex = Math.max(currentMatchIndex - 1, 0)
+    if (nextIndex === currentMatchIndex) return
+    shouldScrollToMatchRef.current = true
+    setCurrentMatchIndex(nextIndex)
+  }, [currentMatchIndex, validMatches.length])
 
   // With CSS Highlight API, highlighting is instant — no settling phase
   const isHighlighting = false
@@ -1055,8 +1057,16 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     })
   }, [session])
 
-  // Ref to track total turn count for scroll handler
+  // Refs read by scroll handlers. Keep them synchronized after commit so render stays pure.
   const totalTurnCountRef = React.useRef(0)
+  const visibleTurnCountRef = React.useRef(visibleTurnCount)
+
+  // Structural-sharing cache for grouped turns (see reconcileTurns). Updated
+  // after commit so aborted/replayed React renders do not leak into the cache.
+  const turnCacheRef = React.useRef<{ sessionId: string | null; turns: Turn[] }>({ sessionId: null, turns: [] })
+  // Pending scroll anchor for reverse pagination (see handleScroll + the
+  // useLayoutEffect that restores scroll position after loading older turns).
+  const pendingTurnAnchorRef = React.useRef<{ key: string; top: number } | null>(null)
 
   // Latest message metadata (for commit-time auto-scroll)
   const messageCount = session?.messages.length ?? 0
@@ -1119,22 +1129,25 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
     // Load more turns when scrolling near top (within 100px)
     if (scrollTop < 100) {
-      setVisibleTurnCount(prev => {
-        // Check if there are more turns to load
-        const currentStartIndex = Math.max(0, totalTurnCountRef.current - prev)
-        if (currentStartIndex <= 0) return prev // Already showing all
-
-        // Remember scroll height before adding more items
-        const prevScrollHeight = viewport.scrollHeight
-
-        // Schedule scroll position adjustment after render
-        requestAnimationFrame(() => {
-          const newScrollHeight = viewport.scrollHeight
-          viewport.scrollTop = newScrollHeight - prevScrollHeight + scrollTop
-        })
-
-        return prev + TURNS_PER_PAGE
-      })
+      // Anchor on the first rendered turn BEFORE loading more. Element-based
+      // anchoring survives streaming growth between measurement and the
+      // post-render adjustment, unlike a scrollHeight delta captured across an
+      // async requestAnimationFrame boundary.
+      const anchorEl = viewport.querySelector<HTMLElement>('[data-turn-key]')
+      if (anchorEl?.dataset.turnKey) {
+        pendingTurnAnchorRef.current = {
+          key: anchorEl.dataset.turnKey,
+          top: anchorEl.getBoundingClientRect().top,
+        }
+      }
+      // Check if there are more turns to load. Compute outside the state setter
+      // so the updater remains pure under React's replayable render model.
+      const currentStartIndex = Math.max(0, totalTurnCountRef.current - visibleTurnCountRef.current)
+      if (currentStartIndex <= 0) {
+        pendingTurnAnchorRef.current = null
+        return
+      }
+      setVisibleTurnCount(Math.min(totalTurnCountRef.current, visibleTurnCountRef.current + TURNS_PER_PAGE))
     }
   }, [])
 
@@ -1145,6 +1158,19 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     viewport.addEventListener('scroll', handleScroll, { passive: true })
     return () => viewport.removeEventListener('scroll', handleScroll)
   }, [handleScroll])
+
+  // Restore scroll position after reverse pagination using the captured turn
+  // anchor. useLayoutEffect runs after render but before paint, so the
+  // corrective scrollTop adjustment never produces a visible jump.
+  React.useLayoutEffect(() => {
+    const pending = pendingTurnAnchorRef.current
+    if (!pending) return
+    pendingTurnAnchorRef.current = null
+    const viewport = scrollViewportRef.current
+    const el = viewport?.querySelector<HTMLElement>(`[data-turn-key="${CSS.escape(pending.key)}"]`)
+    if (!viewport || !el) return
+    viewport.scrollTop += el.getBoundingClientRect().top - pending.top
+  }, [visibleTurnCount])
 
   // Auto-scroll using ResizeObserver for streaming content
   // Initial scroll is handled by ScrollOnMount (useLayoutEffect, before paint)
@@ -1177,9 +1203,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       // Clear pending scroll and wait for layout to settle
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = setTimeout(() => {
-        // Skip smooth scroll if we just did an instant scroll (session switch/lazy load)
+        // Skip the streaming auto-scroll right after an instant scroll (session switch/lazy load)
         if (Date.now() < skipSmoothScrollUntilRef.current) return
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
       }, 200)
     })
 
@@ -1412,11 +1438,21 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     // Pass isSessionProcessing so a turn that ends on a tool call (no final
     // non-intermediate text) is marked complete once the session stops — avoids
     // the chat sitting on "Thinking…" forever.
-    return groupMessagesByTurn(session.messages, { isSessionProcessing: session.isProcessing })
-  }, [session?.messages, session?.isProcessing])
+    const fresh = groupMessagesByTurn(session.messages, { isSessionProcessing: session.isProcessing })
+    // Structural sharing: reuse unchanged turn objects so React.memo on TurnCard
+    // (reference equality on activities/response) skips re-rendering completed
+    // turns on every streaming token. Cache resets on session switch.
+    const cache = turnCacheRef.current
+    const prev = cache.sessionId === session.id ? cache.turns : []
+    return reconcileTurns(prev, fresh, getTurnKey)
+  }, [session?.messages, session?.isProcessing, session?.id])
 
-  // Keep ref in sync for scroll handler
-  totalTurnCountRef.current = allTurns.length
+  // Keep refs in sync for scroll handlers after commit; render remains pure.
+  React.useLayoutEffect(() => {
+    turnCacheRef.current = { sessionId: session?.id ?? null, turns: allTurns }
+    totalTurnCountRef.current = allTurns.length
+    visibleTurnCountRef.current = visibleTurnCount
+  }, [allTurns, session?.id, visibleTurnCount])
 
   // Reverse pagination: only render last N turns for fast initial render
   const startIndex = Math.max(0, allTurns.length - visibleTurnCount)
@@ -1620,6 +1656,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                       return (
                         <div
                           key={turnKey}
+                          data-turn-key={turnKey}
                           ref={el => { if (el) turnRefs.current.set(turnKey, el); else turnRefs.current.delete(turnKey) }}
                           className={cn(
                             compactMode ? "pt-2 pb-1" : CHAT_LAYOUT.userMessagePadding,
@@ -1645,6 +1682,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                       return (
                         <div
                           key={turnKey}
+                          data-turn-key={turnKey}
                           ref={el => { if (el) turnRefs.current.set(turnKey, el); else turnRefs.current.delete(turnKey) }}
                           className={cn(
                             "rounded-lg transition-all duration-200",
@@ -1680,6 +1718,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                       return (
                         <div
                           key={turnKey}
+                          data-turn-key={turnKey}
                           ref={el => { if (el) turnRefs.current.set(turnKey, el); else turnRefs.current.delete(turnKey) }}
                           className={cn(
                             "mt-2 rounded-lg transition-all duration-200",
@@ -1705,6 +1744,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                     return (
                       <div
                         key={turnKey}
+                        data-turn-key={turnKey}
                         ref={el => { if (el) turnRefs.current.set(turnKey, el); else turnRefs.current.delete(turnKey) }}
                         className={cn(
                           "pt-2",

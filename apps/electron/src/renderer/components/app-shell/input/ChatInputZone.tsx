@@ -8,6 +8,7 @@ import type { BackgroundTask } from '../ActiveTasksBar'
 import { ActiveOptionBadges } from '../ActiveOptionBadges'
 import { InputContainer } from './InputContainer'
 import { InputErrorBoundary } from './InputErrorBoundary'
+import { ModelPickerControl } from './ModelPickerControl'
 
 const EMPTY_TASKS: BackgroundTask[] = []
 const EMPTY_SESSION_LABELS: string[] = []
@@ -81,30 +82,6 @@ export function ChatInputZone({
       compactMode ? 'px-2 pb-3' : 'px-3 @xs/panel:px-4 pb-4',
       className,
     )}>
-      {shouldShowOptionBadges && (
-        <ActiveOptionBadges
-          permissionMode={permissionMode}
-          onPermissionModeChange={onPermissionModeChange}
-          tasks={tasks}
-          sessionId={sessionId}
-          sessionFolderPath={sessionFolderPath}
-          onKillTask={onKillTask}
-          onInsertMessage={onInsertMessage ?? inputProps.onInputChange}
-          sessionLabels={sessionLabels}
-          labels={labels}
-          onLabelsChange={onLabelsChange}
-          onRemoveLabel={(labelId) => {
-            const next = (sessionLabels || []).filter(entry => entry !== labelId && !entry.startsWith(`${labelId}::`))
-            onLabelsChange?.(next)
-          }}
-          autoOpenLabelId={autoOpenLabelId}
-          onAutoOpenConsumed={() => setAutoOpenLabelId(null)}
-          sessionStatuses={sessionStatuses}
-          currentSessionStatus={currentSessionStatus}
-          onSessionStatusChange={onSessionStatusChange}
-        />
-      )}
-
       <InputErrorBoundary
         sessionId={sessionId}
         resetKey={inputResetKey}
@@ -123,6 +100,48 @@ export function ChatInputZone({
           currentSessionStatus={currentSessionStatus}
         />
       </InputErrorBoundary>
+
+        {!compactMode && (
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
+            {shouldShowOptionBadges && (
+            <ActiveOptionBadges
+              className="mb-0"
+              permissionMode={permissionMode}
+              onPermissionModeChange={onPermissionModeChange}
+              tasks={tasks}
+              sessionId={sessionId}
+              sessionFolderPath={sessionFolderPath}
+              onKillTask={onKillTask}
+              onInsertMessage={onInsertMessage ?? inputProps.onInputChange}
+              sessionLabels={sessionLabels}
+              labels={labels}
+              onLabelsChange={onLabelsChange}
+              onRemoveLabel={(labelId) => {
+                const next = (sessionLabels || []).filter(entry => entry !== labelId && !entry.startsWith(`${labelId}::`))
+                onLabelsChange?.(next)
+              }}
+              autoOpenLabelId={autoOpenLabelId}
+              onAutoOpenConsumed={() => setAutoOpenLabelId(null)}
+              sessionStatuses={sessionStatuses}
+              currentSessionStatus={currentSessionStatus}
+              onSessionStatusChange={onSessionStatusChange}
+            />
+            )}
+            <ModelPickerControl
+              currentModel={inputProps.currentModel}
+              onModelChange={inputProps.onModelChange}
+              currentConnection={inputProps.currentConnection}
+              onConnectionChange={inputProps.onConnectionChange}
+              thinkingLevel={inputProps.thinkingLevel}
+              onThinkingLevelChange={inputProps.onThinkingLevelChange}
+              hermesProfile={inputProps.hermesProfile}
+              onHermesProfileChange={inputProps.onHermesProfileChange}
+              connectionUnavailable={inputProps.connectionUnavailable}
+              isEmptySession={inputProps.isEmptySession}
+              contextStatus={inputProps.contextStatus}
+            />
+          </div>
+        )}
     </div>
   )
 }
