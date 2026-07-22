@@ -5,6 +5,10 @@ const VERSIONS_URL = 'https://agents.craft.do/electron';
 export async function getLatestVersion(): Promise<string | null> {
     try {
       const response = await fetch(`${VERSIONS_URL}/latest`);
+      if (!response.ok) {
+        debug(`[manifest] Failed to get latest version: HTTP ${response.status}`);
+        return null;
+      }
       const data = await response.json();
       const version = (data as { version?: string }).version;
       if (typeof version !== 'string') {
@@ -23,6 +27,10 @@ export async function getManifest(version: string): Promise<VersionManifest | nu
         const url = `${VERSIONS_URL}/${version}/manifest.json`;
         debug(`[manifest] Getting manifest for version: ${url}`);
         const response = await fetch(url);
+        if (!response.ok) {
+            debug(`[manifest] Failed to get manifest: HTTP ${response.status}`);
+            return null;
+        }
         const data = await response.json();
         return data as VersionManifest;
     } catch (error) {

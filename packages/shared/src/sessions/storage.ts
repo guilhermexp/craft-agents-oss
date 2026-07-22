@@ -155,7 +155,7 @@ function getExistingSessionIds(workspaceRootPath: string): Set<string> {
     return new Set();
   }
   const entries = readdirSync(sessionsDir, { withFileTypes: true });
-  return new Set(entries.filter(e => e.isDirectory()).map(e => e.name));
+  return new Set(entries.flatMap(e => (e.isDirectory() ? [e.name] : [])));
 }
 
 /**
@@ -1074,15 +1074,15 @@ export function listPlanFiles(
 
   try {
     const files = readdirSync(plansDir)
-      .filter(f => f.endsWith('.md'))
-      .map(f => {
+      .flatMap(f => {
+        if (!f.endsWith('.md')) return [];
         const filePath = join(plansDir, f);
         const stats = existsSync(filePath) ? statSync(filePath) : null;
-        return {
+        return [{
           name: f.replace('.md', ''),
           path: filePath,
           modifiedAt: stats?.mtimeMs || 0,
-        };
+        }];
       })
       .sort((a, b) => b.modifiedAt - a.modifiedAt);
 

@@ -53,7 +53,7 @@ function PresetSwatch({ color, onClick }: { color: string; onClick: () => void }
     <button
       type="button"
       onClick={onClick}
-      className="h-5 w-5 rounded-full ring-1 ring-foreground/10 hover:ring-foreground/40 hover:scale-110 transition-all"
+      className="h-5 w-5 rounded-full ring-1 ring-foreground/10 hover:ring-foreground/40 hover:scale-110 transition-[box-shadow,transform]"
       style={{ backgroundColor: color }}
       aria-label={color}
     />
@@ -84,7 +84,7 @@ export function InlineColorPickerRow({
           <button
             type="button"
             aria-label={effectiveCustomAriaLabel}
-            className="h-5 w-5 rounded-full ring-1 ring-foreground/15 hover:ring-foreground/40 hover:scale-110 transition-all cursor-pointer"
+            className="h-5 w-5 rounded-full ring-1 ring-foreground/15 hover:ring-foreground/40 hover:scale-110 transition-[box-shadow,transform] cursor-pointer"
             style={{ background: RAINBOW_GRADIENT }}
           />
         }

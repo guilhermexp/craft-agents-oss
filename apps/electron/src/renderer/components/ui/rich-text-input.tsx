@@ -500,14 +500,17 @@ function RotatingPlaceholder({
 // RichTextInput Component
 // ============================================================================
 
+const EMPTY_SKILLS: LoadedSkill[] = []
+const EMPTY_SOURCES: LoadedSource[] = []
+
 export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInputProps>(
   function RichTextInput(
     {
       value,
       onChange,
       placeholder,
-      skills = [],
-      sources = [],
+      skills = EMPTY_SKILLS,
+      sources = EMPTY_SOURCES,
       workspaceId,
       disabled = false,
       className,
@@ -610,6 +613,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
         // Re-render with badges
         isInternalUpdate.current = true
         const html = textToHTML(newText, skills, sources, workspaceId)
+        // react-doctor-disable-next-line dangerous-html-sink -- textToHTML escapes all free text via escapeHTML; the only raw HTML is a fixed badge template + escaped label/attrs + app-controlled icon URLs
         divRef.current.innerHTML = html || '<br>' // Empty contenteditable needs a BR
         // Restore cursor
         setCursorPosition(divRef.current, cursorPos)
@@ -694,6 +698,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       lastMentionSignatureRef.current = getMentionSignature(safeValue, skillSlugs, sourceSlugs)
 
       const html = textToHTML(safeValue, skills, sources, workspaceId)
+      // react-doctor-disable-next-line dangerous-html-sink -- textToHTML escapes all free text via escapeHTML; the only raw HTML is a fixed badge template + escaped label/attrs + app-controlled icon URLs
       divRef.current.innerHTML = html || '<br>'
 
       // Restore cursor position after innerHTML update.

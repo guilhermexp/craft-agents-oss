@@ -114,28 +114,41 @@ function makeSubtask(title: string, idPrefix: string, model: string): KanbanSubt
 
 type KanbanView = 'board' | 'list'
 
+function ViewToggleButton({
+  view,
+  icon: Icon,
+  label,
+  value,
+  onChange,
+}: {
+  view: KanbanView
+  icon: typeof List
+  label: string
+  value: KanbanView
+  onChange: (v: KanbanView) => void
+}) {
+  const active = value === view
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(view)}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors',
+        active ? 'bg-card text-foreground shadow-sm' : 'text-foreground/50 hover:text-foreground/80'
+      )}
+      aria-pressed={active}
+    >
+      <Icon className="h-3.5 w-3.5" strokeWidth={2} />
+      {label}
+    </button>
+  )
+}
+
 function ViewToggle({ value, onChange }: { value: KanbanView; onChange: (v: KanbanView) => void }) {
-  const Btn = ({ view, icon: Icon, label }: { view: KanbanView; icon: typeof List; label: string }) => {
-    const active = value === view
-    return (
-      <button
-        type="button"
-        onClick={() => onChange(view)}
-        className={cn(
-          'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors',
-          active ? 'bg-card text-foreground shadow-sm' : 'text-foreground/50 hover:text-foreground/80'
-        )}
-        aria-pressed={active}
-      >
-        <Icon className="h-3.5 w-3.5" strokeWidth={2} />
-        {label}
-      </button>
-    )
-  }
   return (
     <div className="inline-flex items-center gap-0.5 rounded-lg border border-border/60 bg-foreground/[0.02] p-0.5">
-      <Btn view="list" icon={List} label="List" />
-      <Btn view="board" icon={LayoutGrid} label="Board" />
+      <ViewToggleButton view="list" icon={List} label="List" value={value} onChange={onChange} />
+      <ViewToggleButton view="board" icon={LayoutGrid} label="Board" value={value} onChange={onChange} />
     </div>
   )
 }

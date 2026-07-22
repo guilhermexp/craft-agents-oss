@@ -186,13 +186,14 @@ function RichBlockEditMenu({ editor }: { editor: Editor }) {
     setIsEditing(true)
   }, [editor])
 
+  const openEditorEvent = React.useEffectEvent(openEditor)
   React.useEffect(() => {
     const activate = () => {
-      openEditor()
+      openEditorEvent()
     }
     ;(editor as any).on(RICH_BLOCK_EDIT_EVENT, activate)
     return () => { (editor as any).off(RICH_BLOCK_EDIT_EVENT, activate) }
-  }, [editor, openEditor])
+  }, [editor])
 
   const commitEdit = React.useCallback(() => {
     const meta = getEditableBlockMeta(editor)
@@ -379,6 +380,7 @@ function InlineMathEditMenu({ editor }: { editor: Editor }) {
         aria-label="LaTeX expression"
         onChange={(e) => setLatex(e.target.value)}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing) return
           if (e.key === 'Enter') {
             e.preventDefault()
             commitEdit()

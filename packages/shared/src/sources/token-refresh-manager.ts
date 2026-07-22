@@ -212,9 +212,10 @@ export class TokenRefreshManager {
       })
     );
 
-    return results
-      .filter(({ needsRefresh }) => needsRefresh)
-      .map(({ source }) => source);
+    return results.reduce<LoadedSource[]>((acc, { source, needsRefresh }) => {
+      if (needsRefresh) acc.push(source);
+      return acc;
+    }, []);
   }
 
   /**

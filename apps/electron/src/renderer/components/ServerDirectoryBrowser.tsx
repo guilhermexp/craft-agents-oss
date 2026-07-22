@@ -86,6 +86,7 @@ export function ServerDirectoryBrowser({
       return
     }
 
+    let cancelled = false
     const init = async () => {
       if (mode === 'browse') {
         setLoading(true)
@@ -97,6 +98,7 @@ export function ServerDirectoryBrowser({
         // 4. listServerDirectory('/') — root directory (old servers)
         const tryNavigate = async (path: string) => {
           const result = await window.electronAPI.listServerDirectory(path)
+          if (cancelled) return
           setListing(result)
           setPathInput(result.currentPath)
           serverHomePathRef.current = result.currentPath
@@ -121,17 +123,19 @@ export function ServerDirectoryBrowser({
             }
           }
         } catch (err) {
-          setError(err instanceof Error ? err.message : 'Failed to list directory')
+          if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to list directory')
         } finally {
-          setLoading(false)
+          if (!cancelled) setLoading(false)
         }
       } else {
         // Manual mode — fetch home dir for platform detection
         const homeDir = await window.electronAPI.getHomeDir()
+        if (cancelled) return
         serverHomePathRef.current = homeDir
       }
     }
     void init()
+    return () => { cancelled = true }
   }, [open, mode, initialPath, navigateTo])
 
   // Handle path input submission (Enter key or navigate button)
@@ -189,6 +193,7 @@ export function ServerDirectoryBrowser({
           value={pathInput}
           onChange={e => setPathInput(e.target.value)}
           onKeyDown={e => {
+            if (e.nativeEvent.isComposing) return
             if (e.key === 'Enter') handlePathSubmit()
           }}
           placeholder={t("common.enterPath")}
@@ -281,6 +286,7 @@ export function ServerDirectoryBrowser({
         value={pathInput}
         onChange={e => setPathInput(e.target.value)}
         onKeyDown={e => {
+          if (e.nativeEvent.isComposing) return
           if (e.key === 'Enter') handleSelect()
         }}
         placeholder="/Users/username/projects/my-project"

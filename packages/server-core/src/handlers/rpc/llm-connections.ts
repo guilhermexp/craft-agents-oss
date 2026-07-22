@@ -427,7 +427,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
     const { getModels } = await import('@earendil-works/pi-ai/compat')
     try {
       const models = getModels(provider as Parameters<typeof getModels>[0])
-      const sorted = [...models].sort((a, b) => b.cost.output - a.cost.output || b.cost.input - a.cost.input)
+      const sorted = models.toSorted((a, b) => b.cost.output - a.cost.output || b.cost.input - a.cost.input)
       return {
         models: sorted.map(m => ({
           id: m.id.startsWith('pi/') ? m.id : `pi/${m.id}`,

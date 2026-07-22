@@ -78,6 +78,7 @@ function AttachmentBubble({ attachment, onRemove, disabled }: AttachmentBubblePr
       {!disabled && (
         <button
           type="button"
+          aria-label="Remove attachment"
           onClick={onRemove}
           className={cn(
             "absolute -top-1.5 -right-1.5 z-10",

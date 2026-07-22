@@ -59,11 +59,11 @@ export function ModalProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [])
 
-  const value: ModalContextValue = {
+  const value: ModalContextValue = React.useMemo(() => ({
     registerModal,
     hasOpenModals,
     closeTopModal,
-  }
+  }), [registerModal, hasOpenModals, closeTopModal])
 
   return (
     <ModalContext.Provider value={value}>

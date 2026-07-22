@@ -380,10 +380,10 @@ export class SessionSourceOrchestrator {
       managed.agent.setAllSources(allSources)
 
       // Set active source servers (tools are only available from these)
-      const intendedSlugs = sources.filter(isSourceUsable).map(s => s.config.slug)
+      const usableSources = sources.filter(isSourceUsable)
+      const intendedSlugs = usableSources.map(s => s.config.slug)
 
       // Update bridge-mcp-server config/credentials for backends that need it
-      const usableSources = sources.filter(isSourceUsable)
       await applyBridgeUpdates(managed.agent, sessionPath, usableSources, mcpServers, managed.id, workspaceRootPath, 'source config change', managed.poolServer?.url)
 
       await managed.agent.setSourceServers(mcpServers, apiServers, intendedSlugs)

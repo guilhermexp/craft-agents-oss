@@ -299,6 +299,7 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
               className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/60"
             />
             <select
+              aria-label="Conexão"
               value={participantConnectionDraft || defaultConnection}
               onChange={event => setParticipantConnectionDraft(event.target.value)}
               className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary/60"
@@ -428,6 +429,7 @@ export function ChannelConversationPanel({ workspaceId, channel }: ChannelConver
               onKeyUp={() => updateMentionQuery(draft)}
               onKeyDown={event => {
                 if (event.key === 'Escape') setMentionQuery(null)
+                if (event.nativeEvent.isComposing) return
                 if ((event.key === 'Tab' || event.key === 'Enter') && mentionSuggestions[0] && mentionQuery) {
                   event.preventDefault()
                   insertMention(mentionSuggestions[0].id)

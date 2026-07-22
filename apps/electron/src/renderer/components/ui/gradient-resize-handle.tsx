@@ -44,6 +44,7 @@ export function GradientResizeHandle({ className, headerHeight = 50 }: GradientR
       <div
         ref={ref}
         role="separator"
+        aria-label="Resize panel"
         aria-orientation="vertical"
         tabIndex={0}
         onMouseDown={handlers.onMouseDown}

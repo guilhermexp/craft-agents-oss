@@ -224,8 +224,7 @@ export class TransferManager {
 
   async cleanupClientTransfers(clientId: string): Promise<void> {
     const transferIds = [...this.activeTransfers.values()]
-      .filter(transfer => transfer.ownerClientId === clientId)
-      .map(transfer => transfer.id)
+      .flatMap(transfer => (transfer.ownerClientId === clientId ? [transfer.id] : []))
     await Promise.all(transferIds.map(transferId => this.cleanupTransfer(transferId)))
   }
 

@@ -49,10 +49,11 @@ function normalizeRequiredSources(value: unknown): string[] | undefined {
   if (!asArray) return undefined;
 
   const normalized = Array.from(new Set(
-    asArray
-      .filter((entry): entry is string => typeof entry === 'string')
-      .map(entry => entry.trim())
-      .filter(Boolean)
+    asArray.flatMap(entry => {
+      if (typeof entry !== 'string') return [];
+      const trimmed = entry.trim();
+      return trimmed ? [trimmed] : [];
+    })
   ));
 
   return normalized.length > 0 ? normalized : undefined;
@@ -341,12 +342,11 @@ export function listSkillSlugs(workspaceRoot: string): string[] {
 
   try {
     return readdirSync(skillsDir, { withFileTypes: true })
-      .filter((entry) => {
-        if (!entry.isDirectory()) return false;
+      .flatMap((entry) => {
+        if (!entry.isDirectory()) return [];
         const skillFile = join(skillsDir, entry.name, 'SKILL.md');
-        return existsSync(skillFile);
-      })
-      .map((entry) => entry.name);
+        return existsSync(skillFile) ? [entry.name] : [];
+      });
   } catch {
     return [];
   }

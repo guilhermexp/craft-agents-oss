@@ -206,6 +206,7 @@ export function HermesProfilesConfig() {
                 value={newName}
                 onChange={(event) => setNewName(event.target.value)}
                 onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing) return
                   if (event.key === 'Enter') void createProfile()
                 }}
                 aria-label="Nome"
@@ -258,6 +259,7 @@ export function HermesProfilesConfig() {
                                 value={renameTo}
                                 onChange={(event) => setRenameTo(event.target.value)}
                                 onKeyDown={(event) => {
+                                  if (event.nativeEvent.isComposing) return
                                   if (event.key === 'Enter') void submitRename()
                                   if (event.key === 'Escape') {
                                     setRenamingFrom(null)

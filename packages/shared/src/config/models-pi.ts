@@ -125,14 +125,15 @@ export function getPiModelsForAuthProvider(piAuthProvider: string): ModelDefinit
   try {
     const models = getModels(piAuthProvider as Parameters<typeof getModels>[0]);
     if (models.length > 0) {
-      return models
-        .filter(m => !isExcludedPiModel(m.id))
-        .filter(m => isAllowedForProvider(piAuthProvider, m.id))
+      return models.flatMap(m => {
+        if (isExcludedPiModel(m.id)) return [];
+        if (!isAllowedForProvider(piAuthProvider, m.id)) return [];
         // Bedrock: exclude bare Claude models without region prefix — they're
         // always rejected by Bedrock which requires inference profiles (us.*/eu.*/global.*).
         // Regional variants from the same catalog are kept.
-        .filter(m => piAuthProvider !== 'amazon-bedrock' || !isBareBedrockClaudeModel(m.id))
-        .map(piModelToDefinition);
+        if (piAuthProvider === 'amazon-bedrock' && isBareBedrockClaudeModel(m.id)) return [];
+        return [piModelToDefinition(m)];
+      });
     }
   } catch {
     // Provider not recognized by SDK — fall through
@@ -148,11 +149,11 @@ export function getAllPiModels(): ModelDefinition[] {
   for (const provider of getProviders()) {
     try {
       const models = getModels(provider as Parameters<typeof getModels>[0]);
-      allModels.push(...models
-        .filter(m => !isExcludedPiModel(m.id))
-        .filter(m => isAllowedForProvider(provider, m.id))
-        .map(piModelToDefinition)
-      );
+      allModels.push(...models.flatMap(m =>
+        !isExcludedPiModel(m.id) && isAllowedForProvider(provider, m.id)
+          ? [piModelToDefinition(m)]
+          : []
+      ));
     } catch {
       // Skip providers that fail
     }
@@ -216,14 +217,14 @@ function formatProviderName(key: string): string {
  */
 export function getPiApiKeyProviders(): PiProviderInfo[] {
   return getProviders()
-    .filter(p => !PI_EXCLUDED_PROVIDERS.has(p))
-    .map(p => {
+    .flatMap(p => {
+      if (PI_EXCLUDED_PROVIDERS.has(p)) return [];
       const display = PI_PROVIDER_DISPLAY[p];
-      return {
+      return [{
         key: p,
         label: display?.label ?? formatProviderName(p),
         placeholder: display?.placeholder ?? 'sk-...',
-      };
+      }];
     })
     .sort((a, b) => {
       const priority = ['anthropic', 'google', 'openai'];

@@ -179,9 +179,10 @@ function coerceCellValue(value: string): unknown {
 
 function inferColumnTypes(columns: TabularColumn[], rows: Record<string, unknown>[]): TabularColumn[] {
   return columns.map((column) => {
-    const values = rows
-      .map((row) => row[column.key])
-      .filter((value) => value !== '' && value !== null && value !== undefined)
+    const values = rows.flatMap((row) => {
+      const value = row[column.key]
+      return value !== '' && value !== null && value !== undefined ? [value] : []
+    })
     const numericCount = values.filter((value) => typeof value === 'number').length
     return values.length > 0 && numericCount === values.length
       ? { ...column, type: 'number' }

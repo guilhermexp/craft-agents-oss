@@ -291,20 +291,19 @@ export function handleInterrupted(
   // Also filter out status messages - they are transient UI state that shouldn't persist after interruption
   // (similar to isPending/isStreaming, and they're not persisted to disk anyway)
   // Also remove queued user messages — they are being restored to the input field
-  const updatedMessages = session.messages
-    .filter(m => m.role !== 'status')  // Remove transient status messages
-    .filter(m => !m.isQueued)          // Remove queued user messages (restored to input)
-    .map(m => {
-      // Mark running tools as interrupted
-      if (m.role === 'tool' && m.toolResult === undefined && m.toolStatus !== 'completed' && m.toolStatus !== 'error') {
-        return { ...m, toolStatus: 'error' as const, toolResult: 'Interrupted', isError: true }
-      }
-      // Clear pending state on assistant messages (transient streaming state)
-      if (m.role === 'assistant' && m.isPending) {
-        return { ...m, isPending: false, isStreaming: false }
-      }
-      return m
-    })
+  const updatedMessages = session.messages.flatMap(m => {
+    if (m.role === 'status') return []  // Remove transient status messages
+    if (m.isQueued) return []           // Remove queued user messages (restored to input)
+    // Mark running tools as interrupted
+    if (m.role === 'tool' && m.toolResult === undefined && m.toolStatus !== 'completed' && m.toolStatus !== 'error') {
+      return [{ ...m, toolStatus: 'error' as const, toolResult: 'Interrupted', isError: true }]
+    }
+    // Clear pending state on assistant messages (transient streaming state)
+    if (m.role === 'assistant' && m.isPending) {
+      return [{ ...m, isPending: false, isStreaming: false }]
+    }
+    return [m]
+  })
 
   // Only add the "Response interrupted" message if provided (not a silent redirect)
   const messages = event.message

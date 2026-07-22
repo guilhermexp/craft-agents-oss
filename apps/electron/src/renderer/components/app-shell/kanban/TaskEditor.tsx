@@ -456,7 +456,7 @@ function SubtaskCard({
           type="button"
           onClick={onRemove}
           aria-label={t('tasks.removeSubtask')}
-          className="grid h-6 w-6 shrink-0 place-items-center rounded text-foreground/40 opacity-0 transition-all hover:bg-foreground/10 hover:text-red-500 group-hover:opacity-100"
+          className="grid h-6 w-6 shrink-0 place-items-center rounded text-foreground/40 opacity-0 transition-[color,background-color,opacity] hover:bg-foreground/10 hover:text-red-500 group-hover:opacity-100"
         >
           <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
         </button>
@@ -703,7 +703,9 @@ export function TaskEditor({
     setSubtasks((prev) => prev.map((s) => (s.uid === id ? { ...s, ...patch } : s)))
   const removeSubtask = (id: string) =>
     setSubtasks((prev) =>
-      prev.filter((s) => s.uid !== id).map((s) => ({ ...s, dependsOn: s.dependsOn.filter((d) => d !== id) })),
+      prev.flatMap((s) =>
+        s.uid === id ? [] : [{ ...s, dependsOn: s.dependsOn.filter((d) => d !== id) }],
+      ),
     )
   const addSubtask = () =>
     setSubtasks((prev) => {
@@ -949,6 +951,7 @@ export function TaskEditor({
             {(['definition', 'results'] as Tab[]).map((tb) => (
               <button
                 key={tb}
+                type="button"
                 onClick={() => setTab(tb)}
                 className={cn(
                   'rounded-[7px] px-3 py-1 text-[12.5px] font-semibold transition-colors',
@@ -1006,6 +1009,7 @@ export function TaskEditor({
             {(['manual', 'generate'] as Mode[]).map((m) => (
               <button
                 key={m}
+                type="button"
                 onClick={() => setMode(m)}
                 className={cn(
                   'inline-flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-[12.5px] font-semibold transition-colors',
@@ -1188,6 +1192,7 @@ export function TaskEditor({
                 ))}
                 {subtasks.length === 0 && (
                   <button
+                    type="button"
                     onClick={addSubtask}
                     className="flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-dashed border-border py-2.5 text-[12.5px] font-semibold text-foreground/40 transition-colors hover:border-foreground/30 hover:text-foreground/60"
                   >

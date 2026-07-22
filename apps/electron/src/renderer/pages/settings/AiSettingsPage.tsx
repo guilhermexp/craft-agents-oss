@@ -119,7 +119,7 @@ function CredentialHealthBanner({ issues, onReauthenticate }: CredentialHealthBa
   return (
     <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 mb-6">
       <div className="flex items-start gap-3">
-        <AlertTriangle className="size-5 text-amber-500 flex-shrink-0 mt-0.5" />
+        <AlertTriangle className="size-5 text-amber-500 shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
           <h4 className="text-sm font-medium text-amber-700 dark:text-amber-400">
             {t("settings.ai.credentialIssue")}
@@ -132,7 +132,7 @@ function CredentialHealthBanner({ issues, onReauthenticate }: CredentialHealthBa
           variant="outline"
           size="sm"
           onClick={onReauthenticate}
-          className="flex-shrink-0 border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
+          className="shrink-0 border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
         >
           {t("settings.ai.reAuthenticate")}
         </Button>
@@ -358,19 +358,22 @@ function WorkspaceOverrideCard({ workspace, llmConnections, onSettingsChange }: 
 
   // Load workspace settings
   useEffect(() => {
+    let cancelled = false
     const loadSettings = async () => {
       if (!window.electronAPI) return
       setIsLoading(true)
       try {
         const ws = await window.electronAPI.getWorkspaceSettings(workspace.id)
+        if (cancelled) return
         setSettings(ws)
       } catch (error) {
         console.error('Failed to load workspace settings:', error)
       } finally {
-        setIsLoading(false)
+        if (!cancelled) setIsLoading(false)
       }
     }
     loadSettings()
+    return () => { cancelled = true }
   }, [workspace.id])
 
   // Save workspace setting helper (optimistic update with rollback)
@@ -607,28 +610,36 @@ export default function AiSettingsPage() {
 
   // Load workspaces, default settings, and credential health
   useEffect(() => {
+    let cancelled = false
     const load = async () => {
       if (!window.electronAPI) return
       try {
         const ws = await window.electronAPI.getWorkspaces()
+        if (cancelled) return
         setWorkspaces(ws)
 
         const defaultThinkingLevel = await window.electronAPI.getDefaultThinkingLevel()
+        if (cancelled) return
         setDefaultThinking(defaultThinkingLevel)
 
         const extendedCache = await window.electronAPI.getExtendedPromptCache()
+        if (cancelled) return
         setExtendedPromptCache(extendedCache)
 
         const enable1M = await window.electronAPI.getEnable1MContext()
+        if (cancelled) return
         setEnable1MContext(enable1M)
 
         const rtkOn = await window.electronAPI.getRtkEnabled()
+        if (cancelled) return
         setRtkEnabledState(rtkOn)
         const rtkStatus = await window.electronAPI.getRtkStatus()
+        if (cancelled) return
         setRtkInstalled(rtkStatus.installed)
 
         // Check credential health for potential issues (corruption, machine migration)
         const health = await window.electronAPI.getCredentialHealth()
+        if (cancelled) return
         if (!health.healthy) {
           setCredentialHealthIssues(health.issues)
         }
@@ -637,6 +648,7 @@ export default function AiSettingsPage() {
       }
     }
     load()
+    return () => { cancelled = true }
   }, [activeWorkspaceId])
 
   // Helpers to open/close the fullscreen API setup overlay
@@ -1081,7 +1093,7 @@ export default function AiSettingsPage() {
                   <button
                     type="button"
                     onClick={handleCloseApiSetup}
-                    className="p-1.5 rounded-[6px] transition-all bg-background shadow-minimal text-muted-foreground/50 hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="p-1.5 rounded-[6px] transition-[color,box-shadow] bg-background shadow-minimal text-muted-foreground/50 hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     title={t("common.closeEsc")}
                   >
                     <X className="size-3.5" />

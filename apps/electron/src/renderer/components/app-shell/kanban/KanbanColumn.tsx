@@ -215,7 +215,7 @@ function ColumnHeader({
         data-no-dnd="true"
         onPointerDown={e => e.stopPropagation()}
         title={editable ? t('kanban.column.edit') : t('kanban.column.setDropStatus')}
-        className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-shadow hover:ring-2 hover:ring-foreground/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:ring-2 data-[state=open]:ring-foreground/20"
+        className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider hover:ring-2 hover:ring-foreground/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:ring-2 data-[state=open]:ring-foreground/20"
         style={pillStyle}
       >
         {inner}
@@ -266,8 +266,9 @@ function ColumnHeader({
       >
         {onRename && (
           <div className="space-y-1">
-            <label className="text-[11px] font-medium text-foreground/50">{t('kanban.column.name')}</label>
+            <label htmlFor="kanban-column-name" className="text-[11px] font-medium text-foreground/50">{t('kanban.column.name')}</label>
             <input
+              id="kanban-column-name"
               type="text"
               defaultValue={label}
               autoFocus
@@ -276,6 +277,7 @@ function ColumnHeader({
                 if (next && next !== label) onRename(next)
               }}
               onKeyDown={e => {
+                if (e.nativeEvent.isComposing) return
                 if (e.key === 'Enter') {
                   e.preventDefault()
                   ;(e.target as HTMLInputElement).blur()
@@ -292,7 +294,7 @@ function ColumnHeader({
 
         {onSetColor && (
           <div className="space-y-1">
-            <label className="text-[11px] font-medium text-foreground/50">{t('kanban.column.color')}</label>
+            <span className="text-[11px] font-medium text-foreground/50">{t('kanban.column.color')}</span>
             <div className="flex flex-wrap gap-1.5">
               {PROJECT_COLOR_PALETTE.map(hex => (
                 <button
@@ -312,7 +314,7 @@ function ColumnHeader({
 
         {onSelectDropStatus && statuses && statuses.length > 0 && (
           <div className="space-y-1">
-            <label className="text-[11px] font-medium text-foreground/50">{t('kanban.column.setDropStatus')}</label>
+            <span className="text-[11px] font-medium text-foreground/50">{t('kanban.column.setDropStatus')}</span>
             <SessionStatusMenu
               states={statuses}
               activeState={dropStatus?.id ?? ''}

@@ -77,6 +77,7 @@ export default function WorkspaceSettingsPage() {
 
   // Load workspace settings when active workspace changes
   useEffect(() => {
+    let cancelled = false
     const loadWorkspaceSettings = async () => {
       if (!window.electronAPI || !activeWorkspaceId) {
         setIsLoadingWorkspace(false)
@@ -86,6 +87,7 @@ export default function WorkspaceSettingsPage() {
       setIsLoadingWorkspace(true)
       try {
         const settings = await window.electronAPI.getWorkspaceSettings(activeWorkspaceId)
+        if (cancelled) return
         if (settings) {
           setWsName(settings.name || '')
           setWsNameEditing(settings.name || '')
@@ -102,6 +104,7 @@ export default function WorkspaceSettingsPage() {
 
           // Load available sources and auto-heal stale slugs
           const sources = await window.electronAPI.getSources(activeWorkspaceId)
+          if (cancelled) return
           setAvailableSources(sources)
           const validSlugs = new Set(sources.map(s => s.config.slug))
           const healedSlugs = savedSlugs.filter(s => validSlugs.has(s))
@@ -115,37 +118,37 @@ export default function WorkspaceSettingsPage() {
 
         // Try to load workspace icon (check common extensions)
         const ICON_EXTENSIONS = ['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif']
-        let iconFound = false
+        let resolvedIcon: string | null = null
         for (const ext of ICON_EXTENSIONS) {
           try {
             const iconData = await window.electronAPI.readWorkspaceImage(activeWorkspaceId, `./icon.${ext}`)
+            if (cancelled) return
             // IPC returns null for missing files - continue to next extension
             if (!iconData) {
               continue
             }
             // For SVG, wrap in data URL
-            if (ext === 'svg' && !iconData.startsWith('data:')) {
-              setWsIconUrl(`data:image/svg+xml;base64,${btoa(iconData)}`)
-            } else {
-              setWsIconUrl(iconData)
-            }
-            iconFound = true
+            resolvedIcon = ext === 'svg' && !iconData.startsWith('data:')
+              ? `data:image/svg+xml;base64,${btoa(iconData)}`
+              : iconData
             break
           } catch {
             // Icon not found with this extension, try next
           }
         }
-        if (!iconFound) {
-          setWsIconUrl(null)
-        }
+        if (cancelled) return
+        setWsIconUrl(resolvedIcon)
       } catch (error) {
         console.error('Failed to load workspace settings:', error)
       } finally {
-        setIsLoadingWorkspace(false)
+        if (!cancelled) setIsLoadingWorkspace(false)
       }
     }
 
     loadWorkspaceSettings()
+    return () => {
+      cancelled = true
+    }
   }, [activeWorkspaceId])
 
   // Subscribe to live source changes (additions/removals)

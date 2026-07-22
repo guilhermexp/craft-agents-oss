@@ -311,23 +311,27 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
       return []
     }
 
-    const { searchSessions } = await import('@craft-agent/server-core/services')
-    const { getWorkspaceSessionsPath } = await import('@craft-agent/shared/workspaces')
+    const [{ searchSessions }, { getWorkspaceSessionsPath }] = await Promise.all([
+      import('@craft-agent/server-core/services'),
+      import('@craft-agent/shared/workspaces'),
+    ])
 
     const sessionsDir = getWorkspaceSessionsPath(workspace.rootPath)
     log.debug(`SEARCH_SESSIONS: Searching "${query}" in ${sessionsDir}`)
 
-    const results = await searchSessions(query, sessionsDir, {
-      timeout: 5000,
-      maxMatchesPerSession: 3,
-      maxSessions: 50,
-      searchId: id,
-    })
+    const [results, allSessions] = await Promise.all([
+      searchSessions(query, sessionsDir, {
+        timeout: 5000,
+        maxMatchesPerSession: 3,
+        maxSessions: 50,
+        searchId: id,
+      }),
+      sessionManager.getSessions(),
+    ])
 
     // Filter out hidden sessions (e.g., mini edit sessions)
-    const allSessions = await sessionManager.getSessions()
     const hiddenSessionIds = new Set(
-      allSessions.filter(s => s.hidden).map(s => s.id)
+      allSessions.flatMap(s => (s.hidden ? [s.id] : []))
     )
     const filteredResults = results.filter(r => !hiddenSessionIds.has(r.sessionId))
 

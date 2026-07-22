@@ -138,6 +138,7 @@ function getTimeInTimezone(date: Date, timezone?: string): { hours: number; minu
   if (timezone) {
     try {
       // Use Intl to convert to target timezone
+      // react-doctor-disable-next-line js-hoist-intl -- Intl options use a per-call dynamic timezone param; cannot be hoisted to module scope
       const formatter = new Intl.DateTimeFormat('en-US', {
         timeZone: timezone,
         hour: 'numeric',

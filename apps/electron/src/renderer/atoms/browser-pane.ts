@@ -6,14 +6,17 @@
  */
 
 import { atom } from 'jotai'
+import { selectAtom } from 'jotai/utils'
 import type { BrowserInstanceInfo } from '../../shared/types'
 
 /** Map of all browser instances by ID */
 const browserInstancesMapAtom = atom<Map<string, BrowserInstanceInfo>>(new Map())
 
 /** Derived: array of all browser instances (for iteration) */
-export const browserInstancesAtom = atom<BrowserInstanceInfo[]>(
-  (get) => Array.from(get(browserInstancesMapAtom).values())
+export const browserInstancesAtom = selectAtom(
+  browserInstancesMapAtom,
+  (map) => Array.from(map.values()),
+  (a, b) => a.length === b.length && a.every((instance, i) => instance === b[i])
 )
 
 /** Derived: count of active browser instances */

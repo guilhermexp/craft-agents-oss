@@ -4,7 +4,10 @@
     "files": [
       "apps/electron/resources/**",
       "apps/electron/eslint-rules/**",
-      "apps/electron/src/main/shims/**"
+      "apps/electron/src/main/shims/**",
+      "**/dist/**",
+      "**/bridge-mcp-server/**",
+      "**/.github/**"
     ]
   },
   "rules": {
@@ -51,6 +54,15 @@
     "react-doctor/js-set-map-lookups": "off",
     "react-doctor/js-index-maps": "off",
     "react-doctor/use-lazy-motion": "off",
+    "react-doctor/no-layout-property-animation": "off",
+    // Misfires on the codebase's correct React unmount/cancel guard idiom
+    // (`finally { if (!cancelled) setLoading(false) }` / mountedRef) used to fix
+    // set-state-after-unmount; the guarded reset DOES run on reject, so the flag is never stuck.
+    "react-doctor/no-loading-flag-reset-outside-finally": "off",
+    // Heuristic over-fires on canonical AnimatePresence usage where the boundary is gated by a
+    // stable structural condition and the animated child by an independent runtime toggle, so the
+    // boundary correctly outlives the child across exit animations.
+    "react-doctor/motion-animate-presence-must-outlive-child": "off",
     "react-doctor/no-autofocus": "off",
     "react-doctor/rendering-hydration-mismatch-time": "off",
     "react-doctor/client-passive-event-listeners": "off",

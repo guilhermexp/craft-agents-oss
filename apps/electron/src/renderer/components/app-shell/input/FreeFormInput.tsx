@@ -407,7 +407,9 @@ export function FreeFormInput({
   // refs (path + name) and debounces the disk write, so we fire eagerly on every
   // change — add/remove/send-clear.
   const onAttachmentsChangeRef = React.useRef(onAttachmentsChange)
-  onAttachmentsChangeRef.current = onAttachmentsChange
+  React.useEffect(() => {
+    onAttachmentsChangeRef.current = onAttachmentsChange
+  }, [onAttachmentsChange])
   React.useEffect(() => {
     if (skipPersistRef.current) {
       skipPersistRef.current = false
@@ -455,11 +457,14 @@ export function FreeFormInput({
       prevInputValueRef.current = value
     }, 300) // Debounce 300ms
   }, [onInputChange])
+  const syncToParentEvent = React.useEffectEvent((value: string) => syncToParent(value))
 
   // Sync immediately on unmount to preserve input across mode switches
   // Also cleanup any pending debounced sync
   const inputRef = React.useRef(input)
-  inputRef.current = input // Keep ref in sync with state
+  React.useEffect(() => {
+    inputRef.current = input // Keep ref in sync with state
+  }, [input])
 
   React.useEffect(() => {
     const syncTimeout = syncTimeoutRef
@@ -539,7 +544,7 @@ export function FreeFormInput({
 
       const text = coerceInputText(e.detail?.text)
       setInput(text)
-      syncToParent(text)
+      syncToParentEvent(text)
       // Focus the input after inserting
       setTimeout(() => {
         richInputRef.current?.focus()
@@ -550,7 +555,7 @@ export function FreeFormInput({
 
     window.addEventListener('craft:insert-text', handleInsertText as EventListener)
     return () => window.removeEventListener('craft:insert-text', handleInsertText as EventListener)
-  }, [sessionId, isFocusedPanel, syncToParent, richInputRef])
+  }, [sessionId, isFocusedPanel, richInputRef])
 
   const clearInputDraft = React.useCallback(() => {
     setInput('')
@@ -564,6 +569,15 @@ export function FreeFormInput({
     clearInputDraft()
     return snapshot
   }, [input, clearInputDraft])
+
+  const onPermissionModeChangeEvent = React.useEffectEvent((mode: PermissionMode) =>
+    onPermissionModeChange?.(mode),
+  )
+  const onSubmitEvent = React.useEffectEvent(
+    (message: string, attachments?: FileAttachment[], skillSlugs?: string[]) =>
+      onSubmit(message, attachments, skillSlugs),
+  )
+  const consumeInputDraftSnapshotEvent = React.useEffectEvent(() => consumeInputDraftSnapshot())
 
   type PlanApprovalEventDetail = {
     sessionId?: string
@@ -583,7 +597,7 @@ export function FreeFormInput({
       }
 
       const shouldIncludeDraft = e.detail?.includeDraftInput !== false
-      const draftInput = shouldIncludeDraft ? consumeInputDraftSnapshot() : ''
+      const draftInput = shouldIncludeDraft ? consumeInputDraftSnapshotEvent() : ''
       const text = buildPlanApprovalMessage({
         planPath: e.detail?.planPath,
         draftInput,
@@ -592,15 +606,15 @@ export function FreeFormInput({
       // Switch to allow-all (Auto) mode if in Explore mode (allow execution without prompts)
       // Only switch if currently in safe mode - if user is in 'ask' mode, respect their choice
       if (permissionMode === 'safe') {
-        onPermissionModeChange?.('allow-all')
+        onPermissionModeChangeEvent('allow-all')
       }
 
-      onSubmit(text, undefined)
+      onSubmitEvent(text, undefined)
     }
 
     window.addEventListener('craft:approve-plan', handleApprovePlan as EventListener)
     return () => window.removeEventListener('craft:approve-plan', handleApprovePlan as EventListener)
-  }, [sessionId, permissionMode, onPermissionModeChange, onSubmit, consumeInputDraftSnapshot])
+  }, [sessionId, permissionMode])
 
   // Listen for craft:approve-plan-with-compact events (Accept & Compact option)
   // This compacts the conversation first, then executes the plan.
@@ -614,11 +628,11 @@ export function FreeFormInput({
 
       const planPath = e.detail?.planPath
       const shouldIncludeDraft = e.detail?.includeDraftInput !== false
-      const draftInputSnapshot = shouldIncludeDraft ? consumeInputDraftSnapshot() : ''
+      const draftInputSnapshot = shouldIncludeDraft ? consumeInputDraftSnapshotEvent() : ''
 
       // Switch to allow-all (Auto) mode if in Explore mode
       if (permissionMode === 'safe') {
-        onPermissionModeChange?.('allow-all')
+        onPermissionModeChangeEvent('allow-all')
       }
 
       // Persist the pending plan execution state BEFORE sending /compact.
@@ -632,7 +646,7 @@ export function FreeFormInput({
       }
 
       // Send /compact to trigger compaction
-      onSubmit('/compact', undefined)
+      onSubmitEvent('/compact', undefined)
 
       // Set up a one-time listener for compaction complete.
       // This handles the normal case (no reload during compaction).
@@ -649,7 +663,7 @@ export function FreeFormInput({
           planPath,
           draftInput: draftInputSnapshot,
         })
-        onSubmit(executionMessage, undefined)
+        onSubmitEvent(executionMessage, undefined)
 
         // Clear the pending state since we just sent the execution message
         if (sessionId) {
@@ -664,7 +678,7 @@ export function FreeFormInput({
 
     window.addEventListener('craft:approve-plan-with-compact', handleApprovePlanWithCompact as unknown as EventListener)
     return () => window.removeEventListener('craft:approve-plan-with-compact', handleApprovePlanWithCompact as unknown as EventListener)
-  }, [sessionId, permissionMode, onPermissionModeChange, onSubmit, consumeInputDraftSnapshot])
+  }, [sessionId, permissionMode])
 
   // Reload recovery: Check for pending plan execution on mount.
   // If the page reloaded after compaction completed (awaitingCompaction = false),
@@ -1171,17 +1185,19 @@ export function FreeFormInput({
     return true
   }, [input, attachments, followUpItems, disabled, disableSend, onInputChange, onSubmit, skills, sources, optimisticSourceSlugs, onSourcesChange, onWorkingDirectoryChange, homeDir])
 
+  const submitMessageEvent = React.useEffectEvent(() => submitMessage())
+
   // Listen for craft:submit-input events (simulate pressing the Send button)
   React.useEffect(() => {
     const handleSubmitInput = (e: CustomEvent<{ sessionId?: string }>) => {
       const targetSessionId = e.detail?.sessionId
       if (!shouldHandleScopedInputEvent({ sessionId, isFocusedPanel, targetSessionId })) return
-      submitMessage()
+      submitMessageEvent()
     }
 
     window.addEventListener('craft:submit-input', handleSubmitInput as EventListener)
     return () => window.removeEventListener('craft:submit-input', handleSubmitInput as EventListener)
-  }, [sessionId, isFocusedPanel, submitMessage])
+  }, [sessionId, isFocusedPanel])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1571,7 +1587,7 @@ export function FreeFormInput({
                               {tooltipText}
                             </TooltipContent>
                           </Tooltip>
-                          <span className="min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap pr-0.5 text-left">
+                          <span className="min-w-0 max-w-full truncate pr-0.5 text-left">
                             <span className="italic text-foreground/60">{selectedExcerpt}</span>
                             <span className="mx-1 text-foreground/40">·</span>
                             <span>{noteExcerpt}</span>
@@ -2132,8 +2148,9 @@ function WorkingDirectoryBadge({
                   </span>
                   <button
                     type="button"
+                    aria-label="Remove from recent"
                     onClick={(e) => handleRemoveRecent(e, path)}
-                    className="shrink-0 size-3 rounded-[3px] flex items-center justify-center opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-all"
+                    className="shrink-0 size-3 rounded-[3px] flex items-center justify-center opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-[color,background-color,opacity]"
                   >
                     <X className="size-3" />
                   </button>

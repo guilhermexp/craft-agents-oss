@@ -981,8 +981,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
   getBrowserWindows(): BrowserWindow[] {
     return Array.from(this.instances.values())
-      .map((instance) => instance.window)
-      .filter((win) => !win.isDestroyed())
+      .flatMap((instance) => instance.window.isDestroyed() ? [] : [instance.window])
   }
 
   async navigate(id: string, url: string): Promise<{ url: string; title: string }> {
@@ -2761,6 +2760,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   private installThemeObserver(instance: BrowserInstance, allowRetry = true): void {
+    // react-doctor-disable-next-line insecure-crypto-risk -- Math.random used only for a non-secret themeObserverToken correlation nonce, not auth/crypto
     const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const urlAtInstall = instance.currentUrl
     instance.themeObserverToken = token

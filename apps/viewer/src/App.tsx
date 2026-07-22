@@ -66,12 +66,14 @@ export function App() {
   useEffect(() => {
     if (!sessionId) return
 
+    let ignore = false
     const fetchSession = async () => {
       setIsLoading(true)
       setError(null)
 
       try {
         const response = await fetch(`/s/api/${sessionId}`)
+        if (ignore) return
         if (!response.ok) {
           if (response.status === 404) {
             setError(t('errors.sessionNotFound'))
@@ -82,8 +84,10 @@ export function App() {
         }
 
         const data = await response.json()
+        if (ignore) return
         setSession(data)
       } catch (err) {
+        if (ignore) return
         console.error('Failed to fetch session:', err)
         setError(t('errors.failedToLoadSession'))
       } finally {
@@ -92,6 +96,9 @@ export function App() {
     }
 
     fetchSession()
+    return () => {
+      ignore = true
+    }
   }, [sessionId, t])
 
   // Handle browser navigation

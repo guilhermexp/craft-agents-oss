@@ -1,4 +1,4 @@
-import { getCredentialManager } from '../credentials/index.ts';
+import { getCredentialManager } from '../credentials/manager.ts';
 import {
   loadWorkspaceConfig,
   saveWorkspaceConfig,

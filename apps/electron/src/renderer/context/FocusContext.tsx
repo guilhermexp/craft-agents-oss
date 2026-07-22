@@ -138,7 +138,7 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
   // Components that need to focus on session change should use session?.id as
   // the effect dependency instead of isFocused.
 
-  const value: FocusContextValue = {
+  const value: FocusContextValue = React.useMemo(() => ({
     currentZone: focusState.zone,
     focusState,
     registerZone,
@@ -147,7 +147,7 @@ export function FocusProvider({ children }: { children: React.ReactNode }) {
     focusNextZone,
     focusPreviousZone,
     isZoneFocused,
-  }
+  }), [focusState, registerZone, unregisterZone, focusZone, focusNextZone, focusPreviousZone, isZoneFocused])
 
   return (
     <FocusContext.Provider value={value}>

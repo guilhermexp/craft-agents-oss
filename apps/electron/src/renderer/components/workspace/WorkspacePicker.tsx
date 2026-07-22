@@ -53,7 +53,7 @@ export function WorkspacePicker({ onSelectWorkspace }: WorkspacePickerProps) {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-sidebar px-4">
+      <div className="flex h-dvh items-center justify-center bg-sidebar px-4">
         <AddWorkspaceContainer>
           <Spinner className="size-6" />
           <p className="mt-3 text-sm text-muted-foreground">{t("workspace.loadingWorkspaces")}</p>
@@ -63,7 +63,7 @@ export function WorkspacePicker({ onSelectWorkspace }: WorkspacePickerProps) {
   }
 
   return (
-    <div className="flex h-screen items-center justify-center bg-sidebar px-4">
+    <div className="flex h-dvh items-center justify-center bg-sidebar px-4">
       <AddWorkspaceContainer>
         <AddWorkspaceStepHeader
           title={t("workspace.selectWorkspace")}

@@ -310,8 +310,7 @@ export class ChannelManager {
 
   private channelKanbanAssignees(channel: WarRoomChannel): Set<string> {
     return new Set((channel.participants ?? [])
-      .filter(participant => participant.llmConnection === 'hermes')
-      .map(participant => participant.hermesProfile ?? participant.id))
+      .flatMap(participant => participant.llmConnection === 'hermes' ? [participant.hermesProfile ?? participant.id] : []))
   }
 
   private participantIdForKanbanAssignee(channel: WarRoomChannel, assignee: string | null): string | null {
@@ -358,6 +357,7 @@ export class ChannelManager {
 
     for (const [key, watched] of this.watchedKanbanTasks) {
       const tasks = listKanbanTasksByIds([...watched.taskIds])
+      const { channel } = watched
       const terminalTasks = tasks.filter(task => isTerminalKanbanStatus(task.status))
       if (terminalTasks.length === 0) continue
 
@@ -370,29 +370,29 @@ export class ChannelManager {
       )).join('\n')
 
       appendChannelMessage(watched.workspaceRootPath, {
-        channelId: watched.channel.id,
+        channelId: channel.id,
         authorType: 'system',
         authorId: 'hermes-kanban',
         text: `Hermes Kanban update:\n${visible}`,
         tagged: terminalTasks
-          .map(task => this.participantIdForKanbanAssignee(watched.channel, task.assignee))
+          .map(task => this.participantIdForKanbanAssignee(channel, task.assignee))
           .filter((participantId): participantId is string => typeof participantId === 'string'),
       })
 
-      const recentMessages = listChannelMessages(watched.workspaceRootPath, watched.channel.id).map(message => ({
+      const recentMessages = listChannelMessages(watched.workspaceRootPath, channel.id).map(message => ({
         authorId: message.authorId,
         text: message.text,
       }))
 
-      const result = await this.getOrchestrator(watched.workspaceId, watched.channel.id, watched.workspaceRootPath).sendTaskUpdate({
-        channel: watched.channel,
+      const result = await this.getOrchestrator(watched.workspaceId, channel.id, watched.workspaceRootPath).sendTaskUpdate({
+        channel,
         tasks: terminalTasks,
         recentMessages,
       })
 
       for (const agentMessage of result.agentMessages) {
         appendChannelMessage(watched.workspaceRootPath, {
-          channelId: watched.channel.id,
+          channelId: channel.id,
           authorType: 'agent',
           authorId: agentMessage.participantId,
           text: agentMessage.text,
@@ -400,7 +400,7 @@ export class ChannelManager {
         })
       }
 
-      this.pushMessagesChanged(watched.workspaceId, watched.channel.id)
+      this.pushMessagesChanged(watched.workspaceId, channel.id)
     }
   }
 

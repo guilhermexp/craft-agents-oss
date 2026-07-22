@@ -262,12 +262,14 @@ function pickBestFavicon(favicons: Array<{href: string, sizes: string | null}>):
 
   // Sort by size (largest first)
   const withSizes = favicons
-    .filter(f => f.sizes && f.sizes !== 'any')
-    .map(f => {
-      const sizeMatch = f.sizes?.match(/(\d+)x(\d+)/);
-      const size = sizeMatch && sizeMatch[1] ? parseInt(sizeMatch[1], 10) : 0;
-      return { ...f, sizeNum: size };
-    })
+    .reduce<Array<{ href: string; sizes: string | null; sizeNum: number }>>((acc, f) => {
+      if (f.sizes && f.sizes !== 'any') {
+        const sizeMatch = f.sizes.match(/(\d+)x(\d+)/);
+        const size = sizeMatch && sizeMatch[1] ? parseInt(sizeMatch[1], 10) : 0;
+        acc.push({ ...f, sizeNum: size });
+      }
+      return acc;
+    }, [])
     .sort((a, b) => b.sizeNum - a.sizeNum);
 
   const largestWithSize = withSizes[0];

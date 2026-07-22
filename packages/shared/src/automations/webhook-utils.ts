@@ -241,6 +241,7 @@ export async function executeWebhookRequest(
       }
     }
 
+    // react-doctor-disable-next-line no-fetch-response-used-without-status-check -- response.status 2xx is checked before body read
     const response = await fetch(url, {
       method,
       headers,

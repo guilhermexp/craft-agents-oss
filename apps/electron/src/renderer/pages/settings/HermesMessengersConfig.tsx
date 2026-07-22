@@ -215,12 +215,12 @@ export function HermesMessengersConfig() {
                       alt=""
                       width={32}
                       height={32}
-                      className="size-8 rounded-lg flex-shrink-0"
+                      className="size-8 rounded-lg shrink-0"
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className="text-sm font-medium leading-5 truncate">{m.name}</span>
-                        {configured && <CheckCircle2 className="size-3.5 text-emerald-500 flex-shrink-0" />}
+                        {configured && <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />}
                       </div>
                       <div className="text-[11px] text-muted-foreground leading-4 mt-0.5 line-clamp-2">
                         {m.description}
@@ -349,7 +349,7 @@ function MessengerModal({
               const isRequired = entry.requiredEnv.includes(key)
               return [(
                 <div key={key} className="space-y-1">
-                  <label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1">
+                  <label htmlFor={`hermes-env-${key}`} className="text-[11px] font-medium text-muted-foreground flex items-center gap-1">
                     {key}
                     {isRequired && <span className="text-destructive">*</span>}
                     {current?.isSet && (
@@ -359,6 +359,7 @@ function MessengerModal({
                     )}
                   </label>
                   <input
+                    id={`hermes-env-${key}`}
                     type={current?.isPassword || isRequired ? 'password' : 'text'}
                     value={values[key] ?? ''}
                     onChange={(e) => setValue(key, e.target.value)}

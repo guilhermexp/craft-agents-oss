@@ -124,6 +124,7 @@ export function PanelResizeSash({
     <div
       ref={ref}
       role="separator"
+      aria-label="Resize panels"
       aria-orientation="vertical"
       tabIndex={0}
       className="relative w-0 h-full cursor-col-resize flex justify-center shrink-0"

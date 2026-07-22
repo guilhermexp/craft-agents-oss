@@ -402,17 +402,22 @@ function FilterRow({
 
   return (
     <div
-      role="button"
-      onClick={pinned ? undefined : onTap}
       className={cn(
-        'flex items-center gap-3 px-3 py-2.5 rounded-[10px] transition-colors',
-        pinned ? 'opacity-60' : 'cursor-pointer hover:bg-foreground/5 active:bg-foreground/10',
+        'flex items-center rounded-[10px] transition-colors',
+        pinned ? 'opacity-60' : 'hover:bg-foreground/5 active:bg-foreground/10',
       )}
     >
-      {renderedIcon}
-      <span className="flex-1 min-w-0 text-sm truncate">{label}</span>
-      {pinned && <Check className="h-4 w-4 text-muted-foreground shrink-0" />}
-      {!pinned && radioSelected && <Check className="h-4 w-4 text-foreground/70 shrink-0" />}
+      <button
+        type="button"
+        disabled={pinned}
+        onClick={onTap}
+        className="flex flex-1 min-w-0 items-center gap-3 px-3 py-2.5 text-left enabled:cursor-pointer disabled:cursor-default"
+      >
+        {renderedIcon}
+        <span className="flex-1 min-w-0 text-sm truncate">{label}</span>
+        {pinned && <Check className="h-4 w-4 text-muted-foreground shrink-0" />}
+        {!pinned && radioSelected && <Check className="h-4 w-4 text-foreground/70 shrink-0" />}
+      </button>
       {!pinned && mode && (
         <button
           type="button"
@@ -421,7 +426,7 @@ function FilterRow({
             onModeTap?.()
           }}
           className={cn(
-            'shrink-0 h-7 px-2.5 rounded-[6px] text-xs font-medium flex items-center gap-1 shadow-tinted',
+            'mr-3 shrink-0 h-7 px-2.5 rounded-[6px] text-xs font-medium flex items-center gap-1 shadow-tinted',
             mode === 'include'
               ? 'bg-background text-foreground'
               : 'bg-destructive/10 text-destructive',

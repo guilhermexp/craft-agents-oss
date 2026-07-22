@@ -280,9 +280,7 @@ if (messagingHandle !== null && !messagingDisabled) {
   const handle: MessagingBootstrapHandle = messagingHandle
   handle.setPublisher(instance.wsServer.push.bind(instance.wsServer))
   try {
-    const localWorkspaceIds = getWorkspaces()
-      .filter((ws) => !ws.remoteServer)
-      .map((ws) => ws.id)
+    const localWorkspaceIds = getWorkspaces().flatMap((ws) => ws.remoteServer ? [] : [ws.id])
     await handle.initializeWorkspaces(localWorkspaceIds)
   } catch (error) {
     console.error('[messaging] Workspace initialization failed:', error)
@@ -298,10 +296,17 @@ if (webuiHandler) {
   healthCheckFn = () => getHealthCheck(depsLike)
 
   // Wire up OAuth callback deps so /api/oauth/callback works
-  const { getSourceCredentialManager, loadWorkspaceSources } = await import('@craft-agent/shared/sources')
-  const { getWorkspaceByNameOrId } = await import('@craft-agent/shared/config')
-  const { pushTyped } = await import('@craft-agent/server-core/transport')
-  const { RPC_NAMESPACES } = await import('@craft-agent/shared/protocol')
+  const [
+    { getSourceCredentialManager, loadWorkspaceSources },
+    { getWorkspaceByNameOrId },
+    { pushTyped },
+    { RPC_NAMESPACES },
+  ] = await Promise.all([
+    import('@craft-agent/shared/sources'),
+    import('@craft-agent/shared/config'),
+    import('@craft-agent/server-core/transport'),
+    import('@craft-agent/shared/protocol'),
+  ])
 
   webuiHandler.setOAuthCallbackDeps({
     flowStore: instance.oauthFlowStore,

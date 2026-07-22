@@ -24,7 +24,8 @@ import type { SessionConfig as Session } from '../../sessions/storage.ts';
 import type { SourceManager } from '../core/source-manager.ts';
 
 // Import AbortReason and RecoveryMessage from core module (single source of truth)
-import { AbortReason, type RecoveryMessage } from '../core/index.ts';
+import { AbortReason } from '../core/session-lifecycle.ts';
+import type { RecoveryMessage } from '../core/types.ts';
 export { AbortReason, type RecoveryMessage };
 
 import type { ModelProvider } from '../../config/models.ts';

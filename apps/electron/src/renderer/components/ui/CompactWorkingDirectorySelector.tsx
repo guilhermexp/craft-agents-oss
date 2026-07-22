@@ -164,38 +164,36 @@ export function CompactWorkingDirectorySelector({
               filteredRecent.map((path) => {
                 const recentFolderName = getPathBasename(path) || 'Folder'
                 return (
-                  <DrawerClose asChild key={path}>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => handleSelectRecent(path)}
-                      onKeyDown={(event) => {
-                        if (event.key !== 'Enter' && event.key !== ' ') return
-                        event.preventDefault()
-                        handleSelectRecent(path)
-                      }}
-                      className={cn(
-                        'flex items-center gap-3 px-3 py-3 rounded-[10px] text-left transition-colors hover:bg-foreground/5 group/row cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                      )}
-                    >
-                      <Icon_Folder className="h-5 w-5 shrink-0 text-foreground/60" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate">{recentFolderName}</div>
-                        <div className="text-xs text-foreground/50 truncate">
-                          {formatCompactPath(path, homeDir)}
-                        </div>
-                      </div>
+                  <div
+                    key={path}
+                    className="flex items-center rounded-[10px] transition-colors hover:bg-foreground/5 group/row"
+                  >
+                    <DrawerClose asChild>
                       <button
                         type="button"
-                        aria-label={t('common.remove')}
-                        onClick={(e) => handleRemoveRecent(e, path)}
-                        onKeyDown={(event) => event.stopPropagation()}
-                        className="shrink-0 h-7 w-7 rounded-[6px] flex items-center justify-center text-foreground/30 hover:text-foreground/70 hover:bg-foreground/5 transition-colors"
+                        onClick={() => handleSelectRecent(path)}
+                        className={cn(
+                          'flex flex-1 min-w-0 items-center gap-3 px-3 py-3 rounded-[10px] text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                        )}
                       >
-                        <X className="h-4 w-4" />
+                        <Icon_Folder className="h-5 w-5 shrink-0 text-foreground/60" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">{recentFolderName}</div>
+                          <div className="text-xs text-foreground/50 truncate">
+                            {formatCompactPath(path, homeDir)}
+                          </div>
+                        </div>
                       </button>
-                    </div>
-                  </DrawerClose>
+                    </DrawerClose>
+                    <button
+                      type="button"
+                      aria-label={t('common.remove')}
+                      onClick={(e) => handleRemoveRecent(e, path)}
+                      className="shrink-0 mr-3 h-7 w-7 rounded-[6px] flex items-center justify-center text-foreground/30 hover:text-foreground/70 hover:bg-foreground/5 transition-colors"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
                 )
               })
             )}

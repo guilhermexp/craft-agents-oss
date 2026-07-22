@@ -33,12 +33,8 @@ import type {
   BrowserInstanceSnapshot,
   AccessibilitySnapshot,
 } from '../handlers/browser-pane-manager-interface'
-import {
-  CLIENT_BROWSER_INVOKE,
-  requestClientBrowserInvoke,
-  type BrowserCapabilityMethod,
-  type ScreenshotResultWire,
-} from '../transport'
+import { CLIENT_BROWSER_INVOKE, requestClientBrowserInvoke } from '../transport/capabilities'
+import type { BrowserCapabilityMethod, ScreenshotResultWire } from '../transport/browser-capability'
 import type { RpcServer } from '../transport/types'
 
 const remoteBpmLog = createScopedLogger(CONSOLE_LOGGER, 'remote-bpm')

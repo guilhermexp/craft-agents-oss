@@ -146,6 +146,7 @@ export function FilterableSelectPopover<T>({
       return
     }
     if (e.key === 'Enter') {
+      if (e.nativeEvent.isComposing) return
       e.preventDefault()
       const item = filteredItems[highlightedIndex]
       if (item) handleToggle(item)

@@ -194,6 +194,7 @@ export function validateSlug(slug: string): ValidationResult {
 /**
  * Zod schema for skill metadata (SKILL.md frontmatter)
  */
+// react-doctor-disable-next-line zod-v4-no-deprecated-schema-apis -- package is pinned to zod v3; .passthrough() is the correct installed API (revisit when upgrading to zod v4)
 export const SkillMetadataSchema = z.object({
   name: z.string().min(1, "Add a 'name' field with a human-readable title"),
   description: z.string().min(1, "Add a 'description' field explaining what this skill does"),

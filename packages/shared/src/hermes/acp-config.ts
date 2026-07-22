@@ -125,15 +125,21 @@ export function applyHermesProfileToRuntime(
 function headersToAcp(headers?: Record<string, string>): AcpHeader[] {
   if (!headers) return []
   return Object.entries(headers)
-    .filter(([name, value]) => Boolean(name.trim()) && typeof value === 'string')
-    .map(([name, value]) => ({ name, value }))
+    .flatMap(([name, value]) =>
+      Boolean(name.trim()) && typeof value === 'string'
+        ? [{ name, value }]
+        : [],
+    )
 }
 
 function envToAcp(env?: Record<string, string>): AcpEnvVar[] {
   if (!env) return []
   return Object.entries(env)
-    .filter(([name, value]) => Boolean(name.trim()) && typeof value === 'string')
-    .map(([name, value]) => ({ name, value }))
+    .flatMap(([name, value]) =>
+      Boolean(name.trim()) && typeof value === 'string'
+        ? [{ name, value }]
+        : [],
+    )
 }
 
 export function sdkMcpServerToHermesAcp(name: string, config: SdkMcpServerConfig): HermesAcpMcpServer {

@@ -718,9 +718,7 @@ app.whenReady().then(async () => {
         messagingHandle.setPublisher(instance.wsServer.push.bind(instance.wsServer))
 
         // Skip remote-owned workspaces — messaging runs on the remote server.
-        const localWorkspaceIds = getWorkspaces()
-          .filter((ws) => !ws.remoteServer)
-          .map((ws) => ws.id)
+        const localWorkspaceIds = getWorkspaces().flatMap((ws) => (ws.remoteServer ? [] : [ws.id]))
         await messagingHandle.initializeWorkspaces(localWorkspaceIds)
 
         // Compose fan-out event sink: RPC push + messaging gateway dispatch.
@@ -760,9 +758,15 @@ app.whenReady().then(async () => {
       ipcMain.handle('session:transferToRemoteWorkspace', async (_event, sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number) => {
         const idx = sessionIndex ?? 0
         const count = sessionCount ?? 1
-        const { getWorkspaceByNameOrId } = await import('@craft-agent/shared/config')
-        const { connectToRemote } = await import('./handlers/workspace')
-        const { CHUNKED_TRANSFER_THRESHOLD, getChunkCount, invokeChunked, prepareChunkedPayload } = await import('./chunked-rpc')
+        const [
+          { getWorkspaceByNameOrId },
+          { connectToRemote },
+          { CHUNKED_TRANSFER_THRESHOLD, getChunkCount, invokeChunked, prepareChunkedPayload },
+        ] = await Promise.all([
+          import('@craft-agent/shared/config'),
+          import('./handlers/workspace'),
+          import('./chunked-rpc'),
+        ])
 
         const targetWorkspace = getWorkspaceByNameOrId(targetWorkspaceId)
         if (!targetWorkspace?.remoteServer) throw new Error(`Workspace ${targetWorkspaceId} has no remote server`)

@@ -66,6 +66,9 @@ if (isClientOnly) {
   const wsToken = process.env.CRAFT_SERVER_TOKEN ?? ''
 
   // Block unencrypted ws:// to non-localhost servers — tokens would be sent in cleartext
+  if (!URL.canParse(wsUrl)) {
+    throw new Error(`Invalid CRAFT_SERVER_URL: ${wsUrl}`)
+  }
   const parsed = new URL(wsUrl)
   const isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1'
   if (parsed.protocol === 'ws:' && !isLocalhost) {

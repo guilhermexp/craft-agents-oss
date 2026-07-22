@@ -109,14 +109,14 @@ export function ActionRegistryProvider({ children }: { children: React.ReactNode
     return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [getHotkey])
 
-  const value: ActionRegistryContextType = {
+  const value = React.useMemo<ActionRegistryContextType>(() => ({
     register,
     execute,
     getHotkey,
     getHotkeyDisplay,
     getAction,
     userOverrides: userOverrides.current!,
-  }
+  }), [register, execute, getHotkey, getHotkeyDisplay, getAction])
 
   return (
     <ActionRegistryContext.Provider value={value}>

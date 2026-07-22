@@ -87,10 +87,11 @@ export function ResetConfirmationDialog({
         </div>
 
         <div className="space-y-2 pt-2">
-          <label className="text-sm font-medium">
+          <label htmlFor="reset-confirm-answer" className="text-sm font-medium">
             {t("dialog.reset.confirmSolve", { a: problem.a, b: problem.b })}
           </label>
           <Input
+            id="reset-confirm-answer"
             type="text"
             inputMode="numeric"
             pattern="[0-9]*"

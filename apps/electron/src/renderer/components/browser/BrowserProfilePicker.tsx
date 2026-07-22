@@ -122,56 +122,59 @@ function ProfileGrid({ profiles, onPick, onCreateClick, onRename, onDelete }: Pr
         const isDefault = p.id === DEFAULT_BROWSER_PROFILE_ID
         const isRenaming = renamingId === p.id
         return (
-          <div
-            key={p.id}
-            role="button"
-            tabIndex={0}
-            className="group relative flex flex-col items-center gap-2 rounded-lg border border-border p-4 hover:bg-foreground/5 transition cursor-pointer"
-            onClick={() => !isRenaming && onPick(p.id)}
-            onKeyDown={(e) => {
-              if ((e.key === 'Enter' || e.key === ' ') && !isRenaming) {
-                e.preventDefault()
-                onPick(p.id)
-              }
-            }}
-          >
-            <ProfileAvatar profile={p} size={56} />
-            {isRenaming ? (
-              <Input
-                autoFocus
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    void onRename(p.id, renameValue).finally(() => setRenamingId(null))
-                  } else if (e.key === 'Escape') {
+          <div key={p.id} className="group relative">
+            <div
+              role="button"
+              tabIndex={0}
+              className="flex flex-col items-center gap-2 rounded-lg border border-border p-4 hover:bg-foreground/5 transition cursor-pointer"
+              onClick={() => !isRenaming && onPick(p.id)}
+              onKeyDown={(e) => {
+                if ((e.key === 'Enter' || e.key === ' ') && !isRenaming) {
+                  e.preventDefault()
+                  onPick(p.id)
+                }
+              }}
+            >
+              <ProfileAvatar profile={p} size={56} />
+              {isRenaming ? (
+                <Input
+                  autoFocus
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.nativeEvent.isComposing) return
+                    if (e.key === 'Enter') {
+                      void onRename(p.id, renameValue).finally(() => setRenamingId(null))
+                    } else if (e.key === 'Escape') {
+                      setRenamingId(null)
+                    }
+                  }}
+                  onBlur={() => {
+                    if (renameValue.trim() && renameValue !== p.name) {
+                      void onRename(p.id, renameValue)
+                    }
                     setRenamingId(null)
-                  }
-                }}
-                onBlur={() => {
-                  if (renameValue.trim() && renameValue !== p.name) {
-                    void onRename(p.id, renameValue)
-                  }
-                  setRenamingId(null)
-                }}
-                className="h-7 text-xs text-center"
-              />
-            ) : (
-              <>
-                <div className="text-sm text-center truncate w-full" title={p.name}>
-                  {p.name}
-                </div>
-                {(p.clientName || p.kind === 'client') && (
-                  <div className="max-w-full truncate rounded-full bg-foreground/5 px-2 py-0.5 text-[10px] text-muted-foreground" title={p.clientName ?? p.kind}>
-                    {p.clientName ?? 'Cliente'}
+                  }}
+                  className="h-7 text-xs text-center"
+                />
+              ) : (
+                <>
+                  <div className="text-sm text-center truncate w-full" title={p.name}>
+                    {p.name}
                   </div>
-                )}
-              </>
-            )}
+                  {(p.clientName || p.kind === 'client') && (
+                    <div className="max-w-full truncate rounded-full bg-foreground/5 px-2 py-0.5 text-[10px] text-muted-foreground" title={p.clientName ?? p.kind}>
+                      {p.clientName ?? 'Cliente'}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
             <div className="absolute top-1 right-1 hidden group-hover:flex gap-1">
               <button
                 type="button"
+                aria-label="Renomear"
                 className="rounded p-1 hover:bg-foreground/10"
                 title="Renomear"
                 onClick={(e) => {
@@ -185,6 +188,7 @@ function ProfileGrid({ profiles, onPick, onCreateClick, onRename, onDelete }: Pr
               {!isDefault && (
                 <button
                   type="button"
+                  aria-label="Apagar perfil"
                   className="rounded p-1 hover:bg-destructive/20 text-destructive"
                   title="Apagar perfil"
                   onClick={(e) => {
@@ -264,6 +268,7 @@ function ProfileCreateForm({ onSubmit, onCancel }: ProfileCreateFormProps) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return
               if (e.key === 'Enter') void handleSubmit()
             }}
             placeholder="Ex.: Guilherme pessoal, Cliente ACME"

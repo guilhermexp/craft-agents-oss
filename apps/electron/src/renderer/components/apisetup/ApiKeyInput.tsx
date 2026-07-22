@@ -435,6 +435,7 @@ export function ApiKeyInput({
           />
           <button
             type="button"
+            aria-label={showValue ? 'Hide API key' : 'Show API key'}
             onClick={() => setShowValue(!showValue)}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
             tabIndex={-1}
@@ -599,6 +600,7 @@ export function ApiKeyInput({
                   />
                   <button
                     type="button"
+                    aria-label={showValue ? 'Hide secret access key' : 'Show secret access key'}
                     onClick={() => setShowValue(!showValue)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     tabIndex={-1}

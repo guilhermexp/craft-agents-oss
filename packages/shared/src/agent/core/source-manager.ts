@@ -158,7 +158,7 @@ export class SourceManager {
    */
   formatSourceState(): string {
     // Use intended active slugs (what UI shows) rather than just what built successfully
-    const activeSlugs = [...this.intendedSlugs].sort();
+    const activeSlugs = Array.from(this.intendedSlugs).sort();
 
     // Find inactive sources (in allSources but not intended-active)
     const inactiveSources = this.allSources.filter(

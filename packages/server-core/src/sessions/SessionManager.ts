@@ -1916,6 +1916,7 @@ export class SessionManager implements ISessionManager {
         // still need to notify the automation system for event matching.
         const incomingSignature = getHeaderMetadataSignature(header)
         const lastWrittenSignature = this.store.getLastWrittenSignature(sessionId)
+        // react-doctor-disable-next-line insecure-crypto-risk -- compares a JSON.stringify fingerprint of non-secret header metadata (fs.watch self-write echo), not a cryptographic signature
         const isSelfWrite = !!(lastWrittenSignature && incomingSignature === lastWrittenSignature)
 
         // For external writes: sync in-memory state + emit UI events.
@@ -3635,8 +3636,7 @@ export class SessionManager implements ISessionManager {
 
       const getRecoveryMessages = () => {
         const relevantMessages = managed.messages
-          .filter(m => m.role === 'user' || m.role === 'assistant')
-          .filter(m => !m.isIntermediate)
+          .filter(m => (m.role === 'user' || m.role === 'assistant') && !m.isIntermediate)
           .slice(-6)
         return relevantMessages.map(m => ({
           type: m.role as 'user' | 'assistant',
@@ -3647,12 +3647,11 @@ export class SessionManager implements ISessionManager {
       const getBranchFallbackMessages = () => {
         if (!managed.branchFromMessageId) return []
         return managed.messages
-          .filter(m => m.role === 'user' || m.role === 'assistant')
-          .filter(m => !m.isIntermediate)
-          .map(m => ({
-            type: m.role as 'user' | 'assistant',
-            content: m.content,
-          }))
+          .flatMap(m => (
+            (m.role === 'user' || m.role === 'assistant') && !m.isIntermediate
+              ? [{ type: m.role as 'user' | 'assistant', content: m.content }]
+              : []
+          ))
       }
 
       const getBranchSeedMessages = () => {
@@ -3660,8 +3659,7 @@ export class SessionManager implements ISessionManager {
         if (managed.branchSeedApplied) return []
 
         const seedMessages = managed.messages
-          .filter(m => m.role === 'user' || m.role === 'assistant')
-          .filter(m => !m.isIntermediate)
+          .filter(m => (m.role === 'user' || m.role === 'assistant') && !m.isIntermediate)
 
         return seedMessages.map(m => ({
           type: m.role as 'user' | 'assistant',
@@ -4045,7 +4043,7 @@ export class SessionManager implements ISessionManager {
                 return {
                   action: released ? 'released' : 'noop',
                   requestedInstanceId,
-                  affectedIds: released ? before.filter((w) => !!w.agentControlActive).map((w) => w.id) : [],
+                  affectedIds: released ? before.flatMap((w) => (w.agentControlActive ? [w.id] : [])) : [],
                   reason: released ? undefined : 'No active overlay was found for this session.',
                 }
               }
@@ -4163,14 +4161,17 @@ export class SessionManager implements ISessionManager {
               return {
                 ok: true,
                 meetings: (await bpm.listInstancesAsync())
-                  .filter((window) => window.boundSessionId === sid || window.ownerSessionId === sid)
-                  .map((window) => ({
-                    meetingId: `browser:${window.id}`,
-                    browserInstanceId: window.id,
-                    title: window.title,
-                    url: window.url,
-                    status: 'running',
-                  })),
+                  .flatMap((window) => (
+                    window.boundSessionId === sid || window.ownerSessionId === sid
+                      ? [{
+                          meetingId: `browser:${window.id}`,
+                          browserInstanceId: window.id,
+                          title: window.title,
+                          url: window.url,
+                          status: 'running',
+                        }]
+                      : []
+                  )),
               }
             }
 
@@ -4746,8 +4747,7 @@ export class SessionManager implements ISessionManager {
 
         // Apply source servers to the agent
         const intendedSlugs = allEnabledSources
-          .filter(isSourceUsable)
-          .map(s => s.config.slug)
+          .flatMap(s => (isSourceUsable(s) ? [s.config.slug] : []))
 
         // Update bridge-mcp-server config/credentials for backends that need it
         await applyBridgeUpdates(managed.agent!, sessionPath, allEnabledSources, mcpServers, managed.id, workspaceRootPath, 'source enable', managed.poolServer?.url)
@@ -5275,10 +5275,10 @@ export class SessionManager implements ISessionManager {
       managed.agent.setAllSources(allSources)
 
       // Set active source servers (tools are only available from these)
-      const intendedSlugs = sources.filter(isSourceUsable).map(s => s.config.slug)
+      const usableSources = sources.filter(isSourceUsable)
+      const intendedSlugs = usableSources.map(s => s.config.slug)
 
       // Update bridge-mcp-server config/credentials for backends that need it
-      const usableSources = sources.filter(isSourceUsable)
       await applyBridgeUpdates(managed.agent, sessionPath, usableSources, mcpServers, managed.id, workspaceRootPath, 'source config change', managed.poolServer?.url)
 
       await managed.agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
@@ -5483,8 +5483,7 @@ export class SessionManager implements ISessionManager {
 
     // Select a spread of user messages (first, middle, last) to capture the session's purpose
     const allUserContents = managed.messages
-      .filter((m) => m.role === 'user')
-      .map((m) => m.content)
+      .flatMap((m) => (m.role === 'user' ? [m.content] : []))
     const userMessages = selectSpreadMessages(allUserContents)
 
     sessionLog.info(`refreshTitle: Selected ${userMessages.length} spread messages from ${allUserContents.length} total`)
@@ -6178,8 +6177,10 @@ export class SessionManager implements ISessionManager {
       if (autoMatches.length > 0) {
         const existingLabels = managed.labels ?? []
         const newEntries = autoMatches
-          .map(m => `${m.labelId}::${m.value}`)
-          .filter(entry => !existingLabels.includes(entry))
+          .flatMap(m => {
+            const entry = `${m.labelId}::${m.value}`
+            return existingLabels.includes(entry) ? [] : [entry]
+          })
 
         if (newEntries.length > 0) {
           managed.labels = [...existingLabels, ...newEntries]
@@ -6245,9 +6246,7 @@ export class SessionManager implements ISessionManager {
           const candidateSlugs = Array.from(requiredSources)
           const loadedSources = getSourcesBySlugs(workspaceRoot, candidateSlugs)
           const usableSources = new Set(
-            loadedSources
-              .filter(isSourceUsable)
-              .map(source => source.config.slug)
+            loadedSources.flatMap(source => (isSourceUsable(source) ? [source.config.slug] : []))
           )
 
           for (const srcSlug of candidateSlugs) {
@@ -8826,12 +8825,11 @@ export class SessionManager implements ISessionManager {
     await this.ensureMessagesLoaded(managed)
 
     const messages = managed.messages
-      .filter(m => m.role === 'user' || m.role === 'assistant')
-      .filter(m => !m.isIntermediate)
-      .map(m => ({
-        type: m.role as 'user' | 'assistant',
-        content: m.content,
-      }))
+      .flatMap(m => (
+        (m.role === 'user' || m.role === 'assistant') && !m.isIntermediate
+          ? [{ type: m.role as 'user' | 'assistant', content: m.content }]
+          : []
+      ))
 
     if (messages.length === 0) return null
 

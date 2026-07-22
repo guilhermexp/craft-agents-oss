@@ -49,7 +49,7 @@ export function mergeSubtaskRows(
   children: readonly SubtaskChildRow[],
   fallbackModel: string
 ): KanbanSubtask[] {
-  const ordered = [...children].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
+  const ordered = children.toSorted((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
   if (!specNodes?.length) return ordered.map(toRow)
 
   // Ascending order → the last write per node is the newest child (re-runs supersede).

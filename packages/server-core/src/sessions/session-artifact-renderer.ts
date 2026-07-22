@@ -55,9 +55,7 @@ async function removeVisibleMermaidSources(diagramsDir: string): Promise<void> {
   }
 
   await Promise.all(
-    entries
-      .filter((name) => name.endsWith('.mmd'))
-      .map((name) => unlink(join(diagramsDir, name)).catch(() => {})),
+    entries.flatMap((name) => (name.endsWith('.mmd') ? [unlink(join(diagramsDir, name)).catch(() => {})] : [])),
   )
 }
 

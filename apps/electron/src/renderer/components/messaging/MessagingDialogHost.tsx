@@ -29,7 +29,9 @@ export function MessagingDialogHost() {
   // a pairing code. The check needs the *latest* state values, so we capture
   // them via a ref to keep the subscription effect stable.
   const stateRef = React.useRef(state)
-  stateRef.current = state
+  React.useEffect(() => {
+    stateRef.current = state
+  })
 
   const isWaitingForPair = state.kind === 'pairing' && state.code !== null
   React.useEffect(() => {

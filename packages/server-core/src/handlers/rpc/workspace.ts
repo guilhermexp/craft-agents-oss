@@ -157,8 +157,10 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
-    const { readFileSync, existsSync } = await import('fs')
-    const { join, normalize } = await import('path')
+    const [{ readFileSync, existsSync }, { join, normalize }] = await Promise.all([
+      import('fs'),
+      import('path'),
+    ])
 
     // Security: validate path
     // - Must not contain .. (path traversal)
@@ -213,8 +215,10 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
-    const { writeFileSync, existsSync, unlinkSync, readdirSync } = await import('fs')
-    const { join, normalize, basename } = await import('path')
+    const [{ writeFileSync, existsSync, unlinkSync, readdirSync }, { join, normalize, basename }] = await Promise.all([
+      import('fs'),
+      import('path'),
+    ])
 
     // Security: validate path
     const ALLOWED_EXTENSIONS = ['.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif']
@@ -321,8 +325,10 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
 
   // Workspace-level theme overrides
   server.handle(RPC_NAMESPACES.theme.GET_WORKSPACE_COLOR_THEME, async (_ctx, workspaceId: string) => {
-    const { getWorkspaces } = await import('@craft-agent/shared/config/storage')
-    const { getWorkspaceColorTheme } = await import('@craft-agent/shared/workspaces/storage')
+    const [{ getWorkspaces }, { getWorkspaceColorTheme }] = await Promise.all([
+      import('@craft-agent/shared/config/storage'),
+      import('@craft-agent/shared/workspaces/storage'),
+    ])
     const workspaces = getWorkspaces()
     const workspace = workspaces.find(w => w.id === workspaceId)
     if (!workspace) return null
@@ -330,8 +336,10 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
   })
 
   server.handle(RPC_NAMESPACES.theme.SET_WORKSPACE_COLOR_THEME, async (_ctx, workspaceId: string, themeId: string | null) => {
-    const { getWorkspaces } = await import('@craft-agent/shared/config/storage')
-    const { setWorkspaceColorTheme } = await import('@craft-agent/shared/workspaces/storage')
+    const [{ getWorkspaces }, { setWorkspaceColorTheme }] = await Promise.all([
+      import('@craft-agent/shared/config/storage'),
+      import('@craft-agent/shared/workspaces/storage'),
+    ])
     const workspaces = getWorkspaces()
     const workspace = workspaces.find(w => w.id === workspaceId)
     if (!workspace) return
@@ -339,8 +347,10 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
   })
 
   server.handle(RPC_NAMESPACES.theme.GET_ALL_WORKSPACE_THEMES, async () => {
-    const { getWorkspaces } = await import('@craft-agent/shared/config/storage')
-    const { getWorkspaceColorTheme } = await import('@craft-agent/shared/workspaces/storage')
+    const [{ getWorkspaces }, { getWorkspaceColorTheme }] = await Promise.all([
+      import('@craft-agent/shared/config/storage'),
+      import('@craft-agent/shared/workspaces/storage'),
+    ])
     const workspaces = getWorkspaces()
     const themes: Record<string, string | undefined> = {}
     for (const ws of workspaces) {
@@ -385,28 +395,29 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
   // Tool icon mappings — loads tool-icons.json and resolves each entry's icon to a data URL
   // for display in the Appearance settings page
   server.handle(RPC_NAMESPACES.toolIcons.GET_MAPPINGS, async () => {
-    const { getToolIconsDir } = await import('@craft-agent/shared/config/storage')
-    const { loadToolIconConfig } = await import('@craft-agent/shared/utils/cli-icon-resolver')
-    const { encodeIconToDataUrl } = await import('@craft-agent/shared/utils/icon-encoder')
-    const { join } = await import('path')
+    const [{ getToolIconsDir }, { loadToolIconConfig }, { encodeIconToDataUrl }, { join }] = await Promise.all([
+      import('@craft-agent/shared/config/storage'),
+      import('@craft-agent/shared/utils/cli-icon-resolver'),
+      import('@craft-agent/shared/utils/icon-encoder'),
+      import('path'),
+    ])
 
     const toolIconsDir = getToolIconsDir()
     const config = loadToolIconConfig(toolIconsDir)
     if (!config) return []
 
     return config.tools
-      .map(tool => {
+      .flatMap(tool => {
         const iconPath = join(toolIconsDir, tool.icon)
         const iconDataUrl = encodeIconToDataUrl(iconPath)
-        if (!iconDataUrl) return null
-        return {
+        if (!iconDataUrl) return []
+        return [{
           id: tool.id,
           displayName: tool.displayName,
           iconDataUrl,
           commands: tool.commands,
-        }
+        }]
       })
-      .filter(Boolean)
   })
 
   // Logo URL resolution (uses Node.js filesystem cache for provider domains)

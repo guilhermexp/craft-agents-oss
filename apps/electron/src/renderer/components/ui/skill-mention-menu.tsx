@@ -69,6 +69,10 @@ export function InlineSkillMention({
   const selectedIndex = selection.forFilter === filter ? selection.index : 0
   const filteredSkills = filterSkills(skills, filter)
 
+  // Effect Events keep the latest callbacks without re-subscribing the keyboard/click effects.
+  const onSelectEvent = React.useEffectEvent((slug: string) => onSelect(slug))
+  const onOpenChangeEvent = React.useEffectEvent((next: boolean) => onOpenChange(next))
+
   // Keyboard navigation
   React.useEffect(() => {
     if (!open) return
@@ -93,20 +97,20 @@ export function InlineSkillMention({
         case 'Tab':
           e.preventDefault()
           if (filteredSkills[selectedIndex]) {
-            onSelect(filteredSkills[selectedIndex].slug)
-            onOpenChange(false)
+            onSelectEvent(filteredSkills[selectedIndex].slug)
+            onOpenChangeEvent(false)
           }
           break
         case 'Escape':
           e.preventDefault()
-          onOpenChange(false)
+          onOpenChangeEvent(false)
           break
       }
     }
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [open, filter, filteredSkills, selectedIndex, onSelect, onOpenChange])
+  }, [open, filter, filteredSkills, selectedIndex])
 
   // Close on click outside
   React.useEffect(() => {
@@ -114,13 +118,13 @@ export function InlineSkillMention({
 
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onOpenChange(false)
+        onOpenChangeEvent(false)
       }
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [open, onOpenChange])
+  }, [open])
 
   // Hide if no results or not open
   if (!open || filteredSkills.length === 0) return null

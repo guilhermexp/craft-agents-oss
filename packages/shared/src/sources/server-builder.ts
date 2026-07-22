@@ -325,19 +325,20 @@ export class SourceServerBuilder {
 
     for (const { source, token, credential } of sourcesWithCredentials) {
       if (!isSourceUsable(source)) continue;
+      const slug = source.config.slug;
 
       try {
         if (source.config.type === 'mcp') {
           const config = this.buildMcpServer(source, token ?? null, credential);
           if (config) {
-            debug(`[SourceServerBuilder] Built MCP server for ${source.config.slug}`);
-            mcpServers[source.config.slug] = config;
+            debug(`[SourceServerBuilder] Built MCP server for ${slug}`);
+            mcpServers[slug] = config;
           } else if (source.config.mcp?.transport !== 'stdio' && source.config.mcp?.authType !== 'none') {
             // Only report auth error for HTTP/SSE sources that need auth
             // Stdio sources don't need auth
-            debug(`[SourceServerBuilder] MCP server ${source.config.slug} needs auth`);
+            debug(`[SourceServerBuilder] MCP server ${slug} needs auth`);
             errors.push({
-              sourceSlug: source.config.slug,
+              sourceSlug: slug,
               error: SERVER_BUILD_ERRORS.AUTH_REQUIRED,
             });
           }
@@ -353,13 +354,13 @@ export class SourceServerBuilder {
             getCredential
           );
           if (server) {
-            apiServers[source.config.slug] = server;
+            apiServers[slug] = server;
           }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        debug(`[SourceServerBuilder] Failed to build server for ${source.config.slug}: ${message}`);
-        errors.push({ sourceSlug: source.config.slug, error: message });
+        debug(`[SourceServerBuilder] Failed to build server for ${slug}: ${message}`);
+        errors.push({ sourceSlug: slug, error: message });
       }
     }
 

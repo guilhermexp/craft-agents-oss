@@ -153,7 +153,10 @@ function PropControl({ definition, value, onChange }: PropControlProps) {
         <input
           type="number"
           value={Number(value ?? 0)}
-          onChange={e => onChange(Number(e.target.value))}
+          onChange={e => {
+            const raw = e.target.value
+            onChange(raw === '' ? undefined : Number(raw))
+          }}
           min={control.min}
           max={control.max}
           step={control.step}

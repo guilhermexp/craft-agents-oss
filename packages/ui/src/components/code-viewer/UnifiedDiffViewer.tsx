@@ -152,7 +152,9 @@ export function UnifiedDiffViewer({
   // Attach a click listener to the file header inside pierre's shadow DOM.
   const containerRef = useRef<HTMLDivElement>(null)
   const onFileHeaderClickRef = useRef(onFileHeaderClick)
-  onFileHeaderClickRef.current = onFileHeaderClick
+  useEffect(() => {
+    onFileHeaderClickRef.current = onFileHeaderClick
+  })
 
   useEffect(() => {
     if (!onFileHeaderClick || disableFileHeader) return

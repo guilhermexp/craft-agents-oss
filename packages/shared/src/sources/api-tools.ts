@@ -283,6 +283,7 @@ export function createApiTool(
 
         debug(`[api-tools] ${config.name}: headers=${JSON.stringify(fetchOptions.headers)}, bodyLength=${fetchOptions.body ? String(fetchOptions.body).length : 0}`);
 
+        // react-doctor-disable-next-line no-fetch-response-used-without-status-check -- response.ok is checked with a distinct error branch before success use
         const response = await fetch(url, fetchOptions);
 
         // OOM safety: reject before loading into memory

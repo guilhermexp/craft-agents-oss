@@ -761,9 +761,7 @@ export class PiEventAdapter extends BaseEventAdapter {
     }
 
     if (Array.isArray(msg.content)) {
-      const textParts = msg.content
-        .filter((c) => c.type === 'text' && c.text)
-        .map((c) => c.text!);
+      const textParts = msg.content.flatMap((c) => (c.type === 'text' && c.text) ? [c.text] : []);
       return textParts.length > 0 ? textParts.join('') : null;
     }
 
@@ -787,9 +785,7 @@ export class PiEventAdapter extends BaseEventAdapter {
     };
 
     if (Array.isArray(typed.content)) {
-      const texts = typed.content
-        .filter((c) => c.type === 'text' && c.text)
-        .map((c) => c.text!);
+      const texts = typed.content.flatMap((c) => (c.type === 'text' && c.text) ? [c.text] : []);
       if (texts.length > 0) return texts.join('\n');
     }
 

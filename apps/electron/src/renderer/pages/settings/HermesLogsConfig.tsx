@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { FolderOpen, Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -112,11 +112,12 @@ export function HermesLogsConfig({
 
   useEffect(() => { void loadLog() }, [loadLog])
 
+  const loadLogEvent = useEffectEvent(() => { void loadLog() })
   useEffect(() => {
     if (!autoRefresh) return
-    const id = setInterval(() => { void loadLog() }, 5000)
+    const id = setInterval(() => { loadLogEvent() }, 5000)
     return () => clearInterval(id)
-  }, [autoRefresh, loadLog])
+  }, [autoRefresh])
 
   const lines = useMemo(() => {
     if (!content) return []
@@ -137,21 +138,25 @@ export function HermesLogsConfig({
             onChange={setSelectedFile}
             options={logs.map(l => ({ value: l.name, label: l.name }))}
             placeholder="Selecione log"
+            label="Arquivo de log"
           />
           <SelectFilter
             value={level}
             onChange={(v) => setLevel(v as Level)}
             options={LEVEL_OPTIONS as readonly { value: string; label: string }[]}
+            label="Nível"
           />
           <SelectFilter
             value={component}
             onChange={(v) => setComponent(v as Component)}
             options={COMPONENT_OPTIONS as readonly { value: string; label: string }[]}
+            label="Componente"
           />
           <SelectFilter
             value={String(lineCount)}
             onChange={(v) => setLineCount(Number(v))}
             options={LINE_COUNT_OPTIONS.map(o => ({ value: String(o.value), label: o.label }))}
+            label="Linhas"
           />
         </div>
 
@@ -215,15 +220,18 @@ function SelectFilter({
   onChange,
   options,
   placeholder,
+  label,
 }: {
   value: string
   onChange: (v: string) => void
   options: readonly { value: string; label: string }[]
   placeholder?: string
+  label: string
 }) {
   return (
     <select
       value={value}
+      aria-label={label}
       onChange={(e) => onChange(e.target.value)}
       className="w-full px-3 py-2 rounded-lg bg-background border border-border/60 text-sm hover:border-border focus:outline-none focus:border-primary/60 transition"
     >

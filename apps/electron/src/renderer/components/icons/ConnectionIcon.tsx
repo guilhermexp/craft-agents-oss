@@ -51,11 +51,11 @@ export function ConnectionIcon({ connection, size = 16, className = '', showTool
     />
   ) : (
     <div
-      className={`rounded-[3px] bg-foreground/10 flex items-center justify-center flex-shrink-0 ${className}`}
+      className={`rounded-[3px] bg-foreground/10 flex items-center justify-center shrink-0 ${className}`}
       style={{ width: size, height: size }}
     >
       <Brain
-        className="text-foreground/50 flex-shrink-0"
+        className="text-foreground/50 shrink-0"
         style={{ width: Math.round(size * 0.7), height: Math.round(size * 0.7) }}
       />
     </div>

@@ -53,6 +53,7 @@ function ExpandableNameCell({ row }: { row: Row<LabelConfig> }) {
       {canExpand ? (
         <button
           type="button"
+          aria-label={isExpanded ? 'Collapse' : 'Expand'}
           onClick={(e) => {
             e.stopPropagation()
             row.toggleExpanded()

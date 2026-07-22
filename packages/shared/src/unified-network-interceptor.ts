@@ -1025,6 +1025,7 @@ export function createOpenAiSseStrippingStream(): TransformStream<Uint8Array, Ui
 
       const choiceIndex = choice.index ?? 0;
       for (const tc of choice.delta.tool_calls) {
+        const fn = tc.function;
         // Resolve the bucket key. If `tc.index` is missing, prefer the most
         // recently opened call in this choice so we don't collide on key 0.
         const fallbackIndex = lastOpenedToolIndexByChoice.get(choiceIndex);
@@ -1036,13 +1037,13 @@ export function createOpenAiSseStrippingStream(): TransformStream<Uint8Array, Ui
           if (existing && existing.id === tc.id) {
             // Relay repeated the id on a subsequent chunk. Treat this as an
             // argument-delta only.
-            if (tc.function?.arguments) {
-              existing.arguments += tc.function.arguments;
+            if (fn?.arguments) {
+              existing.arguments += fn.arguments;
             }
             // If a later chunk carries the function name we hadn't seen yet,
             // upgrade the tracked entry rather than letting it stay 'unknown'.
-            if (tc.function?.name && existing.name === 'unknown') {
-              existing.name = tc.function.name;
+            if (fn?.name && existing.name === 'unknown') {
+              existing.name = fn.name;
             }
             continue;
           }
@@ -1052,11 +1053,11 @@ export function createOpenAiSseStrippingStream(): TransformStream<Uint8Array, Ui
           // event is emitted on flush.
           trackedCalls.set(key, {
             id: tc.id,
-            name: tc.function?.name || 'unknown',
+            name: fn?.name || 'unknown',
             type: tc.type || 'function',
             choiceIndex,
             toolIndex,
-            arguments: tc.function?.arguments || '',
+            arguments: fn?.arguments || '',
             shiftedArgs: [],
           });
           lastOpenedToolIndexByChoice.set(choiceIndex, toolIndex);
@@ -1073,8 +1074,8 @@ export function createOpenAiSseStrippingStream(): TransformStream<Uint8Array, Ui
           const existingByKey = trackedCalls.get(key);
           if (existingByKey) {
             // (a) or (b) — partial JSON delta, append.
-            if (tc.function?.arguments) {
-              existingByKey.arguments += tc.function.arguments;
+            if (fn?.arguments) {
+              existingByKey.arguments += fn.arguments;
             }
           } else {
             // (c) — find the phase-1 entry in this choice by position.
@@ -1087,11 +1088,11 @@ export function createOpenAiSseStrippingStream(): TransformStream<Uint8Array, Ui
               tc.index !== undefined &&
               tc.index > lastOpened &&
               phase1.length > 0 &&
-              tc.function?.arguments
+              fn?.arguments
             ) {
               const ord = tc.index - (lastOpened + 1);
               if (ord >= 0 && ord < phase1.length) {
-                phase1[ord]!.shiftedArgs.push(tc.function.arguments);
+                phase1[ord]!.shiftedArgs.push(fn.arguments);
               }
             }
           }

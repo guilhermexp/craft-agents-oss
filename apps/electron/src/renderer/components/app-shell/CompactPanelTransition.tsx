@@ -59,8 +59,6 @@ export function CompactPanelTransition({
         top: 'var(--compact-panel-stack-top, 0px)',
         // Detail layers above navigator during the transition.
         zIndex: role === 'detail' ? 10 : 0,
-        // Hint the compositor; cheap on GPU and prevents jank on first frame.
-        willChange: 'transform',
         // Off-screen slot must not capture taps or accept focus.
         pointerEvents: isOffscreen ? 'none' : 'auto',
       }}

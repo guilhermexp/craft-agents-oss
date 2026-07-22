@@ -25,7 +25,7 @@ import {
 } from './types.ts';
 import { buildAuthorizationHeader } from './api-tools.ts';
 import type { CredentialId, StoredCredential } from '../credentials/types.ts';
-import { getCredentialManager } from '../credentials/index.ts';
+import { getCredentialManager } from '../credentials/manager.ts';
 import { CraftOAuth, getMcpBaseUrl, prepareMcpOAuth, exchangeMcpOAuth, type OAuthCallbacks, type OAuthTokens } from '../auth/oauth.ts';
 import { type OAuthSessionContext } from '../auth/types.ts';
 import { OAUTH_RELAY_CALLBACK_URL, wrapPreparedOAuthFlowForRelay } from '../auth/oauth-relay.ts';
@@ -65,7 +65,7 @@ import {
   createCraftBridgeOAuthClient,
   prepareCraftBridgeMcpOAuth,
   sourceUsesCraftBridgeAuth,
-} from '../craft-bridge/index.ts';
+} from '../craft-bridge/auth-adapter.ts';
 
 /**
  * Result of authentication attempt

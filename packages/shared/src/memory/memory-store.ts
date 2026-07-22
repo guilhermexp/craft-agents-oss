@@ -187,7 +187,7 @@ export class MemoryStore {
     const maxRank = Math.max(...rows.map(r => Math.abs(r.rank)), 1);
 
     return rows
-      .map(row => {
+      .flatMap(row => {
         const similarity = 1 - Math.abs(row.rank) / maxRank;
         const salienceScore = computeSalience({
           similarity: Math.max(0.1, similarity),
@@ -195,13 +195,13 @@ export class MemoryStore {
           daysSinceLastAccess: daysBetween(row.last_accessed_at, now),
           category: row.category as MemoryCategory,
         });
-        return {
+        if (salienceScore <= 0) return [];
+        return [{
           memory: rowToMemory(row, this.getTagsForMemory(row.id), this.getRefsForMemory(row.id)),
           salienceScore,
           matchType: 'fts' as const,
-        };
+        }];
       })
-      .filter(r => r.salienceScore > 0)
       .sort((a, b) => b.salienceScore - a.salienceScore)
       .slice(0, limit);
   }

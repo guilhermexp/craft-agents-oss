@@ -656,7 +656,10 @@ function imageFallbackReason(tool: string, result: CaptureResult, execution: Exe
 		return "Only a few AX targets were found, so an image is attached for extra context."
 	}
 
-	const labels = result.axTargets.map((target) => normalizeText(target.title || target.description || target.value)).filter(Boolean)
+	const labels = result.axTargets.flatMap((target) => {
+		const label = normalizeText(target.title || target.description || target.value)
+		return label ? [label] : []
+	})
 	const unlabeledCount = result.axTargets.filter((target) => !normalizeText(target.title || target.description || target.value)).length
 	const strongTextRoles = new Set(["AXTextField", "AXSearchField", "AXTextArea", "AXTextView", "AXEditableText"])
 	const strongTargets = result.axTargets.filter((target) => {
@@ -1178,8 +1181,10 @@ async function openIsolatedBrowserWindow(app: HelperApp, signal?: AbortSignal): 
 		);
 	}
 
-	const previousFrontmost = await getFrontmost(signal).catch(() => undefined);
-	const before = await listWindows(app.pid, signal);
+	const [previousFrontmost, before] = await Promise.all([
+		getFrontmost(signal).catch(() => undefined),
+		listWindows(app.pid, signal),
+	]);
 	await runAppleScript(script, signal);
 
 	await beginInputSuppression(signal);
@@ -1211,7 +1216,7 @@ function choosePreferredWindow(windows: HelperWindow[], appName: string): Helper
 		throw new Error(`No controllable window was found in app '${appName}'.`);
 	}
 
-	const scored = [...windows].sort((a, b) => scoreWindow(b) - scoreWindow(a));
+	const scored = windows.toSorted((a, b) => scoreWindow(b) - scoreWindow(a));
 	return scored[0]!;
 }
 
@@ -1239,8 +1244,8 @@ function summarizeWindowCandidate(window: HelperWindow): string {
 }
 
 function summarizeWindowCandidates(windows: HelperWindow[], limit = 6): string {
-	return [...windows]
-		.sort((a, b) => scoreWindow(b) - scoreWindow(a))
+	return windows
+		.toSorted((a, b) => scoreWindow(b) - scoreWindow(a))
 		.slice(0, limit)
 		.map(summarizeWindowCandidate)
 		.join("; ");
@@ -1248,7 +1253,7 @@ function summarizeWindowCandidates(windows: HelperWindow[], limit = 6): string {
 
 function chooseRankedWindowOrUndefined(windows: HelperWindow[]): HelperWindow | undefined {
 	if (windows.length === 0) return undefined;
-	const ranked = [...windows].sort((a, b) => scoreWindow(b) - scoreWindow(a));
+	const ranked = windows.toSorted((a, b) => scoreWindow(b) - scoreWindow(a));
 	if (ranked.length === 1) return ranked[0]!;
 	const topScore = scoreWindow(ranked[0]!);
 	const nextScore = scoreWindow(ranked[1]!);
@@ -1373,8 +1378,7 @@ async function resolveCurrentTarget(signal?: AbortSignal): Promise<ResolvedTarge
 }
 
 async function resolveFrontmostTarget(signal?: AbortSignal): Promise<ResolvedTarget> {
-	const frontmost = await getFrontmost(signal);
-	const apps = await listApps(signal);
+	const [frontmost, apps] = await Promise.all([getFrontmost(signal), listApps(signal)]);
 	const app = apps.find((candidate) => candidate.pid === frontmost.pid) ?? {
 		appName: frontmost.appName,
 		bundleId: frontmost.bundleId,
@@ -1487,7 +1491,7 @@ async function resolveTargetForScreenshot(selection: ScreenshotParams, signal?: 
 		throw new Error(`Window '${query}' was not found in any running app.`);
 	}
 	if (matches.length > 1) {
-		const ranked = [...matches].sort((a, b) => scoreWindow(b.window) - scoreWindow(a.window));
+		const ranked = matches.toSorted((a, b) => scoreWindow(b.window) - scoreWindow(a.window));
 		if (ranked.length > 1 && scoreWindow(ranked[0]!.window) >= scoreWindow(ranked[1]!.window) + 25) {
 			const resolved = toResolvedTarget(ranked[0]!.app, ranked[0]!.window);
 			setCurrentTarget(resolved);
@@ -1542,7 +1546,7 @@ function windowsByCaptureRecoveryPriority(
 	target: ResolvedTarget,
 	failureCode: string,
 ): HelperWindow[] {
-	const sorted = [...windows].sort((a, b) => scoreWindow(b) - scoreWindow(a));
+	const sorted = windows.toSorted((a, b) => scoreWindow(b) - scoreWindow(a));
 	if (failureCode !== "screenshot_timeout") {
 		return sorted;
 	}
@@ -2101,6 +2105,7 @@ async function performScreenshot(params: ScreenshotParams, signal?: AbortSignal)
 	};
 
 	const requestedTarget = await resolveTargetForScreenshot(selection, signal);
+	// react-doctor-disable-next-line server-sequential-independent-await -- reads runtimeState set by resolveTargetForScreenshot (hidden ordering via shared mutable state); parallelizing would race
 	const captureResult = await captureCurrentTarget(signal);
 	if (!matchesScreenshotSelection(captureResult.target, selection)) {
 		throw new Error(

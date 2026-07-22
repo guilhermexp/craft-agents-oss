@@ -170,6 +170,7 @@ export function TaskTile({
       )}
 
       {onEdit && (
+        // react-doctor-disable-next-line html-no-nested-interactive -- edit pencil is a distinct action (edit) nested in the role=button tile (open); stopPropagation + type=button + aria-label + keyboard support
         <button
           type="button"
           data-no-dnd="true"
@@ -237,6 +238,7 @@ export function TaskTile({
           <div className="mt-2.5 border-t border-border/40 pt-2">
             {subtaskCount > 0 && (
               <div className="flex items-center gap-1.5">
+                {/* react-doctor-disable-next-line html-no-nested-interactive -- subtask toggle is a distinct action nested in the role=button tile (open); stopPropagation + type=button + aria-label + keyboard support */}
                 <button
                   type="button"
                   data-no-dnd="true"
@@ -368,7 +370,7 @@ function StatusPicker({
           onClick={e => e.stopPropagation()}
           onKeyDown={e => e.stopPropagation()}
           aria-label={t('kanban.changeStatus')}
-          className="rounded-full transition-shadow hover:ring-2 hover:ring-foreground/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:ring-2 data-[state=open]:ring-foreground/20"
+          className="rounded-full hover:ring-2 hover:ring-foreground/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:ring-2 data-[state=open]:ring-foreground/20"
         >
           <StatusBadge status={status} live={live} />
         </button>
@@ -467,6 +469,7 @@ function AddSubtask({
         value={draft}
         onChange={e => setDraft(e.target.value)}
         onKeyDown={e => {
+          if (e.nativeEvent.isComposing) return
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
             submit()

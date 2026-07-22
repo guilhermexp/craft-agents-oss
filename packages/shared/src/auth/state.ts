@@ -11,7 +11,7 @@
  * our native OAuth flow. This is a one-time migration.
  */
 
-import { getCredentialManager } from '../credentials/index.ts';
+import { getCredentialManager } from '../credentials/manager.ts';
 import {
   loadStoredConfig,
   getActiveWorkspace,

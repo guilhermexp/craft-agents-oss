@@ -119,24 +119,23 @@ export function buildMobileMenuPages({ hasNewWindow, isDebugMode }: BuildOptions
     action: { kind: 'url', url: link.url },
   }))
 
-  const debugRows: MobileMenuRow[] = DEBUG_MENU.items
-    .filter((item) => item.type === 'action')
-    .map<MobileMenuRow>((item) => {
-      // Narrowed by the filter above.
-      const action = item as Extract<typeof item, { type: 'action' }>
-      return {
-        id: action.id,
-        iconName: action.icon,
-        labelKey: action.labelKey,
-        action: {
-          kind: 'electronApi',
-          method:
-            action.id === 'checkForUpdates' ? 'checkForUpdates' :
-            action.id === 'installUpdate' ? 'installUpdate' :
-            'menuToggleDevTools',
-        },
-      }
-    })
+  const debugRows: MobileMenuRow[] = DEBUG_MENU.items.flatMap<MobileMenuRow>((item) => {
+    if (item.type !== 'action') return []
+    // Narrowed by the guard above.
+    const action = item as Extract<typeof item, { type: 'action' }>
+    return [{
+      id: action.id,
+      iconName: action.icon,
+      labelKey: action.labelKey,
+      action: {
+        kind: 'electronApi',
+        method:
+          action.id === 'checkForUpdates' ? 'checkForUpdates' :
+          action.id === 'installUpdate' ? 'installUpdate' :
+          'menuToggleDevTools',
+      },
+    }]
+  })
 
   return [
     { id: 'root', titleKey: 'menu.craftMenu', rows: rootRows },

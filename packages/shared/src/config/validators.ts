@@ -82,19 +82,19 @@ const CustomEndpointSchema = z.object({
   supportsImages: z.boolean().optional(),
 });
 
-const LlmConnectionSchema = z.object({
+const LlmConnectionSchema = z.looseObject({
   slug: z.string().min(1),
   name: z.string().min(1),
   providerType: LlmProviderTypeSchema,
   authType: LlmAuthTypeSchema,
   baseUrl: z.string().optional(),
-  models: z.array(z.union([z.string(), z.object({ id: z.string() }).passthrough()])).optional(),
+  models: z.array(z.union([z.string(), z.looseObject({ id: z.string() })])).optional(),
   defaultModel: z.string().optional(),
   modelSelectionMode: z.enum(['automaticallySyncedFromProvider', 'userDefined3Tier']).optional(),
   customEndpoint: CustomEndpointSchema.optional(),
   createdAt: z.number(),
   // Allow additional fields (codexPath, awsRegion, gcpProjectId, etc.)
-}).passthrough();
+});
 
 export const StoredConfigSchema = z.object({
   workspaces: z.array(WorkspaceSchema).min(0),
@@ -116,7 +116,7 @@ const LocationSchema = z.object({
   country: z.string().optional(),
 });
 
-export const UserPreferencesSchema = z.object({
+export const UserPreferencesSchema = z.looseObject({
   name: z.string().optional(),
   timezone: z.string().optional(),  // TODO: Could validate against IANA timezone list
   location: LocationSchema.optional(),
@@ -125,7 +125,7 @@ export const UserPreferencesSchema = z.object({
   // Validated against the registry-derived supported set.
   uiLanguage: z.enum([...SUPPORTED_LANGUAGE_CODES] as [LanguageCode, ...LanguageCode[]]).optional(),
   updatedAt: z.number().int().min(0).optional(),
-}).passthrough();
+});
 
 // ============================================================
 // Validation Functions
@@ -383,7 +383,7 @@ const SourceTypeSchema = z.enum(['mcp', 'api', 'local']);
 const McpSourceConfigSchema = z.object({
   transport: z.enum(['http', 'sse', 'stdio']).optional(),
   // HTTP/SSE fields
-  url: z.string().url().optional(),
+  url: z.url().optional(),
   authType: z.enum(['oauth', 'bearer', 'none']).optional(),
   clientId: z.string().optional(),
   // Stdio fields
@@ -410,8 +410,8 @@ const McpSourceConfigSchema = z.object({
 );
 
 const ApiOAuthConfigSchema = z.object({
-  authorizationUrl: z.string().url(),
-  tokenUrl: z.string().url(),
+  authorizationUrl: z.url(),
+  tokenUrl: z.url(),
   clientId: z.string().min(1),
   clientSecret: z.string().optional(),
   scopes: z.array(z.string()).optional(),
@@ -420,7 +420,7 @@ const ApiOAuthConfigSchema = z.object({
 });
 
 const ApiSourceConfigSchema = z.object({
-  baseUrl: z.string().url(),
+  baseUrl: z.url(),
   authType: z.enum(['bearer', 'header', 'query', 'basic', 'oauth', 'none']),
   headerName: z.string().optional(),
   headerNames: z.array(z.string()).optional(),
@@ -1354,7 +1354,8 @@ import {
   getSourcePermissionsPath,
   getAppPermissionsDir,
 } from '../agent/permissions-config.ts';
-import { validateAutomationsContent, validateAutomations, AUTOMATIONS_CONFIG_FILE } from '../automations/index.ts';
+import { validateAutomationsContent, validateAutomations } from '../automations/validation.ts';
+import { AUTOMATIONS_CONFIG_FILE } from '../automations/constants.ts';
 
 /**
  * Internal: Validate a single permissions.json file
@@ -1534,7 +1535,7 @@ export function isValidPermissionsFile(filePath: string): boolean {
 
 const CSSColorSchema = z.string().min(1);
 
-const ThemeDarkOverrideSchema = z.object({
+const ThemeDarkOverrideSchema = z.strictObject({
   background: CSSColorSchema.optional(),
   foreground: CSSColorSchema.optional(),
   accent: CSSColorSchema.optional(),
@@ -1546,13 +1547,13 @@ const ThemeDarkOverrideSchema = z.object({
   input: CSSColorSchema.optional(),
   popover: CSSColorSchema.optional(),
   popoverSolid: CSSColorSchema.optional(),
-}).strict();
+});
 
 /**
  * Zod schema for app-level theme override files (~/.craft-agent/theme.json).
  * Allows partial overrides but rejects unknown keys.
  */
-export const ThemeOverrideSchema = z.object({
+export const ThemeOverrideSchema = z.strictObject({
   // Semantic colors
   background: CSSColorSchema.optional(),
   foreground: CSSColorSchema.optional(),
@@ -1574,7 +1575,7 @@ export const ThemeOverrideSchema = z.object({
   scenicBackgroundBlur: z.number().min(0).max(24).optional(),
   // Dark mode overrides
   dark: ThemeDarkOverrideSchema.optional(),
-}).strict()
+})
   .refine(
     (data) => {
       const keys = Object.keys(data);
@@ -1618,7 +1619,7 @@ export const PresetThemeSchema = z.object({
   scenicBackgroundContrast: z.number().min(0.5).max(1.5).optional(),
   scenicBackgroundBlur: z.number().min(0).max(24).optional(),
   // Dark mode overrides
-  dark: z.object({}).passthrough().optional(),
+  dark: z.looseObject({}).optional(),
   // Shiki theme for syntax highlighting
   shikiTheme: z.object({
     light: z.string().optional(),

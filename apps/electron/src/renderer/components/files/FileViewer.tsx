@@ -17,21 +17,27 @@ export function FileViewer({ path }: FileViewerProps) {
   useEffect(() => {
     if (!path) return
 
-    const loadFile = async () => {
-      setIsLoading(true)
-      setError(null)
-      try {
-        const fileContent = await window.electronAPI.readFile(path)
-        setContent(fileContent)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load file')
-        setContent('')
-      } finally {
-        setIsLoading(false)
-      }
-    }
+    let cancelled = false
+    setIsLoading(true)
+    setError(null)
+    window.electronAPI
+      .readFile(path)
+      .then(fileContent => {
+        if (!cancelled) setContent(fileContent)
+      })
+      .catch(err => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load file')
+          setContent('')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
+      })
 
-    loadFile()
+    return () => {
+      cancelled = true
+    }
   }, [path])
 
   if (!path) {

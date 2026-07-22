@@ -26,13 +26,15 @@ export function createLabelMenuItems(labels: LabelConfig[], excludedLabelIds: It
   const excluded = new Set(excludedLabelIds)
 
   return flattenLabelsWithParentPath(labels)
-    .filter(({ label }) => !excluded.has(label.id))
-    .map(({ label, parentPath }) => ({
-      id: label.id,
-      label: label.name,
-      config: label,
-      parentPath,
-    }))
+    .flatMap(({ label, parentPath }) =>
+      excluded.has(label.id)
+        ? []
+        : [{
+            id: label.id,
+            label: label.name,
+            config: label,
+            parentPath,
+          }])
     .sort(compareLabelMenuItems)
 }
 
@@ -58,10 +60,10 @@ export function segmentScore(part: string, segment: string): number {
  * Results are sorted by total match score (starts-with > word-boundary > contains).
  */
 export function filterItems(items: LabelMenuItem[], filter: string): LabelMenuItem[] {
-  if (!filter) return [...items].sort(compareLabelMenuItems)
+  if (!filter) return items.toSorted(compareLabelMenuItems)
 
   const segments = filter.toLowerCase().split('/').map(s => s.trim()).filter(Boolean)
-  if (segments.length === 0) return [...items].sort(compareLabelMenuItems)
+  if (segments.length === 0) return items.toSorted(compareLabelMenuItems)
 
   const scored: { item: LabelMenuItem; score: number }[] = []
 

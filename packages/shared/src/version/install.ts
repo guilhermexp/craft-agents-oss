@@ -15,6 +15,10 @@ export async function downloadArchive(params: { url: string, sha256: string }): 
   const { url, sha256 } = params;
   const response = await fetch(url);
   debug(`[install] Fetching archive from: ${url}`);
+  if (!response.ok) {
+    debug(`[install] Failed to download archive: HTTP ${response.status}`);
+    return null;
+  }
   const data = await response.arrayBuffer();
   const buffer = Buffer.from(data);
   const hash = createHash('sha256').update(buffer).digest('hex');

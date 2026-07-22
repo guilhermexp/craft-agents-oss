@@ -123,13 +123,15 @@ export interface CompactSessionMenuProps {
   trigger?: React.ReactNode | null
 }
 
+const EMPTY_LABELS: LabelConfig[] = []
+
 export function CompactSessionMenu({
   title,
   badge,
   isRegeneratingTitle,
   item,
   sessionStatuses,
-  labels = [],
+  labels = EMPTY_LABELS,
   hasRemoteWorkspaces,
   onLabelsChange,
   onRename,

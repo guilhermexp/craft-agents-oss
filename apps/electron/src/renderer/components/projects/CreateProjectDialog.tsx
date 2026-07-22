@@ -63,7 +63,7 @@ export function CreateProjectDialog({ open, onCancel, onSubmit }: CreateProjectD
             onChange={(e) => setName(e.target.value)}
             placeholder={t('projectsList.createDialogNamePlaceholder')}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && canSubmit) {
+              if (e.key === 'Enter' && canSubmit && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 handleSubmit()
               }

@@ -124,16 +124,17 @@ export function SimpleDropdown({
 }: SimpleDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
+  const isOpenRef = useRef(false)
 
   // Notify parent of open state changes
   const setIsOpenWithCallback = useCallback((open: boolean | ((prev: boolean) => boolean)) => {
-    setIsOpen(prev => {
-      const newValue = typeof open === 'function' ? open(prev) : open
-      if (newValue !== prev) {
-        onOpenChange?.(newValue)
-      }
-      return newValue
-    })
+    const prev = isOpenRef.current
+    const newValue = typeof open === 'function' ? open(prev) : open
+    isOpenRef.current = newValue
+    setIsOpen(newValue)
+    if (newValue !== prev) {
+      onOpenChange?.(newValue)
+    }
   }, [onOpenChange])
 
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null)

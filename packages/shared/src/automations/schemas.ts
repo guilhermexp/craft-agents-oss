@@ -67,7 +67,7 @@ const WebhookActionSchema = z.object({
 const ActionDefinitionSchema = z.union([
   PromptActionSchema,
   WebhookActionSchema,
-  z.object({ type: z.string() }).passthrough(),
+  z.looseObject({ type: z.string() }),
 ]);
 
 // ============================================================================

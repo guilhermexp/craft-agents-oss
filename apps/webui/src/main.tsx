@@ -17,7 +17,7 @@ setupI18n([LanguageDetector, initReactI18next])
 function CrashFallback() {
   const { t } = useTranslation()
   return (
-    <div className="flex flex-col items-center justify-center h-screen font-sans text-foreground/50 gap-3">
+    <div className="flex flex-col items-center justify-center h-dvh font-sans text-foreground/50 gap-3">
       <p className="text-base font-medium">{t("auth.somethingWentWrong")}</p>
       <p className="text-[13px]">{t("errors.pleaseReload")}</p>
       <button

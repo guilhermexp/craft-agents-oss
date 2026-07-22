@@ -1046,7 +1046,12 @@ function AppShellContent({
     order: string[]
   } | null>(null)
   const statusConfigsRef = React.useRef(statusConfigs)
-  statusConfigsRef.current = statusConfigs
+  // Keep the latest statusConfigs in a ref for setOptimisticStatusOrder (only
+  // read inside the drag-drop callback, which fires after commit). Synced in an
+  // effect so render stays pure.
+  React.useEffect(() => {
+    statusConfigsRef.current = statusConfigs
+  }, [statusConfigs])
   const setOptimisticStatusOrder = React.useCallback(
     (order: string[]) => setOptimisticEntry({ configsRef: statusConfigsRef.current, order }),
     [],

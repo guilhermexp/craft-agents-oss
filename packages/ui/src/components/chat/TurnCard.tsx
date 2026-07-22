@@ -937,6 +937,7 @@ function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, 
           {onOpenDetails && isComplete && (
             <button
               type="button"
+              aria-label={i18n.t('chat.viewTurnDetails')}
               onClick={(e) => {
                 e.stopPropagation()
                 onOpenDetails()
@@ -1188,6 +1189,7 @@ function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, 
         {onOpenDetails && isComplete && (
           <button
             type="button"
+            aria-label={i18n.t('chat.viewTurnDetails')}
             onClick={(e) => {
               e.stopPropagation()
               onOpenDetails()
@@ -1335,6 +1337,7 @@ function ActivityGroupRow({ group, expandedGroups: externalExpandedGroups, onExp
         {onOpenActivityDetails && isComplete && (
           <button
             type="button"
+            aria-label={i18n.t('chat.viewTurnDetails')}
             onClick={(e) => {
               e.stopPropagation()
               onOpenActivityDetails(group.parent)

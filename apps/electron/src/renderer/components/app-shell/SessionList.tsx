@@ -598,21 +598,23 @@ export function SessionList({
   }, [shouldMoveDOMFocus, flatRows.length, searchActive, interactions.keyboard])
 
   // --- Global keyboard shortcuts ---
-  const isFocusWithinZone = () => zoneRef.current?.contains(document.activeElement) ?? false
+  const isFocusWithinZone = useCallback(() => zoneRef.current?.contains(document.activeElement) ?? false, [zoneRef])
 
-  useAction('navigator.selectAll', () => {
+  const handleSelectAll = useCallback(() => {
     interactions.selection.selectAll()
-  }, {
-    enabled: isFocusWithinZone,
   }, [interactions.selection])
+  const selectAllOptions = useMemo(() => ({ enabled: isFocusWithinZone }), [isFocusWithinZone])
+  useAction('navigator.selectAll', handleSelectAll, selectAllOptions, [interactions.selection])
 
-  useAction('navigator.clearSelection', () => {
+  const handleClearSelection = useCallback(() => {
     const selectedId = selectionStore.state.selected
     interactions.selection.clear()
     if (selectedId) navigateToSession(selectedId)
-  }, {
+  }, [selectionStore.state.selected, interactions.selection, navigateToSession])
+  const clearSelectionOptions = useMemo(() => ({
     enabled: () => isMultiSelectActive && !showEscapeOverlay,
-  }, [isMultiSelectActive, showEscapeOverlay, interactions.selection, selectionStore.state.selected, navigateToSession])
+  }), [isMultiSelectActive, showEscapeOverlay])
+  useAction('navigator.clearSelection', handleClearSelection, clearSelectionOptions, [isMultiSelectActive, showEscapeOverlay, interactions.selection, selectionStore.state.selected, navigateToSession])
 
   // --- Click handlers ---
   const handleSelectSession = useCallback((row: SessionListRow, index: number) => {

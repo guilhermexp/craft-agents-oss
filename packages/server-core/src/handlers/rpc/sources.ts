@@ -95,8 +95,10 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) return null
 
-    const { existsSync, readFileSync } = await import('fs')
-    const { getSourcePermissionsPath } = await import('@craft-agent/shared/agent')
+    const [{ existsSync, readFileSync }, { getSourcePermissionsPath }] = await Promise.all([
+      import('fs'),
+      import('@craft-agent/shared/agent'),
+    ])
     const path = getSourcePermissionsPath(workspace.rootPath, sourceSlug)
 
     if (!existsSync(path)) return null
@@ -115,8 +117,10 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) return null
 
-    const { existsSync, readFileSync } = await import('fs')
-    const { getWorkspacePermissionsPath } = await import('@craft-agent/shared/agent')
+    const [{ existsSync, readFileSync }, { getWorkspacePermissionsPath }] = await Promise.all([
+      import('fs'),
+      import('@craft-agent/shared/agent'),
+    ])
     const path = getWorkspacePermissionsPath(workspace.rootPath)
 
     if (!existsSync(path)) return null
@@ -132,9 +136,11 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
 
   // Get default permissions from ~/.craft-agent/permissions/default.json
   server.handle(RPC_NAMESPACES.permissions.GET_DEFAULTS, async () => {
-    const { existsSync, readFileSync } = await import('fs')
-    const { getAppPermissionsDir } = await import('@craft-agent/shared/agent')
-    const { join } = await import('path')
+    const [{ existsSync, readFileSync }, { getAppPermissionsDir }, { join }] = await Promise.all([
+      import('fs'),
+      import('@craft-agent/shared/agent'),
+      import('path'),
+    ])
 
     const defaultPath = join(getAppPermissionsDir(), 'default.json')
     if (!existsSync(defaultPath)) return { config: null, path: defaultPath }

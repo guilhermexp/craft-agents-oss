@@ -349,6 +349,7 @@ function ToolbarToConfirmTransitionDemo({ initialView = 'compact' }: ToolbarToCo
                         value={note}
                         onChange={(event) => setNote(event.target.value)}
                         onKeyDown={(event) => {
+                          if (event.nativeEvent.isComposing) return
                           if (event.key === 'Enter') {
                             event.preventDefault()
                             onConfirm('Ask inline', note)

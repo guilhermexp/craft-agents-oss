@@ -327,10 +327,11 @@ export class BrowserCDP {
       const props = node.properties as any[] | undefined
       if (props) {
         for (const prop of props) {
-          if (prop.name === 'focused' && prop.value?.value === true) focused = true
-          if (prop.name === 'checked' && prop.value?.value !== 'false') checked = prop.value?.value === true || prop.value?.value === 'true'
-          if (prop.name === 'disabled' && prop.value?.value === true) disabled = true
-          if (prop.name === 'focusable' && prop.value?.value === true) focusable = true
+          const propValue = prop.value?.value
+          if (prop.name === 'focused' && propValue === true) focused = true
+          if (prop.name === 'checked' && propValue !== 'false') checked = propValue === true || propValue === 'true'
+          if (prop.name === 'disabled' && propValue === true) disabled = true
+          if (prop.name === 'focusable' && propValue === true) focusable = true
         }
       }
 

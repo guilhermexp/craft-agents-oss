@@ -127,6 +127,7 @@ async function exchangeCodeForTokens(
     redirect_uri: redirectUri,
   });
 
+  // react-doctor-disable-next-line no-fetch-response-used-without-status-check -- OAuth endpoint returns a structured error payload that callers inspect (ok/error fields), matching the API contract
   const response = await fetch(SLACK_TOKEN_URL, {
     method: 'POST',
     headers: {
@@ -185,6 +186,7 @@ export async function refreshSlackToken(
     refresh_token: refreshToken,
   });
 
+  // react-doctor-disable-next-line no-fetch-response-used-without-status-check -- OAuth endpoint returns a structured error payload that callers inspect (ok/error fields), matching the API contract
   const response = await fetch(SLACK_TOKEN_URL, {
     method: 'POST',
     headers: {

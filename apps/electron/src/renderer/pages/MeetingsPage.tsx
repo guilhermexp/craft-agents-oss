@@ -267,9 +267,9 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
   const [howItWorksOpen, setHowItWorksOpen] = useState(false)
   const [detectedMeeting, setDetectedMeeting] = useState<{ url: string; instanceId: string; profileId?: string; title?: string } | null>(null)
   const promptedMeetUrlsRef = React.useRef<Set<string>>(null!)
-  if (!promptedMeetUrlsRef.current) promptedMeetUrlsRef.current = new Set()
+  promptedMeetUrlsRef.current ??= new Set()
   const launchedMeetUrlsRef = React.useRef<Set<string>>(null!)
-  if (!launchedMeetUrlsRef.current) launchedMeetUrlsRef.current = new Set()
+  launchedMeetUrlsRef.current ??= new Set()
   const normalizedUrl = useMemo(() => normalizeGoogleMeetInput(meetingInput), [meetingInput])
   // Prefer the parent's explicit selection; fall back to a just-started meeting
   // so recording/transcription feedback shows immediately after clicking record.

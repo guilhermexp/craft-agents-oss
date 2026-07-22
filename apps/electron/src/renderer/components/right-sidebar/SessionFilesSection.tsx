@@ -396,8 +396,6 @@ function FileTreeItem({
             </span>
             {/* Toggle chevron - shown on hover */}
             <span
-              role="button"
-              tabIndex={-1}
               className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 cursor-pointer"
               onClick={handleChevronClick}
             >

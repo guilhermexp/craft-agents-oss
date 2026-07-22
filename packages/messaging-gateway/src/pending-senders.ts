@@ -75,8 +75,7 @@ export class PendingSendersStore {
   list(platform?: PlatformType): PendingSender[] {
     const now = Date.now()
     return this.entries
-      .filter((e) => now - e.lastAttemptAt < TTL_MS)
-      .filter((e) => (platform ? e.platform === platform : true))
+      .filter((e) => now - e.lastAttemptAt < TTL_MS && (platform ? e.platform === platform : true))
       .sort((a, b) => b.lastAttemptAt - a.lastAttemptAt)
   }
 
@@ -207,9 +206,9 @@ export class PendingSendersStore {
       const parsed = JSON.parse(raw)
       if (!Array.isArray(parsed)) return
       const now = Date.now()
-      this.entries = parsed
-        .filter(isPendingSender)
-        .filter((e) => now - e.lastAttemptAt < TTL_MS)
+      this.entries = parsed.filter(
+        (e): e is PendingSender => isPendingSender(e) && now - e.lastAttemptAt < TTL_MS,
+      )
     } catch (err) {
       this.log.error('failed to load pending senders; resetting', {
         event: 'pending_senders_load_failed',

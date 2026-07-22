@@ -392,7 +392,7 @@ export function useSessionSearch({
 
   // Sort by most recent activity first
   const sortedItems = useMemo(() =>
-    [...visibleItems].sort((a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0)),
+    visibleItems.toSorted((a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0)),
     [visibleItems]
   )
 

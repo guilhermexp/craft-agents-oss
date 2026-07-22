@@ -667,6 +667,7 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
         creds.domain === 'feishu'
           ? 'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal'
           : 'https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal'
+      // react-doctor-disable-next-line no-fetch-response-used-without-status-check -- Lark/Feishu token verification: API returns structured body.code inspected by callers (auth semantics)
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1598,6 +1599,7 @@ function cloneRuntime(runtime: MessagingPlatformRuntimeInfo): MessagingPlatformR
 async function fetchTelegramBotInfo(
   token: string,
 ): Promise<{ ok: boolean; result: { username?: string; first_name?: string }; description?: string }> {
+  // react-doctor-disable-next-line no-fetch-response-used-without-status-check -- Telegram getMe token verification: callers inspect body.ok (auth semantics)
   const res = await fetch(`https://api.telegram.org/bot${token}/getMe`)
   return (await res.json()) as {
     ok: boolean

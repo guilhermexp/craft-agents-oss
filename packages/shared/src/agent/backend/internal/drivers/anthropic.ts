@@ -72,40 +72,36 @@ export const anthropicDriver: ProviderDriver = {
     }
 
     const seen = new Set<string>();
-    const models = allRawModels
-      .filter(m => m.id.startsWith('claude-') && !m.id.startsWith('claude-2') && !m.id.startsWith('claude-instant') && !m.id.startsWith('claude-1'))
+    const models = allRawModels.flatMap(m => {
+      if (!(m.id.startsWith('claude-') && !m.id.startsWith('claude-2') && !m.id.startsWith('claude-instant') && !m.id.startsWith('claude-1'))) return [];
       // The live Anthropic API can still list deprecated models. Do not persist
       // them back into active connection catalogs at startup.
-      .filter(m => normalizeDeprecatedModelId(m.id) === m.id)
-      .filter(m => {
-        if (seen.has(m.id)) return false;
-        seen.add(m.id);
-        return true;
-      })
-      .map(m => {
-        const registryModel = getModelById(m.id);
-        return {
-          id: m.id,
-          name: registryModel?.name ?? m.display_name,
-          shortName: registryModel?.shortName ?? (() => {
-            const stripped = m.id
-              .replace('claude-', '')
-              .replace(/-\d{8}$/, '')
-              .replace(/-latest$/, '');
-            const variant = stripped
-              .replace(/^[\d.-]+/, '')
-              .replace(/-[\d.]+$/, '')
-              .replace(/^-/, '');
-            return variant ? variant.charAt(0).toUpperCase() + variant.slice(1) : stripped;
-          })(),
-          description: registryModel?.description ?? '',
-          descriptionKey: registryModel?.descriptionKey,
-          provider: 'anthropic' as const,
-          contextWindow: getModelContextWindow(m.id) ?? 200_000,
-          supportsThinking: registryModel?.supportsThinking,
-          supportsImages: registryModel?.supportsImages,
-        };
-      });
+      if (normalizeDeprecatedModelId(m.id) !== m.id) return [];
+      if (seen.has(m.id)) return [];
+      seen.add(m.id);
+      const registryModel = getModelById(m.id);
+      return [{
+        id: m.id,
+        name: registryModel?.name ?? m.display_name,
+        shortName: registryModel?.shortName ?? (() => {
+          const stripped = m.id
+            .replace('claude-', '')
+            .replace(/-\d{8}$/, '')
+            .replace(/-latest$/, '');
+          const variant = stripped
+            .replace(/^[\d.-]+/, '')
+            .replace(/-[\d.]+$/, '')
+            .replace(/^-/, '');
+          return variant ? variant.charAt(0).toUpperCase() + variant.slice(1) : stripped;
+        })(),
+        description: registryModel?.description ?? '',
+        descriptionKey: registryModel?.descriptionKey,
+        provider: 'anthropic' as const,
+        contextWindow: getModelContextWindow(m.id) ?? 200_000,
+        supportsThinking: registryModel?.supportsThinking,
+        supportsImages: registryModel?.supportsImages,
+      }];
+    });
 
     return {
       models,

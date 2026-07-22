@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync, rmSync, statSync } from 'fs';
 import { join, basename } from 'path';
-import { getCredentialManager } from '../credentials/index.ts';
-import { getOrCreateLatestSession, type SessionConfig } from '../sessions/index.ts';
+import { getCredentialManager } from '../credentials/manager.ts';
+import { getOrCreateLatestSession, type SessionConfig } from '../sessions/storage.ts';
 import {
   discoverWorkspacesInDefaultLocation,
   loadWorkspaceConfig,

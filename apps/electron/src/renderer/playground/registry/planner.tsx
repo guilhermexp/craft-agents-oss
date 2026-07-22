@@ -809,6 +809,7 @@ function PlannerBoard() {
                 value={quickAdd}
                 onChange={(e) => setQuickAdd(e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return
                   if (e.key === 'Enter') addTask()
                 }}
                 placeholder="Quick add task…"

@@ -24,11 +24,15 @@ export function useAction(
   const handlerRef = useRef(handler)
   const optionsRef = useRef(options)
 
-  // Keep refs current
+  // Keep the refs pointing at the latest handler/options after every commit.
+  // `handler`/`options` are freshly allocated each render, so the previous
+  // [handler, options, ...deps] array already re-ran this effect on every
+  // render; an unconditional effect preserves that exactly without depending
+  // on freshly-allocated references.
   useEffect(() => {
     handlerRef.current = handler
     optionsRef.current = options
-  }, [handler, options, ...deps])
+  })
 
   // Register handler
   useEffect(() => {

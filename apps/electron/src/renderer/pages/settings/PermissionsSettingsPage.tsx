@@ -155,6 +155,7 @@ export default function PermissionsSettingsPage() {
 
   // Load both default and workspace permissions configs
   useEffect(() => {
+    let cancelled = false
     const loadPermissions = async () => {
       if (!window.electronAPI) {
         setIsLoading(false)
@@ -165,22 +166,27 @@ export default function PermissionsSettingsPage() {
       try {
         // Load default permissions (app-level) - returns both config and path
         const { config: defaults, path: defaultsPath } = await window.electronAPI.getDefaultPermissionsConfig()
+        if (cancelled) return
         setDefaultConfig(defaults)
         setDefaultPermissionsPath(defaultsPath)
 
         // Load workspace permissions if we have an active workspace
         if (activeWorkspaceId) {
           const workspace = await window.electronAPI.getWorkspacePermissionsConfig(activeWorkspaceId)
+          if (cancelled) return
           setCustomConfig(workspace)
         }
       } catch (error) {
         console.error('Failed to load permissions:', error)
       } finally {
-        setIsLoading(false)
+        if (!cancelled) setIsLoading(false)
       }
     }
 
     loadPermissions()
+    return () => {
+      cancelled = true
+    }
   }, [activeWorkspaceId])
 
   // Listen for default permissions changes (file watcher)

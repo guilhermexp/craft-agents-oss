@@ -1049,8 +1049,7 @@ export function getValidateSteps(): ValidateStep[] {
           return `${r.length} workspaces`
         }
         // Auto-bootstrap a temp workspace for CI environments
-        const { mkdtemp } = await import('fs/promises')
-        const { tmpdir } = await import('os')
+        const [{ mkdtemp }, { tmpdir }] = await Promise.all([import('fs/promises'), import('os')])
         const tmpDir = await mkdtemp(`${tmpdir()}/craft-validate-`)
         const ws = (await client.invoke('workspaces:create', tmpDir, 'validate-workspace')) as { id: string }
         ctx.workspaceId = ws.id
@@ -1536,7 +1535,7 @@ SKILLEOF`, 90_000, true, undefined, ctx.onEvent)
             const text = typeof lastAssistant?.content === 'string'
               ? lastAssistant.content
               : Array.isArray(lastAssistant?.content)
-                ? lastAssistant.content.filter((b) => b.type === 'text').map((b) => b.text ?? '').join(' ')
+                ? lastAssistant.content.flatMap((b) => b.type === 'text' ? [b.text ?? ''] : []).join(' ')
                 : ''
             return `session has assistant response (${text.slice(0, 80).trim()})`
           }
@@ -1618,15 +1617,13 @@ SKILLEOF`, 90_000, true, undefined, ctx.onEvent)
           const lines = content.trim().split('\n').filter(Boolean)
           lastLineCount = lines.length
 
-          const entries = lines
-            .map((l) => {
-              try {
-                return JSON.parse(l)
-              } catch {
-                return null
-              }
-            })
-            .filter(Boolean) as Array<Record<string, unknown>>
+          const entries = lines.flatMap((l) => {
+            try {
+              return [JSON.parse(l)]
+            } catch {
+              return []
+            }
+          }) as Array<Record<string, unknown>>
 
           const webhookEntries = entries.filter((e) => !!e.webhook)
           lastWebhookCount = webhookEntries.length
@@ -1773,7 +1770,7 @@ export async function runValidation(
             if (typeof msg?.content === 'string') {
               text = msg.content
             } else if (Array.isArray(msg?.content)) {
-              text = msg.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join(' ')
+              text = msg.content.flatMap((b: any) => b.type === 'text' ? [b.text] : []).join(' ')
             }
             const clean = text.replace(/\n/g, ' ').trim()
             bufferedPrompt = clean.length > 100 ? clean.slice(0, 100) + '…' : clean

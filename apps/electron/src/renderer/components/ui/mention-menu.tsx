@@ -225,6 +225,10 @@ export function InlineMentionMenu({
   const filteredSections = filterSections(sections, filter)
   const flatItems = flattenItems(filteredSections)
 
+  // Effect Events keep the latest callbacks without re-subscribing the keyboard/click effects.
+  const onSelectEvent = React.useEffectEvent((item: MentionItem) => onSelect(item))
+  const onOpenChangeEvent = React.useEffectEvent((next: boolean) => onOpenChange(next))
+
   // Keyboard navigation
   // Don't attach listener when no items - allows Enter to propagate to input handler
   React.useEffect(() => {
@@ -244,20 +248,20 @@ export function InlineMentionMenu({
         case 'Tab':
           e.preventDefault()
           if (flatItems[selectedIndex]) {
-            onSelect(flatItems[selectedIndex])
-            onOpenChange(false)
+            onSelectEvent(flatItems[selectedIndex])
+            onOpenChangeEvent(false)
           }
           break
         case 'Escape':
           e.preventDefault()
-          onOpenChange(false)
+          onOpenChangeEvent(false)
           break
       }
     }
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [open, flatItems, selectedIndex, onSelect, onOpenChange])
+  }, [open, flatItems, selectedIndex])
 
   // Close on click outside
   React.useEffect(() => {
@@ -265,13 +269,13 @@ export function InlineMentionMenu({
 
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onOpenChange(false)
+        onOpenChangeEvent(false)
       }
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [open, onOpenChange])
+  }, [open])
 
   // Scroll selected item into view when navigating with keyboard
   React.useEffect(() => {

@@ -41,7 +41,7 @@ import { getModelProvider, DEFAULT_MODEL, normalizeDeprecatedModelId } from '../
 import { homedir } from 'node:os';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { getCredentialManager } from '../../credentials/index.ts';
+import { getCredentialManager } from '../../credentials/manager.ts';
 import type {
   BackendModelFetchCredentials,
   BackendProviderOptions,

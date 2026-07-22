@@ -516,8 +516,7 @@ export class SessionReadStateManager {
 
     const { selectSpreadMessages } = await import('@craft-agent/shared/utils')
     const allUserContents = managed.messages
-      .filter((m) => m.role === 'user')
-      .map((m) => m.content)
+      .flatMap((m) => (m.role === 'user' ? [m.content] : []))
     const userMessages = selectSpreadMessages(allUserContents)
 
     log.info(`refreshTitle: Selected ${userMessages.length} spread messages from ${allUserContents.length} total`)

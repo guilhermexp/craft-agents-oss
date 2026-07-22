@@ -195,6 +195,7 @@ async function testAnthropicCompatible(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    // react-doctor-disable-next-line no-fetch-response-used-without-status-check -- response.ok is checked before the body is used as success
     const res = await fetch(url, {
       method: 'POST',
       signal: controller.signal,

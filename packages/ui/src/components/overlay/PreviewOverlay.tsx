@@ -15,7 +15,7 @@
  * Used by: CodePreviewOverlay, TerminalPreviewOverlay, GenericOverlay, etc.
  */
 
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useEffectEvent, type ReactNode } from 'react'
 import * as ReactDOM from 'react-dom'
 import { type LucideIcon } from 'lucide-react'
 import { useOverlayMode, OVERLAY_LAYOUT } from '../../lib/layout'
@@ -94,18 +94,19 @@ export function PreviewOverlay({
   const isModal = responsiveMode === 'modal'
 
   // Handle Escape key for modal mode only (fullscreen mode uses FullscreenOverlayBase which handles ESC)
+  const onCloseEvent = useEffectEvent(onClose)
   useEffect(() => {
     if (!isOpen || !isModal) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose()
+        onCloseEvent()
       }
     }
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, isModal, onClose])
+  }, [isOpen, isModal])
 
   if (!isOpen && !embedded) return null
 
@@ -189,6 +190,7 @@ export function PreviewOverlay({
     <div
       role="dialog"
       aria-modal="true"
+      aria-label={title ?? filePath ?? typeBadge.label}
       className={`fixed inset-0 z-50 flex items-center justify-center ${OVERLAY_LAYOUT.modalBackdropClass}`}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()

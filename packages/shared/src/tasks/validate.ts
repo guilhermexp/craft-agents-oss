@@ -125,8 +125,9 @@ export function validateTaskSpec(spec: TaskSpec): ValidationResult {
     if (node.loop && node.loop.max > TASK_CAPS.maxLoopIterations) {
       errors.push(err(`${path}.loop.max`, `Loop max ${node.loop.max} exceeds the cap of ${TASK_CAPS.maxLoopIterations}`));
     }
-    if (node.loop?.else && !byId.has(node.loop.else)) {
-      errors.push(err(`${path}.loop.else`, `loop.else points to unknown node "${node.loop.else}"`));
+    const loopElse = node.loop?.else;
+    if (loopElse && !byId.has(loopElse)) {
+      errors.push(err(`${path}.loop.else`, `loop.else points to unknown node "${loopElse}"`));
     }
   }
 

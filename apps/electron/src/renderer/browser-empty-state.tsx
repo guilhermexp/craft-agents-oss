@@ -32,7 +32,7 @@ function BrowserEmptyStateApp() {
   }, [])
 
   return (
-    <div className="h-screen w-screen bg-foreground-2 overflow-hidden">
+    <div className="h-dvh w-screen bg-foreground-2 overflow-hidden">
       <div className="h-full w-full bg-background overflow-auto">
         <BrowserEmptyStateCard
           title={t("browser.readyTitle")}

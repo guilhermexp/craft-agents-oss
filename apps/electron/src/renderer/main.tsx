@@ -18,7 +18,7 @@ setupI18n([LanguageDetector, initReactI18next])
  */
 function CrashFallback() {
   return (
-    <div className="flex flex-col items-center justify-center h-screen font-sans text-foreground/50 gap-3">
+    <div className="flex flex-col items-center justify-center h-dvh font-sans text-foreground/50 gap-3">
       <p className="text-base font-medium">Something went wrong</p>
       <p className="text-[13px]">Please restart the app. The error has been reported.</p>
       <button

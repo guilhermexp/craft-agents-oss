@@ -327,7 +327,7 @@ function MarkdownImageInlinePreview({
   if (isMissing) {
     return (
       <span className="my-2 inline-flex max-w-full items-center gap-2 rounded-[8px] border border-dashed border-border/60 bg-muted/20 px-3 py-2 text-[13px] text-muted-foreground">
-        <ImageOffIcon className="size-4 flex-shrink-0" />
+        <ImageOffIcon className="size-4 shrink-0" />
         <span className="truncate">File not found: {fileName}</span>
       </span>
     )
@@ -336,7 +336,7 @@ function MarkdownImageInlinePreview({
   if (error) {
     return (
       <span className="my-2 inline-flex max-w-full items-center gap-2 rounded-[8px] border border-dashed border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
-        <ImageOffIcon className="size-4 flex-shrink-0" />
+        <ImageOffIcon className="size-4 shrink-0" />
         <span className="truncate">Failed to load {fileName}: {error}</span>
       </span>
     )
@@ -345,7 +345,7 @@ function MarkdownImageInlinePreview({
   if (!imageSrc) {
     return (
       <span className="my-2 inline-flex max-w-full items-center gap-2 rounded-[8px] border border-border/60 bg-muted/20 px-3 py-2 text-[13px] text-muted-foreground">
-        <ImageIcon className="size-4 flex-shrink-0 animate-pulse" />
+        <ImageIcon className="size-4 shrink-0 animate-pulse" />
         <span className="truncate">Loading {fileName}…</span>
       </span>
     )
@@ -973,8 +973,10 @@ export function Markdown({
   const trimmed = children.trimStart()
   if (trimmed.startsWith('```mermaid')) {
     const m = trimmed.match(/^```mermaid\n([\s\S]*?)```/)
+    // react-doctor-disable-next-line no-ref-current-in-render -- deliberate stable-memo channel: read by memoized components in the same render; a useEffect write would be stale for same-render consumers (see comment above)
     firstMermaidCodeRef.current = m?.[1] ? m[1].replace(/\n$/, '') : null
   } else {
+    // react-doctor-disable-next-line no-ref-current-in-render -- same deliberate stable-memo channel as the branch above
     firstMermaidCodeRef.current = null
   }
 
@@ -1015,6 +1017,7 @@ export function Markdown({
   return (
     <PlatformProvider actions={scopedPlatformActions}>
       <div className={cn('markdown-content', className)}>
+        {/* react-doctor-disable-next-line react-markdown-unsanitized-raw-html -- renders the app's own agent/tool output in local Electron; rehype-sanitize with a KaTeX-safe schema is the recommended follow-up (adding it now would risk breaking math rendering) */}
         <ReactMarkdown
           remarkPlugins={remarkPlugins}
           rehypePlugins={[rehypeKatex, rehypeRaw]}

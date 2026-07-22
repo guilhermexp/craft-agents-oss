@@ -39,7 +39,7 @@ import {
   validateAllPermissions,
   validateToolIcons,
 } from '../config/validators.ts';
-import { validateAutomations } from '../automations/index.ts';
+import { validateAutomations } from '../automations/validation.ts';
 import {
   validateMcpConnection as validateMcpConnectionImpl,
   validateStdioMcpConnection as validateStdioMcpConnectionImpl,
@@ -50,7 +50,7 @@ import {
   getSourcePath,
 } from '../sources/storage.ts';
 import type { FolderSourceConfig, LoadedSource as SharedLoadedSource } from '../sources/types.ts';
-import { getSourceCredentialManager } from '../sources/index.ts';
+import { getSourceCredentialManager } from '../sources/credential-manager.ts';
 import {
   inferGoogleServiceFromUrl,
   inferSlackServiceFromUrl,

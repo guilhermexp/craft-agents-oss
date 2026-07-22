@@ -578,8 +578,10 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
               </span>
               {/* Toggle chevron - shown on hover. data-no-dnd prevents drag activation on click. */}
               {/* span instead of button to avoid nested <button> inside the outer sidebar item button */}
+              {/* react-doctor-disable-next-line html-no-nested-interactive -- chevron span is a distinct control (toggle) nested in the nav button (open); different actions, keyboard-supported; hoisting changes layout — documented intentional */}
               <span
                 role="button"
+                aria-label={link.expanded ? 'Collapse' : 'Expand'}
                 tabIndex={0}
                 className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 cursor-pointer"
                 data-no-dnd="true"

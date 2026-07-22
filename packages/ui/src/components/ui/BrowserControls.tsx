@@ -283,12 +283,12 @@ export function BrowserControls({
   )
 
   /* Shared: progress bar */
-  const progressBar = showProgressBar && (
+  const progressBar = (
     <LazyMotion features={domAnimation}>
       <AnimatePresence>
-        {loading && (
+        {showProgressBar && loading && (
           <m.div
-            className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] bg-gradient-to-r from-transparent via-accent to-transparent"
+            className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] bg-linear-to-r from-transparent via-accent to-transparent"
             style={{ backgroundSize: '220% 100%' }}
             initial={{ opacity: 0 }}
             animate={{

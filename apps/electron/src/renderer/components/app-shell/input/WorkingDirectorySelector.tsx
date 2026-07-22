@@ -179,9 +179,10 @@ export function WorkingDirectorySelector({
                     </span>
                     <button
                       type="button"
+                      aria-label={`Remove ${recentFolderName}`}
                       onClick={(e) => handleRemoveRecent(e, path)}
                       data-touch-reveal="true"
-                      className="shrink-0 h-3 w-3 rounded-[3px] flex items-center justify-center opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-all"
+                      className="shrink-0 h-3 w-3 rounded-[3px] flex items-center justify-center opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-[color,background-color,opacity]"
                     >
                       <X className="h-3 w-3" />
                     </button>

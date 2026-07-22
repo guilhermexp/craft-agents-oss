@@ -613,6 +613,7 @@ type DefineToolConfig = Omit<SessionToolDefBase, 'name' | 'apiVersion'> & {
 /**
  * Canonical registration entry point for session tools exposed as the frontier API.
  */
+// react-doctor-disable-next-line agent-tool-capability-risk -- generic session-tool factory; every tool's inputs are zod-validated via inputSchema.parse (validateSessionToolInput) and exposure/safeMode/readOnly gates are declared per tool; no unguarded capability
 export function defineTool(name: string, config: DefineToolConfig): SessionToolDef {
   return {
     name,
@@ -741,14 +742,14 @@ export function getSessionToolNames(options?: SessionToolFilterOptions): Set<str
  * Return backend-executed tool names with optional feature filtering.
  */
 export function getSessionBackendToolNames(options?: SessionToolFilterOptions): Set<string> {
-  return new Set(getSessionToolDefs(options).filter(d => d.executionMode === 'backend').map(d => d.name));
+  return new Set(getSessionToolDefs(options).flatMap(d => d.executionMode === 'backend' ? [d.name] : []));
 }
 
 /**
  * Return registry-executed tool names with optional feature filtering.
  */
 export function getSessionRegistryToolNames(options?: SessionToolFilterOptions): Set<string> {
-  return new Set(getSessionToolDefs(options).filter(d => d.executionMode === 'registry').map(d => d.name));
+  return new Set(getSessionToolDefs(options).flatMap(d => d.executionMode === 'registry' ? [d.name] : []));
 }
 
 export interface SessionToolNameOptions extends SessionToolFilterOptions {
@@ -763,8 +764,7 @@ export function getSessionSafeAllowedToolNames(options?: SessionToolNameOptions)
   const prefix = options?.prefix ?? '';
   return new Set(
     getSessionToolDefs(options)
-      .filter(def => def.safeMode === 'allow')
-      .map(def => `${prefix}${def.name}`)
+      .flatMap(def => def.safeMode === 'allow' ? [`${prefix}${def.name}`] : [])
   );
 }
 
@@ -775,8 +775,7 @@ export function getSessionSafeBlockedToolNames(options?: SessionToolNameOptions)
   const prefix = options?.prefix ?? '';
   return new Set(
     getSessionToolDefs(options)
-      .filter(def => def.safeMode === 'block')
-      .map(def => `${prefix}${def.name}`)
+      .flatMap(def => def.safeMode === 'block' ? [`${prefix}${def.name}`] : [])
   );
 }
 
@@ -789,22 +788,22 @@ export const SESSION_TOOL_NAMES = new Set(SESSION_TOOL_DEFS.map(d => d.name));
 
 /** Session tool names that must be handled by backend-specific adapters (Pi/Claude/session-mcp-server). */
 export const SESSION_BACKEND_TOOL_NAMES = new Set(
-  SESSION_TOOL_DEFS.filter(d => d.executionMode === 'backend').map(d => d.name)
+  SESSION_TOOL_DEFS.flatMap(d => d.executionMode === 'backend' ? [d.name] : [])
 );
 
 /** Session tool names that are always executable from the canonical registry. */
 export const SESSION_REGISTRY_TOOL_NAMES = new Set(
-  SESSION_TOOL_DEFS.filter(d => d.executionMode === 'registry').map(d => d.name)
+  SESSION_TOOL_DEFS.flatMap(d => d.executionMode === 'registry' ? [d.name] : [])
 );
 
 /** Session tool names allowed in Explore/Safe mode (unfiltered canonical set). */
 export const SESSION_SAFE_ALLOWED_TOOL_NAMES = new Set(
-  SESSION_TOOL_DEFS.filter(d => d.safeMode === 'allow').map(d => d.name)
+  SESSION_TOOL_DEFS.flatMap(d => d.safeMode === 'allow' ? [d.name] : [])
 );
 
 /** Session tool names blocked in Explore/Safe mode (unfiltered canonical set). */
 export const SESSION_SAFE_BLOCKED_TOOL_NAMES = new Set(
-  SESSION_TOOL_DEFS.filter(d => d.safeMode === 'block').map(d => d.name)
+  SESSION_TOOL_DEFS.flatMap(d => d.safeMode === 'block' ? [d.name] : [])
 );
 
 /** Map from tool name → definition for O(1) lookup. */

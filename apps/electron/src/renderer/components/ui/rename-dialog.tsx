@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import {
   Dialog,
@@ -38,7 +38,8 @@ export function RenameDialog({
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Register with modal context so X button / Cmd+W closes this dialog first
-  useRegisterModal(open, () => onOpenChange(false))
+  const handleCloseModal = useCallback(() => onOpenChange(false), [onOpenChange])
+  useRegisterModal(open, handleCloseModal)
 
   // Focus input after dialog opens (avoids Radix Dialog focus race condition)
   useEffect(() => {
@@ -72,7 +73,7 @@ export function RenameDialog({
             onChange={(e) => onValueChange(e.target.value)}
             placeholder={effectivePlaceholder}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                 handleSubmit()
               }
             }}

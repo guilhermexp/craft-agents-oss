@@ -301,7 +301,7 @@ export function Island({
   const [isTransitionSettling, setIsTransitionSettling] = React.useState(true)
   const [morphDelta, setMorphDelta] = React.useState<{ x: number; y: number; scaleX: number; scaleY: number } | null>(null)
   const warmedViewIdsRef = React.useRef<Set<string>>(null as unknown as Set<string>)
-  if (!warmedViewIdsRef.current) warmedViewIdsRef.current = new Set()
+  warmedViewIdsRef.current ??= new Set()
   const [isMorphWarmReady, setIsMorphWarmReady] = React.useState(true)
   const shouldPrimeInitialVisibleReplay = replayOnVisible === 'always' && isVisible
   const [isVisibilityPrimed, setIsVisibilityPrimed] = React.useState(() => !shouldPrimeInitialVisibleReplay)
@@ -549,6 +549,14 @@ export function Island({
     shellRef.current?.focus()
   }, [shouldLockScroll, isDialogMode, isVisible, activeView?.id])
 
+  const handleEscapeEvent = React.useEffectEvent(() =>
+    handleIslandEscape({
+      dialogBehavior,
+      onRequestBack,
+      onRequestClose,
+    })
+  )
+
   React.useEffect(() => {
     if (!isVisible || dialogBehavior === 'none') return
     if (typeof window === 'undefined') return
@@ -559,11 +567,7 @@ export function Island({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
 
-      const handled = handleIslandEscape({
-        dialogBehavior,
-        onRequestBack,
-        onRequestClose,
-      })
+      const handled = handleEscapeEvent()
 
       if (!handled) return
 
@@ -576,7 +580,7 @@ export function Island({
     return () => {
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [isVisible, dialogBehavior, onRequestBack, onRequestClose])
+  }, [isVisible, dialogBehavior])
 
   React.useEffect(() => {
     if (!dismissOnPointerDownOutside || !isVisible || !onRequestClose) return

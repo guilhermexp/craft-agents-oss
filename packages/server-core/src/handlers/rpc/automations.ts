@@ -100,8 +100,10 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
     if (!workspace) throw new Error('Workspace not found')
 
     const results: import('@craft-agent/shared/protocol').TestAutomationActionResult[] = []
-    const { parsePromptReferences } = await import('@craft-agent/shared/automations')
-    const { executeWebhookRequest, createWebhookHistoryEntry, createPromptHistoryEntry } = await import('@craft-agent/shared/automations/webhook-utils')
+    const [{ parsePromptReferences }, { executeWebhookRequest, createWebhookHistoryEntry, createPromptHistoryEntry }] = await Promise.all([
+      import('@craft-agent/shared/automations'),
+      import('@craft-agent/shared/automations/webhook-utils'),
+    ])
 
     for (const action of payload.actions) {
       const start = Date.now()
@@ -209,7 +211,7 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
   // Duplicate an automation matcher
   server.handle(RPC_NAMESPACES.automations.DUPLICATE, async (_ctx, workspaceId: string, eventName: string, matcherIndex: number) => {
     await withAutomationMatcher(workspaceId, eventName, matcherIndex, (matchers, idx, _config, genId) => {
-      const clone = JSON.parse(JSON.stringify(matchers[idx]))
+      const clone = structuredClone(matchers[idx])
       clone.id = genId()
       clone.name = clone.name ? `${clone.name} Copy` : 'Untitled Copy'
       matchers.splice(idx + 1, 0, clone)

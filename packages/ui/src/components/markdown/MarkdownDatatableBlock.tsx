@@ -393,12 +393,13 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
   const { scrollRef, maskImage } = useScrollFade()
 
   const handleSort = React.useCallback((key: string) => {
-    setSortKey((prev) => {
-      if (prev !== key) { setSortDir('asc'); return key }
-      setSortDir((d) => d === 'asc' ? 'desc' : d === 'desc' ? null : 'asc')
-      return key
-    })
-  }, [])
+    if (sortKey !== key) {
+      setSortKey(key)
+      setSortDir('asc')
+      return
+    }
+    setSortDir((d) => d === 'asc' ? 'desc' : d === 'desc' ? null : 'asc')
+  }, [sortKey])
 
   const processedRows = React.useMemo(() => {
     if (!parsed) return []

@@ -108,7 +108,9 @@ export function useTurnCardExpansion(sessionId: string | undefined, autoExpand: 
   // Persist on change. We mirror state into refs so the writer effect always
   // sees the latest value without causing extra renders.
   const refs = useRef({ expandedTurns, collapsedTurns, userExpandedGroups, userCollapsedGroups })
-  refs.current = { expandedTurns, collapsedTurns, userExpandedGroups, userCollapsedGroups }
+  useEffect(() => {
+    refs.current = { expandedTurns, collapsedTurns, userExpandedGroups, userCollapsedGroups }
+  })
 
   useEffect(() => {
     if (!sessionId) return

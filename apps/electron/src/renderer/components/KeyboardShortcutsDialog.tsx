@@ -1,3 +1,4 @@
+import { useCallback } from "react"
 import { useTranslation } from "react-i18next"
 import {
   Dialog,
@@ -149,7 +150,8 @@ export function KeyboardShortcutsDialog({ open, onOpenChange }: KeyboardShortcut
   const componentSpecificSections = useComponentSpecificSections()
 
   // Register with modal context so X button / Cmd+W closes this dialog first
-  useRegisterModal(open, () => onOpenChange(false))
+  const handleCloseModal = useCallback(() => onOpenChange(false), [onOpenChange])
+  useRegisterModal(open, handleCloseModal)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

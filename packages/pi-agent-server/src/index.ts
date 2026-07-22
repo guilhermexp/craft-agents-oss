@@ -284,8 +284,7 @@ function normalizeSeededCredential(provider: string, credential: PiSdkCredential
   if (credential.type !== 'api_key' || !credential.key) return credential;
   oauthOnlyProviderIds ??= new Set(
     builtinProviders()
-      .filter(p => p.auth?.oauth && !p.auth?.apiKey)
-      .map(p => p.id),
+      .flatMap(p => (p.auth?.oauth && !p.auth?.apiKey) ? [p.id] : []),
   );
   if (!oauthOnlyProviderIds.has(provider)) return credential;
   return { type: 'oauth', access: credential.key, refresh: '', expires: Number.MAX_SAFE_INTEGER };
@@ -1113,8 +1112,7 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
           result = msg.content;
         } else if (Array.isArray(msg.content)) {
           result = msg.content
-            .filter((c) => c.type === 'text' && c.text)
-            .map((c) => c.text!)
+            .flatMap((c) => c.type === 'text' && c.text ? [c.text] : [])
             .join('');
         }
       }

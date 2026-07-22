@@ -34,13 +34,16 @@ function readManifest(seedDir: string): SeedSkillManifestEntry[] {
   if (!existsSync(skillsDir)) return [];
 
   return readdirSync(skillsDir, { withFileTypes: true })
-    .filter(entry => entry.isDirectory())
-    .map(entry => ({
-      name: entry.name,
-      source: `skills/${entry.name}`,
-      target: `skills/craft/${entry.name}`,
-      mergePolicy: 'copy-if-missing' as const,
-    }));
+    .flatMap(entry =>
+      entry.isDirectory()
+        ? [{
+            name: entry.name,
+            source: `skills/${entry.name}`,
+            target: `skills/craft/${entry.name}`,
+            mergePolicy: 'copy-if-missing' as const,
+          }]
+        : [],
+    );
 }
 
 function assertSafeRelativePath(path: string): void {

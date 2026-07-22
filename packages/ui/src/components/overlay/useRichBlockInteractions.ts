@@ -54,25 +54,37 @@ export function useRichBlockInteractions({
   const dragStartRef = useRef({ x: 0, y: 0 })
   const translateAtDragStartRef = useRef({ x: 0, y: 0 })
 
+  const scaleRef = useRef(scale)
+  const translateRef = useRef(translate)
+  useEffect(() => {
+    scaleRef.current = scale
+    translateRef.current = translate
+  }, [scale, translate])
+
   const reset = useCallback(() => {
     setIsAnimating(true)
+    scaleRef.current = 1
+    translateRef.current = { x: 0, y: 0 }
     setScale(1)
     setTranslate({ x: 0, y: 0 })
   }, [])
 
   const zoomByStep = useCallback((direction: 'in' | 'out') => {
     setIsAnimating(true)
-    setScale(prev => {
-      const next = zoomStepScale(prev, direction, zoomStepFactor, minScale, maxScale)
-      const ratio = next / prev
-      setTranslate(t => ({ x: t.x * ratio, y: t.y * ratio }))
-      return next
-    })
+    const prev = scaleRef.current
+    const next = zoomStepScale(prev, direction, zoomStepFactor, minScale, maxScale)
+    const ratio = next / prev
+    scaleRef.current = next
+    setScale(next)
+    setTranslate(t => ({ x: t.x * ratio, y: t.y * ratio }))
   }, [zoomStepFactor, minScale, maxScale])
 
   const zoomToPreset = useCallback((percent: number) => {
     setIsAnimating(true)
-    setScale(clampScale(percent / 100, minScale, maxScale))
+    const next = clampScale(percent / 100, minScale, maxScale)
+    scaleRef.current = next
+    translateRef.current = { x: 0, y: 0 }
+    setScale(next)
     setTranslate({ x: 0, y: 0 })
   }, [minScale, maxScale])
 
@@ -86,6 +98,8 @@ export function useRichBlockInteractions({
     const rect = container.getBoundingClientRect()
     const fit = computeFitScale({ width: rect.width, height: rect.height }, content, minScale, maxScale)
     setIsAnimating(true)
+    scaleRef.current = fit
+    translateRef.current = { x: 0, y: 0 }
     setScale(fit)
     setTranslate({ x: 0, y: 0 })
   }, [containerRef, minScale, maxScale, reset])
@@ -97,10 +111,7 @@ export function useRichBlockInteractions({
     setIsDragging(true)
     setIsAnimating(false)
     dragStartRef.current = { x: e.clientX, y: e.clientY }
-    setTranslate(t => {
-      translateAtDragStartRef.current = { x: t.x, y: t.y }
-      return t
-    })
+    translateAtDragStartRef.current = { x: translateRef.current.x, y: translateRef.current.y }
   }, [])
 
   const onDoubleClick = useCallback(() => {
@@ -149,12 +160,12 @@ export function useRichBlockInteractions({
       const sensitivity = e.ctrlKey ? wheelSensitivity.trackpadPinch : wheelSensitivity.mouse
       const factor = Math.pow(2, -e.deltaY * sensitivity)
 
-      setScale(prev => {
-        const next = clampScale(prev * factor, minScale, maxScale)
-        const ratio = next / prev
-        setTranslate(t => cursorAnchoredTranslate(t, cursor, ratio))
-        return next
-      })
+      const prev = scaleRef.current
+      const next = clampScale(prev * factor, minScale, maxScale)
+      const ratio = next / prev
+      scaleRef.current = next
+      setScale(next)
+      setTranslate(t => cursorAnchoredTranslate(t, cursor, ratio))
     }
 
     container.addEventListener('wheel', handleWheel, { passive: false })

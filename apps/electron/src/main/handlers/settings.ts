@@ -14,8 +14,10 @@ export const GUI_HANDLED_CHANNELS = [
 export function registerSettingsGuiHandlers(server: RpcServer, _deps: HandlerDeps): void {
   // Set keep awake while running setting (requires Electron power-manager)
   server.handle(RPC_NAMESPACES.power.SET_KEEP_AWAKE, async (_ctx, enabled: boolean) => {
-    const { setKeepAwakeWhileRunning } = await import('@craft-agent/shared/config/storage')
-    const { setKeepAwakeSetting } = await import('../power-manager')
+    const [{ setKeepAwakeWhileRunning }, { setKeepAwakeSetting }] = await Promise.all([
+      import('@craft-agent/shared/config/storage'),
+      import('../power-manager'),
+    ])
     // Save to config
     setKeepAwakeWhileRunning(enabled)
     // Update the power manager's cached value and power state

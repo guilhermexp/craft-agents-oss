@@ -403,8 +403,13 @@ export function extractOverlayData(activity: ActivityItem): OverlayData | null {
     if (outputSchema) meta.push(`**Output Schema:**\n\`\`\`json\n${JSON.stringify(outputSchema, null, 2)}\n\`\`\``)
     if (attachments && attachments.length > 0) {
       const paths = attachments
-        .map(a => typeof a === 'string' ? a : (a as { path: string }).path)
-        .filter(Boolean)
+        .flatMap(a => {
+          if (typeof a === 'string') return a ? [a] : []
+          if (a && typeof a === 'object' && 'path' in a && typeof a.path === 'string') {
+            return a.path ? [a.path] : []
+          }
+          return []
+        })
       if (paths.length > 0) meta.push(`**Attachments:** ${paths.join(', ')}`)
     }
     if (meta.length > 0) {

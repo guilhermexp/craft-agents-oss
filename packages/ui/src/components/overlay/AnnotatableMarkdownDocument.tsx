@@ -529,6 +529,7 @@ export function AnnotatableMarkdownDocument({
     showSelectionMenuFromCurrentSelection()
   }, [annotations, canAnnotate, messageId, onAddAnnotation, sessionId, showSelectionMenuFromCurrentSelection])
 
+  const showSelectionMenuFromCurrentSelectionEvent = React.useEffectEvent(showSelectionMenuFromCurrentSelection)
   React.useEffect(() => {
     if (!canAnnotate) return
 
@@ -550,15 +551,17 @@ export function AnnotatableMarkdownDocument({
         return
       }
 
-      showSelectionMenuFromCurrentSelection()
+      showSelectionMenuFromCurrentSelectionEvent()
     }
 
     document.addEventListener('mouseup', handleDocumentMouseUp)
     return () => {
       document.removeEventListener('mouseup', handleDocumentMouseUp)
     }
-  }, [canAnnotate, showSelectionMenuFromCurrentSelection])
+  }, [canAnnotate])
 
+  const closeSelectionMenuEvent = React.useEffectEvent(closeSelectionMenu)
+  const isTargetInsideAnnotationIslandEvent = React.useEffectEvent(isTargetInsideAnnotationIsland)
   React.useEffect(() => {
     if (!hasAnnotationInteraction(interactionState) || !isSelectionMenuVisible) return
 
@@ -569,7 +572,7 @@ export function AnnotatableMarkdownDocument({
 
       const root = contentLayerRef.current
       if (!root) {
-        closeSelectionMenu()
+        closeSelectionMenuEvent()
         return
       }
 
@@ -584,12 +587,12 @@ export function AnnotatableMarkdownDocument({
         ? common as Element
         : common.parentElement
 
-      if (commonElement && isTargetInsideAnnotationIsland(commonElement)) {
+      if (commonElement && isTargetInsideAnnotationIslandEvent(commonElement)) {
         return
       }
 
       if (!root.contains(common)) {
-        closeSelectionMenu()
+        closeSelectionMenuEvent()
       }
     }
 
@@ -597,7 +600,7 @@ export function AnnotatableMarkdownDocument({
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange)
     }
-  }, [interactionState, isSelectionMenuVisible, closeSelectionMenu, isTargetInsideAnnotationIsland, selectionMenuOpenedAtRef])
+  }, [interactionState, isSelectionMenuVisible, selectionMenuOpenedAtRef])
 
   const handleSelectionMenuRequestBack = React.useCallback((): boolean => {
     if (selectionMenuView !== 'compact') {

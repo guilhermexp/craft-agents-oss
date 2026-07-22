@@ -115,6 +115,13 @@ export function InlineLabelMenu({
   // When no items exist at all but onAddLabel is provided, show the "Add New Label" row
   const showAddLabel = totalItemCount === 0 && !!onAddLabel
 
+  // Effect Events keep the latest callbacks without re-subscribing the keyboard/click effects.
+  const onSelectEvent = React.useEffectEvent((labelId: string) => onSelect(labelId))
+  const onSelectStateEvent = React.useEffectEvent((stateId: string) => onSelectState?.(stateId))
+  const onAddLabelEvent = React.useEffectEvent((prefill: string) => onAddLabel?.(prefill))
+  const onOpenChangeEvent = React.useEffectEvent((next: boolean) => onOpenChange(next))
+  const setSelectedIndexEvent = React.useEffectEvent((next: number | ((prev: number) => number)) => setSelectedIndex(next))
+
   // Scroll selected item into view
   React.useEffect(() => {
     if (!listRef.current) return
@@ -134,44 +141,44 @@ export function InlineLabelMenu({
         case 'ArrowDown':
           e.preventDefault()
           if (!showAddLabel) {
-            setSelectedIndex(prev => (prev < totalItemCount - 1 ? prev + 1 : 0))
+            setSelectedIndexEvent(prev => (prev < totalItemCount - 1 ? prev + 1 : 0))
           }
           break
         case 'ArrowUp':
           e.preventDefault()
           if (!showAddLabel) {
-            setSelectedIndex(prev => (prev > 0 ? prev - 1 : totalItemCount - 1))
+            setSelectedIndexEvent(prev => (prev > 0 ? prev - 1 : totalItemCount - 1))
           }
           break
         case 'Enter':
         case 'Tab':
           e.preventDefault()
           if (showAddLabel) {
-            onAddLabel?.(filter)
-            onOpenChange(false)
+            onAddLabelEvent(filter)
+            onOpenChangeEvent(false)
           } else if (selectedIndex < filteredStates_.length) {
             // Selected item is a state
-            onSelectState?.(filteredStates_[selectedIndex].id)
-            onOpenChange(false)
+            onSelectStateEvent(filteredStates_[selectedIndex].id)
+            onOpenChangeEvent(false)
           } else {
             // Selected item is a label
             const labelIndex = selectedIndex - filteredStates_.length
             if (filteredItems[labelIndex]) {
-              onSelect(filteredItems[labelIndex].id)
-              onOpenChange(false)
+              onSelectEvent(filteredItems[labelIndex].id)
+              onOpenChangeEvent(false)
             }
           }
           break
         case 'Escape':
           e.preventDefault()
-          onOpenChange(false)
+          onOpenChangeEvent(false)
           break
       }
     }
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [open, filteredStates_, filteredItems, totalItemCount, selectedIndex, setSelectedIndex, onSelect, onSelectState, onAddLabel, onOpenChange, showAddLabel, filter])
+  }, [open, filteredStates_, filteredItems, totalItemCount, selectedIndex, showAddLabel, filter])
 
   // Close on click outside
   React.useEffect(() => {
@@ -179,13 +186,13 @@ export function InlineLabelMenu({
 
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onOpenChange(false)
+        onOpenChangeEvent(false)
       }
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [open, onOpenChange])
+  }, [open])
 
   // Hide if not open, or if no items and no "Add New Label" fallback
   if (!open || (totalItemCount === 0 && !showAddLabel)) return null

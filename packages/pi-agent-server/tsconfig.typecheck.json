@@ -8,7 +8,7 @@
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "rootDir": "../..",
-    "lib": ["ES2022", "DOM"],
+    "lib": ["ES2023", "DOM"],
     "types": ["bun", "node"],
     "skipLibCheck": true,
     "resolveJsonModule": true

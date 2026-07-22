@@ -330,10 +330,10 @@ export async function validateStdioMcpConnection(
 
   debug(`[stdio-validation] Spawning: ${command} ${args.join(' ')}`);
 
-  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
-  const { StdioClientTransport } = await import(
-    '@modelcontextprotocol/sdk/client/stdio.js'
-  );
+  const [{ Client }, { StdioClientTransport }] = await Promise.all([
+    import('@modelcontextprotocol/sdk/client/index.js'),
+    import('@modelcontextprotocol/sdk/client/stdio.js'),
+  ]);
 
   let client: InstanceType<typeof Client> | null = null;
   let transport: InstanceType<typeof StdioClientTransport> | null = null;

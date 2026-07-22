@@ -282,14 +282,15 @@ class HermesRuntimeManager {
       headers.set('X-Hermes-Session-Token', await this.getDashboardSessionToken(ready.url))
     }
     const response = await fetch(`${ready.url}${path}`, { ...init, headers })
-    const text = await response.text()
     if (!response.ok) {
+      const text = await response.text()
       if (response.status === 401 && this.dashboardSessionTokenUrl === ready.url) {
         this.dashboardSessionToken = null
         this.dashboardSessionTokenUrl = null
       }
       throw new Error(`HTTP ${response.status}: ${text || response.statusText}`)
     }
+    const text = await response.text()
     if (!text) return null
     try {
       return JSON.parse(text)
@@ -391,10 +392,10 @@ class HermesRuntimeManager {
     }
 
     const response = await fetch(baseUrl)
-    const html = await response.text()
     if (!response.ok) {
       throw new Error(`Hermes dashboard token unavailable: HTTP ${response.status}`)
     }
+    const html = await response.text()
 
     const token = extractDashboardSessionToken(html)
     if (!token) {
@@ -459,8 +460,7 @@ async function listCustomProviderModels(runtime: NormalizedHermesRuntimeConfig, 
   if (!customProvider) return []
 
   const configuredModels = (customProvider.models ?? [])
-    .filter(id => typeof id === 'string' && id.length > 0)
-    .map(id => ({ id }))
+    .flatMap(id => (typeof id === 'string' && id.length > 0 ? [{ id }] : []))
 
   if (!customProvider.baseUrl) {
     return configuredModels
@@ -887,9 +887,7 @@ async function listHermesLogs(runtime: NormalizedHermesRuntimeConfig): Promise<H
 
   const entries = await readdir(logsPath, { withFileTypes: true })
   const files = await Promise.all(
-    entries
-      .filter(entry => entry.isFile())
-      .map(entry => fileInfo(join(logsPath, entry.name))),
+    entries.flatMap(entry => (entry.isFile() ? [fileInfo(join(logsPath, entry.name))] : [])),
   )
 
   files.sort((a, b) => b.modifiedAt - a.modifiedAt)
@@ -961,7 +959,7 @@ async function collectSkillsFromRoot(rootPath: string, source: HermesSkillInfo['
       })
       return
     }
-    await Promise.all(entries.filter(entry => entry.isDirectory() && !entry.name.startsWith('.')).map(entry => walk(join(dirPath, entry.name), depth - 1)))
+    await Promise.all(entries.flatMap(entry => (entry.isDirectory() && !entry.name.startsWith('.') ? [walk(join(dirPath, entry.name), depth - 1)] : [])))
   }
   await walk(rootPath, 4)
   skills.sort((a, b) => a.name.localeCompare(b.name))
@@ -1119,7 +1117,7 @@ async function listAvailableProviders(agentRoot?: string): Promise<string[]> {
   if (!existsSync(examplePath)) return []
   const content = await readFile(examplePath, 'utf-8').catch(() => '')
   return Array.from(new Set(
-    [...content.matchAll(/^#\s+"([^"]+)"\s+-/gm)].map(match => match[1]!).filter(Boolean),
+    [...content.matchAll(/^#\s+"([^"]+)"\s+-/gm)].flatMap(match => (match[1] ? [match[1]] : [])),
   )).sort()
 }
 
@@ -1129,8 +1127,7 @@ async function listPluginNames(agentRoot?: string): Promise<string[]> {
   if (!existsSync(pluginsPath)) return []
   const entries = await readdir(pluginsPath, { withFileTypes: true }).catch(() => [])
   return entries
-    .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
-    .map(entry => entry.name)
+    .flatMap(entry => (entry.isDirectory() && !entry.name.startsWith('.') ? [entry.name] : []))
     .sort()
 }
 

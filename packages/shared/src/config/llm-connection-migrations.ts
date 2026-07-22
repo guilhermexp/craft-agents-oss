@@ -1,4 +1,4 @@
-import { getCredentialManager } from '../credentials/index.ts';
+import { getCredentialManager } from '../credentials/manager.ts';
 import {
   loadWorkspaceConfig,
   saveWorkspaceConfig,
@@ -716,9 +716,10 @@ export function migrateLegacyLlmConnectionsConfig(): void {
 
   const normalizeModelList = (models?: Array<{ id: string } | string>): string[] => {
     if (!models) return [];
-    return models
-      .map(model => (typeof model === 'string' ? model : model.id))
-      .filter(Boolean);
+    return models.flatMap(model => {
+      const id = typeof model === 'string' ? model : model.id;
+      return id ? [id] : [];
+    });
   };
 
   const applyCompatDefaults = (target: StoredConfig): boolean => {

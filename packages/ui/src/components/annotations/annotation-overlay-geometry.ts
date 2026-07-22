@@ -51,18 +51,19 @@ export function computeAnnotationOverlayGeometry({
   const chips: AnnotationOverlayChip[] = []
 
   for (const item of resolution.resolved) {
-    const followUpState = getAnnotationFollowUpState(item.annotation)
+    const annotation = item.annotation
+    const followUpState = getAnnotationFollowUpState(annotation)
     const pendingFollowUp = followUpState === 'pending'
     const sentFollowUp = followUpState === 'sent'
 
     const rawRects = getClientRectsForOffsets(root, item.range.start, item.range.end)
       .map(rect => ({
-        id: item.annotation.id,
+        id: annotation.id,
         left: rect.left - rootRect.left,
         top: rect.top - rootRect.top,
         width: rect.width,
         height: rect.height,
-        color: annotationColorToCss(item.annotation.style?.color),
+        color: annotationColorToCss(annotation.style?.color),
         pendingFollowUp,
         sentFollowUp,
       }))
@@ -70,7 +71,7 @@ export function computeAnnotationOverlayGeometry({
     const lineRects = consolidateRectsByLine(rawRects)
     rects.push(...lineRects)
 
-    const annotationIndex = annotationIndexOverrides?.get(item.annotation.id) ?? annotationIndexById.get(item.annotation.id)
+    const annotationIndex = annotationIndexOverrides?.get(annotation.id) ?? annotationIndexById.get(annotation.id)
     if (annotationIndex == null || lineRects.length === 0) {
       continue
     }
@@ -84,7 +85,7 @@ export function computeAnnotationOverlayGeometry({
     })
 
     chips.push({
-      id: item.annotation.id,
+      id: annotation.id,
       index: annotationIndex,
       left: anchorRect.left + anchorRect.width,
       top: anchorRect.top,

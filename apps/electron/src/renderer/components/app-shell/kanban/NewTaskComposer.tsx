@@ -65,7 +65,7 @@ export function NewTaskComposer({ onCreate, className }: NewTaskComposerProps) {
       value={draft}
       onChange={e => setDraft(e.target.value)}
       onKeyDown={e => {
-        if (e.key === 'Enter' && !e.shiftKey) {
+        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
           e.preventDefault()
           commit(true)
         } else if (e.key === 'Escape') {

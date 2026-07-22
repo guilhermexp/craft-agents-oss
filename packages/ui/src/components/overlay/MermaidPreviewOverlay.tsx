@@ -95,7 +95,7 @@ export function MermaidPreviewOverlay({
         style={{
           marginTop: -72,
           marginBottom: -24,
-          height: '100vh',
+          height: '100dvh',
           cursor: isDragging ? 'grabbing' : 'grab',
           overflow: 'hidden',
         }}

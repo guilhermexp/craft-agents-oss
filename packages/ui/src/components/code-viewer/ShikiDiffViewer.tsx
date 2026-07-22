@@ -165,7 +165,9 @@ export function ShikiDiffViewer({
   // inside its shadowRoot. This lets the filename be clickable without modifying pierre.
   const containerRef = useRef<HTMLDivElement>(null)
   const onFileHeaderClickRef = useRef(onFileHeaderClick)
-  onFileHeaderClickRef.current = onFileHeaderClick
+  useEffect(() => {
+    onFileHeaderClickRef.current = onFileHeaderClick
+  })
 
   useEffect(() => {
     if (!onFileHeaderClick || disableFileHeader) return

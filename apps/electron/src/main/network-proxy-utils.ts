@@ -33,8 +33,8 @@ export function parseNoProxyRules(noProxy: string | undefined): NoProxyRule[] {
   if (!noProxy) return [];
 
   return splitCommaSeparated(noProxy)
-    .map(entry => entry.toLowerCase())
-    .map(entry => {
+    .map(rawEntry => {
+      const entry = rawEntry.toLowerCase();
       if (entry === '*') {
         return { host: '*', wildcard: true };
       }

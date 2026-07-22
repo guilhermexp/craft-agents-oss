@@ -6,7 +6,14 @@ function textOf(result) {
   return (result?.content ?? []).map((entry) => entry.type === 'text' ? entry.text : `[${entry.type}]`).join('\n');
 }
 const client = new Client({ name: 'craft-browser-call', version: '0.0.1' });
-await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)));
+const mcpUrl = `http://127.0.0.1:${port}/mcp`;
+if (!URL.canParse(mcpUrl)) {
+  console.error(`Invalid MCP URL: ${mcpUrl}`);
+  process.exit(1);
+}
+// react-doctor-disable-next-line no-unguarded-throwing-parse-call -- guarded by URL.canParse + process.exit directly above
+const mcpTransportUrl = new URL(mcpUrl);
+await client.connect(new StreamableHTTPClientTransport(mcpTransportUrl));
 for (const command of commands) {
   console.log(`CALL ${command}`);
   const result = await client.callTool({ name: 'browser_tool', arguments: { command } });

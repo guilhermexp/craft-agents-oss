@@ -58,11 +58,13 @@ export function EntityPanel<T>({
     selectionStore,
   })
 
-  useAction('navigator.clearSelection', () => {
+  const handleClearSelection = React.useCallback(() => {
     interactions.selection.clear()
-  }, {
-    enabled: () => interactions.selection.isMultiSelectActive,
   }, [interactions.selection])
+  const clearSelectionOptions = React.useMemo(() => ({
+    enabled: () => interactions.selection.isMultiSelectActive,
+  }), [interactions.selection])
+  useAction('navigator.clearSelection', handleClearSelection, clearSelectionOptions, [interactions.selection])
 
   const mergedContainerProps = containerProps
     ? { ...interactions.listProps.containerProps, ...containerProps }

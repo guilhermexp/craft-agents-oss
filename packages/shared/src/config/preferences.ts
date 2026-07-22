@@ -3,7 +3,8 @@ import { join } from 'path';
 import { ensureConfigDir } from './storage.ts';
 import { CONFIG_DIR } from './paths.ts';
 import { readJsonFileSync } from '../utils/files.ts';
-import { i18n, SUPPORTED_LANGUAGE_CODES } from '../i18n/index.ts';
+import { i18n } from '../i18n/setupI18n.ts';
+import { SUPPORTED_LANGUAGE_CODES } from '../i18n/languages.ts';
 import { LOCALE_REGISTRY, type LanguageCode } from '../i18n/registry.ts';
 
 export interface UserLocation {

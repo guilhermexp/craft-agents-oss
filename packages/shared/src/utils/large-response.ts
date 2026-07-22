@@ -291,7 +291,7 @@ function extractAssetsFromStructuredJson(
     return null;
   }
 
-  const linked = JSON.parse(JSON.stringify(parsed)) as unknown;
+  const linked = structuredClone(parsed);
   const assets: SavedAsset[] = [];
 
   const walk = (node: unknown, path: string, parent: Record<string, unknown> | unknown[] | null, key: string | number | null) => {

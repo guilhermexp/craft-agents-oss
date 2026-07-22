@@ -119,8 +119,7 @@ describe('ReactMarkdown anchor rendering with markdownUrlTransform', () => {
           'data-raw-href': href,
         }, children),
       },
-      children: markdown,
-    }))
+    }, markdown))
   }
 
   it('lets file links reach the custom anchor while keeping the DOM href sanitized', () => {

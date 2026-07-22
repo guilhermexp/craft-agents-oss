@@ -209,7 +209,7 @@ export function getStatus(
  */
 export function listStatuses(workspaceRootPath: string): StatusConfig[] {
   const config = loadStatusConfig(workspaceRootPath);
-  return [...config.statuses].sort((a, b) => a.order - b.order);
+  return config.statuses.toSorted((a, b) => a.order - b.order);
 }
 
 /**

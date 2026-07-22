@@ -24,7 +24,7 @@ function LoadingScreen() {
   const { t } = useTranslation()
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen font-sans text-foreground/50 gap-3">
+    <div className="flex flex-col items-center justify-center h-dvh font-sans text-foreground/50 gap-3">
       <div className="animate-spin size-6 border-2 border-current border-t-transparent rounded-full" />
       <p className="text-[13px]">{t("webui.connectingToServer")}</p>
     </div>
@@ -35,7 +35,7 @@ function ErrorScreen({ message, onRetry }: { message: string; onRetry: () => voi
   const { t } = useTranslation()
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen font-sans text-foreground/50 gap-3">
+    <div className="flex flex-col items-center justify-center h-dvh font-sans text-foreground/50 gap-3">
       <p className="text-base font-medium text-destructive">{t("webui.connectionFailed")}</p>
       <p className="text-[13px] max-w-md text-center">{message}</p>
       <div className="flex gap-2 mt-2">
@@ -48,10 +48,13 @@ function ErrorScreen({ message, onRetry }: { message: string; onRetry: () => voi
         </button>
         <button
           type="button"
-          onClick={() => {
-            fetch('/api/auth/logout', { method: 'POST' }).then(() => {
+          onClick={async () => {
+            try {
+              await fetch('/api/auth/logout', { method: 'POST' })
               window.location.href = '/login'
-            })
+            } catch {
+              // ignore logout errors; stay on the current screen
+            }
           }}
           className="px-4 py-1.5 rounded-md bg-background shadow-minimal text-[13px] text-foreground/70 cursor-pointer"
         >

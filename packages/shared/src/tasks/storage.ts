@@ -112,8 +112,10 @@ export function listTaskSlugs(workspaceRoot: string): string[] {
   const root = tasksRoot(workspaceRoot);
   if (!existsSync(root)) return [];
   return readdirSync(root, { withFileTypes: true })
-    .filter((d) => d.isDirectory() && existsSync(join(root, d.name, TASK_FILE)))
-    .map((d) => d.name)
+    .reduce<string[]>((acc, d) => {
+      if (d.isDirectory() && existsSync(join(root, d.name, TASK_FILE))) acc.push(d.name);
+      return acc;
+    }, [])
     .sort();
 }
 
@@ -150,8 +152,10 @@ export function listRunIds(workspaceRoot: string, slug: string): string[] {
   const runs = join(taskDir(workspaceRoot, slug), RUNS_DIR);
   if (!existsSync(runs)) return [];
   return readdirSync(runs, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => d.name)
+    .reduce<string[]>((acc, d) => {
+      if (d.isDirectory()) acc.push(d.name);
+      return acc;
+    }, [])
     .sort();
 }
 

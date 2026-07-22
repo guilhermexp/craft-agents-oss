@@ -196,8 +196,10 @@ function listSubdirNames(dirPath: string): string[] {
   if (!existsSync(dirPath)) return [];
   try {
     return readdirSync(dirPath, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => d.name);
+      .reduce<string[]>((acc, d) => {
+        if (d.isDirectory()) acc.push(d.name);
+        return acc;
+      }, []);
   } catch {
     return [];
   }

@@ -713,6 +713,7 @@ async function executeSingleCommand(args: {
 
   if (cmd === 'open') {
     const foreground = parts.includes('--foreground') || parts.includes('-f');
+    // react-doctor-disable-next-line async-parallel -- listWindows() before/after must bracket the open side effect to compute the window diff; parallelizing corrupts it
     const windowsBefore = await fns.listWindows();
     const result = await fns.openPanel({ background: !foreground });
 
@@ -760,11 +761,12 @@ async function executeSingleCommand(args: {
     const started = Date.now();
     const result = await fns.navigate(url);
     const elapsedMs = Date.now() - started;
-    const after = await getPageMetrics(fns);
-    const failed = await fns.getNetworkLogs({ limit: 200, status: 'failed' });
-
     // Check for security challenge after navigation
-    const challenge = await fns.detectChallenge();
+    const [after, failed, challenge] = await Promise.all([
+      getPageMetrics(fns),
+      fns.getNetworkLogs({ limit: 200, status: 'failed' }),
+      fns.detectChallenge(),
+    ]);
     if (challenge.detected) {
       await fns.releaseControl();
       return {
@@ -1698,6 +1700,7 @@ async function executeSingleCommand(args: {
       throw new Error('close accepts at most one optional argument: [windowId]');
     }
 
+    // react-doctor-disable-next-line async-parallel -- listWindows() before/after must bracket the close side effect to compute the window diff; parallelizing corrupts it
     const before = await fns.listWindows();
     const lifecycle = await fns.closeWindow(targetArg);
     const after = await fns.listWindows();
@@ -1722,6 +1725,7 @@ async function executeSingleCommand(args: {
       throw new Error('hide accepts at most one optional argument: [windowId]');
     }
 
+    // react-doctor-disable-next-line async-parallel -- listWindows() before/after must bracket the hide side effect to compute the window diff; parallelizing corrupts it
     const before = await fns.listWindows();
     const lifecycle = await fns.hideWindow(targetArg);
     const after = await fns.listWindows();

@@ -64,7 +64,7 @@ function sanitizeSourceConfig(config: FolderSourceConfig): { config: FolderSourc
   const warnings: string[] = []
 
   // Deep clone to avoid mutating the original
-  const sanitized: FolderSourceConfig = JSON.parse(JSON.stringify(config))
+  const sanitized: FolderSourceConfig = structuredClone(config)
 
   // --- Runtime state: always remove ---
   sanitized.isAuthenticated = false
@@ -180,8 +180,7 @@ function exportSources(
   let slugs: string[]
   if (selection === 'all') {
     slugs = readdirSync(sourcesDir, { withFileTypes: true })
-      .filter(d => d.isDirectory() && !d.name.startsWith('.'))
-      .map(d => d.name)
+      .flatMap(d => (d.isDirectory() && !d.name.startsWith('.') ? [d.name] : []))
   } else {
     slugs = selection
   }
@@ -232,8 +231,7 @@ function exportSkills(
   let slugs: string[]
   if (selection === 'all') {
     slugs = readdirSync(skillsDir, { withFileTypes: true })
-      .filter(d => d.isDirectory() && !d.name.startsWith('.'))
-      .map(d => d.name)
+      .flatMap(d => (d.isDirectory() && !d.name.startsWith('.') ? [d.name] : []))
   } else {
     slugs = selection
   }
@@ -291,7 +289,7 @@ function sanitizeAutomationMatcher(
   warnings: string[],
 ): AutomationMatcher {
   // Deep clone to avoid mutating the original
-  const sanitized: AutomationMatcher = JSON.parse(JSON.stringify(matcher))
+  const sanitized: AutomationMatcher = structuredClone(matcher)
 
   if (!sanitized.actions) return sanitized
 

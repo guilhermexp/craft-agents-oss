@@ -123,11 +123,12 @@ export function AddWorkspaceStep_CreateNew({
       <div className="mt-6 w-full space-y-6">
         {/* Workspace name */}
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-foreground mb-2.5">
+          <label htmlFor="create-workspace-name" className="block text-sm font-medium text-foreground mb-2.5">
             {t("workspace.nameLabel")}
           </label>
           <div className="bg-background shadow-minimal rounded-lg">
             <Input
+              id="create-workspace-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={t("workspace.myWorkspace")}
@@ -143,9 +144,9 @@ export function AddWorkspaceStep_CreateNew({
 
         {/* Location selection */}
         <div className="space-y-3">
-          <label className="block text-sm font-medium text-foreground mb-2.5">
+          <span className="block text-sm font-medium text-foreground mb-2.5">
             {t("workspace.locationLabel")}
-          </label>
+          </span>
 
           {/* Default location option */}
           <AddWorkspace_RadioOption

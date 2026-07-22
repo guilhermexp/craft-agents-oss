@@ -153,7 +153,7 @@ function getSessionSwitchStats(): {
 
   if (durations.length === 0) return null
 
-  const sorted = [...durations].sort((a, b) => a - b)
+  const sorted = durations.toSorted((a, b) => a - b)
   const sum = durations.reduce((a, b) => a + b, 0)
 
   return {

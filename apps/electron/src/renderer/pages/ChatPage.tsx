@@ -156,7 +156,9 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   // Track draft value for this session
   const [inputValue, setInputValue] = React.useState(() => coerceInputText(getDraft(sessionId)))
   const inputValueRef = React.useRef(inputValue)
-  inputValueRef.current = inputValue
+  React.useEffect(() => {
+    inputValueRef.current = inputValue
+  })
 
   // Re-sync from parent when session changes
   React.useEffect(() => {
@@ -291,7 +293,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     [workspaces, activeWorkspaceId]
   )
   const inlineFileResolveCacheRef = React.useRef<Map<string, InlineFileResolveCacheEntry>>(null as unknown as Map<string, InlineFileResolveCacheEntry>)
-  if (!inlineFileResolveCacheRef.current) inlineFileResolveCacheRef.current = new Map()
+  inlineFileResolveCacheRef.current ??= new Map()
   const handleWorkingDirectoryChange = React.useCallback(async (path: string) => {
     if (!session) return
     await window.electronAPI.sessionCommand(session.id, { type: 'updateWorkingDirectory', dir: path })

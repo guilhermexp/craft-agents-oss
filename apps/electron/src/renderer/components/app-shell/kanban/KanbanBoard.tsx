@@ -109,7 +109,7 @@ export function KanbanBoard({
       // A tile whose persisted column no longer exists falls back to the first column.
       const target = known.has(task.column) ? task.column : firstColumnId
       if (target === undefined) continue
-      buckets.get(target)!.push(task)
+      buckets.get(target)?.push(task)
     }
     // Newest tiles first within each column (a freshly created task lands on top).
     const recency = (t: KanbanTask) => t.createdAt ?? t.lastMessageAt ?? 0

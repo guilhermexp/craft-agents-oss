@@ -34,6 +34,7 @@ import {
   useRef,
   useState,
   useMemo,
+  useEffectEvent,
   type ReactNode,
 } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -335,6 +336,9 @@ export function NavigationProvider({
     lastSemanticHistoryKeyRef.current = currentSemanticKey
   }, [getSemanticHistoryKey])
 
+  // Effect Event: read the latest pushState logic without re-subscribing atom listeners.
+  const onSemanticHistoryChange = useEffectEvent(() => maybePushHistoryForSemanticChange())
+
   // replaceState sync when panel stack, focus, or sidebar changes (catches resize, etc.)
   const panelStack = useAtomValue(panelStackAtom)
   const focusedPanelId = useAtomValue(focusedPanelIdAtom)
@@ -356,13 +360,13 @@ export function NavigationProvider({
       if (currRoutes.length !== prevRoutes.length || !currRoutes.every((r, i) => r === prevRoutes[i])) {
         if (!pendingPushRef.current) {
           pendingPushRef.current = true
-          queueMicrotask(() => { pendingPushRef.current = false; maybePushHistoryForSemanticChange() })
+          queueMicrotask(() => { pendingPushRef.current = false; onSemanticHistoryChange() })
         }
       }
       prevRoutes = currRoutes
     })
     return unsub
-  }, [store, maybePushHistoryForSemanticChange])
+  }, [store])
 
   // Focus changes: push history when active panel changes
   useEffect(() => {
@@ -373,13 +377,13 @@ export function NavigationProvider({
       if (newFocusId !== prevFocusId) {
         if (!pendingPushRef.current) {
           pendingPushRef.current = true
-          queueMicrotask(() => { pendingPushRef.current = false; maybePushHistoryForSemanticChange() })
+          queueMicrotask(() => { pendingPushRef.current = false; onSemanticHistoryChange() })
         }
         prevFocusId = newFocusId
       }
     })
     return unsub
-  }, [store, maybePushHistoryForSemanticChange])
+  }, [store])
 
   // Right sidebar changes: push history
   const prevSidebarTypeRef = useRef(rightSidebar?.type)
@@ -950,6 +954,14 @@ export function NavigationProvider({
   // POPSTATE HANDLER (browser back/forward)
   // =========================================================================
 
+  // Effect Events keep the popstate listener subscribed once while reading latest props/state.
+  const trySwitchWorkspace = useEffectEvent((slug: string): boolean => {
+    if (!onSwitchWorkspaceBySlug) return false
+    isPopstateSwitchRef.current = true
+    onSwitchWorkspaceBySlug(slug)
+    return true
+  })
+  const getSemanticHistoryKeyEvent = useEffectEvent(() => getSemanticHistoryKey())
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
       // Update sequence tracking
@@ -962,11 +974,9 @@ export function NavigationProvider({
       const wsSlug = params.get('ws')
 
       // Check if workspace changed
-      if (wsSlug && wsSlug !== workspaceSlug && onSwitchWorkspaceBySlug) {
+      if (wsSlug && wsSlug !== workspaceSlug && trySwitchWorkspace(wsSlug)) {
         // Workspace boundary crossed — trigger workspace switch
         // The workspace switch effect will handle reconciliation
-        isPopstateSwitchRef.current = true
-        onSwitchWorkspaceBySlug(wsSlug)
         return
       }
 
@@ -979,7 +989,7 @@ export function NavigationProvider({
       // Same workspace — reconcile panels from the URL
       suppressPushRef.current = true
       reconcileFromUrlParamsRef.current(params)
-      lastSemanticHistoryKeyRef.current = getSemanticHistoryKey()
+      lastSemanticHistoryKeyRef.current = getSemanticHistoryKeyEvent()
       requestAnimationFrame(() => {
         suppressPushRef.current = false
       })
@@ -987,7 +997,7 @@ export function NavigationProvider({
 
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
-  }, [workspaceSlug, onSwitchWorkspaceBySlug, updateCanGoBackForward, getSemanticHistoryKey, isSessionsReady])
+  }, [workspaceSlug, updateCanGoBackForward, isSessionsReady])
 
   // =========================================================================
   // WORKSPACE SWITCH

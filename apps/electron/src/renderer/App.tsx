@@ -585,13 +585,16 @@ export default function App() {
 
   // Check auth state and get window's workspace ID on mount
   useEffect(() => {
+    let cancelled = false
     const initialize = async () => {
       try {
         // Get this window's workspace ID (passed via URL query param from main process)
         const wsId = await window.electronAPI.getWindowWorkspace()
+        if (cancelled) return
         setWindowWorkspaceId(wsId)
 
         const needs = await window.electronAPI.getSetupNeeds()
+        if (cancelled) return
         setSetupNeeds(needs)
 
         if (needs.isFullyConfigured) {
@@ -607,6 +610,7 @@ export default function App() {
           setAppState('onboarding')
         }
       } catch (error) {
+        if (cancelled) return
         console.error('Failed to check auth state:', error)
         // If check fails, show onboarding to be safe
         setAppState('onboarding')
@@ -614,6 +618,9 @@ export default function App() {
     }
 
     initialize()
+    return () => {
+      cancelled = true
+    }
   }, [setWindowWorkspaceId])
 
   // Session selection state
@@ -1556,8 +1563,8 @@ export default function App() {
   // Centralized link interceptor: classifies file types and decides whether to
   // show an in-app preview overlay or open externally. Replaces the old
   // handleOpenFile/handleOpenUrl that always opened in external apps.
-  const linkInterceptor = useLinkInterceptor({
-    openFileExternal: async (path) => {
+  const linkInterceptorOptions = useMemo(() => ({
+    openFileExternal: async (path: string) => {
       try {
         await window.electronAPI.openFile(path)
       } catch (error) {
@@ -1568,7 +1575,7 @@ export default function App() {
         })
       }
     },
-    openUrl: async (url) => {
+    openUrl: async (url: string) => {
       try {
         await window.electronAPI.openUrl(url)
       } catch (error) {
@@ -1579,7 +1586,7 @@ export default function App() {
         })
       }
     },
-    showInFolder: async (path) => {
+    showInFolder: async (path: string) => {
       try {
         await window.electronAPI.showInFolder(path)
       } catch (error) {
@@ -1590,10 +1597,12 @@ export default function App() {
         })
       }
     },
-    readFile: (path) => window.electronAPI.readFile(path),
-    readFileDataUrl: (path) => window.electronAPI.readFileDataUrl(path),
-    readFileBinary: (path) => window.electronAPI.readFileBinary(path),
-  })
+    readFile: (path: string) => window.electronAPI.readFile(path),
+    readFileDataUrl: (path: string) => window.electronAPI.readFileDataUrl(path),
+    readFileBinary: (path: string) => window.electronAPI.readFileBinary(path),
+  }), [t])
+
+  const linkInterceptor = useLinkInterceptor(linkInterceptorOptions)
 
   const connectionState = useTransportConnectionState()
   const showTransportConnectionBanner = shouldShowTransportConnectionBanner(connectionState)

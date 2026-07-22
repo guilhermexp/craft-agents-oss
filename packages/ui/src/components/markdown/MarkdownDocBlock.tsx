@@ -134,6 +134,7 @@ export function MarkdownDocBlock({ code, className, onUrlClick, onFileClick }: M
           <div className="flex items-center gap-1">
             <ItemNavigator items={items} activeIndex={activeIndex} onSelect={setActiveIndex} />
             <button
+              type="button"
               onClick={() => setIsFullscreen((v) => !v)}
               className={cn(
                 "p-1 rounded-[6px] transition-all select-none",

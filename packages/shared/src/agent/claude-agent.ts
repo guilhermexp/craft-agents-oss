@@ -25,7 +25,7 @@ import type { McpClientPool } from '../mcp/mcp-pool.ts';
 import { loadPlanFromPath, type SessionConfig as Session } from '../sessions/storage.ts';
 import { loadProjectById, getProjectAssetsPath, listProjectAssets, getProjectMemoryPath, loadProjectMemory } from '../projects/storage.ts';
 import { DEFAULT_MODEL, isClaudeModel, isAdaptiveThinkingAlwaysOnModel, getDefaultSummarizationModel, getModelContextWindow } from '../config/models.ts';
-import { getCredentialManager } from '../credentials/index.ts';
+import { getCredentialManager } from '../credentials/manager.ts';
 import { loadPreferences, formatPreferencesForPrompt, getCoAuthorPreference } from '../config/preferences.ts';
 import type { FileAttachment } from '../utils/files.ts';
 import type { LLMQueryRequest, LLMQueryResult } from './llm-tool.ts';
@@ -126,7 +126,8 @@ export type { LoadedSource } from '../sources/types.ts';
 
 // Import and re-export AbortReason and RecoveryMessage from core module (single source of truth)
 // Re-exported for backwards compatibility with existing imports from claude-agent.ts
-import { AbortReason, type RecoveryMessage } from './core/index.ts';
+import { AbortReason } from './core/session-lifecycle.ts';
+import type { RecoveryMessage } from './core/types.ts';
 export { AbortReason, type RecoveryMessage };
 
 /** File extensions that can be converted to readable text by CLI tools. */

@@ -183,12 +183,11 @@ export class SessionTransferManager {
     await this.deps.ensureMessagesLoaded(managed)
 
     const messages = managed.messages
-      .filter(m => m.role === 'user' || m.role === 'assistant')
-      .filter(m => !m.isIntermediate)
-      .map(m => ({
-        type: m.role as 'user' | 'assistant',
-        content: m.content,
-      }))
+      .flatMap(m => (
+        (m.role === 'user' || m.role === 'assistant') && !m.isIntermediate
+          ? [{ type: m.role as 'user' | 'assistant', content: m.content }]
+          : []
+      ))
 
     if (messages.length === 0) return null
 

@@ -38,6 +38,10 @@ export function ComponentPreview({ component, props }: ComponentPreviewProps) {
   const isDraggingRef = React.useRef<'right' | 'bottom' | 'corner' | null>(null)
   const startPosRef = React.useRef({ x: 0, y: 0 })
   const startSizeRef = React.useRef({ width: 0, height: 0 })
+  const sizeRef = React.useRef(size)
+  React.useEffect(() => {
+    sizeRef.current = size
+  }, [size])
 
   // Merge default props, mock data, and current props
   const mergedProps = React.useMemo(() => {
@@ -67,28 +71,26 @@ export function ComponentPreview({ component, props }: ComponentPreviewProps) {
       const deltaX = e.clientX - startPosRef.current.x
       const deltaY = e.clientY - startPosRef.current.y
 
-      setSize(prev => {
-        let newWidth = prev.width
-        let newHeight = prev.height
+      const prev = sizeRef.current
+      let newWidth = prev.width
+      let newHeight = prev.height
 
-        if (isDraggingRef.current === 'right' || isDraggingRef.current === 'corner') {
-          newWidth = Math.max(MIN_WIDTH, startSizeRef.current.width + deltaX)
-        }
-        if (isDraggingRef.current === 'bottom' || isDraggingRef.current === 'corner') {
-          newHeight = Math.max(MIN_HEIGHT, startSizeRef.current.height + deltaY)
-        }
+      if (isDraggingRef.current === 'right' || isDraggingRef.current === 'corner') {
+        newWidth = Math.max(MIN_WIDTH, startSizeRef.current.width + deltaX)
+      }
+      if (isDraggingRef.current === 'bottom' || isDraggingRef.current === 'corner') {
+        newHeight = Math.max(MIN_HEIGHT, startSizeRef.current.height + deltaY)
+      }
 
-        return { width: newWidth, height: newHeight }
-      })
+      const nextSize = { width: newWidth, height: newHeight }
+      sizeRef.current = nextSize
+      setSize(nextSize)
     }
 
     const handleMouseUp = () => {
       if (isDraggingRef.current) {
         // Save size to localStorage when drag ends
-        setSize(currentSize => {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(currentSize))
-          return currentSize
-        })
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(sizeRef.current))
       }
       isDraggingRef.current = null
     }

@@ -210,19 +210,22 @@ export class CraftSessionToolsMcpServer {
       includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback,
       includeMemory: FEATURE_FLAGS.memory,
     })
-      .filter((def) => browserEnabled || def.name !== 'browser_tool')
-      .map((def) => ({
-        name: def.name,
-        description: def.description,
-        inputSchema: def.inputSchema,
-        outputSchema: def.outputSchema,
-        _meta: {
-          craftApiVersion: def.apiVersion,
-          craftExposure: def.exposure,
-          craftExecutionMode: def.executionMode,
-          craftSafeMode: def.safeMode,
-        },
-      }));
+      .flatMap((def) =>
+        browserEnabled || def.name !== 'browser_tool'
+          ? [{
+              name: def.name,
+              description: def.description,
+              inputSchema: def.inputSchema,
+              outputSchema: def.outputSchema,
+              _meta: {
+                craftApiVersion: def.apiVersion,
+                craftExposure: def.exposure,
+                craftExecutionMode: def.executionMode,
+                craftSafeMode: def.safeMode,
+              },
+            }]
+          : [],
+      );
 
     tools.push({
       name: AUTOMATION_TOOL_NAME,

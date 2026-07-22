@@ -328,8 +328,7 @@ async function callDocsUpstream(
     const result = await docsClient.callTool({ name, arguments: args });
     // Convert MCP result to our format
     const textContent = (result.content as Array<{ type: string; text?: string }> || [])
-      .filter(c => c.type === 'text' && c.text)
-      .map(c => ({ type: 'text' as const, text: c.text! }));
+      .flatMap(c => c.type === 'text' && c.text ? [{ type: 'text' as const, text: c.text }] : []);
 
     return {
       content: textContent.length > 0 ? textContent : [{ type: 'text', text: '(No response from docs server)' }],
@@ -377,6 +376,7 @@ async function handleCallLlm(
   // Uses callbackPort from CLI arg (--callback-port) or env var (CRAFT_LLM_CALLBACK_PORT).
   if (config.callbackPort) {
     try {
+      // react-doctor-disable-next-line no-fetch-response-used-without-status-check -- localhost agent IPC callback returns a structured {error} payload handled by the caller; fixed 127.0.0.1 target
       const resp = await fetch(`http://127.0.0.1:${config.callbackPort}/call-llm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -430,6 +430,7 @@ async function handleSpawnSession(
   // Fallback path: HTTP callback to agent (for Copilot where PreToolUse doesn't fire for MCP tools).
   if (config.callbackPort) {
     try {
+      // react-doctor-disable-next-line no-fetch-response-used-without-status-check -- localhost agent IPC callback returns a structured {error} payload handled by the caller; fixed 127.0.0.1 target
       const resp = await fetch(`http://127.0.0.1:${config.callbackPort}/spawn-session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -540,6 +541,7 @@ async function main() {
   }));
 
   // Handle tool calls — route via canonical registry, call_llm, or docs upstream
+  // react-doctor-disable-next-line mcp-tool-capability-risk -- fetch targets a fixed localhost URL built from server config (callbackPort), inputs are zod-validated; no SSRF
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: toolArgs } = request.params;
 

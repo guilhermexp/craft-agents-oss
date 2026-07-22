@@ -26,6 +26,9 @@ export function HorizontalResizeHandle({ onResize, onResizeEnd, className }: Hor
   const { ref, handlers, gradientStyle, isDragging } = useHorizontalResizeGradient()
   const lastYRef = React.useRef<number | null>(null)
 
+  const onResizeEvent = React.useEffectEvent((deltaY: number) => onResize(deltaY))
+  const onResizeEndEvent = React.useEffectEvent(() => onResizeEnd?.())
+
   // Handle drag movement
   React.useEffect(() => {
     if (!isDragging) {
@@ -36,14 +39,14 @@ export function HorizontalResizeHandle({ onResize, onResizeEnd, className }: Hor
     const handleMouseMove = (e: MouseEvent) => {
       if (lastYRef.current !== null) {
         const deltaY = e.clientY - lastYRef.current
-        onResize(deltaY)
+        onResizeEvent(deltaY)
       }
       lastYRef.current = e.clientY
     }
 
     const handleMouseUp = () => {
       lastYRef.current = null
-      onResizeEnd?.()
+      onResizeEndEvent()
     }
 
     document.addEventListener('mousemove', handleMouseMove)
@@ -53,7 +56,7 @@ export function HorizontalResizeHandle({ onResize, onResizeEnd, className }: Hor
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [isDragging, onResize, onResizeEnd])
+  }, [isDragging])
 
   // Initialize lastY on mouse down
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -74,6 +77,7 @@ export function HorizontalResizeHandle({ onResize, onResizeEnd, className }: Hor
         ref={ref}
         role="separator"
         aria-orientation="horizontal"
+        aria-label="Resize panel height"
         tabIndex={0}
         onMouseDown={handleMouseDown}
         onMouseMove={handlers.onMouseMove}

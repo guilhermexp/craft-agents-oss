@@ -50,22 +50,22 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
       try {
         const entries = readdirSync(dirPath, { withFileTypes: true })
         return entries
-          .filter(entry => !entry.name.startsWith('.')) // Skip hidden files
-          .map(entry => {
+          .flatMap((entry): SkillFile[] => {
+            if (entry.name.startsWith('.')) return [] // Skip hidden files
             const fullPath = join(dirPath, entry.name)
             if (entry.isDirectory()) {
-              return {
+              return [{
                 name: entry.name,
                 type: 'directory' as const,
                 children: scanDirectory(fullPath),
-              }
+              }]
             } else {
               const stats = statSync(fullPath)
-              return {
+              return [{
                 name: entry.name,
                 type: 'file' as const,
                 size: stats.size,
-              }
+              }]
             }
           })
           .sort((a, b) => {

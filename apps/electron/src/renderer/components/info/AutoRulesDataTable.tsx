@@ -68,7 +68,7 @@ function PatternBadge({ pattern }: { pattern: string }) {
   const badge = (
     <button type="button" onClick={handleClick} className="text-left">
       <Info_Badge color="muted" className="font-mono select-none">
-        <span className="block overflow-hidden whitespace-nowrap text-ellipsis max-w-[200px]">
+        <span className="block truncate max-w-[200px]">
           {pattern}
         </span>
       </Info_Badge>

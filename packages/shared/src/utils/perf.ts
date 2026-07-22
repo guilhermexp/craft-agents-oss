@@ -181,7 +181,7 @@ function updateAggregatedStats(metric: PerfMetric): void {
   }
 
   // Calculate percentiles
-  const sorted = [...stats.durations].sort((a, b) => a - b);
+  const sorted = stats.durations.toSorted((a, b) => a - b);
   stats.p50Ms = sorted[Math.floor(sorted.length * 0.5)] ?? 0;
   stats.p95Ms = sorted[Math.floor(sorted.length * 0.95)] ?? 0;
 }

@@ -95,10 +95,11 @@ export function AddWorkspaceStep_OpenFolder({
         {/* Workspace name input - shown after folder is selected */}
         {selectedPath && (
           <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">
+            <label htmlFor="open-folder-workspace-name" className="text-sm font-medium text-foreground">
               {t("workspace.nameLabel")}
             </label>
             <Input
+              id="open-folder-workspace-name"
               value={workspaceName}
               onChange={(e) => setWorkspaceName(e.target.value)}
               placeholder={t("workspace.myWorkspace")}

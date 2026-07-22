@@ -84,16 +84,17 @@ export function createClaudeConfigManager(
     try {
       const files = await readdir(configDir);
       await Promise.all(
-        files
-          .filter((file) => file.startsWith(`${configBase}.corrupted.`))
-          .map(async (file) => {
+        files.flatMap((file) => {
+          if (!file.startsWith(`${configBase}.corrupted.`)) return [];
+          return [(async () => {
             try {
               await unlink(join(configDir, file));
               debug(`[ClaudeConfigManager] Removed stale ${file}`);
             } catch (cause) {
               debug(`[ClaudeConfigManager] Failed to remove stale ${file}: ${String(cause)}`);
             }
-          }),
+          })()];
+        }),
       );
     } catch (cause) {
       debug(`[ClaudeConfigManager] Failed to scan Claude config directory: ${String(cause)}`);

@@ -366,6 +366,10 @@ export function InlineSlashCommand({
     onOpenChange(false)
   }, [onSelectCommand, onSelectFolder, onOpenChange])
 
+  // Effect Events keep the latest callbacks without re-subscribing the keyboard/click effects.
+  const handleSelectEvent = React.useEffectEvent((item: SlashCommand | SlashFolderItem) => handleSelect(item))
+  const onOpenChangeEvent = React.useEffectEvent((next: boolean) => onOpenChange(next))
+
   // Keyboard navigation
   // Don't attach listener when no items - allows Enter to propagate to input handler
   React.useEffect(() => {
@@ -391,19 +395,19 @@ export function InlineSlashCommand({
         case 'Tab':
           e.preventDefault()
           if (flatItems[selectedIndex]) {
-            handleSelect(flatItems[selectedIndex])
+            handleSelectEvent(flatItems[selectedIndex])
           }
           break
         case 'Escape':
           e.preventDefault()
-          onOpenChange(false)
+          onOpenChangeEvent(false)
           break
       }
     }
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [open, flatItems, selectedIndex, handleSelect, onOpenChange, filter])
+  }, [open, flatItems, selectedIndex, filter])
 
   // Close on click outside
   React.useEffect(() => {
@@ -411,13 +415,13 @@ export function InlineSlashCommand({
 
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onOpenChange(false)
+        onOpenChangeEvent(false)
       }
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [open, onOpenChange])
+  }, [open])
 
   // Hide if no results or not open
   if (!open || flatItems.length === 0) return null

@@ -26,7 +26,7 @@ import {
   sourceUsesCraftBridgeAuth,
   prepareCraftBridgeMcpOAuth,
   createCraftBridgeOAuthClient,
-} from '../../craft-bridge/index.ts';
+} from '../../craft-bridge/auth-adapter.ts';
 
 export class McpOAuthCredentialStrategy implements CredentialStrategy {
   readonly name = 'mcp';

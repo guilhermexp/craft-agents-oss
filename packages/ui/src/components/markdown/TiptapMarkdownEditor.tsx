@@ -220,7 +220,9 @@ export function TiptapMarkdownEditor({
   markdownEngine = 'legacy',
 }: TiptapMarkdownEditorProps) {
   const onUpdateRef = React.useRef(onUpdate)
-  onUpdateRef.current = onUpdate
+  React.useEffect(() => {
+    onUpdateRef.current = onUpdate
+  })
 
   // Ref for the editor instance — used by the Mathematics onClick callback
   // which is created at extension-configure time (before useEditor returns).
@@ -353,7 +355,9 @@ export function TiptapMarkdownEditor({
   }, [useOfficialMarkdown, extensions])
 
   // Keep editorRef in sync for the Mathematics onClick callback
-  editorRef.current = editor
+  React.useEffect(() => {
+    editorRef.current = editor
+  })
 
 
   // Sync editable prop
