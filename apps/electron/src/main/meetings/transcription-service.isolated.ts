@@ -11,7 +11,7 @@ mock.module('../logger', () => {
   return { mainLog: logger }
 })
 
-const { TranscriptionService } = await import('./transcription-service')
+const { TranscriptionService, computeFetchTimeoutMs } = await import('./transcription-service')
 
 const originalFetch = globalThis.fetch
 
@@ -55,5 +55,13 @@ describe('TranscriptionService.transcribe', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('computeFetchTimeoutMs', () => {
+  it('keeps the 10min floor for small files and scales with size up to a 60min cap', () => {
+    expect(computeFetchTimeoutMs(0)).toBe(10 * 60_000)
+    expect(computeFetchTimeoutMs(100 * 1024 * 1024)).toBeGreaterThan(10 * 60_000) // 100MB
+    expect(computeFetchTimeoutMs(4 * 1024 * 1024 * 1024)).toBe(60 * 60_000)       // 4GB → cap
   })
 })

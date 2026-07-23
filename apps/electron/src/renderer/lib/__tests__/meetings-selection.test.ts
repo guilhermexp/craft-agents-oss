@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test'
 
-import { isMissingMeetingError, resolveEffectiveMeetingId, shouldClearSelectedMeeting } from '../meetings-selection'
+import {
+  isMissingMeetingError,
+  normalizeGoogleMeetInput,
+  resolveEffectiveMeetingId,
+  shouldClearSelectedMeeting,
+} from '../meetings-selection'
 
 describe('meetings selection helpers', () => {
   it('clears a selected meeting when the refreshed list no longer contains it', () => {
@@ -26,5 +31,18 @@ describe('meetings selection helpers', () => {
       liveStartedId: 'live',
       missingMeetingId: 'deleted',
     })).toBe('live')
+  })
+})
+
+describe('normalizeGoogleMeetInput', () => {
+  it('accepts meet codes and meet.google.com URLs', () => {
+    expect(normalizeGoogleMeetInput('abc-defg-hij')).toBe('https://meet.google.com/abc-defg-hij')
+    expect(normalizeGoogleMeetInput('abcdefghij')).toBe('https://meet.google.com/abc-defg-hij')
+    expect(normalizeGoogleMeetInput('https://meet.google.com/abc-defg-hij?authuser=1')).toBe('https://meet.google.com/abc-defg-hij')
+  })
+  it('rejects non-Meet URLs and junk', () => {
+    expect(normalizeGoogleMeetInput('https://zoom.us/j/123')).toBeNull()
+    expect(normalizeGoogleMeetInput('foo')).toBeNull()
+    expect(normalizeGoogleMeetInput('https://evil.com/abc-defg-hij')).toBeNull()
   })
 })

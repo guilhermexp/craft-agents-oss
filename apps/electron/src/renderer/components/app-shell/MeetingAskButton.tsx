@@ -58,13 +58,8 @@ export function MeetingAskButton({ workspaceId, record }: MeetingAskButtonProps)
   }, [open, transcriptText, workspaceId, record.id])
 
   const title = record.title || record.code || 'Google Meet'
-  const displayLabel = t('meetings.askAbout', {
-    title,
-    defaultValue: 'Perguntar sobre {{title}}',
-  })
-  const placeholder = t('meetings.askPlaceholder', {
-    defaultValue: 'Pergunte sobre decisões, tarefas ou pontos da reunião',
-  })
+  const displayLabel = t('meetings.askAbout', { title })
+  const placeholder = t('meetings.askPlaceholder')
 
   const context: EditContext = React.useMemo(() => {
     const transcriptBlock =
@@ -121,7 +116,7 @@ export function MeetingAskButton({ workspaceId, record }: MeetingAskButtonProps)
             className="h-7 gap-1.5 px-2 text-xs opacity-90"
           >
             <MessageCircle className="size-3" />
-            {t('meetings.ask', 'Perguntar')}
+            {t('meetings.ask')}
           </Button>
         }
         context={context}

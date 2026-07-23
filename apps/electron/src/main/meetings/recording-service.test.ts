@@ -1,8 +1,9 @@
-import { describe, expect, it, mock } from 'bun:test'
+import { afterEach, describe, expect, it, mock } from 'bun:test'
 import { createWriteStream, existsSync, mkdtempSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { BrowserPaneManager } from '../browser-pane-manager'
+import { getWorkspaceMeetingsPath } from '@craft-agent/shared/workspaces'
 
 mock.module('../logger', () => {
   const logger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
@@ -10,6 +11,15 @@ mock.module('../logger', () => {
 })
 
 const { RecordingService } = await import('./recording-service')
+
+// getWorkspaceMeetingsPath resolves under ~/.craft-agent/workspaces/<slug>/meetings;
+// track those dirs so prepare-created recordings are cleaned up after each test.
+const metadataDirs: string[] = []
+afterEach(() => {
+  while (metadataDirs.length > 0) {
+    rmSync(metadataDirs.pop()!, { recursive: true, force: true })
+  }
+})
 
 type RecordingsMap = Map<string, {
   id: string
@@ -60,5 +70,46 @@ describe('RecordingService.abort', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('RecordingService.prepare', () => {
+  it('resolves the recordings dir from the provided workspaceRoot', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-recording-prepare-'))
+    const recordingsDir = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings')
+    metadataDirs.push(dirname(dirname(recordingsDir)), workspaceRoot)
+
+    const service = new RecordingService({ getInstance: () => ({}) } as unknown as BrowserPaneManager)
+    const result = service.prepare({
+      workspaceId: 'ws-test',
+      workspaceRoot,
+      browserInstanceId: 'browser-1',
+      meetingId: 'meeting-1',
+    })
+    expect(result.meetingId).toBe('meeting-1')
+    expect(result.outputPath.startsWith(recordingsDir)).toBe(true)
+    expect(existsSync(recordingsDir)).toBe(true)
+
+    service.abort(result.recordingId)
+  })
+})
+
+describe('RecordingService.append', () => {
+  it('writes chunks and awaits drain under backpressure', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-recording-append-'))
+    const recordingsDir = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings')
+    metadataDirs.push(dirname(dirname(recordingsDir)), workspaceRoot)
+
+    const service = new RecordingService({ getInstance: () => ({}) } as unknown as BrowserPaneManager)
+    const { recordingId } = service.prepare({
+      workspaceId: 'ws-test',
+      workspaceRoot,
+      browserInstanceId: 'browser-1',
+    })
+    await service.append(recordingId, new Uint8Array([1, 2, 3, 4]))
+    const recordings = (service as unknown as { recordings: RecordingsMap }).recordings
+    expect(recordings.get(recordingId)?.bytesWritten).toBe(4)
+
+    service.abort(recordingId)
   })
 })

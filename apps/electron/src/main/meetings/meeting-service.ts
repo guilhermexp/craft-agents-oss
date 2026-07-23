@@ -28,6 +28,12 @@ const execFileAsync = promisify(execFile)
 const GOOGLE_MEET_HOSTS = new Set(['meet.google.com', 'www.meet.google.com'])
 const MEET_CODE_RE = /^[a-z]{3}-[a-z]{4}-[a-z]{3}$/i
 const COMPACT_MEET_CODE_RE = /^[a-z]{10}$/i
+export const HERMES_PLUGIN_TIMEOUT_MS: Record<'start' | 'status' | 'transcript' | 'stop', number> = {
+  start: 60_000, // pm.start faz spawn+handshake do bot Playwright
+  status: 10_000,
+  transcript: 15_000,
+  stop: 15_000,
+}
 const DEFAULT_TRANSCRIPTION_PROVIDER: MeetingTranscriptionProvider = 'deepgram'
 const DEFAULT_TRANSCRIPTION_MODEL_BY_PROVIDER: Record<MeetingTranscriptionProvider, string> = {
   deepgram: 'nova-3',
@@ -81,6 +87,11 @@ interface HermesMeetPluginResult {
 export class MeetingService {
   private readonly workspaceStates = new Map<string, WorkspaceMeetingState>()
   private readonly healthCheckTimers = new Map<string, ReturnType<typeof setInterval>>()
+  /**
+   * Deadline for the Hermes bot to reach the lobby/call before start() fails.
+   * Mutable so tests can shrink the real-time wait in `waitForHermesMeetBotReady`.
+   */
+  private botReadyTimeoutMs = 20_000
 
   constructor(
     private readonly browserPaneManager: BrowserPaneManager,
@@ -135,6 +146,15 @@ export class MeetingService {
     const savedTranscriptionConfig = this.loadTranscriptionConfig(state)
     const normalized = normalizeGoogleMeetUrl(payload?.urlOrCode)
     const captureMode: 'hermes' | 'craft' = payload.captureMode ?? (payload.transcribe === false ? 'craft' : 'hermes')
+    // The google_meet plugin bot is a per-HERMES_HOME singleton; only craft-mode
+    // meetings (or hermes meetings with transcription off) skip it.
+    const usesHermesBot = captureMode === 'hermes' && payload.transcribe !== false
+    if (usesHermesBot) {
+      const active = this.findActiveHermesMeeting()
+      if (active) {
+        throw new Error(t('meetings.hermesBotBusy', { url: active.url }))
+      }
+    }
     const transcriptionProvider = payload.transcribe === false
       ? undefined
       : normalizeTranscriptionProvider(
@@ -192,6 +212,7 @@ export class MeetingService {
     state.transcripts.set(id, placeholder)
     this.persist(state)
     this.persistTranscript(state, placeholder)
+    let botStarted = false
 
     try {
       // If the meeting was detected from an already-open Browser Pane, reuse it
@@ -202,13 +223,14 @@ export class MeetingService {
         this.browserPaneManager.focus(browserInstanceId)
       }
 
-      if (captureMode === 'hermes' && payload.transcribe !== false) {
+      if (usesHermesBot) {
         mainLog.info(`[meetings] starting Hermes Meet bot url=${normalized.url} profileId=${payload.profileId ?? 'default'} browserInstanceId=${browserInstanceId}`)
         const botStart = await this.runHermesMeetPlugin('start', { url: normalized.url, headed: true })
         if (!botStart.ok) {
           throw new Error(botStart.error || botStart.reason || 'Hermes Google Meet bot did not start')
         }
-        const botStatus = await this.waitForHermesMeetBotReady(botStart, 20_000)
+        botStarted = true
+        const botStatus = await this.waitForHermesMeetBotReady(botStart, this.botReadyTimeoutMs)
         mainLog.info(`[meetings] Hermes Meet bot start result pid=${botStart.pid ?? 'unknown'} alive=${String(botStatus.alive ?? 'unknown')} meetingId=${botStatus.meetingId ?? botStart.meeting_id ?? 'unknown'} inCall=${String(botStatus.inCall ?? false)} lobbyWaiting=${String(botStatus.lobbyWaiting ?? false)} error=${botStatus.error ?? 'none'} leaveReason=${botStatus.leaveReason ?? 'none'}`)
         if (botStatus.ok && (botStatus.inCall || botStatus.lobbyWaiting)) {
           // Good: the bot either joined directly or is waiting for host approval.
@@ -234,12 +256,15 @@ export class MeetingService {
           startedAt: now,
         }),
       })
-      if (captureMode === 'hermes') {
+      if (usesHermesBot) {
         this.startHealthCheck(state, id)
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       mainLog.error(`[meetings] start failed id=${id} url=${normalized.url}: ${message}`)
+      if (usesHermesBot && botStarted) {
+        void this.runHermesMeetPlugin('stop').catch(() => undefined)
+      }
       this.updateRecord(state, id, {
         status: 'error',
         error: message,
@@ -247,6 +272,18 @@ export class MeetingService {
     }
 
     return this.getRequired(state, id)
+  }
+
+  /** The google_meet plugin bot is a singleton per HERMES_HOME. */
+  private findActiveHermesMeeting(): MeetingRecord | null {
+    for (const state of this.workspaceStates.values()) {
+      for (const record of state.records.values()) {
+        if (record.captureMode !== 'craft' && ['starting', 'running'].includes(record.status)) {
+          return record
+        }
+      }
+    }
+    return null
   }
 
   list(workspaceRootPath: string, options?: { includeArchived?: boolean }): MeetingRecord[] {
@@ -265,7 +302,7 @@ export class MeetingService {
     return state.records.get(id) ?? null
   }
 
-  stop(workspaceRootPath: string, id: string): MeetingRecord {
+  stop(workspaceId: string, workspaceRootPath: string, id: string): MeetingRecord {
     const state = this.getWorkspaceState(workspaceRootPath)
     this.ensureLoaded(state)
     const record = this.getRequired(state, id)
@@ -276,7 +313,9 @@ export class MeetingService {
 
     try {
       if (record.captureMode !== 'craft') {
-        void this.runHermesMeetPlugin('stop').catch(() => undefined)
+        void this.finalizeHermesCapture(workspaceId, workspaceRootPath, id).catch((err) => {
+          mainLog.error(`[meetings] finalizeHermesCapture failed for ${id}: ${err instanceof Error ? err.message : String(err)}`)
+        })
       }
       if (record.ownsBrowserInstance) {
         this.browserPaneManager.destroyInstance(record.browserInstanceId)
@@ -303,13 +342,7 @@ export class MeetingService {
         error: error instanceof Error ? error.message : String(error),
       })
     }
-
-    const finalRecord = this.getRequired(state, id)
-    if (finalRecord.status === 'stopped' && (finalRecord.summarizeOnEnd || finalRecord.followUpOnEnd)) {
-      mainLog.info(`[meetings] post-meeting processing deferred for ${id}: summarize=${finalRecord.summarizeOnEnd ?? false} followUp=${finalRecord.followUpOnEnd ?? false}. Awaiting transcript ready + LLM backend.`)
-    }
-
-    return finalRecord
+    return this.getRequired(state, id)
   }
 
   archive(workspaceRootPath: string, id: string): MeetingRecord {
@@ -333,6 +366,15 @@ export class MeetingService {
     this.ensureLoaded(state)
     const record = state.records.get(id)
     if (!record) return
+    if (['starting', 'running'].includes(record.status)) {
+      this.stopHealthCheck(id)
+      if (record.captureMode !== 'craft') {
+        void this.runHermesMeetPlugin('stop').catch(() => undefined)
+      }
+      if (record.ownsBrowserInstance) {
+        try { this.browserPaneManager.destroyInstance(record.browserInstanceId) } catch { /* pane já fechado */ }
+      }
+    }
     state.records.delete(id)
     state.transcripts.delete(id)
     this.persist(state)
@@ -577,6 +619,72 @@ export class MeetingService {
   }
 
   /**
+   * Pós-processamento de reuniões capturadas pelo bot Hermes: busca o transcript
+   * do plugin ANTES de encerrar o bot (stop limpa o ponteiro ativo), persiste o
+   * resultado e dispara o summary quando summarizeOnEnd/followUpOnEnd estão setados.
+   * Fire-and-forget a partir de stop(), espelhando completeRecording (craft mode).
+   */
+  private async finalizeHermesCapture(workspaceId: string, workspaceRootPath: string, meetingId: string): Promise<void> {
+    const state = this.getWorkspaceState(workspaceRootPath)
+    const record = state.records.get(meetingId)
+    if (!record || record.captureMode === 'craft') return
+
+    let lines: string[] = []
+    try {
+      const res = await this.runHermesMeetPlugin('transcript')
+      const rawLines = res.lines
+      if (res.ok && Array.isArray(rawLines)) {
+        lines = rawLines.filter((line): line is string => typeof line === 'string' && line.trim().length > 0)
+      }
+    } catch { /* best-effort: segue para o stop mesmo sem transcript */ }
+
+    void this.runHermesMeetPlugin('stop').catch(() => undefined)
+
+    const now = Date.now()
+    const segments: MeetingTranscriptSegment[] = lines.map((line, index) => {
+      const match = /^([^:]{1,60}):\s+(.*)$/.exec(line)
+      return {
+        id: `${meetingId}-${index}`,
+        speaker: match?.[1],
+        text: line,
+        timestamp: now,
+      }
+    })
+
+    const current = state.records.get(meetingId)
+    if (!current) return
+    const message = segments.length > 0
+      ? t('meetings.transcriptCompletedMessage', { count: segments.length })
+      : t('meetings.hermesTranscriptEmptyMessage')
+    const summaryMarkdown = createMeetingSummaryMarkdown({
+      title: current.title,
+      url: current.url,
+      captureMode: 'hermes',
+      transcriptionProvider: current.transcriptionProvider,
+      transcriptionModel: current.transcriptionModel,
+      status: 'stopped',
+      startedAt: current.startedAt,
+      endedAt: current.endedAt,
+      summaryBody: message,
+    })
+    const transcript: MeetingTranscriptResult = {
+      meetingId,
+      status: segments.length > 0 ? 'ready' : 'unavailable',
+      transcript: segments,
+      summaryMarkdown,
+      message,
+      updatedAt: Date.now(),
+    }
+    state.transcripts.set(meetingId, transcript)
+    this.persistTranscript(state, transcript)
+    this.updateRecord(state, meetingId, { summaryMarkdown })
+
+    if ((current.summarizeOnEnd || current.followUpOnEnd) && segments.length > 0) {
+      await this.generateAgentSummary(workspaceId, workspaceRootPath, meetingId, segments)
+    }
+  }
+
+  /**
    * Run the configured Craft agent (Claude/Pi, never Hermes) on the recorded
    * meeting video plus Deepgram transcript segments to produce visual notes.
    * Best-effort: failures keep the existing summary and are logged.
@@ -789,17 +897,23 @@ except Exception as exc:
     print(json.dumps({'ok': False, 'error': str(exc)}))
 `
 
-    const { stdout } = await execFileAsync(runtime.python, ['-c', script, command, JSON.stringify(payload)], {
-      cwd: runtime.hermesAgentRoot,
-      env: {
-        ...process.env,
-        HERMES_HOME: runtime.hermesHome,
-        VIRTUAL_ENV: runtime.virtualEnv,
-        PATH: `${runtime.vendorBinDir}:${process.env.PATH ?? ''}`,
-      },
-      maxBuffer: 1024 * 1024,
-      timeout: options.timeoutMs,
-    })
+    let stdout: string
+    try {
+      ;({ stdout } = await execFileAsync(runtime.python, ['-c', script, command, JSON.stringify(payload)], {
+        cwd: runtime.hermesAgentRoot,
+        env: {
+          ...process.env,
+          HERMES_HOME: runtime.hermesHome,
+          VIRTUAL_ENV: runtime.virtualEnv,
+          PATH: `${runtime.vendorBinDir}:${process.env.PATH ?? ''}`,
+        },
+        maxBuffer: 1024 * 1024,
+        timeout: options.timeoutMs ?? HERMES_PLUGIN_TIMEOUT_MS[command],
+      }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return { ok: false, error: `Hermes Meet plugin '${command}' failed or timed out: ${message}` }
+    }
 
     try {
       const lines = stdout.trim().split(/\r?\n/).filter(Boolean)
@@ -869,6 +983,10 @@ except Exception as exc:
         endedAt: record.endedAt ?? Date.now(),
         updatedAt: Date.now(),
       })
+      if (record.captureMode !== 'craft') {
+        this.stopHealthCheck(record.id)
+        void this.runHermesMeetPlugin('stop').catch(() => undefined)
+      }
       changed = true
     }
     if (changed) this.persist(state)
@@ -896,10 +1014,19 @@ except Exception as exc:
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       mainLog.error(`[meetings] failed to load persisted meetings from ${state.storePath}: ${message}`)
-      if (state.corruptDetected) {
+      state.corruptDetected = true
+      const backupPath = `${state.storePath}.corrupt-${Date.now()}`
+      try {
+        renameSync(state.storePath, backupPath)
+        mainLog.warn(`[meetings] unreadable meetings store moved to ${backupPath}; continuing with an empty store`)
         state.loaded = true
-      } else {
-        state.corruptDetected = true
+      } catch (renameError) {
+        // Sem backup garantido, escrever destruiria a única cópia dos dados —
+        // falhe alto em vez de deixar o próximo persist() sobrescrever.
+        throw new Error(
+          `Meetings store at ${state.storePath} is unreadable and could not be backed up: ${message} ` +
+          `(backup failed: ${renameError instanceof Error ? renameError.message : String(renameError)})`,
+        )
       }
     }
   }
@@ -917,6 +1044,15 @@ except Exception as exc:
    */
   private reconcileOrphanRecordings(state: WorkspaceMeetingState): void {
     const meetingsDir = dirname(state.storePath)
+    let corruptBackupPresent = false
+    try {
+      corruptBackupPresent = existsSync(meetingsDir)
+        && readdirSync(meetingsDir).some((entry) => entry.startsWith('meetings.json.corrupt-'))
+    } catch { /* dir ilegível: trate como presente para não varrer */ corruptBackupPresent = true }
+    if (corruptBackupPresent) {
+      mainLog.warn(`[meetings] corrupt store backup present in ${meetingsDir}; skipping orphan sweep until it is resolved`)
+      return
+    }
     const knownPaths = new Set<string>()
     const knownIds = new Set<string>()
     for (const record of state.records.values()) {
@@ -1302,7 +1438,7 @@ function sanitizeRecord(record: MeetingRecord): MeetingRecord | null {
     try {
       transcriptionProvider = normalizeTranscriptionProvider(record.transcriptionProvider, { strict: true })
     } catch {
-      transcriptionProvider = DEFAULT_TRANSCRIPTION_PROVIDER
+      transcriptionProvider = undefined
     }
   }
   return {

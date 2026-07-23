@@ -129,6 +129,7 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
         }
         return recordingService!.prepare({
           workspaceId,
+          workspaceRoot,
           browserInstanceId: payload.browserInstanceId,
           meetingId: meeting?.id,
           urlOrCode: payload.urlOrCode,
@@ -140,7 +141,7 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
     })
 
     ipcMain.handle(RECORDING_APPEND, (_event, recordingId: string, chunk: ArrayBuffer | Uint8Array) => {
-      recordingService!.append(recordingId, chunk)
+      return recordingService!.append(recordingId, chunk)
     })
 
     ipcMain.handle(RECORDING_FINALIZE, async (_event, recordingId: string, mimeType: string) => {
@@ -162,35 +163,11 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
       const aborted = recordingService!.abort(recordingId)
       if (aborted?.meetingId) {
         try {
-          meetingService!.stop(resolveWorkspaceRoot(aborted.workspaceId), aborted.meetingId)
+          meetingService!.stop(aborted.workspaceId, resolveWorkspaceRoot(aborted.workspaceId), aborted.meetingId)
         } catch (err) {
           platform.logger.error('[meetings] closing meeting record after abort failed:', err)
         }
       }
-    })
-
-    ipcMain.handle(RPC_NAMESPACES.meetings.ARCHIVE, (_event, workspaceIdOrId: string, maybeId?: string) => {
-      const workspaceId = maybeId === undefined
-        ? windowManager?.getWorkspaceForWindow(_event.sender.id)
-        : workspaceIdOrId
-      const id = maybeId ?? workspaceIdOrId
-      return meetingService!.archive(resolveWorkspaceRoot(workspaceId), id)
-    })
-
-    ipcMain.handle(RPC_NAMESPACES.meetings.UNARCHIVE, (_event, workspaceIdOrId: string, maybeId?: string) => {
-      const workspaceId = maybeId === undefined
-        ? windowManager?.getWorkspaceForWindow(_event.sender.id)
-        : workspaceIdOrId
-      const id = maybeId ?? workspaceIdOrId
-      return meetingService!.unarchive(resolveWorkspaceRoot(workspaceId), id)
-    })
-
-    ipcMain.handle(RPC_NAMESPACES.meetings.DELETE, (_event, workspaceIdOrId: string, maybeId?: string) => {
-      const workspaceId = maybeId === undefined
-        ? windowManager?.getWorkspaceForWindow(_event.sender.id)
-        : workspaceIdOrId
-      const id = maybeId ?? workspaceIdOrId
-      meetingService!.deleteMeeting(resolveWorkspaceRoot(workspaceId), id)
     })
   }
 
@@ -226,7 +203,7 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
       : workspaceIdOrId
     const id = maybeId ?? workspaceIdOrId
     try {
-      return meetingService!.stop(resolveWorkspaceRoot(workspaceId), id)
+      return meetingService!.stop(workspaceId!, resolveWorkspaceRoot(workspaceId), id)
     } catch (err) {
       platform.logger.error(`[meetings] stop failed for ${id}:`, err)
       throw err

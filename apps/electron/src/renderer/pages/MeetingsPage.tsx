@@ -25,8 +25,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Markdown } from '@/components/markdown'
 import { MEETINGS_CHANGED_EVENT } from '@/components/app-shell/MeetingsListPanel'
-import { isMissingMeetingError, resolveEffectiveMeetingId } from '@/lib/meetings-selection'
+import { isMissingMeetingError, normalizeGoogleMeetInput, resolveEffectiveMeetingId } from '@/lib/meetings-selection'
 import { cn } from '@/lib/utils'
+import { getFileManagerName } from '@/lib/platform'
 import type { BrowserInstanceInfo, MeetingRecord, MeetingStartInput, MeetingTranscriptResult } from '../../shared/types'
 
 const GOOGLE_MEET_PREFIX = 'https://meet.google.com/'
@@ -49,33 +50,6 @@ const TRANSCRIPTION_MODELS: Record<MeetingTranscriptionProvider, TranscriptionMo
 
 function getTranscriptionProviderLabel(provider: MeetingTranscriptionProvider): string {
   return 'Deepgram'
-}
-
-function normalizeGoogleMeetInput(value: string): string | null {
-  const raw = value.trim()
-  if (!raw) return null
-
-  if (/^https?:\/\//i.test(raw)) {
-    try {
-      const url = new URL(raw)
-      if (url.hostname === 'meet.google.com') {
-        const detected = extractGoogleMeetMeetingUrl(url.toString())
-        return detected ?? url.toString()
-      }
-      if (url.hostname.endsWith('.google.com') && url.pathname.includes('/meet/')) return url.toString()
-      return raw
-    } catch {
-      return raw
-    }
-  }
-
-  const code = raw
-    .replace(/^meet\.google\.com\//i, '')
-    .replace(/[^a-zA-Z0-9-]/g, '')
-    .toLowerCase()
-
-  if (!code) return null
-  return `${GOOGLE_MEET_PREFIX}${code}`
 }
 
 function extractGoogleMeetMeetingUrl(value: string | undefined | null): string | null {
@@ -239,6 +213,7 @@ function getRecordingMediaUrl(record: MeetingRecord | null): string | null {
 
 export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPageProps) {
   const { t } = useTranslation()
+  const fileManagerName = getFileManagerName()
   const [meetingInput, setMeetingInput] = useState('')
   const [transcriptionEnabled, setTranscriptionEnabled] = useState(true)
   const [transcriptionProvider, setTranscriptionProvider] = useState<MeetingTranscriptionProvider>('deepgram')
@@ -382,6 +357,9 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
     }
 
     let cancelled = false
+    let timer: number | undefined
+    let latestRecord: MeetingRecord | null = null
+    let latestTranscript: MeetingTranscriptResult | null = null
     const loadSelectedMeeting = async () => {
       try {
         const [record, transcript] = await Promise.all([
@@ -389,6 +367,8 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
           window.electronAPI.meetings.transcript(workspaceId, effectiveMeetingId),
         ])
         if (cancelled) return
+        latestRecord = record
+        latestTranscript = transcript
         setSelectedRecord(record)
         setSelectedTranscript(transcript)
       } catch (error) {
@@ -405,14 +385,28 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
       }
     }
 
+    // Poll fast (1.5s) while live; back off to 15s once the record is settled and
+    // the transcript is resolved — the only late arrival then is the video-analysis
+    // summary, which does not need sub-second polling.
+    const schedule = () => {
+      if (cancelled) return
+      const settled =
+        (latestRecord?.status === 'stopped' || latestRecord?.status === 'error')
+        && (latestTranscript?.status === 'ready' || latestTranscript?.status === 'unavailable')
+      timer = window.setTimeout(async () => {
+        await loadSelectedMeeting()
+        schedule()
+      }, settled ? 15_000 : 1_500)
+    }
+
     void loadSelectedMeeting()
     const handleChanged = () => { void loadSelectedMeeting() }
     window.addEventListener(MEETINGS_CHANGED_EVENT, handleChanged)
-    const fallback = window.setInterval(() => { void loadSelectedMeeting() }, 1_500)
+    schedule()
     return () => {
       cancelled = true
       window.removeEventListener(MEETINGS_CHANGED_EVENT, handleChanged)
-      window.clearInterval(fallback)
+      if (timer !== undefined) window.clearTimeout(timer)
     }
   }, [effectiveMeetingId, t, workspaceId])
 
@@ -875,7 +869,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium text-foreground">
-                    {t('meetings.recordingPreview', { defaultValue: 'Gravação' })}
+                    {t('meetings.recordingPreview')}
                   </div>
                   <div className="mt-0.5 truncate text-xs text-muted-foreground">
                     {selectedRecord?.recording?.durationMs
@@ -892,7 +886,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
                     onClick={() => window.electronAPI.showInFolder(selectedRecord.recording!.path)}
                   >
                     <ExternalLink className="size-3.5" />
-                    {t('chat.viewInFileManager', { fileManager: 'Finder' })}
+                    {t('chat.viewInFileManager', { fileManager: fileManagerName })}
                   </Button>
                 )}
               </div>
@@ -903,12 +897,12 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
                     src={recordingMediaUrl}
                     controls
                     preload="metadata"
-                    aria-label={t('meetings.recordingPreview', { defaultValue: 'Meeting recording' })}
+                    aria-label={t('meetings.recordingPreview')}
                     className="size-full bg-black object-contain"
                   />
                 ) : (
                   <div className="flex size-full items-center justify-center p-4 text-center text-xs leading-5 text-muted-foreground">
-                    {t('meetings.recordingPreviewUnavailable', { defaultValue: 'A gravação em vídeo aparecerá aqui quando o arquivo WebM estiver salvo.' })}
+                    {t('meetings.recordingPreviewUnavailable')}
                   </div>
                 )}
               </div>

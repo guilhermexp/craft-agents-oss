@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { BrowserPaneManager } from '../browser-pane-manager'
@@ -105,7 +105,7 @@ mock.module('./meeting-video-analysis-service.ts', () => ({
   },
 }))
 
-const { MeetingService } = await import('./meeting-service')
+const { MeetingService, HERMES_PLUGIN_TIMEOUT_MS } = await import('./meeting-service')
 
 function createBrowserPaneManager(): BrowserPaneManager {
   const instances = new Map<string, { id: string }>()
@@ -160,6 +160,44 @@ describe('MeetingService storage', () => {
 
     const reloaded = new MeetingService(createBrowserPaneManager())
     expect(reloaded.list(workspaceRoot).map(item => item.id)).toEqual([record.id])
+  })
+
+  it('backs up a corrupt meetings.json instead of clobbering it', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
+    metadataDirs.push(dirname(meetingsDir))
+    mkdirSync(meetingsDir, { recursive: true })
+    writeFileSync(join(meetingsDir, 'meetings.json'), '{ this is not json', 'utf8')
+
+    const service = new MeetingService(createBrowserPaneManager())
+    expect(service.list(workspaceRoot)).toEqual([])
+
+    const backups = readdirSync(meetingsDir).filter((f) => f.startsWith('meetings.json.corrupt-'))
+    expect(backups).toHaveLength(1)
+    expect(readFileSync(join(meetingsDir, backups[0]!), 'utf8')).toBe('{ this is not json')
+
+    // Próximo write cria um store novo e válido sem tocar no backup.
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'craft', transcribe: false })
+    const store = JSON.parse(readFileSync(join(meetingsDir, 'meetings.json'), 'utf8')) as { meetings: Array<{ id: string }> }
+    expect(store.meetings.map((m) => m.id)).toEqual([record.id])
+  })
+
+  it('skips orphan recording sweep while a corrupt backup exists', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
+    metadataDirs.push(dirname(meetingsDir))
+    const recordingsDir = join(meetingsDir, 'recordings')
+    mkdirSync(recordingsDir, { recursive: true })
+    writeFileSync(join(meetingsDir, 'meetings.json'), 'garbage', 'utf8')
+    writeFileSync(join(recordingsDir, 'orphan.webm'), 'webm-bytes', 'utf8')
+
+    const service = new MeetingService(createBrowserPaneManager())
+    service.list(workspaceRoot)
+
+    // O .webm sobrevive: os registros que o referenciam podem estar no backup.
+    expect(existsSync(join(recordingsDir, 'orphan.webm'))).toBe(true)
   })
 
   it('clears stale summary markdown from storage and transcript when summaryMarkdown is cleared', async () => {
@@ -659,5 +697,131 @@ describe('MeetingService storage', () => {
 
     expect(existsSync(orphanDir)).toBe(false)
     expect(existsSync(ownedDir)).toBe(true)
+  })
+})
+
+describe('Hermes plugin timeouts', () => {
+  it('bounds every plugin command with a positive default timeout', () => {
+    for (const command of ['start', 'status', 'transcript', 'stop'] as const) {
+      expect(HERMES_PLUGIN_TIMEOUT_MS[command]).toBeGreaterThan(0)
+      expect(HERMES_PLUGIN_TIMEOUT_MS[command]).toBeLessThanOrEqual(60_000)
+    }
+  })
+})
+
+type PluginCommand = 'start' | 'status' | 'transcript' | 'stop'
+function installHermesPluginMock(service: InstanceType<typeof MeetingService>, calls: PluginCommand[]): void {
+  ;(service as unknown as { runHermesMeetPlugin: (command: PluginCommand) => Promise<Record<string, unknown>> }).runHermesMeetPlugin =
+    async (command: PluginCommand) => {
+      calls.push(command)
+      if (command === 'status') return { ok: true, alive: true, inCall: true }
+      if (command === 'transcript') return { ok: true, lines: ['Alice: hello world', 'Bob: hi'], total: 2 }
+      return { ok: true, pid: 123 }
+    }
+}
+
+describe('Hermes capture transcript delivery', () => {
+  it('fetches the bot transcript before stopping and persists it as ready', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    installHermesPluginMock(service, calls)
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    expect(record.status).toBe('running')
+
+    service.stop('ws-1', workspaceRoot, record.id)
+
+    // finalizeHermesCapture é fire-and-forget: aguardar o transcript assentar.
+    const deadline = Date.now() + 2_000
+    let transcript = service.transcript(workspaceRoot, record.id)
+    while (transcript.status !== 'ready' && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25))
+      transcript = service.transcript(workspaceRoot, record.id)
+    }
+    expect(transcript.status).toBe('ready')
+    expect(transcript.transcript.map((s) => s.text)).toEqual(['Alice: hello world', 'Bob: hi'])
+    expect(transcript.transcript[0]!.speaker).toBe('Alice')
+    // transcript buscado ANTES do stop (stop limpa o ponteiro ativo do plugin).
+    expect(calls.indexOf('transcript')).toBeLessThan(calls.lastIndexOf('stop'))
+  })
+
+  it('demotes to unavailable when the bot has no transcript lines', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    ;(service as unknown as { runHermesMeetPlugin: (c: PluginCommand) => Promise<Record<string, unknown>> }).runHermesMeetPlugin =
+      async (c: PluginCommand) => (c === 'status' ? { ok: true, inCall: true } : c === 'transcript' ? { ok: true, lines: [], total: 0 } : { ok: true })
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    service.stop('ws-1', workspaceRoot, record.id)
+    const deadline = Date.now() + 2_000
+    let transcript = service.transcript(workspaceRoot, record.id)
+    while (transcript.status === 'placeholder' && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25))
+      transcript = service.transcript(workspaceRoot, record.id)
+    }
+    expect(transcript.status).toBe('unavailable')
+  })
+})
+
+describe('Hermes bot lifecycle', () => {
+  it('rejects a second concurrent hermes meeting', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    installHermesPluginMock(service, calls)
+
+    await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    await expect(service.start(workspaceRoot, { urlOrCode: 'zzz-zzzz-zzz', captureMode: 'hermes' })).rejects.toThrow()
+    // Nenhum segundo pm.start disparado.
+    expect(calls.filter((c) => c === 'start')).toHaveLength(1)
+  })
+
+  it('stops the bot when start fails after pm.start succeeded', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    ;(service as unknown as { botReadyTimeoutMs: number }).botReadyTimeoutMs = 100
+    const calls: PluginCommand[] = []
+    ;(service as unknown as { runHermesMeetPlugin: (c: PluginCommand) => Promise<Record<string, unknown>> }).runHermesMeetPlugin =
+      async (c: PluginCommand) => {
+        calls.push(c)
+        // status nunca chega em inCall/lobby → start() lança "did not reach the lobby"
+        if (c === 'status') return { ok: true, alive: true }
+        return { ok: true, pid: 1 }
+      }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    expect(record.status).toBe('error')
+    await new Promise((r) => setTimeout(r, 50))
+    expect(calls).toContain('stop')
+  }, 30_000)
+
+  it('stops the bot and cleans up when a live hermes meeting is deleted', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    installHermesPluginMock(service, calls)
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    service.deleteMeeting(workspaceRoot, record.id)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(calls).toContain('stop')
+  })
+
+  it('does not start a health check for hermes meetings with transcribe:false', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    installHermesPluginMock(service, calls)
+
+    await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes', transcribe: false })
+    expect(calls).toHaveLength(0) // nem start de bot, nem status de health check
+    expect((service as unknown as { healthCheckTimers: Map<string, unknown> }).healthCheckTimers.size).toBe(0)
   })
 })

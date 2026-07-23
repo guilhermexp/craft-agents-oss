@@ -1,9 +1,10 @@
 import { createWriteStream, mkdirSync, unlinkSync, type WriteStream } from 'fs'
+import { once } from 'node:events'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import type { BrowserPaneManager } from '../browser-pane-manager'
 import { mainLog } from '../logger'
-import { getWorkspaceMeetingsPath, getWorkspacePath } from '@craft-agent/shared/workspaces'
+import { getWorkspaceMeetingsPath } from '@craft-agent/shared/workspaces'
 
 interface ActiveRecording {
   id: string
@@ -20,6 +21,7 @@ interface ActiveRecording {
 
 export interface PrepareRecordingInput {
   workspaceId: string
+  workspaceRoot: string
   browserInstanceId: string
   meetingId?: string
   urlOrCode?: string
@@ -50,11 +52,7 @@ export class RecordingService {
     if (!instance) {
       throw new Error(`browser instance not found: ${input.browserInstanceId}`)
     }
-    const workspaceRoot = getWorkspacePath(input.workspaceId)
-    if (!workspaceRoot) {
-      throw new Error(`workspace not found: ${input.workspaceId}`)
-    }
-    const recordingsDir = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings')
+    const recordingsDir = join(getWorkspaceMeetingsPath(input.workspaceRoot), 'recordings')
     mkdirSync(recordingsDir, { recursive: true })
 
     const id = randomUUID()
@@ -84,7 +82,7 @@ export class RecordingService {
     return { recordingId: id, meetingId: input.meetingId, outputPath }
   }
 
-  append(recordingId: string, chunk: ArrayBuffer | Uint8Array): void {
+  async append(recordingId: string, chunk: ArrayBuffer | Uint8Array): Promise<void> {
     const recording = this.recordings.get(recordingId)
     if (!recording) {
       throw new Error(`recording not found: ${recordingId}`)
@@ -96,7 +94,9 @@ export class RecordingService {
       throw new Error(`recording stream already closed: ${recordingId}`)
     }
     const buffer = chunk instanceof Uint8Array ? Buffer.from(chunk) : Buffer.from(chunk as ArrayBuffer)
-    recording.stream.write(buffer)
+    if (!recording.stream.write(buffer)) {
+      await once(recording.stream, 'drain')
+    }
     recording.bytesWritten += buffer.byteLength
   }
 

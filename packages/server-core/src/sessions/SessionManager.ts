@@ -4129,7 +4129,7 @@ export class SessionManager implements ISessionManager {
               if (!raw) throw new Error('Google Meet URL or code is required')
               if (/^https?:\/\//i.test(raw)) {
                 const parsed = new URL(raw)
-                if (parsed.hostname !== 'meet.google.com' && parsed.hostname !== 'www.meet.google.com') {
+                if (parsed.hostname !== 'meet.google.com') {
                   throw new Error(`Only Google Meet URLs are supported: ${raw}`)
                 }
                 return parsed.toString()

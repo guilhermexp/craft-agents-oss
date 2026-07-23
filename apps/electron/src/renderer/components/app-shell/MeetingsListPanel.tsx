@@ -58,6 +58,7 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
   const [loading, setLoading] = React.useState(true)
   const [stoppingId, setStoppingId] = React.useState<string | null>(null)
   const [actionId, setActionId] = React.useState<string | null>(null)
+  const [loadFailed, setLoadFailed] = React.useState(false)
 
   // `silent` background refreshes must NOT toggle the global `loading` flag —
   // doing so triggers the `if (loading) return <Carregando/>` early-return, which
@@ -72,9 +73,13 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
     try {
       const next = await window.electronAPI.meetings.list(workspaceId)
       setRecords(next)
+      setLoadFailed(false)
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('meetings.joinError')
-      toast.error(message)
+      setLoadFailed(true)
+      if (!options?.silent) {
+        const message = error instanceof Error ? error.message : t('meetings.listError')
+        toast.error(message)
+      }
     } finally {
       if (!options?.silent) setLoading(false)
     }
@@ -111,7 +116,7 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
       await window.electronAPI.meetings.stop(workspaceId, record.id)
       window.dispatchEvent(new Event(MEETINGS_CHANGED_EVENT))
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('meetings.joinError')
+      const message = error instanceof Error ? error.message : t('meetings.stopError')
       toast.error(message)
     } finally {
       setStoppingId(null)
@@ -128,9 +133,8 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
         onSelectMeeting(null)
       }
       window.dispatchEvent(new Event(MEETINGS_CHANGED_EVENT))
-      await loadMeetings()
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('meetings.joinError')
+      const message = error instanceof Error ? error.message : t('meetings.archiveError')
       toast.error(message)
     } finally {
       setActionId(null)
@@ -147,9 +151,8 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
         onSelectMeeting(null)
       }
       window.dispatchEvent(new Event(MEETINGS_CHANGED_EVENT))
-      await loadMeetings()
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('meetings.joinError')
+      const message = error instanceof Error ? error.message : t('meetings.deleteError')
       toast.error(message)
     } finally {
       setActionId(null)
@@ -160,6 +163,17 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
     return (
       <div className="flex-1 px-4 py-6 text-center text-xs text-muted-foreground">
         {t('common.loading', 'Carregando...')}
+      </div>
+    )
+  }
+
+  if (loadFailed && records.length === 0) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+        <div className="text-sm font-medium text-foreground">{t('meetings.listError')}</div>
+        <Button variant="outline" size="sm" onClick={() => void loadMeetings()}>
+          {t('common.retry')}
+        </Button>
       </div>
     )
   }

@@ -8,7 +8,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import ReactDOM from 'react-dom/client'
-import { initReactI18next } from 'react-i18next'
+import { initReactI18next, useTranslation } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import { EyeOff, Sparkles, Square, Video, X, XCircle } from 'lucide-react'
 import { BrowserControls } from '@craft-agent/ui'
@@ -99,6 +99,7 @@ function extractGoogleMeetMeetingUrl(value: string | undefined | null): string |
 /* ------------------------------------------------------------------ */
 
 function BrowserToolbarApp() {
+  const { t } = useTranslation()
   const [state, setState] = useState<ToolbarState>({
     url: 'about:blank',
     title: 'New Tab',
@@ -294,7 +295,7 @@ function BrowserToolbarApp() {
       })
       const hasVideo = stream.getVideoTracks().length > 0
       if (!hasVideo) {
-        throw new Error('A gravação precisa capturar vídeo da reunião.')
+        throw new Error(t('meetings.recordingNeedsVideo'))
       }
       const mimeTypeCandidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
       const mimeType = mimeTypeCandidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? mimeTypeCandidates[mimeTypeCandidates.length - 1]!
@@ -357,19 +358,28 @@ function BrowserToolbarApp() {
   useEffect(() => {
     return () => {
       const active = recordingRef.current
-      if (active) {
-        recordingRef.current = null
-        active.recorder.state !== 'inactive' && active.recorder.stop()
+      if (!active) return
+      recordingRef.current = null
+      // Finalize on unmount so the partial .webm is persisted (the user may have
+      // closed the pane before clicking Parar). Mirror stopRecording's sequence:
+      // await recorder.onstop + drain pendingChunks before finalizeRecording, so
+      // the last captured chunks are written before the file is closed.
+      const finalize = async () => {
+        if (active.recorder.state !== 'inactive') {
+          await new Promise<void>((resolve) => {
+            active.recorder.onstop = () => resolve()
+            active.recorder.stop()
+          })
+        }
+        while (active.pendingChunks.size > 0) {
+          await Promise.allSettled(Array.from(active.pendingChunks))
+        }
         active.stream.getTracks().forEach((track) => track.stop())
-        // Finalize on unmount so the partial .webm is persisted (the user may
-        // have closed the pane before remembering to click Parar). abortRecording
-        // deletes the partial file and closes the meeting record; finalizeRecording
-        // keeps the partial capture and triggers the usual transcribe +
-        // completeRecording pipeline.
-        void api?.finalizeRecording(active.id, active.mimeType).catch((err) => {
-          console.error('[browser-toolbar] finalize on unmount failed', err)
-        })
+        await api?.finalizeRecording(active.id, active.mimeType)
       }
+      void finalize().catch((err) => {
+        console.error('[browser-toolbar] finalize on unmount failed', err)
+      })
     }
   }, [api])
 
@@ -398,12 +408,12 @@ function BrowserToolbarApp() {
     >
       <Sparkles className="size-3.5" />
       {inviteState === 'starting'
-        ? 'Chamando...'
+        ? t('meetings.inviteHermesCalling')
         : inviteState === 'sent'
-          ? 'Hermes chamado'
+          ? t('meetings.inviteHermesSent')
           : inviteState === 'error'
-            ? 'Hermes falhou'
-            : 'Convidar Hermes'}
+            ? t('meetings.inviteHermesFailed')
+            : t('meetings.inviteHermes')}
     </button>
   ) : null
 
@@ -419,18 +429,18 @@ function BrowserToolbarApp() {
       onClick={handleToggleRecording}
       disabled={recordingState === 'preparing' || recordingState === 'stopping'}
       className={recordingButtonClassName}
-      title={recordingError ?? (recordingState === 'recording' ? 'Parar gravação' : 'Gravar vídeo da reunião')}
+      title={recordingError ?? (recordingState === 'recording' ? t('meetings.recordTooltipStop') : t('meetings.recordTooltipStart'))}
     >
       {recordingState === 'recording' ? <Square className="size-3.5" /> : <Video className="size-3.5" />}
       {recordingState === 'preparing'
-        ? 'Preparando...'
+        ? t('meetings.recordPreparing')
         : recordingState === 'stopping'
-          ? 'Salvando...'
+          ? t('meetings.recordSaving')
           : recordingState === 'recording'
-            ? 'Gravando • Parar'
+            ? t('meetings.recordStop')
             : recordingState === 'error'
-              ? 'Tentar de novo'
-              : 'Gravar'}
+              ? t('meetings.recordRetry')
+              : t('meetings.recordStart')}
     </button>
   ) : null
 
@@ -511,12 +521,12 @@ function BrowserToolbarApp() {
                   <StyledDropdownMenuItem onSelect={handleInviteHermes}>
                     <Sparkles className="size-3.5" />
                     {inviteState === 'starting'
-                      ? 'Chamando Hermes...'
+                      ? t('meetings.inviteHermesCalling')
                       : inviteState === 'sent'
-                        ? 'Hermes chamado'
+                        ? t('meetings.inviteHermesSent')
                         : inviteState === 'error'
-                          ? 'Hermes falhou - tentar de novo'
-                          : 'Convidar Hermes para esta reunião'}
+                          ? t('meetings.inviteHermesFailed')
+                          : t('meetings.inviteHermes')}
                   </StyledDropdownMenuItem>
                 )}
                 <StyledDropdownMenuItem onSelect={handleHideWindow}>

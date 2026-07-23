@@ -19,8 +19,17 @@ export interface TranscribeOutput {
 
 // Upper bound for the whole upload + Deepgram processing round-trip. Without a
 // signal the fetch can hang forever and the transcript never leaves 'capturing'
-// while the app is alive.
-const FETCH_TIMEOUT_MS = 10 * 60_000
+// while the app is alive. Scaled by recording size so 1-2GB uploads are not
+// aborted mid-flight.
+const FETCH_TIMEOUT_BASE_MS = 10 * 60_000
+const FETCH_TIMEOUT_MAX_MS = 60 * 60_000
+/** Uplink conservador para dimensionar o upload de gravações de 1-2GB. */
+const ASSUMED_UPLOAD_BYTES_PER_SEC = 1024 * 1024
+
+export function computeFetchTimeoutMs(sizeBytes: number): number {
+  const uploadMs = Math.ceil(sizeBytes / ASSUMED_UPLOAD_BYTES_PER_SEC) * 1000
+  return Math.min(FETCH_TIMEOUT_BASE_MS + uploadMs, FETCH_TIMEOUT_MAX_MS)
+}
 
 export class TranscriptionService {
   async transcribe(input: TranscribeInput): Promise<TranscribeOutput> {
@@ -51,7 +60,7 @@ export class TranscriptionService {
         'Content-Type': contentType,
       },
       body,
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      signal: AbortSignal.timeout(computeFetchTimeoutMs(audioBytes)),
       // Node's fetch (undici) requires half-duplex for stream bodies; Bun ignores it.
       duplex: 'half',
     } as RequestInit & { duplex: 'half' })

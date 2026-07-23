@@ -13,9 +13,10 @@ import {
   writeFileSync,
   readdirSync,
   rmSync,
+  renameSync,
   statSync,
 } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { randomUUID } from 'crypto';
 import { expandPath, toPortablePath } from '../utils/paths.ts';
@@ -94,8 +95,44 @@ export function getWorkspaceSkillsPath(rootPath: string): string {
  * @param rootPath - Absolute path to the user's workspace root folder
  */
 export function getWorkspaceMeetingsPath(rootPath: string): string {
-  const workspaceSlug = extractWorkspaceSlugFromPath(rootPath, 'workspace');
-  return join(CONFIG_DIR, 'workspaces', workspaceSlug, 'meetings');
+  const fallbackSlug = extractWorkspaceSlugFromPath(rootPath, 'workspace');
+  const config = loadWorkspaceConfig(rootPath);
+  const slug = config?.id || fallbackSlug;
+  const dir = join(CONFIG_DIR, 'workspaces', slug, 'meetings');
+  if (config?.id && config.id !== fallbackSlug) {
+    migrateLegacyMeetingsDir(join(CONFIG_DIR, 'workspaces', fallbackSlug, 'meetings'), dir);
+  }
+  return dir;
+}
+
+/**
+ * Storage de meetings era keyed pelo basename do rootPath, o que colide entre
+ * workspaces com pastas de mesmo nome. Migra o dir legado para o dir keyed por
+ * id e reescreve os `recording.path` absolutos persistidos em meetings.json.
+ * Best-effort e idempotente: só roda quando o destino não existe e o legado
+ * tem um meetings.json.
+ */
+function migrateLegacyMeetingsDir(legacyDir: string, dir: string): void {
+  try {
+    if (existsSync(dir) || !existsSync(join(legacyDir, 'meetings.json'))) return;
+    mkdirSync(dirname(dir), { recursive: true });
+    renameSync(legacyDir, dir);
+    const storePath = join(dir, 'meetings.json');
+    const raw = readFileSync(storePath, 'utf8');
+    const store = JSON.parse(raw) as { meetings?: Array<{ recording?: { path?: string } }> };
+    let changed = false;
+    for (const meeting of store.meetings ?? []) {
+      const p = meeting.recording?.path;
+      if (typeof p === 'string' && p.startsWith(legacyDir)) {
+        meeting.recording!.path = join(dir, p.slice(legacyDir.length).replace(/^[\\/]/, ''));
+        changed = true;
+      }
+    }
+    if (changed) writeFileSync(storePath, JSON.stringify(store, null, 2), 'utf8');
+  } catch {
+    // Falha de migração não pode derrubar a resolução de path; o dir legado
+    // permanece e a próxima chamada tenta de novo.
+  }
 }
 
 // ============================================================
@@ -347,10 +384,12 @@ export function createWorkspaceAtPath(
   mkdirSync(getWorkspaceSourcesPath(rootPath), { recursive: true });
   mkdirSync(getWorkspaceSessionsPath(rootPath), { recursive: true });
   mkdirSync(getWorkspaceSkillsPath(rootPath), { recursive: true });
-  mkdirSync(getWorkspaceMeetingsPath(rootPath), { recursive: true });
 
-  // Save config
+  // Save config first so the meetings dir resolves to the id-keyed path
+  // (getWorkspaceMeetingsPath reads config.json to key storage by workspace id).
   saveWorkspaceConfig(rootPath, config);
+
+  mkdirSync(getWorkspaceMeetingsPath(rootPath), { recursive: true });
 
   // Initialize status configuration with defaults
   saveStatusConfig(rootPath, getDefaultStatusConfig());
@@ -371,6 +410,10 @@ export function createWorkspaceAtPath(
  */
 export function deleteWorkspaceFolder(rootPath: string): boolean {
   if (!existsSync(rootPath)) return false;
+
+  try {
+    rmSync(getWorkspaceMeetingsPath(rootPath), { recursive: true, force: true });
+  } catch { /* best-effort */ }
 
   try {
     rmSync(rootPath, { recursive: true });
