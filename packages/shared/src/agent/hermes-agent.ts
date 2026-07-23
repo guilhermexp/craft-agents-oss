@@ -403,7 +403,7 @@ export class HermesAgent extends BaseAgent {
 
   private async ensureSessionToolsServer(): Promise<string | undefined> {
     const sessionId = this.getCraftSessionId()
-    if (!sessionId || this.config.isHeadless) return undefined
+    if (!sessionId) return undefined
     if (this.sessionToolsServerUrl) return this.sessionToolsServerUrl
 
     this.refreshSessionToolCallbacks()
@@ -456,17 +456,25 @@ export class HermesAgent extends BaseAgent {
     } catch (err) {
       this.onDebug?.(`[hermes-auth-bridge] seed failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
     }
+    const acpMcpServers = buildHermesAcpMcpServers({
+      mcpServers: this.activeMcpServers,
+      poolServerUrl: this.config.poolServerUrl,
+      sessionToolsServerUrl,
+    })
+    const acpMcpServerNames = acpMcpServers.map((server) => server.name)
+    if (!acpMcpServerNames.includes('craft-session')) {
+      this.onDebug?.('[hermes-mcp] warning: craft-session MCP endpoint is not available for this Hermes session')
+    } else {
+      this.onDebug?.(`[hermes-mcp] ACP session.mcpServers=${acpMcpServerNames.join(', ') || '(none)'}`)
+    }
+
     this.provider = createACPProvider({
       command: runtime.command,
       args: runtime.args,
       env: { ...baseEnv, ...bridgedEnv },
       session: {
         cwd: this.resolvedCwd(),
-        mcpServers: buildHermesAcpMcpServers({
-          mcpServers: this.activeMcpServers,
-          poolServerUrl: this.config.poolServerUrl,
-          sessionToolsServerUrl,
-        }),
+        mcpServers: acpMcpServers,
       },
       ...(this.hermesSessionId ? { existingSessionId: this.hermesSessionId } : {}),
       persistSession: true,

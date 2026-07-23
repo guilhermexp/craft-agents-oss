@@ -1187,26 +1187,18 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       setVisibleTurnCount(TURNS_PER_PAGE)
     }
 
-    // Debounced scroll for streaming - waits for layout to settle
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null
-
+    // Streaming auto-scroll. Content now commits at most once per animation
+    // frame (App.tsx coalesces text_delta), so the ResizeObserver fires ~once
+    // per frame during streaming. Pin to the bottom by writing scrollTop
+    // directly instead of a debounced scrollIntoView: the old 200ms debounce
+    // let content grow below the fold and then snapped down, which read as a
+    // flicker. A direct scrollTop write stays glued frame-by-frame.
     const resizeObserver = new ResizeObserver(() => {
-      // Unfocused panels: always scroll to bottom instantly (user isn't reading them)
-      if (!isFocusedPanelRef.current) {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
-        return
-      }
-
-      // Focused panel: respect sticky-bottom preference
-      if (!isStickToBottomRef.current) return
-
-      // Clear pending scroll and wait for layout to settle
-      if (debounceTimer) clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(() => {
-        // Skip the streaming auto-scroll right after an instant scroll (session switch/lazy load)
-        if (Date.now() < skipSmoothScrollUntilRef.current) return
-        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
-      }, 200)
+      // Focused panel: respect sticky-bottom preference (user scrolled up = stop).
+      if (isFocusedPanelRef.current && !isStickToBottomRef.current) return
+      // Skip right after an instant scroll (session switch / lazy load).
+      if (Date.now() < skipSmoothScrollUntilRef.current) return
+      viewport.scrollTop = viewport.scrollHeight
     })
 
     // Observe the scroll content container (first child of viewport)
@@ -1217,7 +1209,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
     return () => {
       resizeObserver.disconnect()
-      if (debounceTimer) clearTimeout(debounceTimer)
     }
   }, [session?.id])
 

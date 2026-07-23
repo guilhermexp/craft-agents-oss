@@ -829,6 +829,38 @@ export default function App() {
       }
     }
 
+    // Coalesce high-frequency streaming text into one atom commit per animation
+    // frame. Each text_delta used to trigger a synchronous atom write -> a full
+    // ChatDisplay re-render (regroup over every message + last-block markdown
+    // reparse). At dozens of tokens/sec this starved the main thread and made
+    // scrolling janky during agent runs. We buffer the latest computed session
+    // per id and flush once per frame; non-delta events flush synchronously
+    // first so ordering and state stay correct.
+    const pendingSessions = new Map<string, Session>()
+    let flushRaf: number | null = null
+
+    const flushSession = (sessionId: string) => {
+      const pending = pendingSessions.get(sessionId)
+      if (pending === undefined) return
+      pendingSessions.delete(sessionId)
+      updateSessionDirect(sessionId, () => pending)
+    }
+
+    const flushAllPending = () => {
+      flushRaf = null
+      if (pendingSessions.size === 0) return
+      const entries = Array.from(pendingSessions.entries())
+      pendingSessions.clear()
+      for (const [sid, sess] of entries) {
+        updateSessionDirect(sid, () => sess)
+      }
+    }
+
+    const scheduleFlush = () => {
+      if (flushRaf !== null) return
+      flushRaf = requestAnimationFrame(flushAllPending)
+    }
+
     const cleanup = window.electronAPI.onSessionEvent((event: SessionEvent) => {
       if (!('sessionId' in event)) return
 
@@ -860,6 +892,7 @@ export default function App() {
       }
 
       if (event.type === 'session_deleted') {
+        pendingSessions.delete(sessionId)
         removeSession(sessionId)
         return
       }
@@ -868,6 +901,22 @@ export default function App() {
 
       // Track activity for stale session watchdog
       trackSessionActivity(sessionId)
+
+      // High-frequency streaming text: buffer and commit once per frame.
+      if (agentEvent.type === 'text_delta') {
+        const base = pendingSessions.get(sessionId)
+          ?? store.get(sessionAtomFamily(sessionId))
+          ?? null
+        const { session: updatedSession, effects } = processAgentEvent(agentEvent, base, workspaceId)
+        pendingSessions.set(sessionId, updatedSession)
+        if (effects.length > 0) handleEffects(effects, sessionId, event.type)
+        scheduleFlush()
+        return
+      }
+
+      // Any non-coalesced event must observe accumulated deltas: commit this
+      // session's buffered streaming state synchronously before reading the atom.
+      flushSession(sessionId)
 
       // Dispatch window event when compaction completes
       // This allows FreeFormInput to sequence the plan execution message after compaction
@@ -959,6 +1008,12 @@ export default function App() {
     const timeoutsRef = autoRetryTimeoutsRef.current
     return () => {
       cleanup()
+      // Commit any buffered streaming state so nothing is lost on re-subscribe.
+      if (flushRaf !== null) {
+        cancelAnimationFrame(flushRaf)
+        flushRaf = null
+      }
+      flushAllPending()
       for (const timeout of timeoutsRef) {
         clearTimeout(timeout)
       }

@@ -80,6 +80,12 @@ class TestableHermesAgent extends HermesAgent {
   observeProviderProcessExitForTest(provider: unknown): void {
     ;(this as unknown as { observeProviderProcessExit: (provider: unknown) => void }).observeProviderProcessExit(provider)
   }
+  ensureSessionToolsServerForTest(): Promise<string | undefined> {
+    return (this as unknown as { ensureSessionToolsServer: () => Promise<string | undefined> }).ensureSessionToolsServer()
+  }
+  stopSessionToolsServerForTest(): Promise<void> {
+    return (this as unknown as { stopSessionToolsServer: () => Promise<void> }).stopSessionToolsServer()
+  }
 }
 
 
@@ -482,6 +488,24 @@ describe('HermesAgent abort — orphan ACP notification guard', () => {
     // No session id -> no cancel notification, but the handler is still detached.
     expect(internals.cancelCalls).toEqual([])
     expect(internals.installedHandlers).toHaveLength(1)
+  })
+})
+
+describe('HermesAgent session MCP bridge', () => {
+  it('starts craft-session MCP endpoint even for headless delegated Hermes sessions', async () => {
+    const agent = new TestableHermesAgent(createHermesConfig({
+      isHeadless: true,
+      session: createMockSession({ id: 'headless-hermes-session' }),
+    }))
+
+    try {
+      const url = await agent.ensureSessionToolsServerForTest()
+
+      expect(url).toStartWith('http://127.0.0.1:')
+      expect(url).toEndWith('/mcp')
+    } finally {
+      await agent.stopSessionToolsServerForTest()
+    }
   })
 })
 
