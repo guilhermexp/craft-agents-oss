@@ -163,8 +163,11 @@ $VenvPython = Join-Path $VendorDir "hermes-venv/Scripts/python.exe"
 Write-Host "Installing Hermes (non-editable)..." -ForegroundColor Cyan
 $env:UV_PROJECT_ENVIRONMENT = (Join-Path $VendorDir "hermes-venv")
 & uv pip install --python $VenvPython "${HermesSrc}[web,acp,messaging]"
-& uv pip install --python $VenvPython playwright websockets
-& $VenvPython -m playwright install chromium
+# Playwright (driver ~128 MB) is NOT vendored: it is only used by the Google Meet
+# bot and is provisioned on-demand into an app-scoped writable dir on first use
+# (see plugins/google_meet/_craft_playwright.py + 09-meet-playwright-on-demand
+# overlay patch). websockets stays vendored for Google Meet remote-node mode.
+& uv pip install --python $VenvPython websockets
 git -C $HermesSrc rev-parse --is-inside-work-tree 2>$null | Out-Null
 if ($LASTEXITCODE -eq 0) {
     $sourceBuildStatus = git -C $HermesSrc status --porcelain -- build

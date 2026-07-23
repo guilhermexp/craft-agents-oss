@@ -1,0 +1,195 @@
+diff --git a/plugins/google_meet/_craft_playwright.py b/plugins/google_meet/_craft_playwright.py
+new file mode 100644
+index 000000000..d8f2688c1
+--- /dev/null
++++ b/plugins/google_meet/_craft_playwright.py
+@@ -0,0 +1,157 @@
++"""Craft on-demand Playwright provisioning for the Google Meet bot.
++
++Craft's embedded Hermes runtime does NOT vendor the Playwright driver
++(~128 MB) — it is only ever used by this Google Meet bot. Instead of shipping
++it inside the signed app bundle, Craft downloads it on first use into an
++app-scoped, writable location so the signed runtime is never mutated.
++
++``ensure_playwright_available()`` is called from ``handle_meet_join`` (local
++mode) before the bot subprocess is spawned. It:
++
++* resolves a writable deps root under ``$HERMES_HOME`` (app-scoped),
++* registers that root on ``sys.path`` + ``PYTHONPATH`` and points
++  ``PLAYWRIGHT_BROWSERS_PATH`` at it, so both this process and the spawned
++  ``meet_bot`` subprocess resolve the on-demand install,
++* installs the Playwright package (+ ``websockets``) and the Chromium browser
++  on first use, streaming progress to stderr (never stdout — stdout carries the
++  ACP JSON-RPC stream),
++* raises :class:`PlaywrightProvisionError` with a clear message when the
++  download fails (e.g. offline first use) instead of letting a bare
++  ``ImportError`` surface later as a confusing crash.
++
++Subsequent joins are fast: a ``.playwright-ready`` marker plus an import probe
++short-circuit the download.
++"""
++
++from __future__ import annotations
++
++import importlib
++import os
++import shutil
++import subprocess
++import sys
++from pathlib import Path
++
++# Matches the set Craft used to vendor eagerly (see bundle-hermes.sh); installed
++# on demand instead. ``websockets`` is also vendored in the venv, but installing
++# it into the same target keeps this deps root self-contained.
++_PLAYWRIGHT_PACKAGES = ("playwright", "websockets")
++_READY_MARKER = ".playwright-ready"
++
++
++class PlaywrightProvisionError(RuntimeError):
++    """Raised when Playwright/Chromium cannot be provisioned on demand."""
++
++
++def _deps_base() -> Path:
++    """Writable, app-scoped root for the on-demand Playwright install."""
++    override = os.environ.get("CRAFT_HERMES_PLAYWRIGHT_HOME", "").strip()
++    if override:
++        return Path(override)
++    home = os.environ.get("CRAFT_HERMES_HOME") or os.environ.get("HERMES_HOME")
++    if not home:
++        try:
++            from hermes_constants import get_hermes_home
++            home = get_hermes_home()
++        except Exception:
++            home = os.path.join(os.path.expanduser("~"), ".hermes")
++    return Path(home) / "runtime-deps" / "google-meet"
++
++
++def _uv_binary() -> str:
++    for candidate in (os.environ.get("CRAFT_UV"), os.environ.get("UV")):
++        resolved = (candidate or "").strip()
++        if resolved and os.path.exists(resolved):
++            return resolved
++    found = shutil.which("uv")
++    if found:
++        return found
++    raise PlaywrightProvisionError(
++        "cannot provision Playwright for Google Meet: the bundled `uv` installer "
++        "was not found (CRAFT_UV/UV unset and `uv` is not on PATH)."
++    )
++
++
++def _register_paths(lib_dir: Path, browsers_dir: Path) -> None:
++    """Expose the on-demand install to this process and future subprocesses."""
++    lib = str(lib_dir)
++    if lib not in sys.path:
++        sys.path.insert(0, lib)
++    existing = os.environ.get("PYTHONPATH", "")
++    parts = [lib] + [p for p in existing.split(os.pathsep) if p and p != lib]
++    os.environ["PYTHONPATH"] = os.pathsep.join(parts)
++    # meet_bot's Chromium discovery checks PLAYWRIGHT_BROWSERS_PATH first.
++    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(browsers_dir)
++
++
++def _playwright_importable() -> bool:
++    try:
++        importlib.import_module("playwright")
++        return True
++    except Exception:
++        return False
++
++
++def _run_streaming(cmd: list[str], *, env: dict[str, str] | None = None) -> int:
++    """Run *cmd*, streaming its output to stderr (never stdout) line by line."""
++    with subprocess.Popen(
++        cmd,
++        stdout=subprocess.PIPE,
++        stderr=subprocess.STDOUT,
++        text=True,
++        env=env or dict(os.environ),
++    ) as proc:
++        assert proc.stdout is not None
++        for line in proc.stdout:
++            sys.stderr.write(line)
++            sys.stderr.flush()
++        return proc.wait()
++
++
++def ensure_playwright_available() -> None:
++    """Ensure the Playwright package + Chromium are available, downloading on
++    first use. Raises :class:`PlaywrightProvisionError` on failure."""
++    base = _deps_base()
++    lib_dir = base / "site-packages"
++    browsers_dir = base / "ms-playwright"
++    _register_paths(lib_dir, browsers_dir)
++
++    marker = base / _READY_MARKER
++    if marker.exists() and _playwright_importable():
++        return
++
++    base.mkdir(parents=True, exist_ok=True)
++    lib_dir.mkdir(parents=True, exist_ok=True)
++
++    if not _playwright_importable():
++        uv = _uv_binary()
++        sys.stderr.write(
++            "[craft] Google Meet: downloading Playwright on first use "
++            "(~150 MB, requires network)...\n"
++        )
++        sys.stderr.flush()
++        code = _run_streaming(
++            [uv, "pip", "install", "--python", sys.executable, "--target", str(lib_dir), *_PLAYWRIGHT_PACKAGES]
++        )
++        if code != 0:
++            raise PlaywrightProvisionError(
++                "failed to download Playwright for Google Meet — first use requires "
++                "a network connection. Check connectivity and try joining again."
++            )
++        importlib.invalidate_caches()
++        if not _playwright_importable():
++            raise PlaywrightProvisionError(
++                "Playwright was installed but is still not importable; the Google "
++                "Meet bot cannot start."
++            )
++
++    sys.stderr.write("[craft] Google Meet: downloading Chromium on first use...\n")
++    sys.stderr.flush()
++    code = _run_streaming([sys.executable, "-m", "playwright", "install", "chromium"])
++    if code != 0:
++        raise PlaywrightProvisionError(
++            "failed to download Chromium for Google Meet — first use requires a "
++            "network connection. Check connectivity and try joining again."
++        )
++
++    marker.write_text("ok\n", encoding="utf-8")
+diff --git a/plugins/google_meet/tools.py b/plugins/google_meet/tools.py
+index 034116b88..c57be998a 100644
+--- a/plugins/google_meet/tools.py
++++ b/plugins/google_meet/tools.py
+@@ -262,11 +262,24 @@ def handle_meet_join(args: Dict[str, Any], **_kw) -> str:
+             return _err(f"remote node start_bot failed: {e}", node=node_name)
+ 
+     # Local path — same as v1, with v2 params.
++    # Craft does not vendor the Playwright driver; provision it on-demand (into
++    # an app-scoped writable dir) before the first local Meet join so the signed
++    # runtime is never mutated. This also adds the install to PYTHONPATH so the
++    # spawned meet_bot subprocess resolves it.
++    try:
++        from plugins.google_meet._craft_playwright import (
++            ensure_playwright_available,
++            PlaywrightProvisionError,
++        )
++        ensure_playwright_available()
++    except PlaywrightProvisionError as e:
++        return _err(str(e))
++    except Exception as e:  # defensive: never crash the tool on provisioning
++        return _err(f"failed to provision Playwright for Google Meet: {e}")
+     if not check_meet_requirements():
+         return _err(
+-            "google_meet plugin prerequisites missing — install with "
+-            "`pip install playwright && python -m playwright install "
+-            "chromium`. Plugin is supported on Linux and macOS only."
++            "google_meet plugin prerequisites missing — Playwright/Chromium could "
++            "not be provisioned on this platform. Supported on Linux and macOS only."
+         )
+     res = pm.start(
+         url=url,

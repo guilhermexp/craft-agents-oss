@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { NodeViewWrapper, NodeViewContent, ReactNodeViewRenderer } from '@tiptap/react'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import CodeBlockShiki from 'tiptap-extension-code-block-shiki'
-import { bundledLanguages } from 'shiki'
+// Keys-only usage (language picker list). Import from `shiki/langs` so this
+// view does not pull the `shiki` full-bundle highlighter shorthand.
+import { bundledLanguages } from 'shiki/langs'
 import { Check, ChevronDown, Copy } from 'lucide-react'
 import { SimpleDropdown, SimpleDropdownItem } from '../ui/SimpleDropdown'
 import { TiptapHoverActions, TiptapHoverActionButton } from './TiptapHoverActions'

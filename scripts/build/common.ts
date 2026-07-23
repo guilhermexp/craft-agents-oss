@@ -34,6 +34,56 @@ function resolvePackagedResourcesDir(config: BuildConfig, resourcesDir?: string)
 }
 
 /**
+ * Entries under `apps/electron/resources/` that must NOT be mirrored into
+ * `dist/resources/`. The packaged app already ships an authoritative copy of
+ * each of these somewhere the runtime actually reads from, so mirroring them
+ * duplicates the payload inside `Contents/Resources/app`:
+ *
+ *  - `bin/`               uv binary (~42 MB) + CLI wrappers. The runtime
+ *                         resolves these from `app/resources/bin` (see
+ *                         `apps/electron/src/main/index.ts` uv/scripts wiring),
+ *                         re-included via the electron-builder `files` whitelist.
+ *  - `bridge-mcp-server/` resolved from `app/resources/<name>` first by
+ *                         `runtime-resolver.ts` (`resolveServerPath`).
+ *  - `scripts/`           resolved via `CRAFT_SCRIPTS = app/resources/scripts`.
+ *  - `dmg-background.*` / `source.png` installer-only assets consumed by
+ *                         electron-builder as `buildResources`; never read at
+ *                         runtime.
+ *
+ * `session-mcp-server/`, `pi-agent-server/`, `docs/`, `themes/`, `tool-icons/`,
+ * `permissions/`, `hermes-seed/`, `release-notes/`, icons and `config-defaults`
+ * intentionally stay in `dist/resources`: that is the single authoritative tree
+ * the runtime reads them from (`getBundledAssetsDir` / the subprocess resolver
+ * fallback).
+ */
+const DIST_MIRROR_EXCLUDED_TOP_LEVEL: Record<string, true> = {
+  'bin': true,
+  'bridge-mcp-server': true,
+  'scripts': true,
+  'dmg-background.tiff': true,
+  'dmg-background.png': true,
+  'dmg-background@2x.png': true,
+  'source.png': true,
+};
+
+/**
+ * Decide whether a `resources/` entry (given as a POSIX-relative path) should be
+ * mirrored into `dist/resources/`. Excludes the generated/dev-only Hermes vendor
+ * trees (shipped via electron-builder `extraResources`) plus the duplicated
+ * runtime/installer assets listed in `DIST_MIRROR_EXCLUDED_TOP_LEVEL`.
+ */
+export function shouldMirrorResourceToDist(resourceRelative: string): boolean {
+  const topLevel = resourceRelative.split('/')[0];
+  if (DIST_MIRROR_EXCLUDED_TOP_LEVEL[topLevel]) return false;
+  return !(
+    resourceRelative === 'vendor/hermes' ||
+    resourceRelative.startsWith('vendor/hermes/') ||
+    resourceRelative === 'vendor/hermes-agent' ||
+    resourceRelative.startsWith('vendor/hermes-agent/')
+  );
+}
+
+/**
  * Bun version to bundle with the app.
  * Update this when upgrading Bun. Check latest at: https://github.com/oven-sh/bun/releases
  * This should match or be close to the version used in CI (setup-bun action).

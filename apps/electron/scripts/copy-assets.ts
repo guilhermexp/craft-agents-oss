@@ -13,7 +13,7 @@
 
 import { cpSync, copyFileSync, rmSync } from 'fs';
 import { relative, join, sep } from 'path';
-import { copyBundledSubprocessResources, type Arch, type Platform } from '../../../scripts/build/common';
+import { copyBundledSubprocessResources, shouldMirrorResourceToDist, type Arch, type Platform } from '../../../scripts/build/common';
 
 function resolvePlatform(): Platform {
   if (process.platform === 'darwin') return 'darwin';
@@ -36,28 +36,23 @@ const resourcesDir = join(electronDir, 'resources');
 
 function shouldCopyResource(source: string): boolean {
   const resourceRelative = relative(resourcesDir, source).split(sep).join('/');
-  // The Hermes Python runtime is large, symlink-heavy, and packaged through
-  // electron-builder extraResources as app/vendor/hermes. Copying it into
-  // dist/resources makes release builds duplicate the runtime and can break
-  // electron-builder symlink handling. The legacy Hermes source checkout is a
-  // dev-only fallback and must not ship via dist/resources either.
-  return !(
-    resourceRelative === 'vendor/hermes' ||
-    resourceRelative.startsWith('vendor/hermes/') ||
-    resourceRelative === 'vendor/hermes-agent' ||
-    resourceRelative.startsWith('vendor/hermes-agent/')
-  );
+  // Skip entries the packaged runtime already reads from an authoritative tree
+  // (app/resources/{bin,bridge-mcp-server,scripts}), installer-only assets, and
+  // the generated/dev-only Hermes vendor runtimes. See shouldMirrorResourceToDist.
+  return shouldMirrorResourceToDist(resourceRelative);
 }
 
 // Copy all runtime assets (icons, themes, docs, permissions, tool-icons, etc.).
-// Exclude heavyweight/dev-only Hermes vendor directories; Hermes release runtime
-// is included separately as app/vendor/hermes via electron-builder extraResources.
+// Exclude heavyweight/dev-only Hermes vendor directories, plus assets already
+// shipped once via the electron-builder `files` whitelist (uv/bin,
+// bridge-mcp-server, scripts) or only needed by the installer (dmg-background,
+// source.png). Hermes release runtime ships separately as app/vendor/hermes.
 // Clear the generated dist/resources directory first so stale vendor copies from
 // older builds cannot leak into release packages.
 rmSync(distResourcesDir, { recursive: true, force: true });
 cpSync(resourcesDir, distResourcesDir, { recursive: true, filter: shouldCopyResource });
 
-console.log('✓ Copied resources/ → dist/resources/ (excluding Hermes vendor runtimes)');
+console.log('✓ Copied resources/ → dist/resources/ (excluding Hermes vendor runtimes, duplicated runtime assets, and installer-only files)');
 
 copyBundledSubprocessResources({
   platform: resolvePlatform(),

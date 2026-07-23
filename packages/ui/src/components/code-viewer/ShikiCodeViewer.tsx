@@ -10,7 +10,8 @@
 
 import * as React from 'react'
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { codeToHtml, bundledLanguages, type BundledLanguage } from 'shiki'
+import type { BundledLanguage } from 'shiki'
+import { highlightCodeToHtml } from '../../lib/shiki-highlighter'
 import { cn } from '../../lib/utils'
 import { LANGUAGE_MAP } from './language-map'
 
@@ -46,11 +47,6 @@ const LANGUAGE_ALIASES: Record<string, BundledLanguage> = {
   'kt': 'kotlin',
   'objective-c': 'objc',
   'objc': 'objc',
-}
-
-function isValidLanguage(lang: string): lang is BundledLanguage {
-  const normalized = LANGUAGE_ALIASES[lang] || lang
-  return normalized in bundledLanguages
 }
 
 function getLanguageFromPath(filePath: string, explicit?: string): string {
@@ -93,13 +89,10 @@ export function ShikiCodeViewer({
     async function highlight() {
       // Use provided shikiTheme or fall back to github theme based on mode
       const resolvedShikiTheme = shikiTheme || (theme === 'dark' ? 'github-dark' : 'github-light')
-      const lang = isValidLanguage(resolvedLang) ? resolvedLang : 'text'
-
       try {
-        const html = await codeToHtml(code, {
-          lang,
-          theme: resolvedShikiTheme,
-        })
+        // Lazily load the grammar for this language on first use; unknown
+        // languages fall back to plaintext inside the shared highlighter.
+        const html = await highlightCodeToHtml(code, resolvedLang, resolvedShikiTheme)
 
         if (!cancelled) {
           setHighlighted(html)

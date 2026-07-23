@@ -360,6 +360,11 @@ app.whenReady().then(async () => {
   // Initialize bundled release notes
   initializeReleaseNotes()
 
+  // Track B (startup profiling): time the on-launch asset seeding pass — this
+  // copies bundled docs/permissions/tool-icons/themes to ~/.craft-agent on
+  // every launch. Logged so its startup cost is visible in main.log.
+  const seedStartedAt = Date.now()
+
   // Ensure default permissions file exists (copies bundled default.json on first run)
   ensureDefaultPermissions()
 
@@ -368,6 +373,7 @@ app.whenReady().then(async () => {
 
   // Seed preset themes to ~/.craft-agent/themes/ (copies bundled theme JSONs on first run)
   ensurePresetThemes()
+  mainLog.info(`[boot] Seeded permissions/tool-icons/preset-themes in ${Date.now() - seedStartedAt}ms`)
 
   // Seed Craft-native Hermes skills into app-scoped HERMES_HOME on first run.
   const hermesSeed = ensureHermesSeedSkills()

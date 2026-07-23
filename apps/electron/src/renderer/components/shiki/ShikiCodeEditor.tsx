@@ -14,7 +14,8 @@
 import * as React from 'react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Editor from 'react-simple-code-editor'
-import { codeToHtml, bundledLanguages, type BundledLanguage } from 'shiki'
+import type { BundledLanguage } from 'shiki'
+import { highlightCodeToHtml } from '@craft-agent/ui/shiki'
 import { cn } from '@/lib/utils'
 import { useTheme } from '@/hooks/useTheme'
 
@@ -40,11 +41,6 @@ const LANGUAGE_ALIASES: Record<string, BundledLanguage> = {
   'md': 'markdown',
   'js': 'javascript',
   'ts': 'typescript',
-}
-
-function isValidLanguage(lang: string): lang is BundledLanguage {
-  const normalized = LANGUAGE_ALIASES[lang] || lang
-  return normalized in bundledLanguages
 }
 
 // Simple cache for highlighted code
@@ -90,8 +86,9 @@ export function ShikiCodeEditor({
     if (cached) return cached
 
     try {
-      const lang = isValidLanguage(resolvedLang) ? resolvedLang : 'text'
-      const html = await codeToHtml(code, { lang, theme })
+      // Lazily load this language's grammar on first use; unknown languages
+      // fall back to plaintext inside the shared highlighter.
+      const html = await highlightCodeToHtml(code, resolvedLang, theme)
 
       // Extract just the content inside <pre><code>...</code></pre>
       // Shiki returns: <pre class="..." style="..."><code>...</code></pre>

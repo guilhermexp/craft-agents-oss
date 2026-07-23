@@ -356,6 +356,16 @@ async function main(): Promise<void> {
       // fails every Telegram API call with a TypeError.
       "--alias:node-fetch=./apps/electron/src/main/shims/node-fetch.cjs",
       "--alias:abort-controller=./apps/electron/src/main/shims/abort-controller.cjs",
+      // Ship a minified main bundle to shrink the packaged .app. --keep-names
+      // preserves Function/class .name so identifier renaming does not re-break
+      // the constructor.name checks the node-fetch/AbortController/grammY shims
+      // exist to satisfy. The sourcemap is written out-of-band (main.cjs.map,
+      // no sourceMappingURL comment) and stays in the build artifact — it is
+      // excluded from the package by electron-builder (`!**/*.map`) so crash
+      // logs stay de-minifiable from CI without bloating the runtime.
+      "--minify",
+      "--keep-names",
+      "--sourcemap=external",
       ...buildDefines,
     ],
     cwd: ROOT_DIR,

@@ -228,14 +228,19 @@ VENV_PYTHON="$VENDOR_DIR/hermes-venv/bin/python3"
 UV_PROJECT_ENVIRONMENT="$VENDOR_DIR/hermes-venv" \
     uv pip install --python "$VENV_PYTHON" "$HERMES_USED_SRC[web,acp,messaging]" 2>&1 | tail -15
 
+# Playwright (driver ~128 MB) is intentionally NOT vendored: it is only used by
+# the Google Meet bot. It is provisioned on-demand into an app-scoped writable
+# dir on the bot's first use (see plugins/google_meet/_craft_playwright.py, the
+# 09-meet-playwright-on-demand overlay patch). `websockets` stays vendored
+# because Google Meet's remote-node mode needs it on the gateway side even when
+# Playwright/Chromium are not yet downloaded.
 UV_PROJECT_ENVIRONMENT="$VENDOR_DIR/hermes-venv" \
-    uv pip install --python "$VENV_PYTHON" playwright websockets 2>&1 | tail -15
-"$VENV_PYTHON" -m playwright install chromium
+    uv pip install --python "$VENV_PYTHON" websockets 2>&1 | tail -15
 
 if [ -d "$HERMES_USED_SRC/build" ]; then
     rm -rf "$HERMES_USED_SRC/build"
 fi
-echo -e "${GREEN}✓${NC} Hermes installed with web dashboard, ACP, and Google Meet dependencies"
+echo -e "${GREEN}✓${NC} Hermes installed with web dashboard, ACP, and messaging deps (Playwright fetched on-demand for Google Meet)"
 
 # --------------------------------------------------------------------------
 # 5. Copy Hermes source (subset needed for ACP runtime, with patches applied)

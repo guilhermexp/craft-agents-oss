@@ -40,6 +40,11 @@ export function loadShellEnv(): void {
   const shell = process.env.SHELL || '/bin/zsh'
   mainLog.info(`[shell-env] Loading environment from ${shell}`)
 
+  // Track B (startup profiling): loadShellEnv runs a synchronous login+interactive
+  // shell at the very top of boot, before uv/PATH resolution depends on it. Log
+  // the elapsed time so packaged-build startup cost is visible in main.log.
+  const startedAt = Date.now()
+
   try {
     // Run login shell to get full environment
     // -l = login shell (sources profile files like .zprofile)
@@ -76,7 +81,7 @@ export function loadShellEnv(): void {
       }
     }
 
-    mainLog.info(`[shell-env] Loaded ${count} environment variables`)
+    mainLog.info(`[shell-env] Loaded ${count} environment variables in ${Date.now() - startedAt}ms`)
 
     // Log PATH for debugging
     if (process.env.PATH) {
@@ -85,7 +90,7 @@ export function loadShellEnv(): void {
     }
   } catch (error) {
     // Don't fail app startup if shell env loading fails
-    mainLog.warn(`[shell-env] Failed to load shell environment: ${error}`)
+    mainLog.warn(`[shell-env] Failed to load shell environment after ${Date.now() - startedAt}ms: ${error}`)
     mainLog.warn('[shell-env] Adding common paths as fallback')
 
     // Fallback: add common paths that are likely to be needed

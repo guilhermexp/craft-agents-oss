@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
-import { codeToHtml, bundledLanguages, type BundledLanguage } from 'shiki'
+import type { BundledLanguage } from 'shiki'
+import { highlightCodeToHtml } from '../../lib/shiki-highlighter'
 import { cn } from '../../lib/utils'
 import { useShikiTheme } from '../../context/ShikiThemeContext'
 import { detectLinks } from './linkify'
@@ -121,11 +122,6 @@ function getCacheKey(code: string, lang: string, theme: string): string {
   return `${theme}:${lang}:${code}`
 }
 
-function isValidLanguage(lang: string): lang is BundledLanguage {
-  const normalized = LANGUAGE_ALIASES[lang] || lang
-  return normalized in bundledLanguages
-}
-
 /**
  * CodeBlock - Syntax highlighted code block using Shiki
  *
@@ -175,13 +171,9 @@ export function CodeBlock({ code, language = 'text', className, mode = 'full', f
       }
 
       try {
-        // Use valid language or fallback to plaintext
-        const lang = isValidLanguage(resolvedLang) ? resolvedLang : 'text'
-
-        const html = await codeToHtml(code, {
-          lang,
-          theme,
-        })
+        // Lazily load this language's grammar (and the theme) on first use;
+        // unknown languages fall back to plaintext inside the shared highlighter.
+        const html = await highlightCodeToHtml(code, resolvedLang, theme)
 
         // Cache the result
         if (highlightCache.size >= CACHE_MAX_SIZE) {

@@ -7,7 +7,7 @@ import { spawn, type Subprocess } from "bun";
 import { existsSync, rmSync, cpSync, readFileSync, writeFileSync, statSync, mkdirSync } from "fs";
 import { join, basename, relative, sep } from "path";
 import * as esbuild from "esbuild";
-import { downloadUv, type Platform, type Arch } from "./build/common";
+import { downloadUv, shouldMirrorResourceToDist, type Platform, type Arch } from "./build/common";
 
 const ROOT_DIR = join(import.meta.dir, "..");
 const ELECTRON_DIR = join(ROOT_DIR, "apps/electron");
@@ -223,14 +223,13 @@ function cleanViteCache(): void {
 
 function shouldCopyResource(resourcesDir: string, source: string): boolean {
   const resourceRelative = relative(resourcesDir, source).split(sep).join("/");
-  // Hermes runtime/source checkouts are large, symlink-heavy, and packaged via
-  // dedicated Hermes paths. Do not mirror them into dist/resources during dev.
-  return !(
-    resourceRelative === "vendor/hermes" ||
-    resourceRelative.startsWith("vendor/hermes/") ||
-    resourceRelative === "vendor/hermes-agent" ||
-    resourceRelative.startsWith("vendor/hermes-agent/")
-  );
+  // Mirror the packaging exclusion (scripts/build/common.ts): skip the large
+  // symlink-heavy Hermes trees plus assets the runtime reads from an
+  // authoritative tree or that only the installer needs. Dev reads uv/bin,
+  // scripts and bridge-mcp-server from source (resources/ or packages/), not
+  // from dist/resources, so excluding them here is safe and keeps the three
+  // resource-copy paths in lockstep.
+  return shouldMirrorResourceToDist(resourceRelative);
 }
 
 // Copy resources to dist

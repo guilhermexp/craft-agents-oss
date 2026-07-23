@@ -246,6 +246,11 @@ Important rules:
 - `scripts/copy-assets.ts` must **not** copy `resources/vendor/hermes` into
   `dist/resources`; otherwise the build duplicates a symlink-heavy Python tree
   and can fail during packaging/signing.
+- `scripts/copy-assets.ts` also skips assets the runtime reads from
+  `app/resources` (uv/`bin`, `bridge-mcp-server`, `scripts`) and installer-only
+  files (`dmg-background.*`, `source.png`) so they are not duplicated inside
+  `dist/resources`. The single authoritative exclusion list is
+  `shouldMirrorResourceToDist` in `scripts/build/common.ts`.
 - `scripts/afterPack-hermes.cjs` signs/cleans the packaged path
   `Contents/Resources/app/vendor/hermes` on macOS. If that path changes,
   update the signer and the verification checks together.

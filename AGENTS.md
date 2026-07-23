@@ -116,6 +116,13 @@ overlay behaviors:
   Hermes MCP naming for external servers.
 - `hermes_cli/web_server.py` delegates dashboard Update to Craft's host update
   command only when `CRAFT_HERMES_EMBEDDED=1`.
+- `plugins/google_meet/tools.py` + `plugins/google_meet/_craft_playwright.py`
+  provision the Playwright driver + Chromium on-demand on the first local Google
+  Meet join (into app-scoped `$HERMES_HOME/runtime-deps/google-meet`), because
+  `bundle-hermes.*` no longer vendors Playwright (only `websockets`). Keep this
+  on-demand path: the signed venv must not be mutated, first use downloads with
+  progress to stderr, and offline first use must fail with a clear error, not a
+  silent crash. See `apps/electron/docs/hermes-embed.md`.
 
 When syncing Craft upstream, preserve these Craft-side integration points:
 

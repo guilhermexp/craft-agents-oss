@@ -4,7 +4,7 @@
 
 import { existsSync, cpSync, rmSync } from "fs";
 import { join, relative, sep } from "path";
-import { copyBundledSubprocessResources, type Arch, type Platform } from "./build/common";
+import { copyBundledSubprocessResources, shouldMirrorResourceToDist, type Arch, type Platform } from "./build/common";
 
 const ROOT_DIR = join(import.meta.dir, "..");
 const ELECTRON_DIR = join(ROOT_DIR, "apps/electron");
@@ -27,14 +27,12 @@ function resolveArch(): Arch {
 
 function shouldCopyResource(source: string): boolean {
   const resourceRelative = relative(srcDir, source).split(sep).join("/");
-  // Keep generated/dev-only Hermes trees out of dist/resources. The release
-  // runtime is copied by electron-builder extraResources as app/vendor/hermes.
-  return !(
-    resourceRelative === "vendor/hermes" ||
-    resourceRelative.startsWith("vendor/hermes/") ||
-    resourceRelative === "vendor/hermes-agent" ||
-    resourceRelative.startsWith("vendor/hermes-agent/")
-  );
+  // Keep dist/resources free of the generated/dev-only Hermes trees, the assets
+  // duplicated from the electron-builder `files` whitelist (uv/bin,
+  // bridge-mcp-server, scripts), and installer-only files. See
+  // shouldMirrorResourceToDist in scripts/build/common.ts. This mirrors
+  // copy-assets.ts so both resource-copy paths stay in lockstep.
+  return shouldMirrorResourceToDist(resourceRelative);
 }
 
 if (existsSync(srcDir)) {

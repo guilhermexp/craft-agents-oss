@@ -4,7 +4,7 @@ This folder contains assets that are bundled with the Electron app. Most legacy 
 
 ## How It Works
 
-1. **Build time**: `scripts/copy-assets.ts` copies this folder to `dist/resources/`, excluding generated/dev-only Hermes vendor trees under `resources/vendor/hermes/` and `resources/vendor/hermes-agent/`
+1. **Build time**: `scripts/copy-assets.ts` copies this folder to `dist/resources/`. It excludes the generated/dev-only Hermes vendor trees (`resources/vendor/hermes/`, `resources/vendor/hermes-agent/`) **and** assets that already ship once elsewhere in the packaged app so the runtime is not duplicated: `bin/` (uv + CLI wrappers, read from `app/resources/bin`), `bridge-mcp-server/` and `scripts/` (read from `app/resources/...`), and installer-only files (`dmg-background.*`, `source.png`, consumed by electron-builder as `buildResources`). The authoritative exclusion list lives in `shouldMirrorResourceToDist` in `scripts/build/common.ts`, shared by `copy-assets.ts`, `scripts/electron-build-resources.ts`, and `scripts/electron-dev.ts`.
 2. **Package time**: electron-builder includes `dist/resources/` in the app bundle and separately injects the generated Hermes runtime through `extraResources` as `app/vendor/hermes`
 3. **Runtime**: `getBundledAssetsDir()` resolves paths to these bundled assets
 4. **Launch**: Legacy asset types sync to the user's home directory; Hermes seed assets are copy/merged into app-scoped `HERMES_HOME` by `ensureHermesSeedSkills()`
