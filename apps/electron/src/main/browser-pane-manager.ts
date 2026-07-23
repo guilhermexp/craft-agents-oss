@@ -14,6 +14,7 @@ import { mainLog } from './logger'
 import type { WindowManager } from './window-manager'
 import { BrowserCDP, type AccessibilitySnapshot, type ElementGeometry } from './browser-cdp'
 import { BrowserVisualCapture } from './browser/browser-visual-capture'
+import { normalizeChromeClientHints } from './browser-client-hints'
 import {
   type BrowserEmptyStateLaunchPayload,
   type BrowserEmptyStateLaunchResult,
@@ -389,6 +390,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   // secundários caíam no default permissivo do Electron. `session.fromPartition`
   // devolve o mesmo objeto por partition, então o WeakSet dedupe por partition.
   private readonly configuredPermissionSessions = new WeakSet<ElectronSession>()
+  // Dedupe the Sec-CH-UA normalization handler per partition (same rationale as
+  // configuredPermissionSessions — one onBeforeSendHeaders handler per session).
+  private readonly configuredClientHintSessions = new WeakSet<ElectronSession>()
   // Dedupe permission-denial logs: a page's service workers re-request the same
   // always-denied permissions (web-app-installation, background-sync) on a timer —
   // sometimes for many minutes after the pane is gone — which floods the log with
@@ -399,6 +403,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private lastNetworkActivityByWebContentsId = new Map<number, number>()
   private popupWindowsByParentInstanceId = new Map<string, Set<BrowserWindow>>()
   private popupParentByWebContentsId = new Map<number, string>()
+  // webContents id captured while the popup window is still alive. Popup
+  // teardown ('closed' / parent-destroy) races Electron's lifecycle where the
+  // window's webContents is already destroyed, so reading `webContents.id` there
+  // throws "Object has been destroyed". Look the id up here instead.
+  private readonly popupWebContentsIdByWindow = new WeakMap<BrowserWindow, number>()
   private windowManager: WindowManager | null = null
   private sessionPathResolver: ((sessionId: string) => string | null) | null = null
 
@@ -479,6 +488,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const ses = session.fromPartition(partition)
     this.setupSessionPermissions(ses)
     this.setupSessionObservers(ses)
+    this.setupSessionClientHints(ses)
 
     // Native window chrome follows the OS theme. Embedded pages are left to honor
     // their own prefers-color-scheme (like a normal browser) — we do not override
@@ -614,6 +624,17 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     sanitizedUa = sanitizedUa.replace(/\s{2,}/g, ' ').trim()
     if (sanitizedUa && sanitizedUa !== defaultUa) {
       pageView.webContents.setUserAgent(sanitizedUa)
+      // Popups opened via window.open (Google/Gmail/Meet sign-in open a
+      // foreground-tab popup) get a fresh webContents that does NOT inherit the
+      // pane's per-webContents UA override — it falls back to Electron's default
+      // UA, which still carries `Electron/<ver>` and `<AppToken>/<ver>`. Google's
+      // sign-in then flags the popup as an insecure/embedded browser
+      // ("Não foi possível fazer o login"). Setting the sanitized UA on the
+      // shared partition session covers the pane, its popups (created with
+      // `session: pageWc.session`), and subframes consistently.
+      if (typeof ses.setUserAgent === 'function') {
+        ses.setUserAgent(sanitizedUa)
+      }
     }
 
     window.addBrowserView(pageView)
@@ -1956,10 +1977,20 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
 
     this.destroyingIds.delete(instance.id)
-    this.closePopupsForParent(instance.id, 'parent_destroy')
-    this.applyAgentControlLock(instance, false)
-    this.updateNativeOverlayState(instance)
-    instance.cdp.detach()
+    // Best-effort cleanup: a throwing step (overlay/webContents already gone)
+    // must not abort finalization — otherwise the instance is never removed,
+    // the removed-callback never fires, and the exception escapes destroyInstance.
+    const safe = (label: string, action: () => void): void => {
+      try {
+        action()
+      } catch (error) {
+        mainLog.warn(`[browser-pane] finalize cleanup failed id=${instance.id} step=${label} error=${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    safe('closePopupsForParent', () => this.closePopupsForParent(instance.id, 'parent_destroy'))
+    safe('applyAgentControlLock', () => this.applyAgentControlLock(instance, false))
+    safe('updateNativeOverlayState', () => this.updateNativeOverlayState(instance))
+    safe('cdp.detach', () => instance.cdp.detach())
     this.instances.delete(instance.id)
     this.removedCallback?.(instance.id)
     mainLog.info(`[browser-pane] Destroyed instance: ${instance.id} (${source})`)
@@ -2900,6 +2931,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
   private registerPopupWindow(parentInstance: BrowserInstance, popupWindow: BrowserWindow, sourceUrl?: string): void {
     const popupWcId = popupWindow.webContents.id
+    // Remember the id while the popup is alive so teardown (and the reparent
+    // unregister below) never has to read `webContents` after destruction.
+    this.popupWebContentsIdByWindow.set(popupWindow, popupWcId)
     const existingParent = this.popupParentByWebContentsId.get(popupWcId)
     if (existingParent && existingParent !== parentInstance.id) {
       this.unregisterPopupWindow(popupWindow, 'reparented')
@@ -2913,6 +2947,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
     popups.add(popupWindow)
     this.popupParentByWebContentsId.set(popupWcId, parentInstance.id)
+    this.popupWebContentsIdByWindow.set(popupWindow, popupWcId)
 
     const initialUrl = sourceUrl || popupWindow.webContents.getURL?.() || 'about:blank'
     mainLog.info(`[browser-pane] popup created parent=${parentInstance.id} popupWebContentsId=${popupWcId} url=${initialUrl}`)
@@ -2964,7 +2999,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   private unregisterPopupWindow(popupWindow: BrowserWindow, reason: 'closed' | 'parent_destroy' | 'reparented'): void {
-    const popupWcId = popupWindow.webContents.id
+    const popupWcId = this.popupWebContentsIdByWindow.get(popupWindow)
+    if (popupWcId === undefined) return
+    this.popupWebContentsIdByWindow.delete(popupWindow)
     const parentId = this.popupParentByWebContentsId.get(popupWcId)
     if (!parentId) return
 
@@ -2986,7 +3023,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     if (!popups || popups.size === 0) return
 
     for (const popupWindow of Array.from(popups)) {
-      const popupWcId = popupWindow.webContents.id
+      const popupWcId = this.popupWebContentsIdByWindow.get(popupWindow)
       this.unregisterPopupWindow(popupWindow, reason)
       try {
         if (!popupWindow.isDestroyed()) {
@@ -3186,6 +3223,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       'screen-wake-lock',
       'clipboard-sanitized-write',
       'idle-detection',
+      // Storage Access API: cross-site cookie access requested by embedded
+      // Google flows (sign-in, Meet). Denying it produces
+      // "requestStorageAccess: Permission denied" and breaks the login handoff.
+      'storage-access',
+      'top-level-storage-access',
     ])
 
     if (typeof ses.setPermissionCheckHandler === 'function') {
@@ -3233,6 +3275,16 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         callback(streams)
       })
     }
+  }
+
+  private setupSessionClientHints(ses: ElectronSession): void {
+    if (this.configuredClientHintSessions.has(ses)) return
+    this.configuredClientHintSessions.add(ses)
+    if (typeof ses.webRequest?.onBeforeSendHeaders !== 'function') return
+
+    ses.webRequest.onBeforeSendHeaders((details, callback) => {
+      callback({ requestHeaders: normalizeChromeClientHints(details.requestHeaders) })
+    })
   }
 
   private isToolbarUiDocumentUrl(url: string): boolean {
