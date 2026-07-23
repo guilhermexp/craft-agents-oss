@@ -741,7 +741,6 @@ export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInlin
   const loadedPathsRef = useRef<Set<string>>(null!)
   if (loadedPathsRef.current === null) loadedPathsRef.current = new Set()
   const mountedRef = useRef(true)
-  const fileManagerName = getFileManagerName()
 
   useEffect(() => {
     const saved = storage.get<string[]>(storage.KEYS.workspaceFilesExpandedFolders, [], storageScope)
@@ -843,15 +842,6 @@ export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInlin
     <div className={cn('flex flex-col h-full min-h-0', className)}>
       <div className="flex items-center justify-between px-4 pt-4 pb-2 shrink-0 select-none">
         <span className="text-xs font-medium text-muted-foreground">{t('chat.workspaceFiles')}</span>
-        {rootPath && (
-          <button
-            type="button"
-            onClick={() => window.electronAPI.showInFolder(rootPath)}
-            className="text-xs text-foreground/50 hover:text-foreground/80 hover:underline underline-offset-2 transition-colors"
-          >
-            {t('chat.viewInFileManager', { fileManager: fileManagerName })}
-          </button>
-        )}
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden pb-2 min-h-0">
