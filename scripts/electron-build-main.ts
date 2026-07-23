@@ -4,7 +4,7 @@
  */
 
 import { spawn } from "bun";
-import { existsSync, readFileSync, statSync, mkdirSync } from "fs";
+import { existsSync, readFileSync, statSync, mkdirSync, renameSync } from "fs";
 import { join } from "path";
 
 const ROOT_DIR = join(import.meta.dir, "..");
@@ -396,6 +396,20 @@ async function main(): Promise<void> {
   if (!verification.valid) {
     console.error("❌ Build verification failed:", verification.error);
     process.exit(1);
+  }
+
+  // Move the main-process sourcemap out of dist/ so it ships out-of-band: the
+  // packaged .app copies apps/electron via electron-builder's `**/*` app fileset
+  // (which does not honor a `!**/*.map` negation placed in the node-modules
+  // fileset), but `release/` is excluded from the app. Keeping main.cjs.map in
+  // release/ makes it a CI/build artifact for de-minifying crash logs without
+  // embedding ~87 MB in the runtime. T2.1: sourcemap out-of-band, not shipped.
+  const mainSourceMap = `${OUTPUT_FILE}.map`;
+  if (existsSync(mainSourceMap)) {
+    const artifactDir = join(ROOT_DIR, "apps/electron/release");
+    mkdirSync(artifactDir, { recursive: true });
+    renameSync(mainSourceMap, join(artifactDir, "main.cjs.map"));
+    console.log("🗺️  Moved main.cjs.map → apps/electron/release/ (out-of-band, excluded from .app)");
   }
 
   console.log("✅ Build complete and verified");

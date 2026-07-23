@@ -58,3 +58,33 @@ records **findings**, and only applies fixes that cannot change behavior.
   idle, or Activity Monitor). This requires launching the packaged build and was
   not measurable statically; the instrumentation above is the entry point for a
   follow-up capture.
+
+## Measured (this pass)
+
+- **Packaged `.app` size**: 981 MB (baseline) → 839 MB after this change
+  (−142 MB), macOS arm64, `du -sh`. Delta breakdown: `vendor/hermes` 345→222 MB
+  (Playwright removed), `dist` 180→128 MB (main.cjs minified + sourcemap moved
+  out-of-band + `dist/resources` dedup), duplicated `dist/resources/bin` uv
+  (−42 MB) and installer assets (−13.5 MB) gone.
+- **Idle main-process RSS**: ~357 MB shortly after boot of the packaged app
+  (single `ps` sample; renderer + server-WS not separately captured — see the
+  8.2 follow-up).
+
+## Packaging leaks discovered (pre-existing — out of scope for the 5 named tasks)
+
+During the size measurement, two pre-existing sources of `.app` bloat surfaced.
+They are present in both the baseline and the after build (so they cancel in the
+delta) and are **not** part of T1–T3, but are worth a follow-up:
+
+- **Renderer sourcemaps ship in the `.app`.** `electron-builder.yml` carries a
+  `!**/*.map` negation, but electron-builder splits the config into two filesets
+  and the app files are copied by the default `**/*` fileset
+  (`firstOrDefaultFilePatterns`), which does not carry that negation, so all
+  `dist/renderer/assets/*.js.map` files (322 of them) are packaged. The
+  main-process map is now moved out of `dist/` to dodge this; the renderer maps
+  would need the negation applied to the app fileset (or `build.sourcemap`
+  scoped) to be excluded.
+- **`app/scripts` (~83 MB)** is shipped whole via the same `**/*` app fileset,
+  including `apps/electron/scripts/.hermes-cache/` (the throwaway upstream Hermes
+  clone). Excluding `scripts/.hermes-cache` (and dev-only script sources) from
+  the package is a sizeable additional win.
