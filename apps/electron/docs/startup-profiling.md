@@ -88,3 +88,28 @@ delta) and are **not** part of T1–T3, but are worth a follow-up:
   including `apps/electron/scripts/.hermes-cache/` (the throwaway upstream Hermes
   clone). Excluding `scripts/.hermes-cache` (and dev-only script sources) from
   the package is a sizeable additional win.
+
+## Build gotchas (macOS packaging)
+
+- **`electron-builder` falha no rebuild nativo com Electron 43.1.1.** O
+  `@electron/rebuild` empacotado traz um `node-abi` antigo demais e aborta com
+  *"Could not detect abi for version 43.1.1"* ao empacotar. Contorno usado nesta
+  change: `electron-builder --mac -c.npmRebuild=false`, reusando o
+  `better_sqlite3.node` já compilado com a ABI do Electron em `node_modules`.
+  Nenhuma dependência nova foi instalada e o `electron-builder.yml` não foi
+  alterado. Remover o contorno só quando o `node-abi` do `@electron/rebuild`
+  reconhecer o Electron 43.
+- **`electron:dist:dev:mac` re-clona o cache do Hermes e faz `rm -rf` em
+  `resources/vendor/hermes` antes de reconstruir** (via `bundle-hermes.sh`).
+  Precisa de rede; num rebuild que falhe, o runtime de trabalho é destruído.
+  Ao iterar localmente, faça backup de `vendor/hermes` (ou rode os sub-passos
+  `bundle-hermes.sh` → `electron:build` → `electron-builder --mac` separados).
+
+## Validação visual (orquestrador)
+
+O `.app` empacotado (com esta change) foi aberto via `background-computer-use`
+e confirmado por screenshot: a UI completa renderiza e os blocos de código
+aparecem com highlight colorido (Shiki lazy-load) — nenhuma linguagem perde
+highlight. Backends intactos (seletor Hermes presente). Não validado ao vivo:
+join no Google Meet com download on-demand do Playwright (task 7.4) e amostra de
+heap idle multi-processo (task 8.2).

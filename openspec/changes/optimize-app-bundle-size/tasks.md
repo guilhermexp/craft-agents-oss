@@ -50,4 +50,5 @@
 - [x] 9.1 `bun run electron:dist:dev:mac` + `du -sh` do `.app`: comparar com baseline 981 MB e registrar delta real
 - [x] 9.2 `bun run validate:ci` verde (typecheck + testes shared/config/doc-tools + i18n parity)
 - [ ] 9.3 Smoke real do app empacotado: abre, sessão roda, highlight de código, bot do Meet on-demand
+  - [x] Smoke visual (orquestrador via background-computer-use): `.app` empacotado abre e renderiza a UI completa; blocos de código renderizam com highlight colorido (Shiki lazy) — confirmado por screenshot. PENDENTE: sessão interativa completa + join ao vivo no Meet (on-demand) = task 7.4.
 - [x] 9.4 `openspec validate optimize-app-bundle-size --strict --no-interactive` verde
