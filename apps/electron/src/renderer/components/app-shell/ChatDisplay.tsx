@@ -1867,6 +1867,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                             },
                           }))
                         }}
+                        onRespondToUserQuestion={(toolUseId, response) => {
+                          if (!session?.id) return
+                          void window.electronAPI.respondToUserQuestion(session.id, toolUseId, response)
+                        }}
                         onPopOut={(text) => {
                           // Open raw markdown source in code viewer
                           setOverlayState({

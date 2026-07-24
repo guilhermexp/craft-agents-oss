@@ -17,7 +17,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import type { AgentEvent } from '@craft-agent/core/types';
+import type { AgentEvent, AskUserQuestionResponse } from '@craft-agent/core/types';
 import type { FileAttachment } from '../utils/files.ts';
 import { expandPath } from '../utils/paths.ts';
 import { buildTransferredSessionContext } from './conversation-summary.ts';
@@ -275,6 +275,65 @@ export abstract class BaseAgent implements AgentBackend {
   onUsageUpdate: ((update: UsageUpdate) => void) | null = null;
   onBackendAuthRequired: ((reason: string) => void) | null = null;
   onSpawnSession: ((request: SpawnSessionRequest) => Promise<SpawnSessionResult>) | null = null;
+
+  // ============================================================
+  // AskUserQuestion (interactive questionnaire) plumbing
+  // ============================================================
+  // Resolvers for in-flight AskUserQuestion tool calls, keyed by the tool
+  // use id. A tool call parks here (the agent's tool-intercept awaits the
+  // promise) until the UI answers via respondToUserQuestion() or the request
+  // times out / the session is torn down.
+  private pendingUserQuestions = new Map<string, (response: AskUserQuestionResponse) => void>();
+
+  /**
+   * Park an AskUserQuestion tool call until the UI answers or `timeoutMs`
+   * elapses. On timeout the questionnaire resolves as skipped so the agent's
+   * tool result never hangs the turn.
+   */
+  protected awaitUserQuestion(requestId: string, timeoutMs: number): Promise<AskUserQuestionResponse> {
+    return new Promise<AskUserQuestionResponse>((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.pendingUserQuestions.delete(requestId)) {
+          resolve({
+            answers: {},
+            skipped: true,
+            response: '[The questionnaire timed out with no answer. Proceed using your best judgment or reasonable defaults.]',
+          });
+        }
+      }, timeoutMs);
+      this.pendingUserQuestions.set(requestId, (response) => {
+        clearTimeout(timer);
+        resolve(response);
+      });
+    });
+  }
+
+  /**
+   * Deliver a user's answers to a parked AskUserQuestion tool call.
+   * Returns true if a matching pending request was resolved.
+   */
+  respondToUserQuestion(requestId: string, response: AskUserQuestionResponse): boolean {
+    const resolve = this.pendingUserQuestions.get(requestId);
+    if (!resolve) return false;
+    this.pendingUserQuestions.delete(requestId);
+    resolve(response);
+    return true;
+  }
+
+  /**
+   * Resolve every parked AskUserQuestion as skipped. Called during abort /
+   * dispose so a pending questionnaire never leaves a tool call hanging.
+   */
+  protected clearPendingUserQuestions(reason: string = 'the session ended'): void {
+    for (const [requestId, resolve] of this.pendingUserQuestions.entries()) {
+      this.pendingUserQuestions.delete(requestId);
+      resolve({
+        answers: {},
+        skipped: true,
+        response: `[The questionnaire was dismissed because ${reason}. Proceed using reasonable defaults.]`,
+      });
+    }
+  }
 
   // ============================================================
   // Constructor

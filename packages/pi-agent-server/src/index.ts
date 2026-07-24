@@ -179,7 +179,7 @@ interface OutboundPreToolUseReq {
   toolCallId?: string;
   input: Record<string, unknown>;
 }
-interface OutboundToolExecReq { type: 'tool_execute_request'; requestId: string; toolName: string; args: Record<string, unknown> }
+interface OutboundToolExecReq { type: 'tool_execute_request'; requestId: string; toolName: string; args: Record<string, unknown>; toolCallId?: string }
 interface OutboundSessionToolCompleted { type: 'session_tool_completed'; toolName: string; args: Record<string, unknown>; isError: boolean }
 interface OutboundMiniResult { type: 'mini_completion_result'; id: string; text: string | null }
 interface OutboundLlmQueryResult {
@@ -977,6 +977,7 @@ function buildProxyTools(): ToolDefinition<any, any>[] {
         requestId,
         toolName: def.name,
         args: approvedInput,
+        toolCallId,
       });
 
       const result = await new Promise<{ content: string; isError: boolean }>((resolve) => {

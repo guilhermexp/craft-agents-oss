@@ -2,7 +2,7 @@ import * as React from 'react'
 import { useMemo, useEffect, useEffectEvent, useRef, useCallback, useState } from 'react'
 import i18n from 'i18next'
 import { useTranslation } from 'react-i18next'
-import type { ToolDisplayMeta, AnnotationV1 } from '@craft-agent/core'
+import type { ToolDisplayMeta, AnnotationV1, AskUserQuestionItem, AskUserQuestionResponse } from '@craft-agent/core'
 import { normalizePath, pathStartsWith, stripPathPrefix } from '@craft-agent/core/utils'
 import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
 import { LazyMotion, m, AnimatePresence, domAnimation } from 'motion/react'
@@ -40,6 +40,7 @@ import { getDiffStats } from '../code-viewer/ShikiDiffViewer'
 import { getUnifiedDiffStats } from '../code-viewer/UnifiedDiffViewer'
 import { TurnCardActionsMenu } from './TurnCardActionsMenu'
 import { computeLastChildSet, groupActivitiesByParent, isActivityGroup, formatDuration, formatTokens, deriveTurnPhase, shouldShowThinkingIndicator, type ActivityGroup, type AssistantTurn } from './turn-utils'
+import { AskUserQuestionCard, parseAskUserQuestionResult, ASK_USER_QUESTION_TOOL_NAME } from './AskUserQuestionCard'
 import { extractAnnotationSelectedText } from './follow-up-helpers'
 import {
   formatAnnotationFollowUpTooltipText,
@@ -344,6 +345,8 @@ export interface TurnCardProps {
   onAcceptPlan?: () => void
   /** Callback when user accepts the plan with compaction (compact conversation first, then execute) */
   onAcceptPlanWithCompact?: () => void
+  /** Callback when the user answers an AskUserQuestion questionnaire */
+  onRespondToUserQuestion?: (toolUseId: string, response: AskUserQuestionResponse) => void
   /** Whether this is the last response in the session (shows Accept Plan button only for last response) */
   isLastResponse?: boolean
   /** Session folder path for stripping from file paths in tool display */
@@ -2806,6 +2809,7 @@ export const TurnCard = React.memo(function TurnCard({
   renderActionsMenu,
   onAcceptPlan,
   onAcceptPlanWithCompact,
+  onRespondToUserQuestion,
   isLastResponse,
   sessionFolderPath,
   displayMode = 'detailed',
@@ -2915,8 +2919,14 @@ export const TurnCard = React.memo(function TurnCard({
     () => allSortedActivities.filter(a => a.type === 'plan'),
     [allSortedActivities]
   )
+  // AskUserQuestion tool calls render as an interactive questionnaire card,
+  // not as a collapsible activity row.
+  const askUserQuestionActivities = useMemo(
+    () => allSortedActivities.filter(a => a.type === 'tool' && a.toolName === ASK_USER_QUESTION_TOOL_NAME),
+    [allSortedActivities]
+  )
   const sortedActivities = useMemo(
-    () => allSortedActivities.filter(a => a.type !== 'plan'),
+    () => allSortedActivities.filter(a => a.type !== 'plan' && !(a.type === 'tool' && a.toolName === ASK_USER_QUESTION_TOOL_NAME)),
     [allSortedActivities]
   )
 
@@ -3189,6 +3199,29 @@ export const TurnCard = React.memo(function TurnCard({
           />
         </div>
       ))}
+
+      {/* AskUserQuestion — interactive questionnaire, always visible (not gated by expansion) */}
+      {askUserQuestionActivities.map((activity) => {
+        const rawQuestions = activity.toolInput?.questions
+        if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) return null
+        // Card renders each field defensively; backend already validated the shape.
+        const questions = rawQuestions as AskUserQuestionItem[]
+        const interactive = activity.status === 'running'
+        return (
+          <div key={activity.id} className={cn('select-text', (hasActivities || planActivities.length > 0) && 'mt-2')}>
+            <AskUserQuestionCard
+              questions={questions}
+              interactive={interactive}
+              answered={interactive ? null : parseAskUserQuestionResult(activity.content)}
+              onRespond={
+                onRespondToUserQuestion && activity.toolUseId
+                  ? (response) => onRespondToUserQuestion(activity.toolUseId!, response)
+                  : undefined
+              }
+            />
+          </div>
+        )
+      })}
 
       {/* Response Section - only shown when not buffering */}
       {/* Animated version for playground demos */}

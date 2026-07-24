@@ -82,7 +82,7 @@ import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
 import { restoreFiles } from '@craft-agent/shared/utils/bundle-files'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { CraftMcpClient, McpClientPool, McpPoolServer } from '@craft-agent/shared/mcp'
-import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type UnreadSummary, type RemoteSessionTransferPayload, type ImportRemoteSessionTransferResult, RPC_NAMESPACES, generateMessageId } from '@craft-agent/shared/protocol'
+import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type UnreadSummary, type RemoteSessionTransferPayload, type ImportRemoteSessionTransferResult, type CreateSessionOptions, type AskUserQuestionResponse, RPC_NAMESPACES, generateMessageId } from '@craft-agent/shared/protocol'
 import { storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta, type TokenUsage } from '@craft-agent/core/types'
 import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlAsync, getEmojiIcon, resetSummarizationClient, resolveToolIcon, readFileAttachment, selectSpreadMessages, normalizePath } from '@craft-agent/shared/utils'
 import { loadAllSkills, loadSkillBySlug, invalidateSkillsCache, type LoadedSkill } from '@craft-agent/shared/skills'
@@ -7273,6 +7273,20 @@ export class SessionManager implements ISessionManager {
       sessionLog.warn(`Cannot respond to credential - no pending request for ${requestId}`)
       return false
     }
+  }
+
+  /**
+   * Respond to a pending AskUserQuestion tool call (interactive questionnaire).
+   * Returns true if the response was delivered to a live agent, false otherwise.
+   */
+  respondToUserQuestion(sessionId: string, requestId: string, response: AskUserQuestionResponse): boolean {
+    const managed = this.sessions.get(sessionId)
+    if (managed?.agent) {
+      sessionLog.info(`AskUserQuestion response for ${requestId}: skipped=${!!response.skipped}`)
+      return managed.agent.respondToUserQuestion(requestId, response)
+    }
+    sessionLog.warn(`Cannot respond to user question - no agent for session ${sessionId}`)
+    return false
   }
 
   /**

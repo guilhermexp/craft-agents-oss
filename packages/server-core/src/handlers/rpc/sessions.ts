@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
-import { RPC_NAMESPACES, type FileAttachment, type SendMessageOptions } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES, type FileAttachment, type SendMessageOptions, type AskUserQuestionResponse } from '@craft-agent/shared/protocol'
 import type { StoredAttachment } from '@craft-agent/core/types'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { perf } from '@craft-agent/shared/utils'
@@ -180,6 +180,12 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // Returns true if the response was delivered, false if agent/session is gone
   server.handle(RPC_NAMESPACES.sessions.RESPOND_TO_CREDENTIAL, async (_ctx, sessionId: string, requestId: string, response: import('@craft-agent/shared/protocol').CredentialResponse) => {
     return sessionManager.respondToCredential(sessionId, requestId, response)
+  })
+
+  // Respond to an AskUserQuestion tool call (interactive questionnaire)
+  // Returns true if the response was delivered, false if agent/session is gone
+  server.handle(RPC_NAMESPACES.sessions.RESPOND_TO_USER_QUESTION, async (_ctx, sessionId: string, requestId: string, response: AskUserQuestionResponse) => {
+    return sessionManager.respondToUserQuestion(sessionId, requestId, response)
   })
 
   // ==========================================================================

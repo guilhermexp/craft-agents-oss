@@ -184,6 +184,7 @@ import type {
   SessionEvent,
   PermissionResponseOptions,
   CredentialResponse,
+  AskUserQuestionResponse,
   SessionCommand,
   ShareResult,
   RefreshTitleResult,
@@ -262,6 +263,7 @@ export interface ElectronAPI {
 
   respondToPermission(sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean, options?: PermissionResponseOptions): Promise<boolean>
   respondToCredential(sessionId: string, requestId: string, response: CredentialResponse): Promise<boolean>
+  respondToUserQuestion(sessionId: string, requestId: string, response: AskUserQuestionResponse): Promise<boolean>
 
   // Consolidated session command handler
   sessionCommand(sessionId: string, command: SessionCommand): Promise<void | ShareResult | RefreshTitleResult | { count: number }>

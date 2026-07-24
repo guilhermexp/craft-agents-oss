@@ -43,6 +43,7 @@ export const CHANNEL_MAP = {
   onTaskGenerated: listener(RPC_NAMESPACES.tasks.GENERATED),
   respondToPermission: invoke(RPC_NAMESPACES.sessions.RESPOND_TO_PERMISSION),
   respondToCredential: invoke(RPC_NAMESPACES.sessions.RESPOND_TO_CREDENTIAL),
+  respondToUserQuestion: invoke(RPC_NAMESPACES.sessions.RESPOND_TO_USER_QUESTION),
   sessionCommand: invoke(RPC_NAMESPACES.sessions.COMMAND),
   exportSession: invoke(RPC_NAMESPACES.sessions.EXPORT),
   importSession: invoke(RPC_NAMESPACES.sessions.IMPORT),

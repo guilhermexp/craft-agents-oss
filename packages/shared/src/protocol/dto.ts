@@ -13,6 +13,7 @@ import type {
   ToolDisplayMeta,
   AnnotationV1,
   PermissionRequest as BasePermissionRequest,
+  AskUserQuestionResponse,
 } from '@craft-agent/core/types'
 import type { PermissionMode } from '../agent/mode-types'
 import type { ThinkingLevel } from '../agent/thinking-levels'
@@ -602,6 +603,13 @@ export interface CredentialResponse {
   headers?: Record<string, string>
   cancelled: boolean
 }
+
+/**
+ * User response to an AskUserQuestion tool call (renderer -> backend).
+ * Canonical shape lives in @craft-agent/core; re-exported here so RPC
+ * handlers and the ElectronAPI can import it from @craft-agent/shared/protocol.
+ */
+export type { AskUserQuestionResponse }
 
 // ---------------------------------------------------------------------------
 // Directory browsing types (remote mode)

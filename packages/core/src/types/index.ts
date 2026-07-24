@@ -46,6 +46,10 @@ export type {
   ErrorCode,
   TypedError,
   PermissionRequest,
+  AskUserQuestionOption,
+  AskUserQuestionItem,
+  AskUserQuestionInput,
+  AskUserQuestionResponse,
   AgentEvent,
   // Auth-related types
   CredentialInputMode,

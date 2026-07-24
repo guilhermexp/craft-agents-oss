@@ -530,6 +530,55 @@ export interface PermissionRequest {
 }
 
 /**
+ * A single selectable option within an AskUserQuestion question.
+ */
+export interface AskUserQuestionOption {
+  /** Display text the user selects (concise, 1-5 words). */
+  label: string;
+  /** Explanation of what the option means or its trade-offs. */
+  description?: string;
+  /** Optional preview content (mockup, code snippet) shown when focused. */
+  preview?: string;
+}
+
+/**
+ * A single question presented by the AskUserQuestion tool.
+ */
+export interface AskUserQuestionItem {
+  /** The complete question to ask the user. */
+  question: string;
+  /** Very short label displayed as a chip/tag (~12 chars). */
+  header: string;
+  /** Available choices (typically 2-4). */
+  options: AskUserQuestionOption[];
+  /** When true, the user may select multiple options. */
+  multiSelect?: boolean;
+}
+
+/**
+ * Input payload for an AskUserQuestion tool call (agent -> UI).
+ * Mirrors the Claude Code SDK `AskUserQuestion` tool input.
+ */
+export interface AskUserQuestionInput {
+  questions: AskUserQuestionItem[];
+}
+
+/**
+ * User response to an AskUserQuestion tool call (UI -> agent).
+ *
+ * `answers` maps each question's text to the chosen answer string
+ * (comma-separated when the question is multi-select). `response` carries
+ * any freeform text the user typed instead of picking a listed option.
+ * `skipped` is true when the user dismissed the questionnaire without
+ * answering, in which case the agent should proceed with sensible defaults.
+ */
+export interface AskUserQuestionResponse {
+  answers: Record<string, string>;
+  response?: string;
+  skipped?: boolean;
+}
+
+/**
  * Usage data emitted by CraftAgent in 'complete' events
  * Note: This is a subset of TokenUsage - totalTokens/contextTokens are computed by consumers
  */

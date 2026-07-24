@@ -12,7 +12,7 @@
  * - AsyncGenerator for streaming: Consistent with existing CraftAgent API
  */
 
-import type { AgentEvent } from '@craft-agent/core/types';
+import type { AgentEvent, AskUserQuestionResponse } from '@craft-agent/core/types';
 import type { FileAttachment } from '../../utils/files.ts';
 import type { ThinkingLevel } from '../thinking-levels.ts';
 import type { PermissionMode } from '../mode-manager.ts';
@@ -610,6 +610,15 @@ export interface AgentBackend {
    * @param alwaysAllow - Whether to remember this permission for session
    */
   respondToPermission(requestId: string, allowed: boolean, alwaysAllow?: boolean): void;
+
+  /**
+   * Respond to a pending AskUserQuestion tool call (interactive questionnaire).
+   *
+   * @param requestId - The tool use id of the AskUserQuestion call
+   * @param response - The user's answers (or a skip)
+   * @returns true if a matching pending request was resolved
+   */
+  respondToUserQuestion(requestId: string, response: AskUserQuestionResponse): boolean;
 
   // ============================================================
   // Callbacks (set by facade after construction)

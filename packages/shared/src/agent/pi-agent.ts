@@ -70,6 +70,14 @@ import { attachSessionSelfManagementBindings } from './session-self-management-b
 
 // Session tool proxy definitions (for registering with subprocess)
 import { getSessionToolProxyDefs, SESSION_TOOL_NAMES } from './backend/pi/session-tool-defs.ts';
+import {
+  validateAskUserQuestions,
+  buildAskUserQuestionResult,
+  ASK_USER_QUESTION_TIMEOUT_MS,
+  ASK_USER_QUESTION_TOOL_NAME,
+  ASK_USER_QUESTION_TOOL_DESCRIPTION,
+  ASK_USER_QUESTION_INPUT_SCHEMA,
+} from './ask-user-question.ts';
 
 // Session tool registry (for executing proxy tool calls)
 import {
@@ -619,6 +627,19 @@ export class PiAgent extends BaseAgent {
     });
     this.debug(`Registered ${sessionToolDefs.length} session tools with subprocess`);
 
+    // Register the interactive AskUserQuestion tool so the model can pause and
+    // ask the user structured questions. Answers flow back as the tool result
+    // via routeToolCall (see ASK_USER_QUESTION_TOOL_NAME).
+    this.send({
+      type: 'register_tools',
+      tools: [{
+        name: ASK_USER_QUESTION_TOOL_NAME,
+        description: ASK_USER_QUESTION_TOOL_DESCRIPTION,
+        inputSchema: ASK_USER_QUESTION_INPUT_SCHEMA,
+      }],
+    });
+    this.debug('Registered AskUserQuestion tool with subprocess');
+
     // If pool has source tools, register them with the subprocess.
     this.registerPoolToolsWithSubprocess();
   }
@@ -950,6 +971,7 @@ export class PiAgent extends BaseAgent {
           requestId: string;
           toolName: string;
           args: Record<string, unknown>;
+          toolCallId?: string;
         });
         break;
 
@@ -1420,6 +1442,7 @@ export class PiAgent extends BaseAgent {
     requestId: string;
     toolName: string;
     args: Record<string, unknown>;
+    toolCallId?: string;
   }): Promise<void> {
     // Prerequisite check: block source tools until guide.md is read
     const prereqResult = this.prerequisiteManager.checkPrerequisites(request.toolName);
@@ -1433,7 +1456,7 @@ export class PiAgent extends BaseAgent {
     }
 
     try {
-      const result = await this.routeToolCall(request.toolName, request.args);
+      const result = await this.routeToolCall(request.toolName, request.args, request.toolCallId);
       this.send({
         type: 'tool_execute_response',
         requestId: request.requestId,
@@ -1463,8 +1486,30 @@ export class PiAgent extends BaseAgent {
    */
   private async routeToolCall(
     toolName: string,
-    args: Record<string, unknown>
+    args: Record<string, unknown>,
+    toolCallId?: string,
   ): Promise<{ content: string; isError: boolean }> {
+    // AskUserQuestion — interactive questionnaire. Park until the UI answers.
+    // The tool result echoes {questions, answers, response} so the model sees
+    // the user's choices (matching the Claude backend contract). Key the parked
+    // request by the SDK tool-call id so the renderer's answer (sent with that
+    // same id) resolves it.
+    if (toolName === ASK_USER_QUESTION_TOOL_NAME) {
+      const questions = validateAskUserQuestions(args);
+      if (!questions) {
+        return {
+          content: 'AskUserQuestion needs a non-empty `questions` array; each question requires a non-empty `question` string and a non-empty `options` array. Fix the arguments and call again, or ask the user in plain text.',
+          isError: true,
+        };
+      }
+      const requestId = toolCallId ?? `pi-ask-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const answer = await this.awaitUserQuestion(requestId, ASK_USER_QUESTION_TIMEOUT_MS);
+      return {
+        content: JSON.stringify(buildAskUserQuestionResult(questions, answer)),
+        isError: false,
+      };
+    }
+
     // Session-scoped tools — strip mcp__session__ prefix added by the Pi SDK
     // registration (tools are registered as mcp__session__SubmitPlan, etc.)
     const strippedName = toolName.startsWith('mcp__session__')
@@ -1799,6 +1844,7 @@ export class PiAgent extends BaseAgent {
       pending.reject(new Error('Pi subprocess exited'));
     }
     this.pendingToolExecutions.clear();
+    this.clearPendingUserQuestions('the agent process exited');
 
     // Drop any cached pre-tool metadata for the dead subprocess.
     this.preToolMetadataByCallId.clear();
@@ -2305,6 +2351,7 @@ export class PiAgent extends BaseAgent {
       pending.resolve(false);
     }
     this.pendingPermissions.clear();
+    this.clearPendingUserQuestions('the turn was aborted');
 
     // Send abort to subprocess
     this.send({ type: 'abort' });
@@ -2332,6 +2379,7 @@ export class PiAgent extends BaseAgent {
       pending.reject(new Error(`Force aborted: ${reason}`));
     }
     this.pendingToolExecutions.clear();
+    this.clearPendingUserQuestions('the turn was aborted');
 
     // Signal turn complete to wake up any waiting consumers
     this.eventQueue.complete();
@@ -2400,6 +2448,7 @@ export class PiAgent extends BaseAgent {
     }
 
     this._sessionToolContext = null;
+    this.clearPendingUserQuestions('the session ended');
     // Pool clients are owned by the main process — don't close them here.
     this.killSubprocess();
     this.debug('PiAgent destroyed');

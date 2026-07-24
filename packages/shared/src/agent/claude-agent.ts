@@ -71,6 +71,7 @@ import {
   type PreToolUseCheckResult,
   BUILT_IN_TOOLS,
 } from './core/pre-tool-use.ts';
+import { validateAskUserQuestions, ASK_USER_QUESTION_TIMEOUT_MS } from './ask-user-question.ts';
 import { getRtkPath } from './core/rtk-detector.ts';
 import type { RtkContext } from './core/rtk-rewrite.ts';
 import { type ThinkingLevel, THINKING_TO_EFFORT, getThinkingTokens, DEFAULT_THINKING_LEVEL } from './thinking-levels.ts';
@@ -1071,9 +1072,11 @@ export class ClaudeAgent extends BaseAgent {
 
       // Block SDK tools that require UI we don't have:
       // - EnterPlanMode/ExitPlanMode: We use safe mode instead (user-controlled via UI)
-      // - AskUserQuestion: Requires interactive UI to show question options to user
+      // AskUserQuestion is intentionally NOT blocked: it is intercepted in the
+      // PreToolUse hook below and rendered as an interactive questionnaire in the
+      // conversation, then its answers are fed back as the tool result.
       // Note: Mini agents use a minimal tool list directly, so no additional blocking needed
-      const disallowedTools: string[] = ['EnterPlanMode', 'ExitPlanMode', 'AskUserQuestion', 'Skill'];
+      const disallowedTools: string[] = ['EnterPlanMode', 'ExitPlanMode', 'Skill'];
 
       // Build MCP servers config
       // Mini agents: only session tools (config_validate) to minimize token usage
@@ -1275,6 +1278,38 @@ export class ClaudeAgent extends BaseAgent {
                 return { continue: true };
               }
               const input = _hookInput as Required<Pick<typeof _hookInput, 'tool_name' | 'tool_use_id'>> & typeof _hookInput;
+
+              // --- AskUserQuestion: interactive questionnaire ---
+              // The SDK's AskUserQuestion tool needs an interactive surface we
+              // render in the conversation. We park the tool call here, let the
+              // renderer show the questionnaire (from the streamed tool_start),
+              // and wait for the user to answer via respondToUserQuestion().
+              // Returning the answers as `updatedInput` makes the SDK run the
+              // tool's echo `call()`, so Claude receives {questions, answers,
+              // response} as the tool result. Malformed payloads are blocked with
+              // guidance instead of parking on an unanswerable questionnaire.
+              if (input.tool_name === 'AskUserQuestion') {
+                const questions = validateAskUserQuestions(input.tool_input);
+                if (!questions) {
+                  return blockWithReason(
+                    'AskUserQuestion needs a non-empty `questions` array; each question requires a non-empty `question` string and a non-empty `options` array. Fix the arguments and call the tool again, or ask the user in plain text.'
+                  );
+                }
+                this.onDebug?.(`AskUserQuestion parked for ${input.tool_use_id} (${questions.length} question(s))`);
+                const answer = await this.awaitUserQuestion(input.tool_use_id, ASK_USER_QUESTION_TIMEOUT_MS);
+                const updatedInput: Record<string, unknown> = {
+                  questions,
+                  answers: answer.answers ?? {},
+                };
+                if (answer.response) updatedInput.response = answer.response;
+                return {
+                  continue: true,
+                  hookSpecificOutput: {
+                    hookEventName: 'PreToolUse' as const,
+                    updatedInput,
+                  },
+                };
+              }
 
               // Track Read tool calls for prerequisite checking
               if (input.tool_name === 'Read') {
@@ -2813,6 +2848,7 @@ This is a branched conversation. All prior messages in this conversation are par
       this.currentQueryAbortController = null;
     }
     this.currentQuery = null;
+    this.clearPendingUserQuestions('the turn was aborted');
   }
 
   getModel(): string {
@@ -2928,6 +2964,7 @@ This is a branched conversation. All prior messages in this conversation are par
     // subprocess/background sub-agents leak past the agent's lifetime.
     this.teardownPersistentQuery('destroy');
     this.pendingPermissions.clear();
+    this.clearPendingUserQuestions('the session ended');
 
     // Clear pinned system prompt state
     this.pinnedPreferencesPrompt = null;
