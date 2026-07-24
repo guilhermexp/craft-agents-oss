@@ -1278,6 +1278,53 @@ export function createManagedSession(
   return managed
 }
 
+type SpawnSessionParentDefaults = Pick<ManagedSession,
+  'id' |
+  'llmConnection' |
+  'model' |
+  'enabledSourceSlugs' |
+  'permissionMode' |
+  'thinkingLevel' |
+  'labels' |
+  'projectId'
+>
+
+type SpawnedSessionRequestDefaults = Pick<CreateSessionOptions,
+  'name' |
+  'llmConnection' |
+  'model' |
+  'enabledSourceSlugs' |
+  'permissionMode' |
+  'thinkingLevel' |
+  'labels' |
+  'workingDirectory' |
+  'projectId'
+> & { prompt?: string }
+
+export function createSpawnedSessionOptions(
+  request: SpawnedSessionRequestDefaults,
+  parent: SpawnSessionParentDefaults,
+): CreateSessionOptions {
+  const llmConnection = request.llmConnection ?? parent.llmConnection
+  const shouldInheritParentModel = request.model !== undefined
+    || request.llmConnection === undefined
+    || request.llmConnection === parent.llmConnection
+
+  return {
+    name: request.name,
+    llmConnection,
+    model: request.model ?? (shouldInheritParentModel ? parent.model : 'default'),
+    enabledSourceSlugs: request.enabledSourceSlugs ?? parent.enabledSourceSlugs,
+    permissionMode: request.permissionMode ?? parent.permissionMode,
+    thinkingLevel: request.thinkingLevel ?? parent.thinkingLevel,
+    labels: request.labels ?? parent.labels,
+    workingDirectory: request.workingDirectory,
+    projectId: request.projectId ?? parent.projectId,
+    // Spawned sessions become subtasks of the spawning session.
+    parentSessionId: parent.id,
+  }
+}
+
 /**
  * Resolve supportsBranching for a managed session.
  * Prefers the live agent instance; with a lazy agent (e.g. session restored
@@ -4449,19 +4496,10 @@ export class SessionManager implements ISessionManager {
       managed.agent.onSpawnSession = async (request) => {
         sessionLog.info(`Spawn session request from session ${managed.id}:`, request.name || '(unnamed)')
 
-        const session = await this.createSession(managed.workspace.id, {
-          name: request.name,
-          llmConnection: request.llmConnection ?? managed.llmConnection,
-          model: request.model ?? managed.model,
-          enabledSourceSlugs: request.enabledSourceSlugs ?? managed.enabledSourceSlugs,
-          permissionMode: request.permissionMode ?? managed.permissionMode,
-          thinkingLevel: request.thinkingLevel ?? managed.thinkingLevel,
-          labels: request.labels ?? managed.labels,
-          workingDirectory: request.workingDirectory,
-          projectId: request.projectId ?? managed.projectId,
-          // Spawned sessions become subtasks of the spawning session.
-          parentSessionId: managed.id,
-        })
+        const session = await this.createSession(
+          managed.workspace.id,
+          createSpawnedSessionOptions(request, managed),
+        )
 
         // Build FileAttachment[] from paths (if any)
         let fileAttachments: FileAttachment[] | undefined
