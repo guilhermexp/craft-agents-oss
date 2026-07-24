@@ -69,3 +69,34 @@ describe('parseError tool-support classification', () => {
     }
   })
 })
+
+describe('parseError transient connection classification', () => {
+  // Regression: a mid-turn provider WebSocket drop ("WebSocket closed 1000 CloudFlare
+  // WebSocket proxy restarting") fell through to unknown_error and was emitted as a
+  // plain, non-retryable error — killing the turn with a raw red card and no Retry.
+  it('classifies the CloudFlare WebSocket proxy restart as a retryable service_error', () => {
+    const parsed = parseError(new Error('WebSocket closed 1000 CloudFlare WebSocket proxy restarting'))
+    expect(parsed.code).toBe('service_error')
+    expect(parsed.canRetry).toBe(true)
+  })
+
+  it('classifies other transient socket disconnects as retryable', () => {
+    const cases = [
+      'socket hang up',
+      'read ECONNRESET',
+      'WebSocket proxy connection dropped',
+    ]
+    for (const message of cases) {
+      const parsed = parseError(new Error(message))
+      expect(parsed.code).toBe('service_error')
+      expect(parsed.canRetry).toBe(true)
+    }
+  })
+
+  it('lets auth errors win over the transient-disconnect branch', () => {
+    // A websocket close carrying a 401 must still route to the token-refresh retry
+    // pipeline, not the generic service_error blip.
+    const parsed = parseError(new Error('WebSocket closed: 401 authentication failed'))
+    expect(parsed.code).not.toBe('service_error')
+  })
+})

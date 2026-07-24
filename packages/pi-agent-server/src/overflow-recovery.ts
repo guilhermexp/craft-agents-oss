@@ -22,6 +22,16 @@ export function isContextOverflowErrorMessage(message: string): boolean {
   );
 }
 
+/**
+ * True when a `session.compact()` failure is the benign "there was nothing new
+ * to compact" race — the SDK's own auto-compaction (enabled at spawn) already
+ * ran, or the context is too small to compact. Callers treat this as a
+ * success no-op instead of surfacing the raw plumbing error.
+ */
+export function isAlreadyCompactedMessage(message: string): boolean {
+  return /already compacted|nothing to compact/i.test(message);
+}
+
 /** Minimal shape of the SDK session events the suppressor inspects. */
 export interface OverflowSuppressionEvent {
   type?: string;

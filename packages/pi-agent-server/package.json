@@ -9,7 +9,7 @@
     "pi-agent-server": "./dist/index.js"
   },
   "scripts": {
-    "build": "bun build src/index.ts --outdir=dist --target=bun --format=esm --external koffi && rm -rf dist/pi-computer-use && cp -R src/pi-computer-use dist/pi-computer-use",
+    "build": "bun build src/index.ts --outdir=dist --target=bun --format=esm --external koffi && rm -rf dist/pi-computer-use && cp -R src/pi-computer-use dist/pi-computer-use && rm -rf dist/pi-better-subagents && cp -R src/pi-better-subagents dist/pi-better-subagents",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "validate": "bun run typecheck && bun run build"
   },

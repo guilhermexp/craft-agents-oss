@@ -588,6 +588,15 @@ export function copyPiAgentServer(config: BuildConfig, resourcesDir?: string): v
   // 1. Copy index.js
   copyFileSync(join(piSourceDir, 'index.js'), join(piDestDir, 'index.js'));
 
+  // 1b. Copy the vendored pi-better-subagents extension. It is pure TS (no
+  //     native binaries), loaded via jiti at runtime by the Pi SDK resource
+  //     loader from `<SERVER_DIR>/pi-better-subagents`. Skipped if absent.
+  const subagentsSrc = join(piSourceDir, 'pi-better-subagents');
+  if (existsSync(subagentsSrc)) {
+    cpSync(subagentsSrc, join(piDestDir, 'pi-better-subagents'), { recursive: true });
+    console.log('  Copied pi-better-subagents extension');
+  }
+
   // 2. Copy koffi npm package (external import, resolved via node_modules at runtime)
   const koffiSource = join(rootDir, 'node_modules', 'koffi');
 

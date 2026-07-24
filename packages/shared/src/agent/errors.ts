@@ -424,6 +424,18 @@ export function parseError(
     code = 'rate_limited';
   } else if (lowerMessage.includes('500') || lowerMessage.includes('502') || lowerMessage.includes('503') || lowerMessage.includes('504') || lowerMessage.includes('internal server error') || lowerMessage.includes('service unavailable')) {
     code = 'service_error';
+  } else if (
+    lowerMessage.includes('websocket closed') ||
+    lowerMessage.includes('websocket proxy') ||
+    lowerMessage.includes('proxy restarting') ||
+    lowerMessage.includes('socket hang up') ||
+    lowerMessage.includes('econnreset')
+  ) {
+    // Transient provider WebSocket/proxy disconnect (e.g. "WebSocket closed 1000
+    // CloudFlare WebSocket proxy restarting"). The streaming connection dropped
+    // mid-turn; classify as a retryable service blip instead of unknown_error so the
+    // turn surfaces a proper Retry action rather than dying with a raw error card.
+    code = 'service_error';
   } else if (lowerMessage.includes('network') || lowerMessage.includes('econnrefused') || lowerMessage.includes('enotfound') || lowerMessage.includes('fetch failed') || lowerMessage.includes('connection')) {
     code = 'network_error';
   } else if (lowerMessage.includes('mcp') && (lowerMessage.includes('auth') || lowerMessage.includes('401'))) {

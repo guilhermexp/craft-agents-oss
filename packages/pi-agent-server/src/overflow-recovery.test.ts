@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   decideOverflowSuppression,
   isContextOverflowErrorMessage,
+  isAlreadyCompactedMessage,
 } from './overflow-recovery.ts'
 
 describe('isContextOverflowErrorMessage', () => {
@@ -25,6 +26,21 @@ describe('isContextOverflowErrorMessage', () => {
     expect(isContextOverflowErrorMessage('Bad Request')).toBe(false)
     expect(isContextOverflowErrorMessage('401 Unauthorized')).toBe(false)
     expect(isContextOverflowErrorMessage('Already compacted')).toBe(false)
+  })
+})
+
+describe('isAlreadyCompactedMessage', () => {
+  it('matches the SDK "already compacted" / "nothing to compact" races case-insensitively', () => {
+    expect(isAlreadyCompactedMessage('Already compacted')).toBe(true)
+    expect(isAlreadyCompactedMessage('already compacted')).toBe(true)
+    expect(isAlreadyCompactedMessage('Nothing to compact')).toBe(true)
+    expect(isAlreadyCompactedMessage('Compaction failed: Already compacted')).toBe(true)
+  })
+
+  it('does not match real compaction failures or unrelated errors', () => {
+    expect(isAlreadyCompactedMessage('Compaction failed: Out of memory')).toBe(false)
+    expect(isAlreadyCompactedMessage('context_length_exceeded')).toBe(false)
+    expect(isAlreadyCompactedMessage('Bad Request')).toBe(false)
   })
 })
 

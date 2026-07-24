@@ -76,6 +76,7 @@ import { buildCustomEndpointModelDef, type CustomEndpointModelOverrides } from '
 import {
   decideOverflowSuppression,
   isContextOverflowErrorMessage,
+  isAlreadyCompactedMessage,
 } from './overflow-recovery.ts';
 
 // Direct source imports from shared (bundled by bun build)
@@ -87,6 +88,7 @@ import { PI_TOOL_NAME_MAP, THINKING_TO_PI } from '../../shared/src/agent/backend
 import { getDefaultSummarizationModel } from '../../shared/src/config/models.ts';
 import { createWebFetchTool } from './tools/web-fetch.ts';
 import { buildPiToolAllowlist } from './computer-use-tools.ts';
+import { SUBAGENT_TOOL_NAMES } from './subagent-tools.ts';
 import { resolveSearchProvider } from './tools/search/resolve-provider.ts';
 import { createSearchTool } from './tools/search/create-search-tool.ts';
 
@@ -305,6 +307,7 @@ let initConfig: Extract<InboundMessage, { type: 'init' }> | null = null;
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const COMPUTER_USE_PACKAGE_DIR = join(SERVER_DIR, 'pi-computer-use');
+const SUBAGENTS_PACKAGE_DIR = join(SERVER_DIR, 'pi-better-subagents');
 
 // Mutable state
 let currentUserMessage = '';
@@ -693,21 +696,42 @@ async function ensureSession(): Promise<AgentSession> {
     mkdirSync(agentDir, { recursive: true });
     sessionOptions.agentDir = agentDir;
 
+    // Craft-vendored Pi extensions load through a single resource loader.
+    // Global ~/.pi/agent extensions stay isolated (agentDir above); only these
+    // explicit vendored paths load.
+    const extensionPaths: string[] = [];
+
+    // pi-better-subagents: async, non-blocking subagent delegation tools.
+    // Cross-platform; the child `pi -p` invocation resolves the pi binary at
+    // spawn time.
+    if (existsSync(SUBAGENTS_PACKAGE_DIR)) {
+      extensionPaths.push(SUBAGENTS_PACKAGE_DIR);
+      toolAllowlist = [...new Set([...toolAllowlist, ...SUBAGENT_TOOL_NAMES])];
+      debugLog(`Enabled pi-better-subagents package: ${SUBAGENTS_PACKAGE_DIR}; added subagent tools to allowlist`);
+    } else {
+      debugLog(`pi-better-subagents package not found at ${SUBAGENTS_PACKAGE_DIR}; continuing without subagents`);
+    }
+
+    // pi-computer-use: macOS desktop control, opt-in via enableComputerUse.
     if (initConfig.enableComputerUse && process.platform === 'darwin') {
       if (existsSync(COMPUTER_USE_PACKAGE_DIR)) {
-        const resourceLoader = new DefaultResourceLoader({
-          cwd,
-          agentDir,
-          additionalExtensionPaths: [COMPUTER_USE_PACKAGE_DIR],
-        });
-        await resourceLoader.reload();
-        sessionOptions.resourceLoader = resourceLoader;
+        extensionPaths.push(COMPUTER_USE_PACKAGE_DIR);
         toolAllowlist = buildPiToolAllowlist(toolAllowlist, true);
-        sessionOptions.tools = toolAllowlist;
         debugLog(`Enabled pi-computer-use package: ${COMPUTER_USE_PACKAGE_DIR}; added desktop tools to allowlist`);
       } else {
         debugLog(`pi-computer-use package not found at ${COMPUTER_USE_PACKAGE_DIR}; continuing without desktop computer-use`);
       }
+    }
+
+    if (extensionPaths.length > 0) {
+      const resourceLoader = new DefaultResourceLoader({
+        cwd,
+        agentDir,
+        additionalExtensionPaths: extensionPaths,
+      });
+      await resourceLoader.reload();
+      sessionOptions.resourceLoader = resourceLoader;
+      sessionOptions.tools = toolAllowlist;
     }
 
     // Session resume: use a per-Craft-session directory so the Pi SDK can
@@ -1454,7 +1478,7 @@ async function recoverFromContextOverflow(source: string, errorMsg: string): Pro
       await waitForCompaction(session);
     } catch (compactError) {
       const compactMsg = compactError instanceof Error ? compactError.message : String(compactError);
-      if (!/already compacted|nothing to compact/i.test(compactMsg)) {
+      if (!isAlreadyCompactedMessage(compactMsg)) {
         throw compactError;
       }
       debugLog(`${source} manual compact skipped (${compactMsg}); context already compacted`);
@@ -1480,7 +1504,8 @@ async function recoverFromContextOverflow(source: string, errorMsg: string): Pro
     debugLog(`${source} compact+retry failed: ${retryMsg}`);
     const isOverflowFamily =
       isContextOverflowErrorMessage(retryMsg) ||
-      /already compacted|nothing to compact|compaction failed/i.test(retryMsg);
+      isAlreadyCompactedMessage(retryMsg) ||
+      /compaction failed/i.test(retryMsg);
     emitOverflowTerminalError(
       isOverflowFamily ? OVERFLOW_UNRECOVERABLE_MESSAGE : `Automatic context recovery failed: ${retryMsg}`,
     );
@@ -1667,6 +1692,20 @@ async function handleCompact(msg: Extract<InboundMessage, { type: 'compact' }>):
     });
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
+    // The manual /compact races the SDK's own auto-compaction (enabled at
+    // spawn for resilience). When it already ran, session.compact() throws
+    // "Already compacted"/"Nothing to compact". Mirror the overflow-recovery
+    // path (see attemptOverflowRecovery) and treat that as a success no-op
+    // instead of surfacing the raw plumbing error to the UI.
+    if (isAlreadyCompactedMessage(errorMsg)) {
+      debugLog(`[compact] Skipped (${errorMsg}); context already compacted`);
+      send({
+        type: 'compact_result',
+        id: msg.id,
+        success: true,
+      });
+      return;
+    }
     debugLog(`[compact] Failed: ${errorMsg}`);
     send({
       type: 'compact_result',
