@@ -17,6 +17,7 @@ import { PreviewOverlay } from './PreviewOverlay'
 import { CopyButton } from './CopyButton'
 import { ItemNavigator } from './ItemNavigator'
 import { prepareHtmlPreviewSrcDoc } from '../../lib/html-preview-sanitizer'
+import { resolveHtmlPreviewBackground } from '../../lib/html-preview-background'
 
 interface PreviewItem {
   src: string
@@ -75,6 +76,7 @@ export function HTMLPreviewOverlay({
   const [activeIdx, setActiveIdx] = React.useState(initialIndex)
   const iframeRef = React.useRef<HTMLIFrameElement>(null)
   const [contentSize, setContentSize] = React.useState<{ width: number; height: number } | null>(null)
+  const [pageBackground, setPageBackground] = React.useState<string | null>(null)
 
   // Internal content cache (merges external + locally loaded)
   const [internalCache, setInternalCache] = React.useState<Record<string, string>>({})
@@ -97,6 +99,7 @@ export function HTMLPreviewOverlay({
     if (isOpen) {
       setActiveIdx(initialIndex)
       setContentSize(null)
+      setPageBackground(null)
       setLoadError(null)
     }
   }, [isOpen, initialIndex])
@@ -104,6 +107,7 @@ export function HTMLPreviewOverlay({
   const handleSelectItem = React.useCallback((idx: number) => {
     setActiveIdx(idx)
     setContentSize(null)
+    setPageBackground(null)
     setLoadError(null)
   }, [])
 
@@ -145,7 +149,11 @@ export function HTMLPreviewOverlay({
       const naturalWidth = doc.body.scrollWidth
       doc.body.style.width = origWidth
       const height = doc.body.scrollHeight
+      const view = doc.defaultView
+      const htmlBg = view?.getComputedStyle(doc.documentElement).backgroundColor
+      const bodyBg = view?.getComputedStyle(doc.body).backgroundColor
       setContentSize({ width: naturalWidth, height })
+      setPageBackground(resolveHtmlPreviewBackground(htmlBg, bodyBg))
     } catch {
       // Cross-origin access denied
     }
@@ -159,6 +167,10 @@ export function HTMLPreviewOverlay({
   // read to measure height — show it immediately at the default height instead
   // of gating on a measurement that will never arrive.
   const measured = contentSize !== null || allowScripts
+
+  // Full HTML documents paint their own page background and should render
+  // edge-to-edge; only transparent/white fragments keep the white paper frame.
+  const isFullBleed = pageBackground !== null
 
   // Header actions: item navigation + copy button
   const headerActions = (
@@ -190,10 +202,13 @@ export function HTMLPreviewOverlay({
         )}
         {processedHtml && (
           <div
-            className="bg-white rounded-[12px] overflow-hidden shadow-minimal mx-auto"
+            className={`rounded-[12px] overflow-hidden shadow-minimal mx-auto ${isFullBleed ? '' : 'bg-white'}`}
             style={{
-              maxWidth: contentSize?.width ? `${contentSize.width + 128}px` : undefined,
-              padding: '24px 64px 36px',
+              background: isFullBleed ? pageBackground : undefined,
+              maxWidth: isFullBleed
+                ? undefined
+                : contentSize?.width ? `${contentSize.width + 128}px` : undefined,
+              padding: isFullBleed ? 0 : '24px 64px 36px',
               opacity: measured ? 1 : 0,
               transition: 'opacity 200ms ease-out',
             }}

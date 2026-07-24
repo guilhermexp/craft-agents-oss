@@ -2995,17 +2995,24 @@ export const TurnCard = React.memo(function TurnCard({
     [activities]
   )
 
-  // Separate plan activities from regular activities
-  // Plans are rendered as full ResponseCards, not in the collapsible activities section
-  const planActivities = useMemo(
-    () => allSortedActivities.filter(a => a.type === 'plan'),
+  // Plans and AskUserQuestion tool calls render as full-width cards (ResponseCard /
+  // AskUserQuestionCard) rather than collapsible activity rows. Keep them in a single
+  // chronological stream so a card produced later (e.g. a plan emitted after the user
+  // answered a question) renders below the earlier ones, instead of forcing every plan
+  // above every question regardless of timestamp.
+  const fullWidthCards = useMemo(
+    () => allSortedActivities.filter(
+      a => a.type === 'plan' || (a.type === 'tool' && a.toolName === ASK_USER_QUESTION_TOOL_NAME)
+    ),
     [allSortedActivities]
   )
-  // AskUserQuestion tool calls render as an interactive questionnaire card,
-  // not as a collapsible activity row.
-  const askUserQuestionActivities = useMemo(
-    () => allSortedActivities.filter(a => a.type === 'tool' && a.toolName === ASK_USER_QUESTION_TOOL_NAME),
-    [allSortedActivities]
+  // Only the last plan card exposes the Accept Plan action.
+  const lastPlanActivityId = useMemo(
+    () => fullWidthCards.reduce<string | undefined>(
+      (last, a) => (a.type === 'plan' ? a.id : last),
+      undefined
+    ),
+    [fullWidthCards]
   )
   const sortedActivities = useMemo(
     () => allSortedActivities.filter(a => a.type !== 'plan' && !(a.type === 'tool' && a.toolName === ASK_USER_QUESTION_TOOL_NAME)),
@@ -3251,46 +3258,49 @@ export const TurnCard = React.memo(function TurnCard({
         </div>
       )}
 
-      {/* Plan Activities - rendered as full ResponseCards, time-sorted with other activities */}
-      {planActivities.map((planActivity, index) => (
-        <div key={planActivity.id} className={cn("select-text", (hasActivities || index > 0) && "mt-2")}>
-          <ResponseCard
-            text={planActivity.content || ''}
-            isStreaming={false}
-            sessionId={sessionId}
-            onOpenFile={onOpenFile}
-            onResolveFilePath={onResolveFilePath}
-            onOpenUrl={onOpenUrl}
-            onPopOut={onPopOut ? () => onPopOut(planActivity.content || '') : undefined}
-            variant="plan"
-            messageId={planActivity.messageId}
-            annotations={planActivity.annotations}
-            onAddAnnotation={onAddAnnotation}
-            onRemoveAnnotation={onRemoveAnnotation}
-            onUpdateAnnotation={onUpdateAnnotation}
-            onSaveAndSendFollowUp={onSaveAndSendFollowUp}
-            onAccept={onAcceptPlan}
-            onAcceptWithCompact={onAcceptPlanWithCompact}
-            isLastResponse={isLastResponse && index === planActivities.length - 1}
-            compactMode={compactMode}
-            onBranch={onBranch ? (options?: { newPanel?: boolean }) => onBranch(planActivity.messageId ?? planActivity.id, options) : undefined}
-            sendMessageKey={sendMessageKey}
-            hasActiveFollowUpAnnotations={hasActiveFollowUpAnnotations}
-            openAnnotationRequest={openAnnotationRequest}
-            annotationInteractionMode={annotationInteractionMode}
-          />
-        </div>
-      ))}
-
-      {/* AskUserQuestion — interactive questionnaire, always visible (not gated by expansion) */}
-      {askUserQuestionActivities.map((activity) => {
+      {/* Plans + AskUserQuestion cards, rendered in chronological order (see fullWidthCards)
+          so a plan emitted after an answered question appears below it, not above. */}
+      {fullWidthCards.map((activity, index) => {
+        const spaced = hasActivities || index > 0
+        if (activity.type === 'plan') {
+          return (
+            <div key={activity.id} className={cn('select-text', spaced && 'mt-2')}>
+              <ResponseCard
+                text={activity.content || ''}
+                isStreaming={false}
+                sessionId={sessionId}
+                onOpenFile={onOpenFile}
+                onResolveFilePath={onResolveFilePath}
+                onOpenUrl={onOpenUrl}
+                onPopOut={onPopOut ? () => onPopOut(activity.content || '') : undefined}
+                variant="plan"
+                messageId={activity.messageId}
+                annotations={activity.annotations}
+                onAddAnnotation={onAddAnnotation}
+                onRemoveAnnotation={onRemoveAnnotation}
+                onUpdateAnnotation={onUpdateAnnotation}
+                onSaveAndSendFollowUp={onSaveAndSendFollowUp}
+                onAccept={onAcceptPlan}
+                onAcceptWithCompact={onAcceptPlanWithCompact}
+                isLastResponse={isLastResponse && activity.id === lastPlanActivityId}
+                compactMode={compactMode}
+                onBranch={onBranch ? (options?: { newPanel?: boolean }) => onBranch(activity.messageId ?? activity.id, options) : undefined}
+                sendMessageKey={sendMessageKey}
+                hasActiveFollowUpAnnotations={hasActiveFollowUpAnnotations}
+                openAnnotationRequest={openAnnotationRequest}
+                annotationInteractionMode={annotationInteractionMode}
+              />
+            </div>
+          )
+        }
+        // AskUserQuestion tool call → interactive questionnaire card
         const rawQuestions = activity.toolInput?.questions
         if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) return null
         // Card renders each field defensively; backend already validated the shape.
         const questions = rawQuestions as AskUserQuestionItem[]
         const interactive = activity.status === 'running'
         return (
-          <div key={activity.id} className={cn('select-text', (hasActivities || planActivities.length > 0) && 'mt-2')}>
+          <div key={activity.id} className={cn('select-text', spaced && 'mt-2')}>
             <AskUserQuestionCard
               questions={questions}
               interactive={interactive}

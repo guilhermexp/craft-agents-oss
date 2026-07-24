@@ -789,17 +789,17 @@ html[data-font="inter"] {
 }
 
 /* =============================================================================
-   SCENIC MODE - GLASS PANEL EFFECTS
+   SCENIC MODE - TRANSLUCENT PANEL EFFECTS
 
-   In scenic mode, panels become translucent with backdrop blur (glassmorphism).
-   The glass effect provides visual depth while showing the background image through.
+   In scenic mode, panels remain translucent so the softened wallpaper shows through.
    Target panels by their shadow classes (shadow-middle, shadow-strong).
 ============================================================================= */
 
-  html[data-scenic] .shadow-middle,
-  html[data-scenic] .shadow-strong {
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+html[data-scenic] .shadow-middle,
+html[data-scenic] .shadow-strong {
+  /* Do not restore backdrop-filter on these scrolling panels. Chromium/Metal can
+     recompose the full scenic surface while descendants scroll, causing an
+     app-wide flash. Keep wallpaper softness on the stable html::before layer. */
   position: relative;
   /* Ensure panels are above the titlebar drag region (z-titlebar: 40) so header buttons are clickable.
      Without this, the position:relative creates a stacking context at z-index:auto which is below the fixed titlebar. */
@@ -839,7 +839,7 @@ html[data-scenic] .shadow-strong::before {
 
 /* Scenic mode: Ensure panel content is above the gradient border pseudo-element.
    Without this, interactive elements (buttons, dropdowns) in the header area
-   can be visually obscured or have click issues due to stacking context with backdrop-filter.
+   can be visually obscured or have click issues due to the pseudo-element stacking context.
    Creates explicit stacking for direct children so they sit above ::before (z-index: 1). */
 html[data-scenic] .shadow-middle > *,
 html[data-scenic] .shadow-strong > * {

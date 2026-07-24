@@ -63,4 +63,20 @@ describe('getRightSidebarResizeWidth', () => {
       minWidth: 260,
     })).toBe(784)
   })
+
+  it('caps the file-list-only view so a large persisted width stays compact', () => {
+    const getEffectiveWidth = getEffectiveWidthFunction() as
+      | ((input: EffectiveWidthInput & { maxWidthCap?: number }) => number)
+      | undefined
+    expect(typeof getEffectiveWidth).toBe('function')
+    if (!getEffectiveWidth) return
+
+    expect(getEffectiveWidth({
+      width: 786,
+      windowWidth: 1440,
+      edgeInset: 8,
+      minWidth: 260,
+      maxWidthCap: 380,
+    })).toBe(380)
+  })
 })

@@ -117,7 +117,15 @@ const MENU_CONTAINER_STYLE = 'min-w-[200px] overflow-hidden rounded-[8px] bg-bac
 const MENU_LIST_STYLE = 'max-h-[260px] overflow-y-auto py-1'
 const MENU_ITEM_STYLE = 'flex cursor-pointer select-none items-center gap-2 rounded-[6px] mx-1 px-2 py-1.5 text-[13px]'
 const MENU_ITEM_SELECTED = 'bg-foreground/5'
-const MENU_SECTION_HEADER = 'px-3 py-1.5 mb-0.5 text-[12px] font-medium text-muted-foreground border-b border-foreground/5'
+
+// Inline autocomplete surface (cursor-following /command menu). Uses popover-styled
+// so it reads as solid frosted glass in scenic mode (matching every other dropdown),
+// and is larger/more legible than the compact button-triggered popup above.
+const INLINE_CONTAINER_STYLE = 'popover-styled overflow-hidden rounded-[8px]'
+const INLINE_LIST_STYLE = 'max-h-[400px] overflow-y-auto py-1'
+const INLINE_ITEM_STYLE = 'flex cursor-pointer select-none items-center gap-2.5 rounded-[6px] mx-1 px-3 py-2 text-[14px]'
+const INLINE_SECTION_HEADER = 'px-3 py-2 mb-0.5 text-[13px] font-medium text-muted-foreground border-b border-foreground/5'
+const INLINE_ICON_SIZE = 'size-4'
 
 // ============================================================================
 // Shared: Filter utilities
@@ -438,14 +446,14 @@ export function InlineSlashCommand({
     <div
       ref={menuRef}
       data-inline-menu
-      className={cn('fixed z-dropdown', MENU_CONTAINER_STYLE, className)}
-      style={{ left: Math.round(position.x) - 10, bottom: bottomPosition, minWidth: 220, maxWidth: 260 }}
+      className={cn('fixed z-dropdown', INLINE_CONTAINER_STYLE, className)}
+      style={{ left: typeof window !== 'undefined' ? Math.max(8, Math.min(Math.round(position.x) - 10, window.innerWidth - 520 - 8)) : Math.round(position.x) - 10, bottom: bottomPosition, minWidth: 360, maxWidth: 520 }}
     >
-      <div ref={listRef} className={MENU_LIST_STYLE}>
+      <div ref={listRef} className={INLINE_LIST_STYLE}>
         {filteredSections.map((section, sectionIndex) => (
           <React.Fragment key={section.id}>
             {/* Section header */}
-            <div className={MENU_SECTION_HEADER}>
+            <div className={INLINE_SECTION_HEADER}>
               {section.label}
             </div>
 
@@ -464,12 +472,12 @@ export function InlineSlashCommand({
                     onClick={() => handleSelect(item)}
                     onMouseEnter={() => setSelection({ forFilter: filter, index: itemIndex })}
                     className={cn(
-                      MENU_ITEM_STYLE,
+                      INLINE_ITEM_STYLE,
                       isSelected && MENU_ITEM_SELECTED
                     )}
                   >
                     <div className="shrink-0 text-muted-foreground">
-                      <Icon_Folder className={MENU_ICON_SIZE} strokeWidth={1.75} />
+                      <Icon_Folder className={INLINE_ICON_SIZE} strokeWidth={1.75} />
                     </div>
                     <div className="flex-1 min-w-0 truncate">
                       <span>{item.label}</span>
@@ -488,7 +496,7 @@ export function InlineSlashCommand({
                     onClick={() => handleSelect(item)}
                     onMouseEnter={() => setSelection({ forFilter: filter, index: itemIndex })}
                     className={cn(
-                      MENU_ITEM_STYLE,
+                      INLINE_ITEM_STYLE,
                       isSelected && MENU_ITEM_SELECTED
                     )}
                   >
@@ -503,7 +511,7 @@ export function InlineSlashCommand({
       </div>
       {/* Always-visible footer hint for @ mentions */}
       <div className="h-px bg-border/50 mx-2" />
-      <div className="px-3 py-2.5 select-none text-xs text-muted-foreground">
+      <div className="px-3 py-2.5 select-none text-[13px] text-muted-foreground">
         Use @ for skills and files
       </div>
     </div>

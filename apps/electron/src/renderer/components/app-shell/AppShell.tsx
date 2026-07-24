@@ -80,6 +80,9 @@ import {
   getRightSidebarResizeWidth,
   RIGHT_SIDEBAR_MIN_WIDTH,
   RIGHT_SIDEBAR_SPLIT_MIN_WIDTH,
+  RIGHT_SIDEBAR_DEFAULT_WIDTH,
+  RIGHT_SIDEBAR_TREE_ONLY_MAX_WIDTH,
+  RIGHT_SIDEBAR_SPLIT_DEFAULT_WIDTH,
 } from "./right-sidebar-sizing"
 import {
   getActiveRightSidebarPreviewPath,
@@ -570,7 +573,10 @@ function AppShellContent({
     return storage.get(storage.KEYS.sessionListWidth, 300)
   })
   const [rightSidebarPreferredWidth, setRightSidebarPreferredWidth] = React.useState(() => {
-    return storage.get(storage.KEYS.rightSidebarWidth, 320)
+    return storage.get(storage.KEYS.rightSidebarWidth, RIGHT_SIDEBAR_DEFAULT_WIDTH)
+  })
+  const [rightSidebarPreviewPreferredWidth, setRightSidebarPreviewPreferredWidth] = React.useState(() => {
+    return storage.get(storage.KEYS.rightSidebarPreviewWidth, RIGHT_SIDEBAR_SPLIT_DEFAULT_WIDTH)
   })
 
   // Hides both sidebar and navigator (CMD+. toggle)
@@ -649,7 +655,7 @@ function AppShellContent({
   })
   const rightSidebarFilePaneLayout = getRightSidebarFilePaneLayout(rightSidebarPreviewPath)
   const rightSidebarWidth = getRightSidebarEffectiveWidth({
-    width: rightSidebarPreferredWidth,
+    width: rightSidebarPreviewPath ? rightSidebarPreviewPreferredWidth : rightSidebarPreferredWidth,
     windowWidth: shellWidth > 0
       ? shellWidth
       : typeof window === 'undefined'
@@ -660,6 +666,8 @@ function AppShellContent({
     requiredMinWidth: rightSidebarPreviewPath
       ? RIGHT_SIDEBAR_SPLIT_MIN_WIDTH
       : RIGHT_SIDEBAR_MIN_WIDTH,
+    // File-list-only view stays compact; the preview split is the wide one.
+    maxWidthCap: rightSidebarPreviewPath ? undefined : RIGHT_SIDEBAR_TREE_ONLY_MAX_WIDTH,
   })
 
   const handleRightSidebarPreviewFile = React.useCallback((filePath: string) => {
@@ -1350,8 +1358,13 @@ function AppShellContent({
           minWidth: rightSidebarPreviewPath
             ? RIGHT_SIDEBAR_SPLIT_MIN_WIDTH
             : RIGHT_SIDEBAR_MIN_WIDTH,
+          maxWidthCap: rightSidebarPreviewPath ? undefined : RIGHT_SIDEBAR_TREE_ONLY_MAX_WIDTH,
         })
-        setRightSidebarPreferredWidth(newWidth)
+        if (rightSidebarPreviewPath) {
+          setRightSidebarPreviewPreferredWidth(newWidth)
+        } else {
+          setRightSidebarPreferredWidth(newWidth)
+        }
         if (rightSidebarHandleRef.current) {
           const rect = rightSidebarHandleRef.current.getBoundingClientRect()
           setRightSidebarHandleY(e.clientY - rect.top)
@@ -1367,7 +1380,10 @@ function AppShellContent({
         storage.set(storage.KEYS.sessionListWidth, sessionListWidth)
         setSessionListHandleY(null)
       } else if (isResizing === 'right-sidebar') {
-        storage.set(storage.KEYS.rightSidebarWidth, rightSidebarWidth)
+        storage.set(
+          rightSidebarPreviewPath ? storage.KEYS.rightSidebarPreviewWidth : storage.KEYS.rightSidebarWidth,
+          rightSidebarWidth,
+        )
         setRightSidebarHandleY(null)
       }
       setIsResizing(null)
@@ -3660,7 +3676,7 @@ function AppShellContent({
                 <div className="flex-1 min-h-0 overflow-hidden">
                   <div className={cn(
                     "h-full min-h-0",
-                    rightSidebarFilePaneLayout.mode === 'split' ? "grid grid-cols-[minmax(180px,0.35fr)_1px_minmax(360px,1.65fr)]" : "block",
+                    rightSidebarFilePaneLayout.mode === 'split' ? "grid grid-cols-[minmax(170px,0.26fr)_1px_minmax(380px,1.74fr)]" : "block",
                   )}>
                     <div className="min-h-0 min-w-0 overflow-hidden">
                       <SessionInfoPopoverContent

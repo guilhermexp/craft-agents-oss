@@ -79,6 +79,11 @@ import { CHAT_LAYOUT } from "@/config/layout"
 import { collectFileChangesFromActivities, getFirstFileChangeIdForActivity } from "@/lib/file-changes"
 import { resolveBranchNewPanelOption } from "./branching"
 import { handleErrorMessageAction } from "./error-message-actions"
+import {
+  attachUpwardWheelIntentListener,
+  isNearScrollBottom,
+  shouldPinStreamingContentToBottom,
+} from "./ChatDisplay.auto-scroll"
 
 // ============================================================================
 // CSS Custom Highlight API helper
@@ -1122,10 +1127,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const handleScroll = React.useCallback(() => {
     const viewport = scrollViewportRef.current
     if (!viewport) return
-    const { scrollTop, scrollHeight, clientHeight } = viewport
-    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+    const { scrollTop } = viewport
     // 20px threshold for "at bottom" detection
-    isStickToBottomRef.current = distanceFromBottom < 20
+    isStickToBottomRef.current = isNearScrollBottom(viewport)
 
     // Load more turns when scrolling near top (within 100px)
     if (scrollTop < 100) {
@@ -1151,13 +1155,23 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     }
   }, [])
 
-  // Set up scroll event listener
+  // Set up passive scroll intent listeners. An upward wheel event arrives before
+  // the resulting scroll event, so unstick immediately to keep a concurrent
+  // ResizeObserver callback from snapping streaming content back to the bottom.
   React.useEffect(() => {
     const viewport = scrollViewportRef.current
     if (!viewport) return
+
+    const detachWheelIntentListener = attachUpwardWheelIntentListener(viewport, () => {
+      isStickToBottomRef.current = false
+    })
     viewport.addEventListener('scroll', handleScroll, { passive: true })
-    return () => viewport.removeEventListener('scroll', handleScroll)
-  }, [handleScroll])
+
+    return () => {
+      detachWheelIntentListener()
+      viewport.removeEventListener('scroll', handleScroll)
+    }
+  }, [handleScroll, session?.id])
 
   // Restore scroll position after reverse pagination using the captured turn
   // anchor. useLayoutEffect runs after render but before paint, so the
@@ -1194,10 +1208,13 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     // let content grow below the fold and then snapped down, which read as a
     // flicker. A direct scrollTop write stays glued frame-by-frame.
     const resizeObserver = new ResizeObserver(() => {
-      // Focused panel: respect sticky-bottom preference (user scrolled up = stop).
-      if (isFocusedPanelRef.current && !isStickToBottomRef.current) return
-      // Skip right after an instant scroll (session switch / lazy load).
-      if (Date.now() < skipSmoothScrollUntilRef.current) return
+      const shouldPinToBottom = shouldPinStreamingContentToBottom({
+        isFocusedPanel: isFocusedPanelRef.current,
+        isStickToBottom: isStickToBottomRef.current,
+        skipUntil: skipSmoothScrollUntilRef.current,
+        now: Date.now(),
+      })
+      if (!shouldPinToBottom) return
       viewport.scrollTop = viewport.scrollHeight
     })
 

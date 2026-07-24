@@ -17,7 +17,7 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
-import { AnimatePresence, LazyMotion, m, domAnimation, type Variants } from 'motion/react'
+import { AnimatePresence, LazyMotion, m, domAnimation } from 'motion/react'
 import { File, Folder, FolderOpen, FileText, Image, FileCode, ChevronRight, ExternalLink, Music, Video } from 'lucide-react'
 import {
   ContextMenu,
@@ -32,42 +32,6 @@ import { useAppShellContext, useSession } from '@/context/AppShellContext'
 import { getFileManagerName } from '@/lib/platform'
 import { canPreviewFileInline } from '../app-shell/right-sidebar-preview-state'
 import { restoreSessionFileWatch } from './session-files-watch'
-
-/**
- * Stagger animation variants for child items - matches LeftSidebar pattern
- * Creates a pleasing "cascade" effect when expanding folders
- */
-const containerVariants: Variants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.025,
-      delayChildren: 0.01,
-    },
-  },
-  exit: {
-    opacity: 0,
-    transition: {
-      staggerChildren: 0.015,
-      staggerDirection: -1,
-    },
-  },
-}
-
-const itemVariants: Variants = {
-  hidden: { opacity: 0, x: -8 },
-  visible: {
-    opacity: 1,
-    x: 0,
-    transition: { duration: 0.15, ease: 'easeOut' },
-  },
-  exit: {
-    opacity: 0,
-    x: -8,
-    transition: { duration: 0.1, ease: 'easeIn' },
-  },
-}
 
 export interface SessionFilesSectionProps {
   sessionId?: string
@@ -445,10 +409,12 @@ function FileTreeItem({
           </StyledContextMenuItem>
         </StyledContextMenuContent>
       </ContextMenu>
-      {/* Expandable children with framer-motion animation - matches LeftSidebar exactly */}
+      {/* Expandable children: height reveal on user toggle only. AnimatePresence
+          initial={false} keeps the initial (expand-all) render instant — no
+          entrance cascade — so the panel opens without animating every folder.
+          LazyMotion is provided once at the section root, not per folder. */}
       {hasChildren && (
-        <LazyMotion features={domAnimation}>
-          <AnimatePresence initial={false}>
+        <AnimatePresence initial={false}>
           {isExpanded && (
             <m.div
               initial={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
@@ -459,20 +425,14 @@ function FileTreeItem({
             >
               {/* Wrapper div matches LeftSidebar recursive structure - min-w-0 allows shrinking */}
               <div className="flex flex-col select-none min-w-0">
-                <m.nav
-                  className="grid gap-0.5 pl-5 pr-0 relative"
-                  variants={containerVariants}
-                  initial="hidden"
-                  animate="visible"
-                  exit="exit"
-                >
+                <nav className="grid gap-0.5 pl-5 pr-0 relative">
                   {/* Vertical line at container level - matches LeftSidebar pattern */}
                   <div
                     className="absolute left-[13px] top-1 bottom-1 w-px bg-foreground/10"
                     aria-hidden="true"
                   />
                   {children.map((child) => (
-                    <m.div key={child.path} variants={itemVariants} className="min-w-0">
+                    <div key={child.path} className="min-w-0">
                       <FileTreeItem
                         file={child}
                         depth={depth + 1}
@@ -484,20 +444,19 @@ function FileTreeItem({
                         onRevealInFileManager={onRevealInFileManager}
                         isNested={true}
                       />
-                    </m.div>
+                    </div>
                   ))}
-                </m.nav>
+                </nav>
               </div>
             </m.div>
           )}
         </AnimatePresence>
-        </LazyMotion>
       )}
     </div>
   )
 
-  // For nested items, the parent already wraps in motion.div for stagger
-  // Root items use Fragment to avoid extra wrapper (matches LeftSidebar exactly)
+  // Root items render as a Fragment (no extra wrapper); nested items are wrapped
+  // in a plain div by the parent. No entrance stagger — see the note above.
   return <>{innerContent}</>
 }
 
@@ -693,21 +652,25 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
             </p>
           </div>
         ) : (
-          /* Root nav has px-2 to match LeftSidebar exactly - this constrains grid width */
-          <nav className="grid gap-0.5 px-2">
-            {files.map((file) => (
-              <FileTreeItem
-                key={file.path}
-                file={file}
-                depth={0}
-                expandedPaths={expandedPaths}
-                onToggleExpand={handleToggleExpand}
-                onFileClick={handleFileClick}
-                onFileDoubleClick={handleFileDoubleClick}
-                onRevealInFileManager={handleRevealInFileManager}
-              />
-            ))}
-          </nav>
+          /* Root nav has px-2 to match LeftSidebar exactly - this constrains grid width.
+             Single LazyMotion for the whole tree — child folders use `m.*` without
+             re-providing motion features per folder. */
+          <LazyMotion features={domAnimation}>
+            <nav className="grid gap-0.5 px-2">
+              {files.map((file) => (
+                <FileTreeItem
+                  key={file.path}
+                  file={file}
+                  depth={0}
+                  expandedPaths={expandedPaths}
+                  onToggleExpand={handleToggleExpand}
+                  onFileClick={handleFileClick}
+                  onFileDoubleClick={handleFileDoubleClick}
+                  onRevealInFileManager={handleRevealInFileManager}
+                />
+              ))}
+            </nav>
+          </LazyMotion>
         )}
       </div>
     </div>
@@ -852,21 +815,23 @@ export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInlin
             </p>
           </div>
         ) : (
-          <nav className="grid gap-0.5 px-2">
-            {files.map((file) => (
-              <FileTreeItem
-                key={file.path}
-                file={file}
-                depth={0}
-                expandedPaths={expandedPaths}
-                onToggleExpand={handleToggleExpand}
-                onDirectoryExpand={handleDirectoryExpand}
-                onFileClick={handleFileClick}
-                onFileDoubleClick={handleFileDoubleClick}
-                onRevealInFileManager={(path) => window.electronAPI.showInFolder(path)}
-              />
-            ))}
-          </nav>
+          <LazyMotion features={domAnimation}>
+            <nav className="grid gap-0.5 px-2">
+              {files.map((file) => (
+                <FileTreeItem
+                  key={file.path}
+                  file={file}
+                  depth={0}
+                  expandedPaths={expandedPaths}
+                  onToggleExpand={handleToggleExpand}
+                  onDirectoryExpand={handleDirectoryExpand}
+                  onFileClick={handleFileClick}
+                  onFileDoubleClick={handleFileDoubleClick}
+                  onRevealInFileManager={(path) => window.electronAPI.showInFolder(path)}
+                />
+              ))}
+            </nav>
+          </LazyMotion>
         )}
       </div>
     </div>

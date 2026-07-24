@@ -15,6 +15,7 @@ export const KEYS = {
   sidebarWidth: 'sidebar-width',
   sessionListWidth: 'session-list-width',
   rightSidebarWidth: 'right-sidebar-width',
+  rightSidebarPreviewWidth: 'right-sidebar-preview-width',
   sidebarMode: 'sidebar-mode',
   listFilter: 'list-filter',
   labelFilter: 'label-filter',
