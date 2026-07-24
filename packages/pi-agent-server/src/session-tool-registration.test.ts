@@ -15,6 +15,34 @@ import { createWebFetchTool } from './tools/web-fetch.ts';
 import { buildPiToolAllowlist, COMPUTER_USE_TOOL_NAMES } from './computer-use-tools.ts';
 import type { WebSearchProvider } from './tools/search/types.ts';
 
+const COMPUTER_USE_V0_5_TOOL_NAMES = [
+  'find_roots',
+  'observe_ui',
+  'search_ui',
+  'expand_ui',
+  'inspect_ui',
+  'act_ui',
+  'read_text',
+  'wait_for',
+  'launch_browser',
+  'navigate_browser',
+  'evaluate_browser',
+] as const;
+
+const LEGACY_COMPUTER_USE_TOOL_NAMES = [
+  'screenshot',
+  'click',
+  'double_click',
+  'move_mouse',
+  'drag',
+  'scroll',
+  'keypress',
+  'type_text',
+  'set_text',
+  'wait',
+  'computer_actions',
+] as const;
+
 /**
  * Regression contract for Pi SDK 0.70.0 tool registration.
  *
@@ -133,18 +161,26 @@ describe('Pi SDK 0.70.0 CreateAgentSessionOptions contract', () => {
     }
   });
 
-  it('adds pi-computer-use extension tools to the explicit allowlist when enabled', () => {
+  it('exports exactly the eleven pi-computer-use v0.5 tool names', () => {
+    expect([...COMPUTER_USE_TOOL_NAMES]).toEqual(COMPUTER_USE_V0_5_TOOL_NAMES);
+  });
+
+  it('exposes only v0.5 computer-use tools in the enabled allowlist', () => {
     const baseAllowlist = ['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls', 'web_search', 'web_fetch'];
     const tools = buildPiToolAllowlist(baseAllowlist, true);
 
-    for (const toolName of COMPUTER_USE_TOOL_NAMES) {
-      expect(tools).toContain(toolName);
+    expect(tools).toEqual([...baseAllowlist, ...COMPUTER_USE_V0_5_TOOL_NAMES]);
+    for (const legacyToolName of LEGACY_COMPUTER_USE_TOOL_NAMES) {
+      expect(tools).not.toContain(legacyToolName);
     }
     expect(new Set(tools).size).toBe(tools.length);
   });
 
   it('leaves the Pi tool allowlist unchanged when computer-use is disabled', () => {
     const baseAllowlist = ['read', 'bash', 'web_search'];
-    expect(buildPiToolAllowlist(baseAllowlist, false)).toEqual(baseAllowlist);
+    const originalAllowlist = [...baseAllowlist];
+
+    expect(buildPiToolAllowlist(baseAllowlist, false)).toEqual(originalAllowlist);
+    expect(baseAllowlist).toEqual(originalAllowlist);
   });
 });

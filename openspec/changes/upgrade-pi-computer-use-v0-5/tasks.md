@@ -4,16 +4,16 @@
 
 **must_haves:** change válida; nomes v0.5 congelados; comportamento desabilitado e composição com `pi-better-subagents` cobertos antes da implementação.
 
-- [ ] **1.1 Validar contrato OpenSpec**
+- [x] **1.1 Validar contrato OpenSpec**
   - files: `openspec/changes/upgrade-pi-computer-use-v0-5/**`
   - verify: `openspec validate upgrade-pi-computer-use-v0-5 --strict --no-interactive`
-- [ ] **1.2 Escrever testes RED da allowlist v0.5 e remoção dos tools legados**
+- [x] **1.2 Escrever testes RED da allowlist v0.5 e remoção dos tools legados**
   - files: `packages/pi-agent-server/src/session-tool-registration.test.ts`, `packages/pi-agent-server/src/computer-use-tools.ts`
   - verify: `bun test packages/pi-agent-server/src/session-tool-registration.test.ts`
-- [ ] **1.3 Escrever testes RED do loader conjunto e do pacote ausente**
+- [x] **1.3 Escrever testes RED do loader conjunto e do pacote ausente**
   - files: testes focados em `packages/pi-agent-server/src/`
   - verify: `bun test packages/pi-agent-server/src/*computer-use*.test.ts packages/pi-agent-server/src/session-tool-registration.test.ts`
-- [ ] **1.4 Escrever teste RED de packaging para as duas extensões e arquivos sentinela v0.5**
+- [x] **1.4 Escrever teste RED de packaging para as duas extensões e arquivos sentinela v0.5**
   - files: `packages/shared/src/__tests__/interceptor-packaging-contract.test.ts` ou teste de build equivalente
   - verify: `bun test packages/shared/src/__tests__/interceptor-packaging-contract.test.ts`
 
