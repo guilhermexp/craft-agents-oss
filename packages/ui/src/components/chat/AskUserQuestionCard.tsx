@@ -83,10 +83,12 @@ export function AskUserQuestionCard({ questions, interactive, answered, onRespon
   const [otherOpen, setOtherOpen] = useState<Record<number, boolean>>({})
   const [step, setStep] = useState(0)
   const [submitted, setSubmitted] = useState(false)
+  const customAnswerIdPrefix = React.useId()
 
   const total = questions.length
   const readOnly = !interactive || !onRespond || submitted
   const safeStep = Math.min(step, Math.max(total - 1, 0))
+  const customAnswerId = `${customAnswerIdPrefix}-${safeStep}`
   const isLast = safeStep >= total - 1
 
   const isAnswered = (index: number): boolean => {
@@ -243,14 +245,23 @@ export function AskUserQuestionCard({ questions, interactive, answered, onRespon
               })}
 
               {otherIsOpen ? (
-                <input
-                  autoFocus
-                  type="text"
-                  value={otherText[safeStep] ?? ''}
-                  onChange={e => setOtherText(prev => ({ ...prev, [safeStep]: e.target.value }))}
-                  placeholder="Type your own answer…"
-                  className="w-full rounded-lg border border-accent bg-background px-2.5 py-1.5 text-foreground outline-none placeholder:text-muted-foreground"
-                />
+                <div className="space-y-1">
+                  <label
+                    htmlFor={customAnswerId}
+                    className="block px-0.5 text-[11px] font-medium text-muted-foreground"
+                  >
+                    Other answer
+                  </label>
+                  <input
+                    id={customAnswerId}
+                    autoFocus
+                    type="text"
+                    value={otherText[safeStep] ?? ''}
+                    onChange={e => setOtherText(prev => ({ ...prev, [safeStep]: e.target.value }))}
+                    placeholder="Type your own answer…"
+                    className="w-full rounded-lg border border-accent bg-background px-2.5 py-1.5 text-foreground outline-none placeholder:text-muted-foreground"
+                  />
+                </div>
               ) : (
                 <button
                   type="button"

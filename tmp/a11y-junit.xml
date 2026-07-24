@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="bun test" tests="1" assertions="5" failures="0" skipped="0" time="0.017449">
+  <testsuite name="packages/ui/src/components/chat/__tests__/ask-user-question-card-accessibility.test.ts" file="packages/ui/src/components/chat/__tests__/ask-user-question-card-accessibility.test.ts" tests="1" assertions="5" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+    <testsuite name="AskUserQuestionCard custom answer accessibility" file="packages/ui/src/components/chat/__tests__/ask-user-question-card-accessibility.test.ts" line="10" tests="1" assertions="5" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+      <testcase name="associates a persistent visible label with a question-scoped input ID" classname="AskUserQuestionCard custom answer accessibility" time="0.000369" file="packages/ui/src/components/chat/__tests__/ask-user-question-card-accessibility.test.ts" line="11" assertions="5" />
+    </testsuite>
+  </testsuite>
+</testsuites>

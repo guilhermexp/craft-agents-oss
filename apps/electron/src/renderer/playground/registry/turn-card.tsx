@@ -2,6 +2,7 @@ import type { ComponentEntry } from './types'
 import { useState, useEffect, type ReactNode } from 'react'
 import {
   TurnCard,
+  PlatformProvider,
   DocumentFormattedMarkdownOverlay,
   CodePreviewOverlay,
   MultiDiffPreviewOverlay,
@@ -460,6 +461,50 @@ const todosLong: TodoItem[] = [
   { content: 'Set up logging', status: 'pending', activeForm: 'Setting up logging' },
   { content: 'Write unit tests', status: 'pending', activeForm: 'Writing tests' },
 ]
+
+// ============================================================================
+// Inline image preview demo (Read tool on image files)
+// ============================================================================
+
+/** A tiny SVG "video frame" data URL, colored per index so frames look distinct. */
+function makeFrameDataUrl(index: number): string {
+  const hue = (index * 47) % 360
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="192" height="108">` +
+    `<rect width="192" height="108" fill="hsl(${hue} 55% 32%)"/>` +
+    `<circle cx="96" cy="54" r="26" fill="hsl(${hue} 70% 68%)"/>` +
+    `<text x="96" y="98" fill="white" font-family="sans-serif" font-size="14" text-anchor="middle">frame ${index}</text>` +
+    `</svg>`
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+}
+
+/** Read activities targeting extracted video frames under /tmp (as the watch skill does). */
+const frameReadActivities: ActivityItem[] = [1, 2, 3, 4].map((n) => ({
+  id: `tool-frame-${n}`,
+  type: 'tool',
+  status: 'completed',
+  toolName: 'Read',
+  toolInput: { file_path: `/private/tmp/watch-demo/frames/frame_000${n}.jpg` },
+  timestamp: now - (5 - n) * 500,
+}))
+
+/**
+ * Wrapper that supplies a mock preview loader so ActivityRow's inline thumbnail
+ * path renders in the browser playground (no Electron IPC available there).
+ */
+function FrameReadPlatformWrapper({ children }: { children: ReactNode }) {
+  return (
+    <PlatformProvider
+      actions={{
+        onReadFilePreviewDataUrl: async (path: string) => {
+          const match = path.match(/frame_000(\d)/)
+          return makeFrameDataUrl(match ? Number(match[1]) : 1)
+        },
+      }}
+    >
+      <div className="p-8">{children}</div>
+    </PlatformProvider>
+  )
+}
 
 // ============================================================================
 // Component Entry
@@ -964,6 +1009,35 @@ export const turnCardComponents: ComponentEntry[] = [
         completedGrepActivity,
         completedReadActivity1,
       ],
+    }),
+  },
+  // Inline image previews - Read tool on image files renders a thumbnail per row
+  {
+    id: 'turn-card-image-previews',
+    name: 'TurnCard (Image Previews)',
+    category: 'Turn Cards',
+    description: 'Read tool on image files (e.g. extracted video frames) renders an inline thumbnail beside each row',
+    component: TurnCard,
+    wrapper: FrameReadPlatformWrapper,
+    layout: 'top',
+    props: [],
+    variants: [
+      {
+        name: 'Frames Read (Expanded)',
+        description: 'Several image Read steps, each with an inline mini preview',
+        props: {
+          activities: [completedGrepActivity, ...frameReadActivities],
+          response: undefined,
+          isStreaming: false,
+          isComplete: true,
+          defaultExpanded: true,
+        },
+      },
+    ],
+    mockData: () => ({
+      activities: [completedGrepActivity, ...frameReadActivities],
+      isComplete: true,
+      defaultExpanded: true,
     }),
   },
 ]

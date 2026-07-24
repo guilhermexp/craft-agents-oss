@@ -194,6 +194,12 @@
   --foreground-90: color-mix(in oklch, var(--foreground) 90%, var(--background));
   --foreground-95: color-mix(in oklch, var(--foreground) 95%, var(--background));
 
+  /* Preview overlays: lift the outer frame above the content card in dark mode.
+     Default resolves to --foreground-3, nearly identical to the --background
+     content card, so the whole viewport reads as one dark mass. A lighter frame
+     keeps the content dark while making the surrounding edges clearly visible. */
+  --preview-overlay-background: var(--foreground-20);
+
   /* === SHADCN COMPATIBILITY (derived from 6 base colors) === */
   --secondary: oklch(from var(--foreground) l c h / 0.05);
   --secondary-foreground: var(--foreground);

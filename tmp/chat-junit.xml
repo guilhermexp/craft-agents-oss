@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="bun test" tests="70" assertions="144" failures="0" skipped="0" time="0.023376">
+  <testsuite name="packages/ui/src/components/chat/__tests__/ask-user-question-card-accessibility.test.ts" file="packages/ui/src/components/chat/__tests__/ask-user-question-card-accessibility.test.ts" tests="1" assertions="5" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+    <testsuite name="AskUserQuestionCard custom answer accessibility" file="packages/ui/src/components/chat/__tests__/ask-user-question-card-accessibility.test.ts" line="10" tests="1" assertions="5" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+      <testcase name="associates a persistent visible label with a question-scoped input ID" classname="AskUserQuestionCard custom answer accessibility" time="0.000648" file="packages/ui/src/components/chat/__tests__/ask-user-question-card-accessibility.test.ts" line="11" assertions="5" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" tests="32" assertions="36" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+    <testsuite name="deriveTurnPhase" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="62" tests="19" assertions="19" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+      <testsuite name="PENDING state" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="63" tests="2" assertions="2" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+        <testcase name="returns pending when no activities and not complete" classname="PENDING state &amp;gt; deriveTurnPhase" time="0.000102" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="64" assertions="1" />
+        <testcase name="returns pending when turn just started (no activities, no response)" classname="PENDING state &amp;gt; deriveTurnPhase" time="0.000016" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="73" assertions="1" />
+      </testsuite>
+      <testsuite name="TOOL_ACTIVE state" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="83" tests="4" assertions="4" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+        <testcase name="returns tool_active when any activity is running" classname="TOOL_ACTIVE state &amp;gt; deriveTurnPhase" time="0.000045" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="84" assertions="1" />
+        <testcase name="returns tool_active with mix of running and completed" classname="TOOL_ACTIVE state &amp;gt; deriveTurnPhase" time="0.000066" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="92" assertions="1" />
+        <testcase name="returns tool_active even with pending activities if one is running" classname="TOOL_ACTIVE state &amp;gt; deriveTurnPhase" time="0.000024" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="103" assertions="1" />
+        <testcase name="returns tool_active with multiple running tools" classname="TOOL_ACTIVE state &amp;gt; deriveTurnPhase" time="0.000014" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="114" assertions="1" />
+      </testsuite>
+      <testsuite name="AWAITING state (the gap)" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="126" tests="5" assertions="5" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+        <testcase name="returns awaiting when all tools complete but turn not complete" classname="AWAITING state (the gap) &amp;gt; deriveTurnPhase" time="0.000011" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="127" assertions="1" />
+        <testcase name="returns awaiting with multiple completed tools" classname="AWAITING state (the gap) &amp;gt; deriveTurnPhase" time="0.000012" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="136" assertions="1" />
+        <testcase name="returns awaiting with error activities (errors are not running)" classname="AWAITING state (the gap) &amp;gt; deriveTurnPhase" time="0.000014" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="147" assertions="1" />
+        <testcase name="returns awaiting with mix of completed and error activities" classname="AWAITING state (the gap) &amp;gt; deriveTurnPhase" time="0.00001" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="156" assertions="1" />
+        <testcase name="returns awaiting when response exists but is not streaming (non-streaming response means complete, but isComplete takes precedence)" classname="AWAITING state (the gap) &amp;gt; deriveTurnPhase" time="0.00002" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="167" assertions="1" />
+      </testsuite>
+      <testsuite name="STREAMING state" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="180" tests="3" assertions="3" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+        <testcase name="returns streaming when response is streaming" classname="STREAMING state &amp;gt; deriveTurnPhase" time="0.000009" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="181" assertions="1" />
+        <testcase name="returns streaming when response is streaming after tools" classname="STREAMING state &amp;gt; deriveTurnPhase" time="0.00001" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="190" assertions="1" />
+        <testcase name="streaming takes precedence over awaiting when response exists" classname="STREAMING state &amp;gt; deriveTurnPhase" time="0.000009" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="199" assertions="1" />
+      </testsuite>
+      <testsuite name="COMPLETE state" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="209" tests="4" assertions="4" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+        <testcase name="returns complete when isComplete is true" classname="COMPLETE state &amp;gt; deriveTurnPhase" time="0.000007" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="210" assertions="1" />
+        <testcase name="complete takes precedence over streaming" classname="COMPLETE state &amp;gt; deriveTurnPhase" time="0.000008" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="218" assertions="1" />
+        <testcase name="complete takes precedence over tool_active" classname="COMPLETE state &amp;gt; deriveTurnPhase" time="0.000007" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="227" assertions="1" />
+        <testcase name="complete takes precedence over awaiting" classname="COMPLETE state &amp;gt; deriveTurnPhase" time="0.00001" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="235" assertions="1" />
+      </testsuite>
+      <testsuite name="priority order" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="244" tests="1" assertions="1" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+        <testcase name="checks complete first, then streaming, then tool_active, then awaiting, then pending" classname="priority order &amp;gt; deriveTurnPhase" time="0.00001" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="245" assertions="1" />
+      </testsuite>
+    </testsuite>
+    <testsuite name="activity type filtering" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="261" tests="7" assertions="7" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+      <testcase name="intermediate text with running status returns awaiting (not tool_active)" classname="activity type filtering" time="0.000013" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="262" assertions="1" />
+      <testcase name="only pending tool activities returns awaiting" classname="activity type filtering" time="0.000011" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="276" assertions="1" />
+      <testcase name="status activity with running status returns awaiting" classname="activity type filtering" time="0.000011" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="291" assertions="1" />
+      <testcase name="backgrounded tool returns awaiting" classname="activity type filtering" time="0.000009" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="306" assertions="1" />
+      <testcase name="tool running + intermediate running returns tool_active" classname="activity type filtering" time="0.000017" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="321" assertions="1" />
+      <testcase name="completed tool + running intermediate returns awaiting" classname="activity type filtering" time="0.000011" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="344" assertions="1" />
+      <testcase name="multiple non-tool running activities returns awaiting" classname="activity type filtering" time="0.000011" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="367" assertions="1" />
+    </testsuite>
+    <testsuite name="shouldShowThinkingIndicator" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="394" tests="6" assertions="10" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+      <testcase name="returns true for pending phase" classname="shouldShowThinkingIndicator" time="0.000013" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="395" assertions="2" />
+      <testcase name="returns true for awaiting phase (the gap)" classname="shouldShowThinkingIndicator" time="0.000007" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="400" assertions="2" />
+      <testcase name="returns false for tool_active phase (tools are visible)" classname="shouldShowThinkingIndicator" time="0.000006" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="405" assertions="2" />
+      <testcase name="returns true for streaming when buffering" classname="shouldShowThinkingIndicator" time="0.000008" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="410" assertions="1" />
+      <testcase name="returns false for streaming when not buffering" classname="shouldShowThinkingIndicator" time="0.000006" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="414" assertions="1" />
+      <testcase name="returns false for complete phase" classname="shouldShowThinkingIndicator" time="0.000006" file="packages/ui/src/components/chat/__tests__/turn-phase.test.ts" line="418" assertions="2" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" tests="27" assertions="89" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+    <testsuite name="groupActivitiesByParent" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="121" tests="16" assertions="65" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+      <testsuite name="empty and flat cases" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="122" tests="2" assertions="3" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+        <testcase name="returns empty array for empty input" classname="empty and flat cases &amp;gt; groupActivitiesByParent" time="0.000164" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="123" assertions="1" />
+        <testcase name="returns flat list when no Task tools present" classname="empty and flat cases &amp;gt; groupActivitiesByParent" time="0.000096" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="129" assertions="2" />
+      </testsuite>
+      <testsuite name="single Task with children" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="145" tests="2" assertions="9" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+        <testcase name="groups child activities under Task parent" classname="single Task with children &amp;gt; groupActivitiesByParent" time="0.000076" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="146" assertions="6" />
+        <testcase name="maintains chronological order of children within group" classname="single Task with children &amp;gt; groupActivitiesByParent" time="0.000032" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="166" assertions="3" />
+      </testsuite>
+      <testsuite name="SDK Agent tool name (post v0.2.72 rename)" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="200" tests="1" assertions="6" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+        <testcase name="groups children under an Agent parent identically to a Task parent" classname="SDK Agent tool name (post v0.2.72 rename) &amp;gt; groupActivitiesByParent" time="0.000028" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="201" assertions="6" />
+      </testsuite>
+      <testsuite name="multiple Tasks with children" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="223" tests="1" assertions="5" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+        <testcase name="groups each Task with its own children" classname="multiple Tasks with children &amp;gt; groupActivitiesByParent" time="0.000041" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="224" assertions="5" />
+      </testsuite>
+      <testsuite name="mixed orphans and Task groups" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="248" tests="1" assertions="7" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+        <testcase name="preserves orphan activities alongside Task groups in chronological order" classname="mixed orphans and Task groups &amp;gt; groupActivitiesByParent" time="0.000035" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="249" assertions="7" />
+      </testsuite>
+      <testsuite name="TaskOutput data attachment" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="277" tests="3" assertions="9" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+        <testcase name="attaches TaskOutput data to parent Task group via agentId chain" classname="TaskOutput data attachment &amp;gt; groupActivitiesByParent" time="0.000225" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="278" assertions="6" />
+        <testcase name="handles Task without TaskOutput data gracefully" classname="TaskOutput data attachment &amp;gt; groupActivitiesByParent" time="0.000023" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="308" assertions="1" />
+        <testcase name="hides TaskOutput activities from result" classname="TaskOutput data attachment &amp;gt; groupActivitiesByParent" time="0.00004" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="321" assertions="2" />
+      </testsuite>
+      <testsuite name="edge cases" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="342" tests="3" assertions="8" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+        <testcase name="handles Task with no children (empty group)" classname="edge cases &amp;gt; groupActivitiesByParent" time="0.000016" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="343" assertions="3" />
+        <testcase name="shows children with missing parents as orphan activities at root level" classname="edge cases &amp;gt; groupActivitiesByParent" time="0.000016" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="354" assertions="3" />
+        <testcase name="handles malformed TaskOutput JSON gracefully" classname="edge cases &amp;gt; groupActivitiesByParent" time="0.000071" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="370" assertions="2" />
+      </testsuite>
+      <testsuite name="stateless invariants (post-refactor)" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="396" tests="3" assertions="18" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+        <testcase name="out-of-order stored messages: children before parent still group correctly" classname="stateless invariants (post-refactor) &amp;gt; groupActivitiesByParent" time="0.000033" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="397" assertions="4" />
+        <testcase name="restored session with nested Task hierarchy produces correct groups" classname="stateless invariants (post-refactor) &amp;gt; groupActivitiesByParent" time="0.00005" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="426" assertions="4" />
+        <testcase name="mixed top-level and nested tools group into correct turns" classname="stateless invariants (post-refactor) &amp;gt; groupActivitiesByParent" time="0.000064" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="464" assertions="10" />
+      </testsuite>
+    </testsuite>
+    <testsuite name="computeLastChildSet" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="513" tests="6" assertions="15" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+      <testcase name="returns empty set for empty input" classname="computeLastChildSet" time="0.000029" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="514" assertions="1" />
+      <testcase name="returns empty set when no activities have parents (all depth 0)" classname="computeLastChildSet" time="0.000015" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="520" assertions="1" />
+      <testcase name="identifies last child for single parent" classname="computeLastChildSet" time="0.000025" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="532" assertions="4" />
+      <testcase name="identifies last child for multiple parents" classname="computeLastChildSet" time="0.000028" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="549" assertions="4" />
+      <testcase name="handles nested parent-child relationships (depth &gt; 1)" classname="computeLastChildSet" time="0.000022" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="568" assertions="3" />
+      <testcase name="handles single child (is both first and last)" classname="computeLastChildSet" time="0.000013" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="595" assertions="2" />
+    </testsuite>
+    <testsuite name="isActivityGroup" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="612" tests="3" assertions="3" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+      <testcase name="returns true for ActivityGroup objects" classname="isActivityGroup" time="0.00001" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="613" assertions="1" />
+      <testcase name="returns false for ActivityItem objects" classname="isActivityGroup" time="0.000008" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="624" assertions="1" />
+      <testcase name="returns false for activity with type property that is not &quot;group&quot;" classname="isActivityGroup" time="0.000008" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="631" assertions="1" />
+    </testsuite>
+    <testsuite name="TodoWrite extraction" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="645" tests="2" assertions="6" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+      <testcase name="includes TodoWrite activities in flat list (not grouped)" classname="TodoWrite extraction" time="0.000037" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="649" assertions="3" />
+      <testcase name="handles TodoWrite as child of Task" classname="TodoWrite extraction" time="0.000037" file="packages/ui/src/components/chat/__tests__/turn-utils-grouping.test.ts" line="663" assertions="3" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="packages/ui/src/components/chat/__tests__/reconcile-turns.test.ts" file="packages/ui/src/components/chat/__tests__/reconcile-turns.test.ts" tests="10" assertions="14" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+    <testsuite name="reconcileTurns" file="packages/ui/src/components/chat/__tests__/reconcile-turns.test.ts" line="40" tests="10" assertions="14" failures="0" skipped="0" time="0" hostname="MacBook-Pro-de-Guilherme">
+      <testcase name="returns the fresh list on the first pass (no previous turns)" classname="reconcileTurns" time="0.000048" file="packages/ui/src/components/chat/__tests__/reconcile-turns.test.ts" line="41" assertions="1" />
+      <testcase name="reuses a completed turn object when its value is unchanged" classname="reconcileTurns" time="0.000146" file="packages/ui/src/components/chat/__tests__/reconcile-turns.test.ts" line="46" assertions="1" />
+      <testcase name="always takes the fresh object for a streaming turn" classname="reconcileTurns" time="0.000029" file="packages/ui/src/components/chat/__tests__/reconcile-turns.test.ts" line="53" assertions="2" />
+      <testcase name="reuses completed turns while appending a newly streamed turn" classname="reconcileTurns" time="0.000027" file="packages/ui/src/components/chat/__tests__/reconcile-turns.test.ts" line="62" assertions="3" />
+      <testcase name="refreshes a completed turn when its response text changed" classname="reconcileTurns" time="0.000014" file="packages/ui/src/components/chat/__tests__/reconcile-turns.test.ts" line="72" assertions="1" />
+      <testcase name="refreshes a completed turn when an activity field changed" classname="reconcileTurns" time="0.00002" file="packages/ui/src/components/chat/__tests__/reconcile-turns.test.ts" line="79" assertions="1" />
+      <testcase name="reuses a user turn when its message reference is identical" classname="reconcileTurns" time="0.000022" file="packages/ui/src/components/chat/__tests__/reconcile-turns.test.ts" line="87" assertions="1" />
+      <testcase name="refreshes a user turn when its message reference changed" classname="reconcileTurns" time="0.000011" file="packages/ui/src/components/chat/__tests__/reconcile-turns.test.ts" line="94" assertions="1" />
+      <testcase name="returns the previous array reference when every turn is unchanged" classname="reconcileTurns" time="0.000013" file="packages/ui/src/components/chat/__tests__/reconcile-turns.test.ts" line="100" assertions="1" />
+      <testcase name="produces a new array when a turn is appended" classname="reconcileTurns" time="0.000015" file="packages/ui/src/components/chat/__tests__/reconcile-turns.test.ts" line="107" assertions="2" />
+    </testsuite>
+  </testsuite>
+</testsuites>

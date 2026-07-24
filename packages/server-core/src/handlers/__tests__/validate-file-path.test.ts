@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'bun:test'
+import { afterAll, describe, it, expect } from 'bun:test'
 import { homedir, tmpdir } from 'os'
+import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { join, sep } from 'path'
 import { validateFilePath } from '../utils'
 
@@ -18,6 +19,28 @@ describe('validateFilePath', () => {
     const result = await validateFilePath(path)
     expect(result).toContain('craft-test.txt')
   })
+
+  it('allows non-existent paths under /tmp', async () => {
+    // On Unix /tmp is a conventional scratch dir; on macOS it is a symlink to
+    // /private/tmp. A non-existent path matches the plain /tmp allow entry.
+    const path = sep === '\\' ? 'C:\\tmp\\craft-test.txt' : '/tmp/craft-test.txt'
+    const result = await validateFilePath(path)
+    expect(result).toContain('craft-test.txt')
+  })
+
+  if (sep !== '\\') {
+    // Regression: existing files under /tmp canonicalize to /private/tmp on
+    // macOS. The allow list must resolve symlinks so those real paths match.
+    const scratchDir = mkdtempSync('/tmp/craft-vfp-')
+    afterAll(() => { rmSync(scratchDir, { recursive: true, force: true }) })
+
+    it('allows existing files under /tmp even after realpath canonicalization', async () => {
+      const filePath = join(scratchDir, 'frame_0001.jpg')
+      writeFileSync(filePath, 'x')
+      const result = await validateFilePath(filePath)
+      expect(result).toContain('frame_0001.jpg')
+    })
+  }
 
   it('denies paths outside all allowed directories', async () => {
     // Use a path that's definitely outside home and tmp on any platform

@@ -4,6 +4,8 @@ This file accumulates release notes for the next unreleased version. PRs that ad
 
 ## Features
 
+- Inline image previews in the activity timeline — a `Read` step on an image file (PNG, JPG, GIF, WebP, BMP, ICO, AVIF) now renders a compact thumbnail beside the row instead of just the filename.
+
 ## Improvements
 
 ## Bug Fixes

@@ -96,17 +96,37 @@ export async function validateFilePath(
     realFilePath = normalizedPath
   }
 
-  // Define allowed base directories
-  const allowedDirs = [
+  // Define allowed base directories. `/tmp` is included explicitly because on
+  // macOS os.tmpdir() resolves to a private $TMPDIR under /var/folders, so the
+  // conventional /tmp — where agent skills write scratch files like extracted
+  // video frames — is not otherwise covered.
+  const baseAllowedDirs = [
     homedir(),
     tmpdir(),
+    '/tmp',
     ...(additionalAllowedDirs ?? []),
   ].filter(Boolean)
 
+  // Resolve symlinks in the allowed dirs so they match `realFilePath`, which is
+  // canonical for existing files (e.g. /tmp → /private/tmp and /var → /private/var
+  // on macOS). Keep the un-resolved form too so validation still works when a
+  // dir cannot be resolved (e.g. /tmp on Windows).
+  const allowedDirs: string[] = []
+  for (const dir of baseAllowedDirs) {
+    const normalizedDir = normalize(dir)
+    allowedDirs.push(normalizedDir)
+    try {
+      const realDir = await realpath(normalizedDir)
+      if (realDir !== normalizedDir) allowedDirs.push(realDir)
+    } catch {
+      // Dir may not exist on this platform — ignore.
+    }
+  }
+
   // Check if the real path is within an allowed directory (cross-platform)
+  const normalizedReal = normalize(realFilePath)
   const isAllowed = allowedDirs.some(dir => {
     const normalizedDir = normalize(dir)
-    const normalizedReal = normalize(realFilePath)
     return normalizedReal.startsWith(normalizedDir + sep) || normalizedReal === normalizedDir
   })
 

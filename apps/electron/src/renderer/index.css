@@ -281,6 +281,13 @@
   --foreground-90: color-mix(in srgb, var(--foreground) 90%, var(--background));
   --foreground-95: color-mix(in srgb, var(--foreground) 95%, var(--background));
 
+  /* Preview overlays: lift the outer frame above the content card in dark mode.
+     Default resolves to --foreground-3 (~L0.17), nearly identical to the
+     --background content card (L0.145), so the whole viewport reads as one dark
+     mass. A lighter frame keeps the content dark while making the surrounding
+     edges clearly visible. */
+  --preview-overlay-background: var(--foreground-20);
+
   /* Success/destructive/info interpolated toward foreground (for tinted text) */
   /* Using oklab for perceptually uniform mixing without hue shifts */
   --success-text: color-mix(in oklab, var(--success) 50%, var(--foreground));
@@ -847,32 +854,36 @@ html[data-scenic] .popover-styled {
   -webkit-backdrop-filter: blur(24px);
 }
 
-/* Scenic mode: previews should read as a clean viewer surface, not as another
-   glass panel over the app. Keep scenic controls for the app chrome, but make
-   preview backdrops flat so the UI behind them does not create blurred patches. */
+/* Scenic mode: the outer preview frame reads as frosted glass so the wallpaper
+   (and app chrome) behind it shows through, matching the scenic glass panels.
+   The content card is a much more opaque surface layered on top — only a slight
+   translucency so it picks up a faint hint of the frosted backdrop (less black),
+   while staying far more solid than the frame so text remains fully readable. */
 html[data-scenic] {
-  --preview-overlay-background: oklch(0.16 0.005 270);
-  --preview-overlay-backdrop: oklch(0.16 0.005 270);
-  --preview-overlay-backdrop-blur: 0px;
-  --preview-overlay-surface: oklch(0.16 0.005 270);
-  --preview-overlay-card-background: oklch(0.16 0.005 270);
+  --preview-overlay-background: oklch(0.24 0.008 270 / 0.5);
+  --preview-overlay-backdrop: oklch(0.24 0.008 270 / 0.5);
+  --preview-overlay-backdrop-blur: 30px;
+  --preview-overlay-surface: oklch(0.16 0.005 270 / 0.6);
+  --preview-overlay-card-background: oklch(0.16 0.005 270 / 0.6);
+  --preview-overlay-card-blur: 24px;
   --preview-overlay-shadow: var(--shadow-minimal-flat);
 }
 
 html.dark[data-scenic] {
-  --preview-overlay-background: oklch(0.14 0.005 270);
-  --preview-overlay-backdrop: oklch(0.14 0.005 270);
-  --preview-overlay-surface: oklch(0.14 0.005 270);
-  --preview-overlay-card-background: oklch(0.14 0.005 270);
+  --preview-overlay-background: oklch(0.18 0.008 270 / 0.5);
+  --preview-overlay-backdrop: oklch(0.18 0.008 270 / 0.5);
+  --preview-overlay-surface: oklch(0.14 0.005 270 / 0.6);
+  --preview-overlay-card-background: oklch(0.14 0.005 270 / 0.6);
 }
 
-/* Scenic mode: Expanded document/markdown cards must stay fully readable.
-   Opt these overlays out of the translucent glass background used by normal panels. */
+/* Scenic mode: expanded document/markdown cards stay readable. They are a mostly
+   opaque surface with a gentle blur, so the slight translucency reads as glass
+   without washing out the content. */
 html[data-scenic] .overlay-solid-surface {
   background: var(--preview-overlay-card-background);
   box-shadow: var(--preview-overlay-shadow);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  backdrop-filter: blur(var(--preview-overlay-card-blur, 18px));
+  -webkit-backdrop-filter: blur(var(--preview-overlay-card-blur, 18px));
 }
 
 html[data-scenic] .overlay-solid-surface::before {

@@ -1891,6 +1891,8 @@ export default function App() {
     onReadFile: (path: string) => window.electronAPI.readFile(path),
     // Read file as data URL (used by image-preview blocks)
     onReadFileDataUrl: (path: string) => window.electronAPI.readFileDataUrl(path),
+    // Read image as a size-bounded preview data URL (used by inline thumbnail previews)
+    onReadFilePreviewDataUrl: (path: string, maxSize?: number) => window.electronAPI.readFilePreviewDataUrl(path, maxSize),
     // Read file as binary Uint8Array (used by PDF preview blocks)
     onReadFileBinary: (path: string) => window.electronAPI.readFileBinary(path),
     // Reveal a file in the system file manager (Finder on macOS, Explorer on Windows, etc.)

@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { Markdown } from '../markdown/Markdown'
+import { usePlatform } from '../../context/PlatformContext'
 import { Spinner } from '../ui/LoadingIndicator'
 import { type IslandTransitionConfig } from '../ui'
 import { AnnotationIslandMenu } from '../annotations/AnnotationIslandMenu'
@@ -907,6 +908,80 @@ function TreeViewConnector({ depth }: { depth: number; isLastChild?: boolean }) 
   )
 }
 
+// ============================================================================
+// Inline image preview (for Read tool on image files)
+// ============================================================================
+
+/** Image extensions Chromium can render inline as an <img> thumbnail. */
+const IMAGE_PREVIEW_EXTENSIONS: Record<string, true> = {
+  png: true, jpg: true, jpeg: true, gif: true, webp: true, bmp: true, ico: true, avif: true,
+}
+
+/** True when the path points to a Chromium-renderable image file. */
+function isPreviewableImagePath(filePath: string): boolean {
+  const ext = filePath.split('.').pop()?.toLowerCase()
+  return ext ? IMAGE_PREVIEW_EXTENSIONS[ext] === true : false
+}
+
+/** Cache preview data URLs across rows/remounts so scrolling never re-reads. */
+const activityImagePreviewCache = new Map<string, Promise<string>>()
+
+/**
+ * ActivityImagePreview - Compact inline thumbnail for a Read tool targeting an
+ * image. Loads a size-bounded preview via the platform layer (prefers the
+ * resized preview loader, falls back to the full data URL). Renders nothing
+ * until loaded and stays silent on failure — the row's filename badge is the
+ * fallback, so a missing/denied file never clutters the compact timeline.
+ */
+function ActivityImagePreview({ filePath }: { filePath: string }) {
+  const { onReadFilePreviewDataUrl, onReadFileDataUrl, onResolveFilePath } = usePlatform()
+  const [imageSrc, setImageSrc] = useState<string | null>(null)
+
+  useEffect(() => {
+    const usePreviewLoader = !!onReadFilePreviewDataUrl
+    const loader = onReadFilePreviewDataUrl
+      ? (p: string) => onReadFilePreviewDataUrl(p, 96)
+      : onReadFileDataUrl
+    if (!loader) return
+
+    let cancelled = false
+    setImageSrc(null)
+
+    const load = async (): Promise<string | null> => {
+      const resolved = onResolveFilePath ? await onResolveFilePath(filePath) : filePath
+      if (!resolved) return null
+      const cacheKey = `${usePreviewLoader ? 'preview96' : 'full'}:${resolved}`
+      const cached = activityImagePreviewCache.get(cacheKey)
+      if (cached) return cached
+      const request = loader(resolved).catch((err) => {
+        activityImagePreviewCache.delete(cacheKey)
+        throw err
+      })
+      activityImagePreviewCache.set(cacheKey, request)
+      return request
+    }
+
+    load()
+      .then((url) => { if (!cancelled && url) setImageSrc(url) })
+      .catch(() => { /* silent: keep the filename badge as the fallback */ })
+
+    return () => { cancelled = true }
+  }, [filePath, onReadFilePreviewDataUrl, onReadFileDataUrl, onResolveFilePath])
+
+  if (!imageSrc) return null
+
+  const fileName = filePath.split('/').pop() || filePath
+  return (
+    <img
+      src={imageSrc}
+      alt={fileName}
+      loading="lazy"
+      draggable={false}
+      className="h-8 w-auto max-w-[120px] shrink-0 rounded-[4px] border border-border/60 object-contain shadow-minimal"
+    />
+  )
+}
+
 /** Single activity row in expanded view */
 function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, displayMode = 'detailed' }: ActivityRowProps) {
   const depth = activity.depth || 0
@@ -1145,6 +1220,13 @@ function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, 
               {normalizePath(activity.toolInput.file_path).split('/').pop()}
             </span>
           </span>
+        )}
+        {/* Inline thumbnail for Read tool on image files */}
+        {!isMcpOrApiTool && !isBackgrounded && activity.status !== 'error'
+          && activity.toolName === 'Read'
+          && typeof activity.toolInput?.file_path === 'string'
+          && isPreviewableImagePath(activity.toolInput.file_path) && (
+          <ActivityImagePreview filePath={normalizePath(activity.toolInput.file_path)} />
         )}
         {/* Error badge for native tools */}
         {!isMcpOrApiTool && activity.status === 'error' && activity.error && (

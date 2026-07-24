@@ -89,6 +89,14 @@ export interface PlatformActions {
   onReadFileDataUrl?: (path: string) => Promise<string>
 
   /**
+   * Read an image file as a size-bounded preview data URL for lightweight
+   * thumbnail rendering (Electron: server-side sharp resize). Prefer this over
+   * onReadFileDataUrl when only a small thumbnail is needed — it avoids loading
+   * full-resolution image bytes for compact inline previews.
+   */
+  onReadFilePreviewDataUrl?: (path: string, maxSize?: number) => Promise<string>
+
+  /**
    * Resolve a displayed file path to an absolute/readable path.
    * Used by inline previews where the markdown only has a relative filename.
    */
