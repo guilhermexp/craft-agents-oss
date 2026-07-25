@@ -14,5 +14,5 @@
     "resolveJsonModule": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "src/pi-better-subagents"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "src/pi-better-subagents", "src/pi-computer-use"]
 }

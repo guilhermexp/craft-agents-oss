@@ -1,42 +1,59 @@
 ---
 name: computer-use
-description: Interact with macOS GUI windows using semantic screenshots, clicks, typing, and waits. Use this when the task requires operating a visible app window.
+description: Control supported macOS apps through stateful semantic UI discovery, observation, validated actions, and managed browser contexts.
 ---
 
 # Computer Use
 
-Use these tools when shell/file tools are not enough and you need to operate a macOS app window directly.
+Use these tools when shell and file operations cannot complete work that
+requires a visible macOS application.
 
-## Core workflow
+## Stateful workflow
 
-1. **Call `screenshot` first** to pick the target window and get current UI state.
-2. If the latest screenshot includes AX target refs, use those first for `click`. Use coordinates from the **latest screenshot** only when no suitable AX target is available.
-3. To switch apps/windows, call `screenshot(app, windowTitle)` again.
-4. For text input, prefer `set_text({ ref: "@eN", text })` when the screenshot exposes a matching AX text target. Use click + `type_text({ text })` when you need insertion/cursor semantics.
-5. Use `keypress({ keys })` for Enter, Tab, Escape, arrows, deletion, and shortcuts.
-6. Use `computer_actions({ actions })` to batch obvious actions like click + type + Enter when no intermediate screenshot is needed.
-7. Every successful action returns the **latest semantic state**. If AX targets are missing, sparse, or ambiguous, an image is attached for vision fallback.
+1. Call `find_roots` when you need to discover or switch the target app,
+   window, dialog, menu, or managed browser page. Keep the exact `@r` root ref.
+2. Call `observe_ui` for that root (or the frontmost supported root). Use
+   `semantic` mode when structure is sufficient, `visual` when image evidence
+   is required, and `fused` for automatic selection.
+3. Keep the returned `stateId`. Every `@e` element ref belongs to that state.
+4. Use `search_ui` to find omitted targets, `expand_ui` for bounded subtree
+   context, and `inspect_ui` when capabilities, geometry, or provenance must be
+   confirmed.
+5. Use `act_ui` with the current `stateId`. Prefer semantic refs; use points
+   only when the observed evidence leaves no reliable ref. Group dependent
+   actions only when their order is known, and use `expect` for observable
+   completion.
+6. After navigation or mutation, use the successor state returned by the tool.
+   Re-observe when the UI changed unexpectedly or a state/ref is stale.
 
-## Practical rules
+## Reading and waiting
 
-- All action tools operate on the **current controlled window**.
-- For browsers, prefer a **separate window** for agent work, not a new tab in the user's current window.
-- In strict AX mode, do not bootstrap a new browser window; use an already-open dedicated browser window instead.
-- `screenshot` may include compact AX targets like `@e1`; prefer refs for `click({ ref: "@e1" })` and `set_text({ ref: "@e1", text })` whenever a listed target matches what you want. For `set_text`, prefer targets marked `canSetValue`.
-- Coordinates are **window-relative screenshot pixels** (top-left origin).
-- `captureId` is optional. If provided and stale, refresh with `screenshot`.
-- `type_text` inserts text at the current cursor/selection. Use `set_text` when you need to replace an AX text value; prefer a ref over relying on focus.
-- `scroll`, `move_mouse`, `drag`, `double_click`, and coordinate clicks use screenshot-relative coordinates from the latest screenshot.
-- For shortcut sequences, use chord strings like `keypress({ keys: ["Command+L", "Enter"] })`; reserve `["Command", "L"]` for a single chord call.
-- `computer_actions` executes one to twenty actions and returns one state update plus per-action execution metadata, including whether each action used the `stealth` or `default` implementation variant. Do not batch if the next action depends on seeing an intermediate result.
-- `wait({ ms })` pauses and then returns the latest semantic state for polling/loading states.
-- Accessibility permission is mandatory for actions.
-- Screen Recording permission is mandatory for screenshots and model vision context.
-- Public tool surface is `screenshot`, `click`, `double_click`, `move_mouse`, `drag`, `scroll`, `keypress`, `type_text`, `set_text`, `wait`, `computer_actions`.
-- Default mode has built-in screenshot/vision grounding and is AX-first with fallback only when a control cannot be completed semantically.
-- Opt-in stealth mode (`PI_COMPUTER_USE_STEALTH=1` or `PI_COMPUTER_USE_STRICT_AX=1`) exposes the widest safe subset: AX/background-safe operations run, but non-AX fallbacks are blocked.
-- In stealth mode, operation must stay background-safe: no second screen or virtual display, no foreground activation, no raw keyboard/pointer events, and no physical cursor takeover.
+- Use `read_text` to page through text from an `@e` UI ref. Pass its owning
+  `stateId`. Immutable `@o` continuation refs do not require a state.
+- Use `wait_for` for bounded asynchronous conditions instead of polling. Scope
+  the condition by ref, subtree, text, role, or value whenever possible.
+- Treat every ref as state-scoped. Never reuse a ref with a different state.
 
-## When errors happen
+## Browser contexts
 
-If an action reports stale state, target mismatch, or missing target/window, call `screenshot` again to refresh and continue.
+- Use `launch_browser` only when work needs the Pi-managed CDP browser.
+- Use `navigate_browser` with the current browser-page `stateId` for HTTP(S)
+  navigation.
+- Use `evaluate_browser` only for targeted, bounded JavaScript. Prefer normal
+  observation, search, and text reading when they are sufficient.
+- Native browser windows remain regular UI roots and should be operated through
+  observation and validated UI actions.
+
+## Safety and recovery
+
+- Prefer the smallest action set that can satisfy the request.
+- Do not act on ambiguous targets. Narrow the search or inspect the candidate.
+- Re-observe after any unexpected focus, window, or content change.
+- Accessibility permission is required for interaction; Screen Recording is
+  required for visual evidence.
+- If setup or permission checks fail, report the exact remediation and stop
+  instead of attempting ungrounded actions.
+
+The public tool surface is exactly `find_roots`, `observe_ui`, `search_ui`,
+`expand_ui`, `inspect_ui`, `act_ui`, `read_text`, `wait_for`, `launch_browser`,
+`navigate_browser`, and `evaluate_browser`.

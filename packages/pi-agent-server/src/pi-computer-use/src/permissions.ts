@@ -1,29 +1,67 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+// Which process identity the permission answers reflect. Platforms may
+// attribute grants to a responsible parent process rather than the helper
+// executable itself.
+export type PermissionAttribution = "helper-app" | "caller";
+export type PermissionKind = "accessibility" | "screenRecording";
+
+export interface PermissionSource {
+	attribution: PermissionAttribution;
+	pid?: number;
+	parentPid?: number;
+	executablePath?: string;
+	parentPath?: string;
+	parentBundleId?: string;
+	os?: string;
+}
+
 export interface PermissionStatus {
 	accessibility: boolean;
 	screenRecording: boolean;
+	screenRecordingPreflight?: boolean;
+	source?: PermissionSource;
+}
+
+interface PermissionKindCopy {
+	kind: PermissionKind;
+	openOption: string;
+}
+
+interface PermissionFlowCopy {
+	nonInteractiveError(helperPath: string): string;
+	prompt(status: PermissionStatus, helperPath: string, hint?: string): string;
+	incompleteError(helperPath: string): string;
+	readyMessage: string;
+	stillMissing(kinds: PermissionKind[]): string;
 }
 
 export interface PermissionBridge {
+	kinds: PermissionKindCopy[];
+	copy: PermissionFlowCopy;
 	checkPermissions(signal?: AbortSignal): Promise<PermissionStatus>;
-	openPermissionPane(kind: "accessibility" | "screenRecording", signal?: AbortSignal): Promise<void>;
+	registerPermissions(signal?: AbortSignal): Promise<void>;
+	openPermissionPane(kind: PermissionKind, signal?: AbortSignal): Promise<void>;
+	// Platforms may cache permission answers per process, so restart before
+	// recheck lets a new grant become visible to the helper.
+	restartHelper(signal?: AbortSignal): Promise<void>;
+	permissionHint?: string;
 }
-
-const NON_INTERACTIVE_PERMISSION_ERROR =
-	"pi-computer-use setup requires an interactive session. Start pi in interactive mode and grant Accessibility and Screen Recording to the pi-computer-use helper. Screen Recording lets the agent see the window. Accessibility lets it interact with the window.";
 
 function throwIfAborted(signal?: AbortSignal): void {
-	if (signal?.aborted) {
-		throw new Error("Operation aborted.");
-	}
+	if (signal?.aborted) throw new Error("Operation aborted.");
 }
 
-function missingKinds(status: PermissionStatus): string[] {
-	const missing: string[] = [];
-	if (!status.accessibility) missing.push("Accessibility");
-	if (!status.screenRecording) missing.push("Screen Recording");
-	return missing;
+function granted(status: PermissionStatus, kind: PermissionKind): boolean {
+	return status[kind] === true;
+}
+
+function allGranted(status: PermissionStatus, kinds: PermissionKindCopy[]): boolean {
+	return kinds.every(({ kind }) => granted(status, kind));
+}
+
+function missingKinds(status: PermissionStatus, kinds: PermissionKindCopy[]): PermissionKind[] {
+	return kinds.flatMap(({ kind }) => granted(status, kind) ? [] : [kind]);
 }
 
 export async function ensurePermissions(
@@ -33,53 +71,40 @@ export async function ensurePermissions(
 	signal?: AbortSignal,
 ): Promise<PermissionStatus> {
 	let status = await bridge.checkPermissions(signal);
-	if (status.accessibility && status.screenRecording) {
-		return status;
-	}
+	if (allGranted(status, bridge.kinds)) return status;
 
-	if (!ctx.hasUI) {
-		throw new Error(`${NON_INTERACTIVE_PERMISSION_ERROR}\nHelper path: ${helperPath}`);
-	}
+	if (!ctx.hasUI) throw new Error(bridge.copy.nonInteractiveError(helperPath));
 
-	while (!status.accessibility || !status.screenRecording) {
+	// Register before prompting so platform settings panes can already list
+	// the helper and the user only has to enable existing entries.
+	await bridge.registerPermissions(signal).catch(() => undefined);
+
+	while (!allGranted(status, bridge.kinds)) {
 		throwIfAborted(signal);
 
-		const missing = missingKinds(status);
-		const options: string[] = [];
-		if (!status.accessibility) options.push("Open Accessibility Settings");
-		if (!status.screenRecording) options.push("Open Screen Recording Settings");
-		options.push("Recheck", "Cancel");
+		const missing = missingKinds(status, bridge.kinds);
+		const options = bridge.kinds
+			.filter(({ kind }) => missing.includes(kind))
+			.map(({ openOption }) => openOption);
+		options.push("Recheck (restarts helper)", "Cancel");
 
-		const prompt = [
-			"pi-computer-use needs a one-time macOS setup before its tools can run.",
-			`Missing permissions: ${missing.join(" and ")}`,
-			"",
-			"What each permission does:",
-			"- Screen Recording: lets the agent see the target window and provide screenshot/vision context",
-			"- Accessibility: lets the agent click, focus, and type in the target window",
-			"",
-			"Grant permissions to this helper:",
-			helperPath,
-			"",
-			"Open the missing System Settings panes, enable the helper, then return here and choose Recheck.",
-		].join("\n");
+		const choice = await ctx.ui.select(bridge.copy.prompt(status, helperPath, bridge.permissionHint), options, { signal });
+		if (!choice || choice === "Cancel") throw new Error(bridge.copy.incompleteError(helperPath));
 
-		const choice = await ctx.ui.select(prompt, options, { signal });
-		if (!choice || choice === "Cancel") {
-			throw new Error(
-				`pi-computer-use setup is incomplete. Grant Accessibility and Screen Recording to ${helperPath}, then retry. Screen Recording lets the agent see the window. Accessibility lets it interact with the window.`,
-			);
+		const selected = bridge.kinds.find(({ openOption }) => choice === openOption);
+		if (selected) await bridge.openPermissionPane(selected.kind, signal);
+
+		if (choice.startsWith("Recheck")) {
+			// Restart first: permission decisions can be cached by a running
+			// helper process and remain stale after the user grants access.
+			await bridge.restartHelper(signal);
+			status = await bridge.checkPermissions(signal);
+			if (allGranted(status, bridge.kinds)) {
+				ctx.ui.notify(bridge.copy.readyMessage, "info");
+			} else {
+				ctx.ui.notify(bridge.copy.stillMissing(missingKinds(status, bridge.kinds)), "warning");
+			}
 		}
-
-		if (choice === "Open Accessibility Settings") {
-			await bridge.openPermissionPane("accessibility", signal);
-			ctx.ui.notify("Opened Accessibility settings. Enable the pi-computer-use helper, then come back and choose Recheck.", "info");
-		} else if (choice === "Open Screen Recording Settings") {
-			await bridge.openPermissionPane("screenRecording", signal);
-			ctx.ui.notify("Opened Screen Recording settings. Enable the pi-computer-use helper, then come back and choose Recheck.", "info");
-		}
-
-		status = await bridge.checkPermissions(signal);
 	}
 
 	return status;

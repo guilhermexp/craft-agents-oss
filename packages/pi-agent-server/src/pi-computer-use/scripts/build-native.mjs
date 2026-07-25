@@ -7,12 +7,28 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sourcePath = path.join(rootDir, "native", "macos", "bridge.swift");
-const archTargets = {
-	arm64: "arm64-apple-macosx14.0",
-	x64: "x86_64-apple-macosx14.0",
+const macosSourcePaths = [
+	"agent_cursor.swift",
+	"agent_cursor_motion.swift",
+	"bridge.swift",
+].map((file) => path.join(rootDir, "native", "macos", file));
+const windowsCrateDir = path.join(rootDir, "native", "windows", "bridge-rs");
+const archTriples = {
+	arm64: "arm64-apple-macosx",
+	x64: "x86_64-apple-macosx",
 };
-const defaultCodeSignIdentifier = "com.injaneity.pi-computer-use.bridge";
+const deploymentTarget = "14.0";
+const frameworks = ["ApplicationServices", "AppKit", "ScreenCaptureKit", "Foundation", "SwiftUI"];
+const defaultCodeSignIdentifier = "com.injaneity.pi-computer-use";
+
+async function exists(filePath) {
+	try {
+		await fs.access(filePath);
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 function getArg(name) {
 	const index = process.argv.indexOf(name);
@@ -55,25 +71,17 @@ function moduleCachePath(arch) {
 }
 
 function swiftArgsForArch(arch, outputPath) {
-	return [
+	const args = [
 		"swiftc",
 		"-target",
-		archTargets[arch],
+		`${archTriples[arch]}${deploymentTarget}`,
 		"-module-cache-path",
 		moduleCachePath(arch),
 		"-O",
-		"-framework",
-		"ApplicationServices",
-		"-framework",
-		"AppKit",
-		"-framework",
-		"ScreenCaptureKit",
-		"-framework",
-		"Foundation",
-		sourcePath,
-		"-o",
-		outputPath,
 	];
+	for (const framework of frameworks) args.push("-framework", framework);
+	args.push(...macosSourcePaths, "-o", outputPath);
+	return args;
 }
 
 async function signBinary(outputPath) {
@@ -119,9 +127,75 @@ async function buildUniversal(outputPath) {
 	await fs.rm(tempDir, { recursive: true, force: true });
 }
 
+/**
+ * Return the actual cargo binary path, handling platform suffix differences.
+ * On Windows, the binary is named "windows-bridge.exe"; on other platforms it's "windows-bridge".
+ */
+function windowsBinaryPath(crateDir, target) {
+	const releaseDir = target
+		? path.join(crateDir, "target", target, "release")
+		: path.join(crateDir, "target", "release");
+	return path.join(releaseDir, "windows-bridge.exe");
+}
+
+async function buildWindowsHelper(prebuiltOutput) {
+	const target = getArg("--target");
+	if (process.platform !== "win32" && !target?.includes("windows")) {
+		throw new Error("Refusing to label a host binary as Windows. Build on Windows or pass an explicit Windows --target triple.");
+	}
+	const prebuiltDir = prebuiltOutput
+		? path.resolve(process.cwd(), prebuiltOutput, "..")
+		: path.join(rootDir, "prebuilt", "windows");
+	const manifestPath = path.join(windowsCrateDir, "Cargo.toml");
+
+	console.log("Building Windows helper with cargo...");
+	const cargoArgs = [
+		"build",
+		"--release",
+		"--manifest-path",
+		manifestPath,
+	];
+	if (target) cargoArgs.push("--target", target);
+	await run("cargo", cargoArgs);
+
+	await fs.mkdir(prebuiltDir, { recursive: true });
+
+	const cargoOutput = windowsBinaryPath(windowsCrateDir, target);
+	const handle = await fs.open(cargoOutput, "r");
+	try {
+		const signature = Buffer.alloc(2);
+		await handle.read(signature, 0, 2, 0);
+		if (signature.toString("ascii") !== "MZ") {
+			throw new Error(`Cargo output is not a Windows PE executable: ${cargoOutput}`);
+		}
+	} finally {
+		await handle.close();
+	}
+	const prebuiltDest = path.join(prebuiltDir, "windows-bridge.exe");
+	await fs.copyFile(cargoOutput, prebuiltDest);
+	await fs.chmod(prebuiltDest, 0o755);
+	console.log(`Built Windows helper at ${prebuiltDest}`);
+}
+
 async function main() {
-	if (process.platform !== "darwin") {
-		throw new Error("build-native is only supported on macOS.");
+	const explicitPlatform = getArg("--platform");
+
+	if (explicitPlatform === "windows") {
+		await buildWindowsHelper(getArg("--output"));
+		return;
+	}
+
+	if (explicitPlatform === "darwin") {
+		// Fall through to macOS build logic below.
+	} else if (process.platform === "win32") {
+		await buildWindowsHelper(getArg("--output"));
+		return;
+	} else if (process.platform !== "darwin") {
+		console.log(
+			`Skipping native build: unsupported platform "${process.platform}". ` +
+				"Use --platform windows to build the Windows helper, or run on macOS for the macOS helper.",
+		);
+		return;
 	}
 
 	const arch = normalizeArch(getArg("--arch") ?? process.arch);
@@ -129,10 +203,11 @@ async function main() {
 
 	if (arch === "all") {
 		if (outputArg) {
-			throw new Error("--output is not supported with --arch all. Use --arch arm64/x64/universal for a single output.");
+			throw new Error("--output is not supported with --arch all. Use a single architecture for one output.");
 		}
-		await buildForArch("x64", defaultOutputPath("x64"));
-		await buildForArch("arm64", defaultOutputPath("arm64"));
+		for (const nextArch of ["x64", "arm64"]) {
+			await buildForArch(nextArch, defaultOutputPath(nextArch));
+		}
 		return;
 	}
 

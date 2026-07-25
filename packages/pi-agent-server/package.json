@@ -9,7 +9,8 @@
     "pi-agent-server": "./dist/index.js"
   },
   "scripts": {
-    "build": "bun build src/index.ts --outdir=dist --target=bun --format=esm --external koffi && rm -rf dist/pi-computer-use && cp -R src/pi-computer-use dist/pi-computer-use && rm -rf dist/pi-better-subagents && cp -R src/pi-better-subagents dist/pi-better-subagents",
+    "build:computer-use-extension": "bun build src/pi-computer-use/extensions/computer-use.ts --outfile=src/pi-computer-use/src/platform/macos/craft-runtime-extension.js --target=bun --format=esm --minify --external @earendil-works/pi-coding-agent",
+    "build": "bun run build:computer-use-extension && bun build src/index.ts --outdir=dist --target=bun --format=esm --external koffi && bun src/pi-computer-use/scripts/craft-stage-runtime.mjs dist/pi-computer-use && rm -rf dist/pi-better-subagents && cp -R src/pi-better-subagents dist/pi-better-subagents",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "validate": "bun run typecheck && bun run build"
   },
