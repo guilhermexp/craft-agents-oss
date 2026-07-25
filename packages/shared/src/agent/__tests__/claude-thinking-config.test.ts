@@ -154,6 +154,35 @@ describe('resolveClaudeThinkingOptions', () => {
       thinking: { type: 'disabled' },
     })
   })
+
+  // --- Opus 5: adaptive thinking, but NOT always-on (unlike Mythos-class) ---
+
+  it('uses adaptive thinking + effort for Opus 5', () => {
+    const result = resolveClaudeThinkingOptions({
+      thinkingLevel: 'xhigh',
+      model: 'claude-opus-5',
+      providerType: 'anthropic',
+      minimizeThinking: false,
+    })
+
+    expect(result).toEqual({
+      thinking: { type: 'adaptive' },
+      effort: 'xhigh',
+    })
+  })
+
+  it('disables thinking on Opus 5 when level is off (it accepts disabled, unlike Fable 5)', () => {
+    const result = resolveClaudeThinkingOptions({
+      thinkingLevel: 'off',
+      model: 'claude-opus-5',
+      providerType: 'anthropic',
+      minimizeThinking: false,
+    })
+
+    expect(result).toEqual({
+      thinking: { type: 'disabled' },
+    })
+  })
 })
 
 describe('getThinkingTokens', () => {

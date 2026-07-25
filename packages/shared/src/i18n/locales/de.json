@@ -711,7 +711,7 @@
   "mode.safe": "Erkunden",
   "model.fableDesc": "Modell der nächsten Generation für komplexe Aufgaben",
   "model.haikuDesc": "Am schnellsten für kurze Antworten",
-  "model.opusDesc": "Leistungsstärkste für komplexe Aufgaben",
+  "model.opusDesc": "Für komplexes agentisches Programmieren und Unternehmensarbeit",
   "model.sonnetDesc": "Ideal für alltägliche Aufgaben",
   "multiSelect.changeStatus": "Status ändern",
   "multiSelect.clearSelection": "Drücken Sie <kbd>Esc</kbd>, um die Auswahl zu löschen",

@@ -14,6 +14,7 @@
 // Must stay in sync with BEDROCK_MODEL_MAP in llm-connections.ts.
 const BEDROCK_TO_BARE: Record<string, string> = {
   // US inference profile IDs (primary)
+  'us.anthropic.claude-opus-5': 'claude-opus-5',
   'us.anthropic.claude-opus-4-8': 'claude-opus-4-8',
   'us.anthropic.claude-fable-5': 'claude-fable-5',
   'us.anthropic.claude-opus-4-7': 'claude-opus-4-7',
@@ -24,6 +25,7 @@ const BEDROCK_TO_BARE: Record<string, string> = {
   'us.anthropic.claude-opus-4-5-20251101-v1:0': 'claude-opus-4-5-20251101',
   'us.anthropic.claude-sonnet-4-5-20250929-v1:0': 'claude-sonnet-4-5-20250929',
   // EU inference profile IDs
+  'eu.anthropic.claude-opus-5': 'claude-opus-5',
   'eu.anthropic.claude-opus-4-8': 'claude-opus-4-8',
   'eu.anthropic.claude-fable-5': 'claude-fable-5',
   'eu.anthropic.claude-opus-4-7': 'claude-opus-4-7',
@@ -34,6 +36,7 @@ const BEDROCK_TO_BARE: Record<string, string> = {
   'eu.anthropic.claude-opus-4-5-20251101-v1:0': 'claude-opus-4-5-20251101',
   'eu.anthropic.claude-sonnet-4-5-20250929-v1:0': 'claude-sonnet-4-5-20250929',
   // Global inference profile IDs
+  'global.anthropic.claude-opus-5': 'claude-opus-5',
   'global.anthropic.claude-opus-4-8': 'claude-opus-4-8',
   'global.anthropic.claude-fable-5': 'claude-fable-5',
   'global.anthropic.claude-opus-4-7': 'claude-opus-4-7',
@@ -42,6 +45,7 @@ const BEDROCK_TO_BARE: Record<string, string> = {
   'global.anthropic.claude-sonnet-4-6': 'claude-sonnet-4-6',
   'global.anthropic.claude-haiku-4-5-20251001-v1:0': 'claude-haiku-4-5-20251001',
   // Base IDs (no region prefix)
+  'anthropic.claude-opus-5': 'claude-opus-5',
   'anthropic.claude-opus-4-8': 'claude-opus-4-8',
   'anthropic.claude-fable-5': 'claude-fable-5',
   'anthropic.claude-opus-4-7': 'claude-opus-4-7',
@@ -57,18 +61,18 @@ function bedrockToBareId(modelId: string): string {
 }
 
 const DEPRECATED_MODEL_REPLACEMENTS: Record<string, string> = {
-  'claude-opus-4-5-20251101': 'claude-opus-4-8',
-  'claude-opus-4-6': 'claude-opus-4-8',
-  'anthropic.claude-opus-4-5-20251101-v1:0': 'anthropic.claude-opus-4-8',
-  'anthropic.claude-opus-4-6-v1': 'anthropic.claude-opus-4-8',
+  'claude-opus-4-5-20251101': 'claude-opus-5',
+  'claude-opus-4-6': 'claude-opus-5',
+  'anthropic.claude-opus-4-5-20251101-v1:0': 'anthropic.claude-opus-5',
+  'anthropic.claude-opus-4-6-v1': 'anthropic.claude-opus-5',
   'anthropic.claude-opus-4-7-v1': 'anthropic.claude-opus-4-7',
-  'us.anthropic.claude-opus-4-5-20251101-v1:0': 'us.anthropic.claude-opus-4-8',
-  'us.anthropic.claude-opus-4-6-v1': 'us.anthropic.claude-opus-4-8',
+  'us.anthropic.claude-opus-4-5-20251101-v1:0': 'us.anthropic.claude-opus-5',
+  'us.anthropic.claude-opus-4-6-v1': 'us.anthropic.claude-opus-5',
   'us.anthropic.claude-opus-4-7-v1': 'us.anthropic.claude-opus-4-7',
-  'eu.anthropic.claude-opus-4-5-20251101-v1:0': 'eu.anthropic.claude-opus-4-8',
-  'eu.anthropic.claude-opus-4-6-v1': 'eu.anthropic.claude-opus-4-8',
+  'eu.anthropic.claude-opus-4-5-20251101-v1:0': 'eu.anthropic.claude-opus-5',
+  'eu.anthropic.claude-opus-4-6-v1': 'eu.anthropic.claude-opus-5',
   'eu.anthropic.claude-opus-4-7-v1': 'eu.anthropic.claude-opus-4-7',
-  'global.anthropic.claude-opus-4-6-v1': 'global.anthropic.claude-opus-4-8',
+  'global.anthropic.claude-opus-4-6-v1': 'global.anthropic.claude-opus-5',
   'global.anthropic.claude-opus-4-7-v1': 'global.anthropic.claude-opus-4-7',
 };
 
@@ -129,28 +133,26 @@ export const MODEL_REGISTRY: ModelDefinition[] = [
   // Anthropic Claude Models
   // ----------------------------------------
   {
-    id: 'claude-opus-4-8',
-    name: 'Opus 4.8',
+    id: 'claude-opus-5',
+    name: 'Opus 5',
+    // shortName collides with the older Opus entries below. Opus 5 is listed
+    // first, so findModelIdByShortName('Opus') resolves to it — making it the
+    // default Opus (matches the Claude Code `opus` alias since SDK 0.3.219).
     shortName: 'Opus',
-    description: 'Most capable for complex work',
+    description: 'For complex agentic coding and enterprise work',
     descriptionKey: 'model.opusDesc',
     provider: 'anthropic',
     contextWindow: 1_000_000,
   },
   {
-    id: 'claude-opus-4-7',
-    name: 'Opus 4.7',
-    // shortName intentionally collides with 4.8. 4.8 is listed first, so
-    // findModelIdByShortName('Opus') resolves to 4.8 — making it the default.
+    id: 'claude-opus-4-8',
+    name: 'Opus 4.8',
     shortName: 'Opus',
     description: 'Previous Opus generation',
     descriptionKey: 'model.opusDesc',
     provider: 'anthropic',
     contextWindow: 1_000_000,
   },
-  // TODO(opus-4.6-sunset): remove this entry when Opus 4.6 is deprecated by
-  // Anthropic or we stop offering it. Also drop the related 4.6 pieces in
-  // llm-connections.ts PI_PREFERRED_DEFAULTS (grep for TODO(opus-4.6-sunset)).
   {
     id: 'claude-opus-4-7',
     name: 'Opus 4.7',
@@ -290,7 +292,7 @@ export function getModelDisplayName(modelId: string): string {
   const model = getModelById(modelId);
   if (model) return model.name;
   // Fallback: normalize deprecated/Bedrock-native IDs, then strip prefix and date suffix
-  // e.g., "claude-opus-4-5-20251101" → "Opus 4.8"
+  // e.g., "claude-opus-4-5-20251101" → "Opus 5"
   const normalized = bedrockToBareId(normalizeDeprecatedModelId(modelId));
   const stripped = normalized
     .replace('claude-', '')

@@ -711,7 +711,7 @@
   "mode.safe": "Explore",
   "model.fableDesc": "Next-generation model for complex work",
   "model.haikuDesc": "Fastest for quick answers",
-  "model.opusDesc": "Most capable for complex work",
+  "model.opusDesc": "For complex agentic coding and enterprise work",
   "model.sonnetDesc": "The best combination of speed and intelligence",
   "multiSelect.changeStatus": "Change Status",
   "multiSelect.clearSelection": "Press <kbd>Esc</kbd> to clear selection",

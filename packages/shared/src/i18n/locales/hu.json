@@ -711,7 +711,7 @@
   "mode.safe": "Felfedezés",
   "model.fableDesc": "Új generációs modell összetett feladatokhoz",
   "model.haikuDesc": "Leggyorsabb a rövid válaszokhoz",
-  "model.opusDesc": "Legerősebb összetett feladatokhoz",
+  "model.opusDesc": "Összetett ügynöki kódoláshoz és vállalati munkához",
   "model.sonnetDesc": "Ideális mindennapi feladatokhoz",
   "multiSelect.changeStatus": "Állapot módosítása",
   "multiSelect.clearSelection": "Nyomd meg az <kbd>Esc</kbd> gombot a kijelölés törléséhez",

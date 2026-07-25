@@ -713,7 +713,7 @@
   "mode.safe": "Eksploruj",
   "model.fableDesc": "Model nowej generacji do złożonych zadań",
   "model.haikuDesc": "Najszybszy do szybkich odpowiedzi",
-  "model.opusDesc": "Najbardziej zaawansowany do złożonych zadań",
+  "model.opusDesc": "Do złożonego kodowania agentowego i pracy w firmie",
   "model.sonnetDesc": "Najlepszy do codziennych zadań",
   "multiSelect.changeStatus": "Zmień status",
   "multiSelect.clearSelection": "Naciśnij <kbd>Esc</kbd>, aby wyczyścić wybór",

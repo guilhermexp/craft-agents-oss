@@ -266,8 +266,8 @@ function backfillAllConnectionModels(config: StoredConfig): boolean {
   return changed;
 }
 
-const OPUS_DEFAULT_ID = 'claude-opus-4-8';
-const OPUS_FALLBACK_ID = 'claude-opus-4-7';
+const OPUS_DEFAULT_ID = 'claude-opus-5';
+const OPUS_FALLBACK_ID = 'claude-opus-4-8';
 
 function defaultModelIdsForConnection(connection: LlmConnection): Set<string> {
   return new Set(

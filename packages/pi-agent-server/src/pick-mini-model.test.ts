@@ -31,16 +31,16 @@ describe('pickProviderAppropriateMiniModel', () => {
     // the helper would otherwise pick a non-mini candidate for anthropic.
     const registry = createMockRegistry({
       anthropic: [
+        { id: 'claude-opus-5', name: 'Claude Opus 5' },
         { id: 'claude-opus-4-8', name: 'Claude Opus 4.8' },
-        { id: 'claude-opus-4-7', name: 'Claude Opus 4.7' },
         { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
       ],
     });
 
     const result = pickProviderAppropriateMiniModel('anthropic', registry, false);
-    // Helper picks first entry from PI_PREFERRED_DEFAULTS.anthropic, now claude-opus-4-8.
+    // Helper picks first entry from PI_PREFERRED_DEFAULTS.anthropic, now claude-opus-5.
     // Documenting why the caller must NOT invoke this helper for anthropic auth.
-    expect(result).toBe('claude-opus-4-8');
+    expect(result).toBe('claude-opus-5');
   });
 
   it('openai-codex: skips denied codex-mini variants, returns first resolvable candidate', () => {
