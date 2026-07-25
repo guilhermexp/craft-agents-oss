@@ -27,10 +27,23 @@ Plan: `docs/plans/2026-07-24-001-feat-browser-cookie-import-plan.md` (U-IDs refe
   raises unsupported-platform.
   - files: `packages/shared/src/browser-cookies/chrome-cookie-reader.test.ts`
   - verify: `bun test packages/shared/src/browser-cookies/chrome-cookie-reader.test.ts`
-- [ ] 1.4 Add `userOnly?: boolean` to the browser profile record and thread it through
-  `browser-profile-resolver.ts` / profile settings persistence.
-  - files: `apps/electron/src/main/browser-profile-resolver.ts`
-  - verify: `grep -q "userOnly" apps/electron/src/main/browser-profile-resolver.ts`
+- [ ] 1.4 Add `userOnly?: boolean` to the browser profile record and preserve it through the ENTIRE
+  persistence chain. The flag must survive a save/load round-trip — a profile record that carries
+  `userOnly` in memory but loses it on persist would make the security boundary fail while
+  appearing to work. Four places drop unknown fields today and all must be updated:
+  (a) the `BrowserProfile` interface and the `BrowserProfileInput` type in `config/types.ts`;
+  (b) the explicit return type AND body of `sanitizeBrowserProfileInput`;
+  (c) the `normalized` object built from scratch in `normalizeBrowserProfile`;
+  (d) `normalizeBrowserProfileSettings`, which maps profiles through the normalizer.
+  - files: `packages/shared/src/config/types.ts`, `packages/shared/src/config/browser-profiles.ts`, `apps/electron/src/main/browser-profile-resolver.ts`
+  - verify: `grep -q "userOnly" packages/shared/src/config/types.ts && grep -q "userOnly" packages/shared/src/config/browser-profiles.ts`
+- [ ] 1.4b Prove the round-trip in `packages/shared/src/config/__tests__/browser-profiles.test.ts`:
+  a profile with `userOnly: true` survives `sanitizeBrowserProfileInput` → `normalizeBrowserProfile`
+  → `normalizeBrowserProfileSettings` with the flag intact; a profile without the flag stays
+  undefined (not coerced to `false`); a non-boolean `userOnly` input is rejected/normalized rather
+  than persisted as-is. This test is the guard against the silent-drop failure mode.
+  - files: `packages/shared/src/config/__tests__/browser-profiles.test.ts`
+  - verify: `bun test packages/shared/src/config/__tests__/browser-profiles.test.ts`
 - [ ] 1.5 Enforce the capability at resolution time in `browser-pane-manager.ts`: an agent-owned
   instance request that resolves to a `userOnly` profile is REFUSED with a typed error. Do not fall
   back to the default profile — a silent fallback makes an agent tool appear to succeed against the

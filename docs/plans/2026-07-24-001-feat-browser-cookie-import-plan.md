@@ -256,17 +256,27 @@ land on it.
 **Dependencies:** none (parallel with U1)
 
 **Files:**
+- `packages/shared/src/config/types.ts` (modify — `BrowserProfile`, `BrowserProfileInput`)
+- `packages/shared/src/config/browser-profiles.ts` (modify — `sanitizeBrowserProfileInput`,
+  `normalizeBrowserProfile`, `normalizeBrowserProfileSettings`)
+- `packages/shared/src/config/__tests__/browser-profiles.test.ts` (modify — round-trip test)
 - `apps/electron/src/main/browser-profile-resolver.ts` (modify)
 - `apps/electron/src/main/browser-pane-manager.ts` (modify — `resolveProfileId`, `createInstance`)
-- `packages/shared/src/protocol/channels.ts` (modify — profile shape carries the flag)
 - `apps/electron/src/main/__tests__/browser-profile-capability.test.ts` (create)
 
 **Approach:**
-Add `userOnly?: boolean` to the stored profile record. `createInstance` already resolves a
-profileId; give it an explicit caller intent (`ownerType` is already threaded through — reuse it
-rather than inventing a parallel concept). When the caller is agent-owned and the resolved profile
-is `userOnly`, refuse: do not silently fall back to the default profile, because a silent fallback
-would make an agent tool appear to succeed against the wrong jar.
+Add `userOnly?: boolean` to the stored profile record. **The flag must survive the persistence
+round-trip.** `sanitizeBrowserProfileInput` and `normalizeBrowserProfile` each build their result
+object from scratch with an explicit field list, so any field not added there is dropped on save —
+a profile that is user-only in memory but plain on disk is the worst possible failure for a
+security boundary, because it looks correct until it isn't. Update the interface, the input type,
+both builders, and the settings-level normalizer together, and prove it with a round-trip test.
+
+`createInstance` already resolves a profileId; give it an explicit caller intent (`ownerType` is
+already threaded through — reuse it rather than inventing a parallel concept). When the caller is
+agent-owned and the resolved profile is `userOnly`, refuse: do not silently fall back to the
+default profile, because a silent fallback would make an agent tool appear to succeed against the
+wrong jar.
 
 The guard lives at resolution time so that any future code path that accepts a profileId inherits
 it (KTD2).
@@ -275,6 +285,10 @@ it (KTD2).
 the feature leans on.
 
 **Test scenarios:**
+- A profile with `userOnly: true` survives `sanitizeBrowserProfileInput` →
+  `normalizeBrowserProfile` → `normalizeBrowserProfileSettings` with the flag intact (the
+  silent-drop guard).
+- A profile without the flag stays `undefined` rather than being coerced to `false`.
 - An agent-owned instance request naming a `userOnly` profile is refused with a typed error; no
   instance is created.
 - An agent-owned request with no profileId resolves to the default profile as before (no
@@ -287,10 +301,13 @@ the feature leans on.
 
 **must_haves:**
 - truths: "an agent-driven browser call cannot obtain a session for a user-only profile"; "the
-  refusal is an error, never a silent fallback to the default profile".
-- artifacts: `userOnly` field on the profile record; refusal branch in `resolveProfileId`.
+  refusal is an error, never a silent fallback to the default profile"; "the user-only flag
+  survives a save/load round-trip".
+- artifacts: `userOnly` field on the profile record and through the persistence chain; refusal
+  branch in `resolveProfileId`.
 - key_links: `grep -n "userOnly" apps/electron/src/main/browser-pane-manager.ts`;
-  `grep -n "userOnly" apps/electron/src/main/browser-profile-resolver.ts`
+  `grep -n "userOnly" packages/shared/src/config/browser-profiles.ts`;
+  `grep -n "userOnly" packages/shared/src/config/types.ts`
 
 ---
 
