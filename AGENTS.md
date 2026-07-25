@@ -162,6 +162,21 @@ infer a Hermes lead first, then the first participant. Keep Hermes Kanban using
 app-scoped `HERMES_HOME` and profile-slug assignees so worker tasks and War
 Room updates stay connected.
 
+## Browser cookie import
+
+The macOS Chrome/Chromium reader lives under
+`packages/shared/src/browser-cookies/`. Keep it independent from Electron and
+keep decrypted values in memory only for the duration of a read. Never log,
+persist in app JSON, or return decrypted cookie values from a tool/UI result.
+Per-row decryption failures are counted as skipped and must not abort the read.
+
+Browser profiles may declare `userOnly: true`. Preserve that flag through
+`sanitizeBrowserProfileInput`, `normalizeBrowserProfile`, and
+`normalizeBrowserProfileSettings`. Agent-owned (`ownerType: "session"`) browser
+creation, profile switching, reuse, and binding must refuse a user-only profile
+with an error before resolving a partition or creating/adopting an instance;
+never fall back to `persist:browser-pane` for this refusal.
+
 ## Validation
 
 For Hermes/Craft integration changes, run the focused Craft tests:

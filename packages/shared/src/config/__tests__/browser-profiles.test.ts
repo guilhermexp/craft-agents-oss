@@ -5,6 +5,7 @@ import {
   normalizeBrowserProfileSettings,
   sanitizeBrowserProfileInput,
   suggestBrowserProfileIdForUrl,
+  type BrowserProfileInput,
 } from '../browser-profiles'
 
 const now = () => 1234567890
@@ -61,6 +62,56 @@ describe('browser profile normalization', () => {
       domainHints: ['cliente.test'],
       createdAt: 10,
     })
+  })
+
+  it('preserves userOnly through sanitize, profile normalization, and settings normalization', () => {
+    const sanitized = sanitizeBrowserProfileInput({
+      name: 'Connected account',
+      userOnly: true,
+    })
+    const profile = normalizeBrowserProfile({
+      id: 'connected',
+      ...sanitized,
+      createdAt: 10,
+    }, now)
+    const settings = normalizeBrowserProfileSettings({
+      profiles: [profile],
+      lastUsedProfileId: 'connected',
+      alwaysAsk: false,
+    }, now)
+
+    expect(sanitized.userOnly).toBe(true)
+    expect(profile.userOnly).toBe(true)
+    expect(settings.profiles.find(candidate => candidate.id === 'connected')?.userOnly).toBe(true)
+  })
+
+  it('keeps an absent userOnly capability undefined', () => {
+    const sanitized = sanitizeBrowserProfileInput({ name: 'Regular profile' })
+    const profile = normalizeBrowserProfile({
+      id: 'regular',
+      ...sanitized,
+      createdAt: 10,
+    }, now)
+
+    expect(sanitized.userOnly).toBeUndefined()
+    expect(profile.userOnly).toBeUndefined()
+  })
+
+  it('does not persist a non-boolean userOnly value', () => {
+    const malformed = {
+      name: 'Malformed profile',
+      userOnly: 'true',
+    } as unknown as BrowserProfileInput
+
+    const sanitized = sanitizeBrowserProfileInput(malformed)
+    const profile = normalizeBrowserProfile({
+      id: 'malformed',
+      ...sanitized,
+      createdAt: 10,
+    }, now)
+
+    expect(sanitized.userOnly).toBeUndefined()
+    expect(profile.userOnly).toBeUndefined()
   })
 })
 

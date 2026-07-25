@@ -4,12 +4,12 @@ Plan: `docs/plans/2026-07-24-001-feat-browser-cookie-import-plan.md` (U-IDs refe
 
 ## 1. Foundation — reader + capability (U1, U2)
 
-- [ ] 1.1 Create `packages/shared/src/browser-cookies/types.ts` with the platform-agnostic cookie
+- [x] 1.1 Create `packages/shared/src/browser-cookies/types.ts` with the platform-agnostic cookie
   shape returned by the reader (`name`, `value`, `domain`, `path`, `secure`, `httpOnly`,
   `expirationDate`, `sameSite`).
   - files: `packages/shared/src/browser-cookies/types.ts`
   - verify: `test -f packages/shared/src/browser-cookies/types.ts`
-- [ ] 1.2 Implement `readChromeCookies(opts)` in
+- [x] 1.2 Implement `readChromeCookies(opts)` in
   `packages/shared/src/browser-cookies/chrome-cookie-reader.ts`: locate the Chrome/Chromium profile
   cookie DB, copy it to a temp path before opening (the live DB is locked), query with
   `better-sqlite3`, read the Keychain `Chrome Safe Storage` password, derive with
@@ -20,14 +20,14 @@ Plan: `docs/plans/2026-07-24-001-feat-browser-cookie-import-plan.md` (U-IDs refe
   touch the real Keychain. Per-row decryption failures increment `skipped` and never throw.
   - files: `packages/shared/src/browser-cookies/chrome-cookie-reader.ts`
   - verify: `grep -q "pbkdf2" packages/shared/src/browser-cookies/chrome-cookie-reader.ts && grep -q "11644473600" packages/shared/src/browser-cookies/chrome-cookie-reader.ts`
-- [ ] 1.3 Cover the reader in `chrome-cookie-reader.test.ts` (`bun:test`): known-key decrypt,
+- [x] 1.3 Cover the reader in `chrome-cookie-reader.test.ts` (`bun:test`): known-key decrypt,
   domain-hash prefix stripped (assert exact value), timestamp conversion incl. `0`, domain filter
   matching both `example.com` and `.example.com`, one corrupt row among three yields
   `{cookies: 3, skipped: 1}` without throwing, Keychain failure raises a typed error, non-darwin
   raises unsupported-platform.
   - files: `packages/shared/src/browser-cookies/chrome-cookie-reader.test.ts`
   - verify: `bun test packages/shared/src/browser-cookies/chrome-cookie-reader.test.ts`
-- [ ] 1.4 Add `userOnly?: boolean` to the browser profile record and preserve it through the ENTIRE
+- [x] 1.4 Add `userOnly?: boolean` to the browser profile record and preserve it through the ENTIRE
   persistence chain. The flag must survive a save/load round-trip — a profile record that carries
   `userOnly` in memory but loses it on persist would make the security boundary fail while
   appearing to work. Four places drop unknown fields today and all must be updated:
@@ -37,30 +37,48 @@ Plan: `docs/plans/2026-07-24-001-feat-browser-cookie-import-plan.md` (U-IDs refe
   (d) `normalizeBrowserProfileSettings`, which maps profiles through the normalizer.
   - files: `packages/shared/src/config/types.ts`, `packages/shared/src/config/browser-profiles.ts`, `apps/electron/src/main/browser-profile-resolver.ts`
   - verify: `grep -q "userOnly" packages/shared/src/config/types.ts && grep -q "userOnly" packages/shared/src/config/browser-profiles.ts`
-- [ ] 1.4b Prove the round-trip in `packages/shared/src/config/__tests__/browser-profiles.test.ts`:
+- [x] 1.4b Prove the round-trip in `packages/shared/src/config/__tests__/browser-profiles.test.ts`:
   a profile with `userOnly: true` survives `sanitizeBrowserProfileInput` → `normalizeBrowserProfile`
   → `normalizeBrowserProfileSettings` with the flag intact; a profile without the flag stays
   undefined (not coerced to `false`); a non-boolean `userOnly` input is rejected/normalized rather
   than persisted as-is. This test is the guard against the silent-drop failure mode.
   - files: `packages/shared/src/config/__tests__/browser-profiles.test.ts`
   - verify: `bun test packages/shared/src/config/__tests__/browser-profiles.test.ts`
-- [ ] 1.5 Enforce the capability at resolution time in `browser-pane-manager.ts`: an agent-owned
+- [x] 1.5 Enforce the capability at resolution time in `browser-pane-manager.ts`: an agent-owned
   instance request that resolves to a `userOnly` profile is REFUSED with a typed error. Do not fall
   back to the default profile — a silent fallback makes an agent tool appear to succeed against the
   wrong cookie jar. Reuse the existing `ownerType` threading rather than inventing a parallel
   caller-intent concept. Implement the refusal test-first.
   - files: `apps/electron/src/main/browser-pane-manager.ts`
   - verify: `grep -q "userOnly" apps/electron/src/main/browser-pane-manager.ts`
-- [ ] 1.6 Cover the capability in
+- [x] 1.6 Cover the capability in
   `apps/electron/src/main/__tests__/browser-profile-capability.test.ts`: agent request naming a
   user-only profile is refused and creates no instance; agent request with no profileId still
   resolves to default (no regression); user-owned request to a user-only profile succeeds;
   `getProfilePartition` for a user-only profile never returns `persist:browser-pane`.
   - files: `apps/electron/src/main/__tests__/browser-profile-capability.test.ts`
   - verify: `bun test apps/electron/src/main/__tests__/browser-profile-capability.test.ts`
-- [ ] 1.7 Run gates: `bun run typecheck:all`, `bun test packages/shared/src/browser-cookies/`, and
+- [x] 1.7 Run gates: focused tests for the three touched areas plus
   `openspec validate add-browser-cookie-import --strict --no-interactive`.
+  **Baseline note (verified 2026-07-24):** `bun run typecheck:all` is RED on `main` before this
+  change, in `packages/session-tools-core/src/tool-defs.ts:637` and `scripts/build/common.ts`
+  (build script + a pre-existing `unknown`→`ToolResult` assignment). Neither file is touched by this
+  change, and typecheck reports zero errors in every file this change does touch. The gate for this
+  phase is therefore "no NEW typecheck errors in touched files", not a globally green
+  `typecheck:all`. Fixing the pre-existing baseline is out of scope here.
   - verify: `openspec validate add-browser-cookie-import --strict --no-interactive`
+- [ ] 1.8 CARRY-FORWARD to phase 2/3 (found during phase 1 audit): `resolveBrowserProfileId` returns
+  early for `DEFAULT_BROWSER_PROFILE_ID` **before** the `userOnly` check, so marking the DEFAULT
+  profile user-only would not be enforced (fails open). The intended flow creates a separate
+  profile, so this is not a phase-1 blocker — but the UI must refuse to mark the default profile
+  user-only, or the resolver must check it. Decide and close in phase 3.
+  - files: `apps/electron/src/main/browser-profile-resolver.ts`
+  - verify: `grep -q "DEFAULT_BROWSER_PROFILE_ID" apps/electron/src/main/browser-profile-resolver.ts`
+- [ ] 1.9 CARRY-FORWARD: the production SQLite path (`better-sqlite3`) is unexercised by tests — Bun
+  1.3.14 cannot load its native binding, so tests inject `bun:sqlite` through the database seam.
+  Verified separately that `better-sqlite3` loads correctly under Node (the Electron runtime), so
+  the production path is sound in principle but unproven end-to-end. Close this with the real
+  validation in task 4.1.
 
 ## 2. Injection (U3)
 

@@ -1,11 +1,15 @@
 import {
   DEFAULT_BROWSER_PROFILE_ID,
   type BrowserProfile,
+  type BrowserProfileInput,
   type BrowserProfileKind,
   type BrowserProfileSettings,
 } from './types.ts'
 
-export { DEFAULT_BROWSER_PROFILE_ID } from './types.ts'
+export {
+  DEFAULT_BROWSER_PROFILE_ID,
+  type BrowserProfileInput,
+} from './types.ts'
 
 const DEFAULT_PROFILE_COLOR = '#22c55e'
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/
@@ -20,16 +24,6 @@ export const DEFAULT_BROWSER_PROFILE: BrowserProfile = {
 }
 
 type NowProvider = () => number
-
-export type BrowserProfileInput = {
-  name: string
-  color?: string
-  avatar?: string
-  kind?: BrowserProfileKind | string
-  clientName?: string
-  description?: string
-  domainHints?: string[]
-}
 
 function cleanOptionalText(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
@@ -76,11 +70,15 @@ export function normalizeDomainHints(values: unknown): string[] {
   return hints
 }
 
-export function sanitizeBrowserProfileInput(input: BrowserProfileInput): Required<Pick<BrowserProfile, 'name' | 'color' | 'kind'>> & Pick<BrowserProfile, 'avatar' | 'clientName' | 'description' | 'domainHints'> {
+type SanitizedBrowserProfileInput =
+  & Required<Pick<BrowserProfile, 'name' | 'color' | 'kind'>>
+  & Pick<BrowserProfile, 'avatar' | 'clientName' | 'description' | 'domainHints' | 'userOnly'>
+
+export function sanitizeBrowserProfileInput(input: BrowserProfileInput): SanitizedBrowserProfileInput {
   const name = cleanOptionalText(input.name)
   if (!name) throw new Error('Profile name is required')
 
-  const sanitized: Required<Pick<BrowserProfile, 'name' | 'color' | 'kind'>> & Pick<BrowserProfile, 'avatar' | 'clientName' | 'description' | 'domainHints'> = {
+  const sanitized: SanitizedBrowserProfileInput = {
     name,
     color: normalizeColor(input.color),
     kind: normalizeKind(input.kind),
@@ -94,6 +92,7 @@ export function sanitizeBrowserProfileInput(input: BrowserProfileInput): Require
   if (description) sanitized.description = description
   const domainHints = normalizeDomainHints(input.domainHints)
   if (domainHints.length > 0) sanitized.domainHints = domainHints
+  if (typeof input.userOnly === 'boolean') sanitized.userOnly = input.userOnly
 
   return sanitized
 }
@@ -122,6 +121,7 @@ export function normalizeBrowserProfile(profile: Partial<BrowserProfile> | null 
   if (description) normalized.description = description
   const domainHints = normalizeDomainHints(profile.domainHints)
   if (domainHints.length > 0) normalized.domainHints = domainHints
+  if (typeof profile.userOnly === 'boolean') normalized.userOnly = profile.userOnly
   if (typeof profile.lastUsedAt === 'number' && Number.isFinite(profile.lastUsedAt)) {
     normalized.lastUsedAt = profile.lastUsedAt
   }

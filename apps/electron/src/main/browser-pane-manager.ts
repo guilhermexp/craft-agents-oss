@@ -137,6 +137,8 @@ const TOOLBAR_CHANNELS = {
 import {
   getProfilePartition,
   DEFAULT_BROWSER_PROFILE_PARTITION,
+  resolveBrowserProfileId,
+  UserOnlyBrowserProfileError,
 } from './browser-profile-resolver'
 import {
   DEFAULT_BROWSER_PROFILE_ID,
@@ -410,6 +412,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private readonly popupWebContentsIdByWindow = new WeakMap<BrowserWindow, number>()
   private windowManager: WindowManager | null = null
   private sessionPathResolver: ((sessionId: string) => string | null) | null = null
+  private readonly browserProfilesProvider: () => BrowserProfile[]
+
+  constructor(browserProfilesProvider: () => BrowserProfile[] = getBrowserProfiles) {
+    this.browserProfilesProvider = browserProfilesProvider
+  }
 
   /** Screenshot capture pipeline (full-page, region, recovery, encoding). */
   private visualCapture = new BrowserVisualCapture({
@@ -446,18 +453,20 @@ export class BrowserPaneManager implements IBrowserPaneManager {
    * Falls back to the default profile when the requested id is missing or
    * was deleted, so callers never end up with an orphan partition.
    */
-  private resolveProfileId(requested?: string): string {
-    if (!requested || requested === DEFAULT_BROWSER_PROFILE_ID) {
-      return DEFAULT_BROWSER_PROFILE_ID
-    }
+  private resolveProfileId(
+    requested?: string,
+    ownerType: BrowserInstance['ownerType'] = 'manual',
+  ): string {
     try {
-      const exists = getBrowserProfiles().some(p => p.id === requested)
-      if (!exists) {
+      const resolved = resolveBrowserProfileId(this.browserProfilesProvider(), requested, ownerType)
+      if (requested && requested !== DEFAULT_BROWSER_PROFILE_ID && resolved === DEFAULT_BROWSER_PROFILE_ID) {
         mainLog.warn(`[browser-pane] Unknown profileId=${requested}; falling back to default`)
-        return DEFAULT_BROWSER_PROFILE_ID
       }
-      return requested
+      return resolved
     } catch (err) {
+      // A userOnly refusal is the security boundary; it must never enter the
+      // legacy unknown-profile fallback below.
+      if (err instanceof UserOnlyBrowserProfileError) throw err
       mainLog.warn(`[browser-pane] resolveProfileId failed: ${err instanceof Error ? err.message : String(err)}`)
       return DEFAULT_BROWSER_PROFILE_ID
     }
@@ -477,7 +486,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const ownerType = options?.ownerType ?? 'manual'
     const ownerSessionId = ownerType === 'session' ? (options?.ownerSessionId ?? null) : null
     const workspaceId = options?.workspaceId ?? this.resolveLaunchWorkspaceId()
-    const profileId = this.resolveProfileId(options?.profileId)
+    const profileId = this.resolveProfileId(options?.profileId, ownerType)
     const partition = getProfilePartition(profileId)
 
     if (this.instances.has(instanceId)) {
@@ -821,14 +830,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       return null
     }
 
-    const resolvedTarget = this.resolveProfileId(targetProfileId)
+    const ownerType = instance.ownerType
+    const resolvedTarget = this.resolveProfileId(targetProfileId, ownerType)
     if (resolvedTarget === instance.profileId) {
       mainLog.info(`[browser-pane] switchProfile noop — already on profile ${resolvedTarget}`)
       return instance.id
     }
 
     const url = instance.currentUrl
-    const ownerType = instance.ownerType
     const ownerSessionId = instance.ownerSessionId
 
     this.destroyInstance(instance.id)
@@ -1588,6 +1597,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   bindSession(id: string, sessionId: string, options?: { workspaceId?: string | null }): void {
     const instance = this.instances.get(id)
     if (instance) {
+      this.resolveProfileId(instance.profileId, 'session')
       instance.boundSessionId = sessionId
       instance.ownerType = 'session'
       instance.ownerSessionId = sessionId
@@ -1657,6 +1667,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   createForSession(sessionId: string, options?: { show?: boolean; profileId?: string; allowReuseManual?: boolean; workspaceId?: string | null }): string {
+    const requestedProfile = this.resolveProfileId(options?.profileId, 'session')
     const existing = this.getBoundForSession(sessionId)
     if (existing) {
       // Already bound — adopt the workspace if the caller provided one.
@@ -1679,9 +1690,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     // matches the requested profile (mismatched partitions can't be reused),
     // and that the caller's workspace is allowed to adopt it.
     const reusable = (options?.allowReuseManual ?? true) ? this.findReusableUnboundInstance(workspaceId) : null
-    const requestedProfile = options?.profileId
     const reuseMatchesProfile =
-      reusable && (!requestedProfile || reusable.profileId === this.resolveProfileId(requestedProfile))
+      reusable && reusable.profileId === requestedProfile
     if (reusable && reuseMatchesProfile) {
       this.bindSession(reusable.id, sessionId, { workspaceId })
       if (options?.show) {
@@ -1695,7 +1705,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       show: options?.show ?? false,
       ownerType: 'session',
       ownerSessionId: sessionId,
-      profileId: options?.profileId,
+      profileId: requestedProfile,
       workspaceId,
     })
   }

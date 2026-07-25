@@ -6,12 +6,45 @@
  * cookies/storage survive without migration.
  */
 
-import { DEFAULT_BROWSER_PROFILE_ID } from '@craft-agent/shared/config/types';
+import {
+  DEFAULT_BROWSER_PROFILE_ID,
+  type BrowserProfile,
+} from '@craft-agent/shared/config/types';
 
 const LEGACY_PARTITION = 'persist:browser-pane';
 const PROFILE_PARTITION_PREFIX = 'persist:browser-pane:';
 
 export { LEGACY_PARTITION as DEFAULT_BROWSER_PROFILE_PARTITION };
+
+export type BrowserProfileOwnerType = 'session' | 'manual';
+
+export class UserOnlyBrowserProfileError extends Error {
+  readonly code = 'BROWSER_PROFILE_USER_ONLY';
+  readonly profileId: string;
+
+  constructor(profileId: string) {
+    super(`Browser profile "${profileId}" is user-only and cannot be controlled by an agent`);
+    this.name = 'UserOnlyBrowserProfileError';
+    this.profileId = profileId;
+  }
+}
+
+export function resolveBrowserProfileId(
+  profiles: readonly BrowserProfile[],
+  requested: string | undefined,
+  ownerType: BrowserProfileOwnerType,
+): string {
+  if (!requested || requested === DEFAULT_BROWSER_PROFILE_ID) {
+    return DEFAULT_BROWSER_PROFILE_ID;
+  }
+
+  const profile = profiles.find(candidate => candidate.id === requested);
+  if (!profile) return DEFAULT_BROWSER_PROFILE_ID;
+  if (ownerType === 'session' && profile.userOnly === true) {
+    throw new UserOnlyBrowserProfileError(profile.id);
+  }
+  return profile.id;
+}
 
 export function getProfilePartition(profileId: string | undefined | null): string {
   if (!profileId || profileId === DEFAULT_BROWSER_PROFILE_ID) {
