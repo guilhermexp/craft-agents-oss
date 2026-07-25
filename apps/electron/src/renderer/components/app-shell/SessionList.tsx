@@ -97,6 +97,8 @@ interface SessionListProps {
   onNavigateToSession?: (sessionId: string) => void
   /** Session-level pending prompt marker (permission/admin approval) */
   hasPendingPrompt?: (sessionId: string) => boolean
+  /** Session-level parked AskUserQuestion marker (awaiting the user's answer) */
+  hasPendingQuestion?: (sessionId: string) => boolean
   /** DOM-verified match info for the active session (from ChatDisplay) */
   activeChatMatchInfo?: { sessionId: string | null; count: number; isHighlighting?: boolean }
 }
@@ -150,6 +152,7 @@ export function SessionList({
   focusedSessionId,
   onNavigateToSession,
   hasPendingPrompt,
+  hasPendingQuestion,
   activeChatMatchInfo,
 }: SessionListProps) {
   const { t, i18n } = useTranslation()
@@ -723,6 +726,7 @@ export function SessionList({
     contentSearchResults,
     activeChatMatchInfo,
     hasPendingPrompt,
+    hasPendingQuestion,
   }), [
     handleRenameClick, onSessionStatusChange,
     onFlag, handleFlagWithToast, onUnflag, handleUnflagWithToast,
@@ -732,7 +736,7 @@ export function SessionList({
     handleSelectSessionById, handleOpenInNewWindow, setSendToWorkspace, handleFocusZone, handleKeyDown,
     sessionStatuses, flatLabels, labels, resolvedSearchQuery,
     focusedSessionId, selectionStore.state.selected, isMultiSelectActive,
-    sessionOptions, contentSearchResults, activeChatMatchInfo, hasPendingPrompt,
+    sessionOptions, contentSearchResults, activeChatMatchInfo, hasPendingPrompt, hasPendingQuestion,
   ])
 
   // --- Empty state (non-search) — render before EntityList ---

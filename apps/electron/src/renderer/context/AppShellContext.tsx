@@ -47,6 +47,8 @@ export interface AppShellContextType {
   refreshLlmConnections: () => Promise<void>
   pendingPermissions: Map<string, PermissionRequest[]>
   pendingCredentials: Map<string, CredentialRequest[]>
+  /** Parked AskUserQuestion tool calls per session (toolUseIds awaiting an answer) */
+  pendingQuestions: Map<string, Set<string>>
   /** Get draft input text for a session - reads from ref without triggering re-renders */
   getDraft: (sessionId: string) => string
   /** Get persisted attachment refs (path + name) for a session's draft - no file IO */

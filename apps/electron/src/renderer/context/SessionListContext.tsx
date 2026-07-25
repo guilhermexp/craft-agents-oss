@@ -41,6 +41,8 @@ export interface SessionListContextValue {
   activeChatMatchInfo?: { sessionId: string | null; count: number; isHighlighting?: boolean }
   /** Whether a session currently has a pending permission/admin prompt */
   hasPendingPrompt?: (sessionId: string) => boolean
+  /** Whether a session has a parked AskUserQuestion awaiting the user's answer */
+  hasPendingQuestion?: (sessionId: string) => boolean
 }
 
 const SessionListContext = createContext<SessionListContextValue | null>(null)

@@ -221,7 +221,7 @@ interface SessionItemPreviewProps {
   isSelected?: boolean
   searchQuery?: string
   chatMatchCount?: number
-  state?: 'none' | 'loading' | 'plan' | 'new'
+  state?: 'none' | 'loading' | 'plan' | 'new' | 'question'
   flagged?: boolean
 }
 
@@ -252,6 +252,7 @@ function SessionItemPreview({
     searchQuery,
     selectedSessionId: isSelected ? resolvedItem.id : null,
     contentSearchResults,
+    hasPendingQuestion: state === 'question' ? () => true : undefined,
   })
 
   return (
@@ -403,6 +404,7 @@ export const sessionListComponents: ComponentEntry[] = [
             { label: 'Loading', value: 'loading' },
             { label: 'Plan', value: 'plan' },
             { label: 'New', value: 'new' },
+            { label: 'Question', value: 'question' },
           ],
         },
         defaultValue: 'none',
@@ -463,6 +465,14 @@ export const sessionListComponents: ComponentEntry[] = [
         props: {
           item: sampleSessions[0],
           state: 'new',
+        },
+      },
+      {
+        name: 'Question Pending',
+        description: 'Agent asked a question awaiting the answer (shows help icon)',
+        props: {
+          item: sampleSessions[0],
+          state: 'question',
         },
       },
       {

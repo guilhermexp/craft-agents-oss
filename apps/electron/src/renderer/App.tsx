@@ -280,6 +280,10 @@ export default function App() {
   const [pendingPermissions, setPendingPermissions] = useState<Map<string, PermissionRequest[]>>(new Map())
   // Credential requests per session (queue to handle multiple concurrent requests)
   const [pendingCredentials, setPendingCredentials] = useState<Map<string, CredentialRequest[]>>(new Map())
+  // Parked AskUserQuestion tool calls per session (toolUseIds awaiting an answer).
+  // Surfaced in the sidebar so a pending question is visible when the session
+  // isn't open. Transient renderer state, mirroring pendingPermissions.
+  const [pendingQuestions, setPendingQuestions] = useState<Map<string, Set<string>>>(new Map())
   // Draft composer state per session (text + attachment refs), preserved across mode
   // switches, conversation changes, and app restarts. Using a ref avoids re-renders
   // during typing; attachments are stored as lightweight refs (path + name) and
@@ -772,6 +776,41 @@ export default function App() {
             })
             break
           }
+          case 'question_pending': {
+            let added = false
+            setPendingQuestions(prev => {
+              const existing = prev.get(sessionId)
+              if (existing?.has(effect.toolUseId)) return prev
+              added = true
+              const next = new Map(prev)
+              const updated = new Set(existing ?? [])
+              updated.add(effect.toolUseId)
+              next.set(sessionId, updated)
+              return next
+            })
+            // Native notification (same UX as permission prompts) so the user
+            // notices a question awaiting their answer even off-screen.
+            if (added) {
+              const notifySession = store.get(sessionAtomFamily(sessionId))
+              if (notifySession && !notifySession.hidden) {
+                showSessionNotification(notifySession, 'A question is waiting for your answer')
+              }
+            }
+            break
+          }
+          case 'question_resolved': {
+            setPendingQuestions(prev => {
+              const existing = prev.get(sessionId)
+              if (!existing || !existing.has(effect.toolUseId)) return prev
+              const next = new Map(prev)
+              const updated = new Set(existing)
+              updated.delete(effect.toolUseId)
+              if (updated.size === 0) next.delete(sessionId)
+              else next.set(sessionId, updated)
+              return next
+            })
+            break
+          }
           case 'auto_retry': {
             // A source was auto-activated, automatically re-send the original message
             // Add suffix to indicate the source was activated
@@ -825,6 +864,17 @@ export default function App() {
             return next
           }
           return prevCreds
+        })
+      }
+
+      // Clear parked questions when the turn terminates without a tool_result
+      // (timeout skip lands on complete; abort/error tear the parked call down).
+      if (eventType === 'complete' || eventType === 'error' || eventType === 'interrupted') {
+        setPendingQuestions(prev => {
+          if (!prev.has(sessionId)) return prev
+          const next = new Map(prev)
+          next.delete(sessionId)
+          return next
         })
       }
     }
@@ -1740,6 +1790,7 @@ export default function App() {
       // 4. Clear pending permissions/credentials (not relevant to new workspace)
       setPendingPermissions(new Map())
       setPendingCredentials(new Map())
+      setPendingQuestions(new Map())
 
       // 5. Clear session options from previous workspace
       // (session IDs are unique UUIDs, but clearing prevents unbounded memory growth
@@ -1800,6 +1851,7 @@ export default function App() {
     refreshLlmConnections,
     pendingPermissions,
     pendingCredentials,
+    pendingQuestions,
     getDraft,
     getDraftAttachmentRefs,
     hydrateDraftAttachments,
@@ -1846,6 +1898,7 @@ export default function App() {
     refreshLlmConnections,
     pendingPermissions,
     pendingCredentials,
+    pendingQuestions,
     getDraft,
     getDraftAttachmentRefs,
     hydrateDraftAttachments,

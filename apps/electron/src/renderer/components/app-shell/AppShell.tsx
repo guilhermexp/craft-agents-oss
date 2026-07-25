@@ -555,6 +555,7 @@ function AppShellContent({
     onSendMessage,
     openNewChat,
     pendingPermissions,
+    pendingQuestions,
   } = contextValue
 
   const { t } = useTranslation()
@@ -1413,6 +1414,10 @@ function AppShellContent({
   const hasPendingPrompt = React.useCallback((sessionId: string) => {
     return (pendingPermissions.get(sessionId)?.length ?? 0) > 0
   }, [pendingPermissions])
+
+  const hasPendingQuestion = React.useCallback((sessionId: string) => {
+    return (pendingQuestions.get(sessionId)?.size ?? 0) > 0
+  }, [pendingQuestions])
 
   // Workspace-level unread indicators (needed for workspace selectors across all workspaces)
   const [workspaceUnreadMap, setWorkspaceUnreadMap] = useState<Record<string, boolean>>({})
@@ -3630,6 +3635,7 @@ function AppShellContent({
                   focusedSessionId={panelCount === 0 ? null : panelCount > 1 ? focusedSessionId : undefined}
                   onNavigateToSession={panelCount > 1 ? navigateToSessionInPanel : undefined}
                   hasPendingPrompt={hasPendingPrompt}
+                  hasPendingQuestion={hasPendingQuestion}
                   activeChatMatchInfo={chatMatchInfo}
                 />
               </>

@@ -1,7 +1,7 @@
 import { useMemo } from "react"
 import { formatDistanceToNowStrict } from "date-fns"
 import type { Locale } from "date-fns"
-import { Flag, ShieldAlert } from "lucide-react"
+import { CircleHelp, Flag, ShieldAlert } from "lucide-react"
 import { useActionLabel } from "@/actions"
 import { cn } from "@/lib/utils"
 import { rendererPerf } from "@/lib/perf"
@@ -118,6 +118,7 @@ export function SessionItem({
     return ctx.flatLabels.some(l => l.id === labelId)
   }))
   const hasPendingPrompt = ctx.hasPendingPrompt?.(item.id) ?? false
+  const hasPendingQuestion = ctx.hasPendingQuestion?.(item.id) ?? false
   const previewText = isCompactMode ? getSessionPreviewText(item) : null
   const messagingBindingsBySession = useAtomValue(messagingBindingsBySessionAtom)
   const sessionBindings = messagingBindingsBySession.get(item.id) ?? []
@@ -277,7 +278,7 @@ export function SessionItem({
           <div className={cn(
             "flex items-center justify-center overflow-hidden gap-1",
             "transition-all duration-200 ease-out",
-            (item.isProcessing || hasUnreadMeta(item) || item.lastMessageRole === 'plan' || hasPendingPrompt)
+            (item.isProcessing || hasUnreadMeta(item) || item.lastMessageRole === 'plan' || hasPendingPrompt || hasPendingQuestion)
               ? "opacity-100 ml-0"
               : "!w-0 opacity-0 -ml-[10px]"
           )}>
@@ -295,6 +296,7 @@ export function SessionItem({
               </svg>
             )}
             {hasPendingPrompt && <ShieldAlert className="size-3.5 text-info" />}
+            {hasPendingQuestion && <CircleHelp className="size-3.5 text-info" />}
           </div>
         </>
       }
