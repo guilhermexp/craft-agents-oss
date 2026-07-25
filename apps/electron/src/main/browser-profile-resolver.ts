@@ -34,11 +34,9 @@ export function resolveBrowserProfileId(
   requested: string | undefined,
   ownerType: BrowserProfileOwnerType,
 ): string {
-  if (!requested || requested === DEFAULT_BROWSER_PROFILE_ID) {
-    return DEFAULT_BROWSER_PROFILE_ID;
-  }
-
-  const profile = profiles.find(candidate => candidate.id === requested);
+  const requestedId = requested || DEFAULT_BROWSER_PROFILE_ID;
+  const profile = profiles.find(candidate => candidate.id === requestedId)
+    ?? profiles.find(candidate => candidate.id === DEFAULT_BROWSER_PROFILE_ID);
   if (!profile) return DEFAULT_BROWSER_PROFILE_ID;
   if (ownerType === 'session' && profile.userOnly === true) {
     throw new UserOnlyBrowserProfileError(profile.id);

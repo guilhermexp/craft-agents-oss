@@ -18,6 +18,7 @@ export interface UseBrowserProfilesResult {
   error: string | null
   refresh: () => Promise<void>
   createProfile: (input: BrowserProfileInput) => Promise<BrowserProfile>
+  importCookies: (profileId: string) => Promise<{ imported: number; skipped: number }>
   renameProfile: (id: string, name: string) => Promise<BrowserProfile>
   deleteProfile: (id: string) => Promise<void>
   setAlwaysAsk: (alwaysAsk: boolean) => Promise<void>
@@ -62,6 +63,10 @@ export function useBrowserProfiles(): UseBrowserProfilesResult {
     [],
   )
 
+  const importCookies = useCallback(async (profileId: string) => {
+    return window.electronAPI.browserPane.importCookies(profileId)
+  }, [])
+
   const renameProfile = useCallback(async (id: string, name: string) => {
     return window.electronAPI.browserPane.renameProfile({ id, name })
   }, [])
@@ -86,6 +91,7 @@ export function useBrowserProfiles(): UseBrowserProfilesResult {
     error,
     refresh,
     createProfile,
+    importCookies,
     renameProfile,
     deleteProfile,
     setAlwaysAsk,

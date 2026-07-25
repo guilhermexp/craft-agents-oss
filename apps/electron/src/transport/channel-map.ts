@@ -427,6 +427,7 @@ export const CHANNEL_MAP = {
   'browserPane.getProfileSettings': invoke(RPC_NAMESPACES.browserPane.GET_PROFILE_SETTINGS),
   'browserPane.setProfileSettings': invoke(RPC_NAMESPACES.browserPane.SET_PROFILE_SETTINGS),
   'browserPane.createProfile': invoke(RPC_NAMESPACES.browserPane.CREATE_PROFILE),
+  'browserPane.importCookies': invoke(RPC_NAMESPACES.browserPane.IMPORT_COOKIES),
   'browserPane.renameProfile': invoke(RPC_NAMESPACES.browserPane.RENAME_PROFILE),
   'browserPane.switchProfile': invoke(RPC_NAMESPACES.browserPane.SWITCH_PROFILE),
   'browserPane.deleteProfile': invoke(RPC_NAMESPACES.browserPane.DELETE_PROFILE),

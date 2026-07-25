@@ -725,6 +725,7 @@ export interface ElectronAPI {
     getProfileSettings(): Promise<BrowserProfileSettings>
     setProfileSettings(partial: { alwaysAsk?: boolean; lastUsedProfileId?: string }): Promise<BrowserProfileSettings>
     createProfile(input: BrowserProfileInput): Promise<BrowserProfile>
+    importCookies(profileId: string): Promise<{ imported: number; skipped: number }>
     renameProfile(payload: { id: string; name: string }): Promise<BrowserProfile>
     switchProfile(payload: { instanceId: string; profileId: string }): Promise<string | null>
     deleteProfile(id: string): Promise<void>

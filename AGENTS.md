@@ -176,6 +176,10 @@ Browser profiles may declare `userOnly: true`. Preserve that flag through
 creation, profile switching, reuse, and binding must refuse a user-only profile
 with an error before resolving a partition or creating/adopting an instance;
 never fall back to `persist:browser-pane` for this refusal.
+The default profile cannot be marked user-only through the profile UI. If
+persisted input nevertheless marks it user-only, `resolveBrowserProfileId`
+must enforce the same agent refusal before returning the legacy default
+partition.
 
 Cookie injection into an Electron partition lives in
 `apps/electron/src/main/browser-pane-manager.ts`. `importCookies` must resolve
@@ -188,6 +192,29 @@ Map Chrome SameSite integers to Electron strings, preserve dotted domains, and
 count individual write failures as skipped without aborting the remaining
 writes. Its result is counts-only (`imported`/`skipped`); do not expose this
 phase-only method through `IBrowserPaneManager` or the remote bridge.
+
+The user bulk-import surface is the `browserPane.IMPORT_COOKIES` RPC plus
+`BrowserProfilePicker`. The handler must accept only a user-only target, force
+`callerIntent: "user"`, and keep the manager's empty-domain bulk read internal.
+The picker must identify Google Chrome's `Default` profile and the receiving
+app profile before import, warn about the macOS Keychain prompt and agent
+inaccessibility, and display counts only.
+
+### Browser cookie import child index
+
+- Reader and decrypted in-memory shape:
+  `packages/shared/src/browser-cookies/`.
+- Capability and partition resolution:
+  `apps/electron/src/main/browser-profile-resolver.ts`.
+- Electron cookie injection:
+  `apps/electron/src/main/browser-pane-manager.ts`.
+- User RPC registration and renderer contract:
+  `apps/electron/src/main/handlers/browser.ts`,
+  `apps/electron/src/transport/channel-map.ts`, and
+  `apps/electron/src/shared/types.ts`.
+- Profile creation and bulk-import UI:
+  `apps/electron/src/renderer/components/browser/BrowserProfilePicker.tsx` and
+  `apps/electron/src/renderer/hooks/useBrowserProfiles.ts`.
 
 ## Validation
 

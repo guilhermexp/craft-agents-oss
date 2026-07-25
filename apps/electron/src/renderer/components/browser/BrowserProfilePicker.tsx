@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Plus, Trash2, Pencil } from 'lucide-react'
+import { Download, Plus, Trash2, Pencil } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import {
   Dialog,
   DialogContent,
@@ -42,6 +43,7 @@ export function BrowserProfilePicker({
     alwaysAsk,
     createProfile,
     deleteProfile,
+    importCookies,
     renameProfile,
     setAlwaysAsk,
   } = useBrowserProfiles()
@@ -76,6 +78,7 @@ export function BrowserProfilePicker({
             onCreateClick={() => setMode({ kind: 'create' })}
             onRename={renameProfile}
             onDelete={deleteProfile}
+            onImportCookies={importCookies}
           />
         ) : (
           <ProfileCreateForm
@@ -110,11 +113,43 @@ interface ProfileGridProps {
   onCreateClick: () => void
   onRename: (id: string, name: string) => Promise<BrowserProfile>
   onDelete: (id: string) => Promise<void>
+  onImportCookies: (profileId: string) => Promise<{ imported: number; skipped: number }>
 }
 
-function ProfileGrid({ profiles, onPick, onCreateClick, onRename, onDelete }: ProfileGridProps) {
+function ProfileGrid({
+  profiles,
+  onPick,
+  onCreateClick,
+  onRename,
+  onDelete,
+  onImportCookies,
+}: ProfileGridProps) {
+  const { t } = useTranslation()
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [importingProfileId, setImportingProfileId] = useState<string | null>(null)
+
+  async function handleImportCookies(profile: BrowserProfile) {
+    if (profile.userOnly !== true || importingProfileId !== null) return
+    const confirmed = confirm(t('browserProfiles.importCookies.confirm', {
+      chromeProfile: 'Default',
+      appProfile: profile.name,
+    }))
+    if (!confirmed) return
+
+    setImportingProfileId(profile.id)
+    try {
+      const result = await onImportCookies(profile.id)
+      alert(t('browserProfiles.importCookies.success', {
+        imported: result.imported,
+        skipped: result.skipped,
+      }))
+    } catch {
+      alert(t('browserProfiles.importCookies.error'))
+    } finally {
+      setImportingProfileId(null)
+    }
+  }
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-2">
@@ -163,6 +198,11 @@ function ProfileGrid({ profiles, onPick, onCreateClick, onRename, onDelete }: Pr
                   <div className="text-sm text-center truncate w-full" title={p.name}>
                     {p.name}
                   </div>
+                  {p.userOnly === true ? (
+                    <div className="max-w-full truncate rounded-full bg-foreground/5 px-2 py-0.5 text-[10px] text-muted-foreground">
+                      {t('browserProfiles.userOnly.badge')}
+                    </div>
+                  ) : null}
                   {(p.clientName || p.kind === 'client') && (
                     <div className="max-w-full truncate rounded-full bg-foreground/5 px-2 py-0.5 text-[10px] text-muted-foreground" title={p.clientName ?? p.kind}>
                       {p.clientName ?? 'Cliente'}
@@ -171,6 +211,19 @@ function ProfileGrid({ profiles, onPick, onCreateClick, onRename, onDelete }: Pr
                 </>
               )}
             </div>
+            {p.userOnly === true ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-1 h-7 w-full gap-1 px-2 text-[11px]"
+                disabled={importingProfileId !== null}
+                onClick={() => void handleImportCookies(p)}
+              >
+                <Download className="size-3" />
+                <span className="truncate">{t('browserProfiles.importCookies.action')}</span>
+              </Button>
+            ) : null}
             <div className="absolute top-1 right-1 hidden group-hover:flex gap-1">
               <button
                 type="button"
@@ -225,11 +278,13 @@ interface ProfileCreateFormProps {
 }
 
 function ProfileCreateForm({ onSubmit, onCancel }: ProfileCreateFormProps) {
+  const { t } = useTranslation()
   const [name, setName] = useState('')
   const [color, setColor] = useState<string>(COLORS[0])
   const [kind, setKind] = useState<BrowserProfileKind>('personal')
   const [clientName, setClientName] = useState('')
   const [domainHintsText, setDomainHintsText] = useState('')
+  const [userOnly, setUserOnly] = useState(false)
   const [busy, setBusy] = useState(false)
   const valid = useMemo(() => name.trim().length > 0, [name])
 
@@ -244,7 +299,11 @@ function ProfileCreateForm({ onSubmit, onCancel }: ProfileCreateFormProps) {
         clientName: clientName.trim() || undefined,
         domainHints: domainHintsText
           .split(/[\n,]/)
-          .flatMap((value) => { const t = value.trim(); return t ? [t] : [] }),
+          .flatMap((value) => {
+            const trimmed = value.trim()
+            return trimmed ? [trimmed] : []
+          }),
+        userOnly,
       })
     } finally {
       setBusy(false)
@@ -312,6 +371,20 @@ function ProfileCreateForm({ onSubmit, onCancel }: ProfileCreateFormProps) {
           Use vírgula para separar. O Craft pode sugerir este perfil nesses sites.
         </p>
       </div>
+      <label className="flex items-start gap-2 rounded-md border border-border p-3 text-sm">
+        <input
+          type="checkbox"
+          checked={userOnly}
+          onChange={(e) => setUserOnly(e.target.checked)}
+          className="mt-0.5"
+        />
+        <span>
+          <span className="block font-medium">{t('browserProfiles.userOnly.label')}</span>
+          <span className="block text-xs text-muted-foreground">
+            {t('browserProfiles.userOnly.description')}
+          </span>
+        </span>
+      </label>
       <div>
         <div className="text-xs text-muted-foreground mb-2">Cor do avatar</div>
         <div className="flex gap-2">

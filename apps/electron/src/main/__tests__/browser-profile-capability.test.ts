@@ -89,6 +89,25 @@ describe('browser profile capability', () => {
     expect(resolveBrowserProfileId(profiles, undefined, 'session')).toBe('default')
   })
 
+  it('refuses an agent-owned default profile when persisted data marks it user-only', () => {
+    const profilesWithUserOnlyDefault: BrowserProfile[] = profiles.map(profile => (
+      profile.id === 'default'
+        ? { ...profile, userOnly: true }
+        : profile
+    ))
+
+    expect(() => resolveBrowserProfileId(
+      profilesWithUserOnlyDefault,
+      undefined,
+      'session',
+    )).toThrow(UserOnlyBrowserProfileError)
+    expect(() => resolveBrowserProfileId(
+      profilesWithUserOnlyDefault,
+      'default',
+      'session',
+    )).toThrow(UserOnlyBrowserProfileError)
+  })
+
   it('allows a user-owned request to resolve a user-only profile', () => {
     expect(resolveBrowserProfileId(profiles, 'connected', 'manual')).toBe('connected')
   })

@@ -24,6 +24,7 @@ export const HANDLED_CHANNELS = [
   RPC_NAMESPACES.browserPane.SCROLL,
   RPC_NAMESPACES.browserPane.LIST_PROFILES,
   RPC_NAMESPACES.browserPane.CREATE_PROFILE,
+  RPC_NAMESPACES.browserPane.IMPORT_COOKIES,
   RPC_NAMESPACES.browserPane.DELETE_PROFILE,
   RPC_NAMESPACES.browserPane.RENAME_PROFILE,
   RPC_NAMESPACES.browserPane.SWITCH_PROFILE,
@@ -214,6 +215,28 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
       } catch (err) {
         platform.logger.error('[browser-pane] createProfile failed:', err)
         throw err
+      }
+    },
+  )
+
+  server.handle(
+    RPC_NAMESPACES.browserPane.IMPORT_COOKIES,
+    async (_ctx, profileId: string) => {
+      try {
+        const profile = browserPaneManager
+          .listProfiles()
+          .find(candidate => candidate.id === profileId)
+        if (profile?.userOnly !== true) {
+          throw new Error('Bulk cookie import requires a user-only profile')
+        }
+        return await browserPaneManager.importCookies({
+          profileId,
+          domain: '',
+          callerIntent: 'user',
+        })
+      } catch {
+        platform.logger.error(`[browser-pane] importCookies failed for profile ${profileId}`)
+        throw new Error('Browser cookie import failed')
       }
     },
   )
