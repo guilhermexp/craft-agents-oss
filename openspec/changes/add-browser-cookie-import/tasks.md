@@ -103,6 +103,22 @@ Plan: `docs/plans/2026-07-24-001-feat-browser-cookie-import-plan.md` (U-IDs refe
 - [x] 2.3 Run gates: `bun run typecheck:all` and the two new test files.
   - verify: `bun run typecheck:all`
 
+- [ ] 2.4 CARRY-FORWARD (found during phase 2 audit, orchestrator-verified): running the whole
+  `apps/electron/src/main/__tests__/` directory reports `SyntaxError: Missing 'default' export in
+  module main/logger.ts`. Measured: the pristine baseline (`adff3c1a`, zero feature code) already
+  produces 1 such error over 21 files; with this change's 2 new test files it is 3 over 23. The new
+  tests DO mock `../logger` with a `default` key, matching the existing
+  `browser-pane-manager.test.ts` pattern — the failure comes from Bun's global `mock.module`
+  registry depending on cross-file load order, and `logger.ts` exporting no `default`. Each new file
+  passes cleanly in isolation (12/12). This is a pre-existing test-harness fragility that scales
+  with file count, not a defect introduced here; fixing it means changing the repo's logger
+  mocking strategy, which is out of scope for this change. Raise separately if CI noise matters.
+  - verify: `bun test apps/electron/src/main/__tests__/browser-pane-cookie-import.test.ts apps/electron/src/main/__tests__/browser-profile-capability.test.ts`
+- [ ] 2.5 CARRY-FORWARD: `apps/electron/src/main/__tests__/browser-pane-manager.test.ts` >
+  "runs early theme extraction shortly after navigation" fails. Verified pre-existing: it fails
+  identically at `adff3c1a` (pristine baseline, before any feature code). Timing-sensitive
+  (`Bun.sleep(140)`), unrelated to cookies. Not ours to fix in this change.
+
 ## 3. Surfaces — bulk UI + agent tool (U4, U5)
 
 - [ ] 3.1 Wire the RPC channel following the existing `browserPane.createProfile` recipe: add
