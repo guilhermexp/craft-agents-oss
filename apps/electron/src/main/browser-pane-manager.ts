@@ -21,6 +21,8 @@ import {
   type BrowserInstanceInfo,
 } from '../shared/types'
 import { DEFAULT_THEME, loadAppTheme, getAllowRemoteEvaluate } from '@craft-agent/shared/config'
+import { readChromeCookies } from '@craft-agent/shared/browser-cookies/chrome-cookie-reader'
+import type { BrowserCookieSameSite } from '@craft-agent/shared/browser-cookies/types'
 import { CodedError } from '@craft-agent/shared/protocol'
 import { getBrowserLiveFxCornerRadii } from '../shared/browser-live-fx'
 import type { IBrowserPaneManager, BrowserInstanceSnapshot } from '@craft-agent/server-core/handlers'
@@ -469,6 +471,58 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       if (err instanceof UserOnlyBrowserProfileError) throw err
       mainLog.warn(`[browser-pane] resolveProfileId failed: ${err instanceof Error ? err.message : String(err)}`)
       return DEFAULT_BROWSER_PROFILE_ID
+    }
+  }
+
+  async importCookies(input: {
+    profileId?: string
+    domain: string
+    callerIntent: 'agent' | 'user'
+  }): Promise<{ imported: number; skipped: number }> {
+    if (
+      input.callerIntent === 'agent'
+      && !input.domain.trim().replace(/^\./, '')
+    ) {
+      throw new Error('Agent cookie import requires a domain')
+    }
+    if (
+      input.profileId
+      && input.profileId !== DEFAULT_BROWSER_PROFILE_ID
+      && !this.browserProfilesProvider().some(profile => profile.id === input.profileId)
+    ) {
+      throw new Error(`Unknown profile id: ${input.profileId}`)
+    }
+    const ownerType: BrowserInstance['ownerType'] = input.callerIntent === 'agent'
+      ? 'session'
+      : 'manual'
+    const profileId = this.resolveProfileId(input.profileId, ownerType)
+    const partition = getProfilePartition(profileId)
+    const targetSession = session.fromPartition(partition)
+    const readResult = await readChromeCookies({ domain: input.domain })
+    const sameSiteMap: Record<BrowserCookieSameSite, Electron.CookiesSetDetails['sameSite']> = {
+      [-1]: 'unspecified',
+      0: 'no_restriction',
+      1: 'lax',
+      2: 'strict',
+    }
+    const writeResults = await Promise.allSettled(readResult.cookies.map(async (cookie) => {
+      await targetSession.cookies.set({
+        url: `http${cookie.secure ? 's' : ''}://${cookie.domain.replace(/^\./, '')}${cookie.path}`,
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.domain,
+        path: cookie.path,
+        secure: cookie.secure,
+        httpOnly: cookie.httpOnly,
+        expirationDate: cookie.expirationDate,
+        sameSite: sameSiteMap[cookie.sameSite],
+      })
+    }))
+    const imported = writeResults.filter(result => result.status === 'fulfilled').length
+
+    return {
+      imported,
+      skipped: readResult.skipped + writeResults.length - imported,
     }
   }
 

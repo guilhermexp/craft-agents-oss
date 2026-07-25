@@ -177,6 +177,18 @@ creation, profile switching, reuse, and binding must refuse a user-only profile
 with an error before resolving a partition or creating/adopting an instance;
 never fall back to `persist:browser-pane` for this refusal.
 
+Cookie injection into an Electron partition lives in
+`apps/electron/src/main/browser-pane-manager.ts`. `importCookies` must resolve
+the profile capability before reading or writing, obtain the partition through
+`getProfilePartition`, and use `session.fromPartition(...).cookies.set(...)`.
+Explicit unknown profile ids must fail instead of falling back to the default
+partition, and agent-intent imports must reject a domain that would disable the
+reader filter.
+Map Chrome SameSite integers to Electron strings, preserve dotted domains, and
+count individual write failures as skipped without aborting the remaining
+writes. Its result is counts-only (`imported`/`skipped`); do not expose this
+phase-only method through `IBrowserPaneManager` or the remote bridge.
+
 ## Validation
 
 For Hermes/Craft integration changes, run the focused Craft tests:

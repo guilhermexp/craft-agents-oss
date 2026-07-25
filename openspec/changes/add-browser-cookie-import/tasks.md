@@ -82,7 +82,7 @@ Plan: `docs/plans/2026-07-24-001-feat-browser-cookie-import-plan.md` (U-IDs refe
 
 ## 2. Injection (U3)
 
-- [ ] 2.1 Add `BrowserPaneManager.importCookies({ profileId, domain, callerIntent })`: resolve the
+- [x] 2.1 Add `BrowserPaneManager.importCookies({ profileId, domain, callerIntent })`: resolve the
   partition via `getProfilePartition(resolveProfileId(profileId))`, obtain the session with
   `session.fromPartition(...)` (idempotent — same Session the pane uses), and write each cookie with
   `cookies.set(...)`. Build `url` as `http${secure?'s':''}://${host_key without leading dot}${path}`,
@@ -92,7 +92,7 @@ Plan: `docs/plans/2026-07-24-001-feat-browser-cookie-import-plan.md` (U-IDs refe
   any write.
   - files: `apps/electron/src/main/browser-pane-manager.ts`
   - verify: `grep -q "cookies.set" apps/electron/src/main/browser-pane-manager.ts`
-- [ ] 2.2 Cover injection in
+- [x] 2.2 Cover injection in
   `apps/electron/src/main/__tests__/browser-pane-cookie-import.test.ts`: three cookies map to three
   `cookies.set` calls with asserted `url`/`sameSite`/dotted-domain mapping; secure→`https`,
   non-secure→`http`; all four `samesite` values map correctly; one rejection among three still
@@ -100,7 +100,7 @@ Plan: `docs/plans/2026-07-24-001-feat-browser-cookie-import-plan.md` (U-IDs refe
   makes ZERO `cookies.set` calls; the returned object serializes with no cookie values.
   - files: `apps/electron/src/main/__tests__/browser-pane-cookie-import.test.ts`
   - verify: `bun test apps/electron/src/main/__tests__/browser-pane-cookie-import.test.ts`
-- [ ] 2.3 Run gates: `bun run typecheck:all` and the two new test files.
+- [x] 2.3 Run gates: `bun run typecheck:all` and the two new test files.
   - verify: `bun run typecheck:all`
 
 ## 3. Surfaces — bulk UI + agent tool (U4, U5)
