@@ -21,8 +21,70 @@ import {
   type ModelDefinition,
 } from './models.ts';
 import type { StoredConfig } from './storage.ts';
-import { loadStoredConfig, saveConfig, getWorkspaces } from './storage.ts';
+import { loadStoredConfig, saveConfig } from './storage.ts';
 import type { AuthType } from '@craft-agent/core/types';
+
+// ============================================================
+// Migration Runner (data-driven, versioned phases)
+// ============================================================
+
+/**
+ * A single storage migration phase. `apply` mutates `config` in place and
+ * returns whether it changed the StoredConfig (i.e. whether config.json needs
+ * persisting). Phases that only touch other files (workspace configs) do their
+ * own writes and return false.
+ */
+export interface ConfigMigration {
+  id: string;
+  apply(config: StoredConfig): boolean;
+}
+
+/** Result of a pure migration run over a StoredConfig. */
+export interface MigrationRunResult {
+  /** The (mutated) config passed in. */
+  config: StoredConfig;
+  /** Ids of phases that changed the StoredConfig, in order. */
+  applied: string[];
+  /** The first phase that threw, if any; the run stops there. */
+  failure?: { id: string; error: Error };
+}
+
+/** Thrown when a startup migration fails, naming the phase so boot can report it. */
+export class ConfigMigrationError extends Error {
+  constructor(
+    public readonly migrationId: string,
+    public readonly cause: Error,
+  ) {
+    super(`Config migration '${migrationId}' failed: ${cause.message}`);
+    this.name = 'ConfigMigrationError';
+  }
+}
+
+/**
+ * Pure runner: apply an ordered list of migrations to a StoredConfig. Performs
+ * no loadStoredConfig/saveConfig — those stay at the callsite. Stops at the
+ * first failing phase and reports it by id so boot can block and name it.
+ */
+export function runConfigMigrations(
+  config: StoredConfig,
+  migrations: ConfigMigration[],
+): MigrationRunResult {
+  const applied: string[] = [];
+  for (const migration of migrations) {
+    try {
+      if (migration.apply(config)) {
+        applied.push(migration.id);
+      }
+    } catch (error) {
+      return {
+        config,
+        applied,
+        failure: { id: migration.id, error: error instanceof Error ? error : new Error(String(error)) },
+      };
+    }
+  }
+  return { config, applied };
+}
 
 /**
  * Migrate Codex (OpenAI) and Copilot connections to Pi backend.
@@ -267,7 +329,8 @@ function backfillAllConnectionModels(config: StoredConfig): boolean {
 }
 
 const OPUS_DEFAULT_ID = 'claude-opus-5';
-const OPUS_FALLBACK_ID = 'claude-opus-4-8';
+const OPUS_LADDER = [OPUS_DEFAULT_ID, 'claude-opus-4-8', 'claude-opus-4-7'] as const;
+const OPUS_FALLBACK_ID = OPUS_LADDER[1];
 
 function defaultModelIdsForConnection(connection: LlmConnection): Set<string> {
   return new Set(
@@ -288,10 +351,14 @@ function normalizeConnectionModelId(connection: LlmConnection, modelId: string):
     const candidate = hasPiPrefix || defaults.has(prefixedCandidate) ? prefixedCandidate : native;
 
     if (bare === OPUS_DEFAULT_ID || native.endsWith(`.${OPUS_DEFAULT_ID}`)) {
-      const fallbackNative = toBedrockNativeId(OPUS_FALLBACK_ID);
-      const prefixedFallback = `pi/${fallbackNative}`;
-      const fallback = defaults.has(prefixedFallback) ? prefixedFallback : fallbackNative;
-      if (!defaults.has(candidate) && defaults.has(fallback)) return fallback;
+      if (!defaults.has(candidate)) {
+        for (const opusId of OPUS_LADDER) {
+          const ladderNative = toBedrockNativeId(opusId);
+          const prefixedLadder = `pi/${ladderNative}`;
+          const available = defaults.has(prefixedLadder) ? prefixedLadder : ladderNative;
+          if (defaults.has(available)) return available;
+        }
+      }
     }
     return candidate;
   }
@@ -302,10 +369,12 @@ function normalizeConnectionModelId(connection: LlmConnection, modelId: string):
     const bare = hasPiPrefix ? normalized.slice(3) : normalized;
     const prefixedCandidate = `pi/${bare}`;
     const candidate = hasPiPrefix || defaults.has(prefixedCandidate) ? prefixedCandidate : normalized;
-    const prefixedFallback = `pi/${OPUS_FALLBACK_ID}`;
-    const fallback = defaults.has(prefixedFallback) ? prefixedFallback : OPUS_FALLBACK_ID;
-    if (bare === OPUS_DEFAULT_ID && !defaults.has(candidate) && defaults.has(fallback)) {
-      return fallback;
+    if (bare === OPUS_DEFAULT_ID && !defaults.has(candidate)) {
+      for (const opusId of OPUS_LADDER) {
+        const prefixedOpusId = `pi/${opusId}`;
+        const available = defaults.has(prefixedOpusId) ? prefixedOpusId : opusId;
+        if (defaults.has(available)) return available;
+      }
     }
     if (bare === OPUS_DEFAULT_ID && candidate !== normalized) {
       return candidate;
@@ -698,209 +767,85 @@ function migrateModelDefaultsToConnections(config: StoredConfig): boolean {
   return changed;
 }
 
-/**
- * Migrate legacy auth config to LLM connections.
- * Call this on app startup before any getLlmConnections() calls.
- *
- * This is a one-time migration that converts:
- * - Legacy authType field → LlmConnection in llmConnections array
- * - Legacy anthropicBaseUrl → LlmConnection.baseUrl
- * - Legacy customModel → LlmConnection.defaultModel
- * - Legacy model → modelDefaults (per provider)
- *
- * After migration, the legacy fields are deleted since they are no longer used.
- */
-export function migrateLegacyLlmConnectionsConfig(): void {
-  const config = loadStoredConfig();
-  if (!config) return;
+/** Deprecated top-level config fields, retained only to migrate off legacy shapes. */
+interface LegacyLlmConfigFields {
+  authType?: AuthType;
+  anthropicBaseUrl?: string;
+  customModel?: string;
+  model?: string;
+  modelDefaults?: Record<string, string>;
+}
 
-  const normalizeModelList = (models?: Array<{ id: string } | string>): string[] => {
-    if (!models) return [];
-    return models.flatMap(model => {
-      const id = typeof model === 'string' ? model : model.id;
-      return id ? [id] : [];
-    });
-  };
-
-  const applyCompatDefaults = (target: StoredConfig): boolean => {
-    if (!target.llmConnections) return false;
-    let changed = false;
-    for (const connection of target.llmConnections) {
-      // Cast to string for legacy 'openai_compat' values that may still exist on disk
-      const providerStr = connection.providerType as string;
-      if (providerStr !== 'openai_compat') {
-        continue;
-      }
-      const compatDefaults = getDefaultModelsForConnection(connection.providerType).map(
-        m => typeof m === 'string' ? m : m.id
-      );
-      const normalizedModels = normalizeModelList(connection.models);
-      if (normalizedModels.length === 0) {
-        connection.models = [...compatDefaults];
-        changed = true;
-      } else if (normalizedModels.length !== (connection.models?.length ?? 0)) {
-        connection.models = [...normalizedModels];
-        changed = true;
-      }
-      // Backfill any new default models that are missing from existing connections
-      // (e.g., Sonnet added to compat defaults after user already created connection)
-      let currentModels = normalizeModelList(connection.models);
-      for (const defaultModel of compatDefaults) {
-        if (!currentModels.includes(defaultModel)) {
-          currentModels = [...currentModels, defaultModel];
-          changed = true;
-        }
-      }
-      if (changed) {
-        connection.models = currentModels;
-      }
-      const currentDefault = connection.defaultModel?.trim();
-      if (!currentDefault) {
-        connection.defaultModel = (normalizeModelList(connection.models)[0] ?? compatDefaults[0]);
-        changed = true;
-      } else if (!normalizeModelList(connection.models).includes(currentDefault)) {
-        connection.models = [currentDefault, ...normalizeModelList(connection.models).filter(m => m !== currentDefault)];
-        changed = true;
-      }
+/** Strip legacy top-level auth fields; fold a legacy `model` into modelDefaults. */
+function stripLegacyAuthFields(config: StoredConfig): boolean {
+  // StoredConfig omits these deprecated fields; view them for migration only.
+  const legacy = config as StoredConfig & Partial<LegacyLlmConfigFields>;
+  let changed = false;
+  if ('authType' in legacy) { delete legacy.authType; changed = true; }
+  if ('anthropicBaseUrl' in legacy) { delete legacy.anthropicBaseUrl; changed = true; }
+  if ('customModel' in legacy) { delete legacy.customModel; changed = true; }
+  if ('model' in legacy) {
+    const legacyModel = legacy.model;
+    if (legacyModel) {
+      const provider = getModelProvider(legacyModel) ?? 'anthropic';
+      legacy.modelDefaults = { ...(legacy.modelDefaults ?? {}), [provider]: legacyModel };
     }
-    return changed;
-  };
-
-  // Already migrated - llmConnections array exists
-  if (config.llmConnections !== undefined) {
-    // Clean up any remaining legacy fields from previous runs
-    let needsSave = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const configAny = config as any;
-    if ('authType' in config) {
-      delete configAny.authType;
-      needsSave = true;
-    }
-    if ('anthropicBaseUrl' in config) {
-      delete configAny.anthropicBaseUrl;
-      needsSave = true;
-    }
-    if ('customModel' in config) {
-      delete configAny.customModel;
-      needsSave = true;
-    }
-    if ('model' in config) {
-      const legacyModel = configAny.model as string | undefined;
-      if (legacyModel) {
-        const provider = getModelProvider(legacyModel) ?? 'anthropic';
-        configAny.modelDefaults = { ...(configAny.modelDefaults ?? {}), [provider]: legacyModel };
-      }
-      delete configAny.model;
-      needsSave = true;
-    }
-    // Note: applyCompatDefaults() is NOT called here for already-migrated configs.
-    // Compat connections are user-owned after creation — the app should not
-    // silently extend or override the user's model list on every startup.
-    // Compat defaults are only applied during fresh connection creation or
-    // first-time legacy migration (the config.llmConnections === undefined path below).
-
-    // Phase 1a-bis: Migrate Codex/Copilot connections to Pi backend
-    if (migrateCodexCopilotToPi(config)) {
-      needsSave = true;
-    }
-
-    // Phase 1b: Normalize legacy Opus IDs/defaults before Pi model-list filtering.
-    if (migrateLegacyOpusToDefaultOpus(config)) {
-      needsSave = true;
-    }
-    // Phase 1c: Backfill models/defaultModel on ALL connections (not just compat)
-    // This ensures built-in connections (anthropic, openai) always have models populated
-    if (backfillAllConnectionModels(config)) {
-      needsSave = true;
-    }
-    // Phase 1d: Migrate modelDefaults onto connection.defaultModel, then delete modelDefaults
-    if (migrateModelDefaultsToConnections(config)) {
-      needsSave = true;
-    }
-    // Phase 1e: Normalize anything introduced by modelDefaults.
-    if (migrateLegacyOpusToDefaultOpus(config)) {
-      needsSave = true;
-    }
-    // Phase 1f: Migrate legacy/previous Opus workspace defaults → current default Opus
-    migrateWorkspaceLegacyOpusToDefaultOpus(config);
-    // Phase 1g: Migrate Sonnet 4.5 → Sonnet 4.6 for direct Anthropic connections
-    if (migrateSonnet45ToSonnet46(config)) {
-      needsSave = true;
-    }
-    // Phase 1h: Migrate Sonnet 4.5 → Sonnet 4.6 in workspace default models
-    migrateWorkspaceSonnet45ToSonnet46(config);
-    // Phase 1j: Migrate legacy provider types (bedrock/vertex/anthropic_compat → pi/pi_compat)
-    if (migrateLegacyProviderTypes(config)) {
-      needsSave = true;
-    }
-    // Phase 1k: Normalize legacy Opus IDs introduced by provider-type migration.
-    if (migrateLegacyOpusToDefaultOpus(config)) {
-      needsSave = true;
-    }
-    // Phase 1l: Rename legacy `hermes-local` connection slug to `hermes`
-    if (migrateHermesLocalSlug(config)) {
-      needsSave = true;
-    }
-
-    if (needsSave) {
-      saveConfig(config);
-    }
-    return;
+    delete legacy.model;
+    changed = true;
   }
+  return changed;
+}
 
-  // Initialize empty array
+/**
+ * Bootstrap an llmConnections array from a legacy top-level authType config.
+ * Runs only when llmConnections is undefined; the strip + normalization phases
+ * then run over the result via LLM_CONNECTION_MIGRATIONS.
+ */
+function initLlmConnectionsFromLegacy(config: StoredConfig): void {
   config.llmConnections = [];
 
-  // Legacy migration: if user had authType set, create a connection for them
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const configAny = config as any;
-  const legacyAuthType = configAny.authType as AuthType | undefined;
-  const legacyBaseUrl = configAny.anthropicBaseUrl as string | undefined;
-  const legacyCustomModel = configAny.customModel as string | undefined;
-  const legacyModel = configAny.model as string | undefined;
+  // StoredConfig omits these deprecated fields; view them for migration only.
+  const legacy = config as StoredConfig & Partial<LegacyLlmConfigFields>;
+  const legacyAuthType = legacy.authType;
+  const legacyBaseUrl = legacy.anthropicBaseUrl;
+  const legacyCustomModel = legacy.customModel;
+  if (!legacyAuthType) return;
 
-  if (legacyAuthType) {
-    let migrated: LlmConnection | null = null;
-
-    if (legacyAuthType === 'oauth_token') {
-      // Claude Max OAuth
-      migrated = {
-        slug: 'claude-max',
-        name: 'Claude Max',
-        providerType: 'anthropic',
-        authType: 'oauth',
-        models: getDefaultModelsForConnection('anthropic'),
-        createdAt: Date.now(),
-      };
-    } else if (legacyAuthType === 'codex_oauth') {
-      // ChatGPT Plus OAuth → Pi backend
-      migrated = {
-        slug: 'codex',
-        name: 'ChatGPT Plus (via Pi)',
-        providerType: 'pi',
-        authType: 'oauth',
-        piAuthProvider: 'openai-codex',
-        modelSelectionMode: 'automaticallySyncedFromProvider',
-        models: getDefaultModelsForConnection('pi', 'openai-codex'),
-        createdAt: Date.now(),
-      };
-    } else if (legacyAuthType === 'codex_api_key') {
-      // OpenAI API Key → Pi backend
-      migrated = {
-        slug: 'codex-api',
-        name: 'OpenAI API (via Pi)',
-        providerType: 'pi',
-        authType: 'api_key',
-        piAuthProvider: 'openai',
-        modelSelectionMode: 'automaticallySyncedFromProvider',
-        models: getDefaultModelsForConnection('pi', 'openai'),
-        createdAt: Date.now(),
-      };
-    } else if (legacyAuthType === 'api_key') {
-      // Anthropic API Key - check if custom endpoint (compat mode → pi_compat)
-      const hasCustomEndpoint = !!legacyBaseUrl;
-      if (hasCustomEndpoint) {
-        migrated = {
+  let migrated: LlmConnection | null = null;
+  if (legacyAuthType === 'oauth_token') {
+    migrated = {
+      slug: 'claude-max',
+      name: 'Claude Max',
+      providerType: 'anthropic',
+      authType: 'oauth',
+      models: getDefaultModelsForConnection('anthropic'),
+      createdAt: Date.now(),
+    };
+  } else if (legacyAuthType === 'codex_oauth') {
+    migrated = {
+      slug: 'codex',
+      name: 'ChatGPT Plus (via Pi)',
+      providerType: 'pi',
+      authType: 'oauth',
+      piAuthProvider: 'openai-codex',
+      modelSelectionMode: 'automaticallySyncedFromProvider',
+      models: getDefaultModelsForConnection('pi', 'openai-codex'),
+      createdAt: Date.now(),
+    };
+  } else if (legacyAuthType === 'codex_api_key') {
+    migrated = {
+      slug: 'codex-api',
+      name: 'OpenAI API (via Pi)',
+      providerType: 'pi',
+      authType: 'api_key',
+      piAuthProvider: 'openai',
+      modelSelectionMode: 'automaticallySyncedFromProvider',
+      models: getDefaultModelsForConnection('pi', 'openai'),
+      createdAt: Date.now(),
+    };
+  } else if (legacyAuthType === 'api_key') {
+    migrated = legacyBaseUrl
+      ? {
           slug: 'anthropic-api',
           name: 'Custom Anthropic-Compatible',
           providerType: 'pi_compat',
@@ -908,9 +853,8 @@ export function migrateLegacyLlmConnectionsConfig(): void {
           customEndpoint: { api: 'anthropic-messages' },
           models: getDefaultModelsForConnection('pi_compat'),
           createdAt: Date.now(),
-        };
-      } else {
-        migrated = {
+        }
+      : {
           slug: 'anthropic-api',
           name: 'Anthropic (API Key)',
           providerType: 'anthropic',
@@ -918,95 +862,125 @@ export function migrateLegacyLlmConnectionsConfig(): void {
           models: getDefaultModelsForConnection('anthropic'),
           createdAt: Date.now(),
         };
-      }
-    }
-
-    if (migrated) {
-      // Validate the migrated connection has a valid provider/auth combination
-      if (!isValidProviderAuthCombination(migrated.providerType, migrated.authType)) {
-        console.warn(
-          `[config] Legacy migration created invalid provider/auth combination: ` +
-          `providerType=${migrated.providerType}, authType=${migrated.authType} ` +
-          `(slug: ${migrated.slug}). Skipping migration for this connection.`
-        );
-      } else {
-        // Apply legacy baseUrl if set
-        if (legacyBaseUrl) {
-          migrated.baseUrl = legacyBaseUrl;
-        }
-
-        // Apply legacy customModel if set
-        if (legacyCustomModel) {
-          migrated.defaultModel = legacyCustomModel;
-        }
-
-        config.llmConnections.push(migrated);
-        config.defaultLlmConnection = migrated.slug;
-      }
-    }
   }
 
-  // Delete legacy fields after migration
-  delete configAny.authType;
-  delete configAny.anthropicBaseUrl;
-  delete configAny.customModel;
-  delete configAny.model;
+  if (!migrated) return;
 
-  if (legacyModel) {
-    const provider = getModelProvider(legacyModel) ?? 'anthropic';
-    configAny.modelDefaults = { ...(configAny.modelDefaults ?? {}), [provider]: legacyModel };
+  if (!isValidProviderAuthCombination(migrated.providerType, migrated.authType)) {
+    console.warn(
+      `[config] Legacy migration created invalid provider/auth combination: ` +
+      `providerType=${migrated.providerType}, authType=${migrated.authType} ` +
+      `(slug: ${migrated.slug}). Skipping migration for this connection.`
+    );
+    return;
   }
 
-  // Run the same backfill and migration on newly created connections
-  migrateCodexCopilotToPi(config);
-  backfillAllConnectionModels(config);
-  migrateModelDefaultsToConnections(config);
-  migrateLegacyOpusToDefaultOpus(config);
-  migrateWorkspaceLegacyOpusToDefaultOpus(config);
+  if (legacyBaseUrl) migrated.baseUrl = legacyBaseUrl;
+  if (legacyCustomModel) migrated.defaultModel = legacyCustomModel;
 
-  saveConfig(config);
+  config.llmConnections.push(migrated);
+  config.defaultLlmConnection = migrated.slug;
 }
 
 /**
- * Fix defaultLlmConnection references that point to non-existent connections.
- * This can happen when a connection is removed or was never created
- * (e.g. "anthropic-api" is set as default but only "claude-max" exists).
- *
- * Fixes both the global defaultLlmConnection and per-workspace defaults.
- * Called on app startup alongside other migrations.
+ * Drop workspace default connections that reference a non-existent connection.
+ * Only touches workspace config files, so it returns false (StoredConfig
+ * unchanged) after doing its own writes.
+ */
+function fixOrphanedWorkspaceDefaults(config: StoredConfig): boolean {
+  if (!config.llmConnections || config.llmConnections.length === 0) return false;
+  if (!config.workspaces) return false;
+  try {
+    for (const ws of config.workspaces) {
+      const wsConfig = loadWorkspaceConfig(ws.rootPath);
+      if (!wsConfig?.defaults?.defaultLlmConnection) continue;
+      const exists = config.llmConnections.some(c => c.slug === wsConfig.defaults!.defaultLlmConnection);
+      if (!exists) {
+        delete wsConfig.defaults.defaultLlmConnection;
+        saveWorkspaceConfig(ws.rootPath, wsConfig);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to clean up workspace default connection references:', error);
+  }
+  return false;
+}
+
+const ENSURE_DEFAULT_CONNECTION: ConfigMigration = { id: 'ensure-default-connection', apply: ensureDefaultLlmConnection };
+const ORPHANED_WORKSPACE_DEFAULTS: ConfigMigration = { id: 'orphaned-workspace-defaults', apply: fixOrphanedWorkspaceDefaults };
+
+/**
+ * Ordered startup migrations. Each entry declares an id (a report label for
+ * applied/failure, not a version gate — every phase runs on every boot) and a pure
+ * phase over StoredConfig. Opus normalization appears three times by design:
+ * model-defaults and provider-type migrations perturb model IDs, so the set has
+ * to re-converge after each — the ordering, not any single phase, is where the
+ * bugs live, and here it is data instead of comment labels.
+ */
+export const LLM_CONNECTION_MIGRATIONS: ConfigMigration[] = [
+  { id: 'strip-legacy-auth-fields', apply: stripLegacyAuthFields },
+  { id: 'codex-copilot-to-pi', apply: migrateCodexCopilotToPi },
+  { id: 'legacy-opus-normalize:pre-filter', apply: migrateLegacyOpusToDefaultOpus },
+  { id: 'backfill-connection-models', apply: backfillAllConnectionModels },
+  { id: 'model-defaults-to-connections', apply: migrateModelDefaultsToConnections },
+  { id: 'legacy-opus-normalize:post-model-defaults', apply: migrateLegacyOpusToDefaultOpus },
+  { id: 'workspace-legacy-opus', apply: (config) => { migrateWorkspaceLegacyOpusToDefaultOpus(config); return false; } },
+  { id: 'sonnet-45-to-46', apply: migrateSonnet45ToSonnet46 },
+  { id: 'workspace-sonnet-45-to-46', apply: (config) => { migrateWorkspaceSonnet45ToSonnet46(config); return false; } },
+  { id: 'legacy-provider-types', apply: migrateLegacyProviderTypes },
+  { id: 'legacy-opus-normalize:post-provider-types', apply: migrateLegacyOpusToDefaultOpus },
+  { id: 'hermes-local-slug', apply: migrateHermesLocalSlug },
+  ENSURE_DEFAULT_CONNECTION,
+  ORPHANED_WORKSPACE_DEFAULTS,
+];
+
+/** Orphan-repair subset, sharing entries with LLM_CONNECTION_MIGRATIONS. */
+const ORPHANED_DEFAULT_MIGRATIONS: ConfigMigration[] = [
+  ENSURE_DEFAULT_CONNECTION,
+  ORPHANED_WORKSPACE_DEFAULTS,
+];
+
+/**
+ * Migrate legacy auth config to LLM connections and normalize model state.
+ * Loads config, bootstraps connections from a legacy authType if needed, runs
+ * the versioned migration list, and persists only when something changed. A
+ * failing phase throws a named ConfigMigrationError so boot can block + report.
+ */
+export function migrateLegacyLlmConnectionsConfig(): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+
+  const freshInit = config.llmConnections === undefined;
+  if (freshInit) {
+    initLlmConnectionsFromLegacy(config);
+  }
+
+  const { applied, failure } = runConfigMigrations(config, LLM_CONNECTION_MIGRATIONS);
+  if (failure) {
+    throw new ConfigMigrationError(failure.id, failure.error);
+  }
+
+  if (freshInit || applied.length > 0) {
+    saveConfig(config);
+  }
+}
+
+/**
+ * Fix defaultLlmConnection references that point to non-existent connections,
+ * both the global default and per-workspace defaults. Runs the orphan-repair
+ * subset of the migration list; kept as a distinct export for the existing
+ * startup callsite.
  */
 export function migrateOrphanedDefaultConnections(): void {
   const config = loadStoredConfig();
   if (!config) return;
   if (!config.llmConnections || config.llmConnections.length === 0) return;
 
-  let changed = false;
-
-  // Fix global default if it points to a non-existent connection
-  if (ensureDefaultLlmConnection(config)) {
-    changed = true;
+  const { applied, failure } = runConfigMigrations(config, ORPHANED_DEFAULT_MIGRATIONS);
+  if (failure) {
+    throw new ConfigMigrationError(failure.id, failure.error);
   }
-
-  // Fix workspace defaults that point to non-existent connections
-  try {
-    const workspaces = getWorkspaces();
-    for (const ws of workspaces) {
-      const wsConfig = loadWorkspaceConfig(ws.rootPath);
-      if (wsConfig?.defaults?.defaultLlmConnection) {
-        const exists = config.llmConnections.some(
-          c => c.slug === wsConfig.defaults!.defaultLlmConnection
-        );
-        if (!exists) {
-          delete wsConfig.defaults.defaultLlmConnection;
-          saveWorkspaceConfig(ws.rootPath, wsConfig);
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Failed to clean up workspace default connection references:', error);
-  }
-
-  if (changed) {
+  if (applied.length > 0) {
     saveConfig(config);
   }
 }

@@ -23,6 +23,22 @@ import { isValidProviderAuthCombination } from './llm-connections.ts';
 import { SUPPORTED_LANGUAGE_CODES } from '../i18n/languages.ts';
 import type { LanguageCode } from '../i18n/languages.ts';
 
+import {
+  SkillMetadataSchema,
+  validateSkillContent,
+} from '@craft-agent/session-tools-core';
+import type {
+  ValidationResult as CoreValidationResult,
+  ConfigKind,
+  ConfigValidationKind,
+  ConfigValidationInput,
+  ConfigValidationLocator,
+} from '@craft-agent/session-tools-core';
+
+// Single-home skill validators live in session-tools-core; re-export so
+// packages/shared consumers keep importing them from here.
+export { SkillMetadataSchema, validateSkillContent };
+
 // ============================================================
 // Config Directory
 // ============================================================
@@ -331,42 +347,6 @@ export function validatePreferences(): ValidationResult {
   };
 }
 
-/**
- * Validate all config files
- * @param workspaceId - Optional workspace ID for source validation
- * @param workspaceRoot - Optional workspace root path for skill and status validation
- */
-export function validateAll(workspaceId?: string, workspaceRoot?: string): ValidationResult {
-  const results: ValidationResult[] = [
-    validateConfig(),
-    validatePreferences(),
-    validateToolIcons(),
-  ];
-
-  // Include workspace-scoped validations if workspaceId is provided
-  if (workspaceId) {
-    results.push(validateAllSources(workspaceId));
-  }
-
-  // Include skill, status, label, automations, and permissions validation if workspaceRoot is provided
-  if (workspaceRoot) {
-    results.push(validateAllSkills(workspaceRoot));
-    results.push(validateStatuses(workspaceRoot));
-    results.push(validateLabels(workspaceRoot));
-    results.push(validateAutomations(workspaceRoot));
-    results.push(validateAllPermissions(workspaceRoot));
-  }
-
-  const allErrors = results.flatMap(r => r.errors);
-  const allWarnings = results.flatMap(r => r.warnings);
-
-  return {
-    valid: allErrors.length === 0,
-    errors: allErrors,
-    warnings: allWarnings,
-  };
-}
-
 // ============================================================
 // Source & Agent Validators (Folder-Based Architecture)
 // ============================================================
@@ -651,19 +631,20 @@ export function validateAllSources(workspaceId: string): ValidationResult {
 // Skill Validators
 // ============================================================
 
-import matter from 'gray-matter';
 import { getWorkspaceSkillsPath } from '../workspaces/storage.ts';
 import { basename, extname } from 'path';
 
 /**
- * Schema for skill metadata (SKILL.md frontmatter)
+ * Enrich a session-tools-core ValidationResult (no file/severity) into the
+ * shared shape used across packages/shared, tagging every issue with `file`.
  */
-export const SkillMetadataSchema = z.object({
-  name: z.string().min(1, "Add a 'name' field with a human-readable title (e.g., 'Git Commit Helper')"),
-  description: z.string().min(1, "Add a 'description' field explaining what this skill does and when to use it (1-2 sentences)"),
-  globs: z.array(z.string()).optional(),
-  alwaysAllow: z.array(z.string()).optional(),
-});
+function enrichContentResult(result: CoreValidationResult, file: string): ValidationResult {
+  return {
+    valid: result.valid,
+    errors: result.errors.map((e) => ({ file, path: e.path, message: e.message, severity: 'error' as const, suggestion: e.suggestion })),
+    warnings: result.warnings.map((w) => ({ file, path: w.path, message: w.message, severity: 'warning' as const, suggestion: w.suggestion })),
+  };
+}
 
 /**
  * Find icon file in skill directory
@@ -743,7 +724,7 @@ export function validateSkill(workspaceRoot: string, slug: string): ValidationRe
 
   // Delegate content validation (frontmatter schema + body non-empty + slug format)
   const contentResult = validateSkillContent(content, slug);
-  errors.push(...contentResult.errors);
+  errors.push(...enrichContentResult(contentResult, file).errors);
 
   // 5. FS-only checks: icon existence (warnings)
   const iconPath = findSkillIconForValidation(skillDir);
@@ -773,79 +754,6 @@ export function validateSkill(workspaceRoot: string, slug: string): ValidationRe
     valid: errors.length === 0,
     errors,
     warnings,
-  };
-}
-
-/**
- * Validate skill SKILL.md content from a string (no disk reads).
- * Used by PreToolUse hook to validate before writing to disk.
- * Checks frontmatter schema and non-empty body. Skips icon/folder checks.
- *
- * @param markdownContent - The full SKILL.md file content
- * @param slug - The skill slug (folder name), used for slug format validation
- */
-export function validateSkillContent(markdownContent: string, slug: string): ValidationResult {
-  const file = `skills/${slug}/SKILL.md`;
-  const errors: ValidationIssue[] = [];
-
-  // 1. Validate slug format
-  if (!/^[a-z0-9-]+$/.test(slug)) {
-    const suggestedSlug = slug
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .replace(/-+/g, '-');
-    errors.push({
-      file: `skills/${slug}`,
-      path: 'slug',
-      message: 'Slug must be lowercase alphanumeric with hyphens',
-      severity: 'error',
-      suggestion: `Rename folder to '${suggestedSlug || 'valid-slug-name'}'`,
-    });
-  }
-
-  // 2. Parse frontmatter
-  let frontmatter: unknown;
-  let body: string;
-  try {
-    const parsed = matter(markdownContent);
-    frontmatter = parsed.data;
-    body = parsed.content;
-  } catch (e) {
-    return {
-      valid: false,
-      errors: [{
-        file,
-        path: 'frontmatter',
-        message: `Invalid YAML frontmatter: ${e instanceof Error ? e.message : 'Unknown error'}`,
-        severity: 'error',
-        suggestion: 'See ~/.craft-agent/docs/skills.md for SKILL.md format reference',
-      }],
-      warnings: [],
-    };
-  }
-
-  // 3. Validate frontmatter schema
-  const metaResult = SkillMetadataSchema.safeParse(frontmatter);
-  if (!metaResult.success) {
-    errors.push(...zodErrorToIssues(metaResult.error, file));
-  }
-
-  // 4. Check content is not empty
-  if (!body || body.trim().length === 0) {
-    errors.push({
-      file,
-      path: 'content',
-      message: 'Skill content is empty (nothing after frontmatter)',
-      severity: 'error',
-      suggestion: 'Add instructions after the frontmatter describing what the skill should do',
-    });
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-    warnings: [],  // Icon/folder warnings skipped in content-only validation
   };
 }
 
@@ -2070,31 +1978,140 @@ export function detectAppConfigFileType(filePath: string): ConfigFileDetection |
   return null;
 }
 
+// ============================================================
+// Config Validation Seam (kind → schema dispatch)
+// ============================================================
+
+interface ConfigKindValidator {
+  /** App-level (fixed config-dir paths) vs workspace-scoped. */
+  scope: 'app' | 'workspace';
+  /** Validate an in-memory content string. Absent for kinds with no pending-write path. */
+  validateContent?: (content: string, locator: ConfigValidationLocator) => ValidationResult;
+  /** Validate on disk. `root` = workspace root (workspace kinds) or '' (app kinds). */
+  validateOnDisk: (root: string, locator: ConfigValidationLocator) => ValidationResult;
+}
+
+/**
+ * Single source of truth mapping each config artifact kind to its validators.
+ * Every dispatch — PreToolUse content checks, validate-all fan-out, the
+ * ValidatorInterface seam, and the config_validate handler — routes through here.
+ */
+const CONFIG_KIND_VALIDATORS: Record<ConfigKind, ConfigKindValidator> = {
+  config: {
+    scope: 'app',
+    validateOnDisk: () => validateConfig(),
+  },
+  preferences: {
+    scope: 'app',
+    validateOnDisk: () => validatePreferences(),
+  },
+  'tool-icons': {
+    scope: 'app',
+    validateContent: (content) => validateToolIconsContent(content),
+    validateOnDisk: () => validateToolIcons(),
+  },
+  source: {
+    scope: 'workspace',
+    validateContent: (content) => validateSourceConfigContent(content),
+    validateOnDisk: (root, { slug }) => (slug ? validateSource(root, slug) : validateAllSources(root)),
+  },
+  skill: {
+    scope: 'workspace',
+    validateContent: (content, { slug }) =>
+      enrichContentResult(validateSkillContent(content, slug ?? 'unknown'), `skills/${slug ?? 'unknown'}/SKILL.md`),
+    validateOnDisk: (root, { slug }) => (slug ? validateSkill(root, slug) : validateAllSkills(root)),
+  },
+  statuses: {
+    scope: 'workspace',
+    validateContent: (content) => validateStatusesContent(content),
+    validateOnDisk: (root) => validateStatuses(root),
+  },
+  labels: {
+    scope: 'workspace',
+    validateContent: (content) => validateLabelsContent(content),
+    validateOnDisk: (root) => validateLabels(root),
+  },
+  automations: {
+    scope: 'workspace',
+    validateContent: (content, { displayFile }) => validateAutomationsContent(content, displayFile),
+    validateOnDisk: (root) => validateAutomations(root),
+  },
+  permissions: {
+    scope: 'workspace',
+    validateContent: (content, { displayFile }) => validatePermissionsContent(content, displayFile),
+    validateOnDisk: (root, { slug }) => (slug ? validateSourcePermissions(root, slug) : validateAllPermissions(root)),
+  },
+};
+
+/** Ordered fan-out for `validateAll` and the `'all'` kind. */
+const CONFIG_KIND_ORDER: ConfigKind[] = [
+  'config', 'preferences', 'tool-icons',
+  'source', 'skill', 'statuses', 'labels', 'automations', 'permissions',
+];
+
+/**
+ * The one seam: validate a config artifact by kind. `{ content }` runs the Zod
+ * schema (and semantic checks) in memory; `{ path }` reads disk and adds
+ * filesystem extras (icon/guide warnings, directory scans). `'all'` fans out.
+ */
+export function validateConfigArtifact(
+  kind: ConfigValidationKind,
+  input: ConfigValidationInput,
+  locator: ConfigValidationLocator = {},
+): ValidationResult {
+  if (kind === 'all') {
+    return validateAllArtifacts('path' in input ? input.path : undefined);
+  }
+  const validator = CONFIG_KIND_VALIDATORS[kind];
+  if (!validator) {
+    return {
+      valid: false,
+      errors: [{ file: '', path: '', message: `Unknown config kind: ${kind}`, severity: 'error' }],
+      warnings: [],
+    };
+  }
+  if ('content' in input) {
+    // The seam defaults to REJECT: a kind without a content validator cannot be
+    // vouched for in memory, so we fail closed naming the kind instead of
+    // silently returning valid.
+    if (!validator.validateContent) {
+      return {
+        valid: false,
+        errors: [{ file: '', path: '', message: `Config kind '${kind}' has no content validator`, severity: 'error' }],
+        warnings: [],
+      };
+    }
+    return validator.validateContent(input.content, locator);
+  }
+  return validator.validateOnDisk(input.path, locator);
+}
+
+/** Validate every app-level artifact, plus workspace artifacts when a root is given. */
+function validateAllArtifacts(workspaceRoot?: string): ValidationResult {
+  const results: ValidationResult[] = [];
+  for (const kind of CONFIG_KIND_ORDER) {
+    const validator = CONFIG_KIND_VALIDATORS[kind];
+    if (validator.scope === 'app') {
+      results.push(validator.validateOnDisk('', {}));
+    } else if (workspaceRoot) {
+      results.push(validator.validateOnDisk(workspaceRoot, {}));
+    }
+  }
+  const errors = results.flatMap((r) => r.errors);
+  const warnings = results.flatMap((r) => r.warnings);
+  return { valid: errors.length === 0, errors, warnings };
+}
+
 /**
  * Validate config file content based on its detected type.
- * Dispatches to the appropriate content-based validator.
- * Returns null if the detection type is unrecognized.
+ * Thin wrapper over the config validation seam.
  */
 export function validateConfigFileContent(
   detection: ConfigFileDetection,
   content: string
 ): ValidationResult | null {
-  switch (detection.type) {
-    case 'source':
-      return validateSourceConfigContent(content);
-    case 'skill':
-      return validateSkillContent(content, detection.slug || 'unknown');
-    case 'statuses':
-      return validateStatusesContent(content);
-    case 'labels':
-      return validateLabelsContent(content);
-    case 'automations':
-      return validateAutomationsContent(content, detection.displayFile);
-    case 'permissions':
-      return validatePermissionsContent(content, detection.displayFile);
-    case 'tool-icons':
-      return validateToolIconsContent(content);
-    default:
-      return null;
-  }
+  return validateConfigArtifact(detection.type, { content }, {
+    slug: detection.slug,
+    displayFile: detection.displayFile,
+  });
 }

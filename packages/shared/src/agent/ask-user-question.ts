@@ -48,10 +48,13 @@ export function validateAskUserQuestions(input: unknown): AskUserQuestionItem[] 
   if (!Array.isArray(questions) || questions.length === 0) return null;
 
   const normalized: AskUserQuestionItem[] = [];
+  const seenQuestions = new Set<string>();
   for (const raw of questions) {
     if (!isRecord(raw)) return null;
     const { question, header, options: rawOptions, multiSelect } = raw;
     if (typeof question !== 'string' || question.trim().length === 0) return null;
+    if (seenQuestions.has(question)) return null;
+    seenQuestions.add(question);
     if (!Array.isArray(rawOptions) || rawOptions.length === 0) return null;
 
     const options: AskUserQuestionOption[] = [];
@@ -79,11 +82,24 @@ export function validateAskUserQuestions(input: unknown): AskUserQuestionItem[] 
 export function buildAskUserQuestionResult(
   questions: AskUserQuestionItem[],
   response: AskUserQuestionResponse,
-): { questions: AskUserQuestionItem[]; answers: Record<string, string>; response?: string } {
+): { questions: AskUserQuestionItem[]; answers: Record<string, string>; response?: string; skipped?: boolean } {
   return {
     questions,
     answers: response.answers ?? {},
     ...(response.response ? { response: response.response } : {}),
+    ...(response.skipped ? { skipped: true } : {}),
+  };
+}
+
+export function normalizeAskUserQuestionResponse(raw: unknown): AskUserQuestionResponse {
+  if (!raw || typeof raw !== 'object') return { answers: {}, skipped: true };
+  const response = raw as Record<string, unknown>;
+  return {
+    answers: response.answers && typeof response.answers === 'object'
+      ? response.answers as Record<string, string>
+      : {},
+    ...(typeof response.response === 'string' ? { response: response.response } : {}),
+    ...(response.skipped === true ? { skipped: true } : {}),
   };
 }
 

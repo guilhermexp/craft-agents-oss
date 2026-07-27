@@ -4,7 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { resolveBackendContext } from '@craft-agent/shared/agent/backend'
 import { loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
-import { SessionManager, createManagedSession } from './SessionManager.ts'
+import { SessionManager, createManagedSession, type ManagedSession } from './SessionManager.ts'
 import { buildRestartRequiredSignature } from './runtime-config.ts'
 
 // Regression coverage for the stale-Pi-subprocess bug where toggling
@@ -58,12 +58,12 @@ function injectSession(
     rootPath: workspaceRoot,
     createdAt: Date.now(),
   }
-  const managed = createManagedSession(
+  const managed: ManagedSession = createManagedSession(
     { id, name: id, llmConnection },
     workspace as never,
     { messagesLoaded: true },
-  ) as unknown as { agent: AgentStub | null; backendRuntimeSignature?: string; backendRestartSignature?: string; isProcessing: boolean; llmConnection?: string }
-  managed.agent = agent
+  )
+  managed.agent = agent as unknown as ManagedSession['agent']
   // Force a stale runtime signature so the helper's comparison always reaches
   // the refresh branch — the signature it computes from real disk config will
   // never equal this sentinel.
@@ -88,7 +88,7 @@ function injectSession(
   }
   managed.isProcessing = opts.isProcessing ?? false
   managed.llmConnection = llmConnection
-  ;(sm as unknown as { sessions: Map<string, unknown> }).sessions.set(id, managed)
+  sm.registerManagedSession(managed)
   return managed
 }
 

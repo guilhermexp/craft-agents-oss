@@ -13,7 +13,7 @@ import {
 import type { KanbanColumnDef } from '@craft-agent/shared/projects/types'
 import { SmartPointerSensor } from '@/components/ui/sortable-list'
 import type { ProjectColorTreatment } from '@/utils/project-colors'
-import type { SessionStatus } from '@/config/session-status-config'
+import type { ResolvedSessionStatus } from '@/config/session-status-config'
 import { useKanbanColumnColors, makeColumnColor } from '@/hooks/useKanbanColumnColors'
 import { KanbanColumn } from './KanbanColumn'
 import { TaskTile } from './TaskTile'
@@ -30,9 +30,9 @@ interface KanbanBoardProps {
   columns: readonly KanbanColumnMeta[]
   tasks: KanbanTask[]
   projectsById: Map<string, KanbanProject>
-  statusesById: Map<string, SessionStatus>
+  statusesById: Map<string, ResolvedSessionStatus>
   /** Ordered workspace statuses for the per-tile status picker. */
-  statuses?: SessionStatus[]
+  statuses?: ResolvedSessionStatus[]
   /** Change a task's status from its tile. Enables the status-badge picker when set. */
   onChangeStatus?: (taskId: string, statusId: string) => void
   /** Project color treatment. Defaults to 'stripe-tint'. */

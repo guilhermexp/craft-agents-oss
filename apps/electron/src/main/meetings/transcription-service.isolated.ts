@@ -5,11 +5,9 @@ import { afterEach, describe, expect, it, mock } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { createLoggerModuleStub } from '../__tests__/logger-module-stub'
 
-mock.module('../logger', () => {
-  const logger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
-  return { mainLog: logger }
-})
+mock.module('../logger', () => createLoggerModuleStub())
 
 const { TranscriptionService, computeFetchTimeoutMs } = await import('./transcription-service')
 

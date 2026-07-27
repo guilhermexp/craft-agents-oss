@@ -1,15 +1,17 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
-import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES, getAllNamespaceValues } from '@craft-agent/shared/protocol'
 import type { RpcServer } from '@craft-agent/server-core/transport'
+import { CHANNEL_MAP } from '../../../transport/channel-map'
 import type { HandlerDeps } from '../handler-deps'
+import type { ServerHandlerContext } from '@craft-agent/server-core/handlers/rpc'
 
 const registeredNamespaces: string[] = []
 
 mock.module('electron', () => ({
   ipcMain: {
     // ipcMain is a separate transport from the RPC server this test verifies.
-    // Channels registered here (meetings recording, hermes env, …) are NOT part
-    // of the RPC HANDLED_CHANNELS contract, so the mock intentionally ignores them.
+    // Channels registered here (meetings recording, hermes env, …) are a distinct
+    // transport, so the mock intentionally ignores them.
     handle: () => {},
     on: () => {},
   },
@@ -90,119 +92,27 @@ function createMockDeps(): HandlerDeps {
       dispose: () => {},
       size: 0,
     } as unknown as HandlerDeps['oauthFlowStore'],
+    messagingRegistry: {} as unknown as HandlerDeps['messagingRegistry'],
   }
 }
 
-async function getExpectedChannels(): Promise<Set<string>> {
-  // Core handler channels (now in server-core)
-  const [
-    auth,
-    automations,
-    channels,
-    files,
-    hermes,
-    labels,
-    llm,
-    oauth,
-    projects,
-    sessions,
-    coreSettings,
-    skills,
-    sources,
-    statuses,
-    tasks,
-    coreSystem,
-    coreWorkspace,
-    onboarding,
-    resources,
-  ] = await Promise.all([
-    import('@craft-agent/server-core/handlers/rpc/auth'),
-    import('@craft-agent/server-core/handlers/rpc/automations'),
-    import('@craft-agent/server-core/handlers/rpc/channels'),
-    import('@craft-agent/server-core/handlers/rpc/files'),
-    import('@craft-agent/server-core/handlers/rpc/hermes'),
-    import('@craft-agent/server-core/handlers/rpc/labels'),
-    import('@craft-agent/server-core/handlers/rpc/llm-connections'),
-    import('@craft-agent/server-core/handlers/rpc/oauth'),
-    import('@craft-agent/server-core/handlers/rpc/projects'),
-    import('@craft-agent/server-core/handlers/rpc/sessions'),
-    import('@craft-agent/server-core/handlers/rpc/settings'),
-    import('@craft-agent/server-core/handlers/rpc/skills'),
-    import('@craft-agent/server-core/handlers/rpc/sources'),
-    import('@craft-agent/server-core/handlers/rpc/statuses'),
-    import('@craft-agent/server-core/handlers/rpc/tasks'),
-    import('@craft-agent/server-core/handlers/rpc/system'),
-    import('@craft-agent/server-core/handlers/rpc/workspace'),
-    import('@craft-agent/server-core/handlers/rpc/onboarding'),
-    import('@craft-agent/server-core/handlers/rpc/resources'),
-  ])
-
-  // GUI handler channels (remain in electron)
-  const [browser, meetings, guiSystem, guiWorkspace, guiSettings] = await Promise.all([
-    import('../browser'),
-    import('../meetings'),
-    import('../system'),
-    import('../workspace'),
-    import('../settings'),
-  ])
-
-  return new Set([
-    ...auth.HANDLED_CHANNELS,
-    ...automations.HANDLED_CHANNELS,
-    ...channels.HANDLED_CHANNELS,
-    ...files.HANDLED_CHANNELS,
-    ...hermes.HANDLED_CHANNELS,
-    ...labels.HANDLED_CHANNELS,
-    ...llm.HANDLED_CHANNELS,
-    ...oauth.HANDLED_CHANNELS,
-    ...projects.HANDLED_CHANNELS,
-    ...sessions.HANDLED_CHANNELS,
-    ...coreSettings.HANDLED_CHANNELS,
-    ...skills.HANDLED_CHANNELS,
-    ...sources.HANDLED_CHANNELS,
-    ...statuses.HANDLED_CHANNELS,
-    ...tasks.HANDLED_CHANNELS,
-    ...coreSystem.CORE_HANDLED_CHANNELS,
-    ...coreWorkspace.CORE_HANDLED_CHANNELS,
-    ...onboarding.HANDLED_CHANNELS,
-    ...resources.HANDLED_CHANNELS,
-    RPC_NAMESPACES.transfer.START,
-    RPC_NAMESPACES.transfer.CHUNK,
-    RPC_NAMESPACES.transfer.COMMIT,
-    RPC_NAMESPACES.transfer.ABORT,
-    ...browser.HANDLED_CHANNELS,
-    ...meetings.HANDLED_CHANNELS,
-    ...guiSystem.GUI_HANDLED_CHANNELS,
-    ...guiWorkspace.GUI_HANDLED_CHANNELS,
-    ...guiSettings.GUI_HANDLED_CHANNELS,
-  ])
-}
-
+// The per-handler HANDLED_CHANNELS arrays were removed: they restated what each
+// handler registers, and the array-vs-registration parity they backed is now a
+// tautology. These checks compute the handled set from the registration itself.
 describe('RPC handler registration', () => {
   beforeEach(() => {
     registeredNamespaces.length = 0
   })
 
-  it('registers all declared handled channels exactly once', async () => {
-    const expected = await getExpectedChannels()
+  it('registers each RPC channel exactly once', async () => {
+    // Dynamic import: mock.module('electron') must be registered before the
+    // handler index (and its transitive electron imports) is evaluated.
     const { registerAllRpcHandlers } = await import('../index')
-
     registerAllRpcHandlers(createMockServer(), createMockDeps())
 
-    const appChannels = registeredNamespaces.filter(ch => ch.includes(':'))
-    const actual = new Set(appChannels)
-
-    const missing = [...expected].filter(ch => !actual.has(ch)).sort()
-    const unexpected = [...actual].filter(ch => !expected.has(ch)).sort()
-
-    expect(missing).toEqual([])
-    expect(unexpected).toEqual([])
-
-    // Check for duplicates
+    const appChannels = registeredNamespaces.filter((ch) => ch.includes(':'))
     const counts = new Map<string, number>()
-    for (const ch of appChannels) {
-      counts.set(ch, (counts.get(ch) ?? 0) + 1)
-    }
+    for (const ch of appChannels) counts.set(ch, (counts.get(ch) ?? 0) + 1)
     const duplicates = [...counts.entries()]
       .filter(([, count]) => count > 1)
       .map(([channel, count]) => `${channel} (${count}x)`)
@@ -211,15 +121,55 @@ describe('RPC handler registration', () => {
     expect(duplicates).toEqual([])
   })
 
-  it('keeps onboarding channels in registration coverage', async () => {
-    const { HANDLED_CHANNELS } = await import('@craft-agent/server-core/handlers/rpc/onboarding')
+  it('only registers channels declared in RPC_NAMESPACES', async () => {
     const { registerAllRpcHandlers } = await import('../index')
-
     registerAllRpcHandlers(createMockServer(), createMockDeps())
 
-    const actual = new Set(registeredNamespaces)
-    const missingOnboarding = HANDLED_CHANNELS.filter(ch => !actual.has(ch))
+    const declared = new Set(getAllNamespaceValues())
+    const undeclared = registeredNamespaces
+      .filter((ch) => ch.includes(':') && !declared.has(ch))
+      .sort()
+
+    expect(undeclared).toEqual([])
+  })
+
+  it('keeps onboarding channels in registration coverage', async () => {
+    const { registerAllRpcHandlers } = await import('../index')
+    registerAllRpcHandlers(createMockServer(), createMockDeps())
+
+    const registered = new Set(registeredNamespaces)
+    const missingOnboarding = Object.values(RPC_NAMESPACES.onboarding).filter(
+      (ch) => !registered.has(ch),
+    )
 
     expect(missingOnboarding).toEqual([])
+  })
+
+  // CHANNEL_MAP derives the renderer's typed invoke methods from RPC_CONTRACT.
+  // RPC_CONTRACT has no coupling to server.handle(), so a dropped or
+  // short-circuited registration would leave the renderer with a typed method
+  // and no server handler — invisible to typecheck. Assert every invoke channel
+  // the client can call is actually registered. The mock deps supply everything
+  // (messagingRegistry) and a serverCtx is passed so every conditional registrar
+  // fires.
+  it('registers every invoke channel exposed by CHANNEL_MAP', async () => {
+    const { registerAllRpcHandlers } = await import('../index')
+    registerAllRpcHandlers(createMockServer(), createMockDeps(), {} as unknown as ServerHandlerContext)
+
+    const registered = new Set(registeredNamespaces)
+    // Registered by the Electron main bootstrap (apps/electron/src/main/index.ts),
+    // not by the RPC handler registrars this test exercises.
+    const bootstrapOnly: Record<string, true> = {
+      [RPC_NAMESPACES.settings.GET_SERVER_CONFIG]: true,
+      [RPC_NAMESPACES.settings.SET_SERVER_CONFIG]: true,
+      [RPC_NAMESPACES.settings.GET_SERVER_STATUS]: true,
+    }
+    const missing = Object.values(CHANNEL_MAP)
+      .filter((entry) => entry.type === 'invoke')
+      .map((entry) => entry.channel)
+      .filter((channel) => !registered.has(channel) && !bootstrapOnly[channel])
+      .sort()
+
+    expect(missing).toEqual([])
   })
 })

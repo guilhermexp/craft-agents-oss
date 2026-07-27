@@ -17,7 +17,6 @@ const capabilities: AdapterCapabilities = {
   maxButtons: 0,
   maxMessageLength: 4096,
   markdown: 'whatsapp',
-  webhookSupport: false,
 }
 
 class FakeAdapter implements PlatformAdapter {

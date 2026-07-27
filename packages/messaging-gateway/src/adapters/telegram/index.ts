@@ -21,6 +21,8 @@ import type {
   ButtonPress,
   MessagingLogger,
   MessagingChannelId,
+  CredentialCodec,
+  CredentialTestResult,
 } from '../../types'
 import { messagingChannelId } from '../../types'
 import { formatForTelegram } from './format'
@@ -151,11 +153,7 @@ export class TelegramAdapter implements PlatformAdapter {
     maxButtons: 10,
     maxMessageLength: 4096,
     markdown: 'v2',
-    // This adapter uses polling (grammY Bot#start). A webhook path is not
-    // wired through the Electron main process, so advertising webhookSupport
-    // would mislead the headless server bootstrap. Keep false until a proper
-    // webhook handler exists.
-    webhookSupport: false,
+    accessControl: true,
   }
 
   /** Fetch bot profile (username, display name). Used for UI hints. */
@@ -167,6 +165,10 @@ export class TelegramAdapter implements PlatformAdapter {
     } catch {
       return null
     }
+  }
+
+  async getIdentity(): Promise<string | undefined> {
+    return (await this.getBotInfo())?.username
   }
 
   private bot: Bot | null = null
@@ -790,6 +792,47 @@ export class TelegramAdapter implements PlatformAdapter {
     const result = await this.bot.api.createForumTopic(Number(chatId), name)
     return { threadId: result.message_thread_id, name: result.name }
   }
+}
+
+/**
+ * Verify a Telegram bot token via `getMe` and expose the bot's profile.
+ * Lives here (not in the registry) so credential handling ships with the
+ * adapter it belongs to.
+ */
+async function fetchTelegramBotInfo(
+  token: string,
+): Promise<{ ok: boolean; result: { username?: string; first_name?: string }; description?: string }> {
+  // react-doctor-disable-next-line no-fetch-response-used-without-status-check -- Telegram getMe token verification: callers inspect body.ok (auth semantics)
+  const res = await fetch(`https://api.telegram.org/bot${token}/getMe`)
+  return (await res.json()) as {
+    ok: boolean
+    result: { username?: string; first_name?: string }
+    description?: string
+  }
+}
+
+/** Credential codec for Telegram bot tokens (opaque `<id>:<secret>` string). */
+export const telegramCredentialCodec: CredentialCodec = {
+  normalize(raw: string): string {
+    const trimmed = raw.trim()
+    if (!trimmed) throw new Error('Token is empty')
+    return trimmed
+  },
+  async test(raw: string): Promise<CredentialTestResult> {
+    const token = raw.trim()
+    if (!token) return { success: false, error: 'Token is empty' }
+    try {
+      const info = await fetchTelegramBotInfo(token)
+      if (!info.ok) return { success: false, error: info.description ?? 'Invalid token' }
+      return {
+        success: true,
+        botName: info.result.first_name ?? info.result.username ?? 'bot',
+        botUsername: info.result.username,
+      }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+    }
+  },
 }
 
 /**

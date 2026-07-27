@@ -19,9 +19,10 @@ import { SystemMessage } from './SystemMessage'
 import {
   groupMessagesByTurn,
   storedToMessage,
-  getAssistantTurnUiKey,
+  getTurnKey,
   type ActivityItem,
 } from './turn-utils'
+import type { GroupExpansionController } from './turn-card-shared'
 
 export type SessionViewerMode = 'interactive' | 'readonly'
 
@@ -102,7 +103,7 @@ export function SessionViewer({
     if (defaultExpanded) {
       return new Set(
         turns
-          .map((turn, index) => turn.type === 'assistant' ? getAssistantTurnUiKey(turn, index) : null)
+          .map(turn => turn.type === 'assistant' ? getTurnKey(turn) : null)
           .filter((key): key is string => !!key)
       )
     }
@@ -124,9 +125,14 @@ export function SessionViewer({
     })
   }, [])
 
-  const handleExpandedActivityGroupsChange = useCallback((groups: Set<string>) => {
-    setExpandedActivityGroups(groups)
-  }, [])
+  const groupExpansion = useMemo<GroupExpansionController>(() => ({
+    isExpanded: (groupId) => expandedActivityGroups.has(groupId),
+    setExpanded: (groupId, expanded) => setExpandedActivityGroups(prev => {
+      const next = new Set(prev)
+      if (expanded) next.add(groupId); else next.delete(groupId)
+      return next
+    }),
+  }), [expandedActivityGroups])
 
   const handleOpenActivityDetails = useCallback((activity: ActivityItem) => {
     if (onActivityClick) {
@@ -164,10 +170,10 @@ export function SessionViewer({
         >
           <div className="h-full overflow-y-auto">
             <div className={cn(CHAT_LAYOUT.maxWidth, "mx-auto", CHAT_LAYOUT.containerPadding, CHAT_LAYOUT.messageSpacing)}>
-            {turns.map((turn, index) => {
+            {turns.map((turn) => {
               if (turn.type === 'user') {
                 return (
-                  <div key={turn.message.id} className={CHAT_LAYOUT.userMessagePadding}>
+                  <div key={getTurnKey(turn)} className={CHAT_LAYOUT.userMessagePadding}>
                     <UserMessageBubble
                       content={turn.message.content}
                       attachments={turn.message.attachments}
@@ -185,7 +191,7 @@ export function SessionViewer({
                                turn.message.role === 'info' ? 'info' : 'system'
                 return (
                   <SystemMessage
-                    key={turn.message.id}
+                    key={getTurnKey(turn)}
                     content={turn.message.content}
                     type={msgType}
                   />
@@ -193,7 +199,7 @@ export function SessionViewer({
               }
 
               if (turn.type === 'assistant') {
-                const assistantUiKey = getAssistantTurnUiKey(turn, index)
+                const assistantUiKey = getTurnKey(turn)
                 return (
                   <TurnCard
                     key={assistantUiKey}
@@ -211,8 +217,7 @@ export function SessionViewer({
                     onOpenDetails={() => handleOpenTurnDetails(turn.turnId)}
                     onOpenActivityDetails={handleOpenActivityDetails}
                     todos={turn.todos}
-                    expandedActivityGroups={expandedActivityGroups}
-                    onExpandedActivityGroupsChange={handleExpandedActivityGroupsChange}
+                    groupExpansion={groupExpansion}
                     hasEditOrWriteActivities={turn.activities.some(a =>
                       a.toolName === 'Edit' || a.toolName === 'Write'
                     )}

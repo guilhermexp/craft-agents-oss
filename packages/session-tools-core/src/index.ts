@@ -118,6 +118,10 @@ export type {
   FileSystemInterface,
   CredentialManagerInterface,
   ValidatorInterface,
+  ConfigKind,
+  ConfigValidationKind,
+  ConfigValidationInput,
+  ConfigValidationLocator,
   LoadedSource,
   // MCP validation types
   StdioMcpConfig,
@@ -212,6 +216,7 @@ export {
   ToolResultOutputSchema,
   // Browser tool schema
   BrowserToolSchema,
+  SpawnSessionSchema,
   // Developer feedback schema
   SendDeveloperFeedbackSchema,
   ChannelDispatchSchema,
@@ -219,6 +224,7 @@ export {
   TOOL_DESCRIPTIONS,
   // Registry
   SESSION_TOOL_DEFS,
+  MCP_ONLY_TOOL_DEFS,
   SESSION_TOOLS_FRONTIER_API_VERSION,
   SESSION_TOOL_NAMES,
   SESSION_BACKEND_TOOL_NAMES,
@@ -240,6 +246,7 @@ export {
   executeSessionTool,
   // JSON Schema converter
   getToolDefsAsJsonSchema,
+  toJsonSchemaToolDef,
 } from './tool-defs.ts';
 
 export type {

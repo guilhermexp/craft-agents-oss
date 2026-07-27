@@ -31,6 +31,8 @@ import {
 } from './claude-config-manager.ts'
 import type { ModelFetchResult } from '../../config/model-fetcher.ts'
 
+export { ensureDefaultClaudeConfigValid } from './claude-config-manager.ts'
+
 export type NativeAgentProvider = Extract<AgentProvider, 'anthropic' | 'pi'>
 
 export interface NativeAgentSpawnConfig {

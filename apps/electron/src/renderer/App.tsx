@@ -23,9 +23,9 @@ import { DismissibleLayerProvider } from '@/context/DismissibleLayerContext'
 import { useWindowCloseHandler } from '@/hooks/useWindowCloseHandler'
 import { useOnboarding } from '@/hooks/useOnboarding'
 import { useNotifications } from '@/hooks/useNotifications'
-import { useSession } from '@/hooks/useSession'
+import { useSessionSelection } from '@/hooks/useSession'
 import { useUpdateChecker } from '@/hooks/useUpdateChecker'
-import { NavigationProvider } from '@/contexts/NavigationContext'
+import { NavigationProvider } from '@/context/NavigationContext'
 import { navigate, routes } from './lib/navigate'
 import { attachmentFromContentRef, toDraftRef } from './lib/drafts'
 import { stripMarkdown } from './utils/text'
@@ -284,6 +284,11 @@ export default function App() {
   // Surfaced in the sidebar so a pending question is visible when the session
   // isn't open. Transient renderer state, mirroring pendingPermissions.
   const [pendingQuestions, setPendingQuestions] = useState<Map<string, Set<string>>>(new Map())
+  const pendingQuestionsRef = useRef<Map<string, Set<string>>>(new Map())
+  const commitPendingQuestions = useCallback((next: Map<string, Set<string>>) => {
+    pendingQuestionsRef.current = next
+    setPendingQuestions(next)
+  }, [])
   // Draft composer state per session (text + attachment refs), preserved across mode
   // switches, conversation changes, and app restarts. Using a ref avoids re-renders
   // during typing; attachments are stored as lightweight refs (path + name) and
@@ -628,7 +633,7 @@ export default function App() {
   }, [setWindowWorkspaceId])
 
   // Session selection state
-  const [sessionSelection, setSession] = useSession()
+  const { state: sessionSelection, reset: resetSessionSelection } = useSessionSelection()
 
   // Notification system - shows native OS notifications and badge count
   const handleNavigateToSession = useCallback((sessionId: string) => {
@@ -777,17 +782,16 @@ export default function App() {
             break
           }
           case 'question_pending': {
-            let added = false
-            setPendingQuestions(prev => {
-              const existing = prev.get(sessionId)
-              if (existing?.has(effect.toolUseId)) return prev
-              added = true
-              const next = new Map(prev)
+            const current = pendingQuestionsRef.current
+            const existing = current.get(sessionId)
+            const added = !existing?.has(effect.toolUseId)
+            if (added) {
+              const next = new Map(current)
               const updated = new Set(existing ?? [])
               updated.add(effect.toolUseId)
               next.set(sessionId, updated)
-              return next
-            })
+              commitPendingQuestions(next)
+            }
             // Native notification (same UX as permission prompts) so the user
             // notices a question awaiting their answer even off-screen.
             if (added) {
@@ -799,16 +803,16 @@ export default function App() {
             break
           }
           case 'question_resolved': {
-            setPendingQuestions(prev => {
-              const existing = prev.get(sessionId)
-              if (!existing || !existing.has(effect.toolUseId)) return prev
-              const next = new Map(prev)
+            const current = pendingQuestionsRef.current
+            const existing = current.get(sessionId)
+            if (existing?.has(effect.toolUseId)) {
+              const next = new Map(current)
               const updated = new Set(existing)
               updated.delete(effect.toolUseId)
               if (updated.size === 0) next.delete(sessionId)
               else next.set(sessionId, updated)
-              return next
-            })
+              commitPendingQuestions(next)
+            }
             break
           }
           case 'auto_retry': {
@@ -847,8 +851,8 @@ export default function App() {
         }
       }
 
-      // Clear pending permissions and credentials on complete
-      if (eventType === 'complete') {
+      // Clear pending permissions and credentials on terminal events.
+      if (eventType === 'complete' || eventType === 'typed_error') {
         setPendingPermissions(prevPerms => {
           if (prevPerms.has(sessionId)) {
             const next = new Map(prevPerms)
@@ -869,13 +873,13 @@ export default function App() {
 
       // Clear parked questions when the turn terminates without a tool_result
       // (timeout skip lands on complete; abort/error tear the parked call down).
-      if (eventType === 'complete' || eventType === 'error' || eventType === 'interrupted') {
-        setPendingQuestions(prev => {
-          if (!prev.has(sessionId)) return prev
-          const next = new Map(prev)
+      if (eventType === 'complete' || eventType === 'error' || eventType === 'interrupted' || eventType === 'typed_error') {
+        const current = pendingQuestionsRef.current
+        if (current.has(sessionId)) {
+          const next = new Map(current)
           next.delete(sessionId)
-          return next
-        })
+          commitPendingQuestions(next)
+        }
       }
     }
 
@@ -943,6 +947,24 @@ export default function App() {
 
       if (event.type === 'session_deleted') {
         pendingSessions.delete(sessionId)
+        const currentQuestions = pendingQuestionsRef.current
+        if (currentQuestions.has(sessionId)) {
+          const nextQuestions = new Map(currentQuestions)
+          nextQuestions.delete(sessionId)
+          commitPendingQuestions(nextQuestions)
+        }
+        setPendingPermissions(prev => {
+          if (!prev.has(sessionId)) return prev
+          const next = new Map(prev)
+          next.delete(sessionId)
+          return next
+        })
+        setPendingCredentials(prev => {
+          if (!prev.has(sessionId)) return prev
+          const next = new Map(prev)
+          next.delete(sessionId)
+          return next
+        })
         removeSession(sessionId)
         return
       }
@@ -1082,6 +1104,7 @@ export default function App() {
     syncSessionOptionsFromSession,
     applyPermissionModeState,
     reconcilePermissionModeState,
+    commitPendingQuestions,
   ])
 
   // Transport reconnect recovery — refresh session metadata plus active/processing
@@ -1785,12 +1808,12 @@ export default function App() {
       // 3. Clear selected session - the old session belongs to the previous workspace
       // and should not remain selected when switching to a new workspace.
       // This prevents showing stale session data from the wrong workspace.
-      setSession({ selected: null })
+      resetSessionSelection()
 
       // 4. Clear pending permissions/credentials (not relevant to new workspace)
       setPendingPermissions(new Map())
       setPendingCredentials(new Map())
-      setPendingQuestions(new Map())
+      commitPendingQuestions(new Map())
 
       // 5. Clear session options from previous workspace
       // (session IDs are unique UUIDs, but clearing prevents unbounded memory growth
@@ -1816,7 +1839,7 @@ export default function App() {
       // Sessions and theme will reload automatically due to windowWorkspaceId dependency
       // in useEffect hooks.
     }
-  }, [windowWorkspaceId, setSession, store, setWindowWorkspaceId])
+  }, [windowWorkspaceId, resetSessionSelection, store, setWindowWorkspaceId, commitPendingQuestions])
 
   // Handle workspace switch by slug (called by NavigationContext on popstate when ?ws= changes)
   const handleSwitchWorkspaceBySlug = useCallback((slug: string) => {

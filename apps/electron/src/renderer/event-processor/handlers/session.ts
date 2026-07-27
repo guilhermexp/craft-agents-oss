@@ -273,11 +273,17 @@ export function handleInfo(
 }
 
 /**
- * Handle interrupted - agent was interrupted
- * When message is provided, it's a user-initiated stop (shows "Response interrupted")
- * When message is omitted, it's a silent redirect (user sent new message while processing)
- * When queuedMessages is provided, those messages were waiting to be processed and should
- * be restored to the input field (the corresponding user bubbles are removed from the chat).
+ * Handle interrupted - agent was interrupted.
+ *
+ * Two distinct shapes:
+ * - **User-initiated stop** (`event.message` present): user clicked the Stop
+ *   button. We render the "Response interrupted" notice, drop queued user
+ *   bubbles, and restore their text to the input field so the user can edit
+ *   and re-send.
+ * - **Silent redirect** (`event.message` absent): the turn was aborted so
+ *   queued work can be re-dispatched. The queued bubbles must stay in chat and
+ *   must NOT be pulled back into the composer — otherwise the user perceives a
+ *   silent drop of a message they already sent (#616).
  */
 export function handleInterrupted(
   state: SessionState,
@@ -285,15 +291,17 @@ export function handleInterrupted(
 ): ProcessResult {
   const { session } = state
   const effects: Effect[] = []
+  const isUserInitiated = !!event.message
 
   // Clear transient streaming state (isPending, isStreaming) and mark running tools as interrupted
   // These fields are not persisted, so this matches the state after a reload
   // Also filter out status messages - they are transient UI state that shouldn't persist after interruption
   // (similar to isPending/isStreaming, and they're not persisted to disk anyway)
-  // Also remove queued user messages — they are being restored to the input field
+  // Queued user bubbles are dropped ONLY on an explicit stop, where their text
+  // is handed back to the input field below (#616).
   const updatedMessages = session.messages.flatMap(m => {
     if (m.role === 'status') return []  // Remove transient status messages
-    if (m.isQueued) return []           // Remove queued user messages (restored to input)
+    if (isUserInitiated && m.isQueued) return []
     // Mark running tools as interrupted
     if (m.role === 'tool' && m.toolResult === undefined && m.toolStatus !== 'completed' && m.toolStatus !== 'error') {
       return [{ ...m, toolStatus: 'error' as const, toolResult: 'Interrupted', isError: true }]
@@ -310,8 +318,9 @@ export function handleInterrupted(
     ? [...updatedMessages, event.message]
     : updatedMessages
 
-  // Restore queued message text to the input field
-  if (event.queuedMessages && event.queuedMessages.length > 0) {
+  // Restore queued message text to the input field — user-initiated stops only.
+  // A silent redirect keeps the bubble in chat instead (#616).
+  if (isUserInitiated && event.queuedMessages && event.queuedMessages.length > 0) {
     effects.push({
       type: 'restore_input',
       text: event.queuedMessages.join('\n\n'),

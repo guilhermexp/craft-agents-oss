@@ -22,7 +22,7 @@ import {
   StyledDropdownMenuSubTrigger,
   DropdownMenuSub,
 } from '@/components/ui/styled-dropdown'
-import type { SessionStatusId, SessionStatus } from '@/config/session-status-config'
+import type { SessionStatusId, ResolvedSessionStatus } from '@/config/session-status-config'
 import type { LabelConfig } from '@craft-agent/shared/labels'
 import { LabelMenuItems, StatusMenuItems } from './SessionMenuParts'
 
@@ -37,7 +37,7 @@ export interface MultiSelectPanelProps {
   /** Entity type used to resolve localized selection copy (default: "session") */
   entityType?: MultiSelectEntityType
   /** Available todo states */
-  sessionStatuses?: SessionStatus[]
+  sessionStatuses?: ResolvedSessionStatus[]
   /** Active status if all selected share the same state */
   activeStatusId?: SessionStatusId | null
   /** Callback when setting status for all selected */

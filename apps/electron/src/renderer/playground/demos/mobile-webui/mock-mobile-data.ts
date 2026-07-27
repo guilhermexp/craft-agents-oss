@@ -12,7 +12,7 @@ import type { LabelConfig } from '@craft-agent/shared/labels'
 import type { LlmConnectionWithStatus } from '@config/llm-connections'
 import type { LoadedSource, LoadedSkill, Session, Workspace } from '../../../../shared/types'
 import type { SessionMeta } from '@/atoms/sessions'
-import type { SessionStatus } from '@/config/session-status-config'
+import type { ResolvedSessionStatus } from '@/config/session-status-config'
 import * as React from 'react'
 import { Circle } from 'lucide-react'
 
@@ -38,7 +38,7 @@ export const MOCK_LABELS: LabelConfig[] = [
   { id: 'design', name: 'Design', color: { light: '#8B5CF6', dark: '#A78BFA' } },
 ]
 
-export const MOCK_SESSION_STATUSES: SessionStatus[] = [
+export const MOCK_SESSION_STATUSES: ResolvedSessionStatus[] = [
   {
     id: 'todo',
     label: 'Todo',

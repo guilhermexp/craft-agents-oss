@@ -52,7 +52,6 @@ function makeFakeAdapter(): FakeAdapter {
       maxButtons: 10,
       maxMessageLength: 4096,
       markdown: 'v2' as const,
-      webhookSupport: false,
     },
     initialize: async () => {},
     destroy: async () => {},
@@ -65,12 +64,12 @@ function makeFakeAdapter(): FakeAdapter {
     },
     sendText: mock(async (_channelId: string, text: string) => {
       sent.push(text)
-      return { platform: 'telegram', channelId: _channelId, messageId: String(sent.length) }
+      return { platform: 'telegram', messagingChannelId: _channelId, messageId: String(sent.length) }
     }),
     editMessage: async () => {},
-    sendButtons: async () => ({ platform: 'telegram' as const, channelId: '', messageId: '0' }),
+    sendButtons: async () => ({ platform: 'telegram' as const, messagingChannelId: '', messageId: '0' }),
     sendTyping: async () => {},
-    sendFile: async () => ({ platform: 'telegram' as const, channelId: '', messageId: '0' }),
+    sendFile: async () => ({ platform: 'telegram' as const, messagingChannelId: '', messageId: '0' }),
   } as unknown as FakeAdapter
   ;(adapter as { sent: string[] }).sent = sent
   ;(adapter as { fireButton: (press: ButtonPress) => Promise<void> }).fireButton = (press) =>
@@ -117,7 +116,7 @@ async function makeHarness(args: { workspaceConfig: MessagingConfig }): Promise<
 function buildPress(overrides: Partial<ButtonPress> = {}): ButtonPress {
   return {
     platform: 'telegram',
-    channelId: 'chat-1',
+    messagingChannelId: 'chat-1',
     messageId: '1',
     senderId: 'sender-A',
     buttonId: 'bind:sess-A',
@@ -216,7 +215,7 @@ describe('MessagingGateway button-press access gate', () => {
     await h.adapter.fireButton(
       buildPress({
         buttonId: 'perm:allow:request-1',
-        channelId: 'chat-1',
+        messagingChannelId: 'chat-1',
         senderId: 'bob',
       }),
     )
@@ -249,7 +248,7 @@ describe('MessagingGateway button-press access gate', () => {
     await h.adapter.fireButton(
       buildPress({
         buttonId: 'perm:allow:request-1',
-        channelId: 'chat-1',
+        messagingChannelId: 'chat-1',
         senderId: 'alice',
       }),
     )
@@ -293,7 +292,7 @@ describe('MessagingGateway button-press access gate', () => {
     await h.adapter.fireButton(
       buildPress({
         buttonId: 'perm:allow:request-1',
-        channelId: 'chat-1',
+        messagingChannelId: 'chat-1',
         senderId: 'bob',
       }),
     )

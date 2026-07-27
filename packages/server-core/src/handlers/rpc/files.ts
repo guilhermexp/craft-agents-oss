@@ -98,21 +98,6 @@ async function buildWorkspaceTreeEntries(dirPath: string): Promise<{ entries: Se
   }
 }
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.file.READ,
-  RPC_NAMESPACES.file.READ_DATA_URL,
-  RPC_NAMESPACES.file.READ_PREVIEW_DATA_URL,
-  RPC_NAMESPACES.file.READ_BINARY,
-  RPC_NAMESPACES.file.OPEN_DIALOG,
-  RPC_NAMESPACES.file.READ_ATTACHMENT,
-  RPC_NAMESPACES.file.READ_USER_ATTACHMENT,
-  RPC_NAMESPACES.file.STORE_ATTACHMENT,
-  RPC_NAMESPACES.file.GENERATE_THUMBNAIL,
-  RPC_NAMESPACES.fs.SEARCH,
-  RPC_NAMESPACES.fs.LIST_DIRECTORY,
-  RPC_NAMESPACES.fs.LIST_TREE,
-] as const
-
 export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): void {
   // Read a file (with path validation to prevent traversal attacks)
   server.handle(RPC_NAMESPACES.file.READ, async (ctx, path: string) => {

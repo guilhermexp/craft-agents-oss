@@ -27,11 +27,18 @@ import type {
 import { MessagingGateway } from './gateway'
 import { ConfigStore } from './config-store'
 import { PairingCodeManager } from './pairing'
-import { TelegramAdapter } from './adapters/telegram/index'
+import { TelegramAdapter, telegramCredentialCodec } from './adapters/telegram/index'
 import { WhatsAppAdapter, type WhatsAppEvent } from './adapters/whatsapp/index'
-import { LarkAdapter, parseLarkCredentials, type LarkCredentials } from './adapters/lark/index'
+import { LarkAdapter, larkCredentialCodec } from './adapters/lark/index'
 import { MessageAdapterRegistry } from './adapter-registry'
 import { TopicRegistry } from './topic-registry'
+import {
+  dedupeOwners,
+  readPlatformAccessMode,
+  readPlatformOwners,
+  resolveOwnerSeed,
+  resolvePendingPromotion,
+} from './access-control'
 import type { SessionEvent } from './renderer'
 import type { EventSinkFn } from './event-fanout'
 import type {
@@ -101,9 +108,9 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
 
   constructor(private readonly opts: MessagingGatewayRegistryOptions) {
     this.log = (opts.logger ?? consoleLogger).child({ component: 'registry' })
-    this.adapterRegistry.registerFactory('telegram', () => new TelegramAdapter())
+    this.adapterRegistry.registerFactory('telegram', () => new TelegramAdapter(), telegramCredentialCodec)
     this.adapterRegistry.registerFactory('whatsapp', () => new WhatsAppAdapter())
-    this.adapterRegistry.registerFactory('lark', () => new LarkAdapter())
+    this.adapterRegistry.registerFactory('lark', () => new LarkAdapter(), larkCredentialCodec)
 
     // Install the automation→topic binder hook on the SessionManager so
     // executePromptAutomation can route topic-bound sessions without the
@@ -141,66 +148,56 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
       workspaceId,
     })
 
-    if (isPlatformConfigured(config, 'telegram')) {
-      this.setPlatformRuntime(workspaceId, state, 'telegram', {
-        configured: true,
-        connected: false,
-        state: 'connecting',
-        lastError: undefined,
-      })
-      void this.tryConnectTelegram(workspaceId, state).catch((err) => {
-        this.log.error('background Telegram connect failed', {
-          event: 'telegram_connect_failed',
-          workspaceId,
-          error: err,
-        })
-      })
-    }
+    for (const platform of this.adapterRegistry.getRegisteredPlatforms()) {
+      if (!isPlatformConfigured(config, platform)) continue
 
-    if (isPlatformConfigured(config, 'lark')) {
-      this.setPlatformRuntime(workspaceId, state, 'lark', {
-        configured: true,
-        connected: false,
-        state: 'connecting',
-        lastError: undefined,
-      })
-      void this.tryConnectLark(workspaceId, state).catch((err) => {
-        this.log.error('background Lark connect failed', {
-          event: 'lark_connect_failed',
-          workspaceId,
-          error: err,
-        })
-      })
-    }
-
-    if (isPlatformConfigured(config, 'whatsapp')) {
-      if (this.hasWhatsAppAuthState(workspaceId)) {
-        this.setPlatformRuntime(workspaceId, state, 'whatsapp', {
+      if (this.adapterRegistry.getCredentialCodec(platform)) {
+        this.setPlatformRuntime(workspaceId, state, platform, {
           configured: true,
           connected: false,
           state: 'connecting',
           lastError: undefined,
         })
-        void this.startWhatsAppAdapter(workspaceId, state, { persistConfig: false, reason: 'restore' }).catch((err) => {
-          this.log.error('background WhatsApp restore failed', {
-            event: 'whatsapp_restore_failed',
+        void this.connectCredentialAdapter(workspaceId, state, platform).catch((err) => {
+          this.log.error('background connect failed', {
+            event: 'platform_connect_failed',
             workspaceId,
+            platform,
             error: err,
           })
+        })
+        continue
+      }
+
+      if (platform === 'whatsapp') {
+        if (this.hasWhatsAppAuthState(workspaceId)) {
           this.setPlatformRuntime(workspaceId, state, 'whatsapp', {
             configured: true,
             connected: false,
-            state: 'error',
-            lastError: err instanceof Error ? err.message : String(err),
+            state: 'connecting',
+            lastError: undefined,
           })
-        })
-      } else {
-        this.setPlatformRuntime(workspaceId, state, 'whatsapp', {
-          configured: true,
-          connected: false,
-          state: 'reconnect_required',
-          lastError: 'WhatsApp needs to be linked again.',
-        })
+          void this.startWhatsAppAdapter(workspaceId, state, { persistConfig: false, reason: 'restore' }).catch((err) => {
+            this.log.error('background WhatsApp restore failed', {
+              event: 'whatsapp_restore_failed',
+              workspaceId,
+              error: err,
+            })
+            this.setPlatformRuntime(workspaceId, state, 'whatsapp', {
+              configured: true,
+              connected: false,
+              state: 'error',
+              lastError: err instanceof Error ? err.message : String(err),
+            })
+          })
+        } else {
+          this.setPlatformRuntime(workspaceId, state, 'whatsapp', {
+            configured: true,
+            connected: false,
+            state: 'reconnect_required',
+            lastError: 'WhatsApp needs to be linked again.',
+          })
+        }
       }
     }
   }
@@ -232,16 +229,12 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
   // -------------------------------------------------------------------------
 
   getConfig(workspaceId: string): MessagingConfigInfo | null {
-    const state = this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
+    const state = this.ensureWorkspaceState(workspaceId)
     const cfg = state.configStore.get()
     return {
       enabled: cfg.enabled,
       platforms: cfg.platforms as MessagingConfigInfo['platforms'],
-      runtime: {
-        telegram: cloneRuntime(state.runtime.telegram),
-        whatsapp: cloneRuntime(state.runtime.whatsapp),
-        lark: cloneRuntime(state.runtime.lark),
-      },
+      runtime: this.buildRuntimeDto(state),
     }
   }
 
@@ -249,7 +242,7 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
     workspaceId: string,
     partial: Partial<MessagingConfigInfo>,
   ): Promise<void> {
-    const state = this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
+    const state = this.ensureWorkspaceState(workspaceId)
     state.configStore.update({
       enabled: partial.enabled,
       platforms: partial.platforms,
@@ -257,39 +250,29 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
 
     const cfg = state.configStore.get()
     if (!cfg.enabled) {
-      await Promise.all([
-        this.adapterRegistry.unregisterAdapter(workspaceId, state.gateway, 'telegram').catch(() => {}),
-        this.adapterRegistry.unregisterAdapter(workspaceId, state.gateway, 'whatsapp').catch(() => {}),
-        this.adapterRegistry.unregisterAdapter(workspaceId, state.gateway, 'lark').catch(() => {}),
-      ])
+      await Promise.all(
+        this.adapterRegistry
+          .getRegisteredPlatforms()
+          .map((platform) =>
+            this.adapterRegistry.unregisterAdapter(workspaceId, state.gateway, platform).catch(() => {}),
+          ),
+      )
       state.whatsappOffEvent?.()
       state.whatsappOffEvent = undefined
       state.whatsapp = null
-      this.setPlatformRuntime(workspaceId, state, 'telegram', {
-        configured: false,
-        connected: false,
-        state: 'disconnected',
-        identity: undefined,
-        lastError: undefined,
-      })
-      this.setPlatformRuntime(workspaceId, state, 'whatsapp', {
-        configured: false,
-        connected: false,
-        state: 'disconnected',
-        identity: undefined,
-        lastError: undefined,
-      })
-      this.setPlatformRuntime(workspaceId, state, 'lark', {
-        configured: false,
-        connected: false,
-        state: 'disconnected',
-        identity: undefined,
-        lastError: undefined,
-      })
+      for (const platform of this.adapterRegistry.getRegisteredPlatforms()) {
+        this.setPlatformRuntime(workspaceId, state, platform, {
+          configured: false,
+          connected: false,
+          state: 'disconnected',
+          identity: undefined,
+          lastError: undefined,
+        })
+      }
       return
     }
 
-    for (const platform of ['telegram', 'whatsapp', 'lark'] as const) {
+    for (const platform of this.adapterRegistry.getRegisteredPlatforms()) {
       const configured = isPlatformConfigured(cfg, platform)
       if (!configured && state.gateway.getAdapter(platform)) {
         await this.adapterRegistry.unregisterAdapter(workspaceId, state.gateway, platform).catch(() => {})
@@ -347,10 +330,10 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
     sessionId: string,
     platform: string,
   ): { code: string; expiresAt: number; botUsername?: string } {
-    if (!isKnownPlatform(platform)) {
+    if (!this.isKnownPlatform(platform)) {
       throw new Error(`Unknown messaging platform: ${platform}`)
     }
-    const state = this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
+    const state = this.ensureWorkspaceState(workspaceId)
     if (!state.gateway.hasConnectedAdapter(platform)) {
       throw new Error(`${capitalize(platform)} is not connected`)
     }
@@ -379,13 +362,13 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
     workspaceId: string,
     platform: string,
   ): { code: string; expiresAt: number; botUsername?: string } {
-    if (!isKnownPlatform(platform)) {
+    if (!this.isKnownPlatform(platform)) {
       throw new Error(`Unknown messaging platform: ${platform}`)
     }
     if (platform !== 'telegram') {
-      throw new Error('Workspace-supergroup pairing is only supported on Telegram.')
+      throw new Error(`${capitalize(platform)} does not support workspace-supergroup pairing.`)
     }
-    const state = this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
+    const state = this.ensureWorkspaceState(workspaceId)
     if (!state.gateway.hasConnectedAdapter(platform)) {
       throw new Error(`${capitalize(platform)} is not connected`)
     }
@@ -418,9 +401,9 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
     fallbackTitle?: string,
   ): Promise<{ title: string }> {
     if (platform !== 'telegram') {
-      throw new Error('Workspace-supergroup pairing is only supported on Telegram.')
+      throw new Error(`${capitalize(platform)} does not support workspace-supergroup pairing.`)
     }
-    const state = this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
+    const state = this.ensureWorkspaceState(workspaceId)
     const adapter = state.gateway.getAdapter('telegram') as TelegramAdapter | undefined
     if (!adapter) {
       throw new Error('Telegram adapter is not running. Connect the bot first.')
@@ -453,13 +436,13 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
 
     const title = info.title || fallbackTitle || `Group ${chatId}`
 
-    this.patchTelegramConfig(
-      workspaceId,
+    state.configStore.patchPlatform(
+      'telegram',
       {
         enabled: true,
         supergroup: { chatId, title, capturedAt: Date.now() },
       },
-      { ensureMessagingEnabled: true },
+      { ensureEnabled: true },
     )
 
     adapter.setAcceptedSupergroupChatId(chatId)
@@ -489,7 +472,7 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
     // Drop the supergroup field but keep owners / accessMode / enabled
     // intact. JSON.stringify drops `undefined` values, so this is
     // effectively a key-deletion.
-    this.patchTelegramConfig(workspaceId, { supergroup: undefined })
+    state.configStore.patchPlatform('telegram', { supergroup: undefined })
 
     const adapter = state.gateway.getAdapter('telegram') as TelegramAdapter | undefined
     adapter?.setAcceptedSupergroupChatId(undefined)
@@ -501,7 +484,7 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
 
   /** Read accessor for the current paired supergroup, if any. */
   getWorkspaceSupergroup(workspaceId: string): { chatId: string; title: string; capturedAt: number } | null {
-    const state = this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
+    const state = this.ensureWorkspaceState(workspaceId)
     const sg = state.configStore.get().platforms.telegram?.supergroup
     return sg ? { ...sg } : null
   }
@@ -531,7 +514,7 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
       return { ok: false, reason: 'invalid-name' }
     }
 
-    const state = this.workspaces.get(args.workspaceId) ?? this.bootstrapWorkspace(args.workspaceId)
+    const state = this.ensureWorkspaceState(args.workspaceId)
     const supergroup = state.configStore.get().platforms.telegram?.supergroup
     if (!supergroup?.chatId) return { ok: false, reason: 'no-supergroup' }
 
@@ -593,137 +576,82 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
   // IMessagingGatewayRegistry — platform lifecycle
   // -------------------------------------------------------------------------
 
-  async testTelegramToken(
-    token: string,
+  async testCredential(
+    platform: string,
+    credential: string,
   ): Promise<{ success: boolean; botName?: string; botUsername?: string; error?: string }> {
-    if (!token || token.trim().length === 0) {
-      return { success: false, error: 'Token is empty' }
+    if (!this.isKnownPlatform(platform)) {
+      return { success: false, error: `Unknown messaging platform: ${platform}` }
     }
-    try {
-      const info = await fetchTelegramBotInfo(token.trim())
-      if (!info.ok) {
-        return { success: false, error: info.description ?? 'Invalid token' }
-      }
-      return {
-        success: true,
-        botName: info.result.first_name ?? info.result.username ?? 'bot',
-        botUsername: info.result.username,
-      }
-    } catch (err) {
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : 'Network error',
-      }
+    const codec = this.adapterRegistry.getCredentialCodec(platform)
+    if (!codec) {
+      return { success: false, error: `${capitalize(platform)} does not accept a stored credential.` }
     }
-  }
-
-  async saveTelegramToken(workspaceId: string, token: string): Promise<void> {
-    const trimmed = token.trim()
-    if (!trimmed) throw new Error('Token is empty')
-
-    const test = await this.testTelegramToken(trimmed)
-    if (!test.success) throw new Error(test.error ?? 'Invalid token')
-
-    await this.opts.credentialManager.set(
-      {
-        type: 'messaging_bearer',
-        workspaceId,
-        name: 'telegram',
-      },
-      { value: trimmed },
-    )
-
-    const state = this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
-    // Critical: must NOT replace platforms.telegram with `{ enabled: true }`
-    // — that would wipe owners / accessMode / supergroup. Patch only the
-    // `enabled` flag and let everything else survive.
-    this.patchTelegramConfig(workspaceId, { enabled: true }, { ensureMessagingEnabled: true })
-
-    this.setPlatformRuntime(workspaceId, state, 'telegram', {
-      configured: true,
-      connected: false,
-      state: 'connecting',
-      lastError: undefined,
-    })
-
-    await this.tryConnectTelegram(workspaceId, state)
-    await state.gateway.start()
+    return codec.test(credential)
   }
 
   /**
-   * Verify a Lark/Feishu App ID + App Secret pair by exchanging them for a
-   * tenant access token. The Open Platform returns a structured error code
-   * we forward to the user when the credentials are bad — saves a confused
-   * round-trip through "Invalid token" guesses.
+   * Connect a platform for a workspace. Credential-based platforms (Telegram,
+   * Lark) validate + persist the supplied `credential` and initialise the
+   * adapter; interactive platforms (WhatsApp) ignore `credential` and start
+   * their link flow. Single lifecycle entry point so a new platform costs an
+   * adapter directory + a factory registration — nothing here.
    */
-  async testLarkCredentials(
-    creds: LarkCredentials,
-  ): Promise<{ success: boolean; botName?: string; error?: string }> {
-    if (!creds.appId || !creds.appSecret) {
-      return { success: false, error: 'App ID or App Secret is empty' }
+  async connectPlatform(
+    workspaceId: string,
+    platform: string,
+    credential?: string,
+  ): Promise<void> {
+    if (!this.isKnownPlatform(platform)) {
+      throw new Error(`Unknown messaging platform: ${platform}`)
     }
-    try {
-      const url =
-        creds.domain === 'feishu'
-          ? 'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal'
-          : 'https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal'
-      // react-doctor-disable-next-line no-fetch-response-used-without-status-check -- Lark/Feishu token verification: API returns structured body.code inspected by callers (auth semantics)
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ app_id: creds.appId, app_secret: creds.appSecret }),
+    const state = this.ensureWorkspaceState(workspaceId)
+    const codec = this.adapterRegistry.getCredentialCodec(platform)
+
+    if (codec) {
+      if (credential === undefined) {
+        throw new Error(`${capitalize(platform)} requires a credential to connect.`)
+      }
+      const value = codec.normalize(credential)
+      const test = await codec.test(credential)
+      if (!test.success) throw new Error(test.error ?? 'Invalid credentials')
+
+      await this.opts.credentialManager.set(
+        { type: 'messaging_bearer', workspaceId, name: platform },
+        { value },
+      )
+      // Enable the platform without clobbering owners / accessMode / supergroup.
+      state.configStore.patchPlatform(platform, { enabled: true }, { ensureEnabled: true })
+      this.setPlatformRuntime(workspaceId, state, platform, {
+        configured: true,
+        connected: false,
+        state: 'connecting',
+        lastError: undefined,
       })
-      const body = (await res.json()) as { code?: number; msg?: string; tenant_access_token?: string }
-      if (body.code !== 0 || !body.tenant_access_token) {
-        return { success: false, error: body.msg ?? 'Invalid credentials' }
-      }
-      return { success: true }
-    } catch (err) {
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : 'Network error',
-      }
-    }
-  }
-
-  async saveLarkCredentials(workspaceId: string, credentialsJson: string): Promise<void> {
-    const creds = parseLarkCredentials(credentialsJson)
-    if (!creds.appId || !creds.appSecret) throw new Error('App ID or App Secret is empty')
-    if (creds.domain !== 'lark' && creds.domain !== 'feishu') {
-      throw new Error('Domain must be "lark" or "feishu"')
+      await this.connectCredentialAdapter(workspaceId, state, platform)
+      await state.gateway.start()
+      return
     }
 
-    const test = await this.testLarkCredentials(creds)
-    if (!test.success) throw new Error(test.error ?? 'Invalid Lark credentials')
+    if (platform === 'whatsapp') {
+      if (!this.opts.whatsapp) {
+        throw new Error('WhatsApp support is not configured on this server')
+      }
+      this.setPlatformRuntime(workspaceId, state, 'whatsapp', {
+        configured: true,
+        connected: false,
+        state: 'connecting',
+        lastError: undefined,
+      })
+      await this.startWhatsAppAdapter(workspaceId, state, { persistConfig: true, reason: 'user_connect' })
+      return
+    }
 
-    await this.opts.credentialManager.set(
-      {
-        type: 'messaging_bearer',
-        workspaceId,
-        name: 'lark',
-      },
-      { value: JSON.stringify(creds) },
-    )
-
-    const state = this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
-    state.configStore.update({
-      enabled: true,
-      platforms: { lark: { enabled: true, domain: creds.domain } },
-    })
-
-    this.setPlatformRuntime(workspaceId, state, 'lark', {
-      configured: true,
-      connected: false,
-      state: 'connecting',
-      lastError: undefined,
-    })
-
-    await this.tryConnectLark(workspaceId, state)
-    await state.gateway.start()
+    throw new Error(`${capitalize(platform)} has no connect flow.`)
   }
 
   async disconnectPlatform(workspaceId: string, platform: string): Promise<void> {
-    if (!isKnownPlatform(platform)) return
+    if (!this.isKnownPlatform(platform)) return
     const state = this.workspaces.get(workspaceId)
     if (!state) return
 
@@ -772,7 +700,7 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
   }
 
   async forgetPlatform(workspaceId: string, platform: string): Promise<void> {
-    if (!isKnownPlatform(platform)) return
+    if (!this.isKnownPlatform(platform)) return
     await this.disconnectPlatform(workspaceId, platform)
     if (platform === 'whatsapp') {
       const authDir = this.getWhatsAppAuthStateDir(workspaceId)
@@ -799,27 +727,15 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
   // WhatsApp — subprocess lifecycle
   // -------------------------------------------------------------------------
 
-  async startWhatsAppConnect(workspaceId: string): Promise<void> {
-    const waConfig = this.opts.whatsapp
-    if (!waConfig) {
-      throw new Error('WhatsApp support is not configured on this server')
+  async submitPairingInput(workspaceId: string, platform: string, input: string): Promise<void> {
+    if (platform !== 'whatsapp') {
+      throw new Error(`${capitalize(platform)} does not use interactive pairing input.`)
     }
-    const state = this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
-    this.setPlatformRuntime(workspaceId, state, 'whatsapp', {
-      configured: true,
-      connected: false,
-      state: 'connecting',
-      lastError: undefined,
-    })
-    await this.startWhatsAppAdapter(workspaceId, state, { persistConfig: true, reason: 'user_connect' })
-  }
-
-  async submitWhatsAppPhone(workspaceId: string, phoneNumber: string): Promise<void> {
     const state = this.workspaces.get(workspaceId)
     if (!state?.whatsapp) {
-      throw new Error('WhatsApp not started — call startWhatsAppConnect first')
+      throw new Error('WhatsApp not started — connect it first')
     }
-    const cleaned = phoneNumber.replace(/[^\d]/g, '')
+    const cleaned = input.replace(/[^\d]/g, '')
     if (cleaned.length < 8) throw new Error('Phone number looks too short')
     await state.whatsapp.requestPairingCode(cleaned)
   }
@@ -872,10 +788,7 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
     state.whatsappOffEvent = unsubscribeWhatsApp
 
     if (options.persistConfig) {
-      state.configStore.update({
-        enabled: true,
-        platforms: { whatsapp: { enabled: true, selfChatMode } },
-      })
+      state.configStore.patchPlatform('whatsapp', { enabled: true, selfChatMode }, { ensureEnabled: true })
     }
     await state.gateway.start()
     this.log.info('WhatsApp adapter started', {
@@ -1006,7 +919,7 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
           return { kind: 'session', workspaceId: entry.workspaceId, sessionId: entry.sessionId }
         },
         bindWorkspaceSupergroup: async ({ platform, chatId, fallbackTitle }) => {
-          if (!isKnownPlatform(platform)) {
+          if (!this.isKnownPlatform(platform)) {
             throw new Error(`Unknown platform for supergroup pairing: ${platform}`)
           }
           return this.bindWorkspaceSupergroup(workspaceId, platform, chatId, fallbackTitle)
@@ -1031,160 +944,106 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
       topicRegistry,
       botUsernames: {},
       whatsapp: null,
-      runtime: {
-        telegram: createRuntime('telegram', isPlatformConfigured(cfg, 'telegram')),
-        whatsapp: createRuntime('whatsapp', isPlatformConfigured(cfg, 'whatsapp')),
-        lark: createRuntime('lark', isPlatformConfigured(cfg, 'lark')),
-      },
+      runtime: this.buildRuntimeRecord(cfg),
     }
     this.workspaces.set(workspaceId, state)
     return state
   }
 
-  private async tryConnectLark(workspaceId: string, state: WorkspaceState): Promise<void> {
+  /**
+   * Connect a credential-based adapter (Telegram, Lark) from its stored
+   * credential: validate the stored value, initialise the adapter, capture its
+   * identity, and publish runtime status. Shared by the restore path
+   * (initializeWorkspace) and the connect path (connectPlatform). Adapter-
+   * specific details (Lark's JSON shape, Telegram's supergroup, per-platform
+   * identity) live in the codec + adapter, not here.
+   */
+  private async connectCredentialAdapter(
+    workspaceId: string,
+    state: WorkspaceState,
+    platform: PlatformType,
+  ): Promise<void> {
     const cred = await this.opts.credentialManager
-      .get({ type: 'messaging_bearer', workspaceId, name: 'lark' })
+      .get({ type: 'messaging_bearer', workspaceId, name: platform })
       .catch(() => null)
 
     if (!cred?.value) {
-      this.setPlatformRuntime(workspaceId, state, 'lark', {
+      this.setPlatformRuntime(workspaceId, state, platform, {
         configured: true,
         connected: false,
         state: 'error',
-        lastError: 'Lark credentials are missing.',
+        lastError: `${capitalize(platform)} credentials are missing.`,
       })
       return
     }
 
-    let creds: LarkCredentials
+    // Let the adapter's codec reject a structurally-broken stored credential
+    // (e.g. malformed Lark JSON) before we try to connect.
     try {
-      creds = parseLarkCredentials(cred.value)
+      this.adapterRegistry.getCredentialCodec(platform)?.normalize(cred.value)
     } catch (err) {
-      this.setPlatformRuntime(workspaceId, state, 'lark', {
+      this.setPlatformRuntime(workspaceId, state, platform, {
         configured: true,
         connected: false,
         state: 'error',
-        lastError: err instanceof Error ? err.message : 'Lark credentials are malformed',
+        lastError: err instanceof Error ? err.message : `${capitalize(platform)} credentials are malformed`,
       })
       return
     }
 
-    await this.adapterRegistry.unregisterAdapter(workspaceId, state.gateway, 'lark').catch((err) => {
-      this.log.warn('unregisterAdapter(lark) failed (non-fatal)', {
-        event: 'lark_unregister_failed',
+    await this.adapterRegistry.unregisterAdapter(workspaceId, state.gateway, platform).catch((err) => {
+      this.log.warn('unregisterAdapter failed (non-fatal)', {
+        event: 'adapter_unregister_failed',
         workspaceId,
+        platform,
         error: err,
       })
     })
 
     try {
+      const supergroupChatId =
+        platform === 'telegram'
+          ? state.configStore.get().platforms.telegram?.supergroup?.chatId
+          : undefined
       const adapter = await this.adapterRegistry.initializeAdapter({
         workspaceId,
         gateway: state.gateway,
-        platform: 'lark',
-        replace: true,
-        config: {
-          token: cred.value,
-          logger: this.log.child({
-            component: 'lark-adapter',
-            workspaceId,
-            platform: 'lark',
-          }),
-        },
-      }) as LarkAdapter
-
-      try {
-        const info = await adapter.getBotInfo()
-        state.botUsernames.lark = info?.name
-      } catch {
-        // non-fatal
-      }
-
-      this.setPlatformRuntime(workspaceId, state, 'lark', {
-        configured: true,
-        connected: true,
-        state: 'connected',
-        identity: state.botUsernames.lark ?? creds.domain,
-        lastError: undefined,
-      })
-    } catch (err) {
-      this.log.error('failed to connect Lark', {
-        event: 'lark_connect_failed',
-        workspaceId,
-        error: err,
-      })
-      this.setPlatformRuntime(workspaceId, state, 'lark', {
-        configured: true,
-        connected: false,
-        state: 'error',
-        lastError: err instanceof Error ? err.message : String(err),
-      })
-      throw err
-    }
-  }
-
-  private async tryConnectTelegram(workspaceId: string, state: WorkspaceState): Promise<void> {
-    const cred = await this.opts.credentialManager
-      .get({ type: 'messaging_bearer', workspaceId, name: 'telegram' })
-      .catch(() => null)
-
-    if (!cred?.value) {
-      this.setPlatformRuntime(workspaceId, state, 'telegram', {
-        configured: true,
-        connected: false,
-        state: 'error',
-        lastError: 'Telegram token is missing.',
-      })
-      return
-    }
-
-    await this.adapterRegistry.unregisterAdapter(workspaceId, state.gateway, 'telegram').catch((err) => {
-      this.log.warn('unregisterAdapter(telegram) failed (non-fatal)', {
-        event: 'telegram_unregister_failed',
-        workspaceId,
-        error: err,
-      })
-    })
-
-    try {
-      const supergroupChatId = state.configStore.get().platforms.telegram?.supergroup?.chatId
-      const adapter = await this.adapterRegistry.initializeAdapter({
-        workspaceId,
-        gateway: state.gateway,
-        platform: 'telegram',
+        platform,
         replace: true,
         config: {
           token: cred.value,
           ...(supergroupChatId ? { acceptedSupergroupChatId: supergroupChatId } : {}),
           logger: this.log.child({
-            component: 'telegram-adapter',
+            component: `${platform}-adapter`,
             workspaceId,
-            platform: 'telegram',
+            platform,
           }),
         },
-      }) as TelegramAdapter
+      })
 
+      let identity: string | undefined
       try {
-        const info = await adapter.getBotInfo()
-        state.botUsernames.telegram = info?.username
+        identity = await adapter.getIdentity?.()
       } catch {
-        // non-fatal
+        // non-fatal: identity is a UI hint, not required to be connected.
       }
+      state.botUsernames[platform] = identity
 
-      this.setPlatformRuntime(workspaceId, state, 'telegram', {
+      this.setPlatformRuntime(workspaceId, state, platform, {
         configured: true,
         connected: true,
         state: 'connected',
-        identity: state.botUsernames.telegram,
+        identity,
         lastError: undefined,
       })
     } catch (err) {
-      this.log.error('failed to connect Telegram', {
-        event: 'telegram_connect_failed',
+      this.log.error('failed to connect platform', {
+        event: 'platform_connect_failed',
         workspaceId,
+        platform,
         error: err,
       })
-      this.setPlatformRuntime(workspaceId, state, 'telegram', {
+      this.setPlatformRuntime(workspaceId, state, platform, {
         configured: true,
         connected: false,
         state: 'error',
@@ -1239,71 +1098,31 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
   // -------------------------------------------------------------------------
 
   /**
-   * Patch the Telegram platform config preserving any fields the caller
-   * doesn't touch. Critical: every Telegram config write MUST go through
-   * this helper — direct `configStore.update({ platforms: { telegram: {...} } })`
-   * silently drops `owners` / `accessMode` / `supergroup` / `enabled` from
-   * the persisted state because `ConfigStore.update` shallow-merges
-   * `platforms` but replaces the per-platform value wholesale.
-   *
-   * `ensureMessagingEnabled` flips the top-level `enabled` flag to true
-   * (used by save-token / connect flows). When false, `enabled` is
-   * preserved as-is.
-   */
-  private patchTelegramConfig(
-    workspaceId: string,
-    patch: Partial<NonNullable<MessagingConfig['platforms']['telegram']>>,
-    options: { ensureMessagingEnabled?: boolean } = {},
-  ): MessagingConfig {
-    const state = this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
-    const cfg = state.configStore.get()
-    const tg = cfg.platforms.telegram ?? { enabled: true }
-    return state.configStore.update({
-      enabled: options.ensureMessagingEnabled ? true : cfg.enabled,
-      platforms: {
-        ...cfg.platforms,
-        telegram: { ...tg, ...patch },
-      },
-    })
-  }
-
-  /**
-   * Append `candidate` to the platform's owners list iff the list is
-   * currently empty. Returns the (possibly unchanged) list. Used by the
-   * gateway's `/pair` flow to bootstrap the first owner.
+   * Seed the first owner for a platform on `/pair` redeem. No-op when the
+   * platform doesn't support access control or an owner already exists.
    */
   private async seedFirstOwner(
     workspaceId: string,
     platform: PlatformType,
     candidate: PlatformOwner,
   ): Promise<PlatformOwner[]> {
-    if (platform !== 'telegram') return []
-    const state = this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
-    const cfg = state.configStore.get()
-    const currentOwners = cfg.platforms.telegram?.owners ?? []
-    if (currentOwners.length > 0) return currentOwners
-
-    const nextOwners: PlatformOwner[] = [candidate]
-    // Workspaces that haven't picked an explicit access mode default
-    // to `owner-only` once an owner exists. Existing 'open' workspaces
-    // are respected (the operator chose to stay public).
-    this.patchTelegramConfig(workspaceId, {
-      accessMode: cfg.platforms.telegram?.accessMode ?? 'owner-only',
-      owners: nextOwners,
-    })
+    if (!this.platformSupportsAccessControl(platform)) return []
+    const state = this.ensureWorkspaceState(workspaceId)
+    const seed = resolveOwnerSeed(state.configStore.get(), platform, candidate)
+    if (!seed.changed) return seed.owners
+    state.configStore.patchPlatform(platform, { accessMode: seed.accessMode, owners: seed.owners })
     this.log.info('seeded first owner', {
       event: 'first_owner_seeded',
       workspaceId,
       platform,
       ownerId: candidate.userId,
     })
-    return nextOwners
+    return seed.owners
   }
 
   getPlatformOwners(workspaceId: string, platform: PlatformType): PlatformOwner[] {
-    if (platform !== 'telegram') return []
-    const state = this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
-    return state.configStore.get().platforms.telegram?.owners ?? []
+    if (!this.platformSupportsAccessControl(platform)) return []
+    return readPlatformOwners(this.ensureWorkspaceState(workspaceId).configStore.get(), platform)
   }
 
   setPlatformOwners(
@@ -1311,19 +1130,18 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
     platform: PlatformType,
     owners: PlatformOwner[],
   ): PlatformOwner[] {
-    if (platform !== 'telegram') {
-      throw new Error('Owner lists are only supported on Telegram in this build.')
+    if (!this.platformSupportsAccessControl(platform)) {
+      throw new Error(`${capitalize(platform)} does not support owner lists.`)
     }
-    const state = this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
-    this.patchTelegramConfig(workspaceId, { owners: dedupeOwners(owners) })
+    const state = this.ensureWorkspaceState(workspaceId)
+    state.configStore.patchPlatform(platform, { owners: dedupeOwners(owners) })
     this.emitBindingChanged(workspaceId)
-    return state.configStore.get().platforms.telegram?.owners ?? []
+    return readPlatformOwners(state.configStore.get(), platform)
   }
 
   getPlatformAccessMode(workspaceId: string, platform: PlatformType): PlatformAccessMode {
-    if (platform !== 'telegram') return 'open'
-    const state = this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
-    return state.configStore.get().platforms.telegram?.accessMode ?? 'open'
+    if (!this.platformSupportsAccessControl(platform)) return 'open'
+    return readPlatformAccessMode(this.ensureWorkspaceState(workspaceId).configStore.get(), platform)
   }
 
   setPlatformAccessMode(
@@ -1331,34 +1149,33 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
     platform: PlatformType,
     mode: PlatformAccessMode,
   ): void {
-    if (platform !== 'telegram') {
-      throw new Error('Access mode is only supported on Telegram in this build.')
+    if (!this.platformSupportsAccessControl(platform)) {
+      throw new Error(`${capitalize(platform)} does not support an access-mode policy.`)
     }
-    this.patchTelegramConfig(workspaceId, { accessMode: mode })
+    const state = this.ensureWorkspaceState(workspaceId)
+    state.configStore.patchPlatform(platform, { accessMode: mode })
 
-    // Lock-down semantics: switching the workspace to `owner-only` must
-    // also close any binding that's still in `open` mode, otherwise the
-    // operator clicks "Lock down", the banner disappears, but legacy
-    // bindings remain public — exactly the false-sense-of-security UX
-    // the feature is supposed to prevent.
+    // Lock-down semantics: switching to `owner-only` must also close any
+    // binding still in `open` mode, otherwise the operator locks down but
+    // legacy bindings stay public — the false-sense-of-security UX this is
+    // meant to prevent.
     if (mode === 'owner-only') {
-      this.migrateOpenBindingsToInherit(workspaceId)
+      this.migrateOpenBindingsToInherit(workspaceId, platform)
     }
 
     this.emitBindingChanged(workspaceId)
   }
 
   /**
-   * Walk all Telegram bindings and flip any with `accessMode === 'open'`
-   * to `inherit` (the safe default). Used when locking down the workspace.
-   * Telegram-only — other platforms don't yet have per-binding access.
+   * Flip any of a platform's bindings with `accessMode === 'open'` to
+   * `'inherit'` (the safe default) when locking the workspace down.
    */
-  private migrateOpenBindingsToInherit(workspaceId: string): void {
+  private migrateOpenBindingsToInherit(workspaceId: string, platform: PlatformType): void {
     const state = this.workspaces.get(workspaceId)
     if (!state) return
     const store = state.gateway.getBindingStore()
     for (const b of store.getAll()) {
-      if (b.platform !== 'telegram') continue
+      if (b.platform !== platform) continue
       if (b.config.accessMode !== 'open') continue
       store.updateBindingConfig(b.id, { accessMode: 'inherit', allowedSenderIds: [] })
     }
@@ -1382,21 +1199,9 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
   }
 
   /**
-   * Allow a pending sender. Behaviour depends on why the sender was
-   * rejected:
-   *
-   * - `'not-owner'` (workspace-level reject) → add to platform `owners`.
-   *   Result: sender can run pre-binding commands and inherits binding
-   *   access for `accessMode === 'inherit'` bindings.
-   * - `'not-on-binding-allowlist'` (binding-level reject) → append to
-   *   that binding's `allowedSenderIds`. Workspace owners list is NOT
-   *   touched — closing the privilege-escalation footgun where a Bob
-   *   denied by a single sensitive binding would have been promoted to
-   *   workspace owner.
-   *
-   * `entryKey` identifies the specific pending row (a sender may have
-   * multiple — one per reason/binding combination). When omitted, the
-   * earliest matching entry for the sender is used.
+   * Allow a pending sender. Delegates the reason-branching decision (owner
+   * promotion vs binding allow-list) to access-control; persists any owner
+   * change and emits the binding-changed event here.
    */
   allowPendingSender(
     workspaceId: string,
@@ -1404,86 +1209,28 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
     userId: string,
     entryKey?: { reason?: PendingSender['reason']; bindingId?: string },
   ): { owners: PlatformOwner[]; bindingId?: string } {
-    if (platform !== 'telegram') {
-      throw new Error('Owner lists are only supported on Telegram in this build.')
+    if (!this.platformSupportsAccessControl(platform)) {
+      throw new Error(`${capitalize(platform)} does not support owner lists.`)
     }
-    const state = this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
-    const pending = state.gateway.getPendingStore().list(platform)
-    const match = pending.find((p) =>
-      p.userId === userId &&
-      (entryKey?.reason === undefined ||
-        (p.reason ?? 'not-owner') === entryKey.reason) &&
-      (entryKey?.bindingId === undefined || p.bindingId === entryKey.bindingId),
-    )
-    if (!match) {
-      throw new Error('Pending sender not found — they may have been dismissed.')
-    }
-
-    const reason = match.reason ?? 'not-owner'
-
-    if (reason === 'not-on-binding-allowlist') {
-      // Append to that specific binding's allow-list. Don't touch owners.
-      const bindingId = match.bindingId
-      if (!bindingId) {
-        throw new Error('Pending entry is binding-scoped but has no bindingId.')
-      }
-      const store = state.gateway.getBindingStore()
-      const binding = store.getAll().find((b) => b.id === bindingId)
-      if (!binding) {
-        // Binding was unbound between reject and Allow. Drop the stale
-        // entry and surface a meaningful error so the operator knows to
-        // re-pair if needed.
-        store // (intentional no-op; keep store reference alive for tooling)
-        state.gateway.getPendingStore().dismiss(platform, userId, {
-          reason: 'not-on-binding-allowlist',
-          bindingId,
-        })
-        throw new Error('Binding no longer exists — pending entry dismissed.')
-      }
-      const next = Array.from(new Set([...binding.config.allowedSenderIds, userId]))
-      store.updateBindingConfig(bindingId, {
-        allowedSenderIds: next,
-        // Defensive: ensure the binding is in allow-list mode after
-        // promotion. Otherwise a binding that was 'inherit' would still
-        // ignore the new allowedSenderIds entry.
-        accessMode: binding.config.accessMode === 'allow-list' ? 'allow-list' : 'allow-list',
-      })
-      state.gateway.getPendingStore().dismiss(platform, userId, {
-        reason: 'not-on-binding-allowlist',
-        bindingId,
-      })
-      this.emitBindingChanged(workspaceId)
-      const owners = state.configStore.get().platforms.telegram?.owners ?? []
-      return { owners, bindingId }
-    }
-
-    // reason === 'not-owner': promote to workspace owner.
-    const cfg = state.configStore.get()
-    const existing = cfg.platforms.telegram?.owners ?? []
-    if (existing.some((o) => o.userId === userId)) {
-      state.gateway.getPendingStore().dismiss(platform, userId)
-      return { owners: existing }
-    }
-    const nextOwners: PlatformOwner[] = [
-      ...existing,
-      {
-        userId: match.userId,
-        ...(match.displayName ? { displayName: match.displayName } : {}),
-        ...(match.username ? { username: match.username } : {}),
-        addedAt: Date.now(),
-      },
-    ]
-    const tg = cfg.platforms.telegram
-    this.patchTelegramConfig(workspaceId, {
-      owners: nextOwners,
-      accessMode: tg?.accessMode ?? 'owner-only',
+    const state = this.ensureWorkspaceState(workspaceId)
+    const result = resolvePendingPromotion({
+      config: state.configStore.get(),
+      platform,
+      userId,
+      entryKey,
+      bindingStore: state.gateway.getBindingStore(),
+      pendingStore: state.gateway.getPendingStore(),
     })
-    // Dismiss every pending row for this sender — they're now an owner,
-    // so any binding-allow-list rejects pending against them have been
-    // superseded by the inherit path.
-    state.gateway.getPendingStore().dismiss(platform, userId)
-    this.emitBindingChanged(workspaceId)
-    return { owners: nextOwners }
+    if (result.ownersToPersist) {
+      state.configStore.patchPlatform(platform, {
+        owners: result.ownersToPersist,
+        accessMode: result.accessModeToPersist,
+      })
+    }
+    if (result.bindingChanged) this.emitBindingChanged(workspaceId)
+    return result.bindingId === undefined
+      ? { owners: result.owners }
+      : { owners: result.owners, bindingId: result.bindingId }
   }
 
   /**
@@ -1536,6 +1283,51 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
   private getWhatsAppAuthStateDir(workspaceId: string): string {
     return join(this.opts.getMessagingDir(workspaceId), 'whatsapp-auth')
   }
+
+  // -------------------------------------------------------------------------
+  // Workspace state access + platform capability lookup
+  // -------------------------------------------------------------------------
+
+  /**
+   * Narrow read accessor: the workspace's live gateway, bootstrapping the
+   * workspace lazily when it doesn't exist yet. Exposes only the gateway
+   * (adapter registration + binding/pending stores) rather than the whole
+   * mutable WorkspaceState — the sole external consumers are tests that
+   * register fake adapters and seed binding/pending rows.
+   */
+  getGateway(workspaceId: string): MessagingGateway {
+    return this.ensureWorkspaceState(workspaceId).gateway
+  }
+
+  /** Return the workspace state, bootstrapping it when it doesn't exist yet. */
+  private ensureWorkspaceState(workspaceId: string): WorkspaceState {
+    return this.workspaces.get(workspaceId) ?? this.bootstrapWorkspace(workspaceId)
+  }
+
+  private isKnownPlatform(platform: string): platform is PlatformType {
+    return this.adapterRegistry.hasFactory(platform as PlatformType)
+  }
+
+  private platformSupportsAccessControl(platform: PlatformType): boolean {
+    return this.adapterRegistry.getStaticCapabilities(platform)?.accessControl === true
+  }
+
+  private buildRuntimeRecord(cfg: MessagingConfig): Record<PlatformType, MessagingPlatformRuntimeInfo> {
+    const runtime = {} as Record<PlatformType, MessagingPlatformRuntimeInfo>
+    for (const platform of this.adapterRegistry.getRegisteredPlatforms()) {
+      runtime[platform] = createRuntime(platform, isPlatformConfigured(cfg, platform))
+    }
+    return runtime
+  }
+
+  private buildRuntimeDto(state: WorkspaceState): MessagingConfigInfo['runtime'] {
+    const dto: MessagingConfigInfo['runtime'] = {}
+    for (const platform of this.adapterRegistry.getRegisteredPlatforms()) {
+      const runtime = state.runtime[platform]
+      if (runtime) dto[platform] = cloneRuntime(runtime)
+    }
+    return dto
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1558,10 +1350,6 @@ function toBindingInfo(b: ChannelBinding): MessagingBindingInfo {
   }
 }
 
-function isKnownPlatform(p: string): p is PlatformType {
-  return p === 'telegram' || p === 'whatsapp' || p === 'lark'
-}
-
 function capitalize(value: string): string {
   return value.length === 0 ? value : value[0]!.toUpperCase() + value.slice(1)
 }
@@ -1573,37 +1361,16 @@ function isPlatformConfigured(
   return Boolean(config.enabled && config.platforms[platform]?.enabled)
 }
 
-function dedupeOwners(owners: PlatformOwner[]): PlatformOwner[] {
-  const map = new Map<string, PlatformOwner>()
-  for (const o of owners) {
-    if (!o?.userId) continue
-    map.set(o.userId, { ...o })
-  }
-  return Array.from(map.values())
-}
-
 function createRuntime(platform: PlatformType, configured: boolean): MessagingPlatformRuntimeInfo {
   return {
     platform,
     configured,
     connected: false,
-    state: configured ? 'disconnected' : 'disconnected',
+    state: 'disconnected',
     updatedAt: Date.now(),
   }
 }
 
 function cloneRuntime(runtime: MessagingPlatformRuntimeInfo): MessagingPlatformRuntimeInfo {
   return { ...runtime }
-}
-
-async function fetchTelegramBotInfo(
-  token: string,
-): Promise<{ ok: boolean; result: { username?: string; first_name?: string }; description?: string }> {
-  // react-doctor-disable-next-line no-fetch-response-used-without-status-check -- Telegram getMe token verification: callers inspect body.ok (auth semantics)
-  const res = await fetch(`https://api.telegram.org/bot${token}/getMe`)
-  return (await res.json()) as {
-    ok: boolean
-    result: { username?: string; first_name?: string }
-    description?: string
-  }
 }

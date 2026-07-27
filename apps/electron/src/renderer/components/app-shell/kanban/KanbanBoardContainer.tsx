@@ -7,7 +7,7 @@ import { useAppShellContext } from '@/context/AppShellContext'
 import { sessionMetaMapAtom, updateSessionMetaAtom, type SessionMeta } from '@/atoms/sessions'
 import { projectsAtom } from '@/atoms/projects'
 import { kanbanProjectFilterAtom, kanbanColumnStatusAtom, kanbanEditorTargetAtom } from '@/atoms/kanban'
-import { useNavigation } from '@/contexts/NavigationContext'
+import { useNavigation } from '@/context/NavigationContext'
 import { useProjectColorTreatment } from '@/hooks/useProjectColorTreatment'
 import { useLabels } from '@/hooks/useLabels'
 import { getSessionTitle } from '@/utils/session'
@@ -15,7 +15,7 @@ import { routes } from '@/lib/navigate'
 import { resolveTaskScopeLabelId } from '@craft-agent/shared/labels'
 import { DEFAULT_MODEL, getModelShortName } from '@config/models'
 import { getDefaultModelsForConnection, type LlmConnectionWithStatus } from '@config/llm-connections'
-import type { SessionStatus } from '@/config/session-status-config'
+import type { ResolvedSessionStatus } from '@/config/session-status-config'
 import type { KanbanColumnDef } from '@craft-agent/shared/projects/types'
 import { KanbanBoard } from './KanbanBoard'
 import { KANBAN_COLUMNS, statusToColumn } from './status-column'
@@ -41,7 +41,7 @@ import type {
  * and that is exactly what the tile's Play button dispatches. `lastMessageAt` can't
  * carry this distinction: the server stamps it at creation time as a sort key.
  */
-function deriveRunState(child: SessionMeta, statusesById: Map<string, SessionStatus>): SubtaskRunState {
+function deriveRunState(child: SessionMeta, statusesById: Map<string, ResolvedSessionStatus>): SubtaskRunState {
   if (statusesById.get(child.sessionStatus ?? '')?.category === 'closed') return 'done'
   // The Conductor marks a failed node 'needs-review' (there is no 'failed' session
   // status), so within a task that reads as a failed subtask on the board. v1 heuristic;
@@ -135,7 +135,7 @@ export function KanbanBoardContainer() {
   const [editorTarget, setEditorTarget] = useAtom(kanbanEditorTargetAtom)
 
   const statusesById = React.useMemo(() => {
-    const map = new Map<string, SessionStatus>()
+    const map = new Map<string, ResolvedSessionStatus>()
     for (const status of sessionStatuses ?? []) map.set(status.id, status)
     return map
   }, [sessionStatuses])

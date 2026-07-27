@@ -28,18 +28,18 @@ export function registerMessagingHandlers(server: RpcServer, deps: HandlerDeps):
   })
 
   server.handle(RPC_NAMESPACES.messaging.TEST_TELEGRAM, async (_ctx, token: string) => {
-    return registry.testTelegramToken(token)
+    return registry.testCredential('telegram', token)
   })
 
   server.handle(RPC_NAMESPACES.messaging.SAVE_TELEGRAM, async (ctx, token: string) => {
     if (!ctx.workspaceId) throw new Error('Missing workspaceId')
-    await registry.saveTelegramToken(ctx.workspaceId, token)
+    await registry.connectPlatform(ctx.workspaceId, 'telegram', token)
     return { success: true }
   })
 
   server.handle(RPC_NAMESPACES.messaging.SAVE_LARK, async (ctx, credentialsJson: string) => {
     if (!ctx.workspaceId) throw new Error('Missing workspaceId')
-    await registry.saveLarkCredentials(ctx.workspaceId, credentialsJson)
+    await registry.connectPlatform(ctx.workspaceId, 'lark', credentialsJson)
     return { success: true }
   })
 
@@ -94,13 +94,13 @@ export function registerMessagingHandlers(server: RpcServer, deps: HandlerDeps):
 
   server.handle(RPC_NAMESPACES.messaging.WA_START_CONNECT, async (ctx) => {
     if (!ctx.workspaceId) throw new Error('Missing workspaceId')
-    await registry.startWhatsAppConnect(ctx.workspaceId)
+    await registry.connectPlatform(ctx.workspaceId, 'whatsapp')
     return { success: true }
   })
 
   server.handle(RPC_NAMESPACES.messaging.WA_SUBMIT_PHONE, async (ctx, phoneNumber: string) => {
     if (!ctx.workspaceId) throw new Error('Missing workspaceId')
-    await registry.submitWhatsAppPhone(ctx.workspaceId, phoneNumber)
+    await registry.submitPairingInput(ctx.workspaceId, 'whatsapp', phoneNumber)
     return { success: true }
   })
 

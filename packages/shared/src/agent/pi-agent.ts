@@ -82,9 +82,10 @@ import {
 // Session tool registry (for executing proxy tool calls)
 import {
   SESSION_BACKEND_TOOL_NAMES,
-  SESSION_TOOL_REGISTRY,
+  executeSessionTool as executeRegistrySessionTool,
   type ToolResult as SessionToolResult,
 } from '@craft-agent/session-tools-core';
+import { FEATURE_FLAGS } from '../feature-flags.ts';
 import { createClaudeContext, type SessionToolContext } from './claude-context.ts';
 import { getPermissionModeDiagnostics } from './mode-manager.ts';
 
@@ -98,19 +99,13 @@ import { join } from 'path';
 import { homedir } from 'os';
 
 // Session storage (plans folder path)
-import { getSessionDataPath, getSessionPath, getSessionPlansPath } from '../sessions/storage.ts';
+import { getSessionPath, getSessionPlansPath } from '../sessions/storage.ts';
 
 // Error typing
 import { parseError, type AgentError } from './errors.ts';
 
-// Centralized PreToolUse pipeline
-import { runPreToolUseChecks, type PreToolUseCheckResult } from './core/pre-tool-use.ts';
-import { getRtkPath } from './core/rtk-detector.ts';
-import type { RtkContext } from './core/rtk-rewrite.ts';
-import { getRtkEnabled, getBrowserToolEnabled } from '../config/storage.ts';
-
-// Workspace slug extraction for skill qualification
-import { extractWorkspaceSlug } from '../utils/workspace.ts';
+// Browser tool gate
+import { getBrowserToolEnabled } from '../config/storage.ts';
 
 // LLM tool types
 import { LLM_QUERY_TIMEOUT_MS, type LLMQueryRequest, type LLMQueryResult } from './llm-tool.ts';
@@ -269,12 +264,6 @@ export class PiAgent extends BaseAgent {
     return this.stderrBuffer.join('');
   }
 
-  // Pending permission requests (used by handlePreToolUseRequest for ask-mode prompting)
-  private pendingPermissions: Map<string, {
-    resolve: (allowed: boolean) => void;
-    toolName: string;
-  }> = new Map();
-
   // Pending tool executions (correlation map for subprocess tool_execute_request -> main process -> tool_execute_response)
   private pendingToolExecutions: Map<string, {
     resolve: (result: { content: string; isError: boolean }) => void;
@@ -393,6 +382,19 @@ export class PiAgent extends BaseAgent {
       (event) => this.eventQueue.enqueue(event),
       () => this.eventQueue.complete(),
     );
+
+    // Pi routes PreToolUse through the shared dispatcher. rerunAfterActivation
+    // is true and onSourceActivated enqueues a source_activated event: the
+    // subprocess protocol can re-drive the turn with a newly-activated source's
+    // tools live, so the call continues instead of asking the user to resend.
+    this.initToolPermissionDispatcher({
+      rerunAfterActivation: true,
+      onSourceActivated: (sourceSlug) => this.eventQueue.enqueue({
+        type: 'source_activated',
+        sourceSlug,
+        originalMessage: this.getCurrentTurnUserMessage() ?? '',
+      }),
+    });
 
     if (!config.isHeadless) {
       this.startConfigWatcher();
@@ -580,6 +582,9 @@ export class PiAgent extends BaseAgent {
       customEndpoint: runtime.customEndpoint,
       customModels: runtime.customModels,
       enableComputerUse: !this.config.isHeadless && process.platform === 'darwin',
+      // Product default stays enabled to preserve current behavior; the server
+      // flag exists as an explicit off-switch for callers that need isolation.
+      enableSubagents: true,
       // Branch params for Pi SDK session fork
       branchFromSdkSessionId: this.config.session?.branchFromSdkSessionId,
       branchFromSessionPath: this.config.session?.branchFromSessionPath,
@@ -660,6 +665,38 @@ export class PiAgent extends BaseAgent {
   }
 
   /**
+   * Map an OAuth token to a provider-tagged Pi credential. Copilot needs the
+   * full OAuth shape — the Pi SDK derives its endpoint from the token's
+   * proxy-ep field and mints fresh Copilot tokens from the GitHub refresh
+   * token; every other provider carries the access token as a bearer api_key.
+   */
+  private piOAuthCredential(
+    piAuthProvider: string,
+    oauth: { accessToken: string; refreshToken?: string; expiresAt?: number },
+  ): {
+    provider: string;
+    credential:
+      | { type: 'api_key'; key: string }
+      | { type: 'oauth'; access: string; refresh: string; expires: number };
+  } {
+    if (piAuthProvider === 'github-copilot' && oauth.refreshToken) {
+      return {
+        provider: piAuthProvider,
+        credential: {
+          type: 'oauth',
+          access: oauth.accessToken,
+          refresh: oauth.refreshToken,
+          expires: oauth.expiresAt ?? 0,
+        },
+      };
+    }
+    return {
+      provider: piAuthProvider,
+      credential: { type: 'api_key', key: oauth.accessToken },
+    };
+  }
+
+  /**
    * Build structured Pi auth from connection config.
    * Returns a provider-aware credential object for the subprocess,
    * or null if no piAuthProvider is configured (falls back to legacy getApiKey).
@@ -683,67 +720,68 @@ export class PiAgent extends BaseAgent {
       const credentialManager = getCredentialManager();
       const slug = this.config.connectionSlug || 'pi';
 
-      if (this.config.authType === 'oauth') {
-        const oauth = await credentialManager.getLlmOAuth(slug);
-        if (oauth?.accessToken) {
-          // Copilot: pass full OAuth credential so the Pi SDK can derive the
-          // correct API endpoint from the Copilot token's proxy-ep field.
-          // The refresh token is the GitHub access token used to obtain fresh
-          // Copilot tokens when they expire (~1 hour).
-          if (piAuthProvider === 'github-copilot' && oauth.refreshToken) {
-            this.debug(`Retrieved Copilot OAuth credential for Pi provider: ${piAuthProvider}`);
-            return {
-              provider: piAuthProvider,
-              credential: {
-                type: 'oauth',
-                access: oauth.accessToken,
-                refresh: oauth.refreshToken,
-                expires: oauth.expiresAt ?? 0,
-              },
-            };
+      const resolved = await credentialManager.resolveLlmCredential(
+        slug,
+        this.config.authType ?? 'api_key',
+        this.config.providerType,
+      );
+      if (!resolved) {
+        // resolveLlmCredential returns null for an OAuth token that is expired
+        // with no refresh token. Returning null here drops the caller
+        // (spawnSubprocess) into the legacy getApiKey() fallback, which
+        // resurrects that same token as a bare `legacyApiKey` WITHOUT the
+        // `provider` field the subprocess needs for piAuthProvider routing.
+        // Preserve the provider by mapping the stored token ourselves (Copilot
+        // is pre-refreshed upstream in spawnSubprocess before we reach here).
+        if ((this.config.authType ?? 'api_key') === 'oauth') {
+          const oauth = await credentialManager.getLlmOAuth(slug);
+          if (oauth?.accessToken) {
+            this.debug(`Preserving provider routing for unrefreshed OAuth: ${piAuthProvider}`);
+            return this.piOAuthCredential(piAuthProvider, oauth);
           }
-          // Other OAuth providers: pass as api_key (bearer token)
-          this.debug(`Retrieved OAuth access token for Pi provider: ${piAuthProvider}`);
-          return {
-            provider: piAuthProvider,
-            credential: { type: 'api_key', key: oauth.accessToken },
-          };
         }
-      } else if (this.config.authType === 'iam_credentials') {
-        // AWS IAM credentials — pass structured fields so the subprocess can
-        // identify the credential type. Actual AWS env var injection happens
-        // at spawn time (see spawnSubprocess) for proper process isolation.
-        const iam = await credentialManager.getLlmIamCredentials(slug);
-        if (iam) {
+        this.debug(`No credentials found for Pi provider: ${piAuthProvider}`);
+        return null;
+      }
+
+      switch (resolved.kind) {
+        case 'oauth':
+          this.debug(`Retrieved OAuth credential for Pi provider: ${piAuthProvider}`);
+          return this.piOAuthCredential(piAuthProvider, {
+            accessToken: resolved.accessToken,
+            refreshToken: resolved.refreshToken,
+            expiresAt: resolved.expiresAt,
+          });
+
+        case 'iam':
           this.debug(`Retrieved IAM credentials for Pi provider: ${piAuthProvider}`);
           return {
             provider: piAuthProvider,
             credential: {
               type: 'iam',
-              accessKeyId: iam.accessKeyId,
-              secretAccessKey: iam.secretAccessKey,
-              region: iam.region,
-              sessionToken: iam.sessionToken,
+              accessKeyId: resolved.accessKeyId,
+              secretAccessKey: resolved.secretAccessKey,
+              region: resolved.region,
+              sessionToken: resolved.sessionToken,
             },
           };
-        }
-      } else {
-        // API key-based connections.
-        // NOTE: authType === 'environment' (e.g. Bedrock with ~/.aws/credentials)
-        // intentionally falls through here, finds no API key, and returns null.
-        // The subprocess inherits process.env which contains the AWS credential chain.
-        const apiKey = await credentialManager.getLlmApiKey(slug);
-        if (apiKey) {
+
+        case 'api_key':
           this.debug(`Retrieved API key credential for Pi provider: ${piAuthProvider}`);
           return {
             provider: piAuthProvider,
-            credential: { type: 'api_key', key: apiKey },
+            credential: { type: 'api_key', key: resolved.value },
           };
-        }
-      }
 
-      this.debug(`No credentials found for Pi provider: ${piAuthProvider}`);
-      return null;
+        // 'environment': the subprocess inherits process.env (the AWS/env
+        // credential chain), so nothing explicit is passed here. 'none' and
+        // 'service_account' are not Pi injection paths.
+        case 'environment':
+        case 'none':
+        case 'service_account':
+          this.debug(`No injectable credential for Pi provider: ${piAuthProvider} (kind=${resolved.kind})`);
+          return null;
+      }
     } catch (error) {
       this.debug(`Failed to retrieve Pi auth: ${error}`);
       return null;
@@ -1251,183 +1289,20 @@ export class PiAgent extends BaseAgent {
       tool_input: input,
     });
 
-    const rootPath = this.config.workspace.rootPath ?? this.workingDirectory;
-    const workspaceSlug = extractWorkspaceSlug(rootPath, this.config.workspace.id);
-    const sessionId = this.config.session?.id || this._sessionId;
-    const plansFolderPath = sessionId
-      ? getSessionPlansPath(rootPath, sessionId)
-      : undefined;
-    const dataFolderPath = sessionId
-      ? getSessionDataPath(rootPath, sessionId)
-      : undefined;
-
-    // Build RTK context fresh per call so toggling the preference takes effect
-    // without restart. `getRtkPath()` is cached per process; only the storage
-    // read happens each time. Reused by the post-activation re-run below.
-    const rtkContext: RtkContext | undefined = getRtkEnabled()
-      ? { enabled: true, path: getRtkPath(), exclude: [] }
-      : undefined;
-
-    const checkResult = runPreToolUseChecks({
-      toolName,
-      input,
-      sessionId,
-      permissionMode: this.permissionManager.getPermissionMode(),
-      workspaceRootPath: rootPath,
-      workspaceId: workspaceSlug,
-      plansFolderPath,
-      dataFolderPath,
-      workingDirectory: this.config.session?.workingDirectory,
-      activeSourceSlugs: Array.from(this.sourceManager.getActiveSlugs()),
-      allSourceSlugs: this.sourceManager.getAllSources().map(s => s.config.slug),
-      hasSourceActivation: !!this.onSourceActivationRequest,
-      permissionManager: this.permissionManager,
-      prerequisiteManager: this.prerequisiteManager,
-      rtkContext,
-      onDebug: (msg) => this.debug(`PreToolUse(sessionId=${sessionId}): ${msg}`),
-    });
-
-    switch (checkResult.type) {
+    const result = await this.toolPermissionDispatcher!.dispatch(toolName, input, requestId);
+    switch (result.type) {
       case 'allow':
+      case 'passthrough':
+        // call_llm / spawn_session are proxy tools handled via
+        // tool_execute_request — allow the subprocess to proceed.
         this.send({ type: 'pre_tool_use_response', requestId, action: 'allow' });
         return;
-
       case 'modify':
-        this.send({ type: 'pre_tool_use_response', requestId, action: 'modify', input: checkResult.input });
+        this.send({ type: 'pre_tool_use_response', requestId, action: 'modify', input: result.input });
         return;
-
-      case 'block': {
-        const diagnostics = getPermissionModeDiagnostics(sessionId);
-        this.debug(`__PERMISSION_BLOCK__${JSON.stringify({
-          sessionId,
-          toolName,
-          effectiveMode: diagnostics.permissionMode,
-          modeVersion: diagnostics.modeVersion,
-          changedBy: diagnostics.lastChangedBy,
-          changedAt: diagnostics.lastChangedAt,
-          reason: checkResult.reason,
-        })}`);
-        this.send({ type: 'pre_tool_use_response', requestId, action: 'block', reason: checkResult.reason });
+      case 'block':
+        this.send({ type: 'pre_tool_use_response', requestId, action: 'block', reason: result.reason });
         return;
-      }
-
-      case 'source_activation_needed': {
-        const { sourceSlug, sourceExists } = checkResult;
-        this.debug(`PreToolUse(sessionId=${sessionId}): Source "${sourceSlug}" not active, attempting activation...`);
-
-        if (this.onSourceActivationRequest) {
-          try {
-            const activated = await this.onSourceActivationRequest(sourceSlug);
-            if (!activated) {
-              const reason = sourceExists
-                ? `Source "${sourceSlug}" is not active. Activate it by @mentioning it in your message or via the source icon at the bottom of the input field.`
-                : `Source "${sourceSlug}" is not available yet. It needs to be created and configured first.`;
-              this.send({ type: 'pre_tool_use_response', requestId, action: 'block', reason });
-              return;
-            }
-            this.debug(`PreToolUse(sessionId=${sessionId}): Source "${sourceSlug}" activated successfully`);
-            this.eventQueue.enqueue({
-              type: 'source_activated' as const,
-              sourceSlug,
-              originalMessage: this.getCurrentTurnUserMessage() ?? '',
-            });
-          } catch (err) {
-            const reason = sourceExists
-              ? `Source "${sourceSlug}" could not be activated: ${err}`
-              : `Source "${sourceSlug}" is not available yet. It needs to be created and configured first.`;
-            this.send({ type: 'pre_tool_use_response', requestId, action: 'block', reason });
-            return;
-          }
-        }
-
-        // Re-run pipeline after activation
-        const postResult = runPreToolUseChecks({
-          toolName,
-          input,
-          sessionId,
-          permissionMode: this.permissionManager.getPermissionMode(),
-          workspaceRootPath: rootPath,
-          workspaceId: workspaceSlug,
-          plansFolderPath,
-          dataFolderPath,
-          workingDirectory: this.config.session?.workingDirectory,
-          activeSourceSlugs: Array.from(this.sourceManager.getActiveSlugs()),
-          allSourceSlugs: this.sourceManager.getAllSources().map(s => s.config.slug),
-          hasSourceActivation: !!this.onSourceActivationRequest,
-          permissionManager: this.permissionManager,
-          prerequisiteManager: this.prerequisiteManager,
-          rtkContext,
-          onDebug: (msg) => this.debug(`PreToolUse(sessionId=${sessionId}): ${msg}`),
-        });
-
-        if (postResult.type === 'modify') {
-          this.send({ type: 'pre_tool_use_response', requestId, action: 'modify', input: postResult.input });
-        } else if (postResult.type === 'block') {
-          this.send({ type: 'pre_tool_use_response', requestId, action: 'block', reason: postResult.reason });
-        } else {
-          this.send({ type: 'pre_tool_use_response', requestId, action: 'allow' });
-        }
-        return;
-      }
-
-      case 'call_llm_intercept':
-      case 'spawn_session_intercept':
-        // These tools are proxy tools handled via tool_execute_request — just allow
-        this.send({ type: 'pre_tool_use_response', requestId, action: 'allow' });
-        return;
-
-      case 'prompt': {
-        if (!this.onPermissionRequest) {
-          // No permission handler — allow
-          if (checkResult.modifiedInput) {
-            this.send({ type: 'pre_tool_use_response', requestId, action: 'modify', input: checkResult.modifiedInput });
-          } else {
-            this.send({ type: 'pre_tool_use_response', requestId, action: 'allow' });
-          }
-          return;
-        }
-
-        const permRequestId = `pi-perm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        this.debug(`PreToolUse(sessionId=${sessionId}): Prompting user for ${toolName} - ${checkResult.description}`);
-
-        // Wait for user response via pendingPermissions
-        const permissionPromise = new Promise<boolean>((resolve) => {
-          this.pendingPermissions.set(permRequestId, {
-            resolve,
-            toolName,
-          });
-        });
-
-        this.onPermissionRequest({
-          requestId: permRequestId,
-          toolName,
-          command: checkResult.command,
-          description: checkResult.description,
-          type: checkResult.promptType,
-          appName: checkResult.appName,
-          reason: checkResult.reason,
-          impact: checkResult.impact,
-          requiresSystemPrompt: checkResult.requiresSystemPrompt,
-          rememberForMinutes: checkResult.rememberForMinutes,
-          commandHash: checkResult.commandHash,
-          approvalTtlSeconds: checkResult.approvalTtlSeconds,
-        });
-
-        const allowed = await permissionPromise;
-        this.pendingPermissions.delete(permRequestId);
-
-        if (!allowed) {
-          this.send({ type: 'pre_tool_use_response', requestId, action: 'block', reason: 'Permission denied by user.' });
-          return;
-        }
-
-        if (checkResult.modifiedInput) {
-          this.send({ type: 'pre_tool_use_response', requestId, action: 'modify', input: checkResult.modifiedInput });
-        } else {
-          this.send({ type: 'pre_tool_use_response', requestId, action: 'allow' });
-        }
-        return;
-      }
     }
   }
 
@@ -1645,19 +1520,15 @@ export class PiAgent extends BaseAgent {
         }
       }
 
-      const def = SESSION_TOOL_REGISTRY.get(toolName);
-      if (!def) {
-        return { content: `Unknown session tool: ${toolName}`, isError: true };
-      }
-      if (!def.handler) {
-        return {
-          content: `Session tool '${toolName}' is backend-executed (${def.executionMode}) but has no PiAgent adapter implementation.`,
-          isError: true,
-        };
-      }
-
       const ctx = this.getSessionToolContext();
-      const result: SessionToolResult = await def.handler(ctx, args);
+      // Route through the shared executor: it resolves the def by name (using the
+      // same filter that exposed the tools), validates input, runs the private
+      // handler, validates output, and throws on unknown/backend tools — the
+      // surrounding try/catch converts a throw into an isError result.
+      const result: SessionToolResult = await executeRegistrySessionTool(toolName, ctx, args, {
+        includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback,
+        includeMemory: FEATURE_FLAGS.memory,
+      });
 
       // Convert ToolResult to subprocess response format
       const text = result.content.map(c => c.text).join('\n');
@@ -2242,22 +2113,6 @@ export class PiAgent extends BaseAgent {
   }
 
   // ============================================================
-  // Permission Handling
-  // ============================================================
-
-  /**
-   * Respond to a pending permission request.
-   * Permission checking now happens in the main process, so this resolves locally.
-   */
-  respondToPermission(requestId: string, allowed: boolean, _alwaysAllow?: boolean): void {
-    const pending = this.pendingPermissions.get(requestId);
-    if (pending) {
-      this.pendingPermissions.delete(requestId);
-      pending.resolve(allowed);
-    }
-  }
-
-  // ============================================================
   // Model Forwarding
   // ============================================================
 
@@ -2346,11 +2201,8 @@ export class PiAgent extends BaseAgent {
     // Fire Stop hook event (fire-and-forget)
     this.emitAutomationEvent('Stop', { hook_event_name: 'Stop' });
 
-    // Deny all pending permissions
-    for (const [, pending] of this.pendingPermissions) {
-      pending.resolve(false);
-    }
-    this.pendingPermissions.clear();
+    // Deny all pending permissions (the dispatcher owns the map).
+    this.toolPermissionDispatcher?.clearPendingPermissions();
     this.clearPendingUserQuestions('the turn was aborted');
 
     // Send abort to subprocess
@@ -2368,11 +2220,8 @@ export class PiAgent extends BaseAgent {
     this.abortReason = reason;
     this._isProcessing = false;
 
-    // Reject all pending permissions
-    for (const [, pending] of this.pendingPermissions) {
-      pending.resolve(false);
-    }
-    this.pendingPermissions.clear();
+    // Reject all pending permissions (the dispatcher owns the map).
+    this.toolPermissionDispatcher?.clearPendingPermissions();
 
     // Reject all pending tool executions
     for (const [, pending] of this.pendingToolExecutions) {

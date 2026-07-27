@@ -6,13 +6,6 @@ import { createPendingFlow } from '@craft-agent/shared/auth'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.oauth.START,
-  RPC_NAMESPACES.oauth.COMPLETE,
-  RPC_NAMESPACES.oauth.CANCEL,
-  RPC_NAMESPACES.oauth.REVOKE,
-] as const
-
 /**
  * Complete an OAuth flow: validate state, exchange code for tokens, store credentials.
  *

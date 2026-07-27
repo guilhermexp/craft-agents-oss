@@ -1,13 +1,14 @@
 /**
  * RemoteBrowserPaneManager unit tests.
  *
- * Verifies wire packaging, host-client gating, and screenshot byte round-trip.
+ * Verifies wire packaging, host-client gating, screenshot byte round-trip, and
+ * that every data-returning method hits the wire (no fabricated sync stubs).
  * Uses a fake RpcServer instead of a real WS pair — we only care about the
- * BrowserCapabilityRequest shape that the bridge produces.
+ * BrowserCapabilityRequest shape the bridge produces.
  */
 
 import { describe, it, expect } from 'bun:test'
-import { RemoteBrowserPaneManager } from '../RemoteBrowserPaneManager'
+import { createRemoteBrowserPaneManager } from '../RemoteBrowserPaneManager'
 import { CLIENT_BROWSER_INVOKE, type BrowserCapabilityRequest } from '../../transport'
 import type { RpcServer } from '../../transport/types'
 
@@ -40,15 +41,14 @@ function createFakeServer(opts?: {
   return { server, calls }
 }
 
+function makeBridge(server: RpcServer, getHostClient: () => string | null = () => 'client-A') {
+  return createRemoteBrowserPaneManager({ sessionId: 'sess-1', workspaceId: 'ws-1', rpcServer: server, getHostClient })
+}
+
 describe('RemoteBrowserPaneManager — wire packaging', () => {
-  it('packages async methods into a BrowserCapabilityRequest with sessionId + workspaceId', async () => {
+  it('packages a method into a BrowserCapabilityRequest with sessionId + workspaceId', async () => {
     const { server, calls } = createFakeServer({ invokeImpl: () => ({ url: 'https://x', title: 't' }) })
-    const bridge = new RemoteBrowserPaneManager({
-      sessionId: 'sess-1',
-      workspaceId: 'ws-1',
-      rpcServer: server,
-      getHostClient: () => 'client-A',
-    })
+    const bridge = makeBridge(server)
     await bridge.navigate('inst-1', 'https://example.com')
 
     expect(calls).toHaveLength(1)
@@ -63,26 +63,25 @@ describe('RemoteBrowserPaneManager — wire packaging', () => {
     expect(req.args).toEqual(['inst-1', 'https://example.com'])
   })
 
-  it('createForSessionAsync awaits the WS round-trip and returns the resolved id', async () => {
+  it('createForSession awaits the WS round-trip and returns the resolved id', async () => {
     const { server } = createFakeServer({ invokeImpl: () => 'browser-7' })
-    const bridge = new RemoteBrowserPaneManager({
-      sessionId: 'sess-1',
-      workspaceId: 'ws-1',
-      rpcServer: server,
-      getHostClient: () => 'client-A',
-    })
-    const id = await bridge.createForSessionAsync('sess-1', { show: true })
+    const bridge = makeBridge(server)
+    const id = await bridge.createForSession('sess-1', { show: true })
     expect(id).toBe('browser-7')
+  })
+
+  it('forwards a method it has no explicit handler for (generic proxy)', async () => {
+    const { server, calls } = createFakeServer({ invokeImpl: () => ({ ok: true, kind: 'selector', elapsedMs: 1, detail: 'x' }) })
+    const bridge = makeBridge(server)
+    await bridge.waitFor('inst-1', { kind: 'selector', value: '#x' })
+    const req = calls[0]!.args[0] as BrowserCapabilityRequest
+    expect(req.method).toBe('waitFor')
+    expect(req.args).toEqual(['inst-1', { kind: 'selector', value: '#x' }])
   })
 
   it('throws BROWSER_NO_CAPABLE_CLIENT when no host client is connected', async () => {
     const { server } = createFakeServer()
-    const bridge = new RemoteBrowserPaneManager({
-      sessionId: 'sess-1',
-      workspaceId: 'ws-1',
-      rpcServer: server,
-      getHostClient: () => null,
-    })
+    const bridge = makeBridge(server, () => null)
 
     let caught: unknown
     try {
@@ -95,12 +94,7 @@ describe('RemoteBrowserPaneManager — wire packaging', () => {
 
   it('throws BROWSER_REMOTE_UPLOAD_NOT_SUPPORTED for uploadFile', async () => {
     const { server, calls } = createFakeServer()
-    const bridge = new RemoteBrowserPaneManager({
-      sessionId: 'sess-1',
-      workspaceId: 'ws-1',
-      rpcServer: server,
-      getHostClient: () => 'client-A',
-    })
+    const bridge = makeBridge(server)
 
     let caught: unknown
     try {
@@ -114,12 +108,7 @@ describe('RemoteBrowserPaneManager — wire packaging', () => {
 
   it('throws CAPABILITY_UNAVAILABLE when host client does not advertise the capability', async () => {
     const { server } = createFakeServer({ capabilityClients: new Set([]) })
-    const bridge = new RemoteBrowserPaneManager({
-      sessionId: 'sess-1',
-      workspaceId: 'ws-1',
-      rpcServer: server,
-      getHostClient: () => 'client-A',  // returns id, but server says they lack the cap
-    })
+    const bridge = makeBridge(server, () => 'client-A')  // returns id, but server says they lack the cap
 
     let caught: unknown
     try {
@@ -137,12 +126,7 @@ describe('RemoteBrowserPaneManager — screenshot wire conversion', () => {
     const { server } = createFakeServer({
       invokeImpl: () => ({ imageBytes: sample, imageFormat: 'png', metadata: { ok: true } }),
     })
-    const bridge = new RemoteBrowserPaneManager({
-      sessionId: 'sess-1',
-      workspaceId: 'ws-1',
-      rpcServer: server,
-      getHostClient: () => 'client-A',
-    })
+    const bridge = makeBridge(server)
 
     const result = await bridge.screenshot('inst-1')
     expect(Buffer.isBuffer(result.imageBuffer)).toBe(true)
@@ -155,12 +139,7 @@ describe('RemoteBrowserPaneManager — screenshot wire conversion', () => {
     const { server } = createFakeServer({
       invokeImpl: () => ({ imageBytes: { data: [9, 8, 7] }, imageFormat: 'jpeg' }),
     })
-    const bridge = new RemoteBrowserPaneManager({
-      sessionId: 'sess-1',
-      workspaceId: 'ws-1',
-      rpcServer: server,
-      getHostClient: () => 'client-A',
-    })
+    const bridge = makeBridge(server)
 
     const result = await bridge.screenshot('inst-1')
     expect(Array.from(result.imageBuffer)).toEqual([9, 8, 7])
@@ -168,25 +147,21 @@ describe('RemoteBrowserPaneManager — screenshot wire conversion', () => {
   })
 })
 
-describe('RemoteBrowserPaneManager — sync stubs', () => {
-  it('listInstances (sync) returns []; listInstancesAsync hits the wire', async () => {
-    const { server, calls } = createFakeServer({ invokeImpl: () => [] })
-    const bridge = new RemoteBrowserPaneManager({
-      sessionId: 'sess-1',
-      workspaceId: 'ws-1',
-      rpcServer: server,
-      getHostClient: () => 'client-A',
-    })
-    expect(bridge.listInstances()).toEqual([])
-    expect(calls).toHaveLength(0)
+describe('RemoteBrowserPaneManager — async transport (no fabricated values)', () => {
+  it('listInstances hits the wire and returns the real result (no sync stub)', async () => {
+    const wire = [{ id: 'i1' }]
+    const { server, calls } = createFakeServer({ invokeImpl: () => wire })
+    const bridge = makeBridge(server)
 
-    await bridge.listInstancesAsync()
+    const result = await bridge.listInstances()
+    expect(result).toEqual(wire as never)
     expect(calls).toHaveLength(1)
     expect((calls[0]!.args[0] as BrowserCapabilityRequest).method).toBe('listInstances')
   })
 
-  it('console/network/resize async twins await the invoke result (sync forms drop it)', async () => {
+  it('getInstance / console / network / resize await the real invoke result', async () => {
     const results: Record<string, unknown> = {
+      getInstance: { ownerType: 'session', ownerSessionId: 'sess-1', isVisible: true, title: 't', currentUrl: 'https://x' },
       getConsoleLogs: [{ level: 'error', message: 'boom', timestamp: 1 }],
       getNetworkLogs: [{ method: 'GET', url: 'https://x', status: 500, ok: false }],
       windowResize: { width: 1024, height: 768 },
@@ -194,18 +169,14 @@ describe('RemoteBrowserPaneManager — sync stubs', () => {
     const { server, calls } = createFakeServer({
       invokeImpl: (call) => results[(call.args[0] as BrowserCapabilityRequest).method],
     })
-    const bridge = new RemoteBrowserPaneManager({
-      sessionId: 'sess-1',
-      workspaceId: 'ws-1',
-      rpcServer: server,
-      getHostClient: () => 'client-A',
-    })
+    const bridge = makeBridge(server)
 
-    expect(await bridge.getConsoleLogsAsync('inst-1', { level: 'error' })).toEqual(results.getConsoleLogs as never)
-    expect(await bridge.getNetworkLogsAsync('inst-1', { status: 'failed' })).toEqual(results.getNetworkLogs as never)
-    expect(await bridge.windowResizeAsync('inst-1', 1024, 768)).toEqual(results.windowResize as { width: number; height: number })
+    expect(await bridge.getInstance('inst-1')).toEqual(results.getInstance as never)
+    expect(await bridge.getConsoleLogs('inst-1', { level: 'error' })).toEqual(results.getConsoleLogs as never)
+    expect(await bridge.getNetworkLogs('inst-1', { status: 'failed' })).toEqual(results.getNetworkLogs as never)
+    expect(await bridge.windowResize('inst-1', 1024, 768)).toEqual(results.windowResize as { width: number; height: number })
 
     const methods = calls.map((c) => (c.args[0] as BrowserCapabilityRequest).method)
-    expect(methods).toEqual(['getConsoleLogs', 'getNetworkLogs', 'windowResize'])
+    expect(methods).toEqual(['getInstance', 'getConsoleLogs', 'getNetworkLogs', 'windowResize'])
   })
 })

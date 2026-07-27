@@ -10,7 +10,7 @@ import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CheckCircle2, XCircle, ShieldAlert, ChevronDown, Copy, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useNavigation } from '@/contexts/NavigationContext'
+import { useNavigation } from '@/context/NavigationContext'
 import { type ExecutionEntry, type ExecutionStatus } from './types'
 import { formatShortRelativeTime } from './utils'
 

@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import type { AgentEvent } from '@craft-agent/shared/agent'
+import type { Workspace } from '@craft-agent/shared/config'
 import { SessionManager, createManagedSession } from './SessionManager.ts'
 
 // Workflow visualization: a launched Workflow surfaces as a background task with
@@ -24,20 +26,20 @@ describe('workflow background-task progress', () => {
 
   function buildSession(id: string) {
     const workspace = { id: 'ws_test', name: 'Test Workspace', rootPath: tmpRoot, createdAt: Date.now() }
-    const managed = createManagedSession({ id, name: 'wf test' }, workspace as never, { messagesLoaded: true })
-    ;(sm as unknown as { sessions: Map<string, unknown> }).sessions.set(id, managed)
+    const managed = createManagedSession({ id, name: 'wf test' }, workspace as Workspace, { messagesLoaded: true })
+    sm.registerManagedSession(managed)
     // Stub sendMessage so the idle completion auto-surface doesn't run the full turn path.
-    ;(sm as unknown as { sendMessage: (...a: unknown[]) => Promise<void> }).sendMessage = async () => {}
+    sm.sendMessage = async () => {}
     return managed
   }
 
   function fire(sessionId: string, event: Record<string, unknown>) {
-    const managed = (sm as unknown as { sessions: Map<string, unknown> }).sessions.get(sessionId)!
-    return (sm as unknown as { processEvent: (m: unknown, e: unknown) => Promise<void> }).processEvent(managed, event)
+    const managed = sm.getManagedSession(sessionId)!
+    return sm.dispatchAgentEvent(managed, event as AgentEvent)
   }
 
   function tasks(sessionId: string) {
-    return (sm as unknown as { listBackgroundTasks: (id: string) => Array<Record<string, unknown>> }).listBackgroundTasks(sessionId)
+    return sm.listBackgroundTasks(sessionId)
   }
 
   it('registers a workflow launch with workflowId and a zeroed agent count', async () => {

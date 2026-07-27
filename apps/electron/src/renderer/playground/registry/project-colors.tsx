@@ -2,7 +2,7 @@ import * as React from 'react'
 import { ChevronRight, Circle, FolderKanban } from 'lucide-react'
 import type { ComponentEntry } from './types'
 import type { SessionMeta } from '@/atoms/sessions'
-import type { SessionStatus } from '@/config/session-status-config'
+import type { ResolvedSessionStatus } from '@/config/session-status-config'
 import type { ContentSearchResult } from '@/hooks/useSessionSearch'
 import { SessionItem } from '@/components/app-shell/SessionItem'
 import { SessionListProvider, type SessionListContextValue } from '@/context/SessionListContext'
@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils'
 // Mock session statuses (parallels the playground's session-list.tsx)
 // ============================================================================
 
-const mockSessionStatuses: SessionStatus[] = [
+const mockSessionStatuses: ResolvedSessionStatus[] = [
   {
     id: 'todo',
     label: 'Todo',

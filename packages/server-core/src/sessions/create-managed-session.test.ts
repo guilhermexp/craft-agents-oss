@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test'
+import type { ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
+import type { Workspace } from '@craft-agent/shared/config'
 import { createManagedSession, createSpawnedSessionOptions } from './SessionManager.ts'
 
 describe('createManagedSession', () => {
@@ -12,8 +14,8 @@ describe('createManagedSession', () => {
   it('normalizes legacy thinkingLevel=think on restore', () => {
     const managed = createManagedSession({
       id: 'session_legacy',
-      thinkingLevel: 'think' as any,
-    }, workspace as any)
+      thinkingLevel: 'think' as ThinkingLevel,
+    }, workspace as Workspace)
 
     expect(managed.thinkingLevel).toBe('medium')
   })
@@ -21,8 +23,8 @@ describe('createManagedSession', () => {
   it('drops invalid thinking levels instead of leaking them into runtime state', () => {
     const managed = createManagedSession({
       id: 'session_invalid',
-      thinkingLevel: 'ultra' as any,
-    }, workspace as any)
+      thinkingLevel: 'ultra' as ThinkingLevel,
+    }, workspace as Workspace)
 
     expect(managed.thinkingLevel).toBeUndefined()
   })

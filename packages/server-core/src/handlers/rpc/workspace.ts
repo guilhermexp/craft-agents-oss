@@ -8,33 +8,6 @@ import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { isValidWorkspaceRootPath } from '../../utils/path-validation'
 
-export const CORE_HANDLED_CHANNELS = [
-  RPC_NAMESPACES.workspaces.GET,
-  RPC_NAMESPACES.workspaces.CREATE,
-  RPC_NAMESPACES.workspaces.CHECK_SLUG,
-  RPC_NAMESPACES.workspaces.UPDATE_REMOTE,
-  RPC_NAMESPACES.window.GET_WORKSPACE,
-  RPC_NAMESPACES.window.GET_MODE,
-  RPC_NAMESPACES.window.SWITCH_WORKSPACE,
-  RPC_NAMESPACES.workspace.READ_IMAGE,
-  RPC_NAMESPACES.workspace.WRITE_IMAGE,
-  RPC_NAMESPACES.theme.GET_APP,
-  RPC_NAMESPACES.theme.SET_APP,
-  RPC_NAMESPACES.theme.GET_PRESETS,
-  RPC_NAMESPACES.theme.LOAD_PRESET,
-  RPC_NAMESPACES.theme.GET_COLOR_THEME,
-  RPC_NAMESPACES.theme.SET_COLOR_THEME,
-  RPC_NAMESPACES.theme.BROADCAST_PREFERENCES,
-  RPC_NAMESPACES.theme.GET_WORKSPACE_COLOR_THEME,
-  RPC_NAMESPACES.theme.SET_WORKSPACE_COLOR_THEME,
-  RPC_NAMESPACES.theme.GET_ALL_WORKSPACE_THEMES,
-  RPC_NAMESPACES.theme.BROADCAST_WORKSPACE_THEME,
-  RPC_NAMESPACES.views.LIST,
-  RPC_NAMESPACES.views.SAVE,
-  RPC_NAMESPACES.toolIcons.GET_MAPPINGS,
-  RPC_NAMESPACES.logo.GET_URL,
-] as const
-
 export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDeps): void {
   const { sessionManager } = deps
   const windowManager = deps.windowManager

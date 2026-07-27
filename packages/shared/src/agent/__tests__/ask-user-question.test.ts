@@ -8,6 +8,7 @@ import { describe, it, expect } from 'bun:test';
 import {
   validateAskUserQuestions,
   buildAskUserQuestionResult,
+  normalizeAskUserQuestionResponse,
   ASK_USER_QUESTION_TIMEOUT_MS,
 } from '../ask-user-question.ts';
 import type { AskUserQuestionResponse } from '@craft-agent/core/types';
@@ -45,6 +46,15 @@ describe('validateAskUserQuestions', () => {
     // Option without a label
     expect(validateAskUserQuestions({ questions: [{ question: 'q', options: [{ description: 'no label' }] }] })).toBeNull();
   });
+
+  it('rejects duplicate question text in the same questionnaire', () => {
+    expect(validateAskUserQuestions({
+      questions: [
+        { question: 'Same question?', header: 'First', options: [{ label: 'A' }] },
+        { question: 'Same question?', header: 'Second', options: [{ label: 'B' }] },
+      ],
+    })).toBeNull();
+  });
 });
 
 describe('buildAskUserQuestionResult', () => {
@@ -62,6 +72,38 @@ describe('buildAskUserQuestionResult', () => {
   it('includes the freeform response when present', () => {
     const result = buildAskUserQuestionResult(questions, { answers: {}, response: 'custom' });
     expect(result.response).toBe('custom');
+  });
+
+  it('preserves a skipped response in the tool result', () => {
+    const result = buildAskUserQuestionResult(questions, { answers: {}, skipped: true });
+    expect(result).toEqual({
+      questions,
+      answers: {},
+      skipped: true,
+    });
+  });
+});
+
+describe('normalizeAskUserQuestionResponse', () => {
+  it('turns null into a skipped response', () => {
+    expect(normalizeAskUserQuestionResponse(null)).toEqual({ answers: {}, skipped: true });
+  });
+
+  it('preserves a valid answered response', () => {
+    expect(normalizeAskUserQuestionResponse({
+      answers: { 'Pick one?': 'A' },
+      response: 'A',
+    })).toEqual({
+      answers: { 'Pick one?': 'A' },
+      response: 'A',
+    });
+  });
+
+  it('preserves an explicit skipped response', () => {
+    expect(normalizeAskUserQuestionResponse({ answers: {}, skipped: true })).toEqual({
+      answers: {},
+      skipped: true,
+    });
   });
 });
 
@@ -82,6 +124,7 @@ describe('BaseAgent AskUserQuestion round-trip', () => {
     const delivered = agent.respondToUserQuestion('tool-1', { answers: { q: 'A' } });
     expect(delivered).toBe(true);
     await expect(pending).resolves.toEqual({ answers: { q: 'A' } });
+    expect(agent.respondToUserQuestion('tool-1', { answers: { q: 'B' } })).toBe(false);
   });
 
   it('returns false when there is no pending question for the id', () => {

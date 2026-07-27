@@ -52,7 +52,7 @@ import {
 } from '@/components/ui/label-menu-utils'
 import { findLabelById } from '@craft-agent/shared/labels'
 import type { LabelConfig } from '@craft-agent/shared/labels'
-import { type SessionStatus, type SessionStatusId } from '@/config/session-status-config'
+import { type ResolvedSessionStatus, type SessionStatusId } from '@/config/session-status-config'
 import type { ChatGroupingMode } from './SessionList'
 
 type FilterMode = 'include' | 'exclude'
@@ -77,7 +77,7 @@ interface CompactSessionListFilterProps {
       | ((prev: Map<string, FilterMode>) => Map<string, FilterMode>),
   ) => void
   pinnedFilters: PinnedFilters
-  effectiveSessionStatuses: SessionStatus[]
+  effectiveSessionStatuses: ResolvedSessionStatus[]
   displayLabelConfigs: LabelConfig[]
   labelConfigs: LabelConfig[]
   chatGroupingMode: ChatGroupingMode
@@ -451,7 +451,7 @@ function PinnedSummary({
   labelConfigs,
 }: {
   pinnedFilters: PinnedFilters
-  effectiveSessionStatuses: SessionStatus[]
+  effectiveSessionStatuses: ResolvedSessionStatus[]
   labelConfigs: LabelConfig[]
 }) {
   const { t } = useTranslation()

@@ -78,7 +78,6 @@ function makeFakeAdapter(): FakeAdapter {
       maxButtons: 10,
       maxMessageLength: 4096,
       markdown: 'v2' as const,
-      webhookSupport: false,
     },
     initialize: async () => {},
     destroy: async () => {},

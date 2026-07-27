@@ -15,7 +15,7 @@ import {
   isActivityGroup,
   type ActivityGroup,
 } from '../turn-utils'
-import type { ActivityItem } from '../TurnCard'
+import type { ActivityItem } from '../turn-card-shared'
 
 // ============================================================================
 // Test Helpers

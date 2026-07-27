@@ -170,7 +170,7 @@ export class MeetingService {
       ? payload.browserInstanceId
       : undefined
     const existingBrowserInstance = requestedBrowserInstanceId
-      ? this.browserPaneManager.getInstance(requestedBrowserInstanceId)
+      ? this.browserPaneManager.getLiveInstance(requestedBrowserInstanceId)
       : undefined
     const browserInstanceId = existingBrowserInstance?.id
       ?? this.browserPaneManager.createInstance(undefined, {
@@ -975,7 +975,7 @@ except Exception as exc:
     let changed = false
     for (const record of state.records.values()) {
       if (!['starting', 'running'].includes(record.status)) continue
-      const instance = this.browserPaneManager.getInstance(record.browserInstanceId)
+      const instance = this.browserPaneManager.getLiveInstance(record.browserInstanceId)
       if (instance) continue
       state.records.set(record.id, {
         ...record,

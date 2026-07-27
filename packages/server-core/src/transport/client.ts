@@ -684,7 +684,7 @@ export class WsRpcClient implements RpcClient {
         id: envelope.id,
         type: 'response',
         rpcNamespace: namespace,
-        error: { code: 'HANDLER_ERROR', message },
+        error: { code, message },
       }
       this.trySendEnvelope(this.ws, response)
     }

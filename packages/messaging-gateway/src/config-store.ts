@@ -13,7 +13,13 @@ import {
   copyFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { DEFAULT_MESSAGING_CONFIG, type MessagingConfig, type MessagingLogger } from './types'
+import {
+  DEFAULT_MESSAGING_CONFIG,
+  type MessagingConfig,
+  type MessagingLogger,
+  type PlatformSettings,
+  type PlatformType,
+} from './types'
 
 const NOOP_LOGGER: MessagingLogger = {
   info: () => {},
@@ -51,6 +57,31 @@ export class ConfigStore {
     this.config = next
     this.save()
     return this.get()
+  }
+
+  /**
+   * Patch one platform's settings, preserving every field the caller doesn't
+   * touch. `update` shallow-merges `platforms` but replaces the per-platform
+   * value wholesale, so a direct `update({ platforms: { telegram: {...} } })`
+   * silently drops the platform's other fields — always go through this helper
+   * for per-platform writes.
+   *
+   * `ensureEnabled` flips the top-level `enabled` flag to true (connect / save
+   * flows); otherwise `enabled` is preserved as-is.
+   */
+  patchPlatform(
+    platform: PlatformType,
+    patch: Partial<PlatformSettings>,
+    options: { ensureEnabled?: boolean } = {},
+  ): MessagingConfig {
+    const current = this.config.platforms[platform] ?? { enabled: true }
+    return this.update({
+      enabled: options.ensureEnabled ? true : this.config.enabled,
+      platforms: {
+        ...this.config.platforms,
+        [platform]: { ...current, ...patch },
+      },
+    })
   }
 
   private migrateLegacy(legacyDir?: string): void {

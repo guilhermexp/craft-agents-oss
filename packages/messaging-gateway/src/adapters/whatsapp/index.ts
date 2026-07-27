@@ -120,7 +120,7 @@ export class WhatsAppAdapter implements PlatformAdapter {
     maxButtons: 0,
     maxMessageLength: 4096,
     markdown: 'whatsapp',
-    webhookSupport: false,
+    accessControl: false,
   }
 
   private proc: ChildProcess | null = null

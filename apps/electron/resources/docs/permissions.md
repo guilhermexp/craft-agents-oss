@@ -213,7 +213,7 @@ These commands are allowed in Explore mode without custom configuration:
 | **GitHub CLI** | `gh pr view/list`, `gh issue view/list`, `gh repo view` |
 | **Package managers** | `npm ls/list/outdated`, `yarn list`, `pip list`, `cargo tree` |
 | **Quality checks (read-only)** | `bun run typecheck`, `bun run typecheck:all`, `bunx tsc --noEmit`, `tsc --noEmit`, `npm run typecheck`, `yarn typecheck`, `pnpm typecheck` |
-| **Browser helper** | `bun run browser-tool --help`, `bun run browser-tool list`, `bun run browser-tool template ...`, `bun run browser-tool parse-url <url>` |
+| **Browser helper** | `bun run browser-tool --help`, `bun run browser-tool parse-url <url>` |
 | **System info** | `pwd`, `whoami`, `env`, `ps`, `uname`, `hostname`, `date`, `echo` |
 | **Text processing** | `awk`/`gawk`/`mawk`/`nawk` (safe forms), `jq`, `yq`, `sort`, `uniq`, `cut`, `column` |
 | **Network diagnostics** | `ping`, `dig`, `nslookup`, `netstat` |

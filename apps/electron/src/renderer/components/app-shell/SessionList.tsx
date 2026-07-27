@@ -21,15 +21,15 @@ import { SessionItem } from "./SessionItem"
 import { SessionListProvider, type SessionListContextValue } from "@/context/SessionListContext"
 import { useSessionSelection, useSessionSelectionStore } from "@/hooks/useSession"
 import { useSessionSearch, type FilterMode } from "@/hooks/useSessionSearch"
-import { useSessionActions } from "@/hooks/useSessionActions"
+import { useSessionActionToasts } from "@/hooks/useSessionActionToasts"
 import { useEntityListInteractions } from "@/hooks/useEntityListInteractions"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useEscapeInterrupt } from "@/context/EscapeInterruptContext"
-import { useNavigation, useNavigationState, routes, isSessionsNavigation } from "@/contexts/NavigationContext"
+import { useNavigation, useNavigationState, routes, isSessionsNavigation } from "@/context/NavigationContext"
 import { useFocusContext } from "@/context/FocusContext"
 import { sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import type { ViewConfig } from "@craft-agent/shared/views"
-import type { SessionStatusId, SessionStatus } from "@/config/session-status-config"
+import type { SessionStatusId, ResolvedSessionStatus } from "@/config/session-status-config"
 import { buildCollapsedGroupsScopeSuffix } from "@/utils/session-list-collapse"
 
 export interface SessionListRow {
@@ -40,7 +40,7 @@ export interface SessionListRow {
 export type ChatGroupingMode = 'date' | 'status' | 'unread' | 'project'
 
 // Stable empty-array defaults to avoid re-creating new references on every render
-const EMPTY_SESSION_STATUSES: SessionStatus[] = []
+const EMPTY_SESSION_STATUSES: ResolvedSessionStatus[] = []
 const EMPTY_LABELS: LabelConfig[] = []
 
 interface SessionListProps {
@@ -72,7 +72,7 @@ interface SessionListProps {
   /** Called when search is closed */
   onSearchClose?: () => void
   /** Dynamic todo states from workspace config */
-  sessionStatuses?: SessionStatus[]
+  sessionStatuses?: ResolvedSessionStatus[]
   /** View evaluator — evaluates a session and returns matching view configs */
   evaluateViews?: (meta: SessionMeta) => ViewConfig[]
   /** Label configs for resolving session label IDs to display info */
@@ -553,7 +553,7 @@ export function SessionList({
     handleArchiveWithToast,
     handleUnarchiveWithToast,
     handleDeleteWithToast,
-  } = useSessionActions({ onFlag, onUnflag, onArchive, onUnarchive, onDelete })
+  } = useSessionActionToasts({ onFlag, onUnflag, onArchive, onUnarchive, onDelete })
 
   // --- Focus zone ---
   const { focusZone } = useFocusContext()

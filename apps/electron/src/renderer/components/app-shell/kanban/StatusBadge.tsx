@@ -1,8 +1,8 @@
 import { cn } from '@/lib/utils'
-import type { SessionStatus } from '@/config/session-status-config'
+import type { ResolvedSessionStatus } from '@/config/session-status-config'
 
 interface StatusBadgeProps {
-  status: SessionStatus
+  status: ResolvedSessionStatus
   /** Pulse the dot to signal live/active work (gated by the board's live-pulse pref). */
   live?: boolean
   className?: string

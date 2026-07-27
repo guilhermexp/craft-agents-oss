@@ -7,21 +7,10 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron'
+import { TOOLBAR_CHANNELS } from '../shared/browser-toolbar-channels'
 
 const CHANNELS = {
-  NAVIGATE: 'browser-toolbar:navigate',
-  GO_BACK: 'browser-toolbar:go-back',
-  GO_FORWARD: 'browser-toolbar:go-forward',
-  RELOAD: 'browser-toolbar:reload',
-  STOP: 'browser-toolbar:stop',
-  MENU_GEOMETRY: 'browser-toolbar:menu-geometry',
-  FORCE_CLOSE_MENU: 'browser-toolbar:force-close-menu',
-  HIDE: 'browser-toolbar:hide',
-  DESTROY: 'browser-toolbar:destroy',
-  STATE_UPDATE: 'browser-toolbar:state-update',
-  THEME_COLOR: 'browser-toolbar:theme-color',
-  REQUEST_PROFILE_MANAGEMENT: 'browser-toolbar:request-profile-management',
-  SWITCH_PROFILE: 'browser-toolbar:switch-profile',
+  ...TOOLBAR_CHANNELS,
   MEETINGS_RESOLVE_WORKSPACE: 'meetings:resolve-workspace',
   MEETINGS_START: 'meetings:start',
   RECORDING_PREPARE: 'meetings:recording:prepare',

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import { createLoggerModuleStub, createLoggerStub } from './logger-module-stub'
 
 const workspaceRootPath = '/tmp/ws-rollback'
 const workspace = {
@@ -21,6 +22,11 @@ function mockedResolvedModel(): string {
 // Partial-mock baseline: import real modules via file paths (avoids recursive mock imports)
 const actualSharedAgentModule = await import('../../../../../packages/shared/src/agent/index.ts')
 const actualSharedAgentBackendModule = await import('../../../../../packages/shared/src/agent/backend/index.ts')
+const actualSharedConfigModule = await import('../../../../../packages/shared/src/config/index.ts')
+const actualSharedWorkspacesModule = await import('../../../../../packages/shared/src/workspaces/index.ts')
+const actualSharedSourcesModule = await import('../../../../../packages/shared/src/sources/index.ts')
+const actualSharedAutomationsModule = await import('../../../../../packages/shared/src/automations/index.ts')
+const actualSharedSessionsModule = await import('../../../../../packages/shared/src/sessions/index.ts')
 
 mock.module('electron', () => ({
   app: {
@@ -44,21 +50,13 @@ mock.module('electron', () => ({
   },
 }))
 
-mock.module('../logger', () => {
-  const stubLog = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
-  return {
-    mainLog: stubLog,
-    sessionLog: stubLog,
-    handlerLog: stubLog,
-    windowLog: stubLog,
-    agentLog: stubLog,
-    searchLog: stubLog,
-    isDebugMode: false,
-    getLogFilePath: () => '/tmp/main.log',
-  }
-})
+mock.module('../logger', () => createLoggerModuleStub({ sessionLog: createLoggerStub() }))
 
 mock.module('@craft-agent/shared/config', () => ({
+  // Partial-mock baseline: keeps every other named export of the barrel linkable.
+  // A purely hand-listed factory breaks static named imports (SyntaxError at link
+  // time) for any export the SUT graph pulls but the list forgot.
+  ...actualSharedConfigModule,
   getWorkspaceByNameOrId: (id: string) => (id === workspace.id ? workspace : null),
   getWorkspaces: () => [workspace],
   loadConfigDefaults: () => ({
@@ -70,7 +68,6 @@ mock.module('@craft-agent/shared/config', () => ({
   getLlmConnection: () => null,
   getDefaultLlmConnection: () => null,
   isHermesProvider: (providerType: string) => providerType === 'hermes',
-  assertRemoteEvaluateAllowed: () => {},
   resolveAuthEnvVars: () => ({}),
   getToolIconsDir: () => '/tmp/tool-icons',
   getMiniModel: () => 'claude-haiku-4-5-20251001',
@@ -113,9 +110,15 @@ mock.module('@craft-agent/shared/config', () => ({
   touchLlmConnection: async () => {},
   isCompatProvider: () => false,
   isAnthropicProvider: () => true,
+  // Hermetic overrides: the real implementations read the developer's
+  // ~/.craft-agent/preferences.json, which would leak host state into the suite.
+  loadPreferences: () => ({}),
+  getPersistedUiLanguage: () => undefined,
+  resolveTitleLanguageName: () => undefined,
 }))
 
 mock.module('@craft-agent/shared/workspaces', () => ({
+  ...actualSharedWorkspacesModule,
   loadWorkspaceConfig: () => ({
     defaults: {
       permissionMode: 'ask',
@@ -177,6 +180,7 @@ mock.module('@craft-agent/shared/agent/backend', () => ({
 }))
 
 mock.module('@craft-agent/shared/sources', () => ({
+  ...actualSharedSourcesModule,
   loadWorkspaceSources: () => [],
   loadAllSources: () => [],
   getSourcesBySlugs: () => [],
@@ -198,6 +202,7 @@ mock.module('@craft-agent/shared/sources', () => ({
 }))
 
 mock.module('@craft-agent/shared/automations', () => ({
+  ...actualSharedAutomationsModule,
   AutomationSystem: class AutomationSystem {
     constructor(..._args: unknown[]) {}
     setInitialSessionMetadata() {}
@@ -212,6 +217,7 @@ mock.module('@craft-agent/shared/automations', () => ({
 }))
 
 mock.module('@craft-agent/shared/sessions', () => ({
+  ...actualSharedSessionsModule,
   listSessions: () => [],
   loadSession: (_root: string, id: string) => storedById.get(id) ?? null,
   saveSession: async (session: any) => {

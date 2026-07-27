@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import type { Session } from '@craft-agent/shared/protocol'
 import { SessionManager } from './SessionManager.ts'
 
 // Regression test for craft-agents-oss#943:
@@ -29,8 +30,8 @@ describe('executePromptAutomation waitForCompletion', () => {
     sm = new SessionManager()
     // Stub the collaborators executePromptAutomation touches. With no labels /
     // mentions / llmConnection in the input, everything else is skipped.
-    ;(sm as unknown as { createSession: unknown }).createSession = async () => ({ id: 'test-sess' })
-    ;(sm as unknown as { sendEvent: unknown }).sendEvent = () => {}
+    sm.createSession = async () => ({ id: 'test-sess' } as Session)
+    sm.setEventSink(() => {})
   })
 
   afterEach(() => {
@@ -40,7 +41,7 @@ describe('executePromptAutomation waitForCompletion', () => {
   it('waitForCompletion:false returns as soon as the session is created (does not await the turn)', async () => {
     let sendCalled = false
     // Never-resolving send simulates a long tool-using turn.
-    ;(sm as unknown as { sendMessage: unknown }).sendMessage = () => {
+    sm.sendMessage = () => {
       sendCalled = true
       return new Promise<never>(() => {})
     }
@@ -57,7 +58,7 @@ describe('executePromptAutomation waitForCompletion', () => {
   })
 
   it('default (waitForCompletion unset) awaits sendMessage and propagates its error', async () => {
-    ;(sm as unknown as { sendMessage: unknown }).sendMessage = () =>
+    sm.sendMessage = () =>
       Promise.reject(new Error('send failed'))
 
     await expect(

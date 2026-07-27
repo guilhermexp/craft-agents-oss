@@ -7,7 +7,7 @@ import {
 import { createClaudeContext } from '../claude-context.ts';
 import { attachSessionSelfManagementBindings } from '../session-self-management-bindings.ts';
 import type { SessionToolContext, SessionInfo } from '@craft-agent/session-tools-core';
-import { SESSION_TOOL_REGISTRY } from '@craft-agent/session-tools-core';
+import { executeSessionTool } from '@craft-agent/session-tools-core';
 
 // Minimal noop callbacks for createClaudeContext
 const noopPlan = () => {};
@@ -267,25 +267,22 @@ describe('Claude/Pi session self-management parity', () => {
   it('absent callbacks → handlers return exact "not available" error messages', async () => {
     const ctx = createBaseContext(sessionId);
     attachSessionSelfManagementBindings(ctx, sessionId);
-    // No callbacks registered — use the canonical registry to invoke handlers (same as runtime)
+    // No callbacks registered — invoke through the public executeSessionTool path
+    // (same input/output validation the runtime uses).
 
-    const labelsHandler = SESSION_TOOL_REGISTRY.get('set_session_labels')!.handler!;
-    const labelsResult = await labelsHandler(ctx, { labels: ['test'] });
+    const labelsResult = await executeSessionTool('set_session_labels', ctx, { labels: ['test'] });
     expect(labelsResult.isError).toBe(true);
     expect(labelsResult.content[0]!.text).toContain('not available in this context');
 
-    const statusHandler = SESSION_TOOL_REGISTRY.get('set_session_status')!.handler!;
-    const statusResult = await statusHandler(ctx, { status: 'done' });
+    const statusResult = await executeSessionTool('set_session_status', ctx, { status: 'done' });
     expect(statusResult.isError).toBe(true);
     expect(statusResult.content[0]!.text).toContain('not available in this context');
 
-    const infoHandler = SESSION_TOOL_REGISTRY.get('get_session_info')!.handler!;
-    const infoResult = await infoHandler(ctx, {});
+    const infoResult = await executeSessionTool('get_session_info', ctx, {});
     expect(infoResult.isError).toBe(true);
     expect(infoResult.content[0]!.text).toContain('not available in this context');
 
-    const listHandler = SESSION_TOOL_REGISTRY.get('list_sessions')!.handler!;
-    const listResult = await listHandler(ctx, {});
+    const listResult = await executeSessionTool('list_sessions', ctx, {});
     expect(listResult.isError).toBe(true);
     expect(listResult.content[0]!.text).toContain('not available in this context');
   });

@@ -5,29 +5,50 @@
  * until required files (like guide.md) have been read.
  */
 import { describe, it, expect, beforeEach, mock } from 'bun:test';
-import { existsSync } from 'node:fs';
+import * as nodeFs from 'node:fs';
 import { homedir } from 'node:os';
-import { resolve, join } from 'node:path';
+import { resolve, join, sep } from 'node:path';
+import * as configStorage from '../../../config/storage.ts';
 import { PrerequisiteManager } from '../prerequisite-manager.ts';
 
-// Mock existsSync to control guide.md existence
-const originalExistsSync = existsSync;
+const WORKSPACE_ROOT = '/test/workspace';
+const BROWSER_DOCS_DIR = resolve(join(homedir(), '.craft-agent', 'docs'));
+
+// Snapshot the real module before mocking so the factory never spreads itself.
+const actualFs = { ...nodeFs };
+const originalExistsSync = actualFs.existsSync;
+
+/**
+ * Only paths under these roots are simulated. A blanket `existsSync` stub also
+ * hides ~/.craft-agent/config-defaults.json, which makes `loadConfigDefaults()`
+ * (reached through the browser rule's `getBrowserToolEnabled()`) throw.
+ */
+const SIMULATED_ROOTS = [WORKSPACE_ROOT, BROWSER_DOCS_DIR];
 let mockExistsPaths: Set<string> = new Set();
 
 mock.module('node:fs', () => ({
-  existsSync: (path: string) => mockExistsPaths.has(path),
-  // Re-export anything else the module needs
-  readFileSync: originalExistsSync,
+  ...actualFs,
+  existsSync: (path: nodeFs.PathLike) => {
+    const target = String(path);
+    if (mockExistsPaths.has(target)) return true;
+    const simulated = SIMULATED_ROOTS.some((root) => target === root || target.startsWith(root + sep));
+    return simulated ? false : originalExistsSync(path);
+  },
 }));
 
-const WORKSPACE_ROOT = '/test/workspace';
+// The browser rule is gated on a stored user preference. Pin it so the suite
+// exercises the matcher rather than the developer's ~/.craft-agent/config.json.
+mock.module('../../../config/storage.ts', () => ({
+  ...configStorage,
+  getBrowserToolEnabled: () => true,
+}));
 
 function guidePath(slug: string): string {
   return resolve(WORKSPACE_ROOT, 'sources', slug, 'guide.md');
 }
 
 function browserDocPath(): string {
-  return resolve(join(homedir(), '.craft-agent', 'docs', 'browser-tools.md'));
+  return join(BROWSER_DOCS_DIR, 'browser-tools.md');
 }
 
 describe('PrerequisiteManager', () => {

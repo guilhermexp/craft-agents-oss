@@ -26,20 +26,7 @@ import type {
   SourceConfig,
   DeveloperFeedback,
 } from '@craft-agent/session-tools-core';
-import {
-  validateConfig,
-  validateSource,
-  validateAllSources,
-  validateStatuses,
-  validatePreferences,
-  validateAll,
-  validateSkill,
-  validateWorkspacePermissions,
-  validateSourcePermissions,
-  validateAllPermissions,
-  validateToolIcons,
-} from '../config/validators.ts';
-import { validateAutomations } from '../automations/validation.ts';
+import { validateConfigArtifact } from '../config/validators.ts';
 import {
   validateMcpConnection as validateMcpConnectionImpl,
   validateStdioMcpConnection as validateStdioMcpConnectionImpl,
@@ -116,21 +103,7 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
 
   // Validators implementation
   const validators: ValidatorInterface = {
-    validateConfig: () => validateConfig(),
-    validateSource: (wsPath: string, slug: string) => validateSource(wsPath, slug),
-    validateAllSources: (wsPath: string) => validateAllSources(wsPath),
-    validateStatuses: (wsPath: string) => validateStatuses(wsPath),
-    validatePreferences: () => validatePreferences(),
-    validatePermissions: (wsPath: string, sourceSlug?: string) => {
-      if (sourceSlug) {
-        return validateSourcePermissions(wsPath, sourceSlug);
-      }
-      return validateAllPermissions(wsPath);
-    },
-    validateAutomations: (wsPath: string) => validateAutomations(wsPath),
-    validateToolIcons: () => validateToolIcons(),
-    validateAll: (wsPath: string) => validateAll(wsPath),
-    validateSkill: (wsPath: string, slug: string) => validateSkill(wsPath, slug),
+    validate: validateConfigArtifact,
   };
 
   // Credential manager adapter

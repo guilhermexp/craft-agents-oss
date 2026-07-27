@@ -79,10 +79,6 @@ export interface StoredConfig {
   setupDeferred?: boolean;
   // Server mode — embedded remote server settings
   serverConfig?: import('./server-config.ts').ServerConfig;
-  // One-shot migration markers. Used by migrations that should run at most
-  // once per user (e.g. restoring a previously-removed model to connection
-  // lists without re-adding it if the user later removes it deliberately).
-  migrationsApplied?: string[];
 }
 
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
@@ -318,7 +314,7 @@ export async function clearAllConfig(): Promise<void> {
 // ============================================
 
 // Preferences
-export { getNotificationsEnabled, setNotificationsEnabled, getActiveHermesProfile, setActiveHermesProfile, getAutoCapitalisation, setAutoCapitalisation, getSendMessageKey, setSendMessageKey, getSpellCheck, setSpellCheck, getKeepAwakeWhileRunning, setKeepAwakeWhileRunning, getRichToolDescriptions, setRichToolDescriptions, getExtendedPromptCache, setExtendedPromptCache, getBrowserToolEnabled, setBrowserToolEnabled, getAllowRemoteEvaluate, setAllowRemoteEvaluate, assertRemoteEvaluateAllowed, getEnable1MContext, setEnable1MContext, getRtkEnabled, setRtkEnabled, getAutoExpandActivities, setAutoExpandActivities, getGitBashPath, setGitBashPath, clearGitBashPath, getConfigPath } from './preference-storage.ts';
+export { getNotificationsEnabled, setNotificationsEnabled, getActiveHermesProfile, setActiveHermesProfile, getAutoCapitalisation, setAutoCapitalisation, getSendMessageKey, setSendMessageKey, getSpellCheck, setSpellCheck, getKeepAwakeWhileRunning, setKeepAwakeWhileRunning, getRichToolDescriptions, setRichToolDescriptions, getExtendedPromptCache, setExtendedPromptCache, getBrowserToolEnabled, setBrowserToolEnabled, getAllowRemoteEvaluate, setAllowRemoteEvaluate, getEnable1MContext, setEnable1MContext, getRtkEnabled, setRtkEnabled, getAutoExpandActivities, setAutoExpandActivities, getGitBashPath, setGitBashPath, clearGitBashPath, getConfigPath } from './preference-storage.ts';
 
 // Network proxy, browser profiles, setup deferred, server config
 export { getNetworkProxySettings, setNetworkProxySettings, getBrowserProfileSettings, getBrowserProfiles, setBrowserProfiles, getLastUsedBrowserProfileId, setLastUsedBrowserProfileId, getBrowserPickerAlwaysAsk, setBrowserPickerAlwaysAsk, isSetupDeferred, setSetupDeferred, getServerConfig, setServerConfig } from './preference-storage.ts';
@@ -371,7 +367,11 @@ export {
   migrateOrphanedDefaultConnections,
   ensureDefaultLlmConnection,
   migrateLegacyCredentials,
+  runConfigMigrations,
+  LLM_CONNECTION_MIGRATIONS,
+  ConfigMigrationError,
 } from './llm-connection-migrations.ts';
+export type { ConfigMigration, MigrationRunResult } from './llm-connection-migrations.ts';
 
 // LLM Connection CRUD
 export {

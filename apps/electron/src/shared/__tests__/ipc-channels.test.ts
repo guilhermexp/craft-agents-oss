@@ -295,6 +295,7 @@ const EXPECTED_CHANNELS: string[] = [
   "sessions:markAllRead",
   "sessions:respondToCredential",
   "sessions:respondToPermission",
+  "sessions:respondToUserQuestion",
   "sessions:searchContent",
   "sessions:sendMessage",
   "sessions:setNotes",

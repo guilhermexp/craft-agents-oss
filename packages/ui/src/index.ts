@@ -64,6 +64,14 @@ export {
   type InlineActivityItem,
 } from './components/chat'
 
+// Turn projection: single-polarity expansion resolution (consumed by renderer hooks)
+export {
+  isIdExpanded,
+  applyExpansionToggle,
+  type ExpansionState,
+  type GroupExpansionController,
+} from './components/chat'
+
 // Markdown
 export {
   Markdown,

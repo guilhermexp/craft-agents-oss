@@ -15,7 +15,7 @@ import type { BackendConfig, PostInitResult, PermissionRequestType, SdkMcpServer
 import { parseError, type AgentError } from './errors.ts';
 import { mapClaudeSdkAssistantError, type ClaudeSdkApiError } from './claude-sdk-error-mapper.ts';
 import { runErrorDiagnostics } from './diagnostics.ts';
-import { loadStoredConfig, loadConfigDefaults, type Workspace, type AuthType, getDefaultLlmConnection, getLlmConnection, getRtkEnabled } from '../config/storage.ts';
+import { loadStoredConfig, loadConfigDefaults, type Workspace, type AuthType, getDefaultLlmConnection, getLlmConnection } from '../config/storage.ts';
 import { getValidClaudeOAuthToken } from '../auth/state.ts';
 import {
   clearClaudeBedrockRoutingEnvVars,
@@ -57,23 +57,14 @@ import {
   PERMISSION_MODE_CONFIG,
   SAFE_MODE_CONFIG,
 } from './mode-manager.ts';
-import { getSessionDataPath, getSessionPlansPath, getSessionPath } from '../sessions/storage.ts';
+import { getSessionPlansPath, getSessionPath } from '../sessions/storage.ts';
 import { getLastApiError } from '../interceptor-common.ts';
-import { extractWorkspaceSlug } from '../utils/workspace.ts';
 import {
   ConfigWatcher,
   createConfigWatcher,
   type ConfigWatcherCallbacks,
 } from '../config/watcher.ts';
-// Centralized PreToolUse pipeline
-import {
-  runPreToolUseChecks,
-  type PreToolUseCheckResult,
-  BUILT_IN_TOOLS,
-} from './core/pre-tool-use.ts';
 import { validateAskUserQuestions, ASK_USER_QUESTION_TIMEOUT_MS } from './ask-user-question.ts';
-import { getRtkPath } from './core/rtk-detector.ts';
-import type { RtkContext } from './core/rtk-rewrite.ts';
 import { type ThinkingLevel, THINKING_TO_EFFORT, getThinkingTokens, DEFAULT_THINKING_LEVEL } from './thinking-levels.ts';
 import { generateConversationSummary } from './conversation-summary.ts';
 import type { LoadedSource } from '../sources/types.ts';
@@ -177,6 +168,21 @@ export function resolveClaudeThinkingOptions(args: {
   };
 }
 
+/**
+ * Encode a dispatcher `block` result into the Claude SDK PreToolUse hook shape.
+ * Real errors (`isError`) get the `[ERROR]` marker via {@link blockWithReason} so
+ * the model reads them as failures. Control-flow blocks — notably the successful
+ * mid-turn source activation that asks the user to resend — return the literal
+ * reason with no marker, because the model must relay a success message, not
+ * report a failure. See the `[ERROR]` contract in tool-matching.ts
+ * (isToolResultError).
+ */
+export function encodeClaudeToolBlock(result: { reason: string; isError?: boolean }) {
+  return result.isError
+    ? blockWithReason(result.reason)
+    : { continue: false, decision: 'block' as const, reason: result.reason };
+}
+
 export interface ClaudeAgentConfig {
   workspace: Workspace;
   session?: Session;           // Current session (primary isolation boundary)
@@ -232,15 +238,6 @@ export interface ClaudeAgentConfig {
   connectionSlug?: string;
   /** Enable 1M context window for current Opus models. Default: true. Set false to use 200K and conserve usage limits. */
   enable1MContext?: boolean;
-}
-
-// Permission request tracking
-interface PendingPermission {
-  resolve: (allowed: boolean, alwaysAllow?: boolean) => void;
-  toolName: string;
-  command: string;
-  baseCommand: string;
-  type?: 'bash' | 'safe_mode';  // Type of permission request
 }
 
 // Dangerous commands that should always require permission (never auto-allow)
@@ -487,7 +484,6 @@ export class ClaudeAgent extends BaseAgent {
   private branchFromSdkCwd: string | null = null;
   private branchFromSdkTurnId: string | null = null;
   private isHeadless: boolean = false;
-  private pendingPermissions: Map<string, PendingPermission> = new Map();
   // Permission whitelists are now managed by this.permissionManager (inherited from BaseAgent)
   // Source state tracking is now managed by this.sourceManager (inherited from BaseAgent)
   // Source MCP connections are managed by this.config.mcpPool (centralized in main process)
@@ -802,6 +798,11 @@ export class ClaudeAgent extends BaseAgent {
     this.isHeadless = config.isHeadless ?? false;
     this.automationSystem = config.automationSystem;
 
+    // Claude routes PreToolUse through the shared dispatcher. rerunAfterActivation
+    // is false: the SDK fixes its tool registry per query, so a source activated
+    // mid-turn only becomes callable after the user resends (STOP strategy).
+    this.initToolPermissionDispatcher({ rerunAfterActivation: false });
+
     // Initialize event adapter for SDK message → AgentEvent conversion
     this.eventAdapter = new ClaudeEventAdapter({
       onDebug: (msg) => this.onDebug?.(msg),
@@ -912,87 +913,7 @@ export class ClaudeAgent extends BaseAgent {
   // Permission command utilities (getBaseCommand, isDangerousCommand, extractDomainFromNetworkCommand)
   // are now available via this.permissionManager
 
-  /**
-   * Respond to a pending permission request.
-   * Uses permissionManager for whitelisting.
-   */
-  respondToPermission(requestId: string, allowed: boolean, alwaysAllow: boolean = false): void {
-    this.debug(`respondToPermission: ${requestId}, allowed=${allowed}, alwaysAllow=${alwaysAllow}, pending=${this.pendingPermissions.has(requestId)}`);
-    const pending = this.pendingPermissions.get(requestId);
-    if (pending) {
-      this.debug(`Resolving permission promise for ${requestId}`);
-
-      // If "always allow" was selected, remember it (with special handling for curl/wget)
-      if (alwaysAllow && allowed) {
-        if (['curl', 'wget'].includes(pending.baseCommand)) {
-          // For curl/wget, whitelist the domain instead of the command
-          const domain = this.permissionManager.extractDomainFromNetworkCommand(pending.command);
-          if (domain) {
-            this.permissionManager.whitelistDomain(domain);
-            this.debug(`Added domain "${domain}" to always-allowed domains`);
-          }
-        } else if (!this.permissionManager.isDangerousCommand(pending.baseCommand)) {
-          this.permissionManager.whitelistCommand(pending.baseCommand);
-          this.debug(`Added "${pending.baseCommand}" to always-allowed commands`);
-        }
-      }
-
-      pending.resolve(allowed);
-      this.pendingPermissions.delete(requestId);
-    } else {
-      this.debug(`No pending permission found for ${requestId}`);
-    }
-  }
-
   // isInSafeMode() is now inherited from BaseAgent
-
-  /**
-   * Check if a tool requires permission and handle it
-   * Returns true if allowed, false if denied
-   */
-  private async checkToolPermission(
-    toolName: string,
-    input: Record<string, unknown>,
-    toolUseId: string
-  ): Promise<{ allowed: boolean; updatedInput: Record<string, unknown> }> {
-    // Bash commands require permission
-    if (toolName === 'Bash') {
-      const command = typeof input.command === 'string' ? input.command : JSON.stringify(input);
-      const baseCommand = command.trim().split(/\s+/)[0] || command;
-      const requestId = `perm-${toolUseId}`;
-
-      // Create a promise that will be resolved when user responds
-      const permissionPromise = new Promise<boolean>((resolve) => {
-        this.pendingPermissions.set(requestId, {
-          resolve,
-          toolName,
-          command,
-          baseCommand,
-        });
-      });
-
-      // Notify application of permission request via callback (not event yield)
-      if (this.onPermissionRequest) {
-        this.onPermissionRequest({
-          requestId,
-          toolName,
-          command,
-          description: `Execute bash command: ${command}`,
-        });
-      } else {
-        // No permission handler - deny by default for safety
-        this.pendingPermissions.delete(requestId);
-        return { allowed: false, updatedInput: input };
-      }
-
-      // Wait for user response
-      const allowed = await permissionPromise;
-      return { allowed, updatedInput: input };
-    }
-
-    // All other tools are auto-approved
-    return { allowed: true, updatedInput: input };
-  }
 
   private async getToken(): Promise<string | null> {
     // Only return token if explicitly provided via config
@@ -1302,6 +1223,7 @@ export class ClaudeAgent extends BaseAgent {
                   answers: answer.answers ?? {},
                 };
                 if (answer.response) updatedInput.response = answer.response;
+                if (answer.skipped) updatedInput.skipped = true;
                 return {
                   continue: true,
                   hookSpecificOutput: {
@@ -1359,192 +1281,56 @@ export class ClaudeAgent extends BaseAgent {
                 }
               }
 
-              // Get current permission mode (single source of truth)
-              const permissionMode = getPermissionMode(sessionId);
-              this.onDebug?.(`PreToolUse hook: ${input.tool_name} (sessionId=${sessionId}, permissionMode=${permissionMode})`);
-
               const toolInput = input.tool_input as Record<string, unknown>;
 
-              // Build RTK context fresh per call so toggling the preference
-              // takes effect without restart. `getRtkPath()` is cached per
-              // process; only the storage read happens each time.
-              const rtkContext: RtkContext | undefined = getRtkEnabled()
-                ? { enabled: true, path: getRtkPath(), exclude: [] }
-                : undefined;
+              // Delegate the whole PreToolUse pipeline to the shared dispatcher;
+              // this backend only encodes the result into the SDK hook shape.
+              const result = await this.toolPermissionDispatcher!.dispatch(
+                input.tool_name,
+                toolInput,
+                `perm-${input.tool_use_id}`,
+              );
 
-              // Run centralized PreToolUse checks
-              const checkResult = runPreToolUseChecks({
-                toolName: input.tool_name,
-                input: toolInput,
-                sessionId,
-                permissionMode,
-                workspaceRootPath: this.workspaceRootPath,
-                workspaceId: extractWorkspaceSlug(this.workspaceRootPath, this.config.workspace.id),
-                plansFolderPath: sessionId ? getSessionPlansPath(this.workspaceRootPath, sessionId) : undefined,
-                dataFolderPath: sessionId ? getSessionDataPath(this.workspaceRootPath, sessionId) : undefined,
-                workingDirectory: this.config.session?.workingDirectory,
-                activeSourceSlugs: Array.from(this.sourceManager.getActiveSlugs()),
-                allSourceSlugs: this.sourceManager.getAllSources().map(s => s.config.slug),
-                hasSourceActivation: !!this.onSourceActivationRequest,
-                permissionManager: this.permissionManager,
-                prerequisiteManager: this.prerequisiteManager,
-                rtkContext,
-                onDebug: (msg) => this.onDebug?.(msg),
-              });
-
-              // Consume pending steer message (if any) — will be injected via additionalContext
+              // Consume any pending steer message — injected as additionalContext
+              // on allow/modify so the agent addresses the user's new message.
               const steerMsg = this.pendingSteerMessage;
               if (steerMsg) {
                 this.pendingSteerMessage = null;
                 this.debug(`Injecting steer via additionalContext on ${input.tool_name}`);
               }
+              const steerContext = steerMsg
+                ? `The user just sent a new message while you were working. Stop what you are currently doing and address their message instead:\n\n${steerMsg}`
+                : undefined;
 
-              // Translate result to SDK format
-              switch (checkResult.type) {
+              switch (result.type) {
                 case 'allow':
-                  if (steerMsg) {
-                    return {
-                      continue: true,
-                      hookSpecificOutput: {
-                        hookEventName: 'PreToolUse' as const,
-                        additionalContext: `The user just sent a new message while you were working. Stop what you are currently doing and address their message instead:\n\n${steerMsg}`,
-                      },
-                    };
-                  }
-                  return { continue: true };
+                  return steerContext
+                    ? {
+                        continue: true,
+                        hookSpecificOutput: {
+                          hookEventName: 'PreToolUse' as const,
+                          additionalContext: steerContext,
+                        },
+                      }
+                    : { continue: true };
 
                 case 'modify':
                   return {
                     continue: true,
                     hookSpecificOutput: {
                       hookEventName: 'PreToolUse' as const,
-                      updatedInput: checkResult.input,
-                      ...(steerMsg ? { additionalContext: `The user just sent a new message while you were working. Stop what you are currently doing and address their message instead:\n\n${steerMsg}` } : {}),
+                      updatedInput: result.input,
+                      ...(steerContext ? { additionalContext: steerContext } : {}),
                     },
                   };
 
-                case 'block': {
-                  const diagnostics = getPermissionModeDiagnostics(sessionId);
-                  this.onDebug?.(`__PERMISSION_BLOCK__${JSON.stringify({
-                    sessionId,
-                    toolName: input.tool_name,
-                    effectiveMode: diagnostics.permissionMode,
-                    modeVersion: diagnostics.modeVersion,
-                    changedBy: diagnostics.lastChangedBy,
-                    changedAt: diagnostics.lastChangedAt,
-                    reason: checkResult.reason,
-                  })}`);
-                  return blockWithReason(checkResult.reason);
-                }
+                case 'block':
+                  return encodeClaudeToolBlock(result);
 
-                case 'source_activation_needed': {
-                  const { sourceSlug, sourceExists } = checkResult;
-                  if (sourceExists && this.onSourceActivationRequest) {
-                    this.onDebug?.(`Source "${sourceSlug}" not active, attempting auto-enable...`);
-                    try {
-                      const activated = await this.onSourceActivationRequest(sourceSlug);
-                      if (activated) {
-                        this.onDebug?.(`Source "${sourceSlug}" auto-enabled successfully, tools available next turn`);
-                        return {
-                          continue: false,
-                          decision: 'block' as const,
-                          reason: `STOP. Source "${sourceSlug}" has been activated successfully. The tools will be available on the next turn. Do NOT try other tool names or approaches. Respond to the user now: tell them the source is now active and ask them to send their request again.`,
-                        };
-                      } else {
-                        return {
-                          continue: false,
-                          decision: 'block' as const,
-                          reason: `Source "${sourceSlug}" could not be activated. It may require authentication. Please check the source status and authenticate if needed.`,
-                        };
-                      }
-                    } catch (error) {
-                      return {
-                        continue: false,
-                        decision: 'block' as const,
-                        reason: `Failed to activate source "${sourceSlug}": ${error instanceof Error ? error.message : 'Unknown error'}`,
-                      };
-                    }
-                  } else if (sourceExists) {
-                    return {
-                      continue: false,
-                      decision: 'block' as const,
-                      reason: `Source "${sourceSlug}" is available but not enabled for this session. Please enable it in the sources panel.`,
-                    };
-                  } else {
-                    return {
-                      continue: false,
-                      decision: 'block' as const,
-                      reason: `Source "${sourceSlug}" could not be connected. It may need re-authentication, or the server may be unreachable. Check the source in the sidebar for details.`,
-                    };
-                  }
-                }
-
-                case 'call_llm_intercept':
-                case 'spawn_session_intercept':
-                  // Claude's session tools run in-process via SDK — just allow
+                case 'passthrough':
+                  // Claude's session tools (call_llm / spawn_session) run
+                  // in-process via the SDK — nothing to intercept, just allow.
                   return { continue: true };
-
-                case 'prompt': {
-                  const requestId = `perm-${input.tool_use_id}`;
-                  const command = checkResult.command || '';
-                  const baseCommand = this.permissionManager.getBaseCommand(command);
-
-                  debug(`[PreToolUse] Requesting permission for ${input.tool_name}: ${command}`);
-
-                  const permissionPromise = new Promise<boolean>((resolve) => {
-                    this.pendingPermissions.set(requestId, {
-                      resolve,
-                      toolName: input.tool_name,
-                      command,
-                      baseCommand,
-                    });
-                  });
-
-                  if (this.onPermissionRequest) {
-                    this.onPermissionRequest({
-                      requestId,
-                      toolName: input.tool_name,
-                      command,
-                      description: checkResult.description,
-                      type: checkResult.promptType,
-                      appName: checkResult.appName,
-                      reason: checkResult.reason,
-                      impact: checkResult.impact,
-                      requiresSystemPrompt: checkResult.requiresSystemPrompt,
-                      rememberForMinutes: checkResult.rememberForMinutes,
-                      commandHash: checkResult.commandHash,
-                      approvalTtlSeconds: checkResult.approvalTtlSeconds,
-                    });
-                  } else {
-                    this.pendingPermissions.delete(requestId);
-                    return {
-                      continue: false,
-                      decision: 'block' as const,
-                      reason: 'No permission handler available',
-                    };
-                  }
-
-                  const allowed = await permissionPromise;
-                  if (!allowed) {
-                    return {
-                      continue: false,
-                      decision: 'block' as const,
-                      reason: 'User denied permission',
-                    };
-                  }
-
-                  // User approved — return with modified input if transforms were applied
-                  if (checkResult.modifiedInput) {
-                    return {
-                      continue: true,
-                      hookSpecificOutput: {
-                        hookEventName: 'PreToolUse' as const,
-                        updatedInput: checkResult.modifiedInput,
-                      },
-                    };
-                  }
-                  return { continue: true };
-                }
               }
             }],
           }],
@@ -2848,6 +2634,10 @@ This is a branched conversation. All prior messages in this conversation are par
       this.currentQueryAbortController = null;
     }
     this.currentQuery = null;
+    // Resolve any parked permission prompts through the shared cleanup path so
+    // aborting a turn never leaves a pending entry (and its dispatch() promise)
+    // dangling. Mirrors PiAgent.forceAbort; abort()/close() route through here.
+    this.toolPermissionDispatcher?.clearPendingPermissions();
     this.clearPendingUserQuestions('the turn was aborted');
   }
 
@@ -2963,7 +2753,7 @@ This is a branched conversation. All prior messages in this conversation are par
     // WS2: tear down the persistent streaming-input query (if any) so no
     // subprocess/background sub-agents leak past the agent's lifetime.
     this.teardownPersistentQuery('destroy');
-    this.pendingPermissions.clear();
+    this.toolPermissionDispatcher?.clearPendingPermissions();
     this.clearPendingUserQuestions('the session ended');
 
     // Clear pinned system prompt state
@@ -3188,6 +2978,27 @@ This is a branched conversation. All prior messages in this conversation are par
   // queryLlm — Agent-native LLM query for call_llm tool (OAuth path)
   // ============================================================
 
+  /**
+   * Map the v1 `call_llm` thinking contract (a boolean + token budget) onto the
+   * Claude SDK options for {@link queryLlm}. Honoring, not dropping: extended
+   * thinking is incompatible with structured output and unsupported by non-Claude
+   * models, so those cases degrade with a debug log instead of silently.
+   */
+  private resolveQueryLlmThinking(request: LLMQueryRequest, model: string): Partial<Options> {
+    if (!request.thinking) return {};
+    if (request.outputSchema) {
+      this.debug(`[queryLlm] thinking ignored: incompatible with outputSchema (structured output)`);
+      return {};
+    }
+    if (!isClaudeModel(model)) {
+      this.debug(`[queryLlm] thinking ignored: model "${model}" does not support extended thinking`);
+      return {};
+    }
+    const maxThinkingTokens = request.thinkingBudget ?? 10_000;
+    this.debug(`[queryLlm] extended thinking enabled (maxThinkingTokens=${maxThinkingTokens})`);
+    return { maxThinkingTokens };
+  }
+
   async queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
     const model = request.model ?? this.config.miniModel ?? getDefaultSummarizationModel();
 
@@ -3203,6 +3014,7 @@ This is a branched conversation. All prior messages in this conversation are par
       ...(request.outputSchema ? {
         outputFormat: { type: 'json_schema' as const, schema: request.outputSchema },
       } : {}),
+      ...this.resolveQueryLlmThinking(request, model),
     };
 
     return consumeLlmQueryMessages(

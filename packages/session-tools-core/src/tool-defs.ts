@@ -43,6 +43,7 @@ import { handleMemoryRecall } from './handlers/memory-recall.ts';
 import { handleSendAgentMessage } from './handlers/send-agent-message.ts';
 import { handleChannelDispatch } from './handlers/channel-dispatch.ts';
 import { handleListMessagingChannels, handleUnbindMessagingChannel } from './handlers/messaging.ts';
+import { handleListBackgroundTasks } from './handlers/list-background-tasks.ts';
 
 // ============================================================
 // Canonical Zod Schemas
@@ -163,7 +164,7 @@ export const BrowserToolSchema = z.object({
   ]).describe('Browser command as a string (e.g., "click @e1") or array (e.g., ["evaluate", "var x = 1; x + 2"]). Array mode preserves semicolons and whitespace in arguments.'),
 });
 
-const SpawnSessionSchema = z.object({
+export const SpawnSessionSchema = z.object({
   help: z.boolean().optional().describe('If true, returns available connections, models, and sources instead of creating a session'),
   prompt: z.string().optional().describe('Instructions for the new session (required when not in help mode)'),
   name: z.string().optional().describe('Session name'),
@@ -175,6 +176,7 @@ const SpawnSessionSchema = z.object({
     .describe('Reasoning level for the new session. Silently ignored on non-reasoning models (e.g. gpt-4o, gemini-2.5-flash). Omit to inherit the workspace default.'),
   labels: z.array(z.string()).optional().describe('Labels for the new session'),
   workingDirectory: z.string().optional().describe('Working directory for the new session'),
+  projectId: z.string().optional().describe('Workspace project id to bind the new session to. Inherits the project working directory unless overridden.'),
   attachments: z.array(z.object({
     path: z.string().describe('Absolute file path on disk'),
     name: z.string().optional().describe('Display name (defaults to file basename)'),
@@ -194,6 +196,10 @@ const SetSessionStatusSchema = z.object({
 
 const GetSessionInfoSchema = z.object({
   sessionId: z.string().optional().describe('Session ID to query. Omit to get info about the current session.'),
+});
+
+const ListBackgroundTasksSchema = z.object({
+  sessionId: z.string().optional().describe('Session ID to list background tasks for. Omit to use the current session.'),
 });
 
 const ListSessionsSchema = z.object({
@@ -245,6 +251,31 @@ const ListMessagingChannelsSchema = z.object({
 
 const UnbindMessagingChannelSchema = z.object({
   platform: z.enum(['telegram', 'whatsapp', 'lark']).optional().describe('Platform to unbind. If omitted, unbinds all.'),
+});
+
+// MCP-only bridge tools (executed by the in-process Hermes bridge, not the registry)
+const AutomationToolSchema = z.object({
+  command: z.enum(['list', 'create_scheduled', 'toggle', 'delete', 'history']),
+  id: z.string().optional().describe('Automation matcher id for toggle/delete/history filtering'),
+  name: z.string().optional().describe('Human-readable automation name'),
+  cron: z.string().optional().describe('5-field cron expression for SchedulerTick, e.g. */30 * * * *'),
+  timezone: z.string().optional().describe('IANA timezone, e.g. America/Sao_Paulo'),
+  prompt: z.string().optional().describe('Prompt action text for create_scheduled'),
+  llmConnection: z.string().optional().describe('Optional LLM connection slug for the spawned automation session'),
+  model: z.string().optional().describe('Optional model id for the spawned automation session'),
+  labels: z.array(z.string()).optional().describe('Labels applied to sessions created by the automation'),
+  permissionMode: z.enum(['safe', 'ask', 'allow-all']).optional().describe('Permission mode for created sessions'),
+  enabled: z.boolean().optional().describe('Enable/disable value for create_scheduled or toggle'),
+  limit: z.number().optional().describe('History entry limit, default 20'),
+});
+
+const MeetingToolSchema = z.object({
+  command: z.enum(['start', 'status', 'list', 'transcript', 'stop']),
+  meetingId: z.string().optional().describe('Meeting/capture id for status, transcript, or stop'),
+  id: z.string().optional().describe('Alias for meetingId when native callbacks use id'),
+  title: z.string().optional().describe('Optional meeting title for start'),
+  url: z.string().optional().describe('Optional meeting URL for start/attach'),
+  limit: z.number().optional().describe('Optional result limit for list/transcript'),
 });
 
 // ============================================================
@@ -422,6 +453,7 @@ Examples:
 - \`find login button\` — search elements by keyword
 - \`click @e12\`
 - \`click-at 350 200\` — click at pixel coordinates (for canvas elements)
+- \`drag 100 200 300 400\` — drag from (100,200) to (300,400)
 - \`fill @e5 user@example.com\`
 - \`type Hello World\` — type into currently focused element (no ref needed)
 - \`select @e3 optionValue\`
@@ -429,6 +461,7 @@ Examples:
 - \`set-clipboard Name\\tAge\\nAlice\\t30\` — write text to clipboard
 - \`get-clipboard\` — read clipboard text content
 - \`paste Name\\tAge\\nAlice\\t30\` — set clipboard and trigger Ctrl/Cmd+V
+- \`upload @e3 /path/to/file.pdf\` — attach local file(s) to a file input
 - \`scroll down 800\`
 - \`evaluate document.title\`
 - \`console 50 error\`
@@ -445,13 +478,13 @@ Examples:
 - \`downloads wait 15000\`
 - \`focus [windowId]\` — focus existing browser window (no new window)
 - \`windows\` — list current browser windows and ownership state
-- \`release\` — dismiss the agent control overlay when done
-- \`close\` — close and destroy the browser window
-- \`hide\` — hide the window while preserving state`,
+- \`release [windowId|all]\` — dismiss the agent control overlay when done
+- \`close [windowId]\` — close and destroy the browser window
+- \`hide [windowId]\` — hide the window while preserving state`,
 
   call_llm: `Invoke a secondary LLM for focused subtasks. Use for:
 - Cost optimization: use a smaller model for simple tasks (summarization, classification)
-- Structured output: JSON schema compliance via prompt instructions
+- Structured output: JSON schema compliance — native when the backend supports it (e.g. Claude), via prompt instructions otherwise (Pi/Hermes)
 - Parallel processing: call multiple times in one message - all run simultaneously
 - Context isolation: process content without polluting main context
 
@@ -499,6 +532,12 @@ Call with no arguments to introspect your own session state.`,
 Use filters (status, label, search) to narrow results instead of fetching everything. Default limit is 20 sessions.
 Use get_session_info for full details on a specific session (list-then-detail pattern).`,
 
+  list_background_tasks: `Enumerate the background agents/tasks tracked for a session by the main-process registry (running, finished, or orphaned).
+
+This is the ONLY reliable way to answer "what is running / what's the status?" — it reads the main-process registry, which tracks tasks across turns. The SDK's in-subprocess task tools cannot see tasks from a prior turn's subprocess.
+
+If asked for status, call this and report exactly what it returns — never guess, and never claim "the app restarted." A \`status: 'orphaned'\` task ended when its owning turn's subprocess was torn down; its in-process state was lost.`,
+
   memory_store: `Save durable information to persistent memory that survives across sessions.
 
 WHEN TO SAVE (proactively, don't wait to be asked):
@@ -537,6 +576,28 @@ Shows which external chat apps are connected and can send/receive messages.`,
 
   unbind_messaging_channel: `Disconnect a messaging channel from the current session.
 Messages will no longer be forwarded between the chat app and this session.`,
+
+  automation_tool: `Manage Craft-native automations for this workspace.
+
+Use this instead of Hermes native cron while running inside Craft. Scheduled prompt jobs are written to the workspace automations.json and appear in Craft Automations / Scheduled.
+
+Commands:
+- list: list configured automations
+- create_scheduled: create a SchedulerTick automation that starts a Craft session with a prompt
+- toggle: enable or disable an automation by id
+- delete: remove an automation by id
+- history: read recent automations-history.jsonl entries`,
+
+  meeting_tool: `Control Craft-native meeting capture for this session when desktop/native meeting callbacks are available.
+
+Commands:
+- start: start or attach to a meeting capture
+- status: get current meeting capture status
+- list: list known/recent meeting captures
+- transcript: fetch a meeting transcript
+- stop: stop an active meeting capture
+
+If the active Craft runtime has not registered meeting callbacks, this tool returns a clear unavailable error instead of touching Hermes upstream.`,
 } as const;
 
 // ============================================================
@@ -547,7 +608,13 @@ export const SESSION_TOOLS_FRONTIER_API_VERSION = 'v1' as const;
 
 export type SessionToolApiVersion = typeof SESSION_TOOLS_FRONTIER_API_VERSION | 'v2';
 
-export type SessionToolExposure = 'native-and-mcp';
+/**
+ * Where a session tool may be exposed:
+ * - `native-and-mcp`: available to native backends (Claude/Pi) and every MCP bridge.
+ * - `mcp-only`: available only through an MCP bridge (e.g. the Hermes in-process
+ *   bridge), never surfaced to native backends.
+ */
+export type SessionToolExposure = 'native-and-mcp' | 'mcp-only';
 
 export const TextContentSchema = z.object({
   type: z.literal('text'),
@@ -588,19 +655,22 @@ interface SessionToolDefBase {
   readOnly?: boolean;
 }
 
-/** Tool executed from the canonical registry (requires a concrete handler). */
+/**
+ * Tool executed from the canonical registry. The concrete handler is held in a
+ * module-private table (REGISTRY_HANDLERS) and is only reachable through
+ * executeSessionTool(); it is intentionally NOT a property of the def, so no
+ * consumer can invoke it directly and skip input/output validation.
+ */
 export interface RegistrySessionToolDef extends SessionToolDefBase {
   executionMode: 'registry';
-  handler: SessionToolHandler;
 }
 
 /** Tool executed by backend-specific adapters (Pi/Claude/session-mcp-server). */
 export interface BackendSessionToolDef extends SessionToolDefBase {
   executionMode: 'backend';
-  handler: null;
 }
 
-/** A single session tool definition combining name, description, schema, mode, and handler. */
+/** A single session tool definition combining name, description, schema, and mode. */
 export type SessionToolDef = RegistrySessionToolDef | BackendSessionToolDef;
 
 type DefineToolConfig = Omit<SessionToolDefBase, 'name' | 'apiVersion'> & {
@@ -611,11 +681,18 @@ type DefineToolConfig = Omit<SessionToolDefBase, 'name' | 'apiVersion'> & {
 );
 
 /**
+ * Module-private handler table. Handlers are deliberately kept off SessionToolDef
+ * so no consumer outside this module can invoke a tool's handler directly and
+ * skip input/output validation. The only execution path is executeSessionTool().
+ */
+const REGISTRY_HANDLERS = new WeakMap<SessionToolDef, SessionToolHandler>();
+
+/**
  * Canonical registration entry point for session tools exposed as the frontier API.
  */
 // react-doctor-disable-next-line agent-tool-capability-risk -- generic session-tool factory; every tool's inputs are zod-validated via inputSchema.parse (validateSessionToolInput) and exposure/safeMode/readOnly gates are declared per tool; no unguarded capability
 export function defineTool(name: string, config: DefineToolConfig): SessionToolDef {
-  return {
+  const def: SessionToolDef = {
     name,
     apiVersion: config.version,
     description: config.description,
@@ -625,8 +702,11 @@ export function defineTool(name: string, config: DefineToolConfig): SessionToolD
     safeMode: config.safeMode,
     ...(config.readOnly !== undefined ? { readOnly: config.readOnly } : {}),
     executionMode: config.executionMode,
-    handler: config.handler,
   } as SessionToolDef;
+  if (config.handler) {
+    REGISTRY_HANDLERS.set(def, config.handler);
+  }
+  return def;
 }
 
 export function validateSessionToolInput(def: SessionToolDef, args: unknown): Record<string, unknown> {
@@ -637,13 +717,36 @@ export function validateSessionToolOutput(def: SessionToolDef, result: unknown):
   return def.outputSchema.parse(result);
 }
 
+/**
+ * Execute a registry session tool by name. Resolves the canonical definition,
+ * validates the input against inputSchema, runs the module-private handler, and
+ * validates the result against outputSchema.
+ *
+ * `filterOptions` defaults to the full catalog when omitted, so a direct call
+ * like executeSessionTool('memory_store', ...) resolves instead of 404ing;
+ * feature gating lives in the tool listing, not in execution. The production
+ * callers pass their own filterOptions and are unaffected.
+ *
+ * Throws when the name is unknown/unavailable, or resolves to a backend-executed
+ * tool (call_llm, spawn_session, browser_tool) — those are run by their backend
+ * adapters, not through this function.
+ */
 export async function executeSessionTool(
-  def: RegistrySessionToolDef,
+  name: string,
   ctx: SessionToolContext,
   args: unknown,
+  filterOptions?: SessionToolFilterOptions,
 ): Promise<ToolResult> {
+  const def = getSessionToolRegistry(filterOptions ?? { includeDeveloperFeedback: true, includeMemory: true }).get(name);
+  if (!def) {
+    throw new Error(`Unknown or unavailable session tool: ${name}`);
+  }
+  const handler = REGISTRY_HANDLERS.get(def);
+  if (!handler) {
+    throw new Error(`Session tool '${name}' is backend-executed (${def.executionMode}) and has no canonical handler.`);
+  }
   const parsedArgs = validateSessionToolInput(def, args);
-  const result = await def.handler(ctx, parsedArgs);
+  const result = await handler(ctx, parsedArgs);
   return validateSessionToolOutput(def, result);
 }
 
@@ -683,6 +786,7 @@ export const SESSION_TOOL_DEFS: SessionToolDef[] = [
   defineTool('set_session_status', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.set_session_status, inputSchema: SetSessionStatusSchema, executionMode: 'registry', safeMode: 'block', handler: handleSetSessionStatus }),
   defineTool('get_session_info', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.get_session_info, inputSchema: GetSessionInfoSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleGetSessionInfo }),
   defineTool('list_sessions', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.list_sessions, inputSchema: ListSessionsSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleListSessions }),
+  defineTool('list_background_tasks', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.list_background_tasks, inputSchema: ListBackgroundTasksSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleListBackgroundTasks }),
   // Memory tools (feature-flagged — handlers gracefully degrade when memory is disabled)
   defineTool('memory_store', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.memory_store, inputSchema: MemoryStoreSchema, executionMode: 'registry', safeMode: 'block', handler: handleMemoryStore }),
   defineTool('memory_recall', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.memory_recall, inputSchema: MemoryRecallSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleMemoryRecall }),
@@ -692,6 +796,18 @@ export const SESSION_TOOL_DEFS: SessionToolDef[] = [
   // Messaging gateway tools
   defineTool('list_messaging_channels', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.list_messaging_channels, inputSchema: ListMessagingChannelsSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleListMessagingChannels }),
   defineTool('unbind_messaging_channel', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.unbind_messaging_channel, inputSchema: UnbindMessagingChannelSchema, executionMode: 'registry', safeMode: 'block', handler: handleUnbindMessagingChannel }),
+];
+
+/**
+ * MCP-only tools: declared through defineTool (the same contract machinery as
+ * the canonical catalog) with exposure 'mcp-only'. They are intentionally NOT
+ * part of SESSION_TOOL_DEFS, so native backends (Claude/Pi) and
+ * getToolDefsAsJsonSchema never surface them. Only an MCP bridge that implements
+ * their execution (the in-process Hermes bridge) exposes and runs them.
+ */
+export const MCP_ONLY_TOOL_DEFS: SessionToolDef[] = [
+  defineTool('automation_tool', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.automation_tool, inputSchema: AutomationToolSchema, exposure: 'mcp-only', executionMode: 'backend', safeMode: 'block', handler: null }),
+  defineTool('meeting_tool', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.meeting_tool, inputSchema: MeetingToolSchema, exposure: 'mcp-only', executionMode: 'backend', safeMode: 'block', handler: null }),
 ];
 
 export interface SessionToolFilterOptions {
@@ -826,6 +942,34 @@ export interface JsonSchemaToolDef {
 }
 
 /**
+ * Convert a single session tool definition to JSON Schema format (MCP/Pi shape).
+ * Shared by getToolDefsAsJsonSchema and by MCP bridges that expose extra
+ * mcp-only tools defined via defineTool.
+ */
+export function toJsonSchemaToolDef(def: SessionToolDef, prefix = ''): JsonSchemaToolDef {
+  // Explicit `as any` avoids TS2589 ("type instantiation is excessively deep")
+  // caused by zodToJsonSchema inferring deep generic chains from union schemas.
+  const inputSchema = zodToJsonSchema(def.inputSchema as any, { $refStrategy: 'none' }) as Record<string, unknown>;
+  const outputSchema = zodToJsonSchema(def.outputSchema as any, { $refStrategy: 'none' }) as Record<string, unknown>;
+  // Strip metadata not needed by MCP/Pi consumers
+  delete inputSchema.$schema;
+  delete inputSchema.additionalProperties;
+  delete outputSchema.$schema;
+  delete outputSchema.additionalProperties;
+  return {
+    name: prefix + def.name,
+    apiVersion: def.apiVersion,
+    description: def.description,
+    inputSchema,
+    outputSchema,
+    exposure: def.exposure,
+    executionMode: def.executionMode,
+    safeMode: def.safeMode,
+    ...(def.readOnly !== undefined ? { readOnly: def.readOnly } : {}),
+  };
+}
+
+/**
  * Convert session tool definitions to JSON Schema format.
  *
  * @param opts.prefix - Optional prefix for tool names (e.g., 'mcp__session__' for Pi)
@@ -843,26 +987,5 @@ export function getToolDefsAsJsonSchema(opts?: {
     includeMemory: opts?.includeMemory,
   });
 
-  return defs.map(def => {
-    // Explicit `as any` avoids TS2589 ("type instantiation is excessively deep")
-    // caused by zodToJsonSchema inferring deep generic chains from union schemas.
-    const inputSchema = zodToJsonSchema(def.inputSchema as any, { $refStrategy: 'none' }) as Record<string, unknown>;
-    const outputSchema = zodToJsonSchema(def.outputSchema as any, { $refStrategy: 'none' }) as Record<string, unknown>;
-    // Strip metadata not needed by MCP/Pi consumers
-    delete inputSchema.$schema;
-    delete inputSchema.additionalProperties;
-    delete outputSchema.$schema;
-    delete outputSchema.additionalProperties;
-    return {
-      name: prefix + def.name,
-      apiVersion: def.apiVersion,
-      description: def.description,
-      inputSchema,
-      outputSchema,
-      exposure: def.exposure,
-      executionMode: def.executionMode,
-      safeMode: def.safeMode,
-      ...(def.readOnly !== undefined ? { readOnly: def.readOnly } : {}),
-    };
-  });
+  return defs.map(def => toJsonSchemaToolDef(def, prefix));
 }

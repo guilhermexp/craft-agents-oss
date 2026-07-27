@@ -16,7 +16,8 @@ import {
   ANTHROPIC_MODELS,
   normalizeDeprecatedModelId,
 } from './models';
-import type { CredentialManager } from '../credentials/manager.ts';
+import type { CredentialManager, ResolvedLlmCredential } from '../credentials/manager.ts';
+import { KEYLESS_API_KEY_PLACEHOLDER } from '../credentials/types.ts';
 
 // ============================================================
 // Pi Model Resolver (dependency injection to avoid Pi SDK in renderer)
@@ -439,6 +440,38 @@ export function isCompatProvider(providerType: LlmProviderType): boolean {
  */
 export function isAnthropicProvider(providerType: LlmProviderType): boolean {
   return providerType === 'anthropic';
+}
+
+/**
+ * A connection is *keyless* when its endpoint accepts any/no credential — a
+ * local or self-hosted Anthropic-compatible proxy (e.g. Ollama). Downstream
+ * emits {@link KEYLESS_API_KEY_PLACEHOLDER} so the SDK still initializes with a
+ * truthy key.
+ *
+ * Single source of truth for both consumers — `resolveAuthEnvVars` (session
+ * spawn) and the anthropic driver's Test button — so a keyless session and its
+ * connection test never disagree. Two shapes qualify identically:
+ *  - authType `none` → the resolver returns `{ kind: 'none' }` (present by
+ *    definition); and
+ *  - an api-key-family authType wired to a custom `baseUrl` with no stored key
+ *    (the resolver returns `null` / a non-`api_key` kind), i.e. an endpoint that
+ *    needs no secret.
+ *
+ * @param connection - The connection being resolved (authType + baseUrl)
+ * @param resolved - Its resolved credential, as returned by
+ *   {@link CredentialManager.resolveLlmCredential}
+ */
+export function isKeylessConnection(
+  connection: Pick<LlmConnection, 'authType' | 'baseUrl'>,
+  resolved: ResolvedLlmCredential | null,
+): boolean {
+  if (resolved?.kind === 'none') return true;
+  if (resolved?.kind === 'api_key') return false;
+  const isApiKeyFamily =
+    connection.authType === 'api_key' ||
+    connection.authType === 'api_key_with_endpoint' ||
+    connection.authType === 'bearer_token';
+  return isApiKeyFamily && !!connection.baseUrl;
 }
 
 /**
@@ -1046,12 +1079,14 @@ export async function resolveAuthEnvVars(
   const authType = connection.authType;
 
   if (authType === 'api_key' || authType === 'api_key_with_endpoint' || authType === 'bearer_token') {
-    const apiKey = await credentialManager.getLlmApiKey(connectionSlug);
-    if (apiKey) {
-      envVars.ANTHROPIC_API_KEY = apiKey;
-    } else if (connection.baseUrl) {
-      // Keyless provider (e.g. Ollama)
-      envVars.ANTHROPIC_API_KEY = 'not-needed';
+    // Delegate value resolution to the single authType -> credential resolver.
+    const resolved = await credentialManager.resolveLlmCredential(connectionSlug, authType, connection.providerType);
+    if (resolved?.kind === 'api_key') {
+      envVars.ANTHROPIC_API_KEY = resolved.value;
+    } else if (isKeylessConnection(connection, resolved)) {
+      // Keyless endpoint (e.g. a local Anthropic-compatible server like Ollama).
+      // Same predicate drives the driver's Test button, so both paths agree.
+      envVars.ANTHROPIC_API_KEY = KEYLESS_API_KEY_PLACEHOLDER;
     } else {
       return { envVars, success: false, warning: `No API key found for: ${connectionSlug}` };
     }

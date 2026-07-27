@@ -75,6 +75,7 @@ echo "Cleaning previous builds..."
 rm -rf "$ELECTRON_DIR/vendor"
 rm -rf "$ELECTRON_DIR/node_modules/@anthropic-ai"
 rm -rf "$ELECTRON_DIR/packages"
+rm -rf "$ELECTRON_DIR/dist/packages"
 rm -rf "$ELECTRON_DIR/release"
 
 # 2. Install dependencies
@@ -172,11 +173,14 @@ cp -r "$RG_SOURCE" "$ELECTRON_DIR/node_modules/@vscode/"
 INTERCEPTOR_SOURCE="$ROOT_DIR/packages/shared/src/unified-network-interceptor.ts"
 require_path "$INTERCEPTOR_SOURCE" "Interceptor" "Ensure packages/shared/src/unified-network-interceptor.ts exists."
 echo "Copying interceptor (for Pi subprocess)..."
-mkdir -p "$ELECTRON_DIR/packages/shared/src"
-cp "$INTERCEPTOR_SOURCE" "$ELECTRON_DIR/packages/shared/src/"
+# Stage into dist/ (a gitignored build-output dir) rather than
+# apps/electron/packages/, which the dev interceptor resolver searches and
+# would otherwise shadow the canonical workspace-root source with a stale copy.
+mkdir -p "$ELECTRON_DIR/dist/packages/shared/src"
+cp "$INTERCEPTOR_SOURCE" "$ELECTRON_DIR/dist/packages/shared/src/"
 for dep in interceptor-common.ts feature-flags.ts interceptor-request-utils.ts; do
   if [ -f "$ROOT_DIR/packages/shared/src/$dep" ]; then
-    cp "$ROOT_DIR/packages/shared/src/$dep" "$ELECTRON_DIR/packages/shared/src/"
+    cp "$ROOT_DIR/packages/shared/src/$dep" "$ELECTRON_DIR/dist/packages/shared/src/"
   fi
 done
 

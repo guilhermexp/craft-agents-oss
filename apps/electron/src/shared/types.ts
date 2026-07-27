@@ -2,6 +2,15 @@
 // Protocol re-exports (channels, DTOs, events, wire types)
 // =============================================================================
 export * from '@craft-agent/shared/protocol'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
+import type { CreateProjectInput, ProjectConfig, ProjectAsset } from '@craft-agent/shared/projects/types'
+import type { LabelConfig, CreateLabelInput } from '@craft-agent/shared/labels'
+import type { PermissionsConfigFile } from '@craft-agent/shared/agent'
+import type { ServerConfig, ServerStatus } from '@craft-agent/shared/config/server-config'
+import type { StatusConfig } from '@craft-agent/shared/statuses'
+import type { ThemeOverrides, PresetTheme } from '@config/theme'
+import type { ViewConfig } from '@craft-agent/shared/views'
+import type { WarRoomChannel, CreateWarRoomChannelInput, UpdateWarRoomChannelInput, DeleteChannelOptions, DeleteChannelResult, ChannelMessage, WarRoomDispatch } from '@craft-agent/shared/channels'
 
 // =============================================================================
 // Package re-exports (convenience for renderer imports)
@@ -69,7 +78,7 @@ import type { ExportResourcesOptions, ExportResult, ResourceImportMode, Resource
 export type { ExportResourcesOptions, ExportResult, ResourceImportMode, ResourceBundle, ResourceImportResult };
 
 // LLM connection types
-import type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings } from '@craft-agent/shared/config';
+import type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings, SessionDraft } from '@craft-agent/shared/config';
 export type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings };
 
 // =============================================================================
@@ -234,79 +243,93 @@ import type {
   SaveMeetingTranscriptionConfigInput,
 } from '@craft-agent/shared/protocol'
 
-export interface ElectronAPI {
-  // Session management
-  getSessions(): Promise<Session[]>
-  getUnreadSummary(): Promise<UnreadSummary>
-  markAllSessionsRead(workspaceId: string): Promise<void>
-  getSessionMessages(sessionId: string): Promise<Session | null>
-  createSession(workspaceId: string, options?: CreateSessionOptions): Promise<Session>
-  deleteSession(sessionId: string): Promise<void>
-  sendMessage(sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachmentType[], options?: SendMessageOptions): Promise<void>
-  cancelProcessing(sessionId: string, silent?: boolean): Promise<void>
-  killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
-  getTaskOutput(taskId: string): Promise<string | null>
 
-  // Tasks (Conductor)
-  validateTask(workspaceId: string, yaml: string): Promise<TaskValidationResultDto>
-  createTask(workspaceId: string, req: TaskCreateRequest): Promise<TaskCreateResult>
-  generateTask(workspaceId: string, req: TaskGenerateRequest): Promise<TaskGenerateAck>
+// =============================================================================
+// RPC contract — single source of truth for ElectronAPI + CHANNEL_MAP
+// =============================================================================
+// Each leaf declares its wire channel (referencing RPC_NAMESPACES) plus a phantom
+// signature. ElectronAPI (below) and CHANNEL_MAP (transport/channel-map.ts) are
+// both DERIVED from this object — a new RPC method is a single contract entry.
+//   invoke  — request/response over the RPC transport
+//   event   — server→client push the renderer subscribes to (listener)
+//   local   — never crosses the RPC channel map; attached by the preload / web
+//             adapter / build-api (e.g. performOAuth, getFilePath, getSetupNeeds)
+
+export type RpcLeafKind = 'invoke' | 'event' | 'local'
+
+/** Phantom carrier for the ElectronAPI signature — never present at runtime. */
+interface LeafSig<Sig> { readonly __sig?: Sig }
+interface InvokeLeaf<Sig> extends LeafSig<Sig> { readonly kind: 'invoke'; readonly channel: string }
+interface EventLeaf<Sig> extends LeafSig<Sig> { readonly kind: 'event'; readonly channel: string }
+interface LocalLeaf<Sig> extends LeafSig<Sig> { readonly kind: 'local' }
+
+// Discriminated union: only `invoke`/`event` leaves carry a wire channel, so the
+// derivations below read `leaf.channel` without a non-null assertion, and the
+// `satisfies` guard rejects a channel-less `invoke`/`event` entry.
+export type RpcLeaf<K extends RpcLeafKind, Sig> =
+  K extends 'invoke' ? InvokeLeaf<Sig>
+  : K extends 'event' ? EventLeaf<Sig>
+  : LocalLeaf<Sig>
+
+function invoke<Sig>(channel: string): RpcLeaf<'invoke', Sig> {
+  return { kind: 'invoke', channel }
+}
+function event<Sig>(channel: string): RpcLeaf<'event', Sig> {
+  return { kind: 'event', channel }
+}
+function local<Sig>(): RpcLeaf<'local', Sig> {
+  return { kind: 'local' }
+}
+
+export const RPC_CONTRACT = {
+  getSessions: invoke<(() => Promise<Session[]>)>(RPC_NAMESPACES.sessions.GET),
+  getUnreadSummary: invoke<(() => Promise<UnreadSummary>)>(RPC_NAMESPACES.sessions.GET_UNREAD_SUMMARY),
+  markAllSessionsRead: invoke<((workspaceId: string) => Promise<void>)>(RPC_NAMESPACES.sessions.MARK_ALL_READ),
+  getSessionMessages: invoke<((sessionId: string) => Promise<Session | null>)>(RPC_NAMESPACES.sessions.GET_MESSAGES),
+  createSession: invoke<((workspaceId: string, options?: CreateSessionOptions) => Promise<Session>)>(RPC_NAMESPACES.sessions.CREATE),
+  deleteSession: invoke<((sessionId: string) => Promise<void>)>(RPC_NAMESPACES.sessions.DELETE),
+  sendMessage: invoke<((sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachmentType[], options?: SendMessageOptions) => Promise<void>)>(RPC_NAMESPACES.sessions.SEND_MESSAGE),
+  cancelProcessing: invoke<((sessionId: string, silent?: boolean) => Promise<void>)>(RPC_NAMESPACES.sessions.CANCEL),
+  killShell: invoke<((sessionId: string, shellId: string) => Promise<{ success: boolean; error?: string }>)>(RPC_NAMESPACES.sessions.KILL_SHELL),
+  getTaskOutput: invoke<((taskId: string) => Promise<string | null>)>(RPC_NAMESPACES.tasks.GET_OUTPUT),
+  validateTask: invoke<((workspaceId: string, yaml: string) => Promise<TaskValidationResultDto>)>(RPC_NAMESPACES.tasks.VALIDATE),
+  createTask: invoke<((workspaceId: string, req: TaskCreateRequest) => Promise<TaskCreateResult>)>(RPC_NAMESPACES.tasks.CREATE),
+  generateTask: invoke<((workspaceId: string, req: TaskGenerateRequest) => Promise<TaskGenerateAck>)>(RPC_NAMESPACES.tasks.GENERATE),
   /** Async generate result (or error), keyed by orchestratorSessionId. Subscribe before/after generateTask. */
-  onTaskGenerated(callback: (workspaceId: string, result: TaskGenerateResult) => void): () => void
-  runTask(workspaceId: string, req: TaskRunRequest): Promise<TaskRunSnapshotDto>
-  pauseTask(workspaceId: string, slug: string, runId: string): Promise<void>
-  resumeTask(workspaceId: string, slug: string, runId: string): Promise<void>
-  stopTask(workspaceId: string, slug: string, runId: string): Promise<void>
-  getTask(workspaceId: string, slug: string, runId?: string): Promise<TaskGetResult>
-  listTasks(workspaceId: string): Promise<string[]>
-  getTaskResults(workspaceId: string, slug: string, runId?: string): Promise<TaskResultsDto>
-
-  respondToPermission(sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean, options?: PermissionResponseOptions): Promise<boolean>
-  respondToCredential(sessionId: string, requestId: string, response: CredentialResponse): Promise<boolean>
-  respondToUserQuestion(sessionId: string, requestId: string, response: AskUserQuestionResponse): Promise<boolean>
-
-  // Consolidated session command handler
-  sessionCommand(sessionId: string, command: SessionCommand): Promise<void | ShareResult | RefreshTitleResult | { count: number }>
-
-  // Server info (REMOTE_ELIGIBLE — returns data from whichever server owns the workspace)
-  getServerHomeDir(): Promise<string>
-
-  // Server mode configuration
-  getServerConfig(): Promise<import('@craft-agent/shared/config/server-config').ServerConfig>
-  setServerConfig(config: import('@craft-agent/shared/config/server-config').ServerConfig): Promise<void>
-  getServerStatus(): Promise<import('@craft-agent/shared/config/server-config').ServerStatus>
-
-  // App lifecycle
-  relaunchApp(): Promise<void>
-  removeWorkspace(workspaceId: string): Promise<boolean>
-  invokeOnServer(url: string, token: string, channel: string, ...args: any[]): Promise<any>
-
-  // Remote session transfer (main-process orchestrated, supports chunked upload)
-  transferSessionToWorkspace(sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number): Promise<{ sessionId: string }>
-  onTransferProgress(callback: (progress: { sessionIndex: number; sessionCount: number; chunkSent: number; chunkTotal: number }) => void): () => void
-
-  // Session export/import (cross-workspace transfer)
-  exportSession(sessionId: string): Promise<unknown>
-  importSession(targetWorkspaceId: string, bundle: unknown, mode: 'move' | 'fork'): Promise<{ sessionId: string; warnings?: string[] }>
-  exportRemoteSessionTransfer(sessionId: string): Promise<RemoteSessionTransferPayload>
-  importRemoteSessionTransfer(targetWorkspaceId: string, payload: RemoteSessionTransferPayload): Promise<ImportRemoteSessionTransferResult>
-
-  // Pending plan execution (for reload recovery)
-  getPendingPlanExecution(sessionId: string): Promise<{ planPath: string; draftInputSnapshot?: string; awaitingCompaction: boolean; executionDispatched: boolean } | null>
-  // Permission mode reconciliation
-  getSessionPermissionModeState(sessionId: string): Promise<PermissionModeState | null>
-
-  // Workspace management
-  getWorkspaces(): Promise<Workspace[]>
-  createWorkspace(folderPath: string, name: string, remoteServer?: { url: string; token: string; remoteWorkspaceId: string }): Promise<Workspace>
-  checkWorkspaceSlug(slug: string): Promise<{ exists: boolean; path: string }>
-  updateWorkspaceRemoteServer(workspaceId: string, remoteServer: { url: string; token: string; remoteWorkspaceId: string }): Promise<{ success: boolean }>
-
-  // Server-level workspace operations (for thin client / remote workspace discovery)
-  getServerWorkspaces(): Promise<WorkspaceInfo[]>
-  createServerWorkspace(name: string): Promise<WorkspaceInfo>
-
-  testRemoteConnection(url: string, token: string): Promise<{
+  onTaskGenerated: event<((callback: (workspaceId: string, result: TaskGenerateResult) => void) => () => void)>(RPC_NAMESPACES.tasks.GENERATED),
+  runTask: invoke<((workspaceId: string, req: TaskRunRequest) => Promise<TaskRunSnapshotDto>)>(RPC_NAMESPACES.tasks.RUN),
+  pauseTask: invoke<((workspaceId: string, slug: string, runId: string) => Promise<void>)>(RPC_NAMESPACES.tasks.PAUSE),
+  resumeTask: invoke<((workspaceId: string, slug: string, runId: string) => Promise<void>)>(RPC_NAMESPACES.tasks.RESUME),
+  stopTask: invoke<((workspaceId: string, slug: string, runId: string) => Promise<void>)>(RPC_NAMESPACES.tasks.STOP),
+  getTask: invoke<((workspaceId: string, slug: string, runId?: string) => Promise<TaskGetResult>)>(RPC_NAMESPACES.tasks.GET),
+  listTasks: invoke<((workspaceId: string) => Promise<string[]>)>(RPC_NAMESPACES.tasks.LIST),
+  getTaskResults: invoke<((workspaceId: string, slug: string, runId?: string) => Promise<TaskResultsDto>)>(RPC_NAMESPACES.tasks.GET_RESULTS),
+  respondToPermission: invoke<((sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean, options?: PermissionResponseOptions) => Promise<boolean>)>(RPC_NAMESPACES.sessions.RESPOND_TO_PERMISSION),
+  respondToCredential: invoke<((sessionId: string, requestId: string, response: CredentialResponse) => Promise<boolean>)>(RPC_NAMESPACES.sessions.RESPOND_TO_CREDENTIAL),
+  respondToUserQuestion: invoke<((sessionId: string, requestId: string, response: AskUserQuestionResponse) => Promise<boolean>)>(RPC_NAMESPACES.sessions.RESPOND_TO_USER_QUESTION),
+  sessionCommand: invoke<((sessionId: string, command: SessionCommand) => Promise<void | ShareResult | RefreshTitleResult | { count: number }>)>(RPC_NAMESPACES.sessions.COMMAND),
+  getServerHomeDir: invoke<(() => Promise<string>)>(RPC_NAMESPACES.server.HOME_DIR),
+  getServerConfig: invoke<(() => Promise<ServerConfig>)>(RPC_NAMESPACES.settings.GET_SERVER_CONFIG),
+  setServerConfig: invoke<((config: ServerConfig) => Promise<void>)>(RPC_NAMESPACES.settings.SET_SERVER_CONFIG),
+  getServerStatus: invoke<(() => Promise<ServerStatus>)>(RPC_NAMESPACES.settings.GET_SERVER_STATUS),
+  relaunchApp: local<(() => Promise<void>)>(),
+  removeWorkspace: local<((workspaceId: string) => Promise<boolean>)>(),
+  invokeOnServer: local<((url: string, token: string, channel: string, ...args: any[]) => Promise<any>)>(),
+  transferSessionToWorkspace: local<((sessionId: string, targetWorkspaceId: string, sessionIndex?: number, sessionCount?: number) => Promise<{ sessionId: string }>)>(),
+  onTransferProgress: local<((callback: (progress: { sessionIndex: number; sessionCount: number; chunkSent: number; chunkTotal: number }) => void) => () => void)>(),
+  exportSession: invoke<((sessionId: string) => Promise<unknown>)>(RPC_NAMESPACES.sessions.EXPORT),
+  importSession: invoke<((targetWorkspaceId: string, bundle: unknown, mode: 'move' | 'fork') => Promise<{ sessionId: string; warnings?: string[] }>)>(RPC_NAMESPACES.sessions.IMPORT),
+  exportRemoteSessionTransfer: invoke<((sessionId: string) => Promise<RemoteSessionTransferPayload>)>(RPC_NAMESPACES.sessions.EXPORT_REMOTE_TRANSFER),
+  importRemoteSessionTransfer: invoke<((targetWorkspaceId: string, payload: RemoteSessionTransferPayload) => Promise<ImportRemoteSessionTransferResult>)>(RPC_NAMESPACES.sessions.IMPORT_REMOTE_TRANSFER),
+  getPendingPlanExecution: invoke<((sessionId: string) => Promise<{ planPath: string; draftInputSnapshot?: string; awaitingCompaction: boolean; executionDispatched: boolean } | null>)>(RPC_NAMESPACES.sessions.GET_PENDING_PLAN_EXECUTION),
+  getSessionPermissionModeState: invoke<((sessionId: string) => Promise<PermissionModeState | null>)>(RPC_NAMESPACES.sessions.GET_PERMISSION_MODE_STATE),
+  getWorkspaces: invoke<(() => Promise<Workspace[]>)>(RPC_NAMESPACES.workspaces.GET),
+  createWorkspace: invoke<((folderPath: string, name: string, remoteServer?: { url: string; token: string; remoteWorkspaceId: string }) => Promise<Workspace>)>(RPC_NAMESPACES.workspaces.CREATE),
+  checkWorkspaceSlug: invoke<((slug: string) => Promise<{ exists: boolean; path: string }>)>(RPC_NAMESPACES.workspaces.CHECK_SLUG),
+  updateWorkspaceRemoteServer: invoke<((workspaceId: string, remoteServer: { url: string; token: string; remoteWorkspaceId: string }) => Promise<{ success: boolean }>)>(RPC_NAMESPACES.workspaces.UPDATE_REMOTE),
+  getServerWorkspaces: invoke<(() => Promise<WorkspaceInfo[]>)>(RPC_NAMESPACES.server.GET_WORKSPACES),
+  createServerWorkspace: invoke<((name: string) => Promise<WorkspaceInfo>)>(RPC_NAMESPACES.server.CREATE_WORKSPACE),
+  testRemoteConnection: invoke<((url: string, token: string) => Promise<{
     ok: boolean
     error?: string
     needsWorkspace?: boolean
@@ -314,515 +337,390 @@ export interface ElectronAPI {
     remoteWorkspaceId?: string   // auto-set when exactly one workspace
     remoteWorkspaceName?: string // auto-set when exactly one workspace
     serverVersion?: string       // server app version from handshake
-  }>
-
-  // Window management
-  getWindowWorkspace(): Promise<string | null>
-  getWindowMode(): Promise<string | null>
-  openWorkspace(workspaceId: string): Promise<void>
-  openSessionInNewWindow(workspaceId: string, sessionId: string): Promise<void>
-  switchWorkspace(workspaceId: string): Promise<void>
-  closeWindow(): Promise<void>
-  confirmCloseWindow(): Promise<void>
+  }>)>(RPC_NAMESPACES.remote.TEST_CONNECTION),
+  getWindowWorkspace: invoke<(() => Promise<string | null>)>(RPC_NAMESPACES.window.GET_WORKSPACE),
+  getWindowMode: invoke<(() => Promise<string | null>)>(RPC_NAMESPACES.window.GET_MODE),
+  openWorkspace: invoke<((workspaceId: string) => Promise<void>)>(RPC_NAMESPACES.window.OPEN_WORKSPACE),
+  openSessionInNewWindow: invoke<((workspaceId: string, sessionId: string) => Promise<void>)>(RPC_NAMESPACES.window.OPEN_SESSION_IN_NEW_WINDOW),
+  switchWorkspace: invoke<((workspaceId: string) => Promise<void>)>(RPC_NAMESPACES.window.SWITCH_WORKSPACE),
+  closeWindow: invoke<(() => Promise<void>)>(RPC_NAMESPACES.window.CLOSE),
+  confirmCloseWindow: invoke<(() => Promise<void>)>(RPC_NAMESPACES.window.CONFIRM_CLOSE),
   /** Cancel a pending close request (renderer handled it by closing a modal/panel). */
-  cancelCloseWindow(): Promise<void>
+  cancelCloseWindow: invoke<(() => Promise<void>)>(RPC_NAMESPACES.window.CANCEL_CLOSE),
   /** Listen for close requests and receive source metadata. Returns cleanup function. */
-  onCloseRequested(callback: (request: WindowCloseRequest) => void): () => void
+  onCloseRequested: event<((callback: (request: WindowCloseRequest) => void) => () => void)>(RPC_NAMESPACES.window.CLOSE_REQUESTED),
   /** Show/hide macOS traffic light buttons (for fullscreen overlays) */
-  setTrafficLightsVisible(visible: boolean): Promise<void>
-
-  // Event listeners
-  onSessionEvent(callback: (event: SessionEvent) => void): () => void
-  onUnreadSummaryChanged(callback: (summary: UnreadSummary) => void): () => void
-
-  // File operations
-  readFile(path: string): Promise<string>
+  setTrafficLightsVisible: invoke<((visible: boolean) => Promise<void>)>(RPC_NAMESPACES.window.SET_TRAFFIC_LIGHTS),
+  onSessionEvent: event<((callback: (event: SessionEvent) => void) => () => void)>(RPC_NAMESPACES.sessions.EVENT),
+  onUnreadSummaryChanged: event<((callback: (summary: UnreadSummary) => void) => () => void)>(RPC_NAMESPACES.sessions.UNREAD_SUMMARY_CHANGED),
+  readFile: invoke<((path: string) => Promise<string>)>(RPC_NAMESPACES.file.READ),
   /** Read a file as binary data (Uint8Array) */
-  readFileBinary(path: string): Promise<Uint8Array>
+  readFileBinary: invoke<((path: string) => Promise<Uint8Array>)>(RPC_NAMESPACES.file.READ_BINARY),
   /** Read a file as a data URL (data:{mime};base64,...) for binary preview (images, PDFs) */
-  readFileDataUrl(path: string): Promise<string>
+  readFileDataUrl: invoke<((path: string) => Promise<string>)>(RPC_NAMESPACES.file.READ_DATA_URL),
   /** Read an image file as a size-bounded preview data URL for lightweight thumbnail rendering. */
-  readFilePreviewDataUrl(path: string, maxSize?: number): Promise<string>
-  openFileDialog(): Promise<string[]>
-  readFileAttachment(path: string): Promise<FileAttachment | null>
+  readFilePreviewDataUrl: invoke<((path: string, maxSize?: number) => Promise<string>)>(RPC_NAMESPACES.file.READ_PREVIEW_DATA_URL),
+  openFileDialog: invoke<(() => Promise<string[]>)>(RPC_NAMESPACES.file.OPEN_DIALOG),
+  readFileAttachment: invoke<((path: string) => Promise<FileAttachment | null>)>(RPC_NAMESPACES.file.READ_ATTACHMENT),
   /** Re-read a user-attached file by absolute path (bypasses workspace-dir validation).
    *  Used only by draft hydration for paths the user explicitly picked via OS dialog / drag. */
-  readUserAttachment(path: string): Promise<FileAttachment | null>
-  storeAttachment(sessionId: string, attachment: FileAttachment): Promise<import('../../../../packages/core/src/types/index.ts').StoredAttachment>
-  generateThumbnail(base64: string, mimeType: string): Promise<string | null>
+  readUserAttachment: invoke<((path: string) => Promise<FileAttachment | null>)>(RPC_NAMESPACES.file.READ_USER_ATTACHMENT),
+  storeAttachment: invoke<((sessionId: string, attachment: FileAttachment) => Promise<StoredAttachmentType>)>(RPC_NAMESPACES.file.STORE_ATTACHMENT),
+  generateThumbnail: invoke<((base64: string, mimeType: string) => Promise<string | null>)>(RPC_NAMESPACES.file.GENERATE_THUMBNAIL),
   /** Returns the absolute filesystem path for a File (only works for file-picker / OS-drag Files). */
-  getFilePath(file: File): string | null
-
-  // Filesystem search (for @ mention file selection)
-  searchFiles(basePath: string, query: string): Promise<FileSearchResult[]>
-
-  // Server filesystem browsing (remote mode)
-  listServerDirectory(dirPath: string): Promise<DirectoryListingResult>
-  listFileTree(rootPath?: string, dirPath?: string): Promise<FileTreeListingResult>
-  // Debug: send renderer logs to main process log file
-  debugLog(...args: unknown[]): void
-
-  // Theme
-  getSystemTheme(): Promise<boolean>
-  onSystemThemeChange(callback: (isDark: boolean) => void): () => void
-
-  // System
-  getVersions(): { node: string; chrome: string; electron: string }
+  getFilePath: local<((file: File) => string | null)>(),
+  searchFiles: invoke<((basePath: string, query: string) => Promise<FileSearchResult[]>)>(RPC_NAMESPACES.fs.SEARCH),
+  listServerDirectory: invoke<((dirPath: string) => Promise<DirectoryListingResult>)>(RPC_NAMESPACES.fs.LIST_DIRECTORY),
+  listFileTree: invoke<((rootPath?: string, dirPath?: string) => Promise<FileTreeListingResult>)>(RPC_NAMESPACES.fs.LIST_TREE),
+  debugLog: invoke<((...args: unknown[]) => void)>(RPC_NAMESPACES.debug.LOG),
+  getSystemTheme: invoke<(() => Promise<boolean>)>(RPC_NAMESPACES.theme.GET_SYSTEM_PREFERENCE),
+  onSystemThemeChange: event<((callback: (isDark: boolean) => void) => () => void)>(RPC_NAMESPACES.theme.SYSTEM_CHANGED),
+  getVersions: invoke<(() => { node: string; chrome: string; electron: string })>(RPC_NAMESPACES.system.VERSIONS),
   /** Returns the renderer host environment without going through RPC. */
-  getRuntimeEnvironment(): 'electron' | 'web'
-  getHomeDir(): Promise<string>
-  isDebugMode(): Promise<boolean>
-
-  // Transport connection status (preload-local, not RPC channels)
-  getTransportConnectionState(): Promise<TransportConnectionState>
-  onTransportConnectionStateChanged(callback: (state: TransportConnectionState) => void): () => void
-  reconnectTransport(): Promise<void>
-
+  getRuntimeEnvironment: local<(() => 'electron' | 'web')>(),
+  getHomeDir: invoke<(() => Promise<string>)>(RPC_NAMESPACES.system.HOME_DIR),
+  isDebugMode: invoke<(() => Promise<boolean>)>(RPC_NAMESPACES.system.IS_DEBUG_MODE),
+  getTransportConnectionState: local<(() => Promise<TransportConnectionState>)>(),
+  onTransportConnectionStateChanged: local<((callback: (state: TransportConnectionState) => void) => () => void)>(),
+  reconnectTransport: local<(() => Promise<void>)>(),
   /** Fired after a WebSocket reconnect. isStale=true means buffer was evicted — full refresh needed. */
-  onReconnected(callback: (isStale: boolean) => void): () => void
-
+  onReconnected: event<((callback: (isStale: boolean) => void) => () => void)>('__transport:reconnected'),
   /** Check whether the server registered a handler for a given RPC channel. */
-  isChannelAvailable(channel: string): boolean
-
-  // Auto-update
-  checkForUpdates(): Promise<UpdateInfo>
-  getUpdateInfo(): Promise<UpdateInfo>
-  installUpdate(): Promise<void>
-  dismissUpdate(version: string): Promise<void>
-  getDismissedUpdateVersion(): Promise<string | null>
-  onUpdateAvailable(callback: (info: UpdateInfo) => void): () => void
-  onUpdateDownloadProgress(callback: (progress: number) => void): () => void
-
-  // Release notes
-  getReleaseNotes(): Promise<string>
-  getLatestReleaseVersion(): Promise<string | undefined>
-
-  // System warnings (startup checks)
-  getSystemWarnings(): Promise<{ vcredistMissing: boolean; downloadUrl?: string }>
-
-  // Shell operations
-  openUrl(url: string): Promise<void>
-  openFile(path: string): Promise<void>
-  showInFolder(path: string): Promise<void>
-
-  // Menu event listeners
-  onMenuNewChat(callback: () => void): () => void
-  onMenuOpenSettings(callback: () => void): () => void
-  onMenuKeyboardShortcuts(callback: () => void): () => void
-  onMenuToggleFocusMode(callback: () => void): () => void
-  onMenuToggleSidebar(callback: () => void): () => void
-
-  // Deep link navigation listener (for external craftagents:// URLs)
-  onDeepLinkNavigate(callback: (nav: DeepLinkNavigation) => void): () => void
-
-  // Auth
-  showLogoutConfirmation(): Promise<boolean>
-  showDeleteSessionConfirmation(name: string): Promise<boolean>
-  logout(): Promise<void>
-
-  // Credential health check (startup validation)
-  getCredentialHealth(): Promise<CredentialHealthStatus>
-
-  // Onboarding
-  getAuthState(): Promise<AuthState>
-  getSetupNeeds(): Promise<SetupNeeds>
-  startWorkspaceMcpOAuth(mcpUrl: string): Promise<OAuthResult & { clientId?: string }>
-  // Claude OAuth (two-step flow)
-  startClaudeOAuth(): Promise<{ success: boolean; authUrl?: string; error?: string }>
-  exchangeClaudeCode(code: string, connectionSlug: string): Promise<ClaudeOAuthResult>
-  hasClaudeOAuthState(): Promise<boolean>
-  clearClaudeOAuthState(): Promise<{ success: boolean }>
+  isChannelAvailable: local<((channel: string) => boolean)>(),
+  checkForUpdates: invoke<(() => Promise<UpdateInfo>)>(RPC_NAMESPACES.update.CHECK),
+  getUpdateInfo: invoke<(() => Promise<UpdateInfo>)>(RPC_NAMESPACES.update.GET_INFO),
+  installUpdate: invoke<(() => Promise<void>)>(RPC_NAMESPACES.update.INSTALL),
+  dismissUpdate: invoke<((version: string) => Promise<void>)>(RPC_NAMESPACES.update.DISMISS),
+  getDismissedUpdateVersion: invoke<(() => Promise<string | null>)>(RPC_NAMESPACES.update.GET_DISMISSED),
+  onUpdateAvailable: event<((callback: (info: UpdateInfo) => void) => () => void)>(RPC_NAMESPACES.update.AVAILABLE),
+  onUpdateDownloadProgress: event<((callback: (progress: number) => void) => () => void)>(RPC_NAMESPACES.update.DOWNLOAD_PROGRESS),
+  getReleaseNotes: invoke<(() => Promise<string>)>(RPC_NAMESPACES.releaseNotes.GET),
+  getLatestReleaseVersion: invoke<(() => Promise<string | undefined>)>(RPC_NAMESPACES.releaseNotes.GET_LATEST_VERSION),
+  getSystemWarnings: local<(() => Promise<{ vcredistMissing: boolean; downloadUrl?: string }>)>(),
+  openUrl: invoke<((url: string) => Promise<void>)>(RPC_NAMESPACES.shell.OPEN_URL),
+  openFile: invoke<((path: string) => Promise<void>)>(RPC_NAMESPACES.shell.OPEN_FILE),
+  showInFolder: invoke<((path: string) => Promise<void>)>(RPC_NAMESPACES.shell.SHOW_IN_FOLDER),
+  onMenuNewChat: event<((callback: () => void) => () => void)>(RPC_NAMESPACES.menu.NEW_CHAT),
+  onMenuOpenSettings: event<((callback: () => void) => () => void)>(RPC_NAMESPACES.menu.OPEN_SETTINGS),
+  onMenuKeyboardShortcuts: event<((callback: () => void) => () => void)>(RPC_NAMESPACES.menu.KEYBOARD_SHORTCUTS),
+  onMenuToggleFocusMode: event<((callback: () => void) => () => void)>(RPC_NAMESPACES.menu.TOGGLE_FOCUS_MODE),
+  onMenuToggleSidebar: event<((callback: () => void) => () => void)>(RPC_NAMESPACES.menu.TOGGLE_SIDEBAR),
+  onDeepLinkNavigate: event<((callback: (nav: DeepLinkNavigation) => void) => () => void)>(RPC_NAMESPACES.deeplink.NAVIGATE),
+  showLogoutConfirmation: invoke<(() => Promise<boolean>)>(RPC_NAMESPACES.auth.SHOW_LOGOUT_CONFIRMATION),
+  showDeleteSessionConfirmation: invoke<((name: string) => Promise<boolean>)>(RPC_NAMESPACES.auth.SHOW_DELETE_SESSION_CONFIRMATION),
+  logout: invoke<(() => Promise<void>)>(RPC_NAMESPACES.auth.LOGOUT),
+  getCredentialHealth: invoke<(() => Promise<CredentialHealthStatus>)>(RPC_NAMESPACES.credentials.HEALTH_CHECK),
+  getAuthState: invoke<(() => Promise<AuthState>)>(RPC_NAMESPACES.onboarding.GET_AUTH_STATE),
+  getSetupNeeds: local<(() => Promise<SetupNeeds>)>(),
+  startWorkspaceMcpOAuth: invoke<((mcpUrl: string) => Promise<OAuthResult & { clientId?: string }>)>(RPC_NAMESPACES.onboarding.START_MCP_OAUTH),
+  startClaudeOAuth: invoke<(() => Promise<{ success: boolean; authUrl?: string; error?: string }>)>(RPC_NAMESPACES.onboarding.START_CLAUDE_OAUTH),
+  exchangeClaudeCode: invoke<((code: string, connectionSlug: string) => Promise<ClaudeOAuthResult>)>(RPC_NAMESPACES.onboarding.EXCHANGE_CLAUDE_CODE),
+  hasClaudeOAuthState: invoke<(() => Promise<boolean>)>(RPC_NAMESPACES.onboarding.HAS_CLAUDE_OAUTH_STATE),
+  clearClaudeOAuthState: invoke<(() => Promise<{ success: boolean }>)>(RPC_NAMESPACES.onboarding.CLEAR_CLAUDE_OAUTH_STATE),
   /** Defer onboarding setup — user chose "Setup later" */
-  deferSetup(): Promise<{ success: boolean }>
-
-  // ChatGPT OAuth (for Codex chatgptAuthTokens mode)
-  startChatGptOAuth(connectionSlug: string): Promise<{ success: boolean; error?: string }>
-  cancelChatGptOAuth(): Promise<{ success: boolean }>
-  getChatGptAuthStatus(connectionSlug: string): Promise<{ authenticated: boolean; expiresAt?: number; hasRefreshToken?: boolean }>
-  chatGptLogout(connectionSlug: string): Promise<{ success: boolean }>
-
-  // GitHub Copilot OAuth
-  startCopilotOAuth(connectionSlug: string): Promise<{ success: boolean; error?: string }>
-  cancelCopilotOAuth(): Promise<{ success: boolean }>
-  getCopilotAuthStatus(connectionSlug: string): Promise<{ authenticated: boolean }>
-  copilotLogout(connectionSlug: string): Promise<{ success: boolean }>
-  onCopilotDeviceCode(callback: (data: { userCode: string; verificationUri: string }) => void): () => void
-
+  deferSetup: invoke<(() => Promise<{ success: boolean }>)>(RPC_NAMESPACES.onboarding.DEFER_SETUP),
+  startChatGptOAuth: invoke<((connectionSlug: string) => Promise<{ success: boolean; error?: string }>)>(RPC_NAMESPACES.chatgpt.START_OAUTH),
+  cancelChatGptOAuth: invoke<(() => Promise<{ success: boolean }>)>(RPC_NAMESPACES.chatgpt.CANCEL_OAUTH),
+  getChatGptAuthStatus: invoke<((connectionSlug: string) => Promise<{ authenticated: boolean; expiresAt?: number; hasRefreshToken?: boolean }>)>(RPC_NAMESPACES.chatgpt.GET_AUTH_STATUS),
+  chatGptLogout: invoke<((connectionSlug: string) => Promise<{ success: boolean }>)>(RPC_NAMESPACES.chatgpt.LOGOUT),
+  startCopilotOAuth: invoke<((connectionSlug: string) => Promise<{ success: boolean; error?: string }>)>(RPC_NAMESPACES.copilot.START_OAUTH),
+  cancelCopilotOAuth: invoke<(() => Promise<{ success: boolean }>)>(RPC_NAMESPACES.copilot.CANCEL_OAUTH),
+  getCopilotAuthStatus: invoke<((connectionSlug: string) => Promise<{ authenticated: boolean }>)>(RPC_NAMESPACES.copilot.GET_AUTH_STATUS),
+  copilotLogout: invoke<((connectionSlug: string) => Promise<{ success: boolean }>)>(RPC_NAMESPACES.copilot.LOGOUT),
+  onCopilotDeviceCode: event<((callback: (data: { userCode: string; verificationUri: string }) => void) => () => void)>(RPC_NAMESPACES.copilot.DEVICE_CODE),
   /** Unified LLM connection setup */
-  setupLlmConnection(setup: LlmConnectionSetup): Promise<{ success: boolean; error?: string }>
+  setupLlmConnection: invoke<((setup: LlmConnectionSetup) => Promise<{ success: boolean; error?: string }>)>(RPC_NAMESPACES.settings.SETUP_LLM_CONNECTION),
   /** Unified connection test — spawns a lightweight agent subprocess to validate credentials */
-  testLlmConnectionSetup(params: TestLlmConnectionParams): Promise<TestLlmConnectionResult>
-  // Pi provider discovery (main process only — Pi SDK can't run in renderer)
-  getPiApiKeyProviders(): Promise<Array<{ key: string; label: string; placeholder: string }>>
-  getPiProviderBaseUrl(provider: string): Promise<string | undefined>
-  getPiProviderModels(provider: string): Promise<{ models: Array<{ id: string; name: string; costInput: number; costOutput: number; contextWindow: number; reasoning: boolean }>; totalCount: number }>
-  detectHermesInstallation(): Promise<HermesDetectionResult>
-  getHermesRuntimeDetails(): Promise<HermesRuntimeDetailsResult>
-  startHermesDashboard(): Promise<HermesDashboardResult>
-  updateHermesRuntime(): Promise<HermesUpdateResult>
-  listHermesLogs(): Promise<HermesListLogsResult>
-  readHermesLog(name: string): Promise<HermesReadLogResult>
-  listHermesHomeFiles(target?: string): Promise<HermesListHomeFilesResult>
-  listHermesSkills(): Promise<HermesListSkillsResult>
-  openHermesPath(target?: string): Promise<HermesOpenPathResult>
-  getHermesApiConfig(): Promise<{ success: true; data: unknown } | { success: false; error: string }>
-  patchHermesApiConfig(body: { config?: Record<string, unknown>; env?: Record<string, string> }): Promise<{ success: true; data: unknown } | { success: false; error: string }>
-  getHermesProviderModels(provider: string): Promise<{ success: true; data: unknown } | { success: false; error: string }>
-  listHermesProfiles(): Promise<HermesListProfilesResult>
-  getActiveHermesProfile(): Promise<HermesActiveProfileResult>
-  setActiveHermesProfile(name: string): Promise<HermesActiveProfileResult>
-  createHermesProfile(body: { name: string; cloneFromDefault: boolean }): Promise<HermesProfileMutationResult>
-  renameHermesProfile(name: string, newName: string): Promise<HermesProfileMutationResult>
-  deleteHermesProfile(name: string): Promise<HermesProfileMutationResult>
-  getHermesProfileSetupCommand(name: string): Promise<HermesProfileSetupCommandResult>
-  getHermesProfileSoul(name: string): Promise<HermesProfileSoulResult>
-  updateHermesProfileSoul(name: string, content: string): Promise<HermesProfileMutationResult>
-  listHermesEnv(): Promise<HermesListEnvResult>
-  setHermesEnv(body: { key: string; value: string }): Promise<HermesEnvMutationResult>
-  deleteHermesEnv(key: string): Promise<HermesEnvMutationResult>
-
-  // Session-specific model (overrides global)
-  getSessionModel(sessionId: string, workspaceId: string): Promise<string | null>
-  setSessionModel(sessionId: string, workspaceId: string, model: string | null, connection?: string): Promise<void>
-
-  // Workspace Settings (per-workspace configuration)
-  getWorkspaceSettings(workspaceId: string): Promise<WorkspaceSettings | null>
-  updateWorkspaceSetting<K extends keyof WorkspaceSettings>(workspaceId: string, key: K, value: WorkspaceSettings[K]): Promise<void>
-
-  // Folder dialog
-  openFolderDialog(): Promise<string | null>
-
-  // User Preferences
-  readPreferences(): Promise<{ content: string; exists: boolean; path: string }>
-  writePreferences(content: string): Promise<{ success: boolean; error?: string }>
-
-  // Session Drafts (persisted composer state — text + attachment refs)
-  getDraft(sessionId: string): Promise<import('@craft-agent/shared/config').SessionDraft | null>
-  setDraft(sessionId: string, draft: import('@craft-agent/shared/config').SessionDraft): Promise<void>
-  deleteDraft(sessionId: string): Promise<void>
-  getAllDrafts(): Promise<Record<string, import('@craft-agent/shared/config').SessionDraft>>
-
-  // Session Info Panel
-  getSessionFiles(sessionId: string): Promise<SessionFile[]>
-  getSessionNotes(sessionId: string): Promise<string>
-  setSessionNotes(sessionId: string, content: string): Promise<void>
-  watchSessionFiles(sessionId: string): Promise<void>
-  unwatchSessionFiles(): Promise<void>
-  onSessionFilesChanged(callback: (sessionId: string) => void): () => void
-
-  // Sources
-  getSources(workspaceId: string): Promise<LoadedSource[]>
-  createSource(workspaceId: string, config: Partial<FolderSourceConfig>): Promise<FolderSourceConfig>
-  deleteSource(workspaceId: string, sourceSlug: string): Promise<void>
-  startSourceOAuth(workspaceId: string, sourceSlug: string): Promise<{ success: boolean; error?: string }>
-  saveSourceCredentials(workspaceId: string, sourceSlug: string, credential: string): Promise<void>
-  getSourcePermissionsConfig(workspaceId: string, sourceSlug: string): Promise<import('@craft-agent/shared/agent').PermissionsConfigFile | null>
-  getWorkspacePermissionsConfig(workspaceId: string): Promise<import('@craft-agent/shared/agent').PermissionsConfigFile | null>
-  getDefaultPermissionsConfig(): Promise<{ config: import('@craft-agent/shared/agent').PermissionsConfigFile | null; path: string }>
-  getMcpTools(workspaceId: string, sourceSlug: string): Promise<McpToolsResult>
-
-  // OAuth (server-owned credentials, client-orchestrated flow)
-  performOAuth(args: { sourceSlug: string; sessionId?: string; authRequestId?: string }): Promise<{ success: boolean; error?: string; email?: string }>
-  oauthRevoke(sourceSlug: string): Promise<{ success: boolean }>
-
-  // Session content search (full-text search via ripgrep)
-  searchSessionContent(workspaceId: string, query: string, searchId?: string): Promise<SessionSearchResult[]>
-
-  // Sources change listener (live updates when sources are added/removed)
-  onSourcesChanged(callback: (workspaceId: string, sources: LoadedSource[]) => void): () => void
-
-  // Default permissions change listener (live updates when default.json changes)
-  onDefaultPermissionsChanged(callback: () => void): () => void
-
-  // Skills
-  getSkills(workspaceId: string, workingDirectory?: string): Promise<LoadedSkill[]>
-  getSkillFiles?(workspaceId: string, skillSlug: string): Promise<SkillFile[]>
-  deleteSkill(workspaceId: string, skillSlug: string): Promise<void>
-  openSkillInEditor(workspaceId: string, skillSlug: string): Promise<void>
-  openSkillInFinder(workspaceId: string, skillSlug: string): Promise<void>
-
-  // Skills change listener (live updates when skills are added/removed/modified)
-  onSkillsChanged(callback: (workspaceId: string, skills: LoadedSkill[]) => void): () => void
-
-  // Statuses (workspace-scoped)
-  listStatuses(workspaceId: string): Promise<import('@craft-agent/shared/statuses').StatusConfig[]>
-  reorderStatuses(workspaceId: string, orderedIds: string[]): Promise<void>
-  onStatusesChanged(callback: (workspaceId: string) => void): () => void
-
-  // Labels (workspace-scoped)
-  listLabels(workspaceId: string): Promise<import('@craft-agent/shared/labels').LabelConfig[]>
-  createLabel(workspaceId: string, input: import('@craft-agent/shared/labels').CreateLabelInput): Promise<import('@craft-agent/shared/labels').LabelConfig>
-  deleteLabel(workspaceId: string, labelId: string): Promise<{ stripped: number }>
-  onLabelsChanged(callback: (workspaceId: string) => void): () => void
-
-  // Channels (workspace-scoped)
-  listChannels(workspaceId: string): Promise<import('@craft-agent/shared/channels').WarRoomChannel[]>
-  createChannel(workspaceId: string, input: import('@craft-agent/shared/channels').CreateWarRoomChannelInput): Promise<import('@craft-agent/shared/channels').WarRoomChannel>
-  updateChannel(workspaceId: string, channelId: string, updates: import('@craft-agent/shared/channels').UpdateWarRoomChannelInput): Promise<import('@craft-agent/shared/channels').WarRoomChannel>
-  deleteChannel(workspaceId: string, channelId: string, options?: import('@craft-agent/shared/channels').DeleteChannelOptions): Promise<import('@craft-agent/shared/channels').DeleteChannelResult>
-  listChannelMessages(workspaceId: string, channelId: string): Promise<import('@craft-agent/shared/channels').ChannelMessage[]>
-  listChannelDispatches(workspaceId: string, channelId: string): Promise<import('@craft-agent/shared/channels').WarRoomDispatch[]>
-  sendChannelMessage(workspaceId: string, input: {
+  testLlmConnectionSetup: invoke<((params: TestLlmConnectionParams) => Promise<TestLlmConnectionResult>)>(RPC_NAMESPACES.settings.TEST_LLM_CONNECTION_SETUP),
+  getPiApiKeyProviders: invoke<(() => Promise<Array<{ key: string; label: string; placeholder: string }>>)>(RPC_NAMESPACES.pi.GET_API_KEY_PROVIDERS),
+  getPiProviderBaseUrl: invoke<((provider: string) => Promise<string | undefined>)>(RPC_NAMESPACES.pi.GET_PROVIDER_BASE_URL),
+  getPiProviderModels: invoke<((provider: string) => Promise<{ models: Array<{ id: string; name: string; costInput: number; costOutput: number; contextWindow: number; reasoning: boolean }>; totalCount: number }>)>(RPC_NAMESPACES.pi.GET_PROVIDER_MODELS),
+  detectHermesInstallation: invoke<(() => Promise<HermesDetectionResult>)>(RPC_NAMESPACES.hermes.DETECT_INSTALLATION),
+  getHermesRuntimeDetails: invoke<(() => Promise<HermesRuntimeDetailsResult>)>(RPC_NAMESPACES.hermes.GET_RUNTIME_DETAILS),
+  startHermesDashboard: invoke<(() => Promise<HermesDashboardResult>)>(RPC_NAMESPACES.hermes.START_DASHBOARD),
+  updateHermesRuntime: invoke<(() => Promise<HermesUpdateResult>)>(RPC_NAMESPACES.hermes.UPDATE_RUNTIME),
+  listHermesLogs: invoke<(() => Promise<HermesListLogsResult>)>(RPC_NAMESPACES.hermes.LIST_LOGS),
+  readHermesLog: invoke<((name: string) => Promise<HermesReadLogResult>)>(RPC_NAMESPACES.hermes.READ_LOG),
+  listHermesHomeFiles: invoke<((target?: string) => Promise<HermesListHomeFilesResult>)>(RPC_NAMESPACES.hermes.LIST_HOME_FILES),
+  listHermesSkills: invoke<(() => Promise<HermesListSkillsResult>)>(RPC_NAMESPACES.hermes.LIST_SKILLS),
+  openHermesPath: invoke<((target?: string) => Promise<HermesOpenPathResult>)>(RPC_NAMESPACES.hermes.OPEN_PATH),
+  getHermesApiConfig: invoke<(() => Promise<{ success: true; data: unknown } | { success: false; error: string }>)>(RPC_NAMESPACES.hermes.GET_API_CONFIG),
+  patchHermesApiConfig: invoke<((body: { config?: Record<string, unknown>; env?: Record<string, string> }) => Promise<{ success: true; data: unknown } | { success: false; error: string }>)>(RPC_NAMESPACES.hermes.PATCH_API_CONFIG),
+  getHermesProviderModels: invoke<((provider: string) => Promise<{ success: true; data: unknown } | { success: false; error: string }>)>(RPC_NAMESPACES.hermes.GET_PROVIDER_MODELS),
+  listHermesProfiles: invoke<(() => Promise<HermesListProfilesResult>)>(RPC_NAMESPACES.hermes.LIST_PROFILES),
+  getActiveHermesProfile: invoke<(() => Promise<HermesActiveProfileResult>)>(RPC_NAMESPACES.hermes.GET_ACTIVE_PROFILE),
+  setActiveHermesProfile: invoke<((name: string) => Promise<HermesActiveProfileResult>)>(RPC_NAMESPACES.hermes.SET_ACTIVE_PROFILE),
+  createHermesProfile: invoke<((body: { name: string; cloneFromDefault: boolean }) => Promise<HermesProfileMutationResult>)>(RPC_NAMESPACES.hermes.CREATE_PROFILE),
+  renameHermesProfile: invoke<((name: string, newName: string) => Promise<HermesProfileMutationResult>)>(RPC_NAMESPACES.hermes.RENAME_PROFILE),
+  deleteHermesProfile: invoke<((name: string) => Promise<HermesProfileMutationResult>)>(RPC_NAMESPACES.hermes.DELETE_PROFILE),
+  getHermesProfileSetupCommand: invoke<((name: string) => Promise<HermesProfileSetupCommandResult>)>(RPC_NAMESPACES.hermes.GET_PROFILE_SETUP_COMMAND),
+  getHermesProfileSoul: invoke<((name: string) => Promise<HermesProfileSoulResult>)>(RPC_NAMESPACES.hermes.GET_PROFILE_SOUL),
+  updateHermesProfileSoul: invoke<((name: string, content: string) => Promise<HermesProfileMutationResult>)>(RPC_NAMESPACES.hermes.UPDATE_PROFILE_SOUL),
+  listHermesEnv: invoke<(() => Promise<HermesListEnvResult>)>(RPC_NAMESPACES.hermes.LIST_ENV),
+  setHermesEnv: invoke<((body: { key: string; value: string }) => Promise<HermesEnvMutationResult>)>(RPC_NAMESPACES.hermes.SET_ENV),
+  deleteHermesEnv: invoke<((key: string) => Promise<HermesEnvMutationResult>)>(RPC_NAMESPACES.hermes.DELETE_ENV),
+  getSessionModel: invoke<((sessionId: string, workspaceId: string) => Promise<string | null>)>(RPC_NAMESPACES.sessions.GET_MODEL),
+  setSessionModel: invoke<((sessionId: string, workspaceId: string, model: string | null, connection?: string) => Promise<void>)>(RPC_NAMESPACES.sessions.SET_MODEL),
+  getWorkspaceSettings: invoke<((workspaceId: string) => Promise<WorkspaceSettings | null>)>(RPC_NAMESPACES.workspace.SETTINGS_GET),
+  updateWorkspaceSetting: invoke<(<K extends keyof WorkspaceSettings>(workspaceId: string, key: K, value: WorkspaceSettings[K]) => Promise<void>)>(RPC_NAMESPACES.workspace.SETTINGS_UPDATE),
+  openFolderDialog: invoke<(() => Promise<string | null>)>(RPC_NAMESPACES.dialog.OPEN_FOLDER),
+  readPreferences: invoke<(() => Promise<{ content: string; exists: boolean; path: string }>)>(RPC_NAMESPACES.preferences.READ),
+  writePreferences: invoke<((content: string) => Promise<{ success: boolean; error?: string }>)>(RPC_NAMESPACES.preferences.WRITE),
+  getDraft: invoke<((sessionId: string) => Promise<SessionDraft | null>)>(RPC_NAMESPACES.drafts.GET),
+  setDraft: invoke<((sessionId: string, draft: SessionDraft) => Promise<void>)>(RPC_NAMESPACES.drafts.SET),
+  deleteDraft: invoke<((sessionId: string) => Promise<void>)>(RPC_NAMESPACES.drafts.DELETE),
+  getAllDrafts: invoke<(() => Promise<Record<string, SessionDraft>>)>(RPC_NAMESPACES.drafts.GET_ALL),
+  getSessionFiles: invoke<((sessionId: string) => Promise<SessionFile[]>)>(RPC_NAMESPACES.sessions.GET_FILES),
+  getSessionNotes: invoke<((sessionId: string) => Promise<string>)>(RPC_NAMESPACES.sessions.GET_NOTES),
+  setSessionNotes: invoke<((sessionId: string, content: string) => Promise<void>)>(RPC_NAMESPACES.sessions.SET_NOTES),
+  watchSessionFiles: invoke<((sessionId: string) => Promise<void>)>(RPC_NAMESPACES.sessions.WATCH_FILES),
+  unwatchSessionFiles: invoke<(() => Promise<void>)>(RPC_NAMESPACES.sessions.UNWATCH_FILES),
+  onSessionFilesChanged: event<((callback: (sessionId: string) => void) => () => void)>(RPC_NAMESPACES.sessions.FILES_CHANGED),
+  getSources: invoke<((workspaceId: string) => Promise<LoadedSource[]>)>(RPC_NAMESPACES.sources.GET),
+  createSource: invoke<((workspaceId: string, config: Partial<FolderSourceConfig>) => Promise<FolderSourceConfig>)>(RPC_NAMESPACES.sources.CREATE),
+  deleteSource: invoke<((workspaceId: string, sourceSlug: string) => Promise<void>)>(RPC_NAMESPACES.sources.DELETE),
+  startSourceOAuth: invoke<((workspaceId: string, sourceSlug: string) => Promise<{ success: boolean; error?: string }>)>(RPC_NAMESPACES.sources.START_OAUTH),
+  saveSourceCredentials: invoke<((workspaceId: string, sourceSlug: string, credential: string) => Promise<void>)>(RPC_NAMESPACES.sources.SAVE_CREDENTIALS),
+  getSourcePermissionsConfig: invoke<((workspaceId: string, sourceSlug: string) => Promise<PermissionsConfigFile | null>)>(RPC_NAMESPACES.sources.GET_PERMISSIONS),
+  getWorkspacePermissionsConfig: invoke<((workspaceId: string) => Promise<PermissionsConfigFile | null>)>(RPC_NAMESPACES.workspace.GET_PERMISSIONS),
+  getDefaultPermissionsConfig: invoke<(() => Promise<{ config: PermissionsConfigFile | null; path: string }>)>(RPC_NAMESPACES.permissions.GET_DEFAULTS),
+  getMcpTools: invoke<((workspaceId: string, sourceSlug: string) => Promise<McpToolsResult>)>(RPC_NAMESPACES.sources.GET_MCP_TOOLS),
+  performOAuth: local<((args: { sourceSlug: string; sessionId?: string; authRequestId?: string }) => Promise<{ success: boolean; error?: string; email?: string }>)>(),
+  oauthRevoke: invoke<((sourceSlug: string) => Promise<{ success: boolean }>)>(RPC_NAMESPACES.oauth.REVOKE),
+  searchSessionContent: invoke<((workspaceId: string, query: string, searchId?: string) => Promise<SessionSearchResult[]>)>(RPC_NAMESPACES.sessions.SEARCH_CONTENT),
+  onSourcesChanged: event<((callback: (workspaceId: string, sources: LoadedSource[]) => void) => () => void)>(RPC_NAMESPACES.sources.CHANGED),
+  onDefaultPermissionsChanged: event<((callback: () => void) => () => void)>(RPC_NAMESPACES.permissions.DEFAULTS_CHANGED),
+  getSkills: invoke<((workspaceId: string, workingDirectory?: string) => Promise<LoadedSkill[]>)>(RPC_NAMESPACES.skills.GET),
+  getSkillFiles: invoke<((workspaceId: string, skillSlug: string) => Promise<SkillFile[]>)>(RPC_NAMESPACES.skills.GET_FILES),
+  deleteSkill: invoke<((workspaceId: string, skillSlug: string) => Promise<void>)>(RPC_NAMESPACES.skills.DELETE),
+  openSkillInEditor: invoke<((workspaceId: string, skillSlug: string) => Promise<void>)>(RPC_NAMESPACES.skills.OPEN_EDITOR),
+  openSkillInFinder: invoke<((workspaceId: string, skillSlug: string) => Promise<void>)>(RPC_NAMESPACES.skills.OPEN_FINDER),
+  onSkillsChanged: event<((callback: (workspaceId: string, skills: LoadedSkill[]) => void) => () => void)>(RPC_NAMESPACES.skills.CHANGED),
+  listStatuses: invoke<((workspaceId: string) => Promise<StatusConfig[]>)>(RPC_NAMESPACES.statuses.LIST),
+  reorderStatuses: invoke<((workspaceId: string, orderedIds: string[]) => Promise<void>)>(RPC_NAMESPACES.statuses.REORDER),
+  onStatusesChanged: event<((callback: (workspaceId: string) => void) => () => void)>(RPC_NAMESPACES.statuses.CHANGED),
+  listLabels: invoke<((workspaceId: string) => Promise<LabelConfig[]>)>(RPC_NAMESPACES.labels.LIST),
+  createLabel: invoke<((workspaceId: string, input: CreateLabelInput) => Promise<LabelConfig>)>(RPC_NAMESPACES.labels.CREATE),
+  deleteLabel: invoke<((workspaceId: string, labelId: string) => Promise<{ stripped: number }>)>(RPC_NAMESPACES.labels.DELETE),
+  onLabelsChanged: event<((callback: (workspaceId: string) => void) => () => void)>(RPC_NAMESPACES.labels.CHANGED),
+  listChannels: invoke<((workspaceId: string) => Promise<WarRoomChannel[]>)>(RPC_NAMESPACES.channels.LIST),
+  createChannel: invoke<((workspaceId: string, input: CreateWarRoomChannelInput) => Promise<WarRoomChannel>)>(RPC_NAMESPACES.channels.CREATE),
+  updateChannel: invoke<((workspaceId: string, channelId: string, updates: UpdateWarRoomChannelInput) => Promise<WarRoomChannel>)>(RPC_NAMESPACES.channels.UPDATE),
+  deleteChannel: invoke<((workspaceId: string, channelId: string, options?: DeleteChannelOptions) => Promise<DeleteChannelResult>)>(RPC_NAMESPACES.channels.DELETE),
+  listChannelMessages: invoke<((workspaceId: string, channelId: string) => Promise<ChannelMessage[]>)>(RPC_NAMESPACES.channels.LIST_MESSAGES),
+  listChannelDispatches: invoke<((workspaceId: string, channelId: string) => Promise<WarRoomDispatch[]>)>(RPC_NAMESPACES.channels.LIST_DISPATCHES),
+  sendChannelMessage: invoke<((workspaceId: string, input: {
     channelId: string
     text: string
     authorId?: string
     mentionedParticipantIds?: string[]
-  }): Promise<{
-    message: import('@craft-agent/shared/channels').ChannelMessage
+  }) => Promise<{
+    message: ChannelMessage
     targetedParticipantIds: string[]
     unknownMentions: string[]
     failures: Array<{ participantId: string; message: string }>
-    dispatches: import('@craft-agent/shared/channels').WarRoomDispatch[]
-  }>
-  onChannelsChanged(callback: (workspaceId: string) => void): () => void
-  onChannelMessagesChanged(callback: (workspaceId: string, channelId: string) => void): () => void
-
-  // LLM connections change listener
-  onLlmConnectionsChanged(callback: () => void): () => void
-
-  // Views (workspace-scoped, stored in views.json)
-  listViews(workspaceId: string): Promise<import('@craft-agent/shared/views').ViewConfig[]>
-  saveViews(workspaceId: string, views: import('@craft-agent/shared/views').ViewConfig[]): Promise<void>
-
-  // Generic workspace image loading/saving
-  readWorkspaceImage(workspaceId: string, relativePath: string): Promise<string>
-  writeWorkspaceImage(workspaceId: string, relativePath: string, base64: string, mimeType: string): Promise<void>
-
-  // Tool icon mappings
-  getToolIconMappings(): Promise<ToolIconMapping[]>
-
-  // Theme (app-level default)
-  getAppTheme(): Promise<import('@config/theme').ThemeOverrides | null>
-  setAppTheme(theme: import('@config/theme').ThemeOverrides | null): Promise<void>
-  loadPresetThemes(): Promise<import('@config/theme').PresetTheme[]>
-  loadPresetTheme(themeId: string): Promise<import('@config/theme').PresetTheme | null>
-  getColorTheme(): Promise<string>
-  setColorTheme(themeId: string): Promise<void>
-  getWorkspaceColorTheme(workspaceId: string): Promise<string | null>
-  setWorkspaceColorTheme(workspaceId: string, themeId: string | null): Promise<void>
-  getAllWorkspaceThemes(): Promise<Record<string, string | undefined>>
-
-  // Theme change listeners
-  onAppThemeChange(callback: (theme: import('@config/theme').ThemeOverrides | null) => void): () => void
-
-  // Logo URL resolution
-  getLogoUrl(serviceUrl: string, provider?: string): Promise<string | null>
-
-  // Notifications
-  showNotification(title: string, body: string, workspaceId: string, sessionId: string): Promise<void>
-  getNotificationsEnabled(): Promise<boolean>
-  setNotificationsEnabled(enabled: boolean): Promise<void>
-
-  // Input settings
-  getAutoCapitalisation(): Promise<boolean>
-  setAutoCapitalisation(enabled: boolean): Promise<void>
-  getSendMessageKey(): Promise<'enter' | 'cmd-enter'>
-  setSendMessageKey(key: 'enter' | 'cmd-enter'): Promise<void>
-  getSpellCheck(): Promise<boolean>
-  setSpellCheck(enabled: boolean): Promise<void>
-
-  // Power settings
-  getKeepAwakeWhileRunning(): Promise<boolean>
-  setKeepAwakeWhileRunning(enabled: boolean): Promise<void>
-
-  // Tools settings
-  getBrowserToolEnabled(): Promise<boolean>
-  setBrowserToolEnabled(enabled: boolean): Promise<void>
-
-  // Appearance settings
-  getRichToolDescriptions(): Promise<boolean>
-  setRichToolDescriptions(enabled: boolean): Promise<void>
-  getAutoExpandActivities(): Promise<boolean>
-  setAutoExpandActivities(enabled: boolean): Promise<void>
-
-  // Prompt caching & context
-  getExtendedPromptCache(): Promise<boolean>
-  setExtendedPromptCache(enabled: boolean): Promise<void>
-  getEnable1MContext(): Promise<boolean>
-  setEnable1MContext(enabled: boolean): Promise<void>
-
-  // RTK Bash-output compression (opt-in; requires the `rtk` binary on PATH)
-  getRtkEnabled(): Promise<boolean>
-  setRtkEnabled(enabled: boolean): Promise<void>
-  getRtkStatus(opts?: { forceRecheck?: boolean }): Promise<{ installed: boolean; path: string | null; version: string | null }>
-  getRtkGain(): Promise<{ totalCommands: number; totalInput: number; totalOutput: number; totalSaved: number; avgSavingsPct: number; totalTimeMs: number; avgTimeMs: number } | null>
-
-  // Network proxy settings
-  getNetworkProxySettings(): Promise<NetworkProxySettings | undefined>
-  setNetworkProxySettings(settings: NetworkProxySettings): Promise<void>
-
-  refreshBadge(): Promise<void>
-  setDockIconWithBadge(dataUrl: string): Promise<void>
-  onBadgeDraw(callback: (data: { count: number; iconDataUrl: string }) => void): () => void
-  onBadgeDrawWindows(callback: (data: { count: number }) => void): () => void
-  getWindowFocusState(): Promise<boolean>
-  onWindowFocusChange(callback: (isFocused: boolean) => void): () => void
-  onNotificationNavigate(callback: (data: { workspaceId: string; sessionId: string }) => void): () => void
-
-  // Theme preferences sync across windows
-  broadcastThemePreferences(preferences: { mode: string; colorTheme: string; font: string }): Promise<void>
-  onThemePreferencesChange(callback: (preferences: { mode: string; colorTheme: string; font: string }) => void): () => void
-
-  // Workspace theme sync across windows
-  broadcastWorkspaceThemeChange(workspaceId: string, themeId: string | null): Promise<void>
-  onWorkspaceThemeChange(callback: (data: { workspaceId: string; themeId: string | null }) => void): () => void
-
-  // Git operations
-  getGitBranch(dirPath: string): Promise<string | null>
-
-  // Git Bash (Windows)
-  checkGitBash(): Promise<GitBashStatus>
-  browseForGitBash(): Promise<string | null>
-  setGitBashPath(path: string): Promise<{ success: boolean; error?: string }>
-
-  // Menu actions (from renderer to main)
-  menuQuit(): Promise<void>
-  menuNewWindow(): Promise<void>
-  menuMinimize(): Promise<void>
-  menuMaximize(): Promise<void>
-  menuZoomIn(): Promise<void>
-  menuZoomOut(): Promise<void>
-  menuZoomReset(): Promise<void>
-  menuToggleDevTools(): Promise<void>
-  menuUndo(): Promise<void>
-  menuRedo(): Promise<void>
-  menuCut(): Promise<void>
-  menuCopy(): Promise<void>
-  menuPaste(): Promise<void>
-  menuSelectAll(): Promise<void>
-
-  // Meetings MVP (integrated browser-backed Google Meet)
-  meetings: {
-    start(workspaceId: string, input: string | MeetingStartInput): Promise<MeetingRecord>
-    list(workspaceId: string): Promise<MeetingRecord[]>
-    status(workspaceId: string, id: string): Promise<MeetingRecord | null>
-    stop(workspaceId: string, id: string): Promise<MeetingRecord>
-    transcript(workspaceId: string, id: string): Promise<MeetingTranscriptResult>
-    getTranscriptionConfig(workspaceId: string): Promise<MeetingTranscriptionConfig>
-    saveTranscriptionConfig(workspaceId: string, input: SaveMeetingTranscriptionConfigInput): Promise<MeetingTranscriptionConfig>
-    archive(workspaceId: string, id: string): Promise<MeetingRecord>
-    unarchive(workspaceId: string, id: string): Promise<MeetingRecord>
-    deleteMeeting(workspaceId: string, id: string): Promise<void>
-  }
-
-  // Browser pane management
-  browserPane: {
-    create(input?: string | BrowserPaneCreateOptions): Promise<string>
-    destroy(id: string): Promise<void>
-    list(): Promise<BrowserInstanceInfo[]>
-    navigate(id: string, url: string): Promise<{ url: string; title: string }>
-    goBack(id: string): Promise<void>
-    goForward(id: string): Promise<void>
-    reload(id: string): Promise<void>
-    stop(id: string): Promise<void>
-    focus(id: string): Promise<void>
-    emptyStateLaunch(payload: BrowserEmptyStateLaunchPayload): Promise<BrowserEmptyStateLaunchResult>
-    onStateChanged(callback: (info: BrowserInstanceInfo) => void): () => void
-    onRemoved(callback: (id: string) => void): () => void
-    onInteracted(callback: (id: string) => void): () => void
-    // Profiles
-    listProfiles(): Promise<BrowserProfile[]>
-    getProfileSettings(): Promise<BrowserProfileSettings>
-    setProfileSettings(partial: { alwaysAsk?: boolean; lastUsedProfileId?: string }): Promise<BrowserProfileSettings>
-    createProfile(input: BrowserProfileInput): Promise<BrowserProfile>
-    renameProfile(payload: { id: string; name: string }): Promise<BrowserProfile>
-    switchProfile(payload: { instanceId: string; profileId: string }): Promise<string | null>
-    deleteProfile(id: string): Promise<void>
-    onProfilesChanged(callback: (settings: BrowserProfileSettings) => void): () => void
-    onPickerRequested(callback: (data: { instanceId: string }) => void): () => void
-  }
-
-  // LLM Connections (provider configurations)
-  listLlmConnections(): Promise<LlmConnection[]>
-  listLlmConnectionsWithStatus(): Promise<LlmConnectionWithStatus[]>
-  getLlmConnection(slug: string): Promise<LlmConnection | null>
-  getLlmConnectionApiKey(slug: string): Promise<string | null>
-  saveLlmConnection(connection: LlmConnection): Promise<{ success: boolean; error?: string }>
-  deleteLlmConnection(slug: string): Promise<{ success: boolean; error?: string }>
-  testLlmConnection(slug: string): Promise<{ success: boolean; error?: string }>
-  setDefaultLlmConnection(slug: string): Promise<{ success: boolean; error?: string }>
-  getDefaultThinkingLevel(): Promise<ThinkingLevel>
-  setDefaultThinkingLevel(level: ThinkingLevel): Promise<{ success: boolean; error?: string }>
-  setWorkspaceDefaultLlmConnection(workspaceId: string, slug: string | null): Promise<{ success: boolean; error?: string }>
-
-  // Projects (workspace-scoped)
-  getProjects(workspaceId: string): Promise<unknown>
-  getProject(workspaceId: string, projectIdOrSlug: string): Promise<unknown | null>
-  createProject(workspaceId: string, input: import('@craft-agent/shared/projects/types').CreateProjectInput): Promise<import('@craft-agent/shared/projects/types').ProjectConfig>
-  updateProject(workspaceId: string, projectSlug: string, patch: Partial<Omit<import('@craft-agent/shared/projects/types').ProjectConfig, 'id' | 'slug' | 'createdAt'>>): Promise<import('@craft-agent/shared/projects/types').ProjectConfig>
-  deleteProject(workspaceId: string, projectSlug: string): Promise<void>
-  listProjectAssets(workspaceId: string, projectSlug: string): Promise<unknown>
-  uploadProjectAsset(workspaceId: string, projectSlug: string, input: { filename: string; base64?: string; text?: string; sourcePath?: string }): Promise<import('@craft-agent/shared/projects/types').ProjectAsset>
-  deleteProjectAsset(workspaceId: string, projectSlug: string, filename: string): Promise<void>
-  onProjectsChanged(callback: (workspaceId: string, projects: unknown) => void): () => void
-
-  // Automations
-  getAutomations(workspaceId: string): Promise<unknown>
-
-  // Automation testing (manual trigger)
-  testAutomation(payload: TestAutomationPayload): Promise<TestAutomationResult>
-
-  // Automation state management
-  setAutomationEnabled(workspaceId: string, eventName: string, matcherIndex: number, enabled: boolean): Promise<void>
-  duplicateAutomation(workspaceId: string, eventName: string, matcherIndex: number): Promise<void>
-  deleteAutomation(workspaceId: string, eventName: string, matcherIndex: number): Promise<void>
-  getAutomationHistory(workspaceId: string, automationId: string, limit?: number): Promise<Array<{ id: string; ts: number; ok: boolean; sessionId?: string; prompt?: string; error?: string; webhook?: { method: string; url: string; statusCode: number; durationMs: number; attempts?: number; error?: string; responseBody?: string } }>>
-  getAutomationLastExecuted(workspaceId: string): Promise<Record<string, number>>
-  replayAutomation(workspaceId: string, automationId: string, eventName: string): Promise<{ results: Array<{ type: string; url: string; statusCode: number; success: boolean; error?: string; duration: number }> }>
-
-  // Automations change listener
-  onAutomationsChanged(callback: (workspaceId: string) => void): () => void
-
-  // Language
-  changeLanguage(lang: string): Promise<void>
-
-  // Resources (cross-workspace export/import)
-  exportResources(workspaceId: string, options: ExportResourcesOptions): Promise<ExportResult>
-  importResources(workspaceId: string, bundle: ResourceBundle, mode: ResourceImportMode): Promise<ResourceImportResult>
-
-  // Messaging gateway — workspaceId is taken from the client handshake (ctx.workspaceId)
-  getMessagingConfig(): Promise<{
+    dispatches: WarRoomDispatch[]
+  }>)>(RPC_NAMESPACES.channels.SEND_MESSAGE),
+  onChannelsChanged: event<((callback: (workspaceId: string) => void) => () => void)>(RPC_NAMESPACES.channels.CHANGED),
+  onChannelMessagesChanged: event<((callback: (workspaceId: string, channelId: string) => void) => () => void)>(RPC_NAMESPACES.channels.MESSAGES_CHANGED),
+  onLlmConnectionsChanged: event<((callback: () => void) => () => void)>(RPC_NAMESPACES.llmConnections.CHANGED),
+  listViews: invoke<((workspaceId: string) => Promise<ViewConfig[]>)>(RPC_NAMESPACES.views.LIST),
+  saveViews: invoke<((workspaceId: string, views: ViewConfig[]) => Promise<void>)>(RPC_NAMESPACES.views.SAVE),
+  readWorkspaceImage: invoke<((workspaceId: string, relativePath: string) => Promise<string>)>(RPC_NAMESPACES.workspace.READ_IMAGE),
+  writeWorkspaceImage: invoke<((workspaceId: string, relativePath: string, base64: string, mimeType: string) => Promise<void>)>(RPC_NAMESPACES.workspace.WRITE_IMAGE),
+  getToolIconMappings: invoke<(() => Promise<ToolIconMapping[]>)>(RPC_NAMESPACES.toolIcons.GET_MAPPINGS),
+  getAppTheme: invoke<(() => Promise<ThemeOverrides | null>)>(RPC_NAMESPACES.theme.GET_APP),
+  setAppTheme: invoke<((theme: ThemeOverrides | null) => Promise<void>)>(RPC_NAMESPACES.theme.SET_APP),
+  loadPresetThemes: invoke<(() => Promise<PresetTheme[]>)>(RPC_NAMESPACES.theme.GET_PRESETS),
+  loadPresetTheme: invoke<((themeId: string) => Promise<PresetTheme | null>)>(RPC_NAMESPACES.theme.LOAD_PRESET),
+  getColorTheme: invoke<(() => Promise<string>)>(RPC_NAMESPACES.theme.GET_COLOR_THEME),
+  setColorTheme: invoke<((themeId: string) => Promise<void>)>(RPC_NAMESPACES.theme.SET_COLOR_THEME),
+  getWorkspaceColorTheme: invoke<((workspaceId: string) => Promise<string | null>)>(RPC_NAMESPACES.theme.GET_WORKSPACE_COLOR_THEME),
+  setWorkspaceColorTheme: invoke<((workspaceId: string, themeId: string | null) => Promise<void>)>(RPC_NAMESPACES.theme.SET_WORKSPACE_COLOR_THEME),
+  getAllWorkspaceThemes: invoke<(() => Promise<Record<string, string | undefined>>)>(RPC_NAMESPACES.theme.GET_ALL_WORKSPACE_THEMES),
+  onAppThemeChange: event<((callback: (theme: ThemeOverrides | null) => void) => () => void)>(RPC_NAMESPACES.theme.APP_CHANGED),
+  getLogoUrl: invoke<((serviceUrl: string, provider?: string) => Promise<string | null>)>(RPC_NAMESPACES.logo.GET_URL),
+  showNotification: invoke<((title: string, body: string, workspaceId: string, sessionId: string) => Promise<void>)>(RPC_NAMESPACES.notification.SHOW),
+  getNotificationsEnabled: invoke<(() => Promise<boolean>)>(RPC_NAMESPACES.notification.GET_ENABLED),
+  setNotificationsEnabled: invoke<((enabled: boolean) => Promise<void>)>(RPC_NAMESPACES.notification.SET_ENABLED),
+  getAutoCapitalisation: invoke<(() => Promise<boolean>)>(RPC_NAMESPACES.input.GET_AUTO_CAPITALISATION),
+  setAutoCapitalisation: invoke<((enabled: boolean) => Promise<void>)>(RPC_NAMESPACES.input.SET_AUTO_CAPITALISATION),
+  getSendMessageKey: invoke<(() => Promise<'enter' | 'cmd-enter'>)>(RPC_NAMESPACES.input.GET_SEND_MESSAGE_KEY),
+  setSendMessageKey: invoke<((key: 'enter' | 'cmd-enter') => Promise<void>)>(RPC_NAMESPACES.input.SET_SEND_MESSAGE_KEY),
+  getSpellCheck: invoke<(() => Promise<boolean>)>(RPC_NAMESPACES.input.GET_SPELL_CHECK),
+  setSpellCheck: invoke<((enabled: boolean) => Promise<void>)>(RPC_NAMESPACES.input.SET_SPELL_CHECK),
+  getKeepAwakeWhileRunning: invoke<(() => Promise<boolean>)>(RPC_NAMESPACES.power.GET_KEEP_AWAKE),
+  setKeepAwakeWhileRunning: invoke<((enabled: boolean) => Promise<void>)>(RPC_NAMESPACES.power.SET_KEEP_AWAKE),
+  getBrowserToolEnabled: invoke<(() => Promise<boolean>)>(RPC_NAMESPACES.tools.GET_BROWSER_TOOL_ENABLED),
+  setBrowserToolEnabled: invoke<((enabled: boolean) => Promise<void>)>(RPC_NAMESPACES.tools.SET_BROWSER_TOOL_ENABLED),
+  getRichToolDescriptions: invoke<(() => Promise<boolean>)>(RPC_NAMESPACES.appearance.GET_RICH_TOOL_DESCRIPTIONS),
+  setRichToolDescriptions: invoke<((enabled: boolean) => Promise<void>)>(RPC_NAMESPACES.appearance.SET_RICH_TOOL_DESCRIPTIONS),
+  getAutoExpandActivities: invoke<(() => Promise<boolean>)>(RPC_NAMESPACES.appearance.GET_AUTO_EXPAND_ACTIVITIES),
+  setAutoExpandActivities: invoke<((enabled: boolean) => Promise<void>)>(RPC_NAMESPACES.appearance.SET_AUTO_EXPAND_ACTIVITIES),
+  getExtendedPromptCache: invoke<(() => Promise<boolean>)>(RPC_NAMESPACES.caching.GET_EXTENDED_PROMPT_CACHE),
+  setExtendedPromptCache: invoke<((enabled: boolean) => Promise<void>)>(RPC_NAMESPACES.caching.SET_EXTENDED_PROMPT_CACHE),
+  getEnable1MContext: invoke<(() => Promise<boolean>)>(RPC_NAMESPACES.caching.GET_ENABLE_1M_CONTEXT),
+  setEnable1MContext: invoke<((enabled: boolean) => Promise<void>)>(RPC_NAMESPACES.caching.SET_ENABLE_1M_CONTEXT),
+  getRtkEnabled: invoke<(() => Promise<boolean>)>(RPC_NAMESPACES.rtk.GET_ENABLED),
+  setRtkEnabled: invoke<((enabled: boolean) => Promise<void>)>(RPC_NAMESPACES.rtk.SET_ENABLED),
+  getRtkStatus: invoke<((opts?: { forceRecheck?: boolean }) => Promise<{ installed: boolean; path: string | null; version: string | null }>)>(RPC_NAMESPACES.rtk.GET_STATUS),
+  getRtkGain: invoke<(() => Promise<{ totalCommands: number; totalInput: number; totalOutput: number; totalSaved: number; avgSavingsPct: number; totalTimeMs: number; avgTimeMs: number } | null>)>(RPC_NAMESPACES.rtk.GET_GAIN),
+  getNetworkProxySettings: invoke<(() => Promise<NetworkProxySettings | undefined>)>(RPC_NAMESPACES.settings.GET_NETWORK_PROXY),
+  setNetworkProxySettings: invoke<((settings: NetworkProxySettings) => Promise<void>)>(RPC_NAMESPACES.settings.SET_NETWORK_PROXY),
+  refreshBadge: invoke<(() => Promise<void>)>(RPC_NAMESPACES.badge.REFRESH),
+  setDockIconWithBadge: invoke<((dataUrl: string) => Promise<void>)>(RPC_NAMESPACES.badge.SET_ICON),
+  onBadgeDraw: event<((callback: (data: { count: number; iconDataUrl: string }) => void) => () => void)>(RPC_NAMESPACES.badge.DRAW),
+  onBadgeDrawWindows: event<((callback: (data: { count: number }) => void) => () => void)>(RPC_NAMESPACES.badge.DRAW_WINDOWS),
+  getWindowFocusState: invoke<(() => Promise<boolean>)>(RPC_NAMESPACES.window.GET_FOCUS_STATE),
+  onWindowFocusChange: event<((callback: (isFocused: boolean) => void) => () => void)>(RPC_NAMESPACES.window.FOCUS_STATE),
+  onNotificationNavigate: event<((callback: (data: { workspaceId: string; sessionId: string }) => void) => () => void)>(RPC_NAMESPACES.notification.NAVIGATE),
+  broadcastThemePreferences: invoke<((preferences: { mode: string; colorTheme: string; font: string }) => Promise<void>)>(RPC_NAMESPACES.theme.BROADCAST_PREFERENCES),
+  onThemePreferencesChange: event<((callback: (preferences: { mode: string; colorTheme: string; font: string }) => void) => () => void)>(RPC_NAMESPACES.theme.PREFERENCES_CHANGED),
+  broadcastWorkspaceThemeChange: invoke<((workspaceId: string, themeId: string | null) => Promise<void>)>(RPC_NAMESPACES.theme.BROADCAST_WORKSPACE_THEME),
+  onWorkspaceThemeChange: event<((callback: (data: { workspaceId: string; themeId: string | null }) => void) => () => void)>(RPC_NAMESPACES.theme.WORKSPACE_THEME_CHANGED),
+  getGitBranch: invoke<((dirPath: string) => Promise<string | null>)>(RPC_NAMESPACES.git.GET_BRANCH),
+  checkGitBash: invoke<(() => Promise<GitBashStatus>)>(RPC_NAMESPACES.gitbash.CHECK),
+  browseForGitBash: invoke<(() => Promise<string | null>)>(RPC_NAMESPACES.gitbash.BROWSE),
+  setGitBashPath: invoke<((path: string) => Promise<{ success: boolean; error?: string }>)>(RPC_NAMESPACES.gitbash.SET_PATH),
+  menuQuit: invoke<(() => Promise<void>)>(RPC_NAMESPACES.menu.QUIT),
+  menuNewWindow: invoke<(() => Promise<void>)>(RPC_NAMESPACES.menu.NEW_WINDOW),
+  menuMinimize: invoke<(() => Promise<void>)>(RPC_NAMESPACES.menu.MINIMIZE),
+  menuMaximize: invoke<(() => Promise<void>)>(RPC_NAMESPACES.menu.MAXIMIZE),
+  menuZoomIn: invoke<(() => Promise<void>)>(RPC_NAMESPACES.menu.ZOOM_IN),
+  menuZoomOut: invoke<(() => Promise<void>)>(RPC_NAMESPACES.menu.ZOOM_OUT),
+  menuZoomReset: invoke<(() => Promise<void>)>(RPC_NAMESPACES.menu.ZOOM_RESET),
+  menuToggleDevTools: invoke<(() => Promise<void>)>(RPC_NAMESPACES.menu.TOGGLE_DEV_TOOLS),
+  menuUndo: invoke<(() => Promise<void>)>(RPC_NAMESPACES.menu.UNDO),
+  menuRedo: invoke<(() => Promise<void>)>(RPC_NAMESPACES.menu.REDO),
+  menuCut: invoke<(() => Promise<void>)>(RPC_NAMESPACES.menu.CUT),
+  menuCopy: invoke<(() => Promise<void>)>(RPC_NAMESPACES.menu.COPY),
+  menuPaste: invoke<(() => Promise<void>)>(RPC_NAMESPACES.menu.PASTE),
+  menuSelectAll: invoke<(() => Promise<void>)>(RPC_NAMESPACES.menu.SELECT_ALL),
+  listLlmConnections: invoke<(() => Promise<LlmConnection[]>)>(RPC_NAMESPACES.llmConnections.LIST),
+  listLlmConnectionsWithStatus: invoke<(() => Promise<LlmConnectionWithStatus[]>)>(RPC_NAMESPACES.llmConnections.LIST_WITH_STATUS),
+  getLlmConnection: invoke<((slug: string) => Promise<LlmConnection | null>)>(RPC_NAMESPACES.llmConnections.GET),
+  getLlmConnectionApiKey: invoke<((slug: string) => Promise<string | null>)>(RPC_NAMESPACES.llmConnections.GET_API_KEY),
+  saveLlmConnection: invoke<((connection: LlmConnection) => Promise<{ success: boolean; error?: string }>)>(RPC_NAMESPACES.llmConnections.SAVE),
+  deleteLlmConnection: invoke<((slug: string) => Promise<{ success: boolean; error?: string }>)>(RPC_NAMESPACES.llmConnections.DELETE),
+  testLlmConnection: invoke<((slug: string) => Promise<{ success: boolean; error?: string }>)>(RPC_NAMESPACES.llmConnections.TEST),
+  setDefaultLlmConnection: invoke<((slug: string) => Promise<{ success: boolean; error?: string }>)>(RPC_NAMESPACES.llmConnections.SET_DEFAULT),
+  getDefaultThinkingLevel: invoke<(() => Promise<ThinkingLevel>)>(RPC_NAMESPACES.settings.GET_DEFAULT_THINKING_LEVEL),
+  setDefaultThinkingLevel: invoke<((level: ThinkingLevel) => Promise<{ success: boolean; error?: string }>)>(RPC_NAMESPACES.settings.SET_DEFAULT_THINKING_LEVEL),
+  setWorkspaceDefaultLlmConnection: invoke<((workspaceId: string, slug: string | null) => Promise<{ success: boolean; error?: string }>)>(RPC_NAMESPACES.llmConnections.SET_WORKSPACE_DEFAULT),
+  getProjects: invoke<((workspaceId: string) => Promise<unknown>)>(RPC_NAMESPACES.projects.GET),
+  getProject: invoke<((workspaceId: string, projectIdOrSlug: string) => Promise<unknown | null>)>(RPC_NAMESPACES.projects.GET_ONE),
+  createProject: invoke<((workspaceId: string, input: CreateProjectInput) => Promise<ProjectConfig>)>(RPC_NAMESPACES.projects.CREATE),
+  updateProject: invoke<((workspaceId: string, projectSlug: string, patch: Partial<Omit<ProjectConfig, 'id' | 'slug' | 'createdAt'>>) => Promise<ProjectConfig>)>(RPC_NAMESPACES.projects.UPDATE),
+  deleteProject: invoke<((workspaceId: string, projectSlug: string) => Promise<void>)>(RPC_NAMESPACES.projects.DELETE),
+  listProjectAssets: invoke<((workspaceId: string, projectSlug: string) => Promise<unknown>)>(RPC_NAMESPACES.projects.LIST_ASSETS),
+  uploadProjectAsset: invoke<((workspaceId: string, projectSlug: string, input: { filename: string; base64?: string; text?: string; sourcePath?: string }) => Promise<ProjectAsset>)>(RPC_NAMESPACES.projects.UPLOAD_ASSET),
+  deleteProjectAsset: invoke<((workspaceId: string, projectSlug: string, filename: string) => Promise<void>)>(RPC_NAMESPACES.projects.DELETE_ASSET),
+  onProjectsChanged: event<((callback: (workspaceId: string, projects: unknown) => void) => () => void)>(RPC_NAMESPACES.projects.CHANGED),
+  getAutomations: invoke<((workspaceId: string) => Promise<unknown>)>(RPC_NAMESPACES.automations.GET),
+  testAutomation: invoke<((payload: TestAutomationPayload) => Promise<TestAutomationResult>)>(RPC_NAMESPACES.automations.TEST),
+  setAutomationEnabled: invoke<((workspaceId: string, eventName: string, matcherIndex: number, enabled: boolean) => Promise<void>)>(RPC_NAMESPACES.automations.SET_ENABLED),
+  duplicateAutomation: invoke<((workspaceId: string, eventName: string, matcherIndex: number) => Promise<void>)>(RPC_NAMESPACES.automations.DUPLICATE),
+  deleteAutomation: invoke<((workspaceId: string, eventName: string, matcherIndex: number) => Promise<void>)>(RPC_NAMESPACES.automations.DELETE),
+  getAutomationHistory: invoke<((workspaceId: string, automationId: string, limit?: number) => Promise<Array<{ id: string; ts: number; ok: boolean; sessionId?: string; prompt?: string; error?: string; webhook?: { method: string; url: string; statusCode: number; durationMs: number; attempts?: number; error?: string; responseBody?: string } }>>)>(RPC_NAMESPACES.automations.GET_HISTORY),
+  getAutomationLastExecuted: invoke<((workspaceId: string) => Promise<Record<string, number>>)>(RPC_NAMESPACES.automations.GET_LAST_EXECUTED),
+  replayAutomation: invoke<((workspaceId: string, automationId: string, eventName: string) => Promise<{ results: Array<{ type: string; url: string; statusCode: number; success: boolean; error?: string; duration: number }> }>)>(RPC_NAMESPACES.automations.REPLAY),
+  onAutomationsChanged: event<((callback: (workspaceId: string) => void) => () => void)>(RPC_NAMESPACES.automations.CHANGED),
+  changeLanguage: local<((lang: string) => Promise<void>)>(),
+  exportResources: invoke<((workspaceId: string, options: ExportResourcesOptions) => Promise<ExportResult>)>(RPC_NAMESPACES.resources.EXPORT),
+  importResources: invoke<((workspaceId: string, bundle: ResourceBundle, mode: ResourceImportMode) => Promise<ResourceImportResult>)>(RPC_NAMESPACES.resources.IMPORT),
+  getMessagingConfig: invoke<(() => Promise<{
     enabled: boolean
     platforms: Record<string, { enabled: boolean; accessMode?: MessagingPlatformAccessMode; owners?: MessagingPlatformOwnerInfo[] } | undefined>
     runtime: Record<string, MessagingPlatformRuntimeInfo | undefined>
-  } | null>
-  updateMessagingConfig(config: Record<string, unknown>): Promise<void>
-  testTelegramToken(token: string): Promise<{ success: boolean; botName?: string; botUsername?: string; error?: string }>
-  saveTelegramToken(token: string): Promise<void>
-  saveLarkCredentials(credentialsJson: string): Promise<void>
-  disconnectMessagingPlatform(platform: string): Promise<void>
-  forgetMessagingPlatform(platform: string): Promise<void>
-  getMessagingBindings(): Promise<Array<{ id: string; workspaceId: string; sessionId: string; platform: string; channelId: string; threadId?: number; channelName?: string; enabled: boolean; createdAt: number; accessMode?: MessagingBindingAccessMode; allowedSenderIds?: string[] }>>
-  generateMessagingPairingCode(sessionId: string, platform: string): Promise<{ code: string; expiresAt: number; botUsername?: string }>
+  } | null>)>(RPC_NAMESPACES.messaging.GET_CONFIG),
+  updateMessagingConfig: invoke<((config: Record<string, unknown>) => Promise<void>)>(RPC_NAMESPACES.messaging.UPDATE_CONFIG),
+  testTelegramToken: invoke<((token: string) => Promise<{ success: boolean; botName?: string; botUsername?: string; error?: string }>)>(RPC_NAMESPACES.messaging.TEST_TELEGRAM),
+  saveTelegramToken: invoke<((token: string) => Promise<void>)>(RPC_NAMESPACES.messaging.SAVE_TELEGRAM),
+  saveLarkCredentials: invoke<((credentialsJson: string) => Promise<void>)>(RPC_NAMESPACES.messaging.SAVE_LARK),
+  disconnectMessagingPlatform: invoke<((platform: string) => Promise<void>)>(RPC_NAMESPACES.messaging.DISCONNECT),
+  forgetMessagingPlatform: invoke<((platform: string) => Promise<void>)>(RPC_NAMESPACES.messaging.FORGET),
+  getMessagingBindings: invoke<(() => Promise<Array<{ id: string; workspaceId: string; sessionId: string; platform: string; channelId: string; threadId?: number; channelName?: string; enabled: boolean; createdAt: number; accessMode?: MessagingBindingAccessMode; allowedSenderIds?: string[] }>>)>(RPC_NAMESPACES.messaging.GET_BINDINGS),
+  generateMessagingPairingCode: invoke<((sessionId: string, platform: string) => Promise<{ code: string; expiresAt: number; botUsername?: string }>)>(RPC_NAMESPACES.messaging.GENERATE_CODE),
   /** Telegram supergroup pairing — returns a code typed in the supergroup to capture its chatId. */
-  generateMessagingSupergroupCode(platform: string): Promise<{ code: string; expiresAt: number; botUsername?: string }>
+  generateMessagingSupergroupCode: invoke<((platform: string) => Promise<{ code: string; expiresAt: number; botUsername?: string }>)>(RPC_NAMESPACES.messaging.GENERATE_SUPERGROUP_CODE),
   /** Read the workspace's currently paired Telegram supergroup, if any. */
-  getMessagingSupergroup(): Promise<{ chatId: string; title: string; capturedAt: number } | null>
+  getMessagingSupergroup: invoke<(() => Promise<{ chatId: string; title: string; capturedAt: number } | null>)>(RPC_NAMESPACES.messaging.GET_SUPERGROUP),
   /** Forget the paired Telegram supergroup (existing topic bindings stay on disk but stop matching). */
-  unbindMessagingSupergroup(): Promise<{ success: boolean }>
-  unbindMessagingSession(sessionId: string, platform?: string): Promise<void>
-  unbindMessagingBinding(bindingId: string): Promise<{ success: boolean }>
-  onMessagingBindingChanged(callback: (workspaceId: string) => void): () => void
-  onMessagingPlatformStatus(callback: (workspaceId: string, platform: string, status: MessagingPlatformRuntimeInfo) => void): () => void
-  // WhatsApp (subprocess-based Baileys adapter)
-  startWhatsAppConnect(): Promise<{ success: boolean }>
-  submitWhatsAppPhone(phoneNumber: string): Promise<{ success: boolean }>
-  onWhatsAppEvent(callback: (payload: { workspaceId: string; event: WhatsAppUiEvent }) => void): () => void
-  // Messaging access control (Phase 3)
-  getMessagingPlatformOwners(platform: string): Promise<MessagingPlatformOwnerInfo[]>
-  setMessagingPlatformOwners(platform: string, owners: MessagingPlatformOwnerInfo[]): Promise<MessagingPlatformOwnerInfo[]>
-  getMessagingPlatformAccessMode(platform: string): Promise<MessagingPlatformAccessMode>
-  setMessagingPlatformAccessMode(platform: string, mode: MessagingPlatformAccessMode): Promise<{ success: boolean }>
-  getMessagingPendingSenders(platform?: string): Promise<MessagingPendingSenderInfo[]>
-  dismissMessagingPendingSender(platform: string, userId: string, opts?: { reason?: MessagingPendingRejectReason; bindingId?: string }): Promise<{ success: boolean }>
-  allowMessagingPendingSender(
-    platform: string,
-    userId: string,
-    entryKey?: { reason?: MessagingPendingRejectReason; bindingId?: string },
-  ): Promise<{ owners: MessagingPlatformOwnerInfo[]; bindingId?: string }>
-  setMessagingBindingAccess(bindingId: string, access: { mode: MessagingBindingAccessMode; allowedSenderIds?: string[] }): Promise<{ success: boolean }>
-  onMessagingPendingChanged(callback: (workspaceId: string) => void): () => void
+  unbindMessagingSupergroup: invoke<(() => Promise<{ success: boolean }>)>(RPC_NAMESPACES.messaging.UNBIND_SUPERGROUP),
+  unbindMessagingSession: invoke<((sessionId: string, platform?: string) => Promise<void>)>(RPC_NAMESPACES.messaging.UNBIND),
+  unbindMessagingBinding: invoke<((bindingId: string) => Promise<{ success: boolean }>)>(RPC_NAMESPACES.messaging.UNBIND_BINDING),
+  onMessagingBindingChanged: event<((callback: (workspaceId: string) => void) => () => void)>(RPC_NAMESPACES.messaging.BINDING_CHANGED),
+  onMessagingPlatformStatus: event<((callback: (workspaceId: string, platform: string, status: MessagingPlatformRuntimeInfo) => void) => () => void)>(RPC_NAMESPACES.messaging.PLATFORM_STATUS),
+  startWhatsAppConnect: invoke<(() => Promise<{ success: boolean }>)>(RPC_NAMESPACES.messaging.WA_START_CONNECT),
+  submitWhatsAppPhone: invoke<((phoneNumber: string) => Promise<{ success: boolean }>)>(RPC_NAMESPACES.messaging.WA_SUBMIT_PHONE),
+  onWhatsAppEvent: event<((callback: (payload: { workspaceId: string; event: WhatsAppUiEvent }) => void) => () => void)>(RPC_NAMESPACES.messaging.WA_UI_EVENT),
+  getMessagingPlatformOwners: invoke<((platform: string) => Promise<MessagingPlatformOwnerInfo[]>)>(RPC_NAMESPACES.messaging.GET_PLATFORM_OWNERS),
+  setMessagingPlatformOwners: invoke<((platform: string, owners: MessagingPlatformOwnerInfo[]) => Promise<MessagingPlatformOwnerInfo[]>)>(RPC_NAMESPACES.messaging.SET_PLATFORM_OWNERS),
+  getMessagingPlatformAccessMode: invoke<((platform: string) => Promise<MessagingPlatformAccessMode>)>(RPC_NAMESPACES.messaging.GET_PLATFORM_ACCESS_MODE),
+  setMessagingPlatformAccessMode: invoke<((platform: string, mode: MessagingPlatformAccessMode) => Promise<{ success: boolean }>)>(RPC_NAMESPACES.messaging.SET_PLATFORM_ACCESS_MODE),
+  getMessagingPendingSenders: invoke<((platform?: string) => Promise<MessagingPendingSenderInfo[]>)>(RPC_NAMESPACES.messaging.GET_PENDING_SENDERS),
+  dismissMessagingPendingSender: invoke<((platform: string, userId: string, opts?: { reason?: MessagingPendingRejectReason; bindingId?: string }) => Promise<{ success: boolean }>)>(RPC_NAMESPACES.messaging.DISMISS_PENDING_SENDER),
+  allowMessagingPendingSender: invoke<((platform: string, userId: string, entryKey?: { reason?: MessagingPendingRejectReason; bindingId?: string }) => Promise<{ owners: MessagingPlatformOwnerInfo[]; bindingId?: string }>)>(RPC_NAMESPACES.messaging.ALLOW_PENDING_SENDER),
+  setMessagingBindingAccess: invoke<((bindingId: string, access: { mode: MessagingBindingAccessMode; allowedSenderIds?: string[] }) => Promise<{ success: boolean }>)>(RPC_NAMESPACES.messaging.SET_BINDING_ACCESS),
+  onMessagingPendingChanged: event<((callback: (workspaceId: string) => void) => () => void)>(RPC_NAMESPACES.messaging.PENDING_CHANGED),
+  'meetings.start': invoke<((workspaceId: string, input: string | MeetingStartInput) => Promise<MeetingRecord>)>(RPC_NAMESPACES.meetings.START),
+  'meetings.list': invoke<((workspaceId: string) => Promise<MeetingRecord[]>)>(RPC_NAMESPACES.meetings.LIST),
+  'meetings.status': invoke<((workspaceId: string, id: string) => Promise<MeetingRecord | null>)>(RPC_NAMESPACES.meetings.STATUS),
+  'meetings.stop': invoke<((workspaceId: string, id: string) => Promise<MeetingRecord>)>(RPC_NAMESPACES.meetings.STOP),
+  'meetings.transcript': invoke<((workspaceId: string, id: string) => Promise<MeetingTranscriptResult>)>(RPC_NAMESPACES.meetings.TRANSCRIPT),
+  'meetings.getTranscriptionConfig': invoke<((workspaceId: string) => Promise<MeetingTranscriptionConfig>)>(RPC_NAMESPACES.meetings.GET_TRANSCRIPTION_CONFIG),
+  'meetings.saveTranscriptionConfig': invoke<((workspaceId: string, input: SaveMeetingTranscriptionConfigInput) => Promise<MeetingTranscriptionConfig>)>(RPC_NAMESPACES.meetings.SAVE_TRANSCRIPTION_CONFIG),
+  'meetings.archive': invoke<((workspaceId: string, id: string) => Promise<MeetingRecord>)>(RPC_NAMESPACES.meetings.ARCHIVE),
+  'meetings.unarchive': invoke<((workspaceId: string, id: string) => Promise<MeetingRecord>)>(RPC_NAMESPACES.meetings.UNARCHIVE),
+  'meetings.deleteMeeting': invoke<((workspaceId: string, id: string) => Promise<void>)>(RPC_NAMESPACES.meetings.DELETE),
+  'browserPane.create': invoke<((input?: string | BrowserPaneCreateOptions) => Promise<string>)>(RPC_NAMESPACES.browserPane.CREATE),
+  'browserPane.destroy': invoke<((id: string) => Promise<void>)>(RPC_NAMESPACES.browserPane.DESTROY),
+  'browserPane.list': invoke<(() => Promise<BrowserInstanceInfo[]>)>(RPC_NAMESPACES.browserPane.LIST),
+  'browserPane.navigate': invoke<((id: string, url: string) => Promise<{ url: string; title: string }>)>(RPC_NAMESPACES.browserPane.NAVIGATE),
+  'browserPane.goBack': invoke<((id: string) => Promise<void>)>(RPC_NAMESPACES.browserPane.GO_BACK),
+  'browserPane.goForward': invoke<((id: string) => Promise<void>)>(RPC_NAMESPACES.browserPane.GO_FORWARD),
+  'browserPane.reload': invoke<((id: string) => Promise<void>)>(RPC_NAMESPACES.browserPane.RELOAD),
+  'browserPane.stop': invoke<((id: string) => Promise<void>)>(RPC_NAMESPACES.browserPane.STOP),
+  'browserPane.focus': invoke<((id: string) => Promise<void>)>(RPC_NAMESPACES.browserPane.FOCUS),
+  'browserPane.emptyStateLaunch': invoke<((payload: BrowserEmptyStateLaunchPayload) => Promise<BrowserEmptyStateLaunchResult>)>(RPC_NAMESPACES.browserPane.LAUNCH),
+  'browserPane.onStateChanged': event<((callback: (info: BrowserInstanceInfo) => void) => () => void)>(RPC_NAMESPACES.browserPane.STATE_CHANGED),
+  'browserPane.onRemoved': event<((callback: (id: string) => void) => () => void)>(RPC_NAMESPACES.browserPane.REMOVED),
+  'browserPane.onInteracted': event<((callback: (id: string) => void) => () => void)>(RPC_NAMESPACES.browserPane.INTERACTED),
+  'browserPane.listProfiles': invoke<(() => Promise<BrowserProfile[]>)>(RPC_NAMESPACES.browserPane.LIST_PROFILES),
+  'browserPane.getProfileSettings': invoke<(() => Promise<BrowserProfileSettings>)>(RPC_NAMESPACES.browserPane.GET_PROFILE_SETTINGS),
+  'browserPane.setProfileSettings': invoke<((partial: { alwaysAsk?: boolean; lastUsedProfileId?: string }) => Promise<BrowserProfileSettings>)>(RPC_NAMESPACES.browserPane.SET_PROFILE_SETTINGS),
+  'browserPane.createProfile': invoke<((input: BrowserProfileInput) => Promise<BrowserProfile>)>(RPC_NAMESPACES.browserPane.CREATE_PROFILE),
+  'browserPane.renameProfile': invoke<((payload: { id: string; name: string }) => Promise<BrowserProfile>)>(RPC_NAMESPACES.browserPane.RENAME_PROFILE),
+  'browserPane.switchProfile': invoke<((payload: { instanceId: string; profileId: string }) => Promise<string | null>)>(RPC_NAMESPACES.browserPane.SWITCH_PROFILE),
+  'browserPane.deleteProfile': invoke<((id: string) => Promise<void>)>(RPC_NAMESPACES.browserPane.DELETE_PROFILE),
+  'browserPane.onProfilesChanged': event<((callback: (settings: BrowserProfileSettings) => void) => () => void)>(RPC_NAMESPACES.browserPane.PROFILES_CHANGED),
+  'browserPane.onPickerRequested': event<((callback: (data: { instanceId: string }) => void) => () => void)>(RPC_NAMESPACES.browserPane.PICKER_REQUESTED),
+} satisfies Record<string, RpcLeaf<RpcLeafKind, unknown>>
+
+// ── ElectronAPI — derived from RPC_CONTRACT ─────────────────────────────────
+type SigOf<L> = L extends RpcLeaf<RpcLeafKind, infer S> ? S : never
+type RpcContract = typeof RPC_CONTRACT
+type RpcContractKey = keyof RpcContract & string
+
+type FlatApi = {
+  [K in RpcContractKey as K extends `${string}.${string}` ? never : K]: SigOf<RpcContract[K]>
 }
+type NsPrefix = { [K in RpcContractKey]: K extends `${infer P}.${string}` ? P : never }[RpcContractKey]
+type NestedApi = {
+  [P in NsPrefix]: {
+    [K in RpcContractKey as K extends `${P}.${infer M}` ? M : never]: SigOf<RpcContract[K]>
+  }
+}
+
+/**
+ * Type-safe IPC API exposed to the renderer. Derived from {@link RPC_CONTRACT};
+ * do not hand-edit method signatures here — edit the contract entry instead.
+ * `getSkillFiles` stays optional because the web adapter may omit it.
+ */
+export type ElectronAPI =
+  Omit<FlatApi & NestedApi, 'getSkillFiles'> & {
+    getSkillFiles?: SigOf<RpcContract['getSkillFiles']>
+  }
 
 export interface MessagingPlatformRuntimeInfo {
   platform: string

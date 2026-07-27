@@ -124,7 +124,7 @@ describe('registerSystemCoreHandlers OPEN_URL', () => {
   })
 
   it('rejects unsupported protocols with a per-scheme reason', async () => {
-    const { openUrl, ctx } = createTestHarness()
+    const { openUrl, ctx, invokeClientCalls } = createTestHarness()
 
     // OPEN_URL uses a blocklist (url-safety.ts) and rejects known-dangerous
     // schemes by name. file: is one of them — and the most important on
@@ -132,7 +132,10 @@ describe('registerSystemCoreHandlers OPEN_URL', () => {
     // scheme in parens and a human-readable reason so the renderer can
     // show a useful toast instead of a generic "Invalid URL".
     await expect(openUrl(ctx, 'file:///tmp/test.txt')).rejects.toThrow(
-      'Failed to open URL: Refused to open URL with blocked scheme: file:'
+      'Failed to open URL: URL blocked (file:).'
     )
+
+    // The security property: the URL never reaches the client's shell.openExternal.
+    expect(invokeClientCalls).toEqual([])
   })
 })

@@ -73,7 +73,6 @@ function makeFakeAdapter(): PlatformAdapter {
       maxButtons: 10,
       maxMessageLength: 4096,
       markdown: 'v2',
-      webhookSupport: false,
     },
     initialize: noop,
     destroy: noop,

@@ -68,7 +68,7 @@ export class HermesDashboardHost implements IHermesDashboardHost {
 
     assertDashboardUrlIsSafe(dashboard.url)
     const activeUrl = dashboard.url
-    const existing = this.state.instanceId ? this.browserPaneManager.getInstance(this.state.instanceId) : undefined
+    const existing = this.state.instanceId ? this.browserPaneManager.getLiveInstance(this.state.instanceId) : undefined
 
     if (existing && this.state.dashboardUrl === activeUrl) {
       this.browserPaneManager.focus(this.state.instanceId!)

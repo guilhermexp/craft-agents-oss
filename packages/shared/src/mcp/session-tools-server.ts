@@ -23,8 +23,10 @@ import {
   executeSessionTool,
   getSessionToolRegistry,
   getToolDefsAsJsonSchema,
+  toJsonSchemaToolDef,
   validateSessionToolInput,
   validateSessionToolOutput,
+  MCP_ONLY_TOOL_DEFS,
   type ToolResult as SessionToolResult,
 } from '@craft-agent/session-tools-core';
 import { createClaudeContext } from '../agent/claude-context.ts';
@@ -79,59 +81,6 @@ const BROWSER_RELEASE_HINT = '\n\nWhen you are done using the browser, call brow
 
 const AUTOMATION_TOOL_NAME = 'automation_tool';
 const MEETING_TOOL_NAME = 'meeting_tool';
-const AUTOMATION_TOOL_DESCRIPTION = `Manage Craft-native automations for this workspace.
-
-Use this instead of Hermes native cron while running inside Craft. Scheduled prompt jobs are written to the workspace automations.json and appear in Craft Automations / Scheduled.
-
-Commands:
-- list: list configured automations
-- create_scheduled: create a SchedulerTick automation that starts a Craft session with a prompt
-- toggle: enable or disable an automation by id
-- delete: remove an automation by id
-- history: read recent automations-history.jsonl entries`;
-
-const AUTOMATION_TOOL_SCHEMA = {
-  type: 'object',
-  properties: {
-    command: { type: 'string', enum: ['list', 'create_scheduled', 'toggle', 'delete', 'history'] },
-    id: { type: 'string', description: 'Automation matcher id for toggle/delete/history filtering' },
-    name: { type: 'string', description: 'Human-readable automation name' },
-    cron: { type: 'string', description: '5-field cron expression for SchedulerTick, e.g. */30 * * * *' },
-    timezone: { type: 'string', description: 'IANA timezone, e.g. America/Sao_Paulo' },
-    prompt: { type: 'string', description: 'Prompt action text for create_scheduled' },
-    llmConnection: { type: 'string', description: 'Optional LLM connection slug for the spawned automation session' },
-    model: { type: 'string', description: 'Optional model id for the spawned automation session' },
-    labels: { type: 'array', items: { type: 'string' }, description: 'Labels applied to sessions created by the automation' },
-    permissionMode: { type: 'string', enum: ['safe', 'ask', 'allow-all'], description: 'Permission mode for created sessions' },
-    enabled: { type: 'boolean', description: 'Enable/disable value for create_scheduled or toggle' },
-    limit: { type: 'number', description: 'History entry limit, default 20' },
-  },
-  required: ['command'],
-} as const;
-
-const MEETING_TOOL_DESCRIPTION = `Control Craft-native meeting capture for this session when desktop/native meeting callbacks are available.
-
-Commands:
-- start: start or attach to a meeting capture
-- status: get current meeting capture status
-- list: list known/recent meeting captures
-- transcript: fetch a meeting transcript
-- stop: stop an active meeting capture
-
-If the active Craft runtime has not registered meeting callbacks, this tool returns a clear unavailable error instead of touching Hermes upstream.`;
-
-const MEETING_TOOL_SCHEMA = {
-  type: 'object',
-  properties: {
-    command: { type: 'string', enum: ['start', 'status', 'list', 'transcript', 'stop'] },
-    meetingId: { type: 'string', description: 'Meeting/capture id for status, transcript, or stop' },
-    id: { type: 'string', description: 'Alias for meetingId when native callbacks use id' },
-    title: { type: 'string', description: 'Optional meeting title for start' },
-    url: { type: 'string', description: 'Optional meeting URL for start/attach' },
-    limit: { type: 'number', description: 'Optional result limit for list/transcript' },
-  },
-  required: ['command'],
-} as const;
 
 function toMcpResult(result: SessionToolResult): { content: McpContent[]; isError?: boolean } {
   return {
@@ -206,59 +155,46 @@ export class CraftSessionToolsMcpServer {
 
   getToolDefinitions(): BridgeToolDefinition[] {
     const browserEnabled = getBrowserToolEnabled();
-    const tools: BridgeToolDefinition[] = getToolDefsAsJsonSchema({
+    const nativeDefs = getToolDefsAsJsonSchema({
       includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback,
       includeMemory: FEATURE_FLAGS.memory,
-    })
-      .flatMap((def) =>
-        browserEnabled || def.name !== 'browser_tool'
-          ? [{
-              name: def.name,
-              description: def.description,
-              inputSchema: def.inputSchema,
-              outputSchema: def.outputSchema,
-              _meta: {
-                craftApiVersion: def.apiVersion,
-                craftExposure: def.exposure,
-                craftExecutionMode: def.executionMode,
-                craftSafeMode: def.safeMode,
-              },
-            }]
-          : [],
-      );
-
-    tools.push({
-      name: AUTOMATION_TOOL_NAME,
-      description: AUTOMATION_TOOL_DESCRIPTION,
-      inputSchema: AUTOMATION_TOOL_SCHEMA as unknown as Record<string, unknown>,
-      outputSchema: this.bridgeToolOutputSchema(),
-      _meta: { craftApiVersion: 'v1', craftBridgeOnly: true },
     });
-
-    tools.push({
-      name: MEETING_TOOL_NAME,
-      description: MEETING_TOOL_DESCRIPTION,
-      inputSchema: MEETING_TOOL_SCHEMA as unknown as Record<string, unknown>,
-      outputSchema: this.bridgeToolOutputSchema(),
-      _meta: { craftApiVersion: 'v1', craftBridgeOnly: true },
-    });
-
-    return tools;
+    const bridgeOnlyDefs = MCP_ONLY_TOOL_DEFS.map((def) => toJsonSchemaToolDef(def));
+    return [...nativeDefs, ...bridgeOnlyDefs]
+      .filter((def) => browserEnabled || def.name !== 'browser_tool')
+      .map((def) => ({
+        name: def.name,
+        description: def.description,
+        inputSchema: def.inputSchema,
+        outputSchema: def.outputSchema,
+        _meta: {
+          craftApiVersion: def.apiVersion,
+          craftExposure: def.exposure,
+          craftExecutionMode: def.executionMode,
+          craftSafeMode: def.safeMode,
+        },
+      }));
   }
 
   async callTool(name: string, args: Record<string, unknown> = {}): Promise<{ content: McpContent[]; isError?: boolean }> {
-    if (name === AUTOMATION_TOOL_NAME) return this.automationTool(args);
-    if (name === MEETING_TOOL_NAME) return this.meetingTool(args);
+    if (name === AUTOMATION_TOOL_NAME || name === MEETING_TOOL_NAME) {
+      // mcp-only tools declare a canonical inputSchema via defineTool; validate
+      // against it before dispatch so no consumer executes a tool without validation.
+      const def = MCP_ONLY_TOOL_DEFS.find((d) => d.name === name);
+      if (!def) return errorResult(`Unknown Craft session tool: ${name}`);
+      const parsedArgs = validateSessionToolInput(def, args);
+      return name === AUTOMATION_TOOL_NAME ? this.automationTool(parsedArgs) : this.meetingTool(parsedArgs);
+    }
 
-    const def = getSessionToolRegistry({
+    const filterOptions = {
       includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback,
       includeMemory: FEATURE_FLAGS.memory,
-    }).get(name);
+    };
+    const def = getSessionToolRegistry(filterOptions).get(name);
     if (!def) return errorResult(`Unknown Craft session tool: ${name}`);
 
-    if (def.handler) {
-      const result = await executeSessionTool(def, this.createContext(), args);
-      return toMcpResult(result);
+    if (def.executionMode === 'registry') {
+      return toMcpResult(await executeSessionTool(name, this.createContext(), args, filterOptions));
     }
 
     const parsedArgs = validateSessionToolInput(def, args);
@@ -615,27 +551,6 @@ export class CraftSessionToolsMcpServer {
 
   private configAutomationSystemReload(): void {
     this.options.automationSystem?.reloadConfig();
-  }
-
-  private bridgeToolOutputSchema(): Record<string, unknown> {
-    return {
-      type: 'object',
-      properties: {
-        content: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              type: { type: 'string', const: 'text' },
-              text: { type: 'string' },
-            },
-            required: ['type', 'text'],
-          },
-        },
-        isError: { type: 'boolean' },
-      },
-      required: ['content'],
-    };
   }
 
   private debug(message: string): void {

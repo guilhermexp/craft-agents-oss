@@ -315,5 +315,4 @@ export const piDriver: ProviderDriver = {
     }
     return testAnthropicCompatible(args.apiKey, baseUrl, bareModel, args.timeoutMs);
   },
-  validateStoredConnection: async () => ({ success: true }),
 };

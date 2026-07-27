@@ -1,7 +1,7 @@
 import * as React from 'react'
 import type { ComponentEntry } from './types'
 import type { SessionMeta } from '@/atoms/sessions'
-import type { SessionStatus } from '@/config/session-status-config'
+import type { ResolvedSessionStatus } from '@/config/session-status-config'
 import type { ContentSearchResult } from '@/hooks/useSessionSearch'
 import { Circle } from 'lucide-react'
 import { SessionSearchHeader } from '@/components/app-shell/SessionSearchHeader'
@@ -13,7 +13,7 @@ import { ActionRegistryProvider } from '@/actions/registry'
 // Mock Todo States (minimal set for playground)
 // ============================================================================
 
-const mockSessionStatuses: SessionStatus[] = [
+const mockSessionStatuses: ResolvedSessionStatus[] = [
   {
     id: 'todo',
     label: 'Todo',

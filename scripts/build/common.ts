@@ -74,7 +74,7 @@ const DIST_MIRROR_EXCLUDED_TOP_LEVEL: Record<string, true> = {
  */
 export function shouldMirrorResourceToDist(resourceRelative: string): boolean {
   const topLevel = resourceRelative.split('/')[0];
-  if (DIST_MIRROR_EXCLUDED_TOP_LEVEL[topLevel]) return false;
+  if (topLevel && DIST_MIRROR_EXCLUDED_TOP_LEVEL[topLevel]) return false;
   return !(
     resourceRelative === 'vendor/hermes' ||
     resourceRelative.startsWith('vendor/hermes/') ||
@@ -482,44 +482,6 @@ export function copyRipgrep(config: BuildConfig): void {
 }
 
 /**
- * Copy network interceptor source files (Anthropic — runs under Bun via --preload)
- */
-export function copyInterceptor(config: BuildConfig): void {
-  const { rootDir, electronDir } = config;
-
-  const sharedSrcDir = join('packages', 'shared', 'src');
-  const sourceDir = join(rootDir, sharedSrcDir);
-  const destDir = join(electronDir, sharedSrcDir);
-
-  const interceptorSource = join(sourceDir, 'unified-network-interceptor.ts');
-  if (!existsSync(interceptorSource)) {
-    throw new Error(`Interceptor not found at ${interceptorSource}`);
-  }
-
-  console.log('Copying interceptor...');
-  mkdirSync(destDir, { recursive: true });
-  copyFileSync(interceptorSource, join(destDir, 'unified-network-interceptor.ts'));
-
-  // Also copy shared infrastructure (imported by unified-network-interceptor.ts at runtime)
-  const commonSource = join(sourceDir, 'interceptor-common.ts');
-  if (existsSync(commonSource)) {
-    copyFileSync(commonSource, join(destDir, 'interceptor-common.ts'));
-  }
-
-  // Copy request utilities (imported by unified-network-interceptor.ts)
-  const requestUtilsSource = join(sourceDir, 'interceptor-request-utils.ts');
-  if (existsSync(requestUtilsSource)) {
-    copyFileSync(requestUtilsSource, join(destDir, 'interceptor-request-utils.ts'));
-  }
-
-  // Copy feature flags (imported by unified-network-interceptor.ts for fast mode / source templates)
-  const featureFlagsSource = join(sourceDir, 'feature-flags.ts');
-  if (existsSync(featureFlagsSource)) {
-    copyFileSync(featureFlagsSource, join(destDir, 'feature-flags.ts'));
-  }
-}
-
-/**
  * Verify the unified interceptor CJS bundle exists (runs under Node.js via --require)
  * Built by `bun run build:interceptor` into apps/electron/dist/
  */
@@ -597,6 +559,17 @@ export function copyPiAgentServer(config: BuildConfig, resourcesDir?: string): v
     console.log('  Copied pi-better-subagents extension');
   }
 
+  // 1c. Copy the vendored pi-computer-use runtime (staged into dist/ by
+  //     pi-agent-server's `craft-stage-runtime.mjs`). index.ts resolves it as
+  //     `<SERVER_DIR>/pi-computer-use` and silently disables desktop
+  //     computer-use when absent, so a packaged build without it loses the
+  //     feature with no error. Skipped if absent.
+  const computerUseSrc = join(piSourceDir, 'pi-computer-use');
+  if (existsSync(computerUseSrc)) {
+    cpSync(computerUseSrc, join(piDestDir, 'pi-computer-use'), { recursive: true });
+    console.log('  Copied pi-computer-use runtime');
+  }
+
   // 2. Copy koffi npm package (external import, resolved via node_modules at runtime)
   const koffiSource = join(rootDir, 'node_modules', 'koffi');
 
@@ -624,7 +597,8 @@ export function copyPiAgentServer(config: BuildConfig, resourcesDir?: string): v
   if (existsSync(nativeSrc)) {
     mkdirSync(nativeDest, { recursive: true });
     cpSync(nativeSrc, nativeDest, { recursive: true });
-    const size = lstatSync(join(nativeSrc, readdirSync(nativeSrc)[0])).size;
+    const [firstNativeEntry] = readdirSync(nativeSrc);
+    const size = firstNativeEntry ? lstatSync(join(nativeSrc, firstNativeEntry)).size : 0;
     console.log(`  Copied index.js + koffi/${targetDir} (${(size / 1024 / 1024).toFixed(1)}MB)`);
   } else {
     console.warn(`  Warning: koffi native binary not found for ${targetDir}`);
@@ -656,7 +630,7 @@ export function buildMcpServers(config: BuildConfig): void {
 
   execSync(
     `bun build ${join(sessionDir, 'src', 'index.ts')} --outfile ${sessionOut} --target node --format cjs`,
-    { cwd: rootDir, stdio: 'inherit', shell: true }
+    { cwd: rootDir, stdio: 'inherit' }
   );
 
   if (!existsSync(sessionOut)) {
@@ -672,7 +646,7 @@ export function buildMcpServers(config: BuildConfig): void {
     mkdirSync(join(piDir, 'dist'), { recursive: true });
     execSync(
       `bun build ${join(piDir, 'src', 'index.ts')} --outdir ${join(piDir, 'dist')} --target bun --format esm --external koffi`,
-      { cwd: rootDir, stdio: 'inherit', shell: true }
+      { cwd: rootDir, stdio: 'inherit' }
     );
     if (!existsSync(piOut)) {
       throw new Error(`Pi agent server output not found at ${piOut}`);
@@ -693,7 +667,7 @@ export function buildWhatsAppWorker(config: BuildConfig): void {
 
   console.log('Building WhatsApp worker...');
 
-  execSync('bun run build:wa-worker', { cwd: rootDir, stdio: 'inherit', shell: true });
+  execSync('bun run build:wa-worker', { cwd: rootDir, stdio: 'inherit' });
 
   if (!existsSync(workerOut)) {
     throw new Error(`WhatsApp worker output not found at ${workerOut}`);

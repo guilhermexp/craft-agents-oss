@@ -6,7 +6,7 @@
  */
 
 import type { BaseEventPayload } from './event-bus.ts';
-import type { AutomationEvent, AutomationMatcher, PromptReferences, AgentEvent, SdkAutomationInput } from './types.ts';
+import type { AutomationEvent, AutomationMatcher, PromptReferences, AgentHookEvent, SdkAutomationInput } from './types.ts';
 import { matchesCron } from './cron-matcher.ts';
 import { sanitizeForShell } from './security.ts';
 import { evaluateConditions } from './conditions.ts';
@@ -113,7 +113,7 @@ function getMatchValue(event: AutomationEvent, data: Record<string, unknown>): s
  * Mirrors the Claude SDK's `fieldToMatch` per event — each event type matches
  * against a specific field from the input.
  */
-function getMatchValueForSdkInput(event: AgentEvent, input: SdkAutomationInput): string {
+function getMatchValueForSdkInput(event: AgentHookEvent, input: SdkAutomationInput): string {
   switch (event) {
     case 'PreToolUse':
     case 'PostToolUse':
@@ -195,7 +195,7 @@ export function matcherMatches(matcher: AutomationMatcher, event: AutomationEven
 /**
  * SDK agent-event adapter for canonical matcher evaluation.
  */
-export function matcherMatchesSdk(matcher: AutomationMatcher, event: AgentEvent, input: SdkAutomationInput): boolean {
+export function matcherMatchesSdk(matcher: AutomationMatcher, event: AgentHookEvent, input: SdkAutomationInput): boolean {
   return matcherMatchesWithContext(matcher, event, {
     matchValue: getMatchValueForSdkInput(event, input),
     payload: input as unknown as Record<string, unknown>,

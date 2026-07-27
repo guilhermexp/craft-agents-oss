@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'bun:test'
-import { SessionManager } from './SessionManager.ts'
+import type { Workspace } from '@craft-agent/shared/config'
+import type { SessionEvent } from '@craft-agent/shared/protocol'
+import type { ManagedSession } from './SessionManager.ts'
+import { SessionManager, createManagedSession } from './SessionManager.ts'
+import { SessionMessageStore } from './session-message-store'
+
+const TEST_WORKSPACE = { id: 'ws', name: 'ws', rootPath: '/tmp/adopt-guard', createdAt: Date.now() } as Workspace
 
 // Locks the adoption state machine that prevents "Generate → Create & Run" from minting a duplicate
 // top-level orchestrator (#bug1). The success path needs full storage wiring, so here we pin the
@@ -7,8 +13,7 @@ import { SessionManager } from './SessionManager.ts'
 // review asked for (no silent capture of an unrelated/non-draft session).
 describe('adoptGeneratedTaskOrchestrator guards', () => {
   function seed(sm: SessionManager, id: string, fields: { taskDraft?: boolean; taskSlug?: string }) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(sm as any).sessions.set(id, { id, ...fields })
+    sm.registerManagedSession(createManagedSession({ id, ...fields }, TEST_WORKSPACE, { messagesLoaded: true }))
   }
 
   it('returns false when the session does not exist', async () => {
@@ -33,8 +38,7 @@ describe('adoptGeneratedTaskOrchestrator guards', () => {
     seed(sm, 'orch', { taskDraft: false, taskSlug: 'slug-a' })
     expect(await sm.adoptGeneratedTaskOrchestrator('orch', 'slug-b')).toBe(false)
     // The existing binding is untouched.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((sm as any).sessions.get('orch').taskSlug).toBe('slug-a')
+    expect(sm.getManagedSession('orch')!.taskSlug).toBe('slug-a')
   })
 })
 
@@ -44,8 +48,7 @@ describe('adoptGeneratedTaskOrchestrator guards', () => {
 // storage wiring), so we pin the three early-return guards that run before any I/O.
 describe('bindExistingSessionToTask guards', () => {
   function seed(sm: SessionManager, id: string, fields: { taskDraft?: boolean; taskSlug?: string }) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(sm as any).sessions.set(id, { id, ...fields })
+    sm.registerManagedSession(createManagedSession({ id, ...fields }, TEST_WORKSPACE, { messagesLoaded: true }))
   }
 
   it('returns false when the session does not exist', async () => {
@@ -64,8 +67,7 @@ describe('bindExistingSessionToTask guards', () => {
     seed(sm, 'orch', { taskSlug: 'slug-a' })
     expect(await sm.bindExistingSessionToTask('orch', 'slug-b')).toBe(false)
     // The existing binding is untouched.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((sm as any).sessions.get('orch').taskSlug).toBe('slug-a')
+    expect(sm.getManagedSession('orch')!.taskSlug).toBe('slug-a')
   })
 })
 
@@ -74,32 +76,30 @@ describe('bindExistingSessionToTask guards', () => {
 // must NOT churn the agent when nothing changed. We stub the (separately-tested) mutators + the
 // persistence seam so these tests isolate the delegation contract without full storage wiring.
 describe('adopt/bind route changed fields through canonical live-update mutators', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function harness(seedFields: Record<string, unknown>) {
-    const sm = new SessionManager()
+  function harness(seedFields: Partial<ManagedSession>) {
+    // Stub the persistence seam so the delegation contract is exercised without storage wiring;
+    // the canonical mutators (updateSessionModel/updateWorkingDirectory/setSessionPermissionMode)
+    // are public, so spy them directly; emitted events are captured via the public event sink.
+    const store = new SessionMessageStore()
+    store.persist = () => {}
+    store.flush = async () => {}
+    const sm = new SessionManager({ store })
     const calls = { model: [] as unknown[], cwd: [] as unknown[], mode: [] as unknown[] }
     const events: string[] = []
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const any = sm as any
-    any.sendEvent = (e: { type: string }) => events.push(e.type)
-    any.persistSession = () => {}
-    any.flushSession = async () => {}
-    any.setMetadataWriteGuard = () => {}
-    any.updateSessionModel = async (_id: string, _ws: string, m: string) => { calls.model.push(m) }
-    any.updateWorkingDirectory = (_id: string, p: string) => { calls.cwd.push(p) }
-    any.setSessionPermissionMode = (_id: string, m: string) => { calls.mode.push(m) }
-    any.sessions.set('s', {
+    sm.setEventSink((_channel, _target, event: SessionEvent) => { events.push(event.type) })
+    sm.updateSessionModel = async (_id, _ws, m) => { calls.model.push(m) }
+    sm.updateWorkingDirectory = (_id, p) => { calls.cwd.push(p) }
+    sm.setSessionPermissionMode = (_id, m) => { calls.mode.push(m) }
+    sm.registerManagedSession(createManagedSession({
       id: 's',
       taskDraft: true,
-      messages: [],
       connectionLocked: false,
       model: 'old-model',
       llmConnection: 'old-conn',
       permissionMode: 'ask',
       workingDirectory: '/old/dir',
-      workspace: { id: 'ws', rootPath: '/tmp/ws' },
       ...seedFields,
-    })
+    }, TEST_WORKSPACE, { messagesLoaded: true }))
     return { sm, calls, events }
   }
 
@@ -112,8 +112,7 @@ describe('adopt/bind route changed fields through canonical live-update mutators
     expect(calls.cwd).toEqual(['/new/dir'])
     expect(calls.mode).toEqual(['allow-all'])
     // Connection can't go through setSessionConnection (session has started) → set directly + event.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((sm as any).sessions.get('s').llmConnection).toBe('new-conn')
+    expect(sm.getManagedSession('s')!.llmConnection).toBe('new-conn')
     expect(events).toContain('connection_changed')
     expect(events).toContain('session_metadata_changed')
   })
@@ -158,8 +157,7 @@ describe('adopt/bind route changed fields through canonical live-update mutators
     expect(calls.model).toEqual(['new-model'])
     expect(calls.cwd).toEqual(['/new/dir'])
     expect(calls.mode).toEqual(['allow-all'])
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const session = (sm as any).sessions.get('s')
+    const session = sm.getManagedSession('s')!
     expect(session.name).toBe('Edited title')
     expect(session.llmConnection).toBe('new-conn')
     expect(events).toContain('name_changed')
@@ -173,8 +171,7 @@ describe('adopt/bind route changed fields through canonical live-update mutators
     expect(calls.model).toEqual(['new-model'])
     expect(calls.cwd).toEqual(['/new/dir'])
     expect(calls.mode).toEqual(['allow-all'])
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((sm as any).sessions.get('s').name).toBe('Edited title')
+    expect(sm.getManagedSession('s')!.name).toBe('Edited title')
   })
 
   it('bind stays a true no-op (no mutator/event calls) on a retry re-bind with nothing changed', async () => {

@@ -73,6 +73,7 @@ $foldersToClean = @(
     "$ElectronDir\vendor",
     "$ElectronDir\node_modules\@anthropic-ai",
     "$ElectronDir\packages",
+    "$ElectronDir\dist\packages",
     "$ElectronDir\release"
 )
 foreach ($folder in $foldersToClean) {
@@ -232,12 +233,15 @@ if (-not (Test-Path $InterceptorSource)) {
     exit 1
 }
 Write-Host "Copying interceptor (for Pi subprocess)..."
-New-Item -ItemType Directory -Force -Path "$ElectronDir\packages\shared\src" | Out-Null
-Copy-Item $InterceptorSource "$ElectronDir\packages\shared\src\"
+# Stage into dist\ (a gitignored build-output dir) rather than
+# apps\electron\packages\, which the dev interceptor resolver searches and
+# would otherwise shadow the canonical workspace-root source with a stale copy.
+New-Item -ItemType Directory -Force -Path "$ElectronDir\dist\packages\shared\src" | Out-Null
+Copy-Item $InterceptorSource "$ElectronDir\dist\packages\shared\src\"
 foreach ($dep in @("interceptor-common.ts", "feature-flags.ts", "interceptor-request-utils.ts")) {
     $depPath = "$RootDir\packages\shared\src\$dep"
     if (Test-Path $depPath) {
-        Copy-Item $depPath "$ElectronDir\packages\shared\src\"
+        Copy-Item $depPath "$ElectronDir\dist\packages\shared\src\"
     }
 }
 

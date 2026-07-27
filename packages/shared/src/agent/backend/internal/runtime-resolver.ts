@@ -48,17 +48,47 @@ function firstExistingPath(candidates: string[]): string | undefined {
 /**
  * Walk up from `base` checking `join(ancestor, relativePath)` at each level.
  * Stops after `maxLevels` ancestors or when hitting the filesystem root.
+ *
+ * `reject` lets a caller veto an otherwise-existing candidate and keep
+ * ascending — used to skip stale build-output trees that would otherwise
+ * shadow the canonical source at a higher level.
  */
-function resolveUpwards(base: string, relativePath: string, maxLevels = 4): string | undefined {
+function resolveUpwards(
+  base: string,
+  relativePath: string,
+  maxLevels = 4,
+  reject?: (candidate: string) => boolean,
+): string | undefined {
   let dir = resolve(base);
   for (let i = 0; i <= maxLevels; i++) {
     const candidate = join(dir, relativePath);
-    if (existsSync(candidate)) return candidate;
+    if (existsSync(candidate) && !reject?.(candidate)) return candidate;
     const parent = dirname(dir);
     if (parent === dir) break; // filesystem root
     dir = parent;
   }
   return undefined;
+}
+
+/**
+ * True when `candidate` lives under an `apps/electron/packages/` segment.
+ *
+ * Packaging scripts historically staged interceptor sources into
+ * `apps/electron/packages/shared/src/` — a gitignored, non-workspace tree that
+ * is NOT the canonical source. When a dev run's `appRootPath` is `apps/electron`
+ * (the `dist:*` / `start` cwd), a naive level-0 upward search would return that
+ * stale copy instead of the workspace-root source. The dev interceptor lookup
+ * rejects these paths so the search always resolves the canonical file at the
+ * workspace root.
+ */
+function isUnderElectronPackages(candidate: string): boolean {
+  const segments = resolve(candidate).split(/[\\/]+/);
+  for (let i = 0; i + 2 < segments.length; i++) {
+    if (segments[i] === 'apps' && segments[i + 1] === 'electron' && segments[i + 2] === 'packages') {
+      return true;
+    }
+  }
+  return false;
 }
 
 function resolveBundledRuntimePath(hostRuntime: BackendHostRuntimeContext): string | undefined {
@@ -198,11 +228,16 @@ function resolveInterceptorBundlePath(hostRuntime: BackendHostRuntimeContext): s
   // picked up without a manual `bun run build:interceptor`. Bun handles
   // `--require <file>.ts` natively. Packaged builds always go through the
   // pre-built `dist/interceptor.cjs` bundle.
+  //
+  // The upward search is shielded against `apps/electron/packages/` so a stale
+  // packaging-output copy staged there can never shadow the canonical source
+  // at the workspace root — the search skips it and keeps ascending.
   if (!hostRuntime.isPackaged) {
     const source = resolveUpwards(
       hostRuntime.appRootPath,
       join('packages', 'shared', 'src', 'unified-network-interceptor.ts'),
       10,
+      isUnderElectronPackages,
     );
     if (source) return source;
   }

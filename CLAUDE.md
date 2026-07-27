@@ -53,7 +53,7 @@ bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
         packages/shared/src/mcp/session-tools-server.test.ts \
         packages/shared/src/agent/__tests__/hermes-agent.test.ts \
         packages/server-core/src/handlers/rpc/hermes.test.ts \
-        apps/electron/src/transport/__tests__/channel-map-parity.test.ts
+        apps/electron/src/main/handlers/__tests__/registration.test.ts
 # Hermes/Craft integration focus set — see AGENTS.md
 ```
 
@@ -111,7 +111,7 @@ User-scoped state at `~/.craft-agent/`: `config.json`, `credentials.enc` (AES-25
 
 ### IPC / RPC
 
-Renderer ↔ main and client ↔ server share a typed channel map. `bun run lint:ipc-sends` (`scripts/check-raw-sends.sh`) blocks raw `webContents.send` / `ipcRenderer.send` calls. Channel parity is asserted by `apps/electron/src/transport/__tests__/channel-map-parity.test.ts` — keep that test passing when adding channels.
+Renderer ↔ main and client ↔ server share one typed contract: `RPC_CONTRACT` in `apps/electron/src/shared/types.ts` declares each leaf's wire channel (referencing `RPC_NAMESPACES`) plus its signature, and `ElectronAPI` and `CHANNEL_MAP` are *derived* from it — so a new method is one edit in one file, and parity is a compile-time property rather than a test. `bun run lint:ipc-sends` (`scripts/check-raw-sends.sh`) blocks raw `webContents.send` / `ipcRenderer.send` calls. `apps/electron/src/main/handlers/__tests__/registration.test.ts` still asserts the runtime half: every channel is registered exactly once, only declared namespaces are registered, and the core/gui profiles stay disjoint.
 
 ### Sources, skills, automations
 

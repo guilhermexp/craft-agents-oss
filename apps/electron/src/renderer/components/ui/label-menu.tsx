@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 import { LabelIcon } from './label-icon'
 import type { LabelConfig } from '@craft-agent/shared/labels'
 import { createLabelMenuItems, filterItems, segmentScore, type LabelMenuItem } from './label-menu-utils'
-import { getStatusIconStyle, type SessionStatus } from '@/config/session-status-config'
+import { getStatusIconStyle, type ResolvedSessionStatus } from '@/config/session-status-config'
 
 export { createLabelMenuItems, filterItems, type LabelMenuItem } from './label-menu-utils'
 
@@ -24,7 +24,7 @@ export interface InlineLabelMenuProps {
   className?: string
   // ── State selection (optional — when provided, shows a "States" section) ──
   /** Available workflow states to show in the menu */
-  states?: SessionStatus[]
+  states?: ResolvedSessionStatus[]
   /** Currently active state ID (shows checkmark) */
   activeStateId?: string
   /** Callback when a state is selected */
@@ -48,7 +48,7 @@ const MENU_ITEM_SELECTED = 'bg-foreground/5'
  * Filter states by a simple text match on the state label.
  * Uses the same segmentScore logic for consistency with label filtering.
  */
-export function filterSessionStatuses(states: SessionStatus[], filter: string): SessionStatus[] {
+export function filterSessionStatuses(states: ResolvedSessionStatus[], filter: string): ResolvedSessionStatus[] {
   if (!filter) return states
 
   const segments = filter.toLowerCase().split('/').flatMap(s => { const r = s.trim(); return r ? [r] : [] })
@@ -56,7 +56,7 @@ export function filterSessionStatuses(states: SessionStatus[], filter: string): 
 
   // States are flat (no hierarchy), so just match the first segment against the label
   const segment = segments[0]
-  const scored: { state: SessionStatus; score: number }[] = []
+  const scored: { state: ResolvedSessionStatus; score: number }[] = []
 
   for (const state of states) {
     const score = segmentScore(state.label, segment)
@@ -73,7 +73,7 @@ export function filterSessionStatuses(states: SessionStatus[], filter: string): 
 // InlineLabelMenu Component
 // ============================================================================
 
-const EMPTY_STATES: SessionStatus[] = []
+const EMPTY_STATES: ResolvedSessionStatus[] = []
 
 /**
  * Inline autocomplete menu for labels and states, triggered by # in the input.
@@ -373,7 +373,7 @@ export interface UseInlineLabelMenuOptions {
   onSelect: (labelId: string) => void
   // ── State selection (optional — enables states in the # menu) ──
   /** Available workflow states */
-  sessionStatuses?: SessionStatus[]
+  sessionStatuses?: ResolvedSessionStatus[]
   /** Currently active state ID */
   activeStateId?: string
 }
@@ -384,7 +384,7 @@ export interface UseInlineLabelMenuReturn {
   position: { x: number; y: number }
   items: LabelMenuItem[]
   /** Workflow states passed through for the menu component */
-  states: SessionStatus[]
+  states: ResolvedSessionStatus[]
   /** Currently active state ID */
   activeStateId?: string
   handleInputChange: (value: string, cursorPosition: number) => void

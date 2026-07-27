@@ -4,33 +4,6 @@ import type { BrowserScreenshotOptions } from '../browser-pane-manager'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.browserPane.CREATE,
-  RPC_NAMESPACES.browserPane.DESTROY,
-  RPC_NAMESPACES.browserPane.LIST,
-  RPC_NAMESPACES.browserPane.NAVIGATE,
-  RPC_NAMESPACES.browserPane.GO_BACK,
-  RPC_NAMESPACES.browserPane.GO_FORWARD,
-  RPC_NAMESPACES.browserPane.RELOAD,
-  RPC_NAMESPACES.browserPane.STOP,
-  RPC_NAMESPACES.browserPane.FOCUS,
-  RPC_NAMESPACES.browserPane.LAUNCH,
-  RPC_NAMESPACES.browserPane.SNAPSHOT,
-  RPC_NAMESPACES.browserPane.CLICK,
-  RPC_NAMESPACES.browserPane.FILL,
-  RPC_NAMESPACES.browserPane.SELECT,
-  RPC_NAMESPACES.browserPane.SCREENSHOT,
-  RPC_NAMESPACES.browserPane.EVALUATE,
-  RPC_NAMESPACES.browserPane.SCROLL,
-  RPC_NAMESPACES.browserPane.LIST_PROFILES,
-  RPC_NAMESPACES.browserPane.CREATE_PROFILE,
-  RPC_NAMESPACES.browserPane.DELETE_PROFILE,
-  RPC_NAMESPACES.browserPane.RENAME_PROFILE,
-  RPC_NAMESPACES.browserPane.SWITCH_PROFILE,
-  RPC_NAMESPACES.browserPane.GET_PROFILE_SETTINGS,
-  RPC_NAMESPACES.browserPane.SET_PROFILE_SETTINGS,
-] as const
-
 export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): void {
   const { browserPaneManager, windowManager, platform } = deps
   if (!browserPaneManager) return

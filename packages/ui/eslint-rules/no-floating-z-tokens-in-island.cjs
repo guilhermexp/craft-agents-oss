@@ -28,7 +28,9 @@ module.exports = {
   },
 
   create(context) {
-    const filename = String(context.getFilename?.() ?? '').replace(/\\/g, '/').toLowerCase()
+    // ESLint 10 removed context.getFilename(); context.filename is the API.
+    // Falling back to '' would silently disable this rule, so read it directly.
+    const filename = String(context.filename ?? '').replace(/\\/g, '/').toLowerCase()
     const isIslandContext = /\/components\/(annotations\/annotationislandmenu|overlay\/annotatablemarkdowndocument|ui\/island|ui\/islandfollowupcontentview)\.tsx$/.test(filename)
 
     if (!isIslandContext) {

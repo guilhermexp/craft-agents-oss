@@ -10,7 +10,7 @@ import { shortTimeLocale } from '@/utils/session'
 import { kanbanLivePulseAtom } from '@/atoms/kanban'
 import { useKanbanColumnColors } from '@/hooks/useKanbanColumnColors'
 import type { ProjectColorTreatment } from '@/utils/project-colors'
-import type { SessionStatus } from '@/config/session-status-config'
+import type { ResolvedSessionStatus } from '@/config/session-status-config'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,9 +48,9 @@ interface TaskTileProps {
   /** Project the task is bound to (colors the tile). */
   project?: KanbanProject
   /** Resolved status for the badge. */
-  status?: SessionStatus
+  status?: ResolvedSessionStatus
   /** Ordered workspace statuses for the status picker. */
-  statuses?: SessionStatus[]
+  statuses?: ResolvedSessionStatus[]
   /** Change this task's status. When set (with `statuses`), the badge opens a picker. */
   onStatusChange?: (statusId: string) => void
   /** How the project color is drawn. Mirrors the SessionList project-color treatment. */
@@ -353,8 +353,8 @@ function StatusPicker({
   live,
   onSelect,
 }: {
-  status: SessionStatus
-  statuses: SessionStatus[]
+  status: ResolvedSessionStatus
+  statuses: ResolvedSessionStatus[]
   activeStateId: string
   live: boolean
   onSelect: (statusId: string) => void

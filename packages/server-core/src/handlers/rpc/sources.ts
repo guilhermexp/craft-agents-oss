@@ -6,18 +6,6 @@ import { getCredentialManager } from '@craft-agent/shared/credentials'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.sources.GET,
-  RPC_NAMESPACES.sources.CREATE,
-  RPC_NAMESPACES.sources.DELETE,
-  RPC_NAMESPACES.sources.START_OAUTH,
-  RPC_NAMESPACES.sources.SAVE_CREDENTIALS,
-  RPC_NAMESPACES.sources.GET_PERMISSIONS,
-  RPC_NAMESPACES.workspace.GET_PERMISSIONS,
-  RPC_NAMESPACES.permissions.GET_DEFAULTS,
-  RPC_NAMESPACES.sources.GET_MCP_TOOLS,
-] as const
-
 export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): void {
   const log = deps.platform.logger
 

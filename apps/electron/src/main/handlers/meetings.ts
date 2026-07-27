@@ -12,24 +12,8 @@ const RECORDING_APPEND = 'meetings:recording:append'
 const RECORDING_FINALIZE = 'meetings:recording:finalize'
 const RECORDING_ABORT = 'meetings:recording:abort'
 
-// RPC server (server.handle) channels — verified by the registration coverage
-// test. ipcMain-only channels (resolve-workspace, recording:*) are a separate
-// transport for the in-pane toolbar and are listed in IPC_ONLY_CHANNELS below.
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.meetings.START,
-  RPC_NAMESPACES.meetings.LIST,
-  RPC_NAMESPACES.meetings.STATUS,
-  RPC_NAMESPACES.meetings.STOP,
-  RPC_NAMESPACES.meetings.TRANSCRIPT,
-  RPC_NAMESPACES.meetings.GET_TRANSCRIPTION_CONFIG,
-  RPC_NAMESPACES.meetings.SAVE_TRANSCRIPTION_CONFIG,
-  RPC_NAMESPACES.meetings.ARCHIVE,
-  RPC_NAMESPACES.meetings.UNARCHIVE,
-  RPC_NAMESPACES.meetings.DELETE,
-] as const
-
 // ipcMain-only channels used by the browser-pane toolbar recorder. Registered
-// via ipcMain.handle (not the RPC server), so they are NOT part of HANDLED_CHANNELS.
+// via ipcMain.handle (not the RPC server), so they are NOT registered on the RPC server.
 export const IPC_ONLY_CHANNELS = [
   MEETINGS_RESOLVE_WORKSPACE,
   RECORDING_PREPARE,
@@ -64,7 +48,7 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
       ?? (typeof ctx.webContentsId === 'number' ? windowManager?.getWorkspaceForWindow(ctx.webContentsId) : undefined)
   }
   const resolveBrowserInstanceWorkspaceId = (browserInstanceId: string): string | null => {
-    const instance = browserPaneManager.getInstance(browserInstanceId) as { workspaceId?: string | null; window?: { webContents?: { id?: number } } } | undefined
+    const instance = browserPaneManager.getLiveInstance(browserInstanceId) as { workspaceId?: string | null; window?: { webContents?: { id?: number } } } | undefined
     if (instance?.workspaceId) {
       return instance.workspaceId
     }

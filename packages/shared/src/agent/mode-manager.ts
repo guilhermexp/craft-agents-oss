@@ -1784,6 +1784,10 @@ const ALWAYS_ALLOWED_TOOLS = new Set([
   'browser_tool',
 ]);
 
+// Built-in-only: never suffix-match these names. An external MCP tool such as
+// mcp__external__AskUserQuestion must not inherit safe-mode always-allow.
+const SUFFIX_MATCH_EXEMPT = new Set(['AskUserQuestion']);
+
 /**
  * Result type for tool permission checks
  */
@@ -1841,6 +1845,7 @@ export function shouldAllowToolInMode(
 
   // Check if tool name ends with an always-allowed tool (for MCP variants like mcp__plan__SubmitPlan)
   for (const allowedTool of ALWAYS_ALLOWED_TOOLS) {
+    if (SUFFIX_MATCH_EXEMPT.has(allowedTool)) continue;
     if (toolName.endsWith(`__${allowedTool}`)) {
       return { allowed: true };
     }

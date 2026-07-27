@@ -7,6 +7,8 @@ import type { MeetingRecord, MeetingTranscriptSegment } from '../../shared/types
 import { getWorkspaceMeetingsPath } from '@craft-agent/shared/workspaces'
 import type { LLMQueryRequest, LLMQueryResult } from '@craft-agent/shared/agent/llm-tool'
 import type { AgentBackend } from '@craft-agent/shared/agent/backend'
+import * as realCredentials from '@craft-agent/shared/credentials'
+import { createLoggerModuleStub } from '../__tests__/logger-module-stub'
 
 const tempDirs: string[] = []
 const metadataDirs: string[] = []
@@ -40,12 +42,13 @@ mock.module('../browser-profile-resolver', () => ({
   getProfilePartition: () => 'persist:default',
 }))
 
-mock.module('../logger', () => {
-  const logger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
-  return { mainLog: logger }
-})
+mock.module('../logger', () => createLoggerModuleStub())
 
+// Spread the real namespace: `mock.module` replaces the whole module for every
+// later file in the same test process, so a partial factory would strip exports
+// such as SOURCE_CREDENTIAL_TYPES from unrelated suites.
 mock.module('@craft-agent/shared/credentials', () => ({
+  ...realCredentials,
   getCredentialManager: () => ({
     get: async (id: unknown) => credentials.get(JSON.stringify(id)) ?? null,
     set: async (id: unknown, value: { value: string }) => { credentials.set(JSON.stringify(id), value) },
@@ -116,7 +119,7 @@ function createBrowserPaneManager(): BrowserPaneManager {
       instances.set(id, { id })
       return id
     }),
-    getInstance: mock((id: string) => instances.get(id)),
+    getLiveInstance: mock((id: string) => instances.get(id)),
     navigate: mock(async () => ({ url: 'https://meet.google.com/abc-defg-hij', title: 'Meet' })),
     focus: mock(() => {}),
     destroyInstance: mock((id: string) => { instances.delete(id) }),

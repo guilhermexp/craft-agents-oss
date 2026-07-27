@@ -49,7 +49,6 @@ describe('LarkAdapter shell', () => {
     expect(adapter.platform).toBe('lark')
     expect(adapter.capabilities.inlineButtons).toBe(true)
     expect(adapter.capabilities.markdown).toBe('lark-post')
-    expect(adapter.capabilities.webhookSupport).toBe(false)
     expect(adapter.isConnected()).toBe(false)
   })
 })

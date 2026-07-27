@@ -54,17 +54,6 @@ async function withAutomationMatcher(workspaceId: string, eventName: string, mat
   })
 }
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.automations.GET,
-  RPC_NAMESPACES.automations.TEST,
-  RPC_NAMESPACES.automations.SET_ENABLED,
-  RPC_NAMESPACES.automations.DUPLICATE,
-  RPC_NAMESPACES.automations.DELETE,
-  RPC_NAMESPACES.automations.GET_HISTORY,
-  RPC_NAMESPACES.automations.GET_LAST_EXECUTED,
-  RPC_NAMESPACES.automations.REPLAY,
-] as const
-
 export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps): void {
   const log = deps.platform.logger
 

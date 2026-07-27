@@ -5,6 +5,12 @@ import { describe, it, expect } from 'bun:test';
 import { shouldAllowToolInMode } from '../../agent/mode-manager.ts';
 
 describe('session tool safe-mode classification', () => {
+  it('keeps AskUserQuestion built-in-only while preserving other MCP suffix aliases', () => {
+    expect(shouldAllowToolInMode('AskUserQuestion', {}, 'safe').allowed).toBe(true);
+    expect(shouldAllowToolInMode('mcp__external__AskUserQuestion', {}, 'safe').allowed).toBe(false);
+    expect(shouldAllowToolInMode('mcp__plan__SubmitPlan', {}, 'safe').allowed).toBe(true);
+  });
+
   // send_developer_feedback intentionally omitted — it is feature-flagged via
   // FEATURE_FLAGS.developerFeedback (off by default outside dev runtimes), so
   // its safe-mode visibility depends on env state. The dedicated suite at

@@ -13,7 +13,7 @@ import { flattenLabels, parseLabelEntry, formatLabelEntry } from '@craft-agent/s
 import { resolveEntityColor } from '@craft-agent/shared/colors'
 import { useTheme } from '@/context/ThemeContext'
 import { useDynamicStack } from '@/hooks/useDynamicStack'
-import type { SessionStatus } from '@/config/session-status-config'
+import type { ResolvedSessionStatus } from '@/config/session-status-config'
 import { getState } from '@/config/session-status-config'
 import { SessionStatusMenu } from '@/components/ui/session-status-menu'
 import { MetadataBadge } from '@/components/ui/metadata-badge'
@@ -68,7 +68,7 @@ export interface ActiveOptionBadgesProps {
   onAutoOpenConsumed?: () => void
   // ── State/status badge (in dynamic stack) ──
   /** Available workflow states */
-  sessionStatuses?: SessionStatus[]
+  sessionStatuses?: ResolvedSessionStatus[]
   /** Current session state ID */
   currentSessionStatus?: string
   /** Callback when state changes */
@@ -87,7 +87,7 @@ interface ResolvedLabelEntry {
 const EMPTY_TASKS: BackgroundTask[] = []
 const EMPTY_STRINGS: string[] = []
 const EMPTY_LABEL_CONFIGS: LabelConfig[] = []
-const EMPTY_SESSION_STATUSES: SessionStatus[] = []
+const EMPTY_SESSION_STATUSES: ResolvedSessionStatus[] = []
 
 export function ActiveOptionBadges({
   permissionMode = 'ask',
@@ -328,8 +328,8 @@ function StateBadge({
   onSessionStatusChange,
   sessionId,
 }: {
-  state: SessionStatus
-  sessionStatuses: SessionStatus[]
+  state: ResolvedSessionStatus
+  sessionStatuses: ResolvedSessionStatus[]
   onSessionStatusChange?: (stateId: string) => void
   sessionId?: string
 }) {

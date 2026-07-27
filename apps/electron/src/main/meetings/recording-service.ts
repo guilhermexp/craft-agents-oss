@@ -48,7 +48,7 @@ export class RecordingService {
   constructor(private readonly browserPaneManager: BrowserPaneManager) {}
 
   prepare(input: PrepareRecordingInput): PrepareRecordingResult {
-    const instance = this.browserPaneManager.getInstance(input.browserInstanceId)
+    const instance = this.browserPaneManager.getLiveInstance(input.browserInstanceId)
     if (!instance) {
       throw new Error(`browser instance not found: ${input.browserInstanceId}`)
     }

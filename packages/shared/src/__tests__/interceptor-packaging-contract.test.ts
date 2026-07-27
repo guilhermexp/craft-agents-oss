@@ -10,6 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { copyPiAgentServer, type BuildConfig } from '../../../../scripts/build/common.ts';
+import { resolveBackendRuntimePaths } from '../agent/backend/internal/runtime-resolver.ts';
 
 const repoRoot = join(import.meta.dir, '..', '..', '..', '..');
 
@@ -34,6 +35,75 @@ describe('interceptor packaging contract', () => {
     const copyAssetsScript = readRepoFile('apps/electron/scripts/copy-assets.ts');
 
     expect(copyAssetsScript).toContain('copyBundledSubprocessResources');
+  });
+
+  it('stages interceptor sources under dist/ in scripts while the manifest reads the canonical workspace-root source', () => {
+    const builderYml = readRepoFile('apps/electron/electron-builder.yml');
+    const dmgScript = readRepoFile('apps/electron/scripts/build-dmg.sh');
+    const linuxScript = readRepoFile('apps/electron/scripts/build-linux.sh');
+    const winScript = readRepoFile('apps/electron/scripts/build-win.ps1');
+
+    // Packaging must stage into the gitignored dist/ output tree, never into
+    // apps/electron/packages/ (which the dev runtime resolver searches and
+    // would shadow the canonical workspace-root source with a stale copy).
+    expect(dmgScript).toContain('dist/packages/shared/src');
+    expect(linuxScript).toContain('dist/packages/shared/src');
+    expect(winScript).toContain('dist\\packages\\shared\\src');
+    expect(dmgScript).not.toContain('"$ELECTRON_DIR/packages/shared/src"');
+    expect(linuxScript).not.toContain('"$ELECTRON_DIR/packages/shared/src"');
+    expect(winScript).not.toContain('"$ElectronDir\\packages\\shared\\src"');
+
+    // The manifest reads the canonical workspace-root source directly: CI
+    // packaging (electron:dist:*) never runs the build-*.sh staging step, so a
+    // dist/ `from:` would silently ship an empty interceptor (electron-builder
+    // only warns on a missing source). The scripts still stage into dist/
+    // (never apps/electron/packages/) so a dev run cannot shadow the canonical
+    // workspace-root source.
+    expect(builderYml).toContain('from: ../../packages/shared/src/unified-network-interceptor.ts');
+    expect(builderYml).not.toContain('from: dist/packages/shared/src/unified-network-interceptor.ts');
+  });
+});
+
+describe('dev interceptor resolution shields against stale apps/electron/packages copies', () => {
+  let fixtureRoot = '';
+
+  afterEach(() => {
+    if (fixtureRoot) {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+      fixtureRoot = '';
+    }
+  });
+
+  it('resolves the workspace-root source, not the stale apps/electron/packages copy', () => {
+    // Mirror the real monorepo layout: a workspace-root source plus a stale,
+    // gitignored copy under apps/electron/packages/ (what packaging scripts
+    // used to mint). With appRootPath = apps/electron and isPackaged=false,
+    // resolution must return the workspace-root file.
+    fixtureRoot = mkdtempSync(join(tmpdir(), 'interceptor-shield-'));
+
+    const canonicalDir = join(fixtureRoot, 'packages', 'shared', 'src');
+    const canonical = join(canonicalDir, 'unified-network-interceptor.ts');
+    mkdirSync(canonicalDir, { recursive: true });
+    writeFileSync(canonical, '// canonical workspace-root source\n');
+
+    const staleDir = join(fixtureRoot, 'apps', 'electron', 'packages', 'shared', 'src');
+    const stale = join(staleDir, 'unified-network-interceptor.ts');
+    mkdirSync(staleDir, { recursive: true });
+    writeFileSync(stale, '// STALE build-output copy\n');
+
+    const appRootPath = join(fixtureRoot, 'apps', 'electron');
+    // A dev bundle must exist so a broken resolver has a real fallback to fall
+    // back to — this keeps the assertion about the source path, not undefined.
+    const bundleDir = join(appRootPath, 'dist');
+    mkdirSync(bundleDir, { recursive: true });
+    writeFileSync(join(bundleDir, 'interceptor.cjs'), '// bundle\n');
+
+    const paths = resolveBackendRuntimePaths({ appRootPath, isPackaged: false });
+
+    // Fails if anyone reintroduces the level-0 upward search: that would return
+    // `stale` because appRootPath is apps/electron.
+    expect(paths.interceptorBundlePath).toBe(canonical);
+    expect(paths.interceptorBundlePath).not.toBe(stale);
   });
 });
 

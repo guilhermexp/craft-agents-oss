@@ -15,7 +15,8 @@
  */
 
 import { tool } from '@anthropic-ai/claude-agent-sdk';
-import { z } from 'zod';
+import { CallLlmSchema, TOOL_DESCRIPTIONS } from '@craft-agent/session-tools-core';
+import type { ZodRawShape } from 'zod';
 
 // Tool result type - matches what the SDK expects
 type ToolResult = {
@@ -48,6 +49,10 @@ export interface LLMQueryRequest {
   temperature?: number;
   /** Structured output JSON schema — backends handle natively when possible */
   outputSchema?: Record<string, unknown>;
+  /** Enable extended thinking. Backends that don't support it must degrade with a debug log, not silently. */
+  thinking?: boolean;
+  /** Token budget for extended thinking (paired with `thinking`). */
+  thinkingBudget?: number;
 }
 
 /**
@@ -90,7 +95,6 @@ const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
 // Limits - chosen to balance capability with reasonable resource usage
 const MAX_FILE_LINES = 2000;
 const MAX_FILE_BYTES = 500_000; // 500KB per text file
-const MAX_ATTACHMENTS = 20;
 const MAX_TOTAL_CONTENT_BYTES = 2_000_000; // 2MB total across all attachments
 
 // ============================================================================
@@ -247,6 +251,8 @@ export async function buildCallLlmRequest(
     maxTokens: input.maxTokens as number | undefined,
     temperature: input.temperature as number | undefined,
     outputSchema: schema ?? undefined,
+    thinking: input.thinking as boolean | undefined,
+    thinkingBudget: input.thinkingBudget as number | undefined,
   };
 }
 
@@ -522,25 +528,6 @@ ${sections.join('\n')}`,
 }
 
 // ============================================================================
-// SCHEMA DEFINITIONS
-// ============================================================================
-
-const AttachmentSchema = z.union([
-  z.string().describe('Simple file path'),
-  z.object({
-    path: z.string().describe('File path'),
-    startLine: z.number().int().min(1).optional().describe('First line to include (1-indexed)'),
-    endLine: z.number().int().min(1).optional().describe('Last line to include (1-indexed)'),
-  }).describe('File path with optional line range for large files'),
-]);
-
-const OutputSchemaParam = z.object({
-  type: z.literal('object'),
-  properties: z.record(z.string(), z.unknown()),
-  required: z.array(z.string()).optional(),
-}).describe('JSON Schema for structured output');
-
-// ============================================================================
 // MAIN TOOL FACTORY
 // ============================================================================
 
@@ -562,41 +549,14 @@ export function createLLMTool(options: LLMToolOptions) {
 
   return tool(
     'call_llm',
-    `Invoke a secondary LLM for focused subtasks. Use for:
-- Cost optimization: use a smaller model for simple tasks (summarization, classification)
-- Structured output: JSON schema compliance via native backend support
-- Parallel processing: call multiple times in one message - all run simultaneously
-- Context isolation: process content without polluting main context
-
-Put text/content directly in the 'prompt' parameter. Do NOT pass inline text via attachments.
-Only use 'attachments' for existing file paths on disk - the tool loads file content automatically.
-For large files (>2000 lines), use {path, startLine, endLine} to select a portion.`,
-    {
-      prompt: z.string().min(1, 'Prompt cannot be empty')
-        .describe('Instructions for the LLM'),
-
-      attachments: z.array(AttachmentSchema).max(MAX_ATTACHMENTS).optional()
-        .describe(`File paths on disk (max ${MAX_ATTACHMENTS}). NOT for inline text — put text in prompt instead. Use {path, startLine, endLine} for large files.`),
-
-      model: z.string().optional()
-        .describe('Model ID or short name (e.g., "haiku", "sonnet"). Defaults to a fast model.'),
-
-      systemPrompt: z.string().optional()
-        .describe('Optional system prompt'),
-
-      maxTokens: z.number().int().min(1).max(64000).optional()
-        .describe('Max output tokens (1-64000). Defaults to 4096'),
-
-      temperature: z.number().min(0).max(1).optional()
-        .describe('Sampling temperature 0-1'),
-
-      outputFormat: z.enum(['summary', 'classification', 'extraction', 'analysis', 'comparison', 'validation']).optional()
-        .describe('Predefined output format'),
-
-      outputSchema: OutputSchemaParam.optional()
-        .describe('Custom JSON Schema for structured output'),
-    },
-    async (args) => {
+    TOOL_DESCRIPTIONS.call_llm,
+    // session-tools-core is pinned to zod v3, but the Claude SDK's tool() types
+    // expect a zod v4 shape. The shape is valid at runtime (registry tools flow
+    // zod-v3 shapes through the same path); bridge the compile-time gap and
+    // re-validate the input through the canonical schema.
+    CallLlmSchema.shape as unknown as ZodRawShape,
+    async (rawArgs) => {
+      const args = CallLlmSchema.parse(rawArgs);
       // ========================================
       // VALIDATION PHASE
       // ========================================
@@ -702,6 +662,8 @@ For large files (>2000 lines), use {path, startLine, endLine} to select a portio
           maxTokens: args.maxTokens,
           temperature: args.temperature,
           outputSchema: schema ? (schema as Record<string, unknown>) : undefined,
+          thinking: args.thinking,
+          thinkingBudget: args.thinkingBudget,
         });
 
         if (!result.text && !result.warning) {

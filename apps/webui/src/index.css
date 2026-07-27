@@ -5,7 +5,7 @@
 @source "../../electron/src/renderer/App.tsx";
 @source "../../electron/src/renderer/main.tsx";
 @source "../../electron/src/renderer/components/**/*.{ts,tsx,jsx}";
-@source "../../electron/src/renderer/contexts/**/*.{ts,tsx,jsx}";
+@source "../../electron/src/renderer/context/**/*.{ts,tsx,jsx}";
 @source "../../electron/src/renderer/hooks/**/*.{ts,tsx,jsx}";
 @source "../../electron/src/renderer/pages/**/*.{ts,tsx,jsx}";
 @source "../../electron/src/renderer/tabs/**/*.{ts,tsx,jsx}";

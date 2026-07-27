@@ -15,6 +15,7 @@ import type {
   SlackServiceScope,
   MicrosoftService,
   McpSourceConfig,
+  ValidationResult,
 } from './types.ts';
 
 // ============================================================
@@ -116,25 +117,55 @@ export interface CredentialManagerInterface {
 }
 
 // ============================================================
-// Validator Interface
+// Config Validation Seam
 // ============================================================
 
 /**
- * Config validation interface.
- * Claude uses full Zod validators from packages/shared.
- * Codex uses simplified validators from session-tools-core.
+ * Kinds of config artifact the validator understands. Each maps to exactly one
+ * Zod schema (plus optional filesystem extras) behind the seam.
+ */
+export type ConfigKind =
+  | 'config'
+  | 'preferences'
+  | 'source'
+  | 'skill'
+  | 'statuses'
+  | 'labels'
+  | 'automations'
+  | 'permissions'
+  | 'tool-icons';
+
+/** `'all'` fans out across every kind; concrete kinds validate a single artifact. */
+export type ConfigValidationKind = ConfigKind | 'all';
+
+/**
+ * What to validate: an in-memory `content` string (a pending write) or the
+ * artifact(s) on disk under `path` (the workspace root for workspace-scoped
+ * kinds; ignored for app-level kinds, which read their fixed locations).
+ */
+export type ConfigValidationInput =
+  | { content: string }
+  | { path: string };
+
+/** Narrows a validation to a specific artifact and controls error display. */
+export interface ConfigValidationLocator {
+  /** Source/skill/source-permissions slug. Absent → validate all of that kind. */
+  slug?: string;
+  /** Display file path used in content-validation error messages. */
+  displayFile?: string;
+}
+
+/**
+ * Config validation seam.
+ * Claude wires the full Zod validators from packages/shared; Codex leaves it
+ * undefined and the handler falls back to basic field checks.
  */
 export interface ValidatorInterface {
-  validateConfig(): import('./types.js').ValidationResult;
-  validateSource(workspaceRootPath: string, sourceSlug: string): import('./types.js').ValidationResult;
-  validateAllSources(workspaceRootPath: string): import('./types.js').ValidationResult;
-  validateStatuses(workspaceRootPath: string): import('./types.js').ValidationResult;
-  validatePreferences(): import('./types.js').ValidationResult;
-  validatePermissions(workspaceRootPath: string, sourceSlug?: string): import('./types.js').ValidationResult;
-  validateAutomations(workspaceRootPath: string): import('./types.js').ValidationResult;
-  validateToolIcons(): import('./types.js').ValidationResult;
-  validateAll(workspaceRootPath: string): import('./types.js').ValidationResult;
-  validateSkill(workspaceRootPath: string, skillSlug: string): import('./types.js').ValidationResult;
+  validate(
+    kind: ConfigValidationKind,
+    input: ConfigValidationInput,
+    locator?: ConfigValidationLocator,
+  ): ValidationResult;
 }
 
 // ============================================================

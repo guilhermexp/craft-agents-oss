@@ -2,11 +2,6 @@ import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
 
-export const GUI_HANDLED_CHANNELS = [
-  RPC_NAMESPACES.power.SET_KEEP_AWAKE,
-  RPC_NAMESPACES.settings.SET_NETWORK_PROXY,
-] as const
-
 // ============================================================
 // GUI-only settings (require Electron-specific APIs)
 // ============================================================

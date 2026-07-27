@@ -305,7 +305,7 @@ async function createLocalSigningIdentity() {
 			.catch(async () => {
 				await execFile("openssl", ["pkcs12", "-export", "-inkey", keyPath, "-in", certPath, "-out", p12Path, "-passout", `pass:${password}`, "-name", localCodeSignCommonName]);
 			});
-		await execFile("security", ["import", p12Path, "-k", keychain, "-P", password, "-A", "-T", "/usr/bin/codesign"]);
+		await execFile("security", ["import", p12Path, "-k", keychain, "-P", password, "-T", "/usr/bin/codesign"]);
 		const identity = await findLocalSigningIdentity();
 		if (!identity) throw new Error("Imported local signing certificate is not a valid code-signing identity.");
 		return identity;
@@ -580,7 +580,8 @@ async function setup() {
 }
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (isMain) setup().catch((error) => {
+const shouldRunSetup = !isPostinstall || process.env.PI_COMPUTER_USE_POSTINSTALL === "1";
+if (isMain && shouldRunSetup) setup().catch((error) => {
 	if (isPostinstall) {
 		console.warn(`[pi-computer-use] postinstall helper setup skipped: ${error instanceof Error ? error.message : String(error)}`);
 		process.exit(0);

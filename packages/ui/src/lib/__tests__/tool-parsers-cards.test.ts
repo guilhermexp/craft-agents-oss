@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import type { ActivityItem } from '../../components/chat/TurnCard'
+import type { ActivityItem } from '../../components/chat/turn-card-shared'
 import { extractOverlayCards } from '../tool-parsers'
 import type { OverlayData } from '../tool-parsers'
 

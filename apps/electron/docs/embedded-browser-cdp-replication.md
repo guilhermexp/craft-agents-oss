@@ -421,16 +421,18 @@ Two operations listed above (`reload`, `stop`) are typically concrete
 interface (recommended), route reload/stop through the toolbar/renderer path,
 not through the session abstraction.
 
-Sync vs async: ship sync local methods plus async twins for the remote bridge —
-`getOrCreateForSessionAsync`, `createForSessionAsync`, `getInstanceAsync`,
-`listInstancesAsync`, `focusBoundForSessionAsync`, `getConsoleLogsAsync`,
-`getNetworkLogsAsync`, `windowResizeAsync`. The sync forms cannot survive
-a remote (WebSocket) round-trip, so any remote-aware caller MUST use the async
-forms.
+Async transport seam: `IBrowserPaneManager` is fully async — every
+data-returning method is a `Promise` because the remote adapter
+(`RemoteBrowserPaneManager`) is a WebSocket round-trip. There are no sync/async
+twins and no fabricated placeholder values. `getInstance` returns a cloneable
+snapshot; the concrete `BrowserPaneManager` keeps a separate, sync
+`getLiveInstance` for its own in-process live-instance callers, which is NOT part
+of the interface. The wire name `getInstance` matches protocol v1 — do not rename
+it without bumping `BROWSER_CAPABILITY_VERSION`.
 
 Other interface members needed for a full port: `setSessionPathResolver`
 (downloads dir), `bindSession`, `windowResize`, `setClipboard`/`getClipboard`,
-and `getInstance`/`getInstanceAsync`.
+and `getInstance`.
 
 Navigation normalization:
 

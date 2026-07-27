@@ -43,3 +43,8 @@ never falls back to the monorepo `node_modules`. The isolated loader regression
 test deterministically rebuilds and compares the generated entry, then proves
 its import boundary, package-root/helper resolution, and actual tool
 registration from a tree outside the checkout.
+
+- `package.json` explicitly publishes all three macOS Swift sources required by the source-build fallback without including compiled native artifacts.
+- `package.json` declares `skills/computer-use/SKILL.md` in the Pi manifest so package-manifest discovery loads the Craft skill.
+- `scripts/setup-helper.mjs` limits imported signing-key access to `/usr/bin/codesign` and runs `--postinstall` setup only when `PI_COMPUTER_USE_POSTINSTALL=1`.
+- `package.json` removes scripts for non-vendored typecheck/test files and their now-unused TypeScript-only development dependencies while preserving runtime/native build scripts.

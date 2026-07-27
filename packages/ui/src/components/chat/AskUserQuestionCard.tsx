@@ -14,7 +14,7 @@ export interface AskUserQuestionCardProps {
   /** Answers already given (parsed from the tool result) for the read-only view. */
   answered?: AskUserQuestionResponse | null
   /** Fired when the user submits answers or skips. Only used when interactive. */
-  onRespond?: (response: AskUserQuestionResponse) => void
+  onRespond?: (response: AskUserQuestionResponse) => void | boolean | Promise<boolean>
 }
 
 /** Sentinel option label that reveals the free-text field. */
@@ -48,7 +48,10 @@ export function parseAskUserQuestionResult(content: string | undefined): AskUser
     if (typeof value === 'string') answers[key] = value
   }
   const response = typeof root.response === 'string' ? root.response : undefined
-  return { answers, response }
+  // A legitimate submit always answers every question, so an empty answer map
+  // identifies skipped historical/Claude results that predate the explicit flag.
+  const skipped = root.skipped === true || Object.keys(answers).length === 0
+  return { answers, response, ...(skipped ? { skipped: true } : {}) }
 }
 
 function buildAnswers(
@@ -124,13 +127,21 @@ export function AskUserQuestionCard({ questions, interactive, answered, onRespon
   const handleSubmit = () => {
     if (!onRespond || !canSubmit) return
     setSubmitted(true)
-    onRespond({ answers: buildAnswers(questions, selections, otherText) })
+    void Promise.resolve(onRespond({ answers: buildAnswers(questions, selections, otherText) }))
+      .then(ok => {
+        if (ok === false) setSubmitted(false)
+      })
+      .catch(() => setSubmitted(false))
   }
 
   const handleSkip = () => {
     if (!onRespond) return
     setSubmitted(true)
-    onRespond({ answers: {}, skipped: true })
+    void Promise.resolve(onRespond({ answers: {}, skipped: true }))
+      .then(ok => {
+        if (ok === false) setSubmitted(false)
+      })
+      .catch(() => setSubmitted(false))
   }
 
   const headerLabel = readOnly
@@ -213,12 +224,18 @@ export function AskUserQuestionCard({ questions, interactive, answered, onRespon
             )}
             <p className="font-medium text-foreground">{question.question}</p>
             <div className="space-y-1">
-              {question.options.map((option, oIndex) => {
+              <div
+                className="space-y-1"
+                role={question.multiSelect ? 'group' : 'radiogroup'}
+              >
+                {question.options.map((option, oIndex) => {
                 const isSelected = selected.includes(option.label)
                 return (
                   <button
                     key={oIndex}
                     type="button"
+                    role={question.multiSelect ? 'checkbox' : 'radio'}
+                    aria-checked={isSelected}
                     onClick={() => toggleOption(safeStep, option.label, !!question.multiSelect)}
                     className={cn(
                       'w-full flex items-start gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors',
@@ -242,7 +259,8 @@ export function AskUserQuestionCard({ questions, interactive, answered, onRespon
                     </span>
                   </button>
                 )
-              })}
+                })}
+              </div>
 
               {otherIsOpen ? (
                 <div className="space-y-1">

@@ -5,6 +5,7 @@ import type { StoredAttachment } from '@craft-agent/core/types'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { perf } from '@craft-agent/shared/utils'
 import { isValidThinkingLevel, THINKING_LEVEL_IDS } from '@craft-agent/shared/agent/thinking-levels'
+import { normalizeAskUserQuestionResponse } from '@craft-agent/shared/agent/ask-user-question'
 
 const VALID_THINKING_LEVELS_LIST = THINKING_LEVEL_IDS.map(id => `'${id}'`).join(', ')
 import type { RpcServer } from '@craft-agent/server-core/transport'
@@ -33,34 +34,6 @@ function sessionWorkspaceDistribution(sessions: Array<{ workspaceId?: string }>)
 export async function syncMermaidDiagramArtifacts(sessionPath: string): Promise<void> {
   await sessionArtifactRenderer.syncSessionArtifacts(sessionPath)
 }
-
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.sessions.GET,
-  RPC_NAMESPACES.sessions.GET_UNREAD_SUMMARY,
-  RPC_NAMESPACES.sessions.MARK_ALL_READ,
-  RPC_NAMESPACES.sessions.CREATE,
-  RPC_NAMESPACES.sessions.DELETE,
-  RPC_NAMESPACES.sessions.GET_MESSAGES,
-  RPC_NAMESPACES.sessions.SEND_MESSAGE,
-  RPC_NAMESPACES.sessions.CANCEL,
-  RPC_NAMESPACES.sessions.KILL_SHELL,
-  RPC_NAMESPACES.tasks.GET_OUTPUT,
-  RPC_NAMESPACES.sessions.RESPOND_TO_PERMISSION,
-  RPC_NAMESPACES.sessions.RESPOND_TO_CREDENTIAL,
-  RPC_NAMESPACES.sessions.COMMAND,
-  RPC_NAMESPACES.sessions.GET_PENDING_PLAN_EXECUTION,
-  RPC_NAMESPACES.sessions.GET_PERMISSION_MODE_STATE,
-  RPC_NAMESPACES.sessions.SEARCH_CONTENT,
-  RPC_NAMESPACES.sessions.GET_FILES,
-  RPC_NAMESPACES.sessions.GET_NOTES,
-  RPC_NAMESPACES.sessions.SET_NOTES,
-  RPC_NAMESPACES.sessions.WATCH_FILES,
-  RPC_NAMESPACES.sessions.UNWATCH_FILES,
-  RPC_NAMESPACES.sessions.EXPORT,
-  RPC_NAMESPACES.sessions.IMPORT,
-  RPC_NAMESPACES.sessions.EXPORT_REMOTE_TRANSFER,
-  RPC_NAMESPACES.sessions.IMPORT_REMOTE_TRANSFER,
-] as const
 
 export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): void {
   const { sessionManager, platform } = deps
@@ -185,7 +158,11 @@ export function registerSessionsHandlers(server: RpcServer, deps: HandlerDeps): 
   // Respond to an AskUserQuestion tool call (interactive questionnaire)
   // Returns true if the response was delivered, false if agent/session is gone
   server.handle(RPC_NAMESPACES.sessions.RESPOND_TO_USER_QUESTION, async (_ctx, sessionId: string, requestId: string, response: AskUserQuestionResponse) => {
-    return sessionManager.respondToUserQuestion(sessionId, requestId, response)
+    return sessionManager.respondToUserQuestion(
+      sessionId,
+      requestId,
+      normalizeAskUserQuestionResponse(response),
+    )
   })
 
   // ==========================================================================

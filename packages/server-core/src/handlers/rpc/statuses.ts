@@ -3,11 +3,6 @@ import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.statuses.LIST,
-  RPC_NAMESPACES.statuses.REORDER,
-] as const
-
 export function registerStatusesHandlers(server: RpcServer, _deps: HandlerDeps): void {
   // List all statuses for a workspace
   server.handle(RPC_NAMESPACES.statuses.LIST, async (_ctx, workspaceId: string) => {

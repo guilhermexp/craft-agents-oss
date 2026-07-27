@@ -4,11 +4,9 @@ import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { BrowserPaneManager } from '../browser-pane-manager'
 import { getWorkspaceMeetingsPath } from '@craft-agent/shared/workspaces'
+import { createLoggerModuleStub } from '../__tests__/logger-module-stub'
 
-mock.module('../logger', () => {
-  const logger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
-  return { mainLog: logger }
-})
+mock.module('../logger', () => createLoggerModuleStub())
 
 const { RecordingService } = await import('./recording-service')
 
@@ -79,7 +77,7 @@ describe('RecordingService.prepare', () => {
     const recordingsDir = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings')
     metadataDirs.push(dirname(dirname(recordingsDir)), workspaceRoot)
 
-    const service = new RecordingService({ getInstance: () => ({}) } as unknown as BrowserPaneManager)
+    const service = new RecordingService({ getLiveInstance: () => ({}) } as unknown as BrowserPaneManager)
     const result = service.prepare({
       workspaceId: 'ws-test',
       workspaceRoot,
@@ -100,7 +98,7 @@ describe('RecordingService.append', () => {
     const recordingsDir = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings')
     metadataDirs.push(dirname(dirname(recordingsDir)), workspaceRoot)
 
-    const service = new RecordingService({ getInstance: () => ({}) } as unknown as BrowserPaneManager)
+    const service = new RecordingService({ getLiveInstance: () => ({}) } as unknown as BrowserPaneManager)
     const { recordingId } = service.prepare({
       workspaceId: 'ws-test',
       workspaceRoot,

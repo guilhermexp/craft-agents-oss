@@ -20,11 +20,11 @@ import { toast } from 'sonner'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { StyledDropdownMenuContent, StyledDropdownMenuItem, StyledDropdownMenuSeparator } from '@/components/ui/styled-dropdown'
-import { useAppShellContext, usePendingPermission, usePendingCredential, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
+import { useSessionActions, useWorkspaceData, useAppActions, useSessionRuntime, usePanelChrome, useSessionSearchWiring, usePendingPermission, usePendingCredential, useSessionOptionsFor, useSession } from '@/context/AppShellContext'
 import { rendererPerf } from '@/lib/perf'
 import { routes } from '@/lib/navigate'
 import { resolveOpenFilePath } from '@/lib/resolve-open-file-path'
-import { useNavigation, useNavigationState } from '@/contexts/NavigationContext'
+import { useNavigation, useNavigationState } from '@/context/NavigationContext'
 import { coerceInputText } from '@/lib/input-text'
 import { ensureSessionMessagesLoadedAtom, loadedSessionsAtom, sessionMetaMapAtom, updateSessionAtom } from '@/atoms/sessions'
 import { getSessionTitle } from '@/utils/session'
@@ -33,6 +33,10 @@ import { resolveEffectiveConnectionSlug, isSessionConnectionUnavailable } from '
 
 export interface ChatPageProps {
   sessionId: string
+  /** Per-panel right-sidebar (close) button, passed through from PanelSlot. */
+  rightSidebarButton?: React.ReactNode
+  /** Per-panel leading action (compact-mode back button), passed through from PanelSlot. */
+  leadingAction?: React.ReactNode
 }
 
 type InlineFileResolveCacheEntry = {
@@ -43,7 +47,7 @@ type InlineFileResolveCacheEntry = {
 const INLINE_FILE_MISSING_CACHE_TTL_MS = 10_000
 const HEADER_ICON_ONLY_BUTTON_CLASS = '!bg-transparent !shadow-none hover:!bg-transparent'
 
-const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
+const ChatPage = React.memo(function ChatPage({ sessionId, rightSidebarButton, leadingAction }: ChatPageProps) {
   const { t } = useTranslation()
   // Diagnostic: mark when component runs
   React.useLayoutEffect(() => {
@@ -51,22 +55,25 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   }, [sessionId])
 
   const {
-    activeWorkspaceId,
-    llmConnections,
-    workspaceDefaultLlmConnection,
     onSendMessage,
-    onOpenFile,
-    onOpenUrl,
-    workspaces,
     onRespondToPermission,
     onRespondToCredential,
     onMarkSessionRead,
     onMarkSessionUnread,
     onSetActiveViewingSession,
-    getDraft,
-    hydrateDraftAttachments,
-    onInputChange,
-    onAttachmentsChange,
+    onRenameSession,
+    onFlagSession,
+    onUnflagSession,
+    onArchiveSession,
+    onUnarchiveSession,
+    onSessionStatusChange,
+    onDeleteSession,
+  } = useSessionActions()
+  const {
+    activeWorkspaceId,
+    llmConnections,
+    workspaceDefaultLlmConnection,
+    workspaces,
     enabledSources,
     skills,
     labels,
@@ -75,22 +82,11 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     enabledModes,
     sessionStatuses,
     onSessionSourcesChange,
-    onRenameSession,
-    onFlagSession,
-    onUnflagSession,
-    onArchiveSession,
-    onUnarchiveSession,
-    onSessionStatusChange,
-    onDeleteSession,
-    rightSidebarButton,
-    leadingAction,
-    isCompactMode,
-    sessionListSearchQuery,
-    isSearchModeActive,
-    chatDisplayRef,
-    onChatMatchInfoChange,
-    isFocusedPanel,
-  } = useAppShellContext()
+  } = useWorkspaceData()
+  const { onOpenFile, onOpenUrl } = useAppActions()
+  const { getDraft, hydrateDraftAttachments, onInputChange, onAttachmentsChange } = useSessionRuntime()
+  const { isCompactMode, isFocusedPanel } = usePanelChrome()
+  const { sessionListSearchQuery, isSearchModeActive, chatDisplayRef, onChatMatchInfoChange } = useSessionSearchWiring()
   const { updateRightSidebar } = useNavigation()
   const navigationState = useNavigationState()
 
@@ -102,7 +98,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   } = useSessionOptionsFor(sessionId)
 
   // Use per-session atom for isolated updates
-  const session = useSessionData(sessionId)
+  const session = useSession(sessionId)
 
   // Track if messages are loaded for this session (for lazy loading)
   const loadedSessions = useAtomValue(loadedSessionsAtom)

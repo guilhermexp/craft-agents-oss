@@ -28,7 +28,7 @@ export type AppEvent =
   | 'SessionStatusChange'
   | 'SchedulerTick'
 
-export type AgentEvent =
+export type AgentHookEvent =
   | 'PreToolUse'
   | 'PostToolUse'
   | 'PostToolUseFailure'
@@ -43,14 +43,14 @@ export type AgentEvent =
   | 'PermissionRequest'
   | 'Setup'
 
-export type AutomationTrigger = AppEvent | AgentEvent
+export type AutomationTrigger = AppEvent | AgentHookEvent
 
 export const APP_EVENTS: AppEvent[] = [
   'LabelAdd', 'LabelRemove', 'LabelConfigChange',
   'PermissionModeChange', 'FlagChange', 'TodoStateChange', 'SessionStatusChange', 'SchedulerTick'
 ]
 
-export const AGENT_EVENTS: AgentEvent[] = [
+export const AGENT_EVENTS: AgentHookEvent[] = [
   'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'Notification',
   'UserPromptSubmit', 'SessionStart', 'SessionEnd', 'Stop',
   'SubagentStart', 'SubagentStop', 'PreCompact', 'PermissionRequest', 'Setup'

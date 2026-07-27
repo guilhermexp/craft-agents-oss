@@ -564,8 +564,8 @@ async function main() {
 
       // Check canonical session tool registry first (feature-filtered)
       const def = sessionToolRegistry.get(name);
-      if (def?.handler) {
-        return await executeSessionTool(def, ctx, toolArgs ?? {});
+      if (def?.executionMode === 'registry') {
+        return await executeSessionTool(name, ctx, toolArgs ?? {}, { includeDeveloperFeedback, includeMemory });
       }
 
       // Route to docs upstream if it's a docs tool

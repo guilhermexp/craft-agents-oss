@@ -3,17 +3,6 @@ import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.projects.GET,
-  RPC_NAMESPACES.projects.GET_ONE,
-  RPC_NAMESPACES.projects.CREATE,
-  RPC_NAMESPACES.projects.UPDATE,
-  RPC_NAMESPACES.projects.DELETE,
-  RPC_NAMESPACES.projects.LIST_ASSETS,
-  RPC_NAMESPACES.projects.UPLOAD_ASSET,
-  RPC_NAMESPACES.projects.DELETE_ASSET,
-] as const
-
 export function registerProjectsHandlers(server: RpcServer, deps: HandlerDeps): void {
   const log = deps.platform.logger
 

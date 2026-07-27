@@ -66,7 +66,6 @@ describe('LarkAdapter — static contract', () => {
     expect(adapter.capabilities.inlineButtons).toBe(true)
     expect(adapter.capabilities.markdown).toBe('lark-post')
     expect(adapter.capabilities.maxButtons).toBe(10)
-    expect(adapter.capabilities.webhookSupport).toBe(false)
   })
 
   it('starts disconnected before initialize', () => {

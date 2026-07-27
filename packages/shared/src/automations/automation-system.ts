@@ -22,7 +22,7 @@ import { compactAutomationHistorySync } from './history-store.ts';
 import { createLogger } from '../utils/debug.ts';
 import { WorkspaceEventBus, type EventPayloadMap } from './event-bus.ts';
 import { PromptHandler, EventLogHandler, WebhookHandler, type AutomationsConfigProvider } from './handlers/index.ts';
-import { type AutomationsConfig, type AutomationEvent, type AutomationMatcher, type PendingPrompt, type WebhookActionResult, type AppEvent, type AgentEvent, type SdkAutomationCallbackMatcher, type SdkAutomationInput } from './types.ts';
+import { type AutomationsConfig, type AutomationEvent, type AutomationMatcher, type PendingPrompt, type WebhookActionResult, type AppEvent, type AgentHookEvent, type SdkAutomationCallbackMatcher, type SdkAutomationInput } from './types.ts';
 import { validateAutomationsConfig } from './validation.ts';
 import { matcherMatchesSdk } from './utils.ts';
 import { SchedulerService, type SchedulerTickPayload } from '../scheduler/scheduler-service.ts';
@@ -487,7 +487,7 @@ export class AutomationSystem implements AutomationsConfigProvider {
    * @param signal - Optional AbortSignal for cancelling automation execution on abort
    * @returns Number of matched matchers (for diagnostics/testing)
    */
-  async executeAgentEvent(event: AgentEvent, input: SdkAutomationInput, signal?: AbortSignal): Promise<number> {
+  async executeAgentEvent(event: AgentHookEvent, input: SdkAutomationInput, signal?: AbortSignal): Promise<number> {
     if (!this.config) return 0;
 
     const matchers = this.config.automations[event];
@@ -520,7 +520,7 @@ export class AutomationSystem implements AutomationsConfigProvider {
    * execution (creating agent sessions via PromptHandler). Agent event automations are not
    * currently supported via prompts, so this returns empty.
    */
-  buildSdkHooks(): Partial<Record<AgentEvent, SdkAutomationCallbackMatcher[]>> {
+  buildSdkHooks(): Partial<Record<AgentHookEvent, SdkAutomationCallbackMatcher[]>> {
     return {};
   }
 

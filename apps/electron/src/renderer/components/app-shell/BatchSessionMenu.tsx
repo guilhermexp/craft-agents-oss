@@ -19,9 +19,9 @@ import { useMenuComponents } from '@/components/ui/menu-context'
 import { useSelectedIds } from '@/hooks/useSession'
 import { useSessionSelection } from '@/hooks/useSession'
 import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from '@/atoms/sessions'
-import { useAppShellContext } from '@/context/AppShellContext'
+import { useSessionActions, useWorkspaceData } from '@/context/AppShellContext'
 import { getStateColor, getStateIcon, type SessionStatusId } from '@/config/session-status-config'
-import { extractLabelId } from '@craft-agent/shared/labels'
+import { computeSharedSessionStatus, computeAppliedLabelIds, areAllSessionsFlagged, applyBatchStatus, applyBatchFlag, applyBatchUnflag, applyBatchArchive, applyLabelToggle, applyBatchDelete } from './session-batch-actions'
 import { LabelMenuItems, StatusMenuItems } from './SessionMenuParts'
 
 export interface BatchSessionMenuProps {
@@ -38,18 +38,8 @@ export function BatchSessionMenu({ onSendToWorkspace }: BatchSessionMenuProps = 
   const { clearMultiSelect } = useSessionSelection()
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
 
-  const {
-    onSessionStatusChange,
-    onArchiveSession,
-    onUnarchiveSession,
-    onFlagSession,
-    onUnflagSession,
-    onSessionLabelsChange,
-    onDeleteSession,
-    workspaces,
-    sessionStatuses = [],
-    labels = [],
-  } = useAppShellContext()
+  const { onSessionStatusChange, onFlagSession, onUnflagSession, onArchiveSession, onDeleteSession } = useSessionActions()
+  const { onSessionLabelsChange, workspaces, sessionStatuses = [], labels = [] } = useWorkspaceData()
 
   const hasRemoteWorkspaces = workspaces?.some(w => w.remoteServer) ?? false
 
@@ -64,75 +54,42 @@ export function BatchSessionMenu({ onSendToWorkspace }: BatchSessionMenuProps = 
   }, [selectedIds, sessionMetaMap])
 
   // Compute shared status (if all selected have the same status)
-  const activeStatusId = useMemo((): SessionStatusId | null => {
-    if (selectedMetas.length === 0) return null
-    const first = (selectedMetas[0].sessionStatus || 'todo') as SessionStatusId
-    const allSame = selectedMetas.every(meta => (meta.sessionStatus || 'todo') === first)
-    return allSame ? first : null
-  }, [selectedMetas])
+  const activeStatusId = useMemo(() => computeSharedSessionStatus(selectedMetas), [selectedMetas])
 
   // Compute intersection of applied labels (only labels ALL selected sessions have)
-  const appliedLabelIds = useMemo(() => {
-    if (selectedMetas.length === 0) return new Set<string>()
-    const toLabelSet = (meta: SessionMeta) =>
-      new Set((meta.labels || []).map(entry => extractLabelId(entry)))
-    const [first, ...rest] = selectedMetas.map(toLabelSet)
-    const intersection = new Set(first)
-    for (const labelSet of rest) {
-      for (const id of [...intersection]) {
-        if (!labelSet.has(id)) intersection.delete(id)
-      }
-    }
-    return intersection
-  }, [selectedMetas])
+  const appliedLabelIds = useMemo(() => computeAppliedLabelIds(selectedMetas), [selectedMetas])
 
   // Check flag state: all flagged, or some/none flagged
-  const allFlagged = useMemo(
-    () => selectedMetas.length > 0 && selectedMetas.every(m => m.isFlagged),
-    [selectedMetas]
-  )
+  const allFlagged = useMemo(() => areAllSessionsFlagged(selectedMetas), [selectedMetas])
 
   // Batch status change
   const handleBatchSetStatus = useCallback((status: SessionStatusId) => {
-    selectedIds.forEach(sessionId => {
-      onSessionStatusChange(sessionId, status)
-    })
-  }, [selectedIds, onSessionStatusChange])
+    applyBatchStatus(onSessionStatusChange, selectedIds, status)
+  }, [onSessionStatusChange, selectedIds])
 
   // Batch label toggle (all-or-nothing semantics, same as MainContentPanel)
   const handleBatchToggleLabel = useCallback((labelId: string) => {
     if (!onSessionLabelsChange) return
-    const allHaveLabel = selectedMetas.every(meta =>
-      (meta.labels || []).some(entry => extractLabelId(entry) === labelId)
-    )
-    selectedMetas.forEach(meta => {
-      const currentLabels = meta.labels || []
-      const hasLabel = currentLabels.some(entry => extractLabelId(entry) === labelId)
-      const filtered = currentLabels.filter(entry => extractLabelId(entry) !== labelId)
-      const nextLabels = allHaveLabel
-        ? filtered
-        : (hasLabel ? currentLabels : [...currentLabels, labelId])
-      onSessionLabelsChange(meta.id, nextLabels)
-    })
-  }, [selectedMetas, onSessionLabelsChange])
+    applyLabelToggle(onSessionLabelsChange, selectedMetas, labelId)
+  }, [onSessionLabelsChange, selectedMetas])
 
   // Batch flag/unflag
   const handleBatchFlag = useCallback(() => {
-    selectedIds.forEach(id => onFlagSession(id))
+    applyBatchFlag(onFlagSession, selectedIds)
     toast(`${selectedIds.size} ${selectedIds.size === 1 ? 'session' : 'sessions'} flagged`)
-  }, [selectedIds, onFlagSession])
+  }, [onFlagSession, selectedIds])
 
   const handleBatchUnflag = useCallback(() => {
-    selectedIds.forEach(id => onUnflagSession(id))
+    applyBatchUnflag(onUnflagSession, selectedIds)
     toast(`${selectedIds.size} ${selectedIds.size === 1 ? 'session' : 'sessions'} unflagged`)
-  }, [selectedIds, onUnflagSession])
+  }, [onUnflagSession, selectedIds])
 
   // Batch archive
   const handleBatchArchive = useCallback(() => {
-    selectedIds.forEach(id => onArchiveSession(id))
+    applyBatchArchive(onArchiveSession, selectedIds)
     clearMultiSelect()
     toast(`${selectedIds.size} ${selectedIds.size === 1 ? 'session' : 'sessions'} archived`)
-  }, [selectedIds, onArchiveSession, clearMultiSelect])
+  }, [onArchiveSession, selectedIds, clearMultiSelect])
 
   // Batch send to workspace
   const handleSendToWorkspace = useCallback(() => {
@@ -146,14 +103,11 @@ export function BatchSessionMenu({ onSendToWorkspace }: BatchSessionMenuProps = 
   // Batch delete
   const handleBatchDelete = useCallback(async () => {
     const count = selectedIds.size
-    const ids = [...selectedIds]
-    // Show confirmation for first; if confirmed, delete remaining concurrently
-    const firstDeleted = await onDeleteSession(ids[0])
-    if (!firstDeleted) return // User cancelled
-    await Promise.all(ids.slice(1).map((id) => onDeleteSession(id, true)))
+    const deleted = await applyBatchDelete(onDeleteSession, [...selectedIds])
+    if (!deleted) return // User cancelled
     clearMultiSelect()
     toast(`${count} ${count === 1 ? 'session' : 'sessions'} deleted`)
-  }, [selectedIds, onDeleteSession, clearMultiSelect])
+  }, [onDeleteSession, selectedIds, clearMultiSelect])
 
   // Resolve current status icon for the submenu trigger
   const statusIcon = activeStatusId

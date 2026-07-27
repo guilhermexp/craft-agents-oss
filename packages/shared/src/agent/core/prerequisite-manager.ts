@@ -15,6 +15,7 @@ import { homedir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { expandPath } from './path-processor.ts';
 import { getBrowserToolEnabled } from '../../config/storage.ts';
+import { isBrowserToolNameOrAlias } from '../browser-tool-names.ts';
 
 // ============================================================
 // Types
@@ -96,12 +97,12 @@ const RULES: PrerequisiteRule[] = [
   },
 
   // Built-in browser tool: require browser-tools.md first.
-  // Only matches the session-scoped tool (not external MCP browser tools like mcp__playwright__*),
-  // and skipped entirely when the built-in browser tool is disabled.
+  // Matched through the central normalizer so legacy split aliases
+  // (browser_open, browser_snapshot, ... and their mcp__session__ forms) cannot
+  // bypass the gate, while external MCP browser tools (mcp__playwright__*) stay
+  // out of scope. Skipped entirely when the built-in browser tool is disabled.
   {
-    toolMatcher: (toolName: string) =>
-      getBrowserToolEnabled() &&
-      (toolName === 'browser_tool' || toolName === 'mcp__session__browser_tool'),
+    toolMatcher: (toolName: string) => getBrowserToolEnabled() && isBrowserToolNameOrAlias(toolName),
     resolveRequiredPath: () => {
       return existsSync(BROWSER_TOOLS_DOC_PATH) ? BROWSER_TOOLS_DOC_PATH : null;
     },

@@ -5,7 +5,7 @@
  * Used by both Electron and viewer apps for consistent overlay display.
  */
 
-import type { ActivityItem } from '../components/chat/TurnCard'
+import type { ActivityItem } from '../components/chat/turn-card-shared'
 import type { ToolType } from '../components/terminal/TerminalOutput'
 
 // ============================================================================

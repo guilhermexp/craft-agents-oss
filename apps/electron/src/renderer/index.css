@@ -5,7 +5,7 @@
 @source "../renderer/App.tsx";
 @source "../renderer/main.tsx";
 @source "../renderer/components/**/*.{ts,tsx,jsx}";
-@source "../renderer/contexts/**/*.{ts,tsx,jsx}";
+@source "../renderer/context/**/*.{ts,tsx,jsx}";
 @source "../renderer/hooks/**/*.{ts,tsx,jsx}";
 @source "../renderer/pages/**/*.{ts,tsx,jsx}";
 @source "../renderer/tabs/**/*.{ts,tsx,jsx}";

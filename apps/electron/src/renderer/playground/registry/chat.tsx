@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { motion } from 'motion/react'
 import { ArrowUp, Paperclip, ChevronDown, Circle, Sparkles } from 'lucide-react'
 import type { LabelConfig } from '@craft-agent/shared/labels'
-import type { SessionStatus } from '@/config/session-status-config'
+import type { ResolvedSessionStatus } from '@/config/session-status-config'
 import type { FileAttachment, PermissionRequest, PermissionMode } from '../../../shared/types'
 import { cn } from '@/lib/utils'
 import { AppShellProvider } from '@/context/AppShellContext'
@@ -149,7 +149,7 @@ const inputContainerSampleLabels: LabelConfig[] = [
   { id: 'sprint', name: 'Sprint', color: { light: '#8B5CF6', dark: '#A78BFA' }, valueType: 'string' },
 ]
 
-const inputContainerSampleStatuses: SessionStatus[] = [
+const inputContainerSampleStatuses: ResolvedSessionStatus[] = [
   {
     id: 'todo',
     label: 'Todo',

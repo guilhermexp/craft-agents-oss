@@ -46,7 +46,6 @@ function makeAdapter(
     maxButtons: 3,
     maxMessageLength: 4096,
     markdown: 'v2',
-    webhookSupport: false,
     ...capabilities,
   }
 

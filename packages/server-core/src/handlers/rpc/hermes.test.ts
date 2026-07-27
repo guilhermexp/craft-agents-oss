@@ -1,39 +1,22 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import http from 'node:http'
 import { promisify } from 'node:util'
 import { execFile as execFileCb } from 'node:child_process'
-import { chmod, mkdtemp, mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
-import type { RpcServer, HandlerFn, RequestContext } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
-import { registerHermesHandlers, shutdownHermesDashboard } from './hermes'
+import { HermesRuntimeManager } from '../../hermes/hermes-runtime-manager'
+import { registerHermesHandlers } from './hermes'
+import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
+import type { HandlerFn, RequestContext, RpcServer } from '@craft-agent/server-core/transport'
 
 const originalEnv = { ...process.env }
 const execFile = promisify(execFileCb)
 
-function createHarness(overrides?: Partial<HandlerDeps['platform']>) {
-  const handlers = new Map<string, HandlerFn>()
+function createDeps(overrides?: Partial<HandlerDeps['platform']>) {
   const openedPaths: string[] = []
-
-  const server: RpcServer = {
-    handle(channel, handler) {
-      handlers.set(channel, handler)
-    },
-    push() {},
-    async invokeClient() {
-      return undefined
-    },
-    hasClientCapability() {
-      return false
-    },
-    findClientsWithCapability() {
-      return []
-    },
-  }
-
   const deps: HandlerDeps = {
     sessionManager: {} as HandlerDeps['sessionManager'],
     oauthFlowStore: {} as HandlerDeps['oauthFlowStore'],
@@ -59,29 +42,19 @@ function createHarness(overrides?: Partial<HandlerDeps['platform']>) {
       ...overrides,
     },
   }
-
-  registerHermesHandlers(server, deps)
-
-  const ctx: RequestContext = {
-    clientId: 'client-1',
-    workspaceId: 'ws-1',
-    webContentsId: 1,
-  }
-
-  return { handlers, ctx, openedPaths }
+  return { deps, openedPaths }
 }
 
 beforeEach(() => {
   process.env = { ...originalEnv }
 })
 
-afterEach(async () => {
-  await shutdownHermesDashboard(100)
+afterEach(() => {
   process.env = { ...originalEnv }
 })
 
-describe('registerHermesHandlers local file controls', () => {
-  it('authenticates internal dashboard API calls with the injected Hermes session token', async () => {
+describe('HermesRuntimeManager dashboard lifecycle', () => {
+  it('authenticates internal dashboard API calls with the extracted Hermes session token', async () => {
     const home = await mkdtemp(join(tmpdir(), 'craft-hermes-home-'))
     const binDir = await mkdtemp(join(tmpdir(), 'craft-hermes-bin-'))
     const fakeHermes = join(binDir, 'fake-hermes-dashboard.js')
@@ -125,7 +98,6 @@ const server = http.createServer((req, res) => {
   if (req.url === '/api/profiles') {
     res.setHeader('content-type', 'application/json')
     res.end(JSON.stringify({ profiles: [{ name: 'default', path: '${home}', is_default: true, model: 'gpt-5.5', provider: 'openai-codex', has_env: true, skill_count: 9 }] }))
-    setTimeout(() => server.close(() => process.exit(0)), 100)
     return
   }
   res.statusCode = 404
@@ -135,33 +107,67 @@ server.listen(port, '127.0.0.1')
 `)
     await chmod(fakeHermes, 0o755)
 
-    const { handlers, ctx } = createHarness()
-    const getApiConfig = handlers.get(RPC_NAMESPACES.hermes.GET_API_CONFIG)
-    const getProviderModels = handlers.get(RPC_NAMESPACES.hermes.GET_PROVIDER_MODELS)
-    const listProfiles = handlers.get(RPC_NAMESPACES.hermes.LIST_PROFILES)
-    expect(getApiConfig).toBeDefined()
-    expect(getProviderModels).toBeDefined()
-    expect(listProfiles).toBeDefined()
+    const { deps } = createDeps()
+    const manager = new HermesRuntimeManager(deps)
+    try {
+      const configResult = await manager.getApiConfig()
+      const modelsResult = await manager.getProviderModels('openai-codex')
+      const profilesResult = await manager.listProfiles()
 
-    const configResult = await getApiConfig!(ctx)
-    const modelsResult = await getProviderModels!(ctx, 'openai-codex')
-    const profilesResult = await listProfiles!(ctx)
+      if (!configResult.success) throw new Error(configResult.error)
+      if (!modelsResult.success) throw new Error(modelsResult.error)
 
-    expect(configResult.success).toBe(true)
-    expect(configResult.data.activeProvider).toBe('openai-codex')
-    expect(modelsResult.success).toBe(true)
-    expect(modelsResult.data.models).toEqual([{ id: 'gpt-5.5' }])
-    expect(profilesResult.success).toBe(true)
-    expect(profilesResult.profiles).toEqual([{
-      name: 'default',
-      path: home,
-      isDefault: true,
-      model: 'gpt-5.5',
-      provider: 'openai-codex',
-      hasEnv: true,
-      skillCount: 9,
-      isActive: true,
-    }])
+      expect(configResult.data.activeProvider).toBe('openai-codex')
+      expect(modelsResult.data.models).toEqual([{ id: 'gpt-5.5' }])
+      expect(profilesResult.success).toBe(true)
+      expect(profilesResult.profiles).toEqual([{
+        name: 'default',
+        path: home,
+        isDefault: true,
+        model: 'gpt-5.5',
+        provider: 'openai-codex',
+        hasEnv: true,
+        skillCount: 9,
+        isActive: true,
+      }])
+    } finally {
+      await manager.shutdownDashboard(100)
+    }
+  })
+})
+
+describe('HermesRuntimeManager provider/model config', () => {
+  it('resolves activeProvider through the config/options fallback chain', async () => {
+    const { deps } = createDeps()
+
+    const viaConfig = new HermesRuntimeManager(deps, {
+      fetchDashboardJson: async (path) => {
+        if (path === '/api/model/info') return {}
+        if (path === '/api/config') return { active_provider: 'from-config', model: 'from-config-model' }
+        if (path === '/api/model/options') return { providers: [{ slug: 'first-option' }] }
+        throw new Error(`unexpected dashboard path: ${path}`)
+      },
+    })
+    const viaConfigResult = await viaConfig.getApiConfig()
+    if (!viaConfigResult.success) throw new Error(viaConfigResult.error)
+    // config.active_provider wins over the modelOptions fallback.
+    expect(viaConfigResult.data.activeProvider).toBe('from-config')
+    expect(viaConfigResult.data.activeModel).toBe('from-config-model')
+
+    const viaOptions = new HermesRuntimeManager(deps, {
+      fetchDashboardJson: async (path) => {
+        if (path === '/api/model/info') return {}
+        if (path === '/api/config') return {}
+        if (path === '/api/model/options') return { providers: [{ slug: 'only-option' }] }
+        throw new Error(`unexpected dashboard path: ${path}`)
+      },
+    })
+    const viaOptionsResult = await viaOptions.getApiConfig()
+    if (!viaOptionsResult.success) throw new Error(viaOptionsResult.error)
+    // Deepest fallback: first provider slug from /api/model/options.
+    expect(viaOptionsResult.data.activeProvider).toBe('only-option')
+    expect(viaOptionsResult.data.activeModel).toBeUndefined()
+    expect(viaOptionsResult.data.providers).toEqual([{ id: 'only-option', configured: true }])
   })
 
   it('falls back to app-scoped custom provider config when Hermes returns no models', async () => {
@@ -180,14 +186,7 @@ server.listen(port, '127.0.0.1')
     if (!modelAddress || typeof modelAddress === 'string') throw new Error('model server did not bind')
 
     const home = await mkdtemp(join(tmpdir(), 'craft-hermes-home-'))
-    const binDir = await mkdtemp(join(tmpdir(), 'craft-hermes-bin-'))
-    const fakeHermes = join(binDir, 'fake-hermes-dashboard.js')
     process.env.CRAFT_HERMES_HOME = home
-    process.env.CRAFT_HERMES_COMMAND = fakeHermes
-    delete process.env.CRAFT_HERMES_PYTHON
-    delete process.env.CRAFT_HERMES_ARGS
-    delete process.env.CRAFT_HERMES_BUNDLED_REQUIRED
-
     await writeFile(join(home, 'config.yaml'), [
       'providers:',
       '  custom-openai:',
@@ -198,43 +197,18 @@ server.listen(port, '127.0.0.1')
     ].join('\n'))
     await writeFile(join(home, '.env'), 'CUSTOM_OPENAI_API_KEY=custom-provider-secret\n')
 
-    await writeFile(fakeHermes, `#!/usr/bin/env node
-const http = require('node:http')
-const token = 'test-token'
-const port = Number(process.argv[process.argv.indexOf('--port') + 1])
-const server = http.createServer((req, res) => {
-  if (req.url === '/') {
-    res.setHeader('content-type', 'text/html')
-    res.end('<script>window.__HERMES_SESSION_TOKEN__="test-token";</script>')
-    return
-  }
-  if (!req.headers['x-hermes-session-token'] || req.headers['x-hermes-session-token'] !== token) {
-    res.statusCode = 401
-    res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ detail: 'Unauthorized' }))
-    return
-  }
-  if (req.url === '/api/model/options') {
-    res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ providers: [{ slug: 'custom-openai', models: [] }] }))
-    setTimeout(() => server.close(() => process.exit(0)), 100)
-    return
-  }
-  res.statusCode = 404
-  res.end('not found')
-})
-server.listen(port, '127.0.0.1')
-`)
-    await chmod(fakeHermes, 0o755)
-
     try {
-      const { handlers, ctx } = createHarness()
-      const getProviderModels = handlers.get(RPC_NAMESPACES.hermes.GET_PROVIDER_MODELS)
-      expect(getProviderModels).toBeDefined()
+      const { deps } = createDeps()
+      const manager = new HermesRuntimeManager(deps, {
+        fetchDashboardJson: async (path) => {
+          if (path === '/api/model/options') return { providers: [{ slug: 'custom-openai', models: [] }] }
+          throw new Error(`unexpected dashboard path: ${path}`)
+        },
+      })
 
-      const result = await getProviderModels!(ctx, 'custom-openai')
+      const result = await manager.getProviderModels('custom-openai')
 
-      expect(result.success).toBe(true)
+      if (!result.success) throw new Error(result.error)
       expect(result.data.models).toEqual([{ id: 'claude-sonnet-4-6' }, { id: 'gemini-2.5-pro' }])
     } finally {
       await new Promise<void>((resolve) => modelServer.close(() => resolve()))
@@ -242,67 +216,24 @@ server.listen(port, '127.0.0.1')
   })
 
   it('preserves custom provider base URL when saving the main Hermes model', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'craft-hermes-home-'))
-    const binDir = await mkdtemp(join(tmpdir(), 'craft-hermes-bin-'))
-    const fakeHermes = join(binDir, 'fake-hermes-dashboard.js')
-    const capturedConfig = join(home, 'captured-config.json')
-    process.env.CRAFT_HERMES_HOME = home
-    process.env.CRAFT_HERMES_COMMAND = fakeHermes
-    delete process.env.CRAFT_HERMES_PYTHON
-    delete process.env.CRAFT_HERMES_ARGS
-    delete process.env.CRAFT_HERMES_BUNDLED_REQUIRED
+    const { deps } = createDeps()
+    let capturedPut: { yaml_text: string } | null = null
 
-    await writeFile(fakeHermes, `#!/usr/bin/env node
-const http = require('node:http')
-const fs = require('node:fs')
-const token = 'test-token'
-const port = Number(process.argv[process.argv.indexOf('--port') + 1])
-const server = http.createServer((req, res) => {
-  if (req.url === '/') {
-    res.setHeader('content-type', 'text/html')
-    res.end('<script>window.__HERMES_SESSION_TOKEN__="test-token";</script>')
-    return
-  }
-  if (!req.headers['x-hermes-session-token'] || req.headers['x-hermes-session-token'] !== token) {
-    res.statusCode = 401
-    res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ detail: 'Unauthorized' }))
-    return
-  }
-  if (req.url === '/api/model/set' && req.method === 'POST') {
-    req.resume()
-    res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ ok: true }))
-    return
-  }
-  if (req.url === '/api/config/raw' && req.method === 'GET') {
-    res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ yaml: 'model:\\n  provider: custom\\n  default: old-model\\n  api_mode: chat_completions\\n' }))
-    return
-  }
-  if (req.url === '/api/config/raw' && req.method === 'PUT') {
-    let body = ''
-    req.on('data', chunk => { body += chunk })
-    req.on('end', () => {
-      fs.writeFileSync(${JSON.stringify(capturedConfig)}, body)
-      res.setHeader('content-type', 'application/json')
-      res.end(JSON.stringify({ ok: true }))
-      setTimeout(() => server.close(() => process.exit(0)), 100)
+    const manager = new HermesRuntimeManager(deps, {
+      fetchDashboardJson: async (path, init) => {
+        if (path === '/api/model/set') return { ok: true }
+        if (path === '/api/config/raw') {
+          if (init?.method === 'PUT') {
+            capturedPut = JSON.parse(String(init.body)) as { yaml_text: string }
+            return { ok: true }
+          }
+          return { yaml: 'model:\n  provider: custom\n  default: old-model\n  api_mode: chat_completions\n' }
+        }
+        throw new Error(`unexpected dashboard path: ${path} ${init?.method ?? 'GET'}`)
+      },
     })
-    return
-  }
-  res.statusCode = 404
-  res.end('not found')
-})
-server.listen(port, '127.0.0.1')
-`)
-    await chmod(fakeHermes, 0o755)
 
-    const { handlers, ctx } = createHarness()
-    const patchApiConfig = handlers.get(RPC_NAMESPACES.hermes.PATCH_API_CONFIG)
-    expect(patchApiConfig).toBeDefined()
-
-    const result = await patchApiConfig!(ctx, {
+    const result = await manager.patchApiConfig({
       config: {
         provider: 'custom-openai',
         model: 'claude-sonnet-4-6',
@@ -311,13 +242,55 @@ server.listen(port, '127.0.0.1')
     })
 
     expect(result.success).toBe(true)
-    const captured = JSON.parse(await readFile(capturedConfig, 'utf-8')) as { yaml_text: string }
+    expect(capturedPut).not.toBeNull()
+    const captured = capturedPut as unknown as { yaml_text: string }
     expect(captured.yaml_text).toContain('provider: custom-openai')
     expect(captured.yaml_text).toContain('default: claude-sonnet-4-6')
     expect(captured.yaml_text).toContain('api_mode: chat_completions')
     expect(captured.yaml_text).toContain('base_url: https://custom-provider.example/v1')
   })
+})
 
+describe('HermesRuntimeManager env merge', () => {
+  it('merges dashboard env with disk gateway keys, redacting secrets and sorting', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'craft-hermes-home-'))
+    process.env.CRAFT_HERMES_HOME = home
+    await writeFile(join(home, '.env'), [
+      'SLACK_BOT_TOKEN=disk-should-be-ignored',
+      'TELEGRAM_BOT_TOKEN=secret-telegram-token-value',
+      'NOT_A_GATEWAY_KEY=ignored',
+    ].join('\n'))
+
+    const { deps } = createDeps()
+    const manager = new HermesRuntimeManager(deps, {
+      fetchDashboardJson: async (path) => {
+        if (path === '/api/env') return {
+          SLACK_BOT_TOKEN: { is_set: true, redacted_value: 'xoxb-****', category: 'messaging', is_password: true },
+        }
+        throw new Error(`unexpected dashboard path: ${path}`)
+      },
+    })
+
+    const result = await manager.listEnv()
+
+    if (!result.success) throw new Error(result.error)
+    const vars = result.vars ?? []
+    // Dashboard key first, then the disk-only gateway key; sorted; non-gateway
+    // disk key dropped; dashboard key not overridden by disk.
+    expect(vars.map(v => v.key)).toEqual(['SLACK_BOT_TOKEN', 'TELEGRAM_BOT_TOKEN'])
+
+    const slack = vars.find(v => v.key === 'SLACK_BOT_TOKEN')
+    expect(slack?.redactedValue).toBe('xoxb-****')
+
+    const telegram = vars.find(v => v.key === 'TELEGRAM_BOT_TOKEN')
+    expect(telegram?.isSet).toBe(true)
+    expect(telegram?.isPassword).toBe(true)
+    expect(telegram?.category).toBe('messaging')
+    expect(telegram?.redactedValue).toBe('secr...alue')
+  })
+})
+
+describe('HermesRuntimeManager path-safe browsing', () => {
   it('lists Hermes home files without exposing secrets or expanding operational directories', async () => {
     const home = await mkdtemp(join(tmpdir(), 'craft-hermes-test-'))
     process.env.CRAFT_HERMES_HOME = home
@@ -333,14 +306,13 @@ server.listen(port, '127.0.0.1')
     await writeFile(join(home, 'sessions', 'request_dump_abc_1.json'), '{}')
     await writeFile(join(home, 'logs', 'hermes.log'), 'log')
 
-    const { handlers, ctx } = createHarness()
-    const listHomeFiles = handlers.get(RPC_NAMESPACES.hermes.LIST_HOME_FILES)
-    expect(listHomeFiles).toBeDefined()
+    const { deps } = createDeps()
+    const manager = new HermesRuntimeManager(deps)
 
-    const result = await listHomeFiles!(ctx)
-    const names = result.files.map((file: { name: string }) => file.name)
-    const sessions = result.files.find((file: { name: string }) => file.name === 'sessions')
-    const logs = result.files.find((file: { name: string }) => file.name === 'logs')
+    const result = await manager.listHomeFiles()
+    const names = result.files.map(file => file.name)
+    const sessions = result.files.find(file => file.name === 'sessions')
+    const logs = result.files.find(file => file.name === 'logs')
 
     expect(result.success).toBe(true)
     expect(names).toContain('config.yaml')
@@ -358,11 +330,10 @@ server.listen(port, '127.0.0.1')
     const home = await mkdtemp(join(tmpdir(), 'craft-hermes-test-'))
     process.env.CRAFT_HERMES_HOME = home
 
-    const { handlers, ctx, openedPaths } = createHarness()
-    const openPath = handlers.get(RPC_NAMESPACES.hermes.OPEN_PATH)
-    expect(openPath).toBeDefined()
+    const { deps, openedPaths } = createDeps()
+    const manager = new HermesRuntimeManager(deps)
 
-    const result = await openPath!(ctx, '../outside')
+    const result = await manager.openPath('../outside')
 
     expect(result.success).toBe(false)
     expect(result.error).toContain('Path escapes Hermes home')
@@ -375,31 +346,33 @@ server.listen(port, '127.0.0.1')
     process.env.CRAFT_HERMES_HOME = home
     await symlink(outside, join(home, 'outside-link'))
 
-    const { handlers, ctx, openedPaths } = createHarness()
-    const openPath = handlers.get(RPC_NAMESPACES.hermes.OPEN_PATH)
-    expect(openPath).toBeDefined()
+    const { deps, openedPaths } = createDeps()
+    const manager = new HermesRuntimeManager(deps)
 
-    const result = await openPath!(ctx, 'outside-link')
+    const result = await manager.openPath('outside-link')
 
     expect(result.success).toBe(false)
     expect(result.error).toContain('Path escapes Hermes home')
     expect(openedPaths).toHaveLength(0)
   })
+})
 
+describe('HermesRuntimeManager dev update', () => {
   it('does not mutate bundled Hermes runtime in packaged apps', async () => {
     const home = await mkdtemp(join(tmpdir(), 'craft-hermes-test-'))
     process.env.CRAFT_HERMES_HOME = home
 
-    const { handlers, ctx } = createHarness({ isPackaged: true })
-    const updateRuntime = handlers.get(RPC_NAMESPACES.hermes.UPDATE_RUNTIME)
-    expect(updateRuntime).toBeDefined()
+    const { deps } = createDeps({ isPackaged: true })
+    const manager = new HermesRuntimeManager(deps)
 
-    const result = await updateRuntime!(ctx)
+    const result = await manager.updateRuntime()
 
     expect(result.success).toBe(false)
     expect(result.status).toBe('unsupported')
   })
+})
 
+describe('HermesRuntimeManager runtime details', () => {
   it('returns Hermes fork/upstream release metadata for the settings page', async () => {
     const home = await mkdtemp(join(tmpdir(), 'craft-hermes-home-'))
     const repo = await mkdtemp(join(tmpdir(), 'craft-hermes-repo-'))
@@ -423,11 +396,10 @@ server.listen(port, '127.0.0.1')
     await execFile('git', ['-C', repo, 'remote', 'add', 'origin', 'https://github.com/guilhermexp/hermes-agent.git'])
     await execFile('git', ['-C', repo, 'remote', 'add', 'upstream', 'https://github.com/NousResearch/hermes-agent.git'])
 
-    const { handlers, ctx } = createHarness()
-    const getRuntimeDetails = handlers.get(RPC_NAMESPACES.hermes.GET_RUNTIME_DETAILS)
-    expect(getRuntimeDetails).toBeDefined()
+    const { deps } = createDeps()
+    const manager = new HermesRuntimeManager(deps)
 
-    const result = await getRuntimeDetails!(ctx)
+    const result = await manager.getRuntimeDetails()
 
     expect(result.sourceRepoRemote).toBe('https://github.com/guilhermexp/hermes-agent.git')
     expect(result.sourceRepoUpstreamRemote).toBe('https://github.com/NousResearch/hermes-agent.git')
@@ -464,15 +436,79 @@ server.listen(port, '127.0.0.1')
       await execFile('git', ['-C', repo, 'remote', 'add', 'origin', remote])
     }
 
-    const { handlers, ctx } = createHarness({ appRootPath: appRoot })
-    const getRuntimeDetails = handlers.get(RPC_NAMESPACES.hermes.GET_RUNTIME_DETAILS)
-    expect(getRuntimeDetails).toBeDefined()
+    const { deps } = createDeps({ appRootPath: appRoot })
+    const manager = new HermesRuntimeManager(deps)
 
-    const result = await getRuntimeDetails!(ctx)
+    const result = await manager.getRuntimeDetails()
 
     expect(result.sourceRepoPath).toBe(cacheRepo)
     expect(result.sourceRepoRemote).toBe('https://github.com/NousResearch/hermes-agent.git')
     expect(result.hermesPin).toBe('upstream/main')
     expect(result.hermesPinPath).toBe(join(appRoot, 'scripts', 'hermes-version.txt'))
+  })
+})
+
+describe('registerHermesHandlers protocol adapter', () => {
+  function createServerHarness() {
+    const handlers = new Map<string, HandlerFn>()
+    const server: RpcServer = {
+      handle(channel, handler) {
+        handlers.set(channel, handler)
+      },
+      push() {},
+      async invokeClient() {
+        return undefined
+      },
+      hasClientCapability() {
+        return false
+      },
+      findClientsWithCapability() {
+        return []
+      },
+    }
+    return { server, handlers }
+  }
+
+  it('registers every hermes channel and delegates to the manager with argument order preserved', () => {
+    const { server, handlers } = createServerHarness()
+    const { deps } = createDeps()
+
+    // Keep the real fs-backed auth.json watcher from starting during the test.
+    const watchSpy = spyOn(HermesRuntimeManager.prototype, 'startAuthJsonWatcher').mockImplementation(() => {})
+    // Record the wire→method delegation for a representative multi-arg,
+    // body-destructured, and single-arg handler.
+    const renameSpy = spyOn(HermesRuntimeManager.prototype, 'renameProfile').mockReturnValue(undefined as never)
+    const setEnvSpy = spyOn(HermesRuntimeManager.prototype, 'setEnv').mockReturnValue(undefined as never)
+    const readLogSpy = spyOn(HermesRuntimeManager.prototype, 'readLog').mockReturnValue(undefined as never)
+
+    try {
+      registerHermesHandlers(server, deps)
+
+      const h = RPC_NAMESPACES.hermes
+      const expectedChannels = Object.values(h)
+      // (a) the full channel surface is wired — a forgotten server.handle fails here.
+      expect(expectedChannels).toHaveLength(24)
+      for (const channel of expectedChannels) {
+        expect(handlers.has(channel)).toBe(true)
+      }
+      expect(handlers.size).toBe(expectedChannels.length)
+
+      const ctx = {} as RequestContext
+      // (b) delegation forwards arguments in the right order — a swapped
+      // (name, newName) or an inverted body.key/body.value fails here.
+      handlers.get(h.RENAME_PROFILE)!(ctx, 'old-profile', 'new-profile')
+      expect(renameSpy).toHaveBeenCalledWith('old-profile', 'new-profile')
+
+      handlers.get(h.SET_ENV)!(ctx, { key: 'HERMES_KEY', value: 'secret-value' })
+      expect(setEnvSpy).toHaveBeenCalledWith('HERMES_KEY', 'secret-value')
+
+      handlers.get(h.READ_LOG)!(ctx, 'app.log')
+      expect(readLogSpy).toHaveBeenCalledWith('app.log')
+    } finally {
+      watchSpy.mockRestore()
+      renameSpy.mockRestore()
+      setEnvSpy.mockRestore()
+      readLogSpy.mockRestore()
+    }
   })
 })

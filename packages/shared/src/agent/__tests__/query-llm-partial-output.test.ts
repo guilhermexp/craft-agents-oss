@@ -191,22 +191,11 @@ describe('call_llm tool — warning prefix rendering', () => {
     });
   }
 
-  // Handler's inferred arg type requires all zod fields (optionals resolve to `T | undefined`).
-  function argsFor(prompt: string): Parameters<ReturnType<typeof buildTool>['handler']>[0] {
-    return {
-      prompt,
-      attachments: undefined,
-      model: undefined,
-      systemPrompt: undefined,
-      maxTokens: undefined,
-      temperature: undefined,
-      outputFormat: undefined,
-      outputSchema: undefined,
-    };
-  }
-
   async function invoke(tool: ReturnType<typeof buildTool>, prompt: string) {
-    return tool.handler(argsFor(prompt), {});
+    // createLLMTool types the handler arg from the raw shape (fields erased by the
+    // zod v3 → v4 bridge); the handler re-validates via CallLlmSchema, so a minimal
+    // { prompt } is a valid call.
+    return tool.handler({ prompt } as unknown as Parameters<typeof tool.handler>[0], {});
   }
 
   it('renders a [Partial result — …] prefix when queryFn returns a warning', async () => {
@@ -250,5 +239,21 @@ describe('call_llm tool — warning prefix rendering', () => {
     const resp = await invoke(tool, 'hi');
 
     expect((resp.content[0] as { text: string }).text).toBe('(Model returned empty response)');
+  });
+
+  it('forwards thinking and thinkingBudget through to queryFn', async () => {
+    let received: LLMQueryRequest | undefined;
+    const tool = buildTool(async (req) => {
+      received = req;
+      return { text: 'ok' };
+    });
+
+    await tool.handler(
+      { prompt: 'reason carefully', thinking: true, thinkingBudget: 20000 } as unknown as Parameters<typeof tool.handler>[0],
+      {},
+    );
+
+    expect(received?.thinking).toBe(true);
+    expect(received?.thinkingBudget).toBe(20000);
   });
 });

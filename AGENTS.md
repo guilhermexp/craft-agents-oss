@@ -172,7 +172,7 @@ bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
   packages/shared/src/mcp/session-tools-server.test.ts \
   packages/shared/src/agent/__tests__/hermes-agent.test.ts \
   packages/server-core/src/handlers/rpc/hermes.test.ts \
-  apps/electron/src/transport/__tests__/channel-map-parity.test.ts
+  apps/electron/src/main/handlers/__tests__/registration.test.ts
 ```
 
 For Hermes overlay changes, first prove all overlays apply from a clean cache

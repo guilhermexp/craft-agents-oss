@@ -27,6 +27,8 @@ import type {
   MessagingLogger,
   MessagingChannelId,
   SendOptions,
+  CredentialCodec,
+  CredentialTestResult,
 } from '../../types'
 import { messagingChannelId } from '../../types'
 import {
@@ -203,7 +205,7 @@ export class LarkAdapter implements PlatformAdapter {
     maxButtons: LARK_MAX_BUTTONS,
     maxMessageLength: 30000,
     markdown: 'lark-post',
-    webhookSupport: false,
+    accessControl: false,
   }
 
   private client: LarkClient | null = null
@@ -218,6 +220,8 @@ export class LarkAdapter implements PlatformAdapter {
    * requires the new `msg_type` to match the original.
    */
   private sentMsgTypes = new Map<string, 'text' | 'post' | 'interactive'>()
+  /** Domain the current credential targets; used as an identity fallback. */
+  private domain: 'lark' | 'feishu' = 'lark'
 
   /** Fetch bot profile for UI hints. */
   async getBotInfo(): Promise<{ name?: string } | null> {
@@ -236,9 +240,14 @@ export class LarkAdapter implements PlatformAdapter {
     }
   }
 
+  async getIdentity(): Promise<string | undefined> {
+    return (await this.getBotInfo())?.name ?? this.domain
+  }
+
   async initialize(config: PlatformConfig): Promise<void> {
     this.log = config.logger ?? NOOP_LOGGER
     const creds = parseLarkCredentials(config.token)
+    this.domain = creds.domain
     const sdkDomain = resolveLarkDomain(creds.domain)
 
     // Construct REST client (sends + lookups go through this).
@@ -814,4 +823,43 @@ export class LarkAdapter implements PlatformAdapter {
     }
     await this.buttonHandler(press)
   }
+}
+
+/**
+ * Credential codec for Lark/Feishu bots — a JSON `{ appId, appSecret, domain }`
+ * string. Verification exchanges the pair for a tenant access token; the Open
+ * Platform returns a structured error code we forward to the user, which beats
+ * a confused round-trip through "Invalid token" guesses.
+ */
+export const larkCredentialCodec: CredentialCodec = {
+  normalize(raw: string): string {
+    return JSON.stringify(parseLarkCredentials(raw))
+  },
+  async test(raw: string): Promise<CredentialTestResult> {
+    let creds: LarkCredentials
+    try {
+      creds = parseLarkCredentials(raw)
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Invalid Lark credentials' }
+    }
+    try {
+      const url =
+        creds.domain === 'feishu'
+          ? 'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal'
+          : 'https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal'
+      // react-doctor-disable-next-line no-fetch-response-used-without-status-check -- Lark/Feishu token verification: API returns structured body.code inspected by callers (auth semantics)
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ app_id: creds.appId, app_secret: creds.appSecret }),
+      })
+      const body = (await res.json()) as { code?: number; msg?: string; tenant_access_token?: string }
+      if (body.code !== 0 || !body.tenant_access_token) {
+        return { success: false, error: body.msg ?? 'Invalid credentials' }
+      }
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+    }
+  },
 }

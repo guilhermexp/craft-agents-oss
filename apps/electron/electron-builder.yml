@@ -115,7 +115,10 @@ mac:
     # resolveRipgrepPath() at app/node_modules/@vscode/ripgrep/bin/rg.
     - from: node_modules/@vscode/ripgrep
       to: app/node_modules/@vscode/ripgrep
-    # Network interceptor source files (resolved from workspace root because apps/electron/packages/* doesn't exist)
+    # Network interceptor source files, read directly from the canonical
+    # workspace-root source (always present, including in CI where the
+    # build-*.sh staging step never runs; never the stale
+    # apps/electron/packages/ tree the dev runtime resolver searches).
     - from: ../../packages/shared/src/unified-network-interceptor.ts
       to: app/packages/shared/src/unified-network-interceptor.ts
     - from: ../../packages/shared/src/interceptor-common.ts
@@ -214,7 +217,10 @@ win:
     # resolveRipgrepPath() at app/node_modules/@vscode/ripgrep/bin/rg.exe.
     - from: node_modules/@vscode/ripgrep
       to: app/node_modules/@vscode/ripgrep
-    # Network interceptor source files (resolved from workspace root because apps/electron/packages/* doesn't exist)
+    # Network interceptor source files, read directly from the canonical
+    # workspace-root source (always present, including in CI where the
+    # build-*.ps1 staging step never runs; never the stale
+    # apps/electron/packages/ tree the dev runtime resolver searches).
     - from: ../../packages/shared/src/unified-network-interceptor.ts
       to: app/packages/shared/src/unified-network-interceptor.ts
     - from: ../../packages/shared/src/interceptor-common.ts
@@ -276,7 +282,10 @@ linux:
     # resolveRipgrepPath() at app/node_modules/@vscode/ripgrep/bin/rg.
     - from: node_modules/@vscode/ripgrep
       to: app/node_modules/@vscode/ripgrep
-    # Network interceptor source files (resolved from workspace root because apps/electron/packages/* doesn't exist)
+    # Network interceptor source files, read directly from the canonical
+    # workspace-root source (always present, including in CI where the
+    # build-*.sh staging step never runs; never the stale
+    # apps/electron/packages/ tree the dev runtime resolver searches).
     - from: ../../packages/shared/src/unified-network-interceptor.ts
       to: app/packages/shared/src/unified-network-interceptor.ts
     - from: ../../packages/shared/src/interceptor-common.ts

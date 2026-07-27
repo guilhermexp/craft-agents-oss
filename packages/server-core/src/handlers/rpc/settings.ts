@@ -11,44 +11,6 @@ import type { HandlerDeps } from '../handler-deps'
 import { requestClientOpenFileDialog } from '@craft-agent/server-core/transport'
 import { isValidWorkingDirectory } from '../../utils/path-validation'
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.workspace.SETTINGS_GET,
-  RPC_NAMESPACES.workspace.SETTINGS_UPDATE,
-  RPC_NAMESPACES.preferences.READ,
-  RPC_NAMESPACES.preferences.WRITE,
-  RPC_NAMESPACES.drafts.GET,
-  RPC_NAMESPACES.drafts.SET,
-  RPC_NAMESPACES.drafts.DELETE,
-  RPC_NAMESPACES.drafts.GET_ALL,
-  RPC_NAMESPACES.input.GET_AUTO_CAPITALISATION,
-  RPC_NAMESPACES.input.SET_AUTO_CAPITALISATION,
-  RPC_NAMESPACES.input.GET_SEND_MESSAGE_KEY,
-  RPC_NAMESPACES.input.SET_SEND_MESSAGE_KEY,
-  RPC_NAMESPACES.input.GET_SPELL_CHECK,
-  RPC_NAMESPACES.input.SET_SPELL_CHECK,
-  RPC_NAMESPACES.power.GET_KEEP_AWAKE,
-  RPC_NAMESPACES.appearance.GET_RICH_TOOL_DESCRIPTIONS,
-  RPC_NAMESPACES.appearance.SET_RICH_TOOL_DESCRIPTIONS,
-  RPC_NAMESPACES.appearance.GET_AUTO_EXPAND_ACTIVITIES,
-  RPC_NAMESPACES.appearance.SET_AUTO_EXPAND_ACTIVITIES,
-  RPC_NAMESPACES.caching.GET_EXTENDED_PROMPT_CACHE,
-  RPC_NAMESPACES.caching.SET_EXTENDED_PROMPT_CACHE,
-  RPC_NAMESPACES.caching.GET_ENABLE_1M_CONTEXT,
-  RPC_NAMESPACES.caching.SET_ENABLE_1M_CONTEXT,
-  RPC_NAMESPACES.rtk.GET_ENABLED,
-  RPC_NAMESPACES.rtk.SET_ENABLED,
-  RPC_NAMESPACES.rtk.GET_STATUS,
-  RPC_NAMESPACES.rtk.GET_GAIN,
-  RPC_NAMESPACES.sessions.GET_MODEL,
-  RPC_NAMESPACES.sessions.SET_MODEL,
-  RPC_NAMESPACES.settings.GET_DEFAULT_THINKING_LEVEL,
-  RPC_NAMESPACES.settings.SET_DEFAULT_THINKING_LEVEL,
-  RPC_NAMESPACES.tools.GET_BROWSER_TOOL_ENABLED,
-  RPC_NAMESPACES.tools.SET_BROWSER_TOOL_ENABLED,
-  RPC_NAMESPACES.settings.GET_NETWORK_PROXY,
-  RPC_NAMESPACES.dialog.OPEN_FOLDER,
-] as const
-
 export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): void {
   // ============================================================
   // Settings - Default Thinking Level (App-Level)

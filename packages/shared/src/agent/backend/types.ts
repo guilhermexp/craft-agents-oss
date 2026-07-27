@@ -21,7 +21,6 @@ import type { AuthRequest } from '../session-scoped-tools.ts';
 import type { McpClientPool } from '../../mcp/mcp-pool.ts';
 import type { Workspace } from '../../config/storage.ts';
 import type { SessionConfig as Session } from '../../sessions/storage.ts';
-import type { SourceManager } from '../core/source-manager.ts';
 
 // Import AbortReason and RecoveryMessage from core module (single source of truth)
 import { AbortReason } from '../core/session-lifecycle.ts';
@@ -588,9 +587,6 @@ export interface AgentBackend {
 
   /** Set session ID */
   setSessionId(sessionId: string | null): void;
-
-  /** Get SourceManager for advanced queries */
-  getSourceManager(): SourceManager;
 
   /** Generate a session title from user message */
   generateTitle(message: string, options?: { language?: string }): Promise<string | null>;

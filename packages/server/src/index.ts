@@ -49,6 +49,7 @@ import { initModelRefreshService, setFetcherPlatform } from '@craft-agent/server
 import { setSearchPlatform, setImageProcessor, transferManager } from '@craft-agent/server-core/services'
 import type { HandlerDeps } from '@craft-agent/server-core/handlers'
 import { getValidClaudeOAuthToken } from '@craft-agent/shared/auth'
+import { ensureDefaultClaudeConfigValid } from '@craft-agent/shared/agent'
 
 process.env.CRAFT_IS_PACKAGED ??= 'false'
 
@@ -164,6 +165,11 @@ const waNodeBin = process.env.CRAFT_MESSAGING_NODE_BIN ?? 'node'
 // publisher after bootstrapServer resolves.
 let messagingHandle: MessagingBootstrapHandle | null = null
 let activeSessionManager: SessionManager | null = null
+
+// Repair ~/.claude.json before any Claude SDK subprocess reads it. The Electron
+// host gets this via initializeNativeAgentHostRuntime(); the headless server has
+// no native-runtime bootstrap, so it calls the manager directly.
+await ensureDefaultClaudeConfigValid()
 
 const instance = await (async () => {
   try {

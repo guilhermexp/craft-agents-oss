@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import type { AgentEvent } from '@craft-agent/shared/agent'
+import type { Workspace } from '@craft-agent/shared/config'
+import type { Message } from '@craft-agent/core/types'
 import { SessionManager, createManagedSession, claimAutoRetryPending } from './SessionManager.ts'
 
 // Regression test for craft-agents-oss#804.
@@ -19,6 +22,16 @@ type SourceActivatedEvent = {
   type: 'source_activated'
   sourceSlug: string
   originalMessage: string
+}
+
+// Real timers (ts-no-test-timers exception): these tests exercise SessionManager's
+// real server-side resend timer (100ms) and its 2s Date.now-based dedup window,
+// including the timer-vs-legacy-RPC ordering race. Fake timers cannot faithfully
+// reproduce that race against the platform clock, so genuine delays are used.
+function delay(ms: number): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>()
+  setTimeout(resolve, ms)
+  return promise
 }
 
 describe('claimAutoRetryPending', () => {
@@ -85,10 +98,10 @@ describe('source_activated auto-retry', () => {
     }
     const managed = createManagedSession(
       { id, name: 'auto-retry test' },
-      workspace as never,
+      workspace as Workspace,
       { messagesLoaded: true },
     )
-    ;(sm as unknown as { sessions: Map<string, unknown> }).sessions.set(id, managed)
+    sm.registerManagedSession(managed)
     return managed
   }
 
@@ -101,20 +114,20 @@ describe('source_activated auto-retry', () => {
    */
   function spyOnSendMessage(sessionId: string) {
     const calls: string[] = []
-    const managed = (sm as unknown as { sessions: Map<string, { messages: unknown[] }> }).sessions.get(sessionId)!
-    ;(sm as unknown as { sendMessage: (id: string, msg: string) => Promise<void> }).sendMessage = async (id, msg) => {
-      const m = (sm as unknown as { sessions: Map<string, { autoRetryPending?: { content: string; deadlineMs: number; committed: boolean }; messages: unknown[] }> }).sessions.get(id)!
+    const managed = sm.getManagedSession(sessionId)!
+    sm.sendMessage = async (id, msg) => {
+      const m = sm.getManagedSession(id)!
       if (claimAutoRetryPending(m, msg) === 'drop') return
       calls.push(msg)
-      managed.messages.push({ id: `m-${calls.length}`, role: 'user', content: msg, timestamp: Date.now() })
+      managed.messages.push({ id: `m-${calls.length}`, role: 'user', content: msg, timestamp: Date.now() } as Message)
     }
     return calls
   }
 
   async function fireSourceActivated(sessionId: string, sourceSlug: string, originalMessage: string) {
-    const managed = (sm as unknown as { sessions: Map<string, unknown> }).sessions.get(sessionId)!
+    const managed = sm.getManagedSession(sessionId)!
     const event: SourceActivatedEvent = { type: 'source_activated', sourceSlug, originalMessage }
-    await (sm as unknown as { processEvent: (m: unknown, e: unknown) => Promise<void> }).processEvent(managed, event)
+    await sm.dispatchAgentEvent(managed, event as AgentEvent)
   }
 
   it('basic re-send — fires sendMessage with "[<slug> activated]" suffix', async () => {
@@ -123,7 +136,7 @@ describe('source_activated auto-retry', () => {
     const calls = spyOnSendMessage(sessionId)
 
     await fireSourceActivated(sessionId, 'github', 'list my repos')
-    await new Promise(r => setTimeout(r, 150))
+    await delay(150)
 
     expect(calls).toEqual(['list my repos\n\n[github activated]'])
   })
@@ -134,9 +147,9 @@ describe('source_activated auto-retry', () => {
     const calls = spyOnSendMessage(sessionId)
 
     await fireSourceActivated(sessionId, 'github', 'find issues')
-    await new Promise(r => setTimeout(r, 150))
+    await delay(150)
     await fireSourceActivated(sessionId, 'linear', 'find issues')
-    await new Promise(r => setTimeout(r, 150))
+    await delay(150)
 
     expect(calls).toEqual([
       'find issues\n\n[github activated]',
@@ -150,7 +163,7 @@ describe('source_activated auto-retry', () => {
     const calls = spyOnSendMessage(sessionId)
 
     await fireSourceActivated(sessionId, 'github', '')
-    await new Promise(r => setTimeout(r, 150))
+    await delay(150)
 
     expect(calls).toEqual([])
     expect(managed.autoRetryPending).toBeUndefined()
@@ -170,9 +183,9 @@ describe('source_activated auto-retry', () => {
       role: 'user',
       content: 'actually check the issues instead',
       timestamp: Date.now(),
-    } as never)
+    } as Message)
 
-    await new Promise(r => setTimeout(r, 150))
+    await delay(150)
 
     expect(calls).toEqual([])
     // The pending slot is cleared when the timer skips so a late legacy RPC
@@ -187,12 +200,9 @@ describe('source_activated auto-retry', () => {
 
     await fireSourceActivated(sessionId, 'github', 'do the thing')
     // Legacy renderer's RPC arrives ~5ms after schedule, BEFORE the 100ms timer.
-    await (sm as unknown as { sendMessage: (id: string, msg: string) => Promise<void> }).sendMessage(
-      sessionId,
-      'do the thing\n\n[github activated]',
-    )
+    await sm.sendMessage(sessionId, 'do the thing\n\n[github activated]')
     // Wait past the timer.
-    await new Promise(r => setTimeout(r, 200))
+    await delay(200)
 
     expect(calls.length).toBe(1)
     expect(calls[0]).toBe('do the thing\n\n[github activated]')
@@ -205,12 +215,9 @@ describe('source_activated auto-retry', () => {
 
     await fireSourceActivated(sessionId, 'github', 'do the thing')
     // Wait for the timer to fire and commit.
-    await new Promise(r => setTimeout(r, 150))
+    await delay(150)
     // Now the late legacy RPC arrives (≤2s window).
-    await (sm as unknown as { sendMessage: (id: string, msg: string) => Promise<void> }).sendMessage(
-      sessionId,
-      'do the thing\n\n[github activated]',
-    )
+    await sm.sendMessage(sessionId, 'do the thing\n\n[github activated]')
 
     expect(calls.length).toBe(1)
     expect(calls[0]).toBe('do the thing\n\n[github activated]')
@@ -228,11 +235,8 @@ describe('source_activated auto-retry', () => {
     // timer to skip the auto-retry as preempted — covered by the 'preempted'
     // test. The unique guarantee here is: the unrelated message itself is
     // never silently dropped by the dedup gate.)
-    await (sm as unknown as { sendMessage: (id: string, msg: string) => Promise<void> }).sendMessage(
-      sessionId,
-      'never mind, what time is it',
-    )
-    await new Promise(r => setTimeout(r, 150))
+    await sm.sendMessage(sessionId, 'never mind, what time is it')
+    await delay(150)
 
     expect(calls).toEqual(['never mind, what time is it'])
   })
@@ -249,12 +253,12 @@ describe('source_activated auto-retry', () => {
     // Synchronously rip the session out of the map (mimic the deletion path's
     // cleanup without going through the full deleteSession flow, which would
     // also try to dispose agents and tear down pool servers we never created).
-    if (managed.autoRetryTimer) clearTimeout(managed.autoRetryTimer)
+    clearTimeout(managed.autoRetryTimer)
     managed.autoRetryTimer = undefined
     managed.autoRetryPending = undefined
-    ;(sm as unknown as { sessions: Map<string, unknown> }).sessions.delete(sessionId)
+    sm.deleteManagedSession(sessionId)
 
-    await new Promise(r => setTimeout(r, 200))
+    await delay(200)
 
     expect(calls).toEqual([])
   })

@@ -9,13 +9,51 @@ import type { CredentialBackend } from './backends/types.ts';
 import type { CredentialId, CredentialType, StoredCredential, CredentialHealthStatus, CredentialHealthIssue } from './types.ts';
 import type { LlmAuthType, LlmProviderType } from '../config/llm-connections.ts';
 import { SecureStorageBackend } from './backends/secure-storage.ts';
+import { credentialIdToAccount } from './types.ts';
 import { debug } from '../utils/debug.ts';
+
+/**
+ * A resolved LLM credential carrying the actual secret value(s) for a
+ * connection, discriminated by how the credential must be applied downstream.
+ *
+ * This is the single value-bearing projection of `authType -> credential`.
+ * `hasLlmCredentials` is the thin boolean derived from it (`!== null`).
+ */
+export type ResolvedLlmCredential =
+  | { kind: 'api_key'; value: string }
+  | { kind: 'oauth'; accessToken: string; refreshToken?: string; expiresAt?: number }
+  | { kind: 'iam'; accessKeyId: string; secretAccessKey: string; region?: string; sessionToken?: string }
+  | { kind: 'service_account'; path: string }
+  | { kind: 'environment'; value: string }
+  | { kind: 'none' };
 
 export class CredentialManager {
   private backends: CredentialBackend[] = [];
   private writeBackend: CredentialBackend | null = null;
   private initialized = false;
   private initPromise: Promise<void> | null = null;
+
+  /**
+   * In-memory credentials that take precedence over every persistent backend
+   * and are never written to disk. Populated between {@link setEphemeralLlmApiKey}
+   * and {@link clearEphemeralLlmApiKey} — connection-test flows that must resolve
+   * a credential by slug without leaving a throwaway entry in the store.
+   */
+  private readonly ephemeralCredentials = new Map<string, StoredCredential>();
+
+  /**
+   * @param injectedBackends - Optional explicit backend list. When provided the
+   *   manager uses exactly these backends (highest priority first) and skips
+   *   platform auto-detection. Primarily a dependency-injection seam for tests
+   *   that need an in-memory store instead of the on-disk SecureStorageBackend.
+   */
+  constructor(injectedBackends?: CredentialBackend[]) {
+    if (injectedBackends && injectedBackends.length > 0) {
+      this.backends = [...injectedBackends].sort((a, b) => b.priority - a.priority);
+      this.writeBackend = this.backends[0] ?? null;
+      this.initialized = true;
+    }
+  }
 
   /**
    * Explicitly initialize the credential manager.
@@ -110,6 +148,11 @@ export class CredentialManager {
    */
   async get(id: CredentialId): Promise<StoredCredential | null> {
     await this.ensureInitialized();
+
+    const ephemeral = this.ephemeralCredentials.get(credentialIdToAccount(id));
+    if (ephemeral) {
+      return ephemeral;
+    }
 
     for (const backend of this.backends) {
       try {
@@ -349,6 +392,28 @@ export class CredentialManager {
   }
 
   /**
+   * Store an LLM API key in memory only — resolvable by slug (via
+   * {@link getLlmApiKey}/{@link get}) but never written to any persistent
+   * backend. This is the validate-without-persisting primitive for connection
+   * tests: a synthetic connection can be exercised end to end without leaving a
+   * throwaway credential on disk. Always pair with {@link clearEphemeralLlmApiKey}
+   * (e.g. in a `finally`).
+   */
+  setEphemeralLlmApiKey(connectionSlug: string, apiKey: string): void {
+    this.ephemeralCredentials.set(
+      credentialIdToAccount({ type: 'llm_api_key', connectionSlug }),
+      { value: apiKey },
+    );
+  }
+
+  /** Remove an in-memory LLM API key stored via {@link setEphemeralLlmApiKey}. */
+  clearEphemeralLlmApiKey(connectionSlug: string): void {
+    this.ephemeralCredentials.delete(
+      credentialIdToAccount({ type: 'llm_api_key', connectionSlug }),
+    );
+  }
+
+  /**
    * Get OAuth token for an LLM connection.
    * @param connectionSlug - The connection slug
    * @returns OAuth credentials or null if not found
@@ -494,93 +559,121 @@ export class CredentialManager {
   // ============================================================
 
   /**
-   * Check if an LLM connection has valid credentials.
-   * Uses the new LlmAuthType system - routes by auth mechanism.
+   * Resolve an LLM connection's credential to its concrete value(s).
+   *
+   * This is the single place that maps `authType -> credential`; every consumer
+   * that needs the value (driver validation, env-var injection, Pi auth) derives
+   * from here instead of re-deriving the switch. Returns `null` when no usable
+   * credential exists.
+   *
+   * @param connectionSlug - The connection slug
+   * @param authType - The auth mechanism to resolve
+   * @param providerType - Optional provider type; only affects `environment`
+   *   resolution (see below)
+   */
+  async resolveLlmCredential(
+    connectionSlug: string,
+    authType: LlmAuthType,
+    providerType?: LlmProviderType,
+  ): Promise<ResolvedLlmCredential | null> {
+    switch (authType) {
+      // Keyless connections (local/self-hosted, e.g. Ollama). Present by
+      // definition; downstream applies KEYLESS_API_KEY_PLACEHOLDER.
+      case 'none':
+        return { kind: 'none' };
+
+      // API-key family — all share llm_api_key storage. `bearer_token` stores
+      // its secret here too; consumers that need the Bearer-vs-x-api-key
+      // distinction branch on `authType`, not on the resolved kind.
+      case 'api_key':
+      case 'api_key_with_endpoint':
+      case 'bearer_token': {
+        const value = await this.getLlmApiKey(connectionSlug);
+        return value ? { kind: 'api_key', value } : null;
+      }
+
+      // Browser OAuth. Mirrors expiry handling: an expired token with no refresh
+      // token is not usable and resolves to null.
+      case 'oauth': {
+        const oauth = await this.getLlmOAuth(connectionSlug);
+        if (!oauth) return null;
+        if (
+          oauth.expiresAt &&
+          this.isExpired({ value: oauth.accessToken, expiresAt: oauth.expiresAt }) &&
+          !oauth.refreshToken
+        ) {
+          return null;
+        }
+        return {
+          kind: 'oauth',
+          accessToken: oauth.accessToken,
+          refreshToken: oauth.refreshToken,
+          expiresAt: oauth.expiresAt,
+        };
+      }
+
+      // AWS IAM credentials (Bedrock).
+      case 'iam_credentials': {
+        const iam = await this.getLlmIamCredentials(connectionSlug);
+        if (!iam?.accessKeyId || !iam.secretAccessKey) return null;
+        return {
+          kind: 'iam',
+          accessKeyId: iam.accessKeyId,
+          secretAccessKey: iam.secretAccessKey,
+          region: iam.region,
+          sessionToken: iam.sessionToken,
+        };
+      }
+
+      // GCP service account (Vertex). The stored secret is the account JSON,
+      // exposed on `path` per the ResolvedLlmCredential contract.
+      case 'service_account_file': {
+        const sa = await this.getLlmServiceAccount(connectionSlug);
+        return sa?.serviceAccountJson
+          ? { kind: 'service_account', path: sa.serviceAccountJson }
+          : null;
+      }
+
+      // Credentials supplied out-of-band via the process environment. Anthropic
+      // exposes a single named variable (ANTHROPIC_API_KEY) we can verify — a
+      // missing variable means no credential. Other provider families back
+      // `environment` with a credential *chain* (e.g. Bedrock via ~/.aws, IAM
+      // roles, SSO) that cannot be verified from a single variable, so they
+      // resolve as present and defer to the liveness check.
+      case 'environment': {
+        if (providerType === 'anthropic') {
+          const value = process.env.ANTHROPIC_API_KEY;
+          return value ? { kind: 'environment', value } : null;
+        }
+        return { kind: 'environment', value: '' };
+      }
+
+      default: {
+        // Exhaustive check - TypeScript will error if we miss a case
+        const _exhaustive: never = authType;
+        return null;
+      }
+    }
+  }
+
+  /**
+   * Check if an LLM connection has usable credentials.
+   *
+   * Thin projection of {@link resolveLlmCredential}: a connection has
+   * credentials exactly when a credential resolves. Answers *presence*, not
+   * *liveness* — a real request (driver validation) is the authority on whether
+   * the credential actually works.
    *
    * @param connectionSlug - The connection slug
    * @param authType - The auth type to check
-   * @param providerType - Optional provider type for OAuth routing
-   * @returns true if credentials exist and are valid
+   * @param providerType - Optional provider type for environment resolution
    */
   async hasLlmCredentials(
     connectionSlug: string,
     authType: LlmAuthType,
-    providerType?: LlmProviderType
+    providerType?: LlmProviderType,
   ): Promise<boolean> {
-    switch (authType) {
-      // No credentials needed
-      case 'none':
-      case 'environment':
-        return true;
-
-      // API key variants - all use the same storage
-      case 'api_key':
-      case 'api_key_with_endpoint':
-      case 'bearer_token':
-        return this.hasLlmApiKeyCredential(connectionSlug);
-
-      // OAuth - browser flow
-      case 'oauth':
-        return this.hasLlmOAuthCredential(connectionSlug, providerType);
-
-      // AWS IAM credentials
-      case 'iam_credentials':
-        return this.hasLlmIamCredential(connectionSlug);
-
-      // GCP service account
-      case 'service_account_file':
-        return this.hasLlmServiceAccountCredential(connectionSlug);
-
-      default:
-        // Exhaustive check - TypeScript will error if we miss a case
-        const _exhaustive: never = authType;
-        return false;
-    }
-  }
-
-  /**
-   * Check if connection has valid API key credential.
-   * @internal
-   */
-  private async hasLlmApiKeyCredential(connectionSlug: string): Promise<boolean> {
-    const apiKey = await this.getLlmApiKey(connectionSlug);
-    return !!apiKey;
-  }
-
-  /**
-   * Check if connection has valid OAuth credential.
-   * @internal
-   */
-  private async hasLlmOAuthCredential(
-    connectionSlug: string,
-    providerType?: LlmProviderType
-  ): Promise<boolean> {
-    const oauth = await this.getLlmOAuth(connectionSlug);
-    if (!oauth) return false;
-
-    // Check if expired
-    if (oauth.expiresAt && this.isExpired({ value: oauth.accessToken, expiresAt: oauth.expiresAt })) {
-      return !!oauth.refreshToken; // Can refresh
-    }
-    return true;
-  }
-
-  /**
-   * Check if connection has valid IAM credential.
-   * @internal
-   */
-  private async hasLlmIamCredential(connectionSlug: string): Promise<boolean> {
-    const cred = await this.getLlmIamCredentials(connectionSlug);
-    return !!cred?.accessKeyId && !!cred?.secretAccessKey;
-  }
-
-  /**
-   * Check if connection has valid service account credential.
-   * @internal
-   */
-  private async hasLlmServiceAccountCredential(connectionSlug: string): Promise<boolean> {
-    const cred = await this.getLlmServiceAccount(connectionSlug);
-    return !!cred?.serviceAccountJson;
+    return (await this.resolveLlmCredential(connectionSlug, authType, providerType)) !== null;
   }
 
   /**

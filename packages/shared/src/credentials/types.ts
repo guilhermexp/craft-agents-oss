@@ -130,6 +130,20 @@ export interface StoredCredential {
   // Full service account JSON is stored in the `value` field
 }
 
+/**
+ * Placeholder API key for keyless connections — local/self-hosted endpoints
+ * (e.g. Ollama, or an Anthropic-compatible proxy) that accept any value. SDKs
+ * and provider clients require a truthy `apiKey`/`ANTHROPIC_API_KEY` to
+ * initialize; this satisfies that without implying a real secret. A single
+ * constant so every keyless path emits the same token.
+ *
+ * Lives here, not in `manager.ts`: renderer code reaches this constant through
+ * `config/llm-connections.ts`, and importing it from the manager would drag the
+ * Node-only `backends/secure-storage.ts` (and `node:crypto`) into the browser
+ * bundle. This module has no imports; keep it that way.
+ */
+export const KEYLESS_API_KEY_PLACEHOLDER = 'not-needed';
+
 // Using "::" as delimiter instead of "/" because server names and API names
 // could contain "/" (e.g., URLs like "https://api.example.com")
 const CREDENTIAL_DELIMITER = '::';

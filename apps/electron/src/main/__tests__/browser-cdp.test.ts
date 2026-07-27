@@ -6,21 +6,10 @@
  */
 
 import { describe, it, expect, beforeEach, mock } from 'bun:test'
+import { createLoggerModuleStub } from './logger-module-stub'
 
 // Mock logger before import
-mock.module('../logger', () => {
-  const stubLog = { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} }
-  return {
-    mainLog: stubLog,
-    sessionLog: stubLog,
-    handlerLog: stubLog,
-    windowLog: stubLog,
-    agentLog: stubLog,
-    searchLog: stubLog,
-    isDebugMode: false,
-    getLogFilePath: () => '/tmp/main.log',
-  }
-})
+mock.module('../logger', () => createLoggerModuleStub())
 
 const { BrowserCDP } = await import('../browser-cdp')
 

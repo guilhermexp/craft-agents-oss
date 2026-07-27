@@ -26,7 +26,7 @@ const OPTS = { plansFolderPath: '/tmp/plans', dataFolderPath: '/tmp/data' }
 const SOURCE_BLOCK = '<sources>\nActive: none\n</sources>'
 
 function makeBuilder() {
-  return new TestAgent(createMockBackendConfig()).getPromptBuilder()
+  return new TestAgent(createMockBackendConfig()).getPromptBuilderForTest()
 }
 
 describe('PromptBuilder volatile/stable context split (issue #862)', () => {

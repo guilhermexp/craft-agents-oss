@@ -1,13 +1,11 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import type { LLMQueryRequest, LLMQueryResult } from '@craft-agent/shared/agent/llm-tool'
 import type { AgentBackend } from '@craft-agent/shared/agent/backend'
+import { createLoggerModuleStub } from '../__tests__/logger-module-stub'
 
 let capturedRequest: LLMQueryRequest | null = null
 
-mock.module('../logger', () => {
-  const logger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
-  return { mainLog: logger }
-})
+mock.module('../logger', () => createLoggerModuleStub())
 
 mock.module('@craft-agent/shared/config', () => ({
   getDefaultLlmConnection: () => 'claude-default',

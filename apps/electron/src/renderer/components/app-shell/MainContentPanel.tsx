@@ -23,6 +23,7 @@ import { Panel } from './Panel'
 import { MultiSelectPanel } from './MultiSelectPanel'
 import { ChannelConversationPanel } from './ChannelConversationPanel'
 import { useAppShellContext } from '@/context/AppShellContext'
+import { useAutomationsContext } from '@/context/AutomationsContext'
 import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
 import { StoplightProvider } from '@/context/StoplightContext'
 import {
@@ -33,7 +34,7 @@ import {
   isSkillsNavigation,
   isAutomationsNavigation,
   isMeetingsNavigation,
-} from '@/contexts/NavigationContext'
+} from '@/context/NavigationContext'
 import { useSessionSelection, useIsMultiSelectActive, useSelectedIds, useSelectionCount } from '@/hooks/useSession'
 import { sourceSelection, skillSelection, automationSelection } from '@/hooks/useEntitySelection'
 import { extractLabelId } from '@craft-agent/shared/labels'
@@ -58,12 +59,18 @@ export interface MainContentPanelProps {
    * Used by PanelSlot to render panels in the panel stack.
    */
   navStateOverride?: import('../../../shared/types').NavigationState | null
+  /** Per-panel right-sidebar (close) button, injected by PanelSlot for the chat header. */
+  rightSidebarButton?: React.ReactNode
+  /** Per-panel leading action (compact-mode back button), injected by PanelSlot. */
+  leadingAction?: React.ReactNode
 }
 
 export function MainContentPanel({
   isSidebarAndNavigatorHidden = false,
   className,
   navStateOverride,
+  rightSidebarButton,
+  leadingAction,
 }: MainContentPanelProps) {
   const { t } = useTranslation()
   const globalNavState = useNavigationState()
@@ -76,16 +83,18 @@ export function MainContentPanel({
     onSessionLabelsChange,
     sessionStatuses,
     labels,
-    onTestAutomation,
-    onToggleAutomation,
-    onDuplicateAutomation,
-    onDeleteAutomation,
-    onReplayAutomation,
-    automationTestResults,
-    getAutomationHistory,
     activeSessionWorkingDirectory,
     workspaceChannels,
   } = useAppShellContext()
+  const {
+    handleTestAutomation,
+    handleToggleAutomation,
+    handleDuplicateAutomation,
+    handleDeleteAutomation,
+    handleReplayAutomation,
+    automationTestResults,
+    getAutomationHistory,
+  } = useAutomationsContext()
 
   // Session multi-select state
   const isMultiSelectActive = useIsMultiSelectActive()
@@ -347,11 +356,11 @@ export function MainContentPanel({
               automation={automation}
               executions={executions}
               testResult={automationTestResults?.[automation.id]}
-              onTest={onTestAutomation ? () => onTestAutomation(automation.id) : undefined}
-              onToggleEnabled={onToggleAutomation ? () => onToggleAutomation(automation.id) : undefined}
-              onDuplicate={onDuplicateAutomation ? () => onDuplicateAutomation(automation.id) : undefined}
-              onDelete={onDeleteAutomation ? () => onDeleteAutomation(automation.id) : undefined}
-              onReplay={onReplayAutomation}
+              onTest={() => handleTestAutomation(automation.id)}
+              onToggleEnabled={() => handleToggleAutomation(automation.id)}
+              onDuplicate={() => handleDuplicateAutomation(automation.id)}
+              onDelete={() => handleDeleteAutomation(automation.id)}
+              onReplay={handleReplayAutomation}
             />
           </Panel>
         )
@@ -390,7 +399,7 @@ export function MainContentPanel({
     if (navState.details) {
       return wrapWithStoplight(
         <Panel variant="grow" className={className}>
-          <ChatPage sessionId={navState.details.sessionId} />
+          <ChatPage sessionId={navState.details.sessionId} rightSidebarButton={rightSidebarButton} leadingAction={leadingAction} />
         </Panel>
       )
     }

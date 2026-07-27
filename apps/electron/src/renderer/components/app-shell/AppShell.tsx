@@ -88,11 +88,12 @@ import {
   getActiveRightSidebarPreviewPath,
   type RightSidebarPreviewSelection,
 } from "./right-sidebar-preview-state"
-import type { ChatDisplayHandle } from "./ChatDisplay"
+import { useChatMatchWiring } from "@/hooks/useChatMatchWiring"
 import { LeftSidebar } from "./LeftSidebar"
-import { useSession } from "@/hooks/useSession"
+import { useSessionSelection } from "@/hooks/useSession"
 import { ensureSessionMessagesLoadedAtom } from "@/atoms/sessions"
 import { AppShellProvider, type AppShellContextType } from "@/context/AppShellContext"
+import { AutomationsProvider } from "@/context/AutomationsContext"
 import { EscapeInterruptProvider, useEscapeInterrupt } from "@/context/EscapeInterruptContext"
 import { useTheme } from "@/context/ThemeContext"
 import { getResizeGradientStyle } from "@/hooks/useResizeGradient"
@@ -106,7 +107,7 @@ import { sessionAtomFamily, sessionMetaMapAtom, sendToWorkspaceAtom, type Sessio
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
 import { panelStackAtom, panelCountAtom, focusedPanelIdAtom, focusedSessionIdAtom, focusNextPanelAtom, focusPrevPanelAtom, parseSessionIdFromRoute } from "@/atoms/panel-stack"
-import { type SessionStatusId, type SessionStatus, statusConfigsToSessionStatuses } from "@/config/session-status-config"
+import { type SessionStatusId, type ResolvedSessionStatus, statusConfigsToSessionStatuses } from "@/config/session-status-config"
 import { useStatuses } from "@/hooks/useStatuses"
 import { useLabels } from "@/hooks/useLabels"
 import { useChannels } from "@/hooks/useChannels"
@@ -133,7 +134,7 @@ import {
   isAutomationsNavigation,
   isMeetingsNavigation,
   type NavigationState,
-} from "@/contexts/NavigationContext"
+} from "@/context/NavigationContext"
 import type { SettingsSubpage } from "../../../shared/types"
 import { SourcesListPanel } from "./SourcesListPanel"
 import { SkillsListPanel } from "./SkillsListPanel"
@@ -172,9 +173,13 @@ import { dispatchFocusInputEvent } from "./input/focus-input-events"
  * Only UI-specific state is passed as separate props.
  *
  * Adding new features:
- * 1. Add to AppShellContextType in context/AppShellContext.tsx
- * 2. Update App.tsx to include in contextValue
- * 3. Use via useAppShellContext() hook in child components
+ * 1. Add the field to the matching domain interface in context/AppShellContext.tsx
+ *    (SessionActions, WorkspaceData, SessionRuntime, AppActions, PanelChrome,
+ *    SessionSearchWiring) — never grow one flat bag. Automation callbacks live on
+ *    their own AutomationsContext; single-consumer panel chrome flows via props.
+ * 2. Provide it from App.tsx (base contextValue) or here (AppShell overrides).
+ * 3. Consume it via the domain hook (useSessionActions / useWorkspaceData / …),
+ *    not the whole context.
  */
 interface AppShellProps {
   /** All data and callbacks - passed directly to AppShellProvider */
@@ -617,7 +622,7 @@ function AppShellContent({
   const resizeHandleRef = React.useRef<HTMLDivElement>(null)
   const sessionListHandleRef = React.useRef<HTMLDivElement>(null)
   const rightSidebarHandleRef = React.useRef<HTMLDivElement>(null)
-  const [session, setSession] = useSession()
+  const { state: session, reset: resetSessionSelection } = useSessionSelection()
   const { resolvedMode, isDark, setMode } = useTheme()
   const { canGoBack, canGoForward, goBack, goForward, navigateToSource, navigateToSession, updateRightSidebar } = useNavigation()
 
@@ -823,28 +828,9 @@ function AppShellContent({
     })
   }, [sessionFilterKey])
 
-  // Ref for ChatDisplay navigation (exposed via forwardRef)
-  const chatDisplayRef = React.useRef<ChatDisplayHandle>(null)
-  // Track match count and index from ChatDisplay (for SessionList navigation UI)
-  const [chatMatchInfo, setChatMatchInfo] = React.useState<{ sessionId: string | null; count: number; index: number; isHighlighting?: boolean }>({ sessionId: null, count: 0, index: 0 })
-
-  // Callback for immediate match info updates from ChatDisplay
-  // Memo guard prevents render feedback loops from identical updates
-  const handleChatMatchInfoChange = React.useCallback((info: { sessionId: string | null; count: number; index: number; isHighlighting: boolean }) => {
-    setChatMatchInfo(prev => {
-      if (prev.sessionId === info.sessionId && prev.count === info.count && prev.index === info.index && prev.isHighlighting === info.isHighlighting) {
-        return prev
-      }
-      return info
-    })
-  }, [])
-
-  // Reset match info when search is deactivated
-  React.useEffect(() => {
-    if (!searchActive || !searchQuery) {
-      setChatMatchInfo({ sessionId: null, count: 0, index: 0 })
-    }
-  }, [searchActive, searchQuery])
+  // ChatDisplay match-navigation wiring (ref + match info + change handler).
+  // Tracking is active only while a non-empty search is open.
+  const { chatDisplayRef, chatMatchInfo, onChatMatchInfoChange } = useChatMatchWiring(searchActive && !!searchQuery)
 
   // Filter dropdown: inline search query for filtering statuses/labels in a flat list.
   // When empty, the dropdown shows hierarchical submenus. When typing, shows a flat filtered list.
@@ -917,12 +903,12 @@ function AppShellContent({
   const handleTransferComplete = useCallback((targetWorkspaceId: string, _newSessionIds: string[]) => {
     onSelectWorkspace(targetWorkspaceId)
   }, [onSelectWorkspace])
+  const automationsApi = useAutomations(activeWorkspaceId)
   const {
-    automations, automationTestResults,
+    automations,
     automationPendingDelete, pendingDeleteAutomation, setAutomationPendingDelete,
     handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, confirmDeleteAutomation,
-    getAutomationHistory, handleReplayAutomation,
-  } = useAutomations(activeWorkspaceId)
+  } = automationsApi
 
   // Whether local MCP servers are enabled (affects stdio source status)
   const [localMcpEnabled, setLocalMcpEnabled] = React.useState(true)
@@ -1038,7 +1024,7 @@ function AppShellContent({
   // Load dynamic statuses from workspace config
   const { statuses: statusConfigs, isLoading: isLoadingStatuses } = useStatuses(activeWorkspace?.id || null)
 
-  // Convert StatusConfig to SessionStatus with resolved icons — pure derived value, no state needed.
+  // Convert StatusConfig to ResolvedSessionStatus with resolved icons — pure derived value, no state needed.
   const sessionStatuses = React.useMemo(
     () =>
       activeWorkspace?.id && statusConfigs.length > 0
@@ -1073,7 +1059,7 @@ function AppShellContent({
     if (!optimisticStatusOrder) return sessionStatuses
     // Reorder sessionStatuses array to match optimistic order
     const stateMap = new Map(sessionStatuses.map(s => [s.id, s]))
-    const reordered: SessionStatus[] = []
+    const reordered: ResolvedSessionStatus[] = []
     for (const id of optimisticStatusOrder) {
       const state = stateMap.get(id)
       if (state) reordered.push(state)
@@ -1126,7 +1112,7 @@ function AppShellContent({
   // Compute filtered results for the dropdown's search mode (memoized for use in both
   // the keyboard handler and the JSX render).
   const filterDropdownResults = useMemo(() => {
-    if (!filterDropdownQuery.trim()) return { states: [] as SessionStatus[], labels: [] as LabelMenuItem[] }
+    if (!filterDropdownQuery.trim()) return { states: [] as ResolvedSessionStatus[], labels: [] as LabelMenuItem[] }
     return {
       states: filterLabelMenuStates(effectiveSessionStatuses, filterDropdownQuery),
       labels: filterLabelMenuItems(flatLabelMenuItems, filterDropdownQuery),
@@ -1708,10 +1694,10 @@ function AppShellContent({
   const handleDeleteSession = useCallback(async (sessionId: string, skipConfirmation?: boolean): Promise<boolean> => {
     // Clear selection first if this is the selected session
     if (session.selected === sessionId) {
-      setSession({ selected: null })
+      resetSessionSelection()
     }
     return onDeleteSession(sessionId, skipConfirmation)
-  }, [session.selected, setSession, onDeleteSession])
+  }, [session.selected, resetSessionSelection, onDeleteSession])
 
   const handleContextOpenFile = useCallback((path: string) => {
     const targetSessionId = focusedSessionId ?? session.selected ?? null
@@ -1764,21 +1750,13 @@ function AppShellContent({
     enabledModes,
     sessionStatuses: effectiveSessionStatuses,
     onSessionSourcesChange: handleSessionSourcesChange,
-    rightSidebarButton: null,
     isCompactMode: isAutoCompact,
     // Search state for ChatDisplay highlighting
     sessionListSearchQuery: searchActive ? searchQuery : undefined,
     isSearchModeActive: searchActive,
     chatDisplayRef,
-    onChatMatchInfoChange: handleChatMatchInfoChange,
-    onTestAutomation: handleTestAutomation,
-    onToggleAutomation: handleToggleAutomation,
-    onDuplicateAutomation: handleDuplicateAutomation,
-    onDeleteAutomation: handleDeleteAutomation,
-    automationTestResults,
-    getAutomationHistory,
-    onReplayAutomation: handleReplayAutomation,
-  }), [contextValue, handleDeleteSession, handleContextOpenFile, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, channelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
+    onChatMatchInfoChange,
+  }), [contextValue, handleDeleteSession, handleContextOpenFile, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, channelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, searchActive, searchQuery, onChatMatchInfoChange])
 
   // Persist expanded folders to localStorage (workspace-scoped)
   React.useEffect(() => {
@@ -2504,6 +2482,7 @@ function AppShellContent({
 
   return (
     <AppShellProvider value={appShellContextValue}>
+      <AutomationsProvider value={automationsApi}>
         {/* === TOP BAR === */}
         <TopBar
           workspaces={workspaces}
@@ -4137,6 +4116,7 @@ function AppShellContent({
         }}
       />
 
+      </AutomationsProvider>
     </AppShellProvider>
   )
 }

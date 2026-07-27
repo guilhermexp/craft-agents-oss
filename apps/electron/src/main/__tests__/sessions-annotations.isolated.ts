@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from 'bun:test'
 import type { AnnotationV1 } from '@craft-agent/core/types'
+import { createLoggerModuleStub, createLoggerStub } from './logger-module-stub'
 
 mock.module('electron', () => ({
   app: {
@@ -11,11 +12,7 @@ mock.module('electron', () => ({
   },
 }))
 
-mock.module('../logger', () => ({
-  sessionLog: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
-  isDebugMode: false,
-  getLogFilePath: () => '/tmp/main.log',
-}))
+mock.module('../logger', () => createLoggerModuleStub({ sessionLog: createLoggerStub() }))
 
 mock.module('../notifications', () => ({
   updateBadgeCount: () => {},

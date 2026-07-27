@@ -16,7 +16,7 @@ import { SessionBadges } from "./SessionBadges"
 import { SESSION_DRAG_MIME } from "./session-dnd"
 import { getSessionTitle, getSessionPreviewText, highlightMatch, hasUnreadMeta, shortTimeLocale } from "@/utils/session"
 import { useSessionListContext } from "@/context/SessionListContext"
-import { useAppShellContext } from "@/context/AppShellContext"
+import { useWorkspaceData, usePanelChrome } from "@/context/AppShellContext"
 import { navigate, routes } from "@/lib/navigate"
 import type { SessionMeta } from "@/atoms/sessions"
 import { messagingBindingsBySessionAtom } from "@/atoms/messaging"
@@ -102,7 +102,8 @@ export function SessionItem({
   onRangeSelect,
 }: SessionItemProps) {
   const ctx = useSessionListContext()
-  const { workspaces, isCompactMode, llmConnections, workspaceDefaultLlmConnection } = useAppShellContext()
+  const { workspaces, llmConnections, workspaceDefaultLlmConnection } = useWorkspaceData()
+  const { isCompactMode } = usePanelChrome()
   const hasRemoteWorkspaces = workspaces?.some(w => w.remoteServer) ?? false
   const { hotkey: nextHotkey } = useActionLabel('chat.nextSearchMatch')
   const { hotkey: prevHotkey } = useActionLabel('chat.prevSearchMatch')

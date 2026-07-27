@@ -32,7 +32,7 @@ afterEach(() => {
 function baseMsg(overrides: Partial<IncomingMessage> = {}): IncomingMessage {
   return {
     platform: 'telegram',
-    channelId: 'chat-1',
+    messagingChannelId: 'chat-1',
     messageId: '1',
     senderId: 'sender-A',
     text: 'hello',
@@ -55,7 +55,6 @@ function makeFakeAdapter() {
       maxButtons: 10,
       maxMessageLength: 4096,
       markdown: 'v2',
-      webhookSupport: false,
     },
     initialize: noop,
     destroy: noop,
@@ -64,7 +63,7 @@ function makeFakeAdapter() {
     onButtonPress: () => {},
     sendText: mock(async (_channelId: string, text: string) => {
       sent.push(text)
-      return { platform: 'telegram', channelId: 'chat-1', messageId: 'm' }
+      return { platform: 'telegram', messagingChannelId: 'chat-1', messageId: 'm' }
     }),
     editMessage: noop,
     sendButtons: noop,

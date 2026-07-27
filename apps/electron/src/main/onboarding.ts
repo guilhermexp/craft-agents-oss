@@ -16,17 +16,6 @@ import type { HandlerDeps } from './handlers/handler-deps'
 // IPC Handlers
 // ============================================
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.onboarding.GET_AUTH_STATE,
-  RPC_NAMESPACES.onboarding.VALIDATE_MCP,
-  RPC_NAMESPACES.onboarding.START_MCP_OAUTH,
-  RPC_NAMESPACES.onboarding.START_CLAUDE_OAUTH,
-  RPC_NAMESPACES.onboarding.EXCHANGE_CLAUDE_CODE,
-  RPC_NAMESPACES.onboarding.HAS_CLAUDE_OAUTH_STATE,
-  RPC_NAMESPACES.onboarding.CLEAR_CLAUDE_OAUTH_STATE,
-  RPC_NAMESPACES.onboarding.DEFER_SETUP,
-] as const
-
 export function registerOnboardingHandlers(server: RpcServer, deps: HandlerDeps): void {
   const log = deps.platform.logger
 

@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { getSessionFilePath } from '@craft-agent/shared/sessions/storage'
+import type { Workspace } from '@craft-agent/shared/config'
 import { SessionManager, createManagedSession } from './SessionManager.ts'
 
 // Regression test for the High-severity finding in eb81086e:
@@ -38,10 +39,10 @@ describe('sendMessage durability', () => {
     }
     const managed = createManagedSession(
       { id, name: 'durability test' },
-      workspace as never,
+      workspace as Workspace,
       { messagesLoaded: true },
     )
-    ;(sm as unknown as { sessions: Map<string, unknown> }).sessions.set(id, managed)
+    sm.registerManagedSession(managed)
     return managed
   }
 

@@ -32,14 +32,24 @@ describe('ClaudeConfigManager', () => {
     });
   });
 
-  it('remove backup stale', async () => {
+  it('remove backup stale quando o config primario esta ausente', async () => {
     await withTempHome(async ({ configPath }) => {
-      writeFileSync(configPath, '{"ok":true}', 'utf-8');
       writeFileSync(`${configPath}.backup`, 'stale', 'utf-8');
 
       await createClaudeConfigManager({ configPath }).ensureValid();
 
       expect(existsSync(`${configPath}.backup`)).toBe(false);
+    });
+  });
+
+  it('preserva backup quando o config primario esta saudavel', async () => {
+    await withTempHome(async ({ configPath }) => {
+      writeFileSync(configPath, '{"ok":true}', 'utf-8');
+      writeFileSync(`${configPath}.backup`, 'user-recovery-copy', 'utf-8');
+
+      await createClaudeConfigManager({ configPath }).ensureValid();
+
+      expect(readFileSync(`${configPath}.backup`, 'utf-8')).toBe('user-recovery-copy');
     });
   });
 

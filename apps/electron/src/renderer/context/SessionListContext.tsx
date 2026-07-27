@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react"
 import type { LabelConfig } from "@craft-agent/shared/labels"
-import type { SessionStatusId, SessionStatus } from "@/config/session-status-config"
+import type { SessionStatusId, ResolvedSessionStatus } from "@/config/session-status-config"
 import type { SessionMeta } from "@/atoms/sessions"
 import type { SessionOptions } from "@/hooks/useSessionOptions"
 import type { ContentSearchResult } from "@/hooks/useSessionSearch"
@@ -27,7 +27,7 @@ export interface SessionListContextValue {
   onKeyDown: (e: React.KeyboardEvent, item: SessionMeta) => void
 
   // Shared config
-  sessionStatuses: SessionStatus[]
+  sessionStatuses: ResolvedSessionStatus[]
   flatLabels: LabelConfig[]
   labels: LabelConfig[]
   searchQuery?: string

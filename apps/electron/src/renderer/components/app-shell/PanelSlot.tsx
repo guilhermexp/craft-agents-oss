@@ -7,10 +7,11 @@
  * When multiple panels exist, each uses flex-grow with its proportion as the weight,
  * combined with min-width to prevent shrinking below PANEL_MIN_WIDTH.
  *
- * Each PanelSlot overrides AppShellContext to inject a per-panel close button
- * into PanelHeader's rightSidebarButton slot. All panels are equal — closing
- * any panel removes it from the stack. A reactive effect handles window close
- * when the stack becomes empty.
+ * Each PanelSlot overrides AppShellContext only to inject isFocusedPanel (so
+ * ChatPage/PanelHeader can style the input field). Per-panel close/back buttons
+ * flow to MainContentPanel as props. All panels are equal — closing any panel
+ * removes it from the stack. A reactive effect handles window close when the
+ * stack becomes empty.
  */
 
 import { useCallback, useMemo } from 'react'
@@ -91,14 +92,12 @@ export function PanelSlot({
     )
   }, [isCompact, handleClose, t])
 
-  // Override AppShellContext so ChatPage/PanelHeader gets our per-panel close button,
-  // back button (compact mode), and isFocusedPanel for input field appearance
+  // Override AppShellContext so ChatPage/PanelHeader gets isFocusedPanel for input
+  // field appearance. Per-panel close/back buttons flow to MainContentPanel as props.
   const contextOverride = useMemo(() => ({
     ...parentContext,
-    rightSidebarButton: closeButton,
-    leadingAction: backButton,
     isFocusedPanel,
-  }), [parentContext, closeButton, backButton, isFocusedPanel])
+  }), [parentContext, isFocusedPanel])
 
   const handlePointerDown = useCallback(() => {
     if (!isFocusedPanel) {
@@ -145,6 +144,8 @@ export function PanelSlot({
             <MainContentPanel
               navStateOverride={navState}
               isSidebarAndNavigatorHidden={isSidebarAndNavigatorHidden}
+              rightSidebarButton={closeButton}
+              leadingAction={backButton}
             />
           </AppShellProvider>
         </div>

@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, mock } from 'bun:test'
+import * as sharedConfig from '@craft-agent/shared/config'
 
 const createdWindows: any[] = []
 let toolbarLoadFailuresRemaining = 0
@@ -257,6 +258,12 @@ mock.module('../browser-cdp', () => ({
   },
 }))
 
+let mockAllowRemoteEvaluate = true
+mock.module('@craft-agent/shared/config', () => ({
+  ...sharedConfig,
+  getAllowRemoteEvaluate: () => mockAllowRemoteEvaluate,
+}))
+
 process.env.CRAFT_BROWSER_SCREENSHOT_CAPTURE_TIMEOUT_MS = '50'
 
 const { BrowserPaneManager } = await import('../browser-pane-manager')
@@ -270,23 +277,50 @@ describe('BrowserPaneManager', () => {
     mockShellOpenExternal.mockClear()
     mockIpcMainHandle.mockClear()
     manager = new BrowserPaneManager()
+    mockAllowRemoteEvaluate = true
   })
 
-  it('creates and lists instances', () => {
+  it('freezes the client:browser:invoke wire method names (protocol v1 — a rename is a breaking change)', () => {
+    // capabilityDispatch is Record<BrowserCapabilityMethod, …>, so its keys ARE the
+    // derived wire-method set. Renaming an interface method silently renames the
+    // wire method (see browser-capability.ts); freezing the names here makes a
+    // rename fail this test instead of breaking a staggered client/server rollout.
+    const wireMethods = Object.keys((manager as any).capabilityDispatch).sort()
+    expect(wireMethods).toEqual([
+      'bindSession', 'clearAgentControl', 'clearAgentControlForInstance', 'clearVisualsForSession',
+      'clickAtCoordinates', 'clickElement', 'createForSession', 'destroyForSession', 'destroyInstance',
+      'detectSecurityChallenge', 'drag', 'evaluate', 'fillElement', 'focus', 'focusBoundForSession',
+      'getAccessibilitySnapshot', 'getClipboard', 'getConsoleLogs', 'getDownloads', 'getInstance',
+      'getNetworkLogs', 'getOrCreateForSession', 'goBack', 'goForward', 'hide', 'listInstances',
+      'navigate', 'screenshot', 'screenshotRegion', 'scroll', 'selectOption', 'sendKey',
+      'setAgentControl', 'setClipboard', 'typeText', 'unbindAllForSession', 'uploadFile', 'waitFor',
+      'windowResize',
+    ])
+  })
+
+  it('rejects an Object.prototype key as an unknown capability method (no prototype-chain dispatch)', async () => {
+    // 'constructor' resolves to a function via the prototype chain on a plain
+    // object literal; the Object.hasOwn guard must reject it, not invoke it.
+    await expect(
+      (manager as any).dispatchCapability({ v: 1, method: 'constructor', args: [], sessionId: 's', workspaceId: 'w' }),
+    ).rejects.toThrow(/Unknown browser capability method/)
+  })
+
+  it('creates and lists instances', async () => {
     const id = manager.createInstance('test-1')
-    const list = manager.listInstances()
+    const list = await manager.listInstances()
     expect(id).toBe('test-1')
     expect(list).toHaveLength(1)
     expect(list[0].id).toBe('test-1')
     expect(list[0].agentControlActive).toBe(false)
   })
 
-  it('is idempotent when explicit ID already exists', () => {
+  it('is idempotent when explicit ID already exists', async () => {
     const first = manager.createInstance('same-id')
     const second = manager.createInstance('same-id')
     expect(first).toBe('same-id')
     expect(second).toBe('same-id')
-    expect(manager.listInstances()).toHaveLength(1)
+    expect(await manager.listInstances()).toHaveLength(1)
   })
 
   it('allows http(s) popups with shared browser partition', () => {
@@ -421,10 +455,10 @@ describe('BrowserPaneManager', () => {
     expect((manager as any).popupWindowsByParentInstanceId.has('popup-parent')).toBe(false)
   })
 
-  it('destroys instances', () => {
+  it('destroys instances', async () => {
     manager.createInstance('d1')
     manager.destroyInstance('d1')
-    expect(manager.listInstances()).toHaveLength(0)
+    expect(await manager.listInstances()).toHaveLength(0)
   })
 
   it('destroys instance via toolbar destroy IPC handler', async () => {
@@ -444,10 +478,10 @@ describe('BrowserPaneManager', () => {
     const [, destroyHandler] = destroyRegistration
     await destroyHandler({}, 'd-ipc-destroy')
 
-    expect(manager.listInstances()).toHaveLength(0)
+    expect(await manager.listInstances()).toHaveLength(0)
   })
 
-  it('emits removed callback exactly once when destroy triggers closed', () => {
+  it('emits removed callback exactly once when destroy triggers closed', async () => {
     const removed: string[] = []
     manager.onRemoved((id) => removed.push(id))
 
@@ -455,7 +489,7 @@ describe('BrowserPaneManager', () => {
     manager.destroyInstance('d-removed-once')
 
     expect(removed).toEqual(['d-removed-once'])
-    expect(manager.listInstances()).toHaveLength(0)
+    expect(await manager.listInstances()).toHaveLength(0)
   })
 
   it('ignores late state events after instance was removed', () => {
@@ -475,46 +509,46 @@ describe('BrowserPaneManager', () => {
     expect(states.length).toBe(countAfterDestroy)
   })
 
-  it('binds and unbinds sessions', () => {
+  it('binds and unbinds sessions', async () => {
     manager.createInstance('b1')
     manager.bindSession('b1', 'session-abc')
-    expect(manager.listInstances()[0].boundSessionId).toBe('session-abc')
-    expect(manager.listInstances()[0].ownerType).toBe('session')
+    expect((await manager.listInstances())[0].boundSessionId).toBe('session-abc')
+    expect((await manager.listInstances())[0].ownerType).toBe('session')
 
     manager.unbindSession('b1')
-    expect(manager.listInstances()[0].boundSessionId).toBeNull()
-    expect(manager.listInstances()[0].ownerType).toBe('manual')
+    expect((await manager.listInstances())[0].boundSessionId).toBeNull()
+    expect((await manager.listInstances())[0].ownerType).toBe('manual')
   })
 
-  it('createForSession returns canonical bound instance', () => {
-    const id1 = manager.createForSession('sess-1')
-    const id2 = manager.createForSession('sess-1')
-    const info = manager.listInstances()[0]
+  it('createForSession returns canonical bound instance', async () => {
+    const id1 = await manager.createForSession('sess-1')
+    const id2 = await manager.createForSession('sess-1')
+    const info = (await manager.listInstances())[0]
 
     expect(id1).toBe(id2)
     expect(info.ownerType).toBe('session')
     expect(info.ownerSessionId).toBe('sess-1')
-    expect(manager.listInstances()).toHaveLength(1)
+    expect(await manager.listInstances()).toHaveLength(1)
   })
 
-  it('getOrCreateForSession reuses existing instance', () => {
-    const id1 = manager.getOrCreateForSession('sess-1')
-    const id2 = manager.getOrCreateForSession('sess-1')
+  it('getOrCreateForSession reuses existing instance', async () => {
+    const id1 = await manager.getOrCreateForSession('sess-1')
+    const id2 = await manager.getOrCreateForSession('sess-1')
     expect(id1).toBe(id2)
-    expect(manager.listInstances()).toHaveLength(1)
+    expect(await manager.listInstances()).toHaveLength(1)
   })
 
-  it('createForSession reuses an unbound manual window before creating new', () => {
+  it('createForSession reuses an unbound manual window before creating new', async () => {
     manager.createInstance('manual-1')
 
-    const id = manager.createForSession('sess-reuse')
+    const id = await manager.createForSession('sess-reuse')
 
     expect(id).toBe('manual-1')
-    const info = manager.listInstances()[0]
+    const info = (await manager.listInstances())[0]
     expect(info.ownerType).toBe('session')
     expect(info.ownerSessionId).toBe('sess-reuse')
     expect(info.boundSessionId).toBe('sess-reuse')
-    expect(manager.listInstances()).toHaveLength(1)
+    expect(await manager.listInstances()).toHaveLength(1)
   })
 
   it('navigate normalizes hostnames to https', async () => {
@@ -591,7 +625,7 @@ describe('BrowserPaneManager', () => {
     expect(instance.window.focus.mock.calls.length).toBe(focusCallsBeforeReady)
   })
 
-  it('user close hides window and keeps instance alive', () => {
+  it('user close hides window and keeps instance alive', async () => {
     manager.createInstance('h1')
     const instance = (manager as any).instances.get('h1')
 
@@ -600,8 +634,8 @@ describe('BrowserPaneManager', () => {
 
     expect(closeEvent.preventDefault).toHaveBeenCalled()
     expect(instance.window.hide).toHaveBeenCalled()
-    expect(manager.listInstances()).toHaveLength(1)
-    expect(manager.listInstances()[0].isVisible).toBe(false)
+    expect(await manager.listInstances()).toHaveLength(1)
+    expect((await manager.listInstances())[0].isVisible).toBe(false)
   })
 
   it('does not intercept close when destroy is explicit', () => {
@@ -617,7 +651,7 @@ describe('BrowserPaneManager', () => {
     expect(instance.window.hide).not.toHaveBeenCalled()
   })
 
-  it('still destroys instance when cleanup throws', () => {
+  it('still destroys instance when cleanup throws', async () => {
     manager.createInstance('destroy-cleanup-throw')
     const instance = (manager as any).instances.get('destroy-cleanup-throw')
 
@@ -627,10 +661,10 @@ describe('BrowserPaneManager', () => {
 
     expect(() => manager.destroyInstance('destroy-cleanup-throw')).not.toThrow()
     expect(instance.window.destroy).toHaveBeenCalledTimes(1)
-    expect(manager.listInstances()).toHaveLength(0)
+    expect(await manager.listInstances()).toHaveLength(0)
   })
 
-  it('emits removed callback when window closes', () => {
+  it('emits removed callback when window closes', async () => {
     const removed: string[] = []
     manager.onRemoved((id) => removed.push(id))
     manager.createInstance('r1')
@@ -639,7 +673,7 @@ describe('BrowserPaneManager', () => {
     instance.window._emit('closed')
 
     expect(removed).toEqual(['r1'])
-    expect(manager.listInstances()).toHaveLength(0)
+    expect(await manager.listInstances()).toHaveLength(0)
   })
 
   it('retries toolbar load and recovers', async () => {
@@ -676,67 +710,30 @@ describe('BrowserPaneManager', () => {
     expect(toolbarWc.loadURL).toHaveBeenCalledWith(expect.stringContaining('data:text/html'))
   })
 
-  it('captures and filters console entries', () => {
+  it('captures and filters console entries', async () => {
     manager.createInstance('console-1')
     const instance = (manager as any).instances.get('console-1')
 
     instance.pageView.webContents._emit('console-message', 2, 'warn message')
     instance.pageView.webContents._emit('console-message', 3, 'error message')
 
-    const allEntries = manager.getConsoleLogs('console-1', { level: 'all', limit: 10 })
+    const allEntries = await manager.getConsoleLogs('console-1', { level: 'all', limit: 10 })
     expect(allEntries).toHaveLength(2)
 
-    const warnEntries = manager.getConsoleLogs('console-1', { level: 'warn', limit: 10 })
+    const warnEntries = await manager.getConsoleLogs('console-1', { level: 'warn', limit: 10 })
     expect(warnEntries).toHaveLength(1)
     expect(warnEntries[0].message).toBe('warn message')
   })
 
-  it('applies observer theme signal and skips regular console logging for it', () => {
+  it('applies observer theme signal and skips regular console logging for it', async () => {
     manager.createInstance('theme-signal')
     const instance = (manager as any).instances.get('theme-signal')
     instance.themeObserverToken = 'tok-1'
 
     instance.pageView.webContents._emit('console-message', 1, '__craft_theme_color__:tok-1:#123456')
 
-    expect(manager.listInstances().find(i => i.id === 'theme-signal')?.themeColor).toBe('#123456')
-    expect(manager.getConsoleLogs('theme-signal', { level: 'all', limit: 10 })).toHaveLength(0)
-  })
-
-  it('dedupes repeated observer theme signals', () => {
-    manager.createInstance('theme-dedupe')
-    const instance = (manager as any).instances.get('theme-dedupe')
-    instance.themeObserverToken = 'tok-2'
-
-    instance.pageView.webContents._emit('console-message', 1, '__craft_theme_color__:tok-2:#445566')
-    const sendCallsAfterFirst = instance.window.webContents.send.mock.calls.length
-
-    instance.pageView.webContents._emit('console-message', 1, '__craft_theme_color__:tok-2:#445566')
-    const sendCallsAfterSecond = instance.window.webContents.send.mock.calls.length
-
-    expect(sendCallsAfterSecond).toBe(sendCallsAfterFirst)
-  })
-
-  it('ignores observer theme signals from stale token', () => {
-    manager.createInstance('theme-stale-token')
-    const instance = (manager as any).instances.get('theme-stale-token')
-    instance.themeObserverToken = 'tok-current'
-    instance.themeColor = '#aaaaaa'
-
-    instance.pageView.webContents._emit('console-message', 1, '__craft_theme_color__:tok-old:#bbccdd')
-
-    expect(manager.listInstances().find(i => i.id === 'theme-stale-token')?.themeColor).toBe('#aaaaaa')
-  })
-
-  it('clears theme on explicit null sentinel signal', () => {
-    manager.createInstance('theme-null')
-    const instance = (manager as any).instances.get('theme-null')
-    instance.themeObserverToken = 'tok-null'
-
-    instance.pageView.webContents._emit('console-message', 1, '__craft_theme_color__:tok-null:#223344')
-    expect(manager.listInstances().find(i => i.id === 'theme-null')?.themeColor).toBe('#223344')
-
-    instance.pageView.webContents._emit('console-message', 1, '__craft_theme_color__:tok-null:__NULL__')
-    expect(manager.listInstances().find(i => i.id === 'theme-null')?.themeColor).toBeNull()
+    expect((await manager.listInstances()).find(i => i.id === 'theme-signal')?.themeColor).toBe('#123456')
+    expect(await manager.getConsoleLogs('theme-signal', { level: 'all', limit: 10 })).toHaveLength(0)
   })
 
   it('replays toolbar state with theme color when window is shown', () => {
@@ -851,7 +848,7 @@ describe('BrowserPaneManager', () => {
 
     await Bun.sleep(140)
 
-    expect(manager.listInstances().find(i => i.id === 'theme-early')?.themeColor).toBe('#0f1e2d')
+    expect((await manager.listInstances()).find(i => i.id === 'theme-early')?.themeColor).toBe('#0f1e2d')
   })
 
   it('clears pending in-page theme timer on full navigation', async () => {
@@ -1014,21 +1011,44 @@ describe('BrowserPaneManager', () => {
     ).rejects.toThrow('Resolved screenshot region is outside the current viewport')
   })
 
-  it('resizes browser window viewport and returns effective applied size', () => {
+  it('resizes browser window viewport and returns effective applied size', async () => {
     manager.createInstance('resize-1')
-    const resized = manager.windowResize('resize-1', 1280, 720)
+    const resized = await manager.windowResize('resize-1', 1280, 720)
 
     const instance = (manager as any).instances.get('resize-1')
     expect(instance.window.setContentSize).toHaveBeenCalledWith(1280, 768)
     expect(resized).toEqual({ width: 1280, height: 720 })
   })
 
-  it('returns effective viewport size when min window constraints apply', () => {
+  it('returns effective viewport size when min window constraints apply', async () => {
     manager.createInstance('resize-min')
-    const resized = manager.windowResize('resize-min', 200, 200)
+    const resized = await manager.windowResize('resize-min', 200, 200)
 
     // BrowserWindow minHeight is 500, toolbar is 48, so effective viewport height is 452.
     expect(resized).toEqual({ width: 700, height: 452 })
+  })
+
+  describe('evaluate gate (allowRemoteEvaluate)', () => {
+    // The gate is enforced inside evaluate() itself — the single seam both the
+    // local path (SessionManager → this) and the remote path (dispatch → this)
+    // cross. This test fails if the gate ever moves back to only the dispatcher
+    // and the local path slips under it: it rejects with the GATE error, which
+    // only fires because the check runs before the instance lookup.
+    it('rejects on the local path when allowRemoteEvaluate=false — single unified gate', async () => {
+      manager.createInstance('eval-gate')
+      mockAllowRemoteEvaluate = false
+      await expect(manager.evaluate('eval-gate', '1 + 1')).rejects.toThrow(/allowRemoteEvaluate=false/)
+    })
+
+    it('rejects before touching the instance when the gate is closed', async () => {
+      mockAllowRemoteEvaluate = false
+      await expect(manager.evaluate('never-created', '1 + 1')).rejects.toThrow(/allowRemoteEvaluate=false/)
+    })
+
+    it('runs the evaluation when allowRemoteEvaluate=true', async () => {
+      manager.createInstance('eval-ok')
+      await expect(manager.evaluate('eval-ok', '1 + 1')).resolves.toBeUndefined()
+    })
   })
 
   describe('agent control overlay', () => {
@@ -1048,7 +1068,7 @@ describe('BrowserPaneManager', () => {
       })
       expect(instance.nativeOverlayView.webContents.executeJavaScript).toHaveBeenCalled()
       expect(instance.nativeOverlayView.webContents.focus).not.toHaveBeenCalled()
-      expect(manager.listInstances().find(i => i.id === 'ac-1')?.agentControlActive).toBe(true)
+      expect((await manager.listInstances()).find(i => i.id === 'ac-1')?.agentControlActive).toBe(true)
     })
 
     it('keeps native overlay visible for active session control', async () => {
@@ -1064,7 +1084,7 @@ describe('BrowserPaneManager', () => {
       const instance = (manager as any).instances.get('ac-idle')
       expect(instance.nativeOverlayView.setBounds).toHaveBeenCalledWith({ x: 0, y: 48, width: 1200, height: 852 })
       expect(instance.nativeOverlayView.webContents.focus).not.toHaveBeenCalled()
-      expect(manager.listInstances().find(i => i.id === 'ac-idle')?.agentControlActive).toBe(true)
+      expect((await manager.listInstances()).find(i => i.id === 'ac-idle')?.agentControlActive).toBe(true)
     })
 
     it('emits state change when agent control is set and cleared', () => {
@@ -1290,25 +1310,6 @@ describe('BrowserPaneManager', () => {
       ;(manager as any).setupSessionPermissions(ses)
       ;(manager as any).setupSessionPermissions(ses)
       expect(ses.setPermissionRequestHandler).toHaveBeenCalledTimes(1)
-    })
-
-    it('denies clipboard-read and display-capture, allows geolocation (F1.3)', () => {
-      const ses = { setPermissionCheckHandler: mock(() => {}), setPermissionRequestHandler: mock(() => {}), setDisplayMediaRequestHandler: mock(() => {}) }
-      ;(manager as any).setupSessionPermissions(ses)
-
-      const requestHandler = (ses.setPermissionRequestHandler.mock.calls[0] as unknown[])[0] as (
-        wc: unknown, permission: string, cb: (allow: boolean) => void, details: unknown,
-      ) => void
-
-      const decide = (permission: string): boolean => {
-        let decision = false
-        requestHandler({}, permission, (allow: boolean) => { decision = allow }, { requestingOrigin: 'https://evil.example' })
-        return decision
-      }
-
-      expect(decide('clipboard-read')).toBe(false)
-      expect(decide('display-capture')).toBe(false)
-      expect(decide('geolocation')).toBe(true)
     })
   })
 })

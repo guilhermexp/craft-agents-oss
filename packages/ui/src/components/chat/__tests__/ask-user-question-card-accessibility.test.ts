@@ -15,4 +15,10 @@ describe('AskUserQuestionCard custom answer accessibility', () => {
     expect(source).toContain('id={customAnswerId}')
     expect(source).toContain('Other answer')
   })
+
+  it('exposes single and multi-select options with checked-state semantics', () => {
+    expect(source).toContain("role={question.multiSelect ? 'group' : 'radiogroup'}")
+    expect(source).toContain("role={question.multiSelect ? 'checkbox' : 'radio'}")
+    expect(source).toContain('aria-checked={isSelected}')
+  })
 })
