@@ -194,6 +194,14 @@ lifecycle. Preserve these invariants:
   é limpa e `rearmHermesReconciliation` rearma health check + poll para o record
   ainda ativo, então um sinal posterior retenta. `shutdown()` e
   `shutdownMeetingCaptures()` reportam `failed` em vez de `sealed` nesse caso.
+- A escrita do store (`persist(state)`) é o ponto de virada de toda mutação de
+  record: `updateRecord` e `purgeMeeting` mutam os Maps antes dela e, se ela
+  lançar, restauram exatamente o estado anterior antes de relançar. Memória à
+  frente do disco é o que quebra o retry — um terminal só em memória faz o
+  rearme ignorar um record que o disco ainda vê `running`, e um purge só em
+  memória apaga arquivos por um delete que reaparece no próximo boot. As
+  escritas derivadas depois do store (summary/transcript) ficam fora do
+  rollback: elas não invalidam um store já persistido.
 - Evidência do bot é o que autoriza terminal/free/purge, tanto no health check
   quanto no stop: `{ok:false, reason:'no active meeting'}` (o único `ok:false`
   que `pm.status()`/`pm.stop()` produzem) conta como bot ausente e `ok:true`

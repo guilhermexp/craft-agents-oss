@@ -604,12 +604,28 @@ export class MeetingService {
     this.purgeMeeting(state, id)
   }
 
-  /** Remove record, transcript, summary, recording e evidência gerada do disco. */
+  /**
+   * Remove record, transcript, summary, recording e evidência gerada do disco.
+   *
+   * A escrita do store é o ponto de virada: enquanto ela não confirma, nada foi
+   * apagado de verdade. Uma falha ali restaura record e transcript exatamente
+   * como estavam e relança, porque uma memória vazia sobre um disco intacto
+   * faria o delete parecer concluído e a reunião reapareceria no próximo boot —
+   * agora sem transcript, já que os arquivos teriam sido removidos por um store
+   * que nunca chegou ao disco.
+   */
   private purgeMeeting(state: WorkspaceMeetingState, id: string): void {
     const record = state.records.get(id)
+    const transcript = state.transcripts.get(id)
     state.records.delete(id)
     state.transcripts.delete(id)
-    this.persist(state)
+    try {
+      this.persist(state)
+    } catch (error) {
+      if (record) state.records.set(id, record)
+      if (transcript) state.transcripts.set(id, transcript)
+      throw error
+    }
     const transcriptPath = join(state.transcriptsDir, `${safeFileId(id)}.json`)
     try { if (existsSync(transcriptPath)) unlinkSync(transcriptPath) } catch {}
     const summaryPath = join(state.summariesDir, `${safeFileId(id)}.md`)
@@ -1456,6 +1472,17 @@ except Exception as exc:
     return record
   }
 
+  /**
+   * Aplica a mudança em memória e no store. Só a escrita do store é
+   * transacional: se ela falhar, o record anterior volta ao Map antes de
+   * relançar, senão a memória seguiria adiante do disco — um status terminal
+   * que nunca persistiu faria a reconciliação ignorar um record que o disco
+   * ainda vê ativo, e o retry ficaria impossível.
+   *
+   * As escritas derivadas abaixo (summary/transcript) são deliberadamente
+   * deixadas fora do rollback: elas acontecem depois do store já persistido, e
+   * desfazer o record por causa delas descartaria uma escrita bem-sucedida.
+   */
   private updateRecord(
     state: WorkspaceMeetingState,
     id: string,
@@ -1471,7 +1498,12 @@ except Exception as exc:
         : existing.summaryMarkdown,
     }
     state.records.set(id, next)
-    this.persist(state)
+    try {
+      this.persist(state)
+    } catch (error) {
+      state.records.set(id, existing)
+      throw error
+    }
     if (hasOwn(updates, 'summaryMarkdown')) {
       if (next.summaryMarkdown) {
         this.persistSummaryMarkdown(state, next)

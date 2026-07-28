@@ -17,7 +17,9 @@ no config real do usuário.
     em voo (purga exatamente uma vez, e nunca sobre um seal falho), terminal/free
     exige evidência do bot tanto no `status` quanto no `stop`
     (`ok:true` ou `reason: 'no active meeting'`), seal falho rearma health check +
-    poll, e o resumo opcional roda fora da janela in-flight.
+    poll, o resumo opcional roda fora da janela in-flight, e toda mutação de
+    record (`updateRecord`, `purgeMeeting`) reverte a memória quando a escrita do
+    store falha, para que disco e memória nunca divirjam num retry.
   - verify: `bun test apps/electron/src/main/meetings/meeting-service.test.ts`
 - [x] **1.3 Integrar shutdown bounded com transcript já persistido**
   - files: `apps/electron/src/main/index.ts`, `apps/electron/src/main/meetings/meeting-service.ts`, `apps/electron/src/main/meetings/meeting-service.test.ts`

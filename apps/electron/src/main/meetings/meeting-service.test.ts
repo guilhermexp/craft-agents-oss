@@ -747,6 +747,7 @@ type ServiceInternals = {
   runHermesHealthCheck: (state: object, meetingId: string) => Promise<void>
   pollHermesTranscript: (state: object, meetingId: string) => Promise<void>
   persistHermesTranscript: (state: object, meetingId: string, lines: string[], options: { seal: boolean }) => unknown
+  persist: (state: { records: Map<string, { status: string }> }) => void
   hermesFinalizations: Map<string, Promise<unknown>>
   pendingDeletions: Set<string>
   generateAgentSummary: (workspaceId: string, workspaceRootPath: string, meetingId: string, segments: MeetingTranscriptSegment[]) => Promise<void>
@@ -1491,6 +1492,13 @@ function persistedMeetingIds(workspaceRoot: string): string[] {
   return (parsed.meetings ?? []).map((meeting) => meeting.id)
 }
 
+function persistedRecordStatus(workspaceRoot: string, meetingId: string): string | undefined {
+  const storePath = join(getWorkspaceMeetingsPath(workspaceRoot), 'meetings.json')
+  if (!existsSync(storePath)) return undefined
+  const parsed = JSON.parse(readFileSync(storePath, 'utf8')) as { meetings?: Array<{ id: string; status: string }> }
+  return (parsed.meetings ?? []).find((meeting) => meeting.id === meetingId)?.status
+}
+
 /**
  * Um pane pré-criado é reusado (`ownsBrowserInstance: false`), então nenhum
  * caminho terminal o destrói e `refreshLiveStatuses` não injeta finalizações
@@ -1782,6 +1790,107 @@ describe('optional summary never holds the bot singleton', () => {
     } finally {
       process.off('unhandledRejection', onUnhandled)
     }
+  })
+})
+
+describe('purge is transactional against the store write', () => {
+  it('keeps record and transcript coherent, frees the delete intent and purges on a later retry', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const panes = createBrowserPaneManager()
+    const service = new MeetingService(panes)
+    const calls: PluginCommand[] = []
+    installHermesPluginMock(service, calls)
+
+    const record = await startOnSharedPane(service, panes, workspaceRoot)
+    const transcriptPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'transcripts', `${record.id}.json`)
+
+    // Falha localizada na única escrita do purge: o store já sem o record.
+    // O seal (que escreve com o record ainda presente) roda inteiro.
+    const realPersist = internals(service).persist.bind(service)
+    let purgePersistFails = true
+    internals(service).persist = (state) => {
+      if (purgePersistFails && !state.records.has(record.id)) {
+        throw new Error('ENOSPC: no space left on device')
+      }
+      realPersist(state)
+    }
+
+    service.deleteMeeting(workspaceRoot, record.id)
+    expect(await internals(service).hermesFinalizations.get(record.id)).toBe('sealed')
+
+    // O store não persistiu, então nada pode ter sido removido: disco e memória
+    // continuam de acordo e o record selado volta visível.
+    expect(persistedMeetingIds(workspaceRoot)).toContain(record.id)
+    expect(existsSync(transcriptPath)).toBe(true)
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('stopped')
+    expect(service.list(workspaceRoot).map((r) => r.id)).toContain(record.id)
+    expect(service.transcript(workspaceRoot, record.id).status).toBe('ready')
+    expect(readPersistedTranscript(workspaceRoot, record.id).transcript).toHaveLength(2)
+    // A intenção de delete não fica presa atrás da falha.
+    expect(internals(service).pendingDeletions.has(record.id)).toBe(false)
+
+    // Retry depois que a escrita volta: agora o purge remove tudo, sem tocar no bot.
+    purgePersistFails = false
+    service.deleteMeeting(workspaceRoot, record.id)
+
+    expect(service.status(workspaceRoot, record.id)).toBeNull()
+    expect(persistedMeetingIds(workspaceRoot)).not.toContain(record.id)
+    expect(existsSync(transcriptPath)).toBe(false)
+    expect(calls.filter((c) => c === 'stop')).toHaveLength(1)
+    expect(internals(service).pendingDeletions.has(record.id)).toBe(false)
+  })
+})
+
+describe('terminal status is transactional against the store write', () => {
+  it('reports failed, keeps the record running on disk and in memory, and rearms for a retry', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const panes = createBrowserPaneManager()
+    const service = new MeetingService(panes)
+    const calls: PluginCommand[] = []
+    installHermesPluginMock(service, calls)
+
+    const record = await startOnSharedPane(service, panes, workspaceRoot)
+
+    // Falha localizada na escrita do status terminal, depois de o stop já ter
+    // sido confirmado: o store só falha quando o record deixou de estar ativo.
+    const realPersist = internals(service).persist.bind(service)
+    let terminalPersistFails = true
+    internals(service).persist = (state) => {
+      const pending = state.records.get(record.id)
+      if (terminalPersistFails && pending && !['starting', 'running'].includes(pending.status)) {
+        throw new Error('ENOSPC: no space left on device')
+      }
+      realPersist(state)
+    }
+
+    service.stop('ws-1', workspaceRoot, record.id)
+    expect(await internals(service).hermesFinalizations.get(record.id)).toBe('failed')
+    expect(calls.filter((c) => c === 'stop')).toHaveLength(1)
+
+    // Nada terminal chegou ao disco, então a memória também não pode parecer
+    // terminal: senão o rearme ignoraria um record que o disco ainda vê ativo.
+    expect(persistedRecordStatus(workspaceRoot, record.id)).toBe('running')
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('running')
+    expect(service.status(workspaceRoot, record.id)?.endedAt).toBeUndefined()
+    expect(endReasonOf(service.status(workspaceRoot, record.id))).toBeUndefined()
+    expect(internals(service).hermesFinalizations.has(record.id)).toBe(false)
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(true)
+    expect(internals(service).transcriptPollTimers.has(record.id)).toBe(true)
+
+    // Sinal posterior, com a escrita de volta: agora sela como terminal.
+    terminalPersistFails = false
+    service.stop('ws-1', workspaceRoot, record.id)
+    expect(await internals(service).hermesFinalizations.get(record.id)).toBe('sealed')
+
+    const sealed = service.status(workspaceRoot, record.id)
+    expect(sealed?.status).toBe('stopped')
+    expect(endReasonOf(sealed)).toBe('user_stop')
+    expect(persistedRecordStatus(workspaceRoot, record.id)).toBe('stopped')
+    expect(service.transcript(workspaceRoot, record.id).status).toBe('ready')
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(false)
+    expect(internals(service).transcriptPollTimers.has(record.id)).toBe(false)
   })
 })
 
