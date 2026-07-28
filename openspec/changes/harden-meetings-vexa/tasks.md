@@ -12,10 +12,12 @@ no config real do usuário.
 - [x] **1.2 Implementar finalização única e persistência incremental**
   - files: `apps/electron/src/main/meetings/meeting-service.ts`, `apps/electron/src/main/meetings/meeting-service.test.ts`
   - note: o sink é o único a escrever status terminal; a entrada in-flight é o
-    mutex do bot singleton (Stop/Delete não liberam antes do seal), delete purga
-    só depois de `transcript → persist → stop`, seal falho rearma health check +
-    poll, e o health check só encerra com evidência do bot (`ok:false` +
-    `reason: 'no active meeting'`).
+    mutex do bot singleton (Stop/Delete não liberam antes do seal), a intenção de
+    purge do delete vive em `pendingDeletions` e é honrada por uma finalização já
+    em voo (purga exatamente uma vez, e nunca sobre um seal falho), terminal/free
+    exige evidência do bot tanto no `status` quanto no `stop`
+    (`ok:true` ou `reason: 'no active meeting'`), seal falho rearma health check +
+    poll, e o resumo opcional roda fora da janela in-flight.
   - verify: `bun test apps/electron/src/main/meetings/meeting-service.test.ts`
 - [x] **1.3 Integrar shutdown bounded com transcript já persistido**
   - files: `apps/electron/src/main/index.ts`, `apps/electron/src/main/meetings/meeting-service.ts`, `apps/electron/src/main/meetings/meeting-service.test.ts`

@@ -170,26 +170,40 @@ lifecycle. Preserve these invariants:
 - Every terminal signal — Stop explícito, pane fechado, bot morto detectado pelo
   health check, delete-while-running, quit — passa por `finalizeHermesCapture`,
   que é idempotente por `meetingId`. A ordem é sempre buscar transcript →
-  persistir → `pm.stop` → gravar status/`endReason`; inverter perde o transcript,
-  porque `pm.stop` limpa o ponteiro do processo ativo do plugin. O único `stop`
-  fora do sink é o rollback de um `start` que falhou (o bot nunca entrou no call).
+  persistir → `pm.stop` confirmado → gravar status/`endReason`; inverter perde o
+  transcript, porque `pm.stop` limpa o ponteiro do processo ativo do plugin. O
+  único `stop` fora do sink é o rollback de um `start` que falhou (o bot nunca
+  entrou no call, nada é purgado, e `pm.start` substitui um bot obsoleto).
 - A entrada de `hermesFinalizations` é o mutex do bot singleton, e o sink é o
   único a escrever status terminal. `stop()` e `deleteMeeting()` não anunciam
   término antes do seal: enquanto a finalização está em voo, `start()` recusa a
   reunião seguinte (`meetings.hermesBotBusy`), senão o finalizer anterior mataria
-  o bot novo e capturaria o transcript dele. A entrada sai da tabela no settle.
+  o bot novo e capturaria o transcript dele. A entrada sai da tabela no settle, e
+  o trecho pós-seal (cleanup do delete + rearme) é síncrono, então nenhum sinal
+  novo se intercala entre o cleanup e a liberação do mutex.
 - Delete-while-running roda `transcript → persist → stop` antes de remover
-  record/transcript/summary/artifacts; o cleanup vive em `afterSeal`, dentro da
-  janela in-flight (`pendingDeletions` esconde a reunião da API na hora). Nada
-  pode recriar artefato depois do cleanup.
-- Falha transitória de seal (persistência, por exemplo) devolve `failed`: a
-  entrada in-flight é limpa e `rearmHermesReconciliation` rearma health check +
-  poll para o record ainda ativo, então um sinal posterior retenta. `shutdown()`
-  e `shutdownMeetingCaptures()` reportam `failed` em vez de `sealed` nesse caso.
-- O health check só encerra com evidência do bot: `{ok:false, reason:'no active
-  meeting'}` (o único `ok:false` de `pm.status()`) conta como término, mas um
-  `ok:false` de exec — timeout, runtime ausente, saída não parseável — é
-  transiente e o próximo tick tenta de novo. Ver `classifyHermesBotStatus`.
+  record/transcript/summary/artifacts. A intenção de purge mora em
+  `pendingDeletions` (que também esconde a reunião da API na hora), não num
+  callback: um delete que chega sobre uma finalização já em voo é honrado por
+  ela, purgando exatamente uma vez. `settlePendingDeletion` consome a intenção
+  sempre — um seal falho devolve a reunião à API em vez de deixá-la oculta — mas
+  só purga quando o seal não falhou. Nada pode recriar artefato depois do
+  cleanup.
+- Falha transitória de seal — persistência, ou um `pm.stop` sem confirmação —
+  devolve `failed`: nada terminal é gravado, nada é purgado, a entrada in-flight
+  é limpa e `rearmHermesReconciliation` rearma health check + poll para o record
+  ainda ativo, então um sinal posterior retenta. `shutdown()` e
+  `shutdownMeetingCaptures()` reportam `failed` em vez de `sealed` nesse caso.
+- Evidência do bot é o que autoriza terminal/free/purge, tanto no health check
+  quanto no stop: `{ok:false, reason:'no active meeting'}` (o único `ok:false`
+  que `pm.status()`/`pm.stop()` produzem) conta como bot ausente e `ok:true`
+  conta como sucesso, mas um `ok:false` de exec — timeout, runtime ausente, saída
+  não parseável — é transiente e não encerra nada. Ver `classifyHermesBotStatus`
+  e `confirmHermesBotStopped`.
+- O resumo opcional por agente (`summarizeOnEnd`/`followUpOnEnd`) roda
+  fire-and-forget depois do seal, com erro logado: aguardá-lo dentro da janela
+  in-flight manteria o bot singleton ocupado e atrasaria shutdown/relaunch com a
+  captura já selada.
 - O transcript é persistido incrementalmente enquanto a reunião roda
   (`startTranscriptPoll`), com skip-if-unchanged e sem nunca encurtar o que já
   está no disco. Finalizar apenas sela o tail. O poll usa status `ready`, não
