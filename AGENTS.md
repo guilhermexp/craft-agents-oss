@@ -173,6 +173,23 @@ lifecycle. Preserve these invariants:
   persistir → `pm.stop` → gravar status/`endReason`; inverter perde o transcript,
   porque `pm.stop` limpa o ponteiro do processo ativo do plugin. O único `stop`
   fora do sink é o rollback de um `start` que falhou (o bot nunca entrou no call).
+- A entrada de `hermesFinalizations` é o mutex do bot singleton, e o sink é o
+  único a escrever status terminal. `stop()` e `deleteMeeting()` não anunciam
+  término antes do seal: enquanto a finalização está em voo, `start()` recusa a
+  reunião seguinte (`meetings.hermesBotBusy`), senão o finalizer anterior mataria
+  o bot novo e capturaria o transcript dele. A entrada sai da tabela no settle.
+- Delete-while-running roda `transcript → persist → stop` antes de remover
+  record/transcript/summary/artifacts; o cleanup vive em `afterSeal`, dentro da
+  janela in-flight (`pendingDeletions` esconde a reunião da API na hora). Nada
+  pode recriar artefato depois do cleanup.
+- Falha transitória de seal (persistência, por exemplo) devolve `failed`: a
+  entrada in-flight é limpa e `rearmHermesReconciliation` rearma health check +
+  poll para o record ainda ativo, então um sinal posterior retenta. `shutdown()`
+  e `shutdownMeetingCaptures()` reportam `failed` em vez de `sealed` nesse caso.
+- O health check só encerra com evidência do bot: `{ok:false, reason:'no active
+  meeting'}` (o único `ok:false` de `pm.status()`) conta como término, mas um
+  `ok:false` de exec — timeout, runtime ausente, saída não parseável — é
+  transiente e o próximo tick tenta de novo. Ver `classifyHermesBotStatus`.
 - O transcript é persistido incrementalmente enquanto a reunião roda
   (`startTranscriptPoll`), com skip-if-unchanged e sem nunca encurtar o que já
   está no disco. Finalizar apenas sela o tail. O poll usa status `ready`, não
@@ -181,6 +198,10 @@ lifecycle. Preserve these invariants:
 - `shutdownMeetingCaptures()` é chamado no `before-quit` de
   `apps/electron/src/main/index.ts` antes de derrubar panes e subprocessos, e é
   bounded por `MEETINGS_SHUTDOWN_DEADLINE_MS`: o quit segue no deadline.
+- `app:relaunch` usa `app.relaunch()` + `app.exit(0)`, que não emitem
+  `before-quit`, então o handler passa por `relaunchAfterSealingCaptures()` e
+  aguarda o mesmo shutdown bounded antes de relançar. Qualquer novo caminho de
+  exit que não emita `before-quit` MUST fazer o mesmo.
 - `endReason` é interno ao main process nesta fase; expor no DTO/UI é F2.
 
 `packages/shared/src/workspaces/storage.ts` resolve o config root em cada

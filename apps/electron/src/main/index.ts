@@ -47,7 +47,7 @@ import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
 import { initializeNativeAgentHostRuntime, setPowerShellValidatorRoot } from '@craft-agent/shared/agent'
 import { handleDeepLink } from './deep-link'
 import { BrowserPaneManager } from './browser-pane-manager'
-import { shutdownMeetingCaptures } from './meetings/meeting-service'
+import { relaunchAfterSealingCaptures, shutdownMeetingCaptures } from './meetings/meeting-service'
 import { OAuthFlowStore } from '@craft-agent/shared/auth'
 import { registerMediaHandler, registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath, getMessagingGatewayLogFilePath, messagingGatewayLog } from './logger'
@@ -869,11 +869,13 @@ app.whenReady().then(async () => {
         }
       })
 
-      // App relaunch (for server config changes — NOT an update install)
-      ipcMain.handle('app:relaunch', () => {
-        app.relaunch()
-        app.exit(0)
-      })
+      // App relaunch (for server config changes — NOT an update install).
+      // `app.exit(0)` não emite `before-quit`, então o seal bounded das capturas
+      // ativas acontece aqui, antes de relançar.
+      ipcMain.handle('app:relaunch', () => relaunchAfterSealingCaptures({
+        relaunch: () => app.relaunch(),
+        exit: () => app.exit(0),
+      }))
 
       // Language change: sync from renderer to main process and rebuild native menu
       ipcMain.handle('i18n:changeLanguage', async (_event, lang: string) => {

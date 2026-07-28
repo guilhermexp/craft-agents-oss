@@ -11,9 +11,17 @@ no config real do usuário.
   - verify: `bun test apps/electron/src/main/meetings/meeting-service.test.ts`
 - [x] **1.2 Implementar finalização única e persistência incremental**
   - files: `apps/electron/src/main/meetings/meeting-service.ts`, `apps/electron/src/main/meetings/meeting-service.test.ts`
+  - note: o sink é o único a escrever status terminal; a entrada in-flight é o
+    mutex do bot singleton (Stop/Delete não liberam antes do seal), delete purga
+    só depois de `transcript → persist → stop`, seal falho rearma health check +
+    poll, e o health check só encerra com evidência do bot (`ok:false` +
+    `reason: 'no active meeting'`).
   - verify: `bun test apps/electron/src/main/meetings/meeting-service.test.ts`
 - [x] **1.3 Integrar shutdown bounded com transcript já persistido**
   - files: `apps/electron/src/main/index.ts`, `apps/electron/src/main/meetings/meeting-service.ts`, `apps/electron/src/main/meetings/meeting-service.test.ts`
+  - note: `shutdown()` reporta `failed` quando o seal falha, e `app:relaunch`
+    aguarda `relaunchAfterSealingCaptures()` porque `app.exit(0)` não emite
+    `before-quit`.
   - verify: `bun test apps/electron/src/main/meetings/meeting-service.test.ts`
 - [x] **1.4 Isolar o config root dos testes na origem**
   - files: `packages/shared/src/workspaces/storage.ts`, `packages/shared/src/workspaces/__tests__/storage-meetings.test.ts`, testes de meetings que criavam `craft-meetings-*`

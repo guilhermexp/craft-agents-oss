@@ -141,6 +141,7 @@ const {
   HERMES_PLUGIN_TIMEOUT_MS,
   MEETINGS_SHUTDOWN_DEADLINE_MS,
   shutdownMeetingCaptures,
+  relaunchAfterSealingCaptures,
 } = await import('./meeting-service')
 
 function createBrowserPaneManager(): BrowserPaneManager {
@@ -745,7 +746,8 @@ type ServiceInternals = {
   getWorkspaceState: (workspaceRootPath: string) => object
   runHermesHealthCheck: (state: object, meetingId: string) => Promise<void>
   pollHermesTranscript: (state: object, meetingId: string) => Promise<void>
-  hermesFinalizations: Map<string, Promise<void>>
+  persistHermesTranscript: (state: object, meetingId: string, lines: string[], options: { seal: boolean }) => unknown
+  hermesFinalizations: Map<string, Promise<unknown>>
   healthCheckTimers: Map<string, unknown>
   transcriptPollTimers: Map<string, unknown>
   botReadyTimeoutMs: number
@@ -1249,6 +1251,234 @@ describe('bounded shutdown', () => {
     // O seal já escreveu o tail antes de tentar parar o bot.
     expect(readPersistedTranscript(workspaceRoot, record.id).transcript.map((s) => s.text)).toEqual(['Alice: hello world'])
     hung.resolve({ ok: true })
+  })
+})
+
+describe('Hermes singleton stays busy until the capture is sealed', () => {
+  it('refuses a Start while an explicit Stop is still sealing, and allows it after the seal settles', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    const sealGate = Promise.withResolvers<void>()
+    internals(service).runHermesMeetPlugin = async (command) => {
+      calls.push(command)
+      if (command === 'status') return { ok: true, alive: true, inCall: true }
+      if (command === 'transcript') {
+        await sealGate.promise
+        return { ok: true, lines: ['Alice: hello world'], total: 1 }
+      }
+      return { ok: true, pid: 21 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    service.stop('ws-1', workspaceRoot, record.id)
+
+    // O seal está em voo: o bot singleton segue ocupado e nada terminal foi anunciado.
+    await expect(service.start(workspaceRoot, { urlOrCode: 'zzz-zzzz-zzz', captureMode: 'hermes' })).rejects.toThrow()
+    expect(calls.filter((c) => c === 'start')).toHaveLength(1)
+    expect(calls).not.toContain('stop')
+
+    sealGate.resolve()
+    await internals(service).hermesFinalizations.get(record.id)
+    expect(internals(service).hermesFinalizations.has(record.id)).toBe(false)
+    const sealed = service.status(workspaceRoot, record.id)
+    expect(sealed?.status).toBe('stopped')
+    expect(endReasonOf(sealed)).toBe('user_stop')
+    expect(service.transcript(workspaceRoot, record.id).status).toBe('ready')
+
+    // Liberado só depois do settle.
+    const next = await service.start(workspaceRoot, { urlOrCode: 'zzz-zzzz-zzz', captureMode: 'hermes' })
+    expect(next.status).toBe('running')
+    expect(calls.filter((c) => c === 'start')).toHaveLength(2)
+  }, 30_000)
+
+  it('refuses a Start while a delete-while-running seals, and purges only after transcript then stop', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    const sealGate = Promise.withResolvers<void>()
+    internals(service).runHermesMeetPlugin = async (command) => {
+      calls.push(command)
+      if (command === 'status') return { ok: true, alive: true, inCall: true }
+      if (command === 'transcript') {
+        await sealGate.promise
+        return { ok: true, lines: ['Alice: hello world'], total: 1 }
+      }
+      return { ok: true, pid: 22 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const transcriptPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'transcripts', `${record.id}.json`)
+    expect(existsSync(transcriptPath)).toBe(true)
+
+    service.deleteMeeting(workspaceRoot, record.id)
+
+    // Delete é observável na hora para a UI...
+    expect(service.list(workspaceRoot).map((r) => r.id)).not.toContain(record.id)
+    // ...mas o bot só é liberado depois de transcript → persist → stop.
+    await expect(service.start(workspaceRoot, { urlOrCode: 'zzz-zzzz-zzz', captureMode: 'hermes' })).rejects.toThrow()
+    expect(calls.filter((c) => c === 'start')).toHaveLength(1)
+    expect(calls).not.toContain('stop')
+
+    sealGate.resolve()
+    await internals(service).hermesFinalizations.get(record.id)
+
+    expect(calls.filter((c) => c === 'transcript')).toHaveLength(1)
+    expect(calls.filter((c) => c === 'stop')).toHaveLength(1)
+    expect(calls.indexOf('transcript')).toBeLessThan(calls.indexOf('stop'))
+    // Nada recria artefatos depois do cleanup.
+    expect(existsSync(transcriptPath)).toBe(false)
+    expect(service.status(workspaceRoot, record.id)).toBeNull()
+    expect(internals(service).hermesFinalizations.has(record.id)).toBe(false)
+
+    const next = await service.start(workspaceRoot, { urlOrCode: 'zzz-zzzz-zzz', captureMode: 'hermes' })
+    expect(next.status).toBe('running')
+  }, 30_000)
+})
+
+describe('failed finalization rearms the retry path', () => {
+  it('clears the in-flight entry and rearms health check and poll when the seal throws', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    let botGone = false
+    internals(service).runHermesMeetPlugin = async (command) => {
+      calls.push(command)
+      if (command === 'status') {
+        return botGone ? { ok: true, exited: true, leaveReason: 'call_ended' } : { ok: true, alive: true, inCall: true }
+      }
+      if (command === 'transcript') return { ok: true, lines: ['Alice: hello world'], total: 1 }
+      return { ok: true, pid: 23 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const state = internals(service).getWorkspaceState(workspaceRoot)
+    const realPersist = internals(service).persistHermesTranscript.bind(service)
+    let persistFails = true
+    internals(service).persistHermesTranscript = (persistState, meetingId, lines, options) => {
+      if (persistFails) throw new Error('ENOSPC: no space left on device')
+      return realPersist(persistState, meetingId, lines, options)
+    }
+
+    // O pane segue vivo: só o bot terminou, e o seal falha na persistência.
+    botGone = true
+    await internals(service).runHermesHealthCheck(state, record.id)
+
+    // Falha transitória: nada fica preso na tabela de finalizações...
+    expect(internals(service).hermesFinalizations.has(record.id)).toBe(false)
+    // ...e a reconciliação volta armada, então um sinal posterior retenta.
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(true)
+    expect(internals(service).transcriptPollTimers.has(record.id)).toBe(true)
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('running')
+
+    persistFails = false
+    await internals(service).runHermesHealthCheck(state, record.id)
+    await waitFor(() => service.status(workspaceRoot, record.id)?.status === 'stopped')
+
+    const sealed = service.status(workspaceRoot, record.id)
+    expect(sealed?.status).toBe('stopped')
+    expect(endReasonOf(sealed)).toBe('bot_exited')
+    expect(service.transcript(workspaceRoot, record.id).status).toBe('ready')
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(false)
+    expect(internals(service).transcriptPollTimers.has(record.id)).toBe(false)
+  })
+
+  it('does not report a sealed shutdown when the seal throws', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    installHermesPluginMock(service, [])
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    internals(service).persistHermesTranscript = () => { throw new Error('ENOSPC: no space left on device') }
+
+    expect(await service.shutdown(2_000)).toBe('failed')
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('running')
+  })
+})
+
+describe('health check bot-gone contract', () => {
+  it('finalizes when the plugin reports no active meeting', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    let botGone = false
+    internals(service).runHermesMeetPlugin = async (command) => {
+      calls.push(command)
+      // Contrato real de plugins/google_meet/process_manager.status().
+      if (command === 'status') return botGone ? { ok: false, reason: 'no active meeting' } : { ok: true, alive: true, inCall: true }
+      if (command === 'transcript') return { ok: true, lines: ['Alice: hello world'], total: 1 }
+      return { ok: true, pid: 31 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const state = internals(service).getWorkspaceState(workspaceRoot)
+    botGone = true
+
+    await internals(service).runHermesHealthCheck(state, record.id)
+    await waitFor(() => service.status(workspaceRoot, record.id)?.status === 'stopped')
+
+    const final = service.status(workspaceRoot, record.id)
+    expect(final?.status).toBe('stopped')
+    expect(endReasonOf(final)).toBe('bot_exited')
+    expect(calls.indexOf('transcript')).toBeLessThan(calls.indexOf('stop'))
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(false)
+  })
+
+  it('keeps the meeting running when the plugin call itself fails without bot evidence', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    let transportFails = false
+    internals(service).runHermesMeetPlugin = async (command) => {
+      calls.push(command)
+      if (command === 'status') {
+        // Forma que runHermesMeetPlugin devolve num timeout de exec: sem evidência do bot.
+        return transportFails
+          ? { ok: false, error: "Hermes Meet plugin 'status' failed or timed out: killed" }
+          : { ok: true, alive: true, inCall: true }
+      }
+      if (command === 'transcript') return { ok: true, lines: ['Alice: hello world'], total: 1 }
+      return { ok: true, pid: 32 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const state = internals(service).getWorkspaceState(workspaceRoot)
+    transportFails = true
+
+    await internals(service).runHermesHealthCheck(state, record.id)
+
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('running')
+    expect(calls).not.toContain('stop')
+    expect(internals(service).hermesFinalizations.has(record.id)).toBe(false)
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(true)
+  })
+})
+
+describe('relaunch seals captures before exiting', () => {
+  it('awaits the bounded shutdown before relaunch and exit', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    installHermesPluginMock(service, [])
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    // `app.relaunch()` + `app.exit(0)` não emitem `before-quit`, então o seal
+    // precisa acontecer aqui, antes de qualquer um dos dois.
+    const order: string[] = []
+    await relaunchAfterSealingCaptures({
+      relaunch: () => { order.push(`relaunch:${service.status(workspaceRoot, record.id)?.status ?? 'missing'}`) },
+      exit: () => { order.push('exit') },
+    }, 2_000)
+
+    expect(order).toEqual(['relaunch:stopped', 'exit'])
+    expect(service.transcript(workspaceRoot, record.id).status).toBe('ready')
+    expect(endReasonOf(service.status(workspaceRoot, record.id))).toBe('app_quit')
   })
 })
 
