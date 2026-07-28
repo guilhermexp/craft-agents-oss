@@ -1,21 +1,47 @@
-import { afterEach, describe, expect, it, mock } from 'bun:test'
-import { createWriteStream, existsSync, mkdtempSync, rmSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { afterAll, afterEach, beforeAll, describe, expect, it, mock } from 'bun:test'
+import { createWriteStream, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { homedir, tmpdir } from 'node:os'
 import type { BrowserPaneManager } from '../browser-pane-manager'
 import { getWorkspaceMeetingsPath } from '@craft-agent/shared/workspaces'
 import { createLoggerModuleStub } from '../__tests__/logger-module-stub'
 
 mock.module('../logger', () => createLoggerModuleStub())
 
+/**
+ * Meetings storage resolves the config root on every call, so this suite writes
+ * recording metadata into one tmpdir instead of the user's real `~/.craft-agent`.
+ */
+const configRoot = mkdtempSync(join(tmpdir(), 'craft-config-recording-'))
+process.env.CRAFT_CONFIG_DIR = configRoot
+
 const { RecordingService } = await import('./recording-service')
 
-// getWorkspaceMeetingsPath resolves under ~/.craft-agent/workspaces/<slug>/meetings;
-// track those dirs so prepare-created recordings are cleaned up after each test.
-const metadataDirs: string[] = []
+const realWorkspacesDir = join(homedir(), '.craft-agent', 'workspaces')
+
+function listRealWorkspaces(): string[] {
+  try {
+    return readdirSync(realWorkspacesDir).sort()
+  } catch {
+    return []
+  }
+}
+
+let realWorkspacesBefore: string[] = []
+
+beforeAll(() => {
+  realWorkspacesBefore = listRealWorkspaces()
+})
+
+afterAll(() => {
+  rmSync(configRoot, { recursive: true, force: true })
+})
+
+const tempDirs: string[] = []
+
 afterEach(() => {
-  while (metadataDirs.length > 0) {
-    rmSync(metadataDirs.pop()!, { recursive: true, force: true })
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true })
   }
 })
 
@@ -75,7 +101,7 @@ describe('RecordingService.prepare', () => {
   it('resolves the recordings dir from the provided workspaceRoot', async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-recording-prepare-'))
     const recordingsDir = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings')
-    metadataDirs.push(dirname(dirname(recordingsDir)), workspaceRoot)
+    tempDirs.push(workspaceRoot)
 
     const service = new RecordingService({ getLiveInstance: () => ({}) } as unknown as BrowserPaneManager)
     const result = service.prepare({
@@ -96,7 +122,7 @@ describe('RecordingService.append', () => {
   it('writes chunks and awaits drain under backpressure', async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-recording-append-'))
     const recordingsDir = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings')
-    metadataDirs.push(dirname(dirname(recordingsDir)), workspaceRoot)
+    tempDirs.push(workspaceRoot)
 
     const service = new RecordingService({ getLiveInstance: () => ({}) } as unknown as BrowserPaneManager)
     const { recordingId } = service.prepare({
@@ -109,5 +135,11 @@ describe('RecordingService.append', () => {
     expect(recordings.get(recordingId)?.bytesWritten).toBe(4)
 
     service.abort(recordingId)
+  })
+})
+
+describe('recording suite isolation', () => {
+  it('leaves the real user config root untouched', () => {
+    expect(listRealWorkspaces()).toEqual(realWorkspacesBefore)
   })
 })

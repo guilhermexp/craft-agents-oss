@@ -6,17 +6,17 @@
 transcript incremental sobrevive a crash; quit é bounded; a suíte não escreve
 no config real do usuário.
 
-- [ ] **1.1 Congelar os gaps de finalização com testes RED**
+- [x] **1.1 Congelar os gaps de finalização com testes RED**
   - files: `apps/electron/src/main/meetings/meeting-service.test.ts`
   - verify: `bun test apps/electron/src/main/meetings/meeting-service.test.ts`
-- [ ] **1.2 Implementar finalização única e persistência incremental**
+- [x] **1.2 Implementar finalização única e persistência incremental**
   - files: `apps/electron/src/main/meetings/meeting-service.ts`, `apps/electron/src/main/meetings/meeting-service.test.ts`
   - verify: `bun test apps/electron/src/main/meetings/meeting-service.test.ts`
-- [ ] **1.3 Integrar shutdown bounded com transcript já persistido**
+- [x] **1.3 Integrar shutdown bounded com transcript já persistido**
   - files: `apps/electron/src/main/index.ts`, `apps/electron/src/main/meetings/meeting-service.ts`, `apps/electron/src/main/meetings/meeting-service.test.ts`
   - verify: `bun test apps/electron/src/main/meetings/meeting-service.test.ts`
-- [ ] **1.4 Isolar o config root dos testes na origem**
-  - files: `packages/shared/src/workspaces/storage.ts`, testes de meetings que criam `craft-meetings-*`
+- [x] **1.4 Isolar o config root dos testes na origem**
+  - files: `packages/shared/src/workspaces/storage.ts`, `packages/shared/src/workspaces/__tests__/storage-meetings.test.ts`, testes de meetings que criavam `craft-meetings-*`
   - verify: `bun test apps/electron/src/main/meetings/meeting-service.test.ts apps/electron/src/main/meetings/recording-service.test.ts`
 - [ ] **1.5 Rodar gates da fase e validar uma reunião real**
   - files: nenhum arquivo novo esperado além de evidência local não commitada

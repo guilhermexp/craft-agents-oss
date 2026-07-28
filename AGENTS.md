@@ -162,6 +162,33 @@ infer a Hermes lead first, then the first participant. Keep Hermes Kanban using
 app-scoped `HERMES_HOME` and profile-slug assignees so worker tasks and War
 Room updates stay connected.
 
+## Meetings capture (Hermes google_meet bot)
+
+`apps/electron/src/main/meetings/meeting-service.ts` owns the Hermes capture
+lifecycle. Preserve these invariants:
+
+- Every terminal signal — Stop explícito, pane fechado, bot morto detectado pelo
+  health check, delete-while-running, quit — passa por `finalizeHermesCapture`,
+  que é idempotente por `meetingId`. A ordem é sempre buscar transcript →
+  persistir → `pm.stop` → gravar status/`endReason`; inverter perde o transcript,
+  porque `pm.stop` limpa o ponteiro do processo ativo do plugin. O único `stop`
+  fora do sink é o rollback de um `start` que falhou (o bot nunca entrou no call).
+- O transcript é persistido incrementalmente enquanto a reunião roda
+  (`startTranscriptPoll`), com skip-if-unchanged e sem nunca encurtar o que já
+  está no disco. Finalizar apenas sela o tail. O poll usa status `ready`, não
+  `capturing`: `recoverInterruptedTranscriptions` rebaixa transcripts
+  `capturing` sem recording em disco.
+- `shutdownMeetingCaptures()` é chamado no `before-quit` de
+  `apps/electron/src/main/index.ts` antes de derrubar panes e subprocessos, e é
+  bounded por `MEETINGS_SHUTDOWN_DEADLINE_MS`: o quit segue no deadline.
+- `endReason` é interno ao main process nesta fase; expor no DTO/UI é F2.
+
+`packages/shared/src/workspaces/storage.ts` resolve o config root em cada
+chamada (`CRAFT_CONFIG_DIR`, com fallback em `homedir()`). Não reintroduza uma
+constante de config root capturada no load do módulo para resolver paths: as
+suítes de meetings apontam `CRAFT_CONFIG_DIR` para um tmpdir e voltariam a
+escrever no `~/.craft-agent` real.
+
 ## Validation
 
 For Hermes/Craft integration changes, run the focused Craft tests:
@@ -173,6 +200,14 @@ bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
   packages/shared/src/agent/__tests__/hermes-agent.test.ts \
   packages/server-core/src/handlers/rpc/hermes.test.ts \
   apps/electron/src/main/handlers/__tests__/registration.test.ts
+```
+
+For meetings capture/lifecycle or workspace-storage path changes, run:
+
+```bash
+bun test apps/electron/src/main/meetings/meeting-service.test.ts \
+  apps/electron/src/main/meetings/recording-service.test.ts \
+  packages/shared/src/workspaces/__tests__/storage-meetings.test.ts
 ```
 
 For Hermes overlay changes, first prove all overlays apply from a clean cache

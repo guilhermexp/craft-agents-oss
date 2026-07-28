@@ -34,8 +34,26 @@ import type {
   WorkspaceSummary,
 } from './types.ts';
 
-const CONFIG_DIR = join(homedir(), '.craft-agent');
-const DEFAULT_WORKSPACES_DIR = join(CONFIG_DIR, 'workspaces');
+/**
+ * Config root, resolved on every call so an override taken from the environment
+ * applies to a process that already imported this module (tests point the whole
+ * workspace metadata tree at a tmpdir). Without an override the app keeps
+ * resolving under `homedir()`.
+ */
+function resolveConfigDir(): string {
+  return process.env.CRAFT_CONFIG_DIR || join(homedir(), '.craft-agent');
+}
+
+function resolveWorkspacesDir(): string {
+  return join(resolveConfigDir(), 'workspaces');
+}
+
+/**
+ * Module-load snapshots kept for the re-exported constants only; every path
+ * helper below must use the resolvers so a runtime override is honored.
+ */
+const CONFIG_DIR = resolveConfigDir();
+const DEFAULT_WORKSPACES_DIR = resolveWorkspacesDir();
 
 // ============================================================
 // Path Utilities
@@ -45,15 +63,16 @@ const DEFAULT_WORKSPACES_DIR = join(CONFIG_DIR, 'workspaces');
  * Get the default workspaces directory (~/.craft-agent/workspaces/)
  */
 export function getDefaultWorkspacesDir(): string {
-  return DEFAULT_WORKSPACES_DIR;
+  return resolveWorkspacesDir();
 }
 
 /**
  * Ensure default workspaces directory exists
  */
 export function ensureDefaultWorkspacesDir(): void {
-  if (!existsSync(DEFAULT_WORKSPACES_DIR)) {
-    mkdirSync(DEFAULT_WORKSPACES_DIR, { recursive: true });
+  const dir = resolveWorkspacesDir();
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
   }
 }
 
@@ -63,7 +82,7 @@ export function ensureDefaultWorkspacesDir(): void {
  * @returns Absolute path to workspace root in default location
  */
 export function getWorkspacePath(workspaceId: string): string {
-  return join(DEFAULT_WORKSPACES_DIR, workspaceId);
+  return join(resolveWorkspacesDir(), workspaceId);
 }
 
 /**
@@ -98,9 +117,10 @@ export function getWorkspaceMeetingsPath(rootPath: string): string {
   const fallbackSlug = extractWorkspaceSlugFromPath(rootPath, 'workspace');
   const config = loadWorkspaceConfig(rootPath);
   const slug = config?.id || fallbackSlug;
-  const dir = join(CONFIG_DIR, 'workspaces', slug, 'meetings');
+  const workspacesDir = resolveWorkspacesDir();
+  const dir = join(workspacesDir, slug, 'meetings');
   if (config?.id && config.id !== fallbackSlug) {
-    migrateLegacyMeetingsDir(join(CONFIG_DIR, 'workspaces', fallbackSlug, 'meetings'), dir);
+    migrateLegacyMeetingsDir(join(workspacesDir, fallbackSlug, 'meetings'), dir);
   }
   return dir;
 }
@@ -455,17 +475,18 @@ export function renameWorkspaceFolder(rootPath: string, newName: string): boolea
  */
 export function discoverWorkspacesInDefaultLocation(): string[] {
   const discovered: string[] = [];
+  const workspacesDir = resolveWorkspacesDir();
 
-  if (!existsSync(DEFAULT_WORKSPACES_DIR)) {
+  if (!existsSync(workspacesDir)) {
     return discovered;
   }
 
   try {
-    const entries = readdirSync(DEFAULT_WORKSPACES_DIR, { withFileTypes: true });
+    const entries = readdirSync(workspacesDir, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
 
-      const rootPath = join(DEFAULT_WORKSPACES_DIR, entry.name);
+      const rootPath = join(workspacesDir, entry.name);
       if (isValidWorkspace(rootPath)) {
         discovered.push(rootPath);
       }

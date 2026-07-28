@@ -47,6 +47,7 @@ import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
 import { initializeNativeAgentHostRuntime, setPowerShellValidatorRoot } from '@craft-agent/shared/agent'
 import { handleDeepLink } from './deep-link'
 import { BrowserPaneManager } from './browser-pane-manager'
+import { shutdownMeetingCaptures } from './meetings/meeting-service'
 import { OAuthFlowStore } from '@craft-agent/shared/auth'
 import { registerMediaHandler, registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath, getMessagingGatewayLogFilePath, messagingGatewayLog } from './logger'
@@ -1134,6 +1135,18 @@ app.on('before-quit', async (event) => {
     }
     // Clean up SessionManager resources (file watchers, timers, etc.)
     sessionManager.cleanup()
+
+    // Sela as capturas Hermes ativas ANTES de derrubar panes e subprocessos: o
+    // transcript só existe no bot até ser buscado. Bounded — o quit segue no
+    // deadline e o que o poll incremental já gravou fica no disco.
+    try {
+      const meetingsShutdown = await shutdownMeetingCaptures()
+      if (meetingsShutdown !== 'idle') {
+        mainLog.info(`[meetings] shutdown outcome=${meetingsShutdown}`)
+      }
+    } catch (error) {
+      mainLog.error('[meetings] shutdown failed:', error)
+    }
 
     // Clean up dashboard/browser pane instances
     if (hermesDashboardHost) {

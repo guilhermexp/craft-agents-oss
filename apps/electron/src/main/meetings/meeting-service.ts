@@ -21,7 +21,7 @@ import { mainLog } from '../logger'
 import { getCredentialManager, type CredentialId } from '@craft-agent/shared/credentials'
 import { setupI18n, i18n } from '@craft-agent/shared/i18n'
 import { readJsonFileSync } from '@craft-agent/shared/utils/files'
-import { getWorkspaceMeetingsPath } from '@craft-agent/shared/workspaces'
+import { getWorkspaceMeetingsPath, loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
 
 const execFileAsync = promisify(execFile)
 
@@ -34,6 +34,30 @@ export const HERMES_PLUGIN_TIMEOUT_MS: Record<'start' | 'status' | 'transcript' 
   transcript: 15_000,
   stop: 15_000,
 }
+/** Cadência do health check que reconcilia a reunião com o estado real do bot. */
+const HERMES_HEALTH_CHECK_MS = 30_000
+/**
+ * Cadência do poll incremental do transcript enquanto a reunião roda (U2). Um
+ * crash perde no máximo uma janela dessas; finalizar apenas sela o tail.
+ */
+const HERMES_TRANSCRIPT_POLL_MS = 10_000
+/**
+ * Deadline duro para selar reuniões ativas durante o quit (U3). O quit continua
+ * quando ele expira: a persistência incremental já limitou a perda.
+ */
+export const MEETINGS_SHUTDOWN_DEADLINE_MS = 20_000
+
+/**
+ * Razão terminal gravada no record. Interna ao main process nesta fase — expor
+ * no DTO/UI é F2 (task 2.3) — mas persistida no store para que nenhum
+ * encerramento fique sem causa registrada.
+ */
+export type MeetingEndReason = 'user_stop' | 'pane_closed' | 'bot_exited' | 'app_quit' | 'deleted'
+
+const MEETING_END_REASONS: readonly MeetingEndReason[] = ['user_stop', 'pane_closed', 'bot_exited', 'app_quit', 'deleted']
+
+type MeetingRecordWithEndReason = MeetingRecord & { endReason?: MeetingEndReason }
+
 const DEFAULT_TRANSCRIPTION_PROVIDER: MeetingTranscriptionProvider = 'deepgram'
 const DEFAULT_TRANSCRIPTION_MODEL_BY_PROVIDER: Record<MeetingTranscriptionProvider, string> = {
   deepgram: 'nova-3',
@@ -45,7 +69,7 @@ const DEFAULT_MEETING_TRANSCRIPTION_CONFIG: Omit<MeetingTranscriptionConfig, 'ha
 
 interface PersistedMeetingsStore {
   version?: number
-  meetings: MeetingRecord[]
+  meetings: MeetingRecordWithEndReason[]
 }
 
 interface PersistedMeetingTranscriptionConfig {
@@ -57,7 +81,7 @@ interface PersistedMeetingTranscriptionConfig {
 }
 
 interface WorkspaceMeetingState {
-  records: Map<string, MeetingRecord>
+  records: Map<string, MeetingRecordWithEndReason>
   transcripts: Map<string, MeetingTranscriptResult>
   loaded: boolean
   corruptDetected: boolean
@@ -65,6 +89,7 @@ interface WorkspaceMeetingState {
   configPath: string
   transcriptsDir: string
   summariesDir: string
+  workspaceRootPath: string
 }
 
 type MeetingVideoAnalysisGenerator = typeof generateMeetingVideoAnalysisMarkdown
@@ -84,9 +109,48 @@ interface HermesMeetPluginResult {
   [key: string]: unknown
 }
 
+/**
+ * Serviços vivos, referenciados fracamente para que o hook de quit alcance o
+ * singleton do app sem prender instâncias efêmeras (os testes criam dezenas).
+ * Uma captura ativa é alcançável pelos próprios timers, então ela nunca é
+ * coletada enquanto a reunião roda.
+ */
+const liveMeetingServices = new Set<WeakRef<MeetingService>>()
+
+function collectLiveMeetingServices(): MeetingService[] {
+  const services: MeetingService[] = []
+  for (const ref of [...liveMeetingServices]) {
+    const service = ref.deref()
+    if (service) services.push(service)
+    else liveMeetingServices.delete(ref)
+  }
+  return services
+}
+
+/**
+ * Sela toda captura Hermes ativa antes do app sair (U3). Bounded: devolve
+ * `deadline` e deixa o quit seguir quando o plugin não responde no prazo.
+ */
+export async function shutdownMeetingCaptures(
+  deadlineMs = MEETINGS_SHUTDOWN_DEADLINE_MS,
+): Promise<'idle' | 'sealed' | 'deadline'> {
+  const outcomes = await Promise.all(collectLiveMeetingServices().map((service) => service.shutdown(deadlineMs)))
+  if (outcomes.includes('deadline')) return 'deadline'
+  if (outcomes.includes('sealed')) return 'sealed'
+  return 'idle'
+}
+
 export class MeetingService {
   private readonly workspaceStates = new Map<string, WorkspaceMeetingState>()
   private readonly healthCheckTimers = new Map<string, ReturnType<typeof setInterval>>()
+  private readonly transcriptPollTimers = new Map<string, ReturnType<typeof setInterval>>()
+  /**
+   * Finalizações por meetingId. A entrada sobrevive à conclusão: um meetingId é
+   * finalizado no máximo uma vez, então sinais terminais concorrentes (ou
+   * repetidos, já que `list()` chama refresh a cada poll da UI) compartilham a
+   * mesma promise em vez de buscar transcript e parar o bot de novo.
+   */
+  private readonly hermesFinalizations = new Map<string, Promise<void>>()
   /**
    * Deadline for the Hermes bot to reach the lobby/call before start() fails.
    * Mutable so tests can shrink the real-time wait in `waitForHermesMeetBotReady`.
@@ -97,7 +161,9 @@ export class MeetingService {
     private readonly browserPaneManager: BrowserPaneManager,
     private readonly storePathOverride?: string,
     private readonly videoAnalysisGenerator: MeetingVideoAnalysisGenerator = generateMeetingVideoAnalysisMarkdown,
-  ) {}
+  ) {
+    liveMeetingServices.add(new WeakRef(this))
+  }
 
   async getTranscriptionConfig(workspaceId: string, workspaceRootPath: string): Promise<MeetingTranscriptionConfig> {
     const state = this.getWorkspaceState(workspaceRootPath)
@@ -258,11 +324,15 @@ export class MeetingService {
       })
       if (usesHermesBot) {
         this.startHealthCheck(state, id)
+        this.startTranscriptPoll(state, id)
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       mainLog.error(`[meetings] start failed id=${id} url=${normalized.url}: ${message}`)
       if (usesHermesBot && botStarted) {
+        // Rollback de um start que falhou, não término de captura: o bot nunca
+        // chegou ao call, então não há transcript a buscar e o record termina
+        // como `error` logo abaixo. É o único `stop` fora da finalização.
         void this.runHermesMeetPlugin('stop').catch(() => undefined)
       }
       this.updateRecord(state, id, {
@@ -313,8 +383,11 @@ export class MeetingService {
 
     try {
       if (record.captureMode !== 'craft') {
-        void this.finalizeHermesCapture(workspaceId, workspaceRootPath, id).catch((err) => {
-          mainLog.error(`[meetings] finalizeHermesCapture failed for ${id}: ${err instanceof Error ? err.message : String(err)}`)
+        void this.finalizeHermesCapture({
+          workspaceId,
+          workspaceRootPath,
+          meetingId: id,
+          reason: 'user_stop',
         })
       }
       if (record.ownsBrowserInstance) {
@@ -345,6 +418,55 @@ export class MeetingService {
     return this.getRequired(state, id)
   }
 
+  /**
+   * Sela as capturas Hermes ativas antes do app sair (U3).
+   *
+   * - sem reunião ativa: nada é armado e o quit não paga atraso (`idle`);
+   * - com reunião ativa: corre a finalização contra um watchdog `unref`'d, então
+   *   um plugin travado devolve `deadline` e o quit segue. O que o poll
+   *   incremental já escreveu permanece no disco.
+   */
+  async shutdown(deadlineMs = MEETINGS_SHUTDOWN_DEADLINE_MS): Promise<'idle' | 'sealed' | 'deadline'> {
+    const active: Array<{ workspaceRootPath: string; meetingId: string }> = []
+    for (const state of this.workspaceStates.values()) {
+      for (const record of state.records.values()) {
+        if (record.captureMode !== 'craft' && ['starting', 'running'].includes(record.status)) {
+          active.push({ workspaceRootPath: state.workspaceRootPath, meetingId: record.id })
+        }
+      }
+    }
+
+    if (active.length === 0) {
+      this.disposeTimers()
+      return 'idle'
+    }
+
+    const sealed = Promise.all(active.map(({ workspaceRootPath, meetingId }) => this.finalizeHermesCapture({
+      workspaceRootPath,
+      meetingId,
+      reason: 'app_quit',
+    })))
+
+    const { promise: expired, resolve: expire } = Promise.withResolvers<'deadline'>()
+    const watchdog = setTimeout(() => expire('deadline'), deadlineMs)
+    watchdog.unref?.()
+    try {
+      const outcome = await Promise.race([sealed.then(() => 'sealed' as const), expired])
+      if (outcome === 'deadline') {
+        mainLog.warn(`[meetings] shutdown deadline of ${deadlineMs}ms hit with ${active.length} active capture(s); quitting anyway`)
+      }
+      return outcome
+    } finally {
+      clearTimeout(watchdog)
+      this.disposeTimers()
+    }
+  }
+
+  private disposeTimers(): void {
+    for (const meetingId of [...this.healthCheckTimers.keys()]) this.stopHealthCheck(meetingId)
+    for (const meetingId of [...this.transcriptPollTimers.keys()]) this.stopTranscriptPoll(meetingId)
+  }
+
   archive(workspaceRootPath: string, id: string): MeetingRecord {
     const state = this.getWorkspaceState(workspaceRootPath)
     this.ensureLoaded(state)
@@ -369,7 +491,14 @@ export class MeetingService {
     if (['starting', 'running'].includes(record.status)) {
       this.stopHealthCheck(id)
       if (record.captureMode !== 'craft') {
-        void this.runHermesMeetPlugin('stop').catch(() => undefined)
+        // Mesmo sink dos outros términos: libera o bot singleton sem deixar
+        // ponteiro ativo. O record e o transcript vão embora logo abaixo, então
+        // não há tail a selar.
+        void this.finalizeHermesCapture({
+          workspaceRootPath,
+          meetingId: id,
+          reason: 'deleted',
+        })
       }
       if (record.ownsBrowserInstance) {
         try { this.browserPaneManager.destroyInstance(record.browserInstanceId) } catch { /* pane já fechado */ }
@@ -619,68 +748,180 @@ export class MeetingService {
   }
 
   /**
-   * Pós-processamento de reuniões capturadas pelo bot Hermes: busca o transcript
-   * do plugin ANTES de encerrar o bot (stop limpa o ponteiro ativo), persiste o
-   * resultado e dispara o summary quando summarizeOnEnd/followUpOnEnd estão setados.
-   * Fire-and-forget a partir de stop(), espelhando completeRecording (craft mode).
+   * Único sink terminal da captura Hermes (F1/U1). Stop explícito, pane fechado,
+   * bot morto e delete-while-running passam todos por aqui, e a ordem é sempre a
+   * mesma: buscar o transcript → persistir → parar o bot → gravar status/reason.
+   * Inverter isso perde o único estado que o bot mantém, porque `pm.stop` limpa
+   * o ponteiro do processo ativo.
+   *
+   * Idempotente por meetingId: sinais terminais concorrentes compartilham a
+   * mesma promise, então o transcript é buscado uma vez e o bot para uma vez.
    */
-  private async finalizeHermesCapture(workspaceId: string, workspaceRootPath: string, meetingId: string): Promise<void> {
-    const state = this.getWorkspaceState(workspaceRootPath)
+  private finalizeHermesCapture(args: {
+    workspaceRootPath: string
+    meetingId: string
+    reason: MeetingEndReason
+    workspaceId?: string
+    botError?: string
+  }): Promise<void> {
+    const inflight = this.hermesFinalizations.get(args.meetingId)
+    if (inflight) return inflight
+
+    // Os timers param antes de qualquer await: um poll em voo não pode reescrever
+    // um transcript que o delete acabou de remover.
+    this.stopHealthCheck(args.meetingId)
+    this.stopTranscriptPoll(args.meetingId)
+
+    const run = this.runHermesFinalization(args).catch((error) => {
+      mainLog.error(
+        `[meetings] finalize (${args.reason}) failed for ${args.meetingId}: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    })
+    this.hermesFinalizations.set(args.meetingId, run)
+    return run
+  }
+
+  private async runHermesFinalization(args: {
+    workspaceRootPath: string
+    meetingId: string
+    reason: MeetingEndReason
+    workspaceId?: string
+    botError?: string
+  }): Promise<void> {
+    const { meetingId, reason } = args
+    const state = this.getWorkspaceState(args.workspaceRootPath)
     const record = state.records.get(meetingId)
     if (!record || record.captureMode === 'craft') return
 
-    let lines: string[] = []
+    if (reason === 'deleted') {
+      await this.runHermesMeetPlugin('stop').catch(() => undefined)
+      return
+    }
+
+    const fetched = await this.fetchHermesTranscriptLines()
+    const transcript = this.persistHermesTranscript(state, meetingId, fetched.lines, { seal: true })
+
+    await this.runHermesMeetPlugin('stop').catch(() => undefined)
+
+    const current = state.records.get(meetingId)
+    if (!current) return
+    // Selado quando há linhas no disco ou o bot respondeu; `error` só quando o
+    // término veio de uma falha e nada pôde ser preservado.
+    const sealed = transcript.transcript.length > 0 || fetched.ok
+    const status: MeetingStatus = sealed ? 'stopped' : 'error'
+    this.updateRecord(state, meetingId, {
+      status,
+      endedAt: current.endedAt ?? Date.now(),
+      endReason: reason,
+      error: status === 'error'
+        ? (args.botError || fetched.error || t('meetings.hermesTranscriptEmptyMessage'))
+        : undefined,
+      summaryMarkdown: transcript.summaryMarkdown,
+    })
+    mainLog.info(`[meetings] finalized ${meetingId} reason=${reason} status=${status} lines=${transcript.transcript.length}`)
+
+    if ((current.summarizeOnEnd || current.followUpOnEnd) && transcript.transcript.length > 0) {
+      const workspaceId = args.workspaceId ?? this.resolveWorkspaceId(args.workspaceRootPath)
+      await this.generateAgentSummary(workspaceId, args.workspaceRootPath, meetingId, transcript.transcript)
+    }
+  }
+
+  private async fetchHermesTranscriptLines(): Promise<{ ok: boolean; lines: string[]; error?: string }> {
     try {
       const res = await this.runHermesMeetPlugin('transcript')
       const rawLines = res.lines
       if (res.ok && Array.isArray(rawLines)) {
-        lines = rawLines.filter((line): line is string => typeof line === 'string' && line.trim().length > 0)
+        return {
+          ok: true,
+          lines: rawLines.filter((line): line is string => typeof line === 'string' && line.trim().length > 0),
+        }
       }
-    } catch { /* best-effort: segue para o stop mesmo sem transcript */ }
+      return { ok: false, lines: [], error: typeof res.error === 'string' ? res.error : undefined }
+    } catch (error) {
+      return { ok: false, lines: [], error: error instanceof Error ? error.message : String(error) }
+    }
+  }
 
-    void this.runHermesMeetPlugin('stop').catch(() => undefined)
+  /**
+   * Persiste o transcript Hermes capturado até agora. Chamado a cada tick do
+   * poll (U2) e uma última vez ao selar, com duas garantias:
+   *
+   * - nunca encurta o que já está no disco, então um fetch que falhou não apaga
+   *   as linhas que polls anteriores já preservaram;
+   * - pula a escrita quando nada mudou, para não reescrever conteúdo idêntico.
+   *
+   * Usa `ready` em vez de `capturing` durante a reunião de propósito:
+   * `recoverInterruptedTranscriptions` rebaixa transcripts `capturing` sem
+   * recording em disco, o que apagaria justamente o que o poll salvou.
+   */
+  private persistHermesTranscript(
+    state: WorkspaceMeetingState,
+    meetingId: string,
+    lines: string[],
+    options: { seal: boolean },
+  ): MeetingTranscriptResult {
+    const record = state.records.get(meetingId)
+    const existing = state.transcripts.get(meetingId) ?? this.loadTranscript(state, meetingId) ?? undefined
+    const existingSegments = existing?.transcript ?? []
+    if (!record) return existing ?? { meetingId, status: 'unavailable', transcript: [], updatedAt: Date.now() }
+
+    const texts = lines.length >= existingSegments.length ? lines : existingSegments.map((segment) => segment.text)
+    const unchanged = texts.length === existingSegments.length
+      && texts.every((text, index) => existingSegments[index]?.text === text)
 
     const now = Date.now()
-    const segments: MeetingTranscriptSegment[] = lines.map((line, index) => {
-      const match = /^([^:]{1,60}):\s+(.*)$/.exec(line)
+    const segments: MeetingTranscriptSegment[] = texts.map((text, index) => {
+      const previous = existingSegments[index]
+      if (previous?.text === text) return previous
       return {
         id: `${meetingId}-${index}`,
-        speaker: match?.[1],
-        text: line,
+        speaker: /^([^:]{1,60}):\s+(.*)$/.exec(text)?.[1],
+        text,
         timestamp: now,
       }
     })
 
-    const current = state.records.get(meetingId)
-    if (!current) return
+    const status: MeetingTranscriptResult['status'] = segments.length > 0
+      ? 'ready'
+      : (options.seal ? 'unavailable' : 'placeholder')
+    if (unchanged && existing && existing.status === status) return existing
+
     const message = segments.length > 0
       ? t('meetings.transcriptCompletedMessage', { count: segments.length })
       : t('meetings.hermesTranscriptEmptyMessage')
     const summaryMarkdown = createMeetingSummaryMarkdown({
-      title: current.title,
-      url: current.url,
+      title: record.title,
+      url: record.url,
       captureMode: 'hermes',
-      transcriptionProvider: current.transcriptionProvider,
-      transcriptionModel: current.transcriptionModel,
-      status: 'stopped',
-      startedAt: current.startedAt,
-      endedAt: current.endedAt,
+      transcriptionProvider: record.transcriptionProvider,
+      transcriptionModel: record.transcriptionModel,
+      status: options.seal ? 'stopped' : 'running',
+      startedAt: record.startedAt,
+      endedAt: options.seal ? (record.endedAt ?? now) : undefined,
       summaryBody: message,
     })
     const transcript: MeetingTranscriptResult = {
       meetingId,
-      status: segments.length > 0 ? 'ready' : 'unavailable',
+      status,
       transcript: segments,
       summaryMarkdown,
       message,
-      updatedAt: Date.now(),
+      updatedAt: now,
     }
     state.transcripts.set(meetingId, transcript)
     this.persistTranscript(state, transcript)
-    this.updateRecord(state, meetingId, { summaryMarkdown })
+    return transcript
+  }
 
-    if ((current.summarizeOnEnd || current.followUpOnEnd) && segments.length > 0) {
-      await this.generateAgentSummary(workspaceId, workspaceRootPath, meetingId, segments)
+  /**
+   * Workspace id para caminhos terminais sem contexto de RPC (pane fechado,
+   * health check, quit). Melhor esforço: só o summary por agente depende dele.
+   */
+  private resolveWorkspaceId(workspaceRootPath: string): string {
+    try {
+      return loadWorkspaceConfig(workspaceRootPath)?.id ?? ''
+    } catch {
+      return ''
     }
   }
 
@@ -801,35 +1042,40 @@ export class MeetingService {
 
   private startHealthCheck(state: WorkspaceMeetingState, meetingId: string): void {
     if (this.healthCheckTimers.has(meetingId)) return
-
-    const timer = setInterval(async () => {
-      const record = state.records.get(meetingId)
-      if (!record || !['running', 'starting'].includes(record.status)) {
-        this.stopHealthCheck(meetingId)
-        return
-      }
-      if (record.captureMode !== 'hermes') {
-        this.stopHealthCheck(meetingId)
-        return
-      }
-
-      try {
-        const status = await this.runHermesMeetPlugin('status', {}, { timeoutMs: 5_000 })
-        if (status.exited || status.error || status.leaveReason) {
-          mainLog.warn(`[meetings] health-check: bot exited for ${meetingId}: error=${status.error ?? 'none'} leaveReason=${status.leaveReason ?? 'none'}`)
-          this.updateRecord(state, meetingId, {
-            status: 'error',
-            error: status.error || status.leaveReason || 'Hermes bot exited unexpectedly',
-            endedAt: Date.now(),
-          })
-          this.stopHealthCheck(meetingId)
-        }
-      } catch (err) {
-        mainLog.warn(`[meetings] health-check failed for ${meetingId}: ${err instanceof Error ? err.message : String(err)}`)
-      }
-    }, 30_000)
-
+    const timer = setInterval(() => { void this.runHermesHealthCheck(state, meetingId) }, HERMES_HEALTH_CHECK_MS)
+    timer.unref?.()
     this.healthCheckTimers.set(meetingId, timer)
+  }
+
+  /**
+   * Um tick de reconciliação com o estado real do bot. Qualquer término detectado
+   * aqui vai para o sink de finalização, então o transcript é buscado antes do
+   * stop mesmo quando o pane continua aberto — o caso "preso em running" do audit.
+   */
+  private async runHermesHealthCheck(state: WorkspaceMeetingState, meetingId: string): Promise<void> {
+    const record = state.records.get(meetingId)
+    if (!record || !['running', 'starting'].includes(record.status) || record.captureMode !== 'hermes') {
+      this.stopHealthCheck(meetingId)
+      this.stopTranscriptPoll(meetingId)
+      return
+    }
+
+    let status: HermesMeetPluginResult
+    try {
+      status = await this.runHermesMeetPlugin('status', {}, { timeoutMs: 5_000 })
+    } catch (err) {
+      mainLog.warn(`[meetings] health-check failed for ${meetingId}: ${err instanceof Error ? err.message : String(err)}`)
+      return
+    }
+
+    if (!(status.exited || status.error || status.leaveReason || status.alive === false)) return
+    mainLog.warn(`[meetings] health-check: bot ended for ${meetingId}: error=${status.error ?? 'none'} leaveReason=${status.leaveReason ?? 'none'}`)
+    await this.finalizeHermesCapture({
+      workspaceRootPath: state.workspaceRootPath,
+      meetingId,
+      reason: 'bot_exited',
+      botError: status.error || status.leaveReason,
+    })
   }
 
   private stopHealthCheck(meetingId: string): void {
@@ -838,6 +1084,53 @@ export class MeetingService {
       clearInterval(timer)
       this.healthCheckTimers.delete(meetingId)
     }
+  }
+
+  /**
+   * Poll incremental do transcript enquanto a reunião roda (U2). Serializado: o
+   * timer só dispara o próximo tick depois que o anterior assentou, então dois
+   * fetches nunca competem pela mesma escrita.
+   */
+  private startTranscriptPoll(state: WorkspaceMeetingState, meetingId: string): void {
+    if (this.transcriptPollTimers.has(meetingId)) return
+    let running = false
+    const timer = setInterval(() => {
+      if (running) return
+      running = true
+      void this.pollHermesTranscript(state, meetingId).finally(() => { running = false })
+    }, HERMES_TRANSCRIPT_POLL_MS)
+    timer.unref?.()
+    this.transcriptPollTimers.set(meetingId, timer)
+  }
+
+  private stopTranscriptPoll(meetingId: string): void {
+    const timer = this.transcriptPollTimers.get(meetingId)
+    if (timer) {
+      clearInterval(timer)
+      this.transcriptPollTimers.delete(meetingId)
+    }
+  }
+
+  /**
+   * Um tick do poll: leva ao disco o que o bot já transcreveu. Falha de um tick é
+   * logada e ignorada — o próximo tick recupera, e finalizar sela o tail.
+   */
+  private async pollHermesTranscript(state: WorkspaceMeetingState, meetingId: string): Promise<void> {
+    const record = state.records.get(meetingId)
+    if (!record || record.status !== 'running' || record.captureMode !== 'hermes') {
+      this.stopTranscriptPoll(meetingId)
+      return
+    }
+
+    const fetched = await this.fetchHermesTranscriptLines()
+    if (!fetched.ok) {
+      mainLog.warn(`[meetings] transcript poll failed for ${meetingId}: ${fetched.error ?? 'unknown error'}`)
+      return
+    }
+    // Um sinal terminal pode ter chegado durante o fetch; nesse caso a
+    // finalização é dona da escrita.
+    if (this.hermesFinalizations.has(meetingId) || !state.records.has(meetingId)) return
+    this.persistHermesTranscript(state, meetingId, fetched.lines, { seal: false })
   }
 
   private async runHermesMeetPlugin(
@@ -927,7 +1220,7 @@ except Exception as exc:
     }
   }
 
-  private getRequired(state: WorkspaceMeetingState, id: string): MeetingRecord {
+  private getRequired(state: WorkspaceMeetingState, id: string): MeetingRecordWithEndReason {
     const record = state.records.get(id)
     if (!record) {
       throw new Error(`Meeting not found: ${id}`)
@@ -935,9 +1228,13 @@ except Exception as exc:
     return record
   }
 
-  private updateRecord(state: WorkspaceMeetingState, id: string, updates: Partial<MeetingRecord> & { summaryMarkdown?: string | null }): void {
+  private updateRecord(
+    state: WorkspaceMeetingState,
+    id: string,
+    updates: Partial<MeetingRecordWithEndReason> & { summaryMarkdown?: string | null },
+  ): void {
     const existing = this.getRequired(state, id)
-    const next: MeetingRecord = {
+    const next: MeetingRecordWithEndReason = {
       ...existing,
       ...updates,
       updatedAt: Date.now(),
@@ -971,22 +1268,31 @@ except Exception as exc:
     }
   }
 
+  /**
+   * Reconcilia reuniões cujo pane já não existe. Para captura Hermes o status
+   * terminal sai da finalização, que busca e persiste o transcript antes de
+   * parar o bot; nenhum caminho daqui chama `stop` direto.
+   */
   private refreshLiveStatuses(state: WorkspaceMeetingState): void {
     let changed = false
     for (const record of state.records.values()) {
       if (!['starting', 'running'].includes(record.status)) continue
       const instance = this.browserPaneManager.getLiveInstance(record.browserInstanceId)
       if (instance) continue
+      if (record.captureMode !== 'craft') {
+        void this.finalizeHermesCapture({
+          workspaceRootPath: state.workspaceRootPath,
+          meetingId: record.id,
+          reason: 'pane_closed',
+        })
+        continue
+      }
       state.records.set(record.id, {
         ...record,
         status: 'stopped',
         endedAt: record.endedAt ?? Date.now(),
         updatedAt: Date.now(),
       })
-      if (record.captureMode !== 'craft') {
-        this.stopHealthCheck(record.id)
-        void this.runHermesMeetPlugin('stop').catch(() => undefined)
-      }
       changed = true
     }
     if (changed) this.persist(state)
@@ -1143,6 +1449,7 @@ except Exception as exc:
       configPath: join(meetingsDir, 'config.json'),
       transcriptsDir: join(meetingsDir, 'transcripts'),
       summariesDir: join(meetingsDir, 'summaries'),
+      workspaceRootPath,
     }
     this.workspaceStates.set(stateKey, state)
     return state
@@ -1426,7 +1733,7 @@ function atomicWriteTextFileSync(filePath: string, data: string, mode?: number):
   }
 }
 
-function sanitizeRecord(record: MeetingRecord): MeetingRecord | null {
+function sanitizeRecord(record: MeetingRecordWithEndReason): MeetingRecordWithEndReason | null {
   if (!record || typeof record.id !== 'string' || typeof record.url !== 'string' || typeof record.browserInstanceId !== 'string') {
     return null
   }
@@ -1443,6 +1750,9 @@ function sanitizeRecord(record: MeetingRecord): MeetingRecord | null {
   }
   return {
     ...record,
+    // Um encerramento já registrado sobrevive ao reload; boot que rebaixa
+    // running/starting para stopped não tem causa conhecida e fica sem reason.
+    endReason: record.endReason && MEETING_END_REASONS.includes(record.endReason) ? record.endReason : undefined,
     provider: 'google-meet',
     captureMode: record.captureMode === 'craft' ? 'craft' : 'hermes',
     status: status === 'running' || status === 'starting' ? 'stopped' : status,
