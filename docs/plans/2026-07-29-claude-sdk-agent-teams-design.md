@@ -20,7 +20,7 @@ Named/background `Agent` launches continue through the existing `task_background
 
 Add `team-task` to the existing `BackgroundTask` model and render distinct labels for agent, workflow, team task, and shell. Fix the current workflow label fallback, which renders workflows as shell tasks. Reuse the current terminal-state retention policy.
 
-Stopping an actual background agent continues through the existing task-stop path. Shared coordination tasks are status-only and do not add a new stop protocol.
+Stopping a specific background agent remains model-driven through Claude's `TaskStop`; SDK 0.3.219 exposes no host API for the renderer to invoke it directly. The UI must not offer a fake stop action for agent or team-task chips. Shared coordination tasks are status-only and do not add a new stop protocol.
 
 ## Error handling and compatibility
 
