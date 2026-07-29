@@ -1,12 +1,18 @@
-import type { HookInput } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentEvent } from '@craft-agent/core/types';
+export interface ClaudeTeamLifecycleHookInput {
+  hook_event_name: string;
+  task_id?: string;
+  task_subject?: string;
+  task_description?: string;
+  teammate_name?: string;
+}
 
 function trimmed(value: string | undefined): string | undefined {
   const result = value?.trim();
   return result || undefined;
 }
 
-export function normalizeClaudeTeamLifecycleHook(input: HookInput): AgentEvent | null {
+export function normalizeClaudeTeamLifecycleHook(input: ClaudeTeamLifecycleHookInput): AgentEvent | null {
   if (input.hook_event_name === 'TeammateIdle') {
     const teammateName = trimmed(input.teammate_name);
     return teammateName ? { type: 'teammate_idle', teammateName } : null;

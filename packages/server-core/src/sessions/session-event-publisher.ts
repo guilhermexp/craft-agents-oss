@@ -31,10 +31,8 @@ type EventOf<T extends SessionEvent['type']> = Extract<SessionEvent, { type: T }
 type EventBody<T extends SessionEvent['type']> = Omit<EventOf<T>, 'type' | 'sessionId'>
 
 /**
- * Agent-side events forwarded to the renderer verbatim. They carry fields
- * beyond the `SessionEvent` shape (`kind`, `workflowId`) that the renderer
- * reads off the wire, so they are re-keyed to the session rather than
- * re-projected field by field.
+ * Agent-side background-task and team events forwarded to the renderer
+ * verbatim, re-keyed to the owning session.
  */
 type ForwardedAgentEvent = Extract<
   AgentEvent,
@@ -45,6 +43,9 @@ type ForwardedAgentEvent = Extract<
       | 'task_completed'
       | 'shell_backgrounded'
       | 'workflow_agent_completed'
+      | 'team_task_created'
+      | 'team_task_completed'
+      | 'teammate_idle'
   }
 >
 

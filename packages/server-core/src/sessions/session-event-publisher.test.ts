@@ -145,6 +145,7 @@ describe('SessionEventPublisher', () => {
       toolUseId: 'toolu_1',
       taskId: 'wf_run_1',
       intent: 'Analyze codebase',
+      agentName: 'reviewer',
       turnId: 'turn-1',
       kind: 'workflow',
       workflowId: 'wf_1',
@@ -155,11 +156,57 @@ describe('SessionEventPublisher', () => {
       toolUseId: 'toolu_1',
       taskId: 'wf_run_1',
       intent: 'Analyze codebase',
+      agentName: 'reviewer',
       turnId: 'turn-1',
       kind: 'workflow',
       workflowId: 'wf_1',
       sessionId: 'session-1',
     } as unknown as SessionEvent)
+  })
+
+  it('forwards implicit-team lifecycle events verbatim', () => {
+    const { publisher, session, events } = harness()
+
+    publisher.forwardBackgroundTaskEvent(session, {
+      type: 'team_task_created',
+      taskId: 'task-1',
+      subject: 'Review auth',
+      description: 'Check token refresh',
+      teammateName: 'reviewer',
+    })
+    publisher.forwardBackgroundTaskEvent(session, {
+      type: 'team_task_completed',
+      taskId: 'task-1',
+      subject: 'Review auth',
+      teammateName: 'reviewer',
+    })
+    publisher.forwardBackgroundTaskEvent(session, {
+      type: 'teammate_idle',
+      teammateName: 'reviewer',
+    })
+
+    expect(events()).toEqual([
+      {
+        type: 'team_task_created',
+        sessionId: 'session-1',
+        taskId: 'task-1',
+        subject: 'Review auth',
+        description: 'Check token refresh',
+        teammateName: 'reviewer',
+      },
+      {
+        type: 'team_task_completed',
+        sessionId: 'session-1',
+        taskId: 'task-1',
+        subject: 'Review auth',
+        teammateName: 'reviewer',
+      },
+      {
+        type: 'teammate_idle',
+        sessionId: 'session-1',
+        teammateName: 'reviewer',
+      },
+    ])
   })
 
   it('routes workspace and global broadcasts to their own channels', () => {

@@ -1,4 +1,4 @@
-import { query, createSdkMcpServer, tool, AbortError, type Query, type SDKMessage, type SDKUserMessage, type SDKAssistantMessageError, type Options, type HookInput } from '@anthropic-ai/claude-agent-sdk';
+import { query, createSdkMcpServer, tool, AbortError, type Query, type SDKMessage, type SDKUserMessage, type SDKAssistantMessageError, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { getDefaultOptions } from './options.ts';
 import { ensureDefaultClaudeConfigValid } from './native/claude-config-manager.ts';
 // Local type for SDK user message content blocks (text, image, document)
@@ -45,7 +45,7 @@ import {
   cleanupSessionScopedTools,
   type AuthRequest,
 } from './session-scoped-tools.ts';
-import { type AutomationSystem, type SdkAutomationCallbackMatcher } from '../automations/index.ts';
+import { type AutomationSystem, type SdkAutomationCallback, type SdkAutomationCallbackMatcher } from '../automations/index.ts';
 import {
   getPermissionMode,
   getPermissionModeDiagnostics,
@@ -1185,7 +1185,7 @@ export class ClaudeAgent extends BaseAgent {
             debug('[CraftAgent] User SDK hooks loaded:', Object.keys(userHooks).join(', '));
           }
 
-          const forwardTeamLifecycle = async (input: HookInput) => {
+          const forwardTeamLifecycle: SdkAutomationCallback = async (input) => {
             const event = normalizeClaudeTeamLifecycleHook(input);
             if (event) {
               this.onBackgroundEvent?.(event);

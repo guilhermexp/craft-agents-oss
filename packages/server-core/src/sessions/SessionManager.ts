@@ -783,6 +783,9 @@ interface RunningBackgroundTask {
   turnId?: string
   workflowId?: string
   agentsCompleted?: number
+  kind?: 'workflow' | 'team-task'
+  agentName?: string
+  isIdle?: boolean
 }
 
 export interface ManagedSession {
@@ -8003,6 +8006,8 @@ export class SessionManager implements ISessionManager {
             startTime: Date.now(),
             status: 'running',
             turnId: event.turnId,
+            ...(event.agentName ? { agentName: event.agentName } : {}),
+            ...(event.kind ? { kind: event.kind } : {}),
             // Workflow launches carry a wf_ id + a live sub-agent completion count.
             ...(event.workflowId ? { workflowId: event.workflowId } : {}),
             ...(event.kind === 'workflow' ? { agentsCompleted: 0 } : {}),
@@ -8017,6 +8022,57 @@ export class SessionManager implements ISessionManager {
         // Forward background task event directly to renderer
         this.events.forwardBackgroundTaskEvent(managed, event)
         break
+
+      case 'teammate_idle':
+        if (managed) {
+          for (const info of managed.backgroundTaskRegistry.values()) {
+            if (info.status === 'running' && info.agentName === event.teammateName) {
+              info.isIdle = true
+            }
+          }
+        }
+        this.events.forwardBackgroundTaskEvent(managed, event)
+        break
+
+      case 'team_task_created':
+        if (managed) {
+          managed.backgroundTaskRegistry.set(event.taskId, {
+            taskId: event.taskId,
+            intent: event.description ?? event.subject,
+            startTime: Date.now(),
+            status: 'running',
+            kind: 'team-task',
+            ...(event.teammateName ? { agentName: event.teammateName } : {}),
+          })
+        }
+        this.events.forwardBackgroundTaskEvent(managed, event)
+        break
+
+      case 'team_task_completed': {
+        if (managed) {
+          const existing = managed.backgroundTaskRegistry.get(event.taskId)
+          if (existing) {
+            existing.status = 'completed'
+            existing.completedAt = Date.now()
+            existing.kind = 'team-task'
+            existing.intent ??= event.subject
+            existing.agentName ??= event.teammateName
+          } else {
+            managed.backgroundTaskRegistry.set(event.taskId, {
+              taskId: event.taskId,
+              intent: event.subject,
+              startTime: Date.now(),
+              status: 'completed',
+              completedAt: Date.now(),
+              kind: 'team-task',
+              ...(event.teammateName ? { agentName: event.teammateName } : {}),
+            })
+          }
+          this.evictStaleBackgroundTasks(managed)
+        }
+        this.events.forwardBackgroundTaskEvent(managed, event)
+        break
+      }
 
       case 'workflow_agent_completed':
         // One sub-agent of a running Workflow finished (SubagentStop, attributed
