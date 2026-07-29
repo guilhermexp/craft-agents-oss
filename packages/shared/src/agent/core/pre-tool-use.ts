@@ -94,27 +94,34 @@ export interface ConfigValidationResult {
 // BUILT-IN TOOLS
 // ============================================================
 
-/** SDK built-in tools that should NOT have metadata stripped */
-export const BUILT_IN_TOOLS = new Set([
-  'Bash',
-  'Read',
-  'Write',
-  'Edit',
-  'Glob',
-  'Grep',
-  'WebFetch',
-  'WebSearch',
-  'Task',
-  'TaskOutput',
-  'TodoWrite',
-  'MultiEdit',
-  'NotebookEdit',
-  'KillShell',
-  'SubmitPlan',
-  'Skill',
-  'SlashCommand',
-  'TaskStop',
-]);
+/** SDK built-in tools exposed by the embedded runtime. */
+export const BUILT_IN_TOOLS: Readonly<Record<string, true>> = {
+  Bash: true,
+  Read: true,
+  Write: true,
+  Edit: true,
+  Glob: true,
+  Grep: true,
+  WebFetch: true,
+  WebSearch: true,
+  Task: true,
+  Agent: true,
+  Workflow: true,
+  SendMessage: true,
+  TaskCreate: true,
+  TaskGet: true,
+  TaskUpdate: true,
+  TaskList: true,
+  TaskOutput: true,
+  TaskStop: true,
+  TodoWrite: true,
+  MultiEdit: true,
+  NotebookEdit: true,
+  KillShell: true,
+  SubmitPlan: true,
+  Skill: true,
+  SlashCommand: true,
+};
 
 /** Tools that operate on file paths */
 export const FILE_PATH_TOOLS = new Set([

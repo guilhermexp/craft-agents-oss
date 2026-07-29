@@ -991,12 +991,10 @@ export class ClaudeAgent extends BaseAgent {
       // This ensures Claude and Codex agents use the same detection and constants
       const miniConfig = this.getMiniAgentConfig();
 
-      // Block SDK tools that require UI we don't have:
-      // - EnterPlanMode/ExitPlanMode: We use safe mode instead (user-controlled via UI)
-      // AskUserQuestion is intentionally NOT blocked: it is intercepted in the
-      // PreToolUse hook below and rendered as an interactive questionnaire in the
-      // conversation, then its answers are fed back as the tool result.
-      // Note: Mini agents use a minimal tool list directly, so no additional blocking needed
+      // Craft replaces Claude's native plan mode with its user-controlled safe mode
+      // and loads skills through BaseAgent. AskUserQuestion remains enabled: the
+      // PreToolUse hook renders it as an interactive questionnaire and returns the
+      // user's answers as the tool result. Mini agents use a minimal tool list.
       const disallowedTools: string[] = ['EnterPlanMode', 'ExitPlanMode', 'Skill'];
 
       // Build MCP servers config
@@ -1408,7 +1406,7 @@ export class ClaudeAgent extends BaseAgent {
         canUseTool: async (_toolName, input) => {
           return { behavior: 'allow' as const, updatedInput: input as Record<string, unknown> };
         },
-        // Selectively disable tools - file tools are disabled (use MCP), web/code controlled by settings
+        // Native plan mode and Skill are replaced by Craft-owned flows; all other preset tools remain available.
         disallowedTools,
         // No plugins — skills are handled by BaseAgent.chat() via read-before-execute
         // (the model reads SKILL.md files directly, enforced by PrerequisiteManager)

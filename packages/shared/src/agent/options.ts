@@ -80,13 +80,17 @@ function nativeBinaryName(): string {
 
 export function getDefaultOptions(envOverrides?: Record<string, string>): Partial<Options> {
     const env = buildClaudeSubprocessEnv(envOverrides);
+    const baseOptions: Partial<Options> = {
+        env,
+        settingSources: ['project', 'local'],
+    };
 
     // If custom path is set (e.g., for Electron packaged build), point the SDK at it.
     // This is the native `claude` binary, not a JS file.
     if (customPathToClaudeCodeExecutable) {
         return {
+            ...baseOptions,
             pathToClaudeCodeExecutable: customPathToClaudeCodeExecutable,
-            env,
         };
     }
 
@@ -95,8 +99,8 @@ export function getDefaultOptions(envOverrides?: Record<string, string>): Partia
     if (typeof CRAFT_AGENT_CLI_VERSION !== 'undefined' && CRAFT_AGENT_CLI_VERSION != null) {
         const baseDir = join(homedir(), '.local', 'share', 'craft', 'versions', CRAFT_AGENT_CLI_VERSION);
         return {
+            ...baseOptions,
             pathToClaudeCodeExecutable: join(baseDir, 'claude-agent-sdk', nativeBinaryName()),
-            env,
         };
     }
 
@@ -104,5 +108,5 @@ export function getDefaultOptions(envOverrides?: Record<string, string>): Partia
     // node_modules resolution from `sdk.mjs`. The matching platform package
     // (e.g. `@anthropic-ai/claude-agent-sdk-darwin-arm64`) is installed via
     // optionalDependencies.
-    return { env };
+    return baseOptions;
 }
