@@ -783,6 +783,7 @@ interface RunningBackgroundTask {
   turnId?: string
   workflowId?: string
   agentsCompleted?: number
+  completedAgentIds?: string[]
   kind?: 'workflow' | 'team-task'
   agentName?: string
   isIdle?: boolean
@@ -7994,24 +7995,36 @@ export class SessionManager implements ISessionManager {
         }, { timestamp: typedErrorMessage.timestamp })
         break
 
-      case 'task_backgrounded':
+      case 'task_backgrounded': {
         // Record in the running-task registry so a cross-subprocess "status?"
-        // query can enumerate live tasks (WS3). The renderer still shows the
-        // chip via its own atom; this is the main-process source of truth.
+        // query can enumerate live tasks (WS3). Late metadata may enrich a
+        // terminal entry, but lifecycle state only moves forward.
         if (managed) {
-          managed.backgroundTaskRegistry.set(event.taskId, {
-            taskId: event.taskId,
-            toolUseId: event.toolUseId,
-            intent: event.intent,
-            startTime: Date.now(),
-            status: 'running',
-            turnId: event.turnId,
-            ...(event.agentName ? { agentName: event.agentName } : {}),
-            ...(event.kind ? { kind: event.kind } : {}),
-            // Workflow launches carry a wf_ id + a live sub-agent completion count.
-            ...(event.workflowId ? { workflowId: event.workflowId } : {}),
-            ...(event.kind === 'workflow' ? { agentsCompleted: 0 } : {}),
-          })
+          const existing = managed.backgroundTaskRegistry.get(event.taskId)
+          if (existing) {
+            existing.toolUseId ??= event.toolUseId
+            existing.intent = event.intent ?? existing.intent
+            existing.turnId ??= event.turnId
+            existing.agentName = event.agentName ?? existing.agentName
+            existing.kind = event.kind ?? existing.kind
+            existing.workflowId = event.workflowId ?? existing.workflowId
+            if (event.kind === 'workflow' && existing.agentsCompleted === undefined) {
+              existing.agentsCompleted = 0
+            }
+          } else {
+            managed.backgroundTaskRegistry.set(event.taskId, {
+              taskId: event.taskId,
+              toolUseId: event.toolUseId,
+              intent: event.intent,
+              startTime: Date.now(),
+              status: 'running',
+              turnId: event.turnId,
+              ...(event.agentName ? { agentName: event.agentName } : {}),
+              ...(event.kind ? { kind: event.kind } : {}),
+              ...(event.workflowId ? { workflowId: event.workflowId } : {}),
+              ...(event.kind === 'workflow' ? { agentsCompleted: 0 } : {}),
+            })
+          }
           sessionLog.info(`[bg-lifecycle] task backgrounded`, {
             sessionId,
             taskId: event.taskId,
@@ -8019,9 +8032,9 @@ export class SessionManager implements ISessionManager {
             turnId: event.turnId,
           })
         }
-        // Forward background task event directly to renderer
         this.events.forwardBackgroundTaskEvent(managed, event)
         break
+      }
 
       case 'teammate_idle':
         if (managed) {
@@ -8034,19 +8047,27 @@ export class SessionManager implements ISessionManager {
         this.events.forwardBackgroundTaskEvent(managed, event)
         break
 
-      case 'team_task_created':
+      case 'team_task_created': {
         if (managed) {
-          managed.backgroundTaskRegistry.set(event.taskId, {
-            taskId: event.taskId,
-            intent: event.description ?? event.subject,
-            startTime: Date.now(),
-            status: 'running',
-            kind: 'team-task',
-            ...(event.teammateName ? { agentName: event.teammateName } : {}),
-          })
+          const existing = managed.backgroundTaskRegistry.get(event.taskId)
+          if (existing) {
+            existing.intent = event.description ?? event.subject
+            existing.kind = 'team-task'
+            existing.agentName = event.teammateName ?? existing.agentName
+          } else {
+            managed.backgroundTaskRegistry.set(event.taskId, {
+              taskId: event.taskId,
+              intent: event.description ?? event.subject,
+              startTime: Date.now(),
+              status: 'running',
+              kind: 'team-task',
+              ...(event.teammateName ? { agentName: event.teammateName } : {}),
+            })
+          }
         }
         this.events.forwardBackgroundTaskEvent(managed, event)
         break
+      }
 
       case 'team_task_completed': {
         if (managed) {
@@ -8074,21 +8095,27 @@ export class SessionManager implements ISessionManager {
         break
       }
 
-      case 'workflow_agent_completed':
+      case 'workflow_agent_completed': {
+        let shouldForward = true
         // One sub-agent of a running Workflow finished (SubagentStop, attributed
-        // by wf_ id). Bump the owning workflow chip's completed count so the user
-        // sees live fan-out progress. Lightweight: registry counter + renderer
-        // forward, no persistence (this can fire dozens of times per workflow).
+        // by wf_ id). Count each stable agent id once across duplicate delivery.
         if (managed) {
           for (const info of managed.backgroundTaskRegistry.values()) {
-            if (info.workflowId && info.workflowId === event.workflowId) {
-              info.agentsCompleted = (info.agentsCompleted ?? 0) + 1
+            if (info.workflowId === event.workflowId) {
+              const completedAgentIds = info.completedAgentIds ?? []
+              if (completedAgentIds.includes(event.agentId)) {
+                shouldForward = false
+              } else {
+                info.completedAgentIds = [...completedAgentIds, event.agentId]
+                info.agentsCompleted = info.completedAgentIds.length
+              }
               break
             }
           }
         }
-        this.events.forwardBackgroundTaskEvent(managed, event)
+        if (shouldForward) this.events.forwardBackgroundTaskEvent(managed, event)
         break
+      }
 
       case 'task_progress':
         // Update elapsed/last-progress on the registry entry (best-effort — the

@@ -11,7 +11,7 @@ import {
 import { Spinner } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import type { BackgroundTask } from './ActiveTasksBar'
+import type { BackgroundTask, BackgroundTaskStatus } from '@/atoms/sessions'
 
 /** Terminal data for overlay display */
 export interface TerminalOverlayData {
@@ -37,6 +37,20 @@ function formatElapsed(seconds: number): string {
 /** Shorten task ID for compact display (show first 8 chars) */
 function shortenId(id: string): string {
   return id.length > 8 ? `${id.slice(0, 8)}...` : id
+}
+
+const TASK_TYPE_LABEL_KEY: Record<BackgroundTask['type'], string> = {
+  agent: 'chat.taskTypeAgent',
+  shell: 'chat.taskTypeShell',
+  workflow: 'chat.taskTypeWorkflow',
+  'team-task': 'chat.taskTypeTeamTask',
+}
+
+const TERMINAL_STATUS_LABEL_KEY: Record<Exclude<BackgroundTaskStatus, 'running'>, string> = {
+  completed: 'chat.taskStatusDone',
+  failed: 'chat.taskStatusFailed',
+  stopped: 'chat.taskStatusStopped',
+  orphaned: 'chat.taskStatusOrphaned',
 }
 
 export interface TaskActionMenuProps {
@@ -65,26 +79,37 @@ export function TaskActionMenu({ task, sessionId, onKillTask, onInsertMessage, o
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
 
-  // Local timer for shell tasks (since they don't get task_progress events)
-  // For agent tasks, we use elapsedSeconds from events
-  const [localElapsed, setLocalElapsed] = React.useState(() => {
-    // Initialize from startTime
-    return Math.floor((Date.now() - task.startTime) / 1000)
-  })
+  // Wall-clock fallback keeps tasks without progress events (team tasks and
+  // async agents) moving, then freezes at their terminal timestamp.
+  const [localElapsed, setLocalElapsed] = React.useState(() =>
+    Math.max(0, Math.floor(((task.completedAt ?? Date.now()) - task.startTime) / 1000)))
 
   React.useEffect(() => {
-    // Only use local timer for shell tasks
-    if (task.type !== 'shell') return
+    if (task.status !== 'running') return
 
     const interval = setInterval(() => {
-      setLocalElapsed(Math.floor((Date.now() - task.startTime) / 1000))
+      setLocalElapsed(Math.max(0, Math.floor((Date.now() - task.startTime) / 1000)))
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [task.type, task.startTime])
+  }, [task.status, task.startTime])
 
-  // Use local timer for shells, event-based for agents
-  const displayElapsed = task.type === 'shell' ? localElapsed : task.elapsedSeconds
+  const terminalElapsed = Math.max(
+    0,
+    Math.floor(((task.completedAt ?? Date.now()) - task.startTime) / 1000),
+  )
+  const displayElapsed = Math.max(
+    task.elapsedSeconds,
+    task.status === 'running' ? localElapsed : terminalElapsed,
+  )
+  const statusLabel = task.status === 'running'
+    ? task.isIdle
+      ? t('chat.taskStatusIdle')
+      : null
+    : t(TERMINAL_STATUS_LABEL_KEY[task.status])
+  const workflowProgress = task.type === 'workflow' && (task.agentsCompleted ?? 0) > 0
+    ? t('chat.workflowAgentsDone', { count: task.agentsCompleted })
+    : null
 
   const handleViewOutput = async () => {
     if (!onShowTerminalOverlay) {
@@ -93,9 +118,13 @@ export function TaskActionMenu({ task, sessionId, onKillTask, onInsertMessage, o
     }
 
     try {
-      // Fetch task output via IPC
-      const output = await window.electronAPI.getTaskOutput(task.id)
-
+      // Workflow completion may be keyed by either its wf_ run id or returned
+      // task id. Prefer wf_, then fall back to the returned id.
+      const outputTaskId = task.type === 'workflow' ? task.workflowId ?? task.id : task.id
+      let output = await window.electronAPI.getTaskOutput(outputTaskId)
+      if (!output && outputTaskId !== task.id) {
+        output = await window.electronAPI.getTaskOutput(task.id)
+      }
       // Show terminal output in overlay
       onShowTerminalOverlay({
         command: task.intent || `${task.type} task`,
@@ -114,40 +143,52 @@ export function TaskActionMenu({ task, sessionId, onKillTask, onInsertMessage, o
     setOpen(false)
   }
 
+  const hasActions = task.type !== 'team-task'
+
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
+          disabled={!hasActions}
           className={cn(
             "h-[30px] pl-2.5 pr-2 text-xs font-medium rounded-[8px]",
             "flex items-center gap-1.5 shrink-0 select-none",
-            "transition-all shadow-minimal cursor-pointer",
+            "transition-all shadow-minimal",
+            hasActions ? "cursor-pointer" : "cursor-default",
             // Plain white badge with hover
             "bg-white dark:bg-white/10",
-            "hover:bg-white/80 dark:hover:bg-white/15",
-            "data-[state=open]:bg-white/80 dark:data-[state=open]:bg-white/15",
+            hasActions
+              ? "hover:bg-white/80 dark:hover:bg-white/15 data-[state=open]:bg-white/80 dark:data-[state=open]:bg-white/15"
+              : "",
             className
           )}
-          title={t("chat.clickForTaskActions")}
+          title={hasActions ? t("chat.clickForTaskActions") : undefined}
         >
-          {/* Spinner */}
-          <div className="flex items-center justify-center shrink-0">
-            <Spinner className="text-xs" />
-          </div>
+          {task.status === 'running' && !task.isIdle ? (
+            <div className="flex items-center justify-center shrink-0">
+              <Spinner className="text-xs" />
+            </div>
+          ) : null}
 
-          {/* Type badge */}
           <span className="opacity-60">
-            {task.type === 'agent' ? t('chat.taskTypeAgent') : t('chat.taskTypeShell')}
+            {t(TASK_TYPE_LABEL_KEY[task.type])}
           </span>
 
-          {/* Task ID (shortened) */}
-          <span className="font-mono opacity-80">
-            {shortenId(task.id)}
+          {task.agentName ? (
+            <span className="font-medium opacity-80">
+              {task.agentName}
+            </span>
+          ) : null}
+
+          <span className={cn("max-w-48 truncate opacity-80", task.intent ? "" : "font-mono")}>
+            {task.intent ?? shortenId(task.id)}
           </span>
 
-          {/* Elapsed time */}
+          {workflowProgress ? <span className="opacity-60">{workflowProgress}</span> : null}
+          {statusLabel ? <span className="opacity-60">{statusLabel}</span> : null}
+
           <span className="opacity-60 tabular-nums">
             {formatElapsed(displayElapsed)}
           </span>

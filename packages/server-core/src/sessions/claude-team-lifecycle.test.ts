@@ -96,12 +96,21 @@ describe('Claude implicit-team lifecycle', () => {
       subject: 'Recovered task',
     });
 
+    await fire({
+      type: 'team_task_created',
+      taskId: 'task-missed',
+      subject: 'Recovered task',
+      description: 'Recovered details',
+      teammateName: 'reviewer',
+    });
+
     expect(manager.listBackgroundTasks('session-1')).toEqual(expect.arrayContaining([
       expect.objectContaining({
         taskId: 'task-missed',
         kind: 'team-task',
         status: 'completed',
-        intent: 'Recovered task',
+        intent: 'Recovered details',
+        agentName: 'reviewer',
       }),
     ]));
   });

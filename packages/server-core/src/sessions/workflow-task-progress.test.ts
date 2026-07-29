@@ -63,6 +63,7 @@ describe('workflow background-task progress', () => {
     await fire(sid, { type: 'task_backgrounded', sessionId: sid, toolUseId: 'tu_1', taskId: 'w5x', kind: 'workflow', workflowId: 'wf_1' })
 
     await fire(sid, { type: 'workflow_agent_completed', sessionId: sid, workflowId: 'wf_1', agentId: 'a1' })
+    await fire(sid, { type: 'workflow_agent_completed', sessionId: sid, workflowId: 'wf_1', agentId: 'a1' })
     await fire(sid, { type: 'workflow_agent_completed', sessionId: sid, workflowId: 'wf_1', agentId: 'a2' })
     // An unrelated workflow id must not affect this chip.
     await fire(sid, { type: 'workflow_agent_completed', sessionId: sid, workflowId: 'wf_other', agentId: 'a3' })
@@ -80,5 +81,25 @@ describe('workflow background-task progress', () => {
 
     const t = tasks(sid).find(x => x.taskId === 'w5x')!
     expect(t.status).toBe('completed')
+  })
+
+  it('does not resurrect completion that arrives before backgrounding', async () => {
+    const sid = 'completed-before-backgrounded'
+    buildSession(sid)
+    await fire(sid, { type: 'task_completed', sessionId: sid, taskId: 'w5x', status: 'completed' })
+    await fire(sid, {
+      type: 'task_backgrounded',
+      sessionId: sid,
+      toolUseId: 'tu_1',
+      taskId: 'w5x',
+      intent: 'Review auth',
+      agentName: 'reviewer',
+    })
+
+    expect(tasks(sid).find(x => x.taskId === 'w5x')).toMatchObject({
+      status: 'completed',
+      intent: 'Review auth',
+      agentName: 'reviewer',
+    })
   })
 })
