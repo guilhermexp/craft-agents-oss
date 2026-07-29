@@ -1,4 +1,4 @@
-import { query, createSdkMcpServer, tool, AbortError, type Query, type SDKMessage, type SDKUserMessage, type SDKAssistantMessageError, type Options } from '@anthropic-ai/claude-agent-sdk';
+import { query, createSdkMcpServer, tool, AbortError, type Query, type SDKMessage, type SDKUserMessage, type SDKAssistantMessageError, type Options, type HookInput } from '@anthropic-ai/claude-agent-sdk';
 import { getDefaultOptions } from './options.ts';
 import { ensureDefaultClaudeConfigValid } from './native/claude-config-manager.ts';
 // Local type for SDK user message content blocks (text, image, document)
@@ -34,6 +34,7 @@ import { debug } from '../utils/debug.ts';
 import { guardLargeResult } from '../utils/large-response.ts';
 import { SourceActivationDrainController } from './source-activation-drain.ts';
 import { resolveKeepBackgroundTasksAlive, createPushableInputStream, type PushableInputStream } from './backend/claude/persistent-input.ts';
+import { normalizeClaudeTeamLifecycleHook } from './backend/claude/team-lifecycle.ts';
 import {
   getSessionPlansDir,
   getLastPlanFilePath,
@@ -1184,6 +1185,16 @@ export class ClaudeAgent extends BaseAgent {
             debug('[CraftAgent] User SDK hooks loaded:', Object.keys(userHooks).join(', '));
           }
 
+          const forwardTeamLifecycle = async (input: HookInput) => {
+            const event = normalizeClaudeTeamLifecycleHook(input);
+            if (event) {
+              this.onBackgroundEvent?.(event);
+            } else {
+              debug(`[ClaudeAgent] Ignoring malformed ${input.hook_event_name} hook`);
+            }
+            return { continue: true };
+          };
+
           // Internal hooks for permission handling and logging
           const internalHooks: Record<string, SdkAutomationCallbackMatcher[]> = {
           PreToolUse: [{
@@ -1336,6 +1347,10 @@ export class ClaudeAgent extends BaseAgent {
           // For API tools (api_*), summarization happens in api-tools.ts.
           // For external MCP servers (stdio/HTTP), we cannot modify their output - they're responsible
           // for their own size management via pagination or filtering.
+
+          TaskCreated: [{ hooks: [forwardTeamLifecycle] }],
+          TaskCompleted: [{ hooks: [forwardTeamLifecycle] }],
+          TeammateIdle: [{ hooks: [forwardTeamLifecycle] }],
 
           // ═══════════════════════════════════════════════════════════════════════════
           // SUBAGENT HOOKS: Logging only - parent tracking uses SDK's parent_tool_use_id
