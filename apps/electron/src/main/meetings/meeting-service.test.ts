@@ -350,6 +350,132 @@ describe('MeetingService storage', () => {
     expect(existsSync(videoAnalysisDir)).toBe(false)
   })
 
+  it('keeps an interrupted craft recording on disk and marks it partial after a restart', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-partial-'))
+    tempDirs.push(workspaceRoot)
+
+    const service = new MeetingService(createBrowserPaneManager())
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+    })
+
+    const recordingPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings', `${record.id}.webm`)
+    mkdirSync(dirname(recordingPath), { recursive: true })
+    writeFileSync(recordingPath, 'partial-bytes')
+
+    // Referência desde o primeiro byte: é o que tira o parcial da mira do sweep.
+    service.attachRecordingTarget(workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      mimeType: 'video/webm;codecs=vp9,opus',
+    })
+    expect(service.status(workspaceRoot, record.id)?.recording).toEqual({
+      path: recordingPath,
+      mimeType: 'video/webm;codecs=vp9,opus',
+      bytesWritten: 0,
+      durationMs: 0,
+      partial: true,
+    })
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('running')
+
+    // Crash/quit: nenhum finalize, nenhum completeRecording. Próximo boot:
+    const reloaded = new MeetingService(createBrowserPaneManager())
+    const afterBoot = reloaded.list(workspaceRoot).find(item => item.id === record.id)
+
+    expect(existsSync(recordingPath)).toBe(true)
+    expect(afterBoot?.status).toBe('stopped')
+    expect(afterBoot?.recording?.partial).toBe(true)
+  })
+
+  it('clears the partial mark when the recording is sealed', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-sealed-'))
+    tempDirs.push(workspaceRoot)
+
+    const service = new MeetingService(createBrowserPaneManager())
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+    })
+
+    const recordingPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings', `${record.id}.webm`)
+    mkdirSync(dirname(recordingPath), { recursive: true })
+    writeFileSync(recordingPath, 'sealed-bytes')
+
+    service.attachRecordingTarget(workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      mimeType: 'video/webm',
+    })
+    await service.completeRecording('ws-test', workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      bytesWritten: 12,
+      durationMs: 3000,
+      mimeType: 'video/webm',
+    })
+
+    const sealed = service.status(workspaceRoot, record.id)
+    expect(sealed?.recording?.partial).toBeFalsy()
+    expect(sealed?.recording?.bytesWritten).toBe(12)
+    expect(sealed?.status).toBe('stopped')
+  })
+
+  it('reuses the live craft record for the same meeting on the same pane', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-dedupe-'))
+    tempDirs.push(workspaceRoot)
+
+    const paneManager = createBrowserPaneManager()
+    const service = new MeetingService(paneManager)
+    // Caminho da página: cria o pane, sem browserInstanceId explícito.
+    const fromPage = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+    })
+    // Caminho da toolbar: aponta o mesmo pane e a mesma reunião.
+    const fromToolbar = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      browserInstanceId: fromPage.browserInstanceId,
+      transcribe: false,
+    })
+
+    expect(fromToolbar.id).toBe(fromPage.id)
+    expect(service.list(workspaceRoot)).toHaveLength(1)
+    expect(paneManager.createInstance).toHaveBeenCalledTimes(1)
+  })
+
+  it('creates a new record for a different meeting on the same pane or after the previous stopped', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-dedupe-new-'))
+    tempDirs.push(workspaceRoot)
+
+    const paneManager = createBrowserPaneManager()
+    const service = new MeetingService(paneManager)
+    const first = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+    })
+
+    const differentMeeting = await service.start(workspaceRoot, {
+      urlOrCode: 'xyz-vwqr-stu',
+      captureMode: 'craft',
+      browserInstanceId: first.browserInstanceId,
+      transcribe: false,
+    })
+    expect(differentMeeting.id).not.toBe(first.id)
+
+    service.stop('ws-test', workspaceRoot, first.id)
+    const afterStop = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      browserInstanceId: first.browserInstanceId,
+      transcribe: false,
+    })
+    expect(afterStop.id).not.toBe(first.id)
+    expect(service.list(workspaceRoot)).toHaveLength(3)
+  })
+
   it('reconciles orphan .webm recordings on first ensureLoaded and keeps referenced files', async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-orphans-'))
     tempDirs.push(workspaceRoot)

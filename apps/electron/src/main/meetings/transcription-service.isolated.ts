@@ -24,9 +24,9 @@ describe('TranscriptionService.transcribe', () => {
       const filePath = join(dir, 'recording.webm')
       writeFileSync(filePath, 'fake-audio-bytes')
 
-      let captured: { init?: RequestInit & { duplex?: string } } = {}
-      globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
-        captured = { init: init as RequestInit & { duplex?: string } }
+      let captured: { url?: string; init?: RequestInit & { duplex?: string } } = {}
+      globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+        captured = { url: String(url), init: init as RequestInit & { duplex?: string } }
         return new Response(JSON.stringify({
           results: {
             utterances: [{ start: 0, end: 1.5, transcript: 'hello world', speaker: 0 }],
@@ -50,6 +50,39 @@ describe('TranscriptionService.transcribe', () => {
       expect(captured.init?.signal instanceof AbortSignal).toBe(true)
 
       expect(result.segments.map(segment => segment.text)).toEqual(['hello world'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('sends the mapped language when given, and detect_language otherwise', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'craft-transcription-lang-'))
+    try {
+      const filePath = join(dir, 'recording.webm')
+      writeFileSync(filePath, 'fake-audio-bytes')
+
+      const capturedUrls: string[] = []
+      globalThis.fetch = (async (url: unknown) => {
+        capturedUrls.push(String(url))
+        return new Response(JSON.stringify({ results: { utterances: [] } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }) as typeof fetch
+
+      const service = new TranscriptionService()
+      const base = { filePath, model: 'nova-3', apiKey: 'dg-test-key', mimeType: 'video/webm' }
+
+      await service.transcribe({ ...base, language: 'pt-BR' })
+      // Sem language o Deepgram assumiria inglês e fonetizaria a call — foi o
+      // que produziu a transcrição sem sentido. Nesse caso pedimos detecção.
+      await service.transcribe(base)
+
+      const [mapped, detected] = capturedUrls.map((url) => new URL(url))
+      expect(mapped!.searchParams.get('language')).toBe('pt-BR')
+      expect(mapped!.searchParams.get('detect_language')).toBeNull()
+      expect(detected!.searchParams.get('detect_language')).toBe('true')
+      expect(detected!.searchParams.get('language')).toBeNull()
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

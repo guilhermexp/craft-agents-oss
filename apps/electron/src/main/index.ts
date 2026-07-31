@@ -48,6 +48,7 @@ import { initializeNativeAgentHostRuntime, setPowerShellValidatorRoot } from '@c
 import { handleDeepLink } from './deep-link'
 import { BrowserPaneManager } from './browser-pane-manager'
 import { relaunchAfterSealingCaptures, shutdownMeetingCaptures } from './meetings/meeting-service'
+import { shutdownCraftRecordings } from './handlers/meetings'
 import { OAuthFlowStore } from '@craft-agent/shared/auth'
 import { registerMediaHandler, registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath, getMessagingGatewayLogFilePath, messagingGatewayLog } from './logger'
@@ -871,11 +872,18 @@ app.whenReady().then(async () => {
 
       // App relaunch (for server config changes — NOT an update install).
       // `app.exit(0)` não emite `before-quit`, então o seal bounded das capturas
-      // ativas acontece aqui, antes de relançar.
-      ipcMain.handle('app:relaunch', () => relaunchAfterSealingCaptures({
-        relaunch: () => app.relaunch(),
-        exit: () => app.exit(0),
-      }))
+      // ativas acontece aqui, antes de relançar. A gravação craft é selada
+      // primeiro: é fs local e rápida, e não depende do Hermes.
+      ipcMain.handle('app:relaunch', async () => {
+        const craftOutcome = await shutdownCraftRecordings()
+        if (craftOutcome !== 'idle') {
+          mainLog.info(`[meetings] craft recording shutdown outcome=${craftOutcome} (relaunch)`)
+        }
+        await relaunchAfterSealingCaptures({
+          relaunch: () => app.relaunch(),
+          exit: () => app.exit(0),
+        })
+      })
 
       // Language change: sync from renderer to main process and rebuild native menu
       ipcMain.handle('i18n:changeLanguage', async (_event, lang: string) => {
@@ -1138,9 +1146,19 @@ app.on('before-quit', async (event) => {
     // Clean up SessionManager resources (file watchers, timers, etc.)
     sessionManager.cleanup()
 
-    // Sela as capturas Hermes ativas ANTES de derrubar panes e subprocessos: o
-    // transcript só existe no bot até ser buscado. Bounded — o quit segue no
-    // deadline e o que o poll incremental já gravou fica no disco.
+    // Sela as gravações craft e as capturas Hermes ativas ANTES de derrubar
+    // panes e subprocessos. Craft primeiro: é fs local, rápida e independente
+    // do Hermes; o transcript Hermes só existe no bot até ser buscado. Bounded —
+    // o quit segue no deadline e o que já foi escrito fica no disco.
+    try {
+      const craftShutdown = await shutdownCraftRecordings()
+      if (craftShutdown !== 'idle') {
+        mainLog.info(`[meetings] craft recording shutdown outcome=${craftShutdown}`)
+      }
+    } catch (error) {
+      mainLog.error('[meetings] craft recording shutdown failed:', error)
+    }
+
     try {
       const meetingsShutdown = await shutdownMeetingCaptures()
       if (meetingsShutdown !== 'idle') {

@@ -144,6 +144,9 @@ function mapBrowserToolErrorCode(code: string): string | null {
     case 'BROWSER_INSTANCE_NOT_OWNED':
       return 'That browser instance ID doesn\'t belong to this session. ' +
         'Use `windows` to list owned instances, or `open` to create a new one.';
+    case 'BROWSER_INSTANCE_CAPTURE_LOCKED':
+      return 'That browser window is recording a meeting and cannot be navigated or closed. ' +
+        'Use `open` to work in a new window instead.';
     case 'BROWSER_REMOTE_UPLOAD_NOT_SUPPORTED':
       return 'File upload from a remote agent is not supported. ' +
         'Ask the user to attach the file to the session.';

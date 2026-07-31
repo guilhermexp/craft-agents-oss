@@ -26,6 +26,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Markdown } from '@/components/markdown'
 import { MEETINGS_CHANGED_EVENT } from '@/components/app-shell/MeetingsListPanel'
 import { isMissingMeetingError, normalizeGoogleMeetInput, resolveEffectiveMeetingId } from '@/lib/meetings-selection'
+import { meetingStatusLabelKey } from '@/lib/meeting-status-label'
 import { cn } from '@/lib/utils'
 import { getFileManagerName } from '@/lib/platform'
 import type { BrowserInstanceInfo, MeetingRecord, MeetingStartInput, MeetingTranscriptResult } from '../../shared/types'
@@ -135,28 +136,28 @@ function buildFallbackSummary(
   record: MeetingRecord | null,
   transcript: MeetingTranscriptResult | null,
   emptyPlaceholder: string,
+  t: (key: string) => string,
 ): string {
   if (transcript?.summaryMarkdown) return transcript.summaryMarkdown
   if (record?.summaryMarkdown) return record.summaryMarkdown
   if (!record) return emptyPlaceholder
 
-  const origin = record.captureMode === 'craft' ? 'Craft internal' : 'Hermes'
-  const status = record.status
+  const origin = record.captureMode === 'craft' ? t('meetings.captureModeCraft') : t('meetings.captureModeHermes')
   const lines = [
     `# ${record.title || 'Google Meet'}`,
     '',
-    `- Origem: ${origin}`,
-    `- Status: ${status}`,
-    `- Link: ${record.url}`,
+    `- ${t('meetings.summaryDocOrigin')}: ${origin}`,
+    `- ${t('meetings.summaryDocStatus')}: ${t(meetingStatusLabelKey(record))}`,
+    `- ${t('meetings.summaryDocLink')}: ${record.url}`,
   ]
   if (record.transcriptionProvider && record.transcriptionModel) {
-    lines.push(`- Transcricao: ${getTranscriptionProviderLabel(record.transcriptionProvider)} / ${record.transcriptionModel}`)
+    lines.push(`- ${t('meetings.docLabelTranscription')}: ${getTranscriptionProviderLabel(record.transcriptionProvider)} / ${record.transcriptionModel}`)
   }
   lines.push(
     '',
-    '## Resumo',
+    `## ${t('meetings.docHeadingSummary')}`,
     '',
-    transcript?.message || 'Summary not yet available for this recording.',
+    transcript?.message || t('meetings.docSummaryPending'),
   )
   return lines.join('\n')
 }
@@ -173,22 +174,23 @@ function buildTranscriptMarkdown(
   record: MeetingRecord | null,
   transcript: MeetingTranscriptResult | null,
   unavailableText: string,
+  t: (key: string) => string,
 ): string {
   if (!record) return unavailableText
 
   const lines = [
     `# ${record.title || record.code || 'Google Meet'}`,
     '',
-    `- Link: ${record.url}`,
-    `- Status: ${record.status}`,
-    `- Capture: ${record.captureMode === 'craft' ? 'Craft' : 'Hermes'}`,
+    `- ${t('meetings.summaryDocLink')}: ${record.url}`,
+    `- ${t('meetings.summaryDocStatus')}: ${t(meetingStatusLabelKey(record))}`,
+    `- ${t('meetings.docLabelCapture')}: ${record.captureMode === 'craft' ? t('meetings.captureModeCraft') : t('meetings.captureModeHermes')}`,
   ]
 
   if (record.recording?.durationMs) {
-    lines.push(`- Duration: ${formatTranscriptTimestamp(record.recording.durationMs)}`)
+    lines.push(`- ${t('meetings.docLabelDuration')}: ${formatTranscriptTimestamp(record.recording.durationMs)}`)
   }
 
-  lines.push('', '## Transcript', '')
+  lines.push('', `## ${t('meetings.docHeadingTranscript')}`, '')
 
   if (!transcript || transcript.transcript.length === 0) {
     lines.push(transcript?.message || unavailableText)
@@ -196,7 +198,7 @@ function buildTranscriptMarkdown(
   }
 
   for (const segment of transcript.transcript) {
-    const speaker = segment.speaker?.trim() || 'Speaker'
+    const speaker = segment.speaker?.trim() || t('meetings.docSpeakerFallback')
     const timestamp = formatTranscriptTimestamp(segment.startedAt ?? segment.timestamp)
     lines.push(`**[${timestamp}] ${speaker}:** ${segment.text}`)
     lines.push('')
@@ -541,11 +543,13 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
     selectedRecord,
     selectedTranscript,
     t('meetings.selectRecordingMarkdown', { defaultValue: 'Select a recording in the panel to view the Markdown summary.' }),
+    t,
   )
   const selectedTranscriptMarkdown = buildTranscriptMarkdown(
     selectedRecord,
     selectedTranscript,
     t('meetings.transcriptUnavailable'),
+    t,
   )
   const selectedDetailMarkdown = selectedDetailTab === 'summary'
     ? selectedSummaryMarkdown
@@ -897,6 +901,22 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
                     src={recordingMediaUrl}
                     controls
                     preload="metadata"
+                    onLoadedMetadata={(event) => {
+                      // Webm cru do MediaRecorder não tem Duration/Cues: o
+                      // Chromium reporta duração infinita e o seek morre. O
+                      // remux no seal corrige os arquivos novos; para os
+                      // antigos, saltar para o fim força o player a calcular a
+                      // duração real e liberar o seek.
+                      const video = event.currentTarget
+                      if (video.duration !== Infinity) return
+                      const restore = () => {
+                        if (video.duration === Infinity) return
+                        video.removeEventListener('durationchange', restore)
+                        video.currentTime = 0
+                      }
+                      video.addEventListener('durationchange', restore)
+                      video.currentTime = 1e10
+                    }}
                     aria-label={t('meetings.recordingPreview')}
                     className="size-full bg-black object-contain"
                   />

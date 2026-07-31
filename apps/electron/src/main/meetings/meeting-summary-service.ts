@@ -16,6 +16,7 @@
  */
 
 import { mainLog } from '../logger'
+import { getOutputLanguageName } from './output-language'
 import { getLlmConnections, getDefaultLlmConnection, getLlmConnection } from '@craft-agent/shared/config'
 import { createBackendFromConnection } from '@craft-agent/shared/agent/backend'
 import { buildMeetingBackendHostRuntime } from './backend-host-runtime'
@@ -87,9 +88,13 @@ export async function generateMeetingSummaryMarkdown(input: MeetingSummaryInput)
 
   const skill = loadSkill(workspaceRootPath, MEETING_NOTES_SKILL_SLUG)
   const baseSystemPrompt = skill?.content?.trim() || DEFAULT_SUMMARY_INSTRUCTIONS
+  // A língua de saída é a do app, não a da transcrição: o resumo é para quem
+  // usa o Craft, e uma transcrição errada (ex.: EN fonético de áudio PT) não
+  // pode arrastar o resumo para o idioma errado junto.
+  const languageInstruction = `Write the entire document in ${getOutputLanguageName()}. Quoted speech MAY keep the original language.`
   const systemPrompt = record.followUpOnEnd
-    ? `${baseSystemPrompt}\n\n${FOLLOW_UP_INSTRUCTIONS}`
-    : baseSystemPrompt
+    ? `${baseSystemPrompt}\n\n${FOLLOW_UP_INSTRUCTIONS}\n\n${languageInstruction}`
+    : `${baseSystemPrompt}\n\n${languageInstruction}`
 
   const prompt = [
     `Meeting title: ${record.title || 'Untitled meeting'}`,

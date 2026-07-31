@@ -10,6 +10,7 @@ import { loadSkillBySlug } from '@craft-agent/shared/skills'
 import type { AgentBackend } from '@craft-agent/shared/agent/backend'
 import type { MeetingRecord, MeetingTranscriptSegment } from '../../shared/types'
 import { mainLog } from '../logger'
+import { getOutputLanguageName } from './output-language'
 
 const execFileAsync = promisify(execFile)
 
@@ -224,6 +225,8 @@ function buildPrompt(input: MeetingVideoAnalysisInput, summary: VideoEvidenceSum
     '- Risks, blockers, bugs, UX issues, or noteworthy screen states if visible',
     followUpInstruction,
     '- Evidence notes that mention which timestamp/frame/contact-sheet observation supports important claims',
+    '',
+    `Write the entire document in ${getOutputLanguageName()} — headings included. Quoted speech MAY keep the original language.`,
   ].filter(Boolean).join('\n')
 }
 

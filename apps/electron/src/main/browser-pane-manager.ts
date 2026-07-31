@@ -84,6 +84,17 @@ interface AgentControlLockState {
   previousResizable: boolean
 }
 
+/**
+ * Marca um pane cuja tela está sendo capturada (gravação de reunião). Enquanto
+ * existe, o pane não pode ser adotado por sessão de agente: navegar a página
+ * não encerra as faixas capturadas — a gravação continuaria, gravando a tela do
+ * agente no mesmo arquivo.
+ */
+export interface BrowserPaneCaptureLock {
+  reason: 'meeting-recording'
+  since: number
+}
+
 export interface BrowserInstance {
   id: string
   profileId: string
@@ -103,6 +114,8 @@ export interface BrowserInstance {
   ownerType: 'session' | 'manual'
   ownerSessionId: string | null
   isVisible: boolean
+  /** Não-nulo enquanto uma captura de tela está ativa neste pane. */
+  captureLock: BrowserPaneCaptureLock | null
   keepAliveOnWindowClose: boolean
   toolbarReady: boolean
   toolbarMenuOpen: boolean
@@ -301,6 +314,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private stateChangeCallback: ((info: BrowserInstanceInfo) => void) | null = null
   private removedCallback: ((id: string) => void) | null = null
   private interactedCallback: ((id: string) => void) | null = null
+  private captureReleaseHook: ((browserInstanceId: string) => void) | null = null
   private profilesChangeCallback: ((settings: BrowserProfileSettings) => void) | null = null
   private profileManagementRequestCallback: ((instanceId: string) => void) | null = null
   // SECURITY (auditoria 2026-07-14): dedup POR partition, não por instância.
@@ -523,6 +537,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       ownerType,
       ownerSessionId,
       isVisible: false,
+      captureLock: null,
       keepAliveOnWindowClose: true,
       toolbarReady: false,
       toolbarMenuOpen: false,
@@ -630,6 +645,33 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return instanceId
   }
 
+  /**
+   * Marca/desmarca o pane como sob captura de tela. O dono da gravação chama
+   * isso no início e no fim; enquanto marcado, o pane sai do pool de adoção por
+   * sessão de agente.
+   */
+  setCaptureLock(id: string, lock: BrowserPaneCaptureLock | null): void {
+    const instance = this.instances.get(id)
+    if (!instance) return
+    instance.captureLock = lock
+    mainLog.info(`[browser-pane] captureLock ${lock ? `set reason=${lock.reason}` : 'cleared'} id=${id}`)
+    this.emitStateChange(instance)
+    this.toolbarHost.pushState(instance)
+  }
+
+  getCaptureLock(id: string): BrowserPaneCaptureLock | null {
+    return this.instances.get(id)?.captureLock ?? null
+  }
+
+  /**
+   * Hook disparado antes de um pane sob captura ser destruído, para o dono da
+   * gravação selar o arquivo. É fire-and-forget porque o teardown é síncrono: o
+   * que já foi escrito está no disco e só o tail em voo se perde.
+   */
+  setCaptureReleaseHook(hook: (browserInstanceId: string) => void): void {
+    this.captureReleaseHook = hook
+  }
+
   destroyInstance(id: string): void {
     const instance = this.instances.get(id)
     if (!instance) {
@@ -639,6 +681,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
     const destroyedBefore = instance.window.isDestroyed()
     mainLog.info(`[browser-pane] destroy requested id=${id} destroyedBefore=${destroyedBefore} keepAlive=${instance.keepAliveOnWindowClose}`)
+
+    if (instance.captureLock) {
+      this.captureReleaseHook?.(id)
+    }
 
     // Clear pending timers before destroying the window
     if (instance.inPageThemeTimer) {
@@ -1595,7 +1641,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private findReusableUnboundInstance(workspaceId: string | null): BrowserInstance | null {
     const unbound = Array.from(this.instances.values()).filter(
       i => i.boundSessionId === null && i.ownerType === 'manual'
-        && (i.workspaceId === null || i.workspaceId === workspaceId),
+        && (i.workspaceId === null || i.workspaceId === workspaceId)
+        // Um pane em captura nunca é adotado: navegar a página não encerra as
+        // faixas capturadas, então a gravação seguiria com o conteúdo do agente.
+        && !i.captureLock,
     )
     if (unbound.length === 0) return null
 
@@ -1606,15 +1655,25 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   async createForSession(sessionId: string, options?: { show?: boolean; profileId?: string; allowReuseManual?: boolean; workspaceId?: string | null }): Promise<string> {
     const existing = this.getBoundForSession(sessionId)
     if (existing) {
-      // Already bound — adopt the workspace if the caller provided one.
-      if (options?.workspaceId !== undefined) {
-        const inst = this.instances.get(existing)
-        if (inst) inst.workspaceId = options.workspaceId
+      const boundInstance = this.instances.get(existing)
+      if (boundInstance?.captureLock) {
+        // A sessão já possuía este pane, mas ele está gravando: devolve a janela
+        // ao usuário (mantendo ownerSessionId para rastreio) e segue para criar
+        // outra — o filtro de adoção exclui a que acabou de ser liberada.
+        mainLog.warn(`[browser-pane] session ${sessionId} was bound to capture-locked instance ${existing}; unbinding and creating a new window`)
+        boundInstance.boundSessionId = null
+        boundInstance.ownerType = 'manual'
+        this.emitStateChange(boundInstance)
+      } else {
+        // Already bound — adopt the workspace if the caller provided one.
+        if (options?.workspaceId !== undefined && boundInstance) {
+          boundInstance.workspaceId = options.workspaceId
+        }
+        if (options?.show) {
+          this.focus(existing)
+        }
+        return existing
       }
-      if (options?.show) {
-        this.focus(existing)
-      }
-      return existing
     }
 
     const workspaceId = options?.workspaceId ?? this.resolveLaunchWorkspaceId()
@@ -2108,6 +2167,18 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
   }
 
+  /**
+   * Defesa em profundidade: mesmo que um pane em captura chegue às mãos de uma
+   * sessão, o seam do agente não navega nem destrói. A navegação do usuário
+   * sobre o próprio pane continua livre — este guard só cobre o seam.
+   */
+  private requireUnlockedInstance(instanceId: string, operation: string): void {
+    const lock = this.instances.get(instanceId)?.captureLock
+    if (!lock) return
+    throw new CodedError('BROWSER_INSTANCE_CAPTURE_LOCKED',
+      `Browser instance "${instanceId}" is capturing (${lock.reason}); "${operation}" is not allowed while recording.`)
+  }
+
   /** Session-scoped listInstances — never returns workspace-wide windows to a remote agent. */
   private listInstancesForOwner(ownerKey: string): BrowserInstanceInfo[] {
     const infos: BrowserInstanceInfo[] = []
@@ -2138,6 +2209,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       ownerType: instance.ownerType,
       ownerSessionId: instance.ownerSessionId,
       isVisible: instance.isVisible,
+      captureLock: instance.captureLock,
       title: instance.title,
       currentUrl: instance.currentUrl,
     }
@@ -2220,6 +2292,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     destroyInstance: (args, { ownerKey }) => {
       const [instanceId] = args as [string]
       this.requireOwnedInstance(instanceId, ownerKey)
+      this.requireUnlockedInstance(instanceId, 'destroyInstance')
       this.destroyInstance(instanceId)
     },
 
@@ -2227,6 +2300,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     navigate: (args, { ownerKey }) => {
       const [instanceId, url] = args as [string, string]
       this.requireOwnedInstance(instanceId, ownerKey)
+      this.requireUnlockedInstance(instanceId, 'navigate')
       return this.navigate(instanceId, url)
     },
     goBack: (args, { ownerKey }) => {
@@ -3115,6 +3189,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       ownerType: instance.ownerType,
       ownerSessionId: instance.ownerSessionId,
       isVisible: instance.isVisible,
+      captureLock: instance.captureLock,
       agentControlActive: !!instance.agentControl?.active,
       themeColor: instance.themeColor,
     }

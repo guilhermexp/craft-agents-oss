@@ -6,6 +6,7 @@
  */
 
 import { forwardRef, useEffect, useState, type ButtonHTMLAttributes } from 'react'
+import { useTranslation } from 'react-i18next'
 import * as Icons from 'lucide-react'
 import { Spinner } from '@craft-agent/ui'
 import type { BrowserInstanceInfo } from '../../../shared/types'
@@ -20,9 +21,13 @@ export const BrowserTabBadge = forwardRef<HTMLButtonElement, BrowserTabBadgeProp
   { instance, isActive: _isActive, className, style, ...buttonProps },
   ref
 ) {
+  const { t } = useTranslation()
   const hostname = getHostname(instance.url)
   const displayLabel = instance.title.trim() || hostname || 'Local File'
   const themedBackground = instance.themeColor || undefined
+  // Gravação em curso neste pane: o usuário pode estar em outra janela do app e
+  // precisa ver que a captura está viva antes de dar quit.
+  const isCapturing = Boolean(instance.captureLock)
 
   const themeLuminance = instance.themeColor ? getThemeLuminance(instance.themeColor) : null
   const isDarkThemeColor = themeLuminance !== null && themeLuminance < 0.42
@@ -56,7 +61,7 @@ export const BrowserTabBadge = forwardRef<HTMLButtonElement, BrowserTabBadgeProp
         transition: 'background-color 200ms ease, border-color 200ms ease',
         ...style,
       }}
-      aria-label={`${displayLabel} actions`}
+      aria-label={isCapturing ? `${displayLabel} — ${t('meetings.statusRunning')} — actions` : `${displayLabel} actions`}
       {...buttonProps}
     >
       <span className={`shrink-0 flex items-center justify-center ${isDarkThemeColor ? 'size-3.5' : 'size-3'}`}>
@@ -84,6 +89,13 @@ export const BrowserTabBadge = forwardRef<HTMLButtonElement, BrowserTabBadgeProp
           <Icons.Globe className="size-3" />
         )}
       </span>
+
+      {isCapturing && (
+        <span
+          className="shrink-0 size-1.5 rounded-full bg-red-500 animate-pulse"
+          title={t('meetings.statusRunning')}
+        />
+      )}
 
       <span className="truncate ml-0.5 leading-[12px]">{displayLabel}</span>
 

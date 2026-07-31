@@ -12,6 +12,8 @@ interface ActiveRecording {
   browserInstanceId: string
   meetingId?: string
   outputPath: string
+  /** Escolhido pelo renderer antes do prepare, para o main poder selar sozinho. */
+  mimeType: string
   stream: WriteStream
   startedAt: number
   bytesWritten: number
@@ -25,6 +27,11 @@ export interface PrepareRecordingInput {
   browserInstanceId: string
   meetingId?: string
   urlOrCode?: string
+  /**
+   * Mime do MediaRecorder, decidido antes do prepare. Sem ele o main não
+   * conseguiria selar a gravação no quit, quando o renderer já não existe.
+   */
+  mimeType: string
 }
 
 export interface PrepareRecordingResult {
@@ -40,6 +47,9 @@ export interface FinalizeRecordingResult {
   outputPath: string
   bytesWritten: number
   durationMs: number
+  mimeType: string
+  /** Pane dono, para o chamador liberar o captureLock da instância. */
+  browserInstanceId: string
 }
 
 export class RecordingService {
@@ -65,6 +75,7 @@ export class RecordingService {
       browserInstanceId: input.browserInstanceId,
       meetingId: input.meetingId,
       outputPath,
+      mimeType: input.mimeType,
       stream,
       startedAt: Date.now(),
       bytesWritten: 0,
@@ -78,8 +89,17 @@ export class RecordingService {
 
     this.recordings.set(id, recording)
 
-    mainLog.info(`[recording] prepared id=${id} pane=${input.browserInstanceId} -> ${outputPath}`)
+    mainLog.info(`[recording] prepared id=${id} pane=${input.browserInstanceId} mime=${input.mimeType} -> ${outputPath}`)
     return { recordingId: id, meetingId: input.meetingId, outputPath }
+  }
+
+  /**
+   * Pane dono de uma gravação ativa. Existe para o handler liberar o
+   * `captureLock` mesmo quando `finalize` lança — nesse caminho não há resultado
+   * de onde tirar o id, e um lock vazado tornaria o pane inadotável para sempre.
+   */
+  getBrowserInstanceId(recordingId: string): string | null {
+    return this.recordings.get(recordingId)?.browserInstanceId ?? null
   }
 
   async append(recordingId: string, chunk: ArrayBuffer | Uint8Array): Promise<void> {
@@ -100,7 +120,11 @@ export class RecordingService {
     recording.bytesWritten += buffer.byteLength
   }
 
-  async finalize(recordingId: string, mimeType: string): Promise<FinalizeRecordingResult> {
+  /**
+   * `mimeType` é opcional porque o seal de quit acontece sem o renderer: nesse
+   * caminho vale o mime guardado no prepare.
+   */
+  async finalize(recordingId: string, mimeType?: string): Promise<FinalizeRecordingResult> {
     const recording = this.recordings.get(recordingId)
     if (!recording) {
       throw new Error(`recording not found: ${recordingId}`)
@@ -110,11 +134,12 @@ export class RecordingService {
       try { recording.stream.destroy() } catch { /* ignore */ }
       throw new Error(`recording stream failed: ${recording.streamError.message}`)
     }
+    const effectiveMimeType = mimeType ?? recording.mimeType
     await new Promise<void>((resolve, reject) => {
       recording.stream.end((err: NodeJS.ErrnoException | null | undefined) => (err ? reject(err) : resolve()))
     })
     const durationMs = Date.now() - recording.startedAt
-    mainLog.info(`[recording] finalized id=${recordingId} bytes=${recording.bytesWritten} duration=${durationMs}ms mime=${mimeType} -> ${recording.outputPath}`)
+    mainLog.info(`[recording] finalized id=${recordingId} bytes=${recording.bytesWritten} duration=${durationMs}ms mime=${effectiveMimeType} -> ${recording.outputPath}`)
     return {
       recordingId,
       meetingId: recording.meetingId,
@@ -122,7 +147,42 @@ export class RecordingService {
       outputPath: recording.outputPath,
       bytesWritten: recording.bytesWritten,
       durationMs,
+      mimeType: effectiveMimeType,
+      browserInstanceId: recording.browserInstanceId,
     }
+  }
+
+  /**
+   * Sela toda gravação ativa sem passar pelo renderer (quit e relaunch). Uma
+   * stream com erro é logada e pulada: uma gravação ruim não pode impedir o
+   * seal das outras.
+   */
+  async finalizeAll(): Promise<FinalizeRecordingResult[]> {
+    return this.finalizeMany([...this.recordings.keys()])
+  }
+
+  /** Mesma semântica de `finalizeAll`, restrita ao pane dono. */
+  async finalizeForInstance(browserInstanceId: string): Promise<FinalizeRecordingResult[]> {
+    const ids = [...this.recordings.values()]
+      .filter((recording) => recording.browserInstanceId === browserInstanceId)
+      .map((recording) => recording.id)
+    return this.finalizeMany(ids)
+  }
+
+  private async finalizeMany(recordingIds: string[]): Promise<FinalizeRecordingResult[]> {
+    const settled = await Promise.allSettled(recordingIds.map((id) => this.finalize(id)))
+    const results: FinalizeRecordingResult[] = []
+    settled.forEach((outcome, index) => {
+      if (outcome.status === 'fulfilled') {
+        results.push(outcome.value)
+        return
+      }
+      const reason: unknown = outcome.reason
+      mainLog.error(
+        `[recording] finalize failed id=${recordingIds[index]}: ${reason instanceof Error ? reason.message : String(reason)}`,
+      )
+    })
+    return results
   }
 
   /**
@@ -130,7 +190,7 @@ export class RecordingService {
    * (best-effort, after the stream closes) and returns the owning ids so the
    * caller can close the associated meeting record.
    */
-  abort(recordingId: string): { meetingId?: string; workspaceId: string } | null {
+  abort(recordingId: string): { meetingId?: string; workspaceId: string; browserInstanceId: string } | null {
     const recording = this.recordings.get(recordingId)
     if (!recording) return null
     this.recordings.delete(recordingId)
@@ -152,6 +212,6 @@ export class RecordingService {
       removePartialFile()
     }
     mainLog.info(`[recording] aborted id=${recordingId}; partial file removed ${recording.outputPath}`)
-    return { meetingId: recording.meetingId, workspaceId: recording.workspaceId }
+    return { meetingId: recording.meetingId, workspaceId: recording.workspaceId, browserInstanceId: recording.browserInstanceId }
   }
 }

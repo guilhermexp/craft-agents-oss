@@ -15,6 +15,8 @@ import type {
 } from '../../shared/types'
 import { generateMeetingSummaryMarkdown } from './meeting-summary-service'
 import { generateMeetingVideoAnalysisMarkdown } from './meeting-video-analysis-service'
+import { remuxWebmForSeek } from './recording-remux'
+import { getOutputLanguageName, toDeepgramLanguage } from './output-language'
 import type { BrowserPaneManager } from '../browser-pane-manager'
 import { getHermesRuntimePaths } from '../handlers/hermes-runtime'
 import { mainLog } from '../logger'
@@ -288,13 +290,32 @@ export class MeetingService {
       ? normalizeTranscriptionModel(payload.transcriptionModel ?? savedTranscriptionConfig.model, transcriptionProvider)
       : undefined
     const now = Date.now()
-    const id = randomUUID()
     const requestedBrowserInstanceId = typeof payload?.browserInstanceId === 'string'
       ? payload.browserInstanceId
       : undefined
+
+    // A página ("Gravar no Craft") e o botão da toolbar do pane passam por este
+    // mesmo start: sem dedupe, cada gravação virava dois records — o primeiro,
+    // criado pela página, nunca ganhava gravação e ficava "running" até o pane
+    // fechar. Quando o chamador aponta o pane e já existe um record craft vivo
+    // para a mesma reunião nele, o start reutiliza esse record em vez de abrir
+    // outro. Só vale com pane explícito: sem ele não há como saber que é a
+    // mesma sessão de gravação.
+    if (captureMode === 'craft' && requestedBrowserInstanceId) {
+      const live = [...state.records.values()].find((candidate) =>
+        candidate.captureMode === 'craft'
+        && candidate.code === normalized.code
+        && candidate.browserInstanceId === requestedBrowserInstanceId
+        && (candidate.status === 'starting' || candidate.status === 'running'))
+      if (live) {
+        mainLog.info(`[meetings] reusing live craft record ${live.id} for ${normalized.url} on pane ${requestedBrowserInstanceId}`)
+        return live
+      }
+    }
     const existingBrowserInstance = requestedBrowserInstanceId
       ? this.browserPaneManager.getLiveInstance(requestedBrowserInstanceId)
       : undefined
+    const id = randomUUID()
     const browserInstanceId = existingBrowserInstance?.id
       ?? this.browserPaneManager.createInstance(undefined, {
         show: true,
@@ -637,6 +658,35 @@ export class MeetingService {
     try { rmSync(this.getVideoAnalysisDir(state, id), { recursive: true, force: true }) } catch {}
   }
 
+  /**
+   * Referencia o `.webm` no record desde o primeiro byte, marcado como parcial.
+   *
+   * Um parcial referenciado não é órfão: `reconcileOrphanRecordings` preserva o
+   * arquivo, então crash, quit ou destroy de pane no meio da gravação deixam a
+   * captura no disco em vez de perdê-la no boot seguinte — e `sanitizeRecord`
+   * rebaixa o record para `stopped` mantendo `partial`, que a UI mostra como
+   * interrompida. Não muda status nem dispara transcrição/summary: selar é
+   * papel de `completeRecording`.
+   */
+  attachRecordingTarget(
+    workspaceRootPath: string,
+    meetingId: string,
+    target: { outputPath: string; mimeType: string },
+  ): void {
+    const state = this.getWorkspaceState(workspaceRootPath)
+    this.ensureLoaded(state)
+    if (!state.records.has(meetingId)) return
+    this.updateRecord(state, meetingId, {
+      recording: {
+        path: target.outputPath,
+        mimeType: target.mimeType,
+        bytesWritten: 0,
+        durationMs: 0,
+        partial: true,
+      },
+    })
+  }
+
   async completeRecording(
     workspaceId: string,
     workspaceRootPath: string,
@@ -686,14 +736,47 @@ export class MeetingService {
       }
       state.transcripts.set(meetingId, transcript)
       this.persistTranscript(state, transcript)
-      void this.transcribeRecording(workspaceId, workspaceRootPath, meetingId).catch((err) => {
-        mainLog.error(`[meetings] transcription failed for ${meetingId}: ${err instanceof Error ? err.message : String(err)}`)
-      })
     }
 
     const updatedRecord = state.records.get(meetingId)
-    if (!updatedRecord?.transcriptionProvider || !updatedRecord.transcriptionModel) {
-      void this.generateAgentVideoAnalysis(workspaceId, workspaceRootPath, meetingId, [])
+    // O remux precisa vir primeiro: ele reescreve o `.webm` (Duration + Cues),
+    // e transcrição e video-analysis leem o mesmo arquivo — renomear no meio da
+    // leitura quebraria os dois. É o que faz o player conseguir seekar; o webm
+    // cru do MediaRecorder não tem índice nenhum.
+    void (async () => {
+      await this.remuxRecordingForSeek(workspaceRootPath, meetingId)
+      if (updatedRecord?.transcriptionProvider && updatedRecord.transcriptionModel) {
+        await this.transcribeRecording(workspaceId, workspaceRootPath, meetingId).catch((err) => {
+          mainLog.error(`[meetings] transcription failed for ${meetingId}: ${err instanceof Error ? err.message : String(err)}`)
+        })
+      } else {
+        await this.generateAgentVideoAnalysis(workspaceId, workspaceRootPath, meetingId, [])
+      }
+    })().catch((err) => {
+      mainLog.error(`[meetings] post-recording pipeline failed for ${meetingId}: ${err instanceof Error ? err.message : String(err)}`)
+    })
+  }
+
+  /**
+   * Regrava o `.webm` selado com Duration + Cues para o player poder seekar e
+   * atualiza `bytesWritten` quando o tamanho muda. Nunca lança: remux é
+   * melhoria do artefato, não condição — sem ffmpeg a gravação continua válida.
+   */
+  private async remuxRecordingForSeek(workspaceRootPath: string, meetingId: string): Promise<void> {
+    const state = this.getWorkspaceState(workspaceRootPath)
+    this.ensureLoaded(state)
+    const record = state.records.get(meetingId)
+    if (!record?.recording?.path || !existsSync(record.recording.path)) return
+    try {
+      const result = await remuxWebmForSeek(record.recording.path)
+      if (result.outcome !== 'remuxed' || result.size === record.recording.bytesWritten) return
+      const current = state.records.get(meetingId)
+      if (!current?.recording) return
+      this.updateRecord(state, meetingId, {
+        recording: { ...current.recording, bytesWritten: result.size },
+      })
+    } catch (error) {
+      mainLog.warn(`[meetings] remux step failed for ${meetingId}: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -796,6 +879,7 @@ export class MeetingService {
         model: record.transcriptionModel,
         apiKey: credential.value,
         mimeType: record.recording.mimeType,
+        language: toDeepgramLanguage(i18n.resolvedLanguage),
       })
       const currentRecord = state.records.get(meetingId) ?? record
       const message = result.segments.length > 0

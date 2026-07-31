@@ -75,6 +75,13 @@ export interface MeetingRecordingMetadata {
   mimeType?: string
   bytesWritten?: number
   durationMs?: number
+  /**
+   * Verdadeiro enquanto o `.webm` tem stream aberto ou nunca foi selado
+   * (crash, quit ou destroy do pane). Referenciar o arquivo desde o primeiro
+   * byte é o que o tira da mira do sweep de órfãos; `completeRecording` limpa
+   * a marca ao selar.
+   */
+  partial?: boolean
 }
 
 export interface MeetingRecord {
@@ -1127,6 +1134,12 @@ export interface BrowserInstanceInfo {
   ownerType: 'session' | 'manual'
   ownerSessionId: string | null
   isVisible: boolean
+  /**
+   * Non-null enquanto a tela deste pane está sendo capturada (gravação de
+   * reunião). O renderer usa para sinalizar "gravando" fora da janela do pane, e
+   * sessões de agente não adotam um pane marcado.
+   */
+  captureLock?: { reason: 'meeting-recording'; since: number } | null
   agentControlActive: boolean
   themeColor: string | null
   /**

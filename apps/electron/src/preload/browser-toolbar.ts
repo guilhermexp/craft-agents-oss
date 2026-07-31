@@ -80,14 +80,18 @@ contextBridge.exposeInMainWorld('browserToolbar', {
    * Audio recording lifecycle for the browser pane.
    * The toolbar renderer records via getDisplayMedia; the main process display
    * media handler grants the active Meet BrowserView frame.
+   *
+   * `mimeType` viaja no prepare porque o main precisa dele para selar a
+   * gravação no quit, quando este renderer já não existe.
    */
-  prepareRecording: async (payload: { urlOrCode: string; workspaceId?: string }) => {
+  prepareRecording: async (payload: { urlOrCode: string; workspaceId?: string; mimeType: string }) => {
     const resolvedWorkspaceId = (payload.workspaceId || workspaceId).trim()
       || await ipcRenderer.invoke(CHANNELS.MEETINGS_RESOLVE_WORKSPACE, instanceId)
     return ipcRenderer.invoke(CHANNELS.RECORDING_PREPARE, {
       workspaceId: resolvedWorkspaceId,
       browserInstanceId: instanceId,
       urlOrCode: payload.urlOrCode,
+      mimeType: payload.mimeType,
     }) as Promise<{ recordingId: string; meetingId?: string; outputPath: string }>
   },
   appendRecordingChunk: (recordingId: string, chunk: ArrayBuffer) =>

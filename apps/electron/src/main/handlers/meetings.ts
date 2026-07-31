@@ -5,6 +5,8 @@ import { MeetingService } from '../meetings/meeting-service'
 import { RecordingService } from '../meetings/recording-service'
 import { ipcMain } from 'electron'
 import { getWorkspaceByNameOrId, getWorkspaces } from '@craft-agent/shared/config'
+import type { FinalizeRecordingResult } from '../meetings/recording-service'
+import type { BrowserPaneManager } from '../browser-pane-manager'
 
 const MEETINGS_RESOLVE_WORKSPACE = 'meetings:resolve-workspace'
 const RECORDING_PREPARE = 'meetings:recording:prepare'
@@ -26,23 +28,100 @@ let meetingService: MeetingService | null = null
 let recordingService: RecordingService | null = null
 let meetingsIpcRegistered = false
 
+/**
+ * Logger do host, injetado no registro. Os caminhos de seal exportados abaixo
+ * rodam fora do escopo de `registerMeetingHandlers` e precisam logar; importar o
+ * logger do main no topo deste módulo puxaria `electron-log` para o grafo dos
+ * testes de registro, onde `electron` é mockado.
+ */
+let hostLogger: { info: (...args: unknown[]) => void; error: (...args: unknown[]) => void } = {
+  info: () => {},
+  error: () => {},
+}
+
+/** Pane manager do host, injetado no registro pelos mesmos motivos. */
+let paneManager: BrowserPaneManager | null = null
+
+function resolveWorkspaceRoot(workspaceId: string | null | undefined): string {
+  if (!workspaceId) {
+    throw new Error('No workspace context for meetings storage')
+  }
+  const workspace = getWorkspaceByNameOrId(workspaceId)
+  if (!workspace) {
+    throw new Error(`Workspace not found: ${workspaceId}`)
+  }
+  return workspace.rootPath
+}
+
+/**
+ * Fecha o ciclo de uma gravação craft já finalizada, persistindo o resultado no
+ * meeting record. Único ponto de seal: serve o IPC de finalize e os caminhos
+ * que selam sem renderer (quit, relaunch, destroy de pane). Lança em falha de
+ * persistência para que o shutdown consiga reportar `failed` — o record segue
+ * marcado `partial`, que é a leitura correta de uma captura não selada.
+ */
+async function sealRecording(result: FinalizeRecordingResult): Promise<void> {
+  if (!result.meetingId) return
+  await meetingService!.completeRecording(
+    result.workspaceId,
+    resolveWorkspaceRoot(result.workspaceId),
+    result.meetingId,
+    {
+      outputPath: result.outputPath,
+      bytesWritten: result.bytesWritten,
+      durationMs: result.durationMs,
+      mimeType: result.mimeType,
+    },
+  )
+}
+
+async function sealResults(results: FinalizeRecordingResult[]): Promise<number> {
+  const settled = await Promise.allSettled(results.map((result) => sealRecording(result)))
+  let failures = 0
+  settled.forEach((outcome, index) => {
+    // Selou ou não, a gravação já saiu da tabela: manter o lock deixaria o pane
+    // inadotável para sempre.
+    const browserInstanceId = results[index]?.browserInstanceId
+    if (browserInstanceId) paneManager?.setCaptureLock(browserInstanceId, null)
+    if (outcome.status !== 'rejected') return
+    failures += 1
+    const reason: unknown = outcome.reason
+    hostLogger.error(
+      `[meetings] sealing recording for meeting ${results[index]?.meetingId ?? 'unknown'} failed: `
+      + (reason instanceof Error ? reason.message : String(reason)),
+    )
+  })
+  return failures
+}
+
+/**
+ * Sela toda gravação craft ativa antes do app sair ou relançar. O renderer já
+ * não tem como dar flush nesse ponto, então perde-se no máximo o último
+ * timeslice (~1s) — o resto da captura já está no disco.
+ */
+export async function shutdownCraftRecordings(): Promise<'idle' | 'sealed' | 'failed'> {
+  if (!recordingService) return 'idle'
+  const results = await recordingService.finalizeAll()
+  if (results.length === 0) return 'idle'
+  const failures = await sealResults(results)
+  return failures > 0 ? 'failed' : 'sealed'
+}
+
+/** Sela a gravação de um pane específico antes de o pane ser destruído. */
+export async function sealCraftRecordingsForInstance(browserInstanceId: string): Promise<void> {
+  if (!recordingService) return
+  await sealResults(await recordingService.finalizeForInstance(browserInstanceId))
+}
+
 export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): void {
   const { browserPaneManager, platform, windowManager } = deps
   if (!browserPaneManager) return
+  hostLogger = platform.logger
+  paneManager = browserPaneManager
 
   meetingService = meetingService ?? new MeetingService(browserPaneManager)
   recordingService = recordingService ?? new RecordingService(browserPaneManager)
 
-  const resolveWorkspaceRoot = (workspaceId: string | null | undefined): string => {
-    if (!workspaceId) {
-      throw new Error('No workspace context for meetings storage')
-    }
-    const workspace = getWorkspaceByNameOrId(workspaceId)
-    if (!workspace) {
-      throw new Error(`Workspace not found: ${workspaceId}`)
-    }
-    return workspace.rootPath
-  }
   const resolveContextWorkspaceId = (ctx: { workspaceId?: string | null; webContentsId?: number | null }): string | null | undefined => {
     return ctx.workspaceId
       ?? (typeof ctx.webContentsId === 'number' ? windowManager?.getWorkspaceForWindow(ctx.webContentsId) : undefined)
@@ -91,7 +170,7 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
       }
     })
 
-    ipcMain.handle(RECORDING_PREPARE, async (_event, payload: { workspaceId?: string; browserInstanceId: string; urlOrCode?: string }) => {
+    ipcMain.handle(RECORDING_PREPARE, async (_event, payload: { workspaceId?: string; browserInstanceId: string; urlOrCode?: string; mimeType: string }) => {
       try {
         const workspaceId = payload.workspaceId
           ?? resolveBrowserInstanceWorkspaceId(payload.browserInstanceId)
@@ -111,13 +190,30 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
         if (meeting?.status === 'error') {
           throw new Error(meeting.error || 'Could not create meeting recording record')
         }
-        return recordingService!.prepare({
+        const prepared = recordingService!.prepare({
           workspaceId,
           workspaceRoot,
           browserInstanceId: payload.browserInstanceId,
           meetingId: meeting?.id,
           urlOrCode: payload.urlOrCode,
+          mimeType: payload.mimeType,
         })
+        // Referencia o arquivo já como parcial: um crash/quit daqui em diante
+        // deixa a captura no disco em vez de virar órfã no próximo boot.
+        if (meeting?.id) {
+          meetingService!.attachRecordingTarget(workspaceRoot, meeting.id, {
+            outputPath: prepared.outputPath,
+            mimeType: payload.mimeType,
+          })
+        }
+        // Enquanto a captura roda, o pane sai do pool de adoção por sessão de
+        // agente: navegar a página não encerra as faixas, então a gravação
+        // seguiria com a tela do agente dentro do mesmo arquivo.
+        browserPaneManager.setCaptureLock(payload.browserInstanceId, {
+          reason: 'meeting-recording',
+          since: Date.now(),
+        })
+        return prepared
       } catch (err) {
         platform.logger.error('[meetings] recording prepare failed:', err)
         throw err
@@ -128,30 +224,43 @@ export function registerMeetingHandlers(server: RpcServer, deps: HandlerDeps): v
       return recordingService!.append(recordingId, chunk)
     })
 
-    ipcMain.handle(RECORDING_FINALIZE, async (_event, recordingId: string, mimeType: string) => {
-      const result = await recordingService!.finalize(recordingId, mimeType)
-      if (result.meetingId) {
-        void meetingService!.completeRecording(
-          result.workspaceId,
-          resolveWorkspaceRoot(result.workspaceId),
-          result.meetingId,
-          { outputPath: result.outputPath, bytesWritten: result.bytesWritten, durationMs: result.durationMs, mimeType },
-        ).catch((err) => {
+    ipcMain.handle(RECORDING_FINALIZE, async (_event, recordingId: string, mimeType?: string) => {
+      // Resolvido antes: se `finalize` lançar (stream em erro), não há resultado
+      // de onde tirar o pane, e um lock vazado o tornaria inadotável para sempre.
+      const lockedInstanceId = recordingService!.getBrowserInstanceId(recordingId)
+      try {
+        const result = await recordingService!.finalize(recordingId, mimeType)
+        try {
+          await sealRecording(result)
+        } catch (err) {
           platform.logger.error('[meetings] completeRecording failed:', err)
-        })
+        }
+        return result
+      } finally {
+        if (lockedInstanceId) browserPaneManager.setCaptureLock(lockedInstanceId, null)
       }
-      return result
     })
 
     ipcMain.handle(RECORDING_ABORT, (_event, recordingId: string) => {
       const aborted = recordingService!.abort(recordingId)
-      if (aborted?.meetingId) {
+      if (!aborted) return
+      browserPaneManager.setCaptureLock(aborted.browserInstanceId, null)
+      if (aborted.meetingId) {
         try {
           meetingService!.stop(aborted.workspaceId, resolveWorkspaceRoot(aborted.workspaceId), aborted.meetingId)
         } catch (err) {
           platform.logger.error('[meetings] closing meeting record after abort failed:', err)
         }
       }
+    })
+
+    // Destruir um pane (fechar de verdade, trocar/remover perfil) sela a
+    // gravação antes do teardown: o hook é fire-and-forget porque o destroy é
+    // síncrono, e o que já foi escrito está no disco.
+    browserPaneManager.setCaptureReleaseHook((browserInstanceId) => {
+      void sealCraftRecordingsForInstance(browserInstanceId).catch((err: unknown) => {
+        platform.logger.error('[meetings] sealing recording on pane destroy failed:', err)
+      })
     })
   }
 

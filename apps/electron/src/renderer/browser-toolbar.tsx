@@ -20,6 +20,8 @@ import {
   StyledDropdownMenuContent,
   StyledDropdownMenuItem,
 } from '@/components/ui/styled-dropdown'
+import { extractGoogleMeetMeetingUrl, shouldFinalizeOnMeetNavigation } from '@/lib/meet-navigation-finalize'
+import { formatRecordingElapsed } from '@/lib/recording-elapsed'
 import './index.css'
 
 // Initialize i18n before any React rendering — this entry runs in its own
@@ -64,7 +66,7 @@ declare global {
       requestProfileManagement: () => Promise<void>
       switchProfile: (profileId: string) => Promise<string | null>
       inviteHermesToMeet: (payload: { urlOrCode: string; profileId?: string }) => Promise<{ status?: string; error?: string }>
-      prepareRecording: (payload: { urlOrCode: string; workspaceId?: string }) => Promise<{ recordingId: string; meetingId?: string; outputPath: string }>
+      prepareRecording: (payload: { urlOrCode: string; workspaceId?: string; mimeType: string }) => Promise<{ recordingId: string; meetingId?: string; outputPath: string }>
       appendRecordingChunk: (recordingId: string, chunk: ArrayBuffer) => Promise<void>
       finalizeRecording: (recordingId: string, mimeType: string) => Promise<{ outputPath: string }>
       abortRecording: (recordingId: string) => Promise<void>
@@ -75,22 +77,28 @@ declare global {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                           */
-/* ------------------------------------------------------------------ */
+interface ActiveToolbarRecording {
+  id: string
+  recorder: MediaRecorder
+  /** Streams de origem (display + mic quando houver): são elas que param. */
+  sourceStreams: MediaStream[]
+  /** Contexto do mix, quando houve mais de uma faixa de áudio. */
+  audioContext: AudioContext | null
+  mimeType: string
+  pendingChunks: Set<Promise<void>>
+}
 
-const GOOGLE_MEET_PREFIX = 'https://meet.google.com/'
-
-function extractGoogleMeetMeetingUrl(value: string | undefined | null): string | null {
-  if (!value) return null
-  try {
-    const url = new URL(value)
-    if (url.hostname !== 'meet.google.com') return null
-    const match = url.pathname.toLowerCase().match(/^\/([a-z]{3}-[a-z]{4}-[a-z]{3})(?:$|[/?#])/)
-    return match ? `${GOOGLE_MEET_PREFIX}${match[1]}` : null
-  } catch {
-    const match = value.toLowerCase().match(/\b([a-z]{3}-[a-z]{4}-[a-z]{3})\b/)
-    return match ? `${GOOGLE_MEET_PREFIX}${match[1]}` : null
+/**
+ * Libera as fontes de captura. Parar a faixa mixada não bastaria: ela é um
+ * destino de `AudioContext`, e as faixas de display/mic continuariam vivas —
+ * o Meet seguiria mostrando o indicador de compartilhamento e o mic aberto.
+ */
+function stopCaptureSources(active: Pick<ActiveToolbarRecording, 'sourceStreams' | 'audioContext'>): void {
+  active.sourceStreams.forEach((stream) => {
+    stream.getTracks().forEach((track) => { track.stop() })
+  })
+  if (active.audioContext && active.audioContext.state !== 'closed') {
+    void active.audioContext.close().catch(() => { /* teardown best-effort */ })
   }
 }
 
@@ -115,7 +123,9 @@ function BrowserToolbarApp() {
   const [recordingState, setRecordingState] = useState<'idle' | 'preparing' | 'recording' | 'stopping' | 'error'>('idle')
   const [recordingError, setRecordingError] = useState<string | null>(null)
   const [activeRecordingMeetUrl, setActiveRecordingMeetUrl] = useState<string | null>(null)
-  const recordingRef = useRef<{ id: string; recorder: MediaRecorder; stream: MediaStream; mimeType: string; pendingChunks: Set<Promise<void>> } | null>(null)
+  const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null)
+  const [recordingNow, setRecordingNow] = useState<number>(() => Date.now())
+  const recordingRef = useRef<ActiveToolbarRecording | null>(null)
   const menuContentRef = useRef<HTMLDivElement | null>(null)
   const profileMenuContentRef = useRef<HTMLDivElement | null>(null)
   const anyMenuOpen = windowMenuOpen || profileMenuOpen
@@ -124,6 +134,15 @@ function BrowserToolbarApp() {
   const detectedMeetUrl = extractGoogleMeetMeetingUrl(state.url) ?? extractGoogleMeetMeetingUrl(state.title)
   const recordingMeetUrl = detectedMeetUrl ?? activeRecordingMeetUrl
   const recordingActive = recordingState === 'preparing' || recordingState === 'recording' || recordingState === 'stopping'
+
+  // Um único intervalo, vivo somente enquanto grava: o timer é indicador, a
+  // duração autoritativa sai de `RecordingService.finalize`.
+  useEffect(() => {
+    if (recordingState !== 'recording' || recordingStartedAt === null) return
+    setRecordingNow(Date.now())
+    const timer = setInterval(() => { setRecordingNow(Date.now()) }, 1000)
+    return () => { clearInterval(timer) }
+  }, [recordingState, recordingStartedAt])
 
   useEffect(() => {
     setInviteState('idle')
@@ -258,7 +277,7 @@ function BrowserToolbarApp() {
       while (active.pendingChunks.size > 0) {
         await Promise.allSettled(Array.from(active.pendingChunks))
       }
-      active.stream.getTracks().forEach((track) => track.stop())
+      stopCaptureSources(active)
       if (mode === 'finalize') {
         const result = await api?.finalizeRecording(active.id, active.mimeType)
         console.info('[browser-toolbar] recording finalized', { recordingId: active.id, outputPath: result?.outputPath })
@@ -271,8 +290,22 @@ function BrowserToolbarApp() {
       setRecordingState('idle')
       setRecordingError(null)
       setActiveRecordingMeetUrl(null)
+      setRecordingStartedAt(null)
     }
   }, [api])
+
+  // Navegar o pane NÃO encerra as faixas capturadas (medido em Electron 43): sem
+  // este sinal a gravação seguiria ativa, gravando a página nova dentro do mesmo
+  // arquivo. O `track.ended` abaixo cobre só "Stop sharing" e o teardown do frame.
+  useEffect(() => {
+    if (recordingState !== 'recording') return
+    if (!shouldFinalizeOnMeetNavigation(activeRecordingMeetUrl, state.url)) return
+    console.info('[browser-toolbar] pane left the meeting, auto-finalizing', {
+      activeRecordingMeetUrl,
+      currentUrl: state.url,
+    })
+    void stopRecording('finalize')
+  }, [activeRecordingMeetUrl, recordingState, state.url, stopRecording])
 
   const handleToggleRecording = useCallback(async () => {
     if (recordingState === 'recording') {
@@ -286,19 +319,54 @@ function BrowserToolbarApp() {
     setRecordingError(null)
     setActiveRecordingMeetUrl(detectedMeetUrl)
     let prepared: { recordingId: string; outputPath: string } | null = null
-    let stream: MediaStream | null = null
+    const sourceStreams: MediaStream[] = []
+    let audioContext: AudioContext | null = null
     try {
-      prepared = await api.prepareRecording({ urlOrCode: detectedMeetUrl })
-      stream = await navigator.mediaDevices.getDisplayMedia({
+      // O mime é escolhido antes do prepare porque o main precisa dele para
+      // selar a gravação no quit, quando este renderer já não existe.
+      const mimeTypeCandidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+      const mimeType = mimeTypeCandidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? mimeTypeCandidates[mimeTypeCandidates.length - 1]!
+      prepared = await api.prepareRecording({ urlOrCode: detectedMeetUrl, mimeType })
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
         audio: true,
       })
-      const hasVideo = stream.getVideoTracks().length > 0
-      if (!hasVideo) {
+      sourceStreams.push(displayStream)
+      const videoTrack = displayStream.getVideoTracks()[0]
+      if (!videoTrack) {
         throw new Error(t('meetings.recordingNeedsVideo'))
       }
-      const mimeTypeCandidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
-      const mimeType = mimeTypeCandidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? mimeTypeCandidates[mimeTypeCandidates.length - 1]!
+
+      // O áudio concedido é o da aba do Meet: contém os outros participantes,
+      // não a voz local — o Meet não faz playback do próprio microfone. Sem este
+      // mix a gravação sai sem quem está falando deste lado. Best-effort: mic
+      // indisponível degrada para áudio de aba em vez de abortar a gravação.
+      let micStream: MediaStream | null = null
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        sourceStreams.push(micStream)
+      } catch (micError) {
+        console.warn('[browser-toolbar] local mic unavailable, recording tab audio only', micError)
+      }
+
+      const audioTracks = [...displayStream.getAudioTracks(), ...(micStream?.getAudioTracks() ?? [])]
+      let recordedAudioTracks = audioTracks
+      if (audioTracks.length > 1) {
+        audioContext = new AudioContext()
+        const destination = audioContext.createMediaStreamDestination()
+        for (const track of audioTracks) {
+          audioContext.createMediaStreamSource(new MediaStream([track])).connect(destination)
+        }
+        recordedAudioTracks = destination.stream.getAudioTracks()
+      }
+      if (audioTracks.length === 0) {
+        // Vídeo sem áudio ainda é melhor que nada: avisa e continua, diferente da
+        // ausência de vídeo, que aborta.
+        console.warn('[browser-toolbar] no audio track captured; recording video only')
+        setRecordingError(t('meetings.recordingNoAudio'))
+      }
+
+      const stream = new MediaStream([videoTrack, ...recordedAudioTracks])
       const recorder = new MediaRecorder(stream, { mimeType })
       const recordingId = prepared.recordingId
       const pendingChunks = new Set<Promise<void>>()
@@ -322,11 +390,11 @@ function BrowserToolbarApp() {
         setRecordingError('Recorder error')
         setRecordingState('error')
       }
-      recordingRef.current = { id: recordingId, recorder, stream, mimeType, pendingChunks }
-      // Auto-stop when the shared tab/window/screen ends (user closed the Meet
-      // tab, navigated away, or clicked "Stop sharing" in the Chromium bar).
-      // The MediaStream tracks fire `ended` in all those cases; the recorder
-      // will stop emitting data so we must finalize or the .webm is lost.
+      recordingRef.current = { id: recordingId, recorder, sourceStreams, audioContext, mimeType, pendingChunks }
+      // Auto-stop when the captured surface goes away ("Stop sharing", frame
+      // teardown). Escuta as faixas de ORIGEM: a faixa mixada é um destino de
+      // AudioContext e nunca emite `ended`. Navegação para fora da reunião NÃO
+      // encerra faixa nenhuma — quem cobre isso é o efeito acima.
       const onTrackEnded = (event: Event) => {
         const target = event.target as MediaStreamTrack | null
         console.info('[browser-toolbar] recording track ended, auto-finalizing', {
@@ -336,24 +404,31 @@ function BrowserToolbarApp() {
         })
         void stopRecording('finalize')
       }
-      stream.getTracks().forEach((track) => {
+      displayStream.getTracks().forEach((track) => {
         track.addEventListener('ended', onTrackEnded, { once: true })
       })
       recorder.start(1000)
+      setRecordingStartedAt(Date.now())
       setRecordingState('recording')
-      console.info('[browser-toolbar] recording started', { recordingId, outputPath: prepared.outputPath })
+      console.info('[browser-toolbar] recording started', {
+        recordingId,
+        outputPath: prepared.outputPath,
+        audioTracks: audioTracks.length,
+        micIncluded: Boolean(micStream),
+      })
     } catch (error) {
       console.error('[browser-toolbar] start recording failed', error)
       const message = error instanceof Error ? error.message : String(error)
       setRecordingError(message)
       setRecordingState('error')
       setActiveRecordingMeetUrl(null)
-      stream?.getTracks().forEach((track) => track.stop())
+      setRecordingStartedAt(null)
+      stopCaptureSources({ sourceStreams, audioContext })
       if (prepared) {
         try { await api.abortRecording(prepared.recordingId) } catch { /* noop */ }
       }
     }
-  }, [api, detectedMeetUrl, recordingState, stopRecording])
+  }, [api, detectedMeetUrl, recordingState, stopRecording, t])
 
   useEffect(() => {
     return () => {
@@ -374,7 +449,7 @@ function BrowserToolbarApp() {
         while (active.pendingChunks.size > 0) {
           await Promise.allSettled(Array.from(active.pendingChunks))
         }
-        active.stream.getTracks().forEach((track) => track.stop())
+        stopCaptureSources(active)
         await api?.finalizeRecording(active.id, active.mimeType)
       }
       void finalize().catch((err) => {
@@ -395,8 +470,8 @@ function BrowserToolbarApp() {
 
   const inviteButtonTitle = inviteError ?? detectedMeetUrl ?? undefined
   const inviteButtonClassName = inviteState === 'error'
-    ? 'titlebar-no-drag inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 text-xs font-semibold text-destructive shadow-minimal transition-colors hover:bg-destructive/15'
-    : 'titlebar-no-drag inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/12 px-2.5 text-xs font-semibold text-emerald-700 shadow-minimal transition-colors hover:bg-emerald-500/20 disabled:cursor-default disabled:opacity-70 dark:text-emerald-300'
+    ? 'titlebar-no-drag inline-flex h-8 shrink-0 items-center rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 text-xs font-semibold text-destructive shadow-minimal transition-colors hover:bg-destructive/15'
+    : 'titlebar-no-drag inline-flex h-8 shrink-0 items-center rounded-lg border border-emerald-500/30 bg-emerald-500/12 px-2.5 text-xs font-semibold text-emerald-700 shadow-minimal transition-colors hover:bg-emerald-500/20 disabled:cursor-default disabled:opacity-70 dark:text-emerald-300'
 
   const hermesInviteButton = detectedMeetUrl ? (
     <button
@@ -406,7 +481,6 @@ function BrowserToolbarApp() {
       className={inviteButtonClassName}
       title={inviteButtonTitle}
     >
-      <Sparkles className="size-3.5" />
       {inviteState === 'starting'
         ? t('meetings.inviteHermesCalling')
         : inviteState === 'sent'
@@ -417,8 +491,9 @@ function BrowserToolbarApp() {
     </button>
   ) : null
 
+  // `tabular-nums`: o timer no label não pode fazer a largura do botão oscilar.
   const recordingButtonClassName = recordingState === 'recording'
-    ? 'titlebar-no-drag inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-red-500/50 bg-red-500/15 px-2.5 text-xs font-semibold text-red-700 shadow-minimal transition-colors hover:bg-red-500/25 dark:text-red-300'
+    ? 'titlebar-no-drag inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-red-500/50 bg-red-500/15 px-2.5 text-xs font-semibold tabular-nums text-red-700 shadow-minimal transition-colors hover:bg-red-500/25 dark:text-red-300'
     : recordingState === 'error'
       ? 'titlebar-no-drag inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 text-xs font-semibold text-destructive shadow-minimal transition-colors hover:bg-destructive/15'
       : 'titlebar-no-drag inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border/70 bg-foreground/[0.04] px-2.5 text-xs font-semibold text-foreground shadow-minimal transition-colors hover:bg-foreground/[0.08] disabled:cursor-default disabled:opacity-70'
@@ -437,7 +512,11 @@ function BrowserToolbarApp() {
         : recordingState === 'stopping'
           ? t('meetings.recordSaving')
           : recordingState === 'recording'
-            ? t('meetings.recordStop')
+            ? (recordingStartedAt === null
+              ? t('meetings.recordStop')
+              : t('meetings.recordStopWithElapsed', {
+                elapsed: formatRecordingElapsed(recordingNow - recordingStartedAt),
+              }))
             : recordingState === 'error'
               ? t('meetings.recordRetry')
               : t('meetings.recordStart')}

@@ -26,6 +26,8 @@ export interface BrowserInstanceSnapshot {
   ownerType: 'session' | 'manual'
   ownerSessionId: string | null
   isVisible: boolean
+  /** Non-null enquanto a tela do pane está sob captura (gravação de reunião). */
+  captureLock?: { reason: 'meeting-recording'; since: number } | null
   title: string
   currentUrl: string
 }

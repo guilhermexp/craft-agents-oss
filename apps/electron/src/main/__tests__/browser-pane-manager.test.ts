@@ -551,6 +551,61 @@ describe('BrowserPaneManager', () => {
     expect(await manager.listInstances()).toHaveLength(1)
   })
 
+  it('does not adopt a capture-locked manual window', async () => {
+    manager.createInstance('recording-1')
+    manager.setCaptureLock('recording-1', { reason: 'meeting-recording', since: Date.now() })
+
+    const id = await manager.createForSession('sess-no-steal')
+
+    // A janela em gravação segue manual e intocada; a sessão ganha outra.
+    expect(id).not.toBe('recording-1')
+    expect(await manager.listInstances()).toHaveLength(2)
+    const recording = (await manager.listInstances()).find(info => info.id === 'recording-1')
+    expect(recording?.ownerType).toBe('manual')
+    expect(recording?.boundSessionId).toBeNull()
+    expect(recording?.captureLock).toEqual({ reason: 'meeting-recording', since: expect.any(Number) })
+  })
+
+  it('unbinds a capture-locked bound window and gives the session a new one', async () => {
+    const bound = await manager.createForSession('sess-locked')
+    manager.setCaptureLock(bound, { reason: 'meeting-recording', since: Date.now() })
+
+    const next = await manager.createForSession('sess-locked')
+
+    expect(next).not.toBe(bound)
+    const infos = await manager.listInstances()
+    const previous = infos.find(info => info.id === bound)
+    expect(previous?.boundSessionId).toBeNull()
+    expect(previous?.ownerType).toBe('manual')
+    // ownerSessionId é preservado: a janela continua rastreável à sessão original.
+    expect(previous?.ownerSessionId).toBe('sess-locked')
+    expect(infos.find(info => info.id === next)?.boundSessionId).toBe('sess-locked')
+  })
+
+  it('clearing the capture lock makes the window adoptable again', async () => {
+    manager.createInstance('recording-2')
+    manager.setCaptureLock('recording-2', { reason: 'meeting-recording', since: Date.now() })
+    manager.setCaptureLock('recording-2', null)
+
+    expect(manager.getCaptureLock('recording-2')).toBeNull()
+    expect(await manager.createForSession('sess-after-unlock')).toBe('recording-2')
+  })
+
+  it('fires the capture release hook when a locked pane is destroyed', () => {
+    const released: string[] = []
+    manager.setCaptureReleaseHook((instanceId) => { released.push(instanceId) })
+
+    manager.createInstance('recording-3')
+    manager.createInstance('idle-1')
+    manager.setCaptureLock('recording-3', { reason: 'meeting-recording', since: Date.now() })
+
+    manager.destroyInstance('idle-1')
+    expect(released).toEqual([])
+
+    manager.destroyInstance('recording-3')
+    expect(released).toEqual(['recording-3'])
+  })
+
   it('navigate normalizes hostnames to https', async () => {
     manager.createInstance('nav-1')
     await manager.navigate('nav-1', 'example.com')
