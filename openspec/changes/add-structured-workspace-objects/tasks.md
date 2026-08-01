@@ -435,8 +435,9 @@ Lote corretivo 5 de Phase B (2026-08-01): o RED de conteúdo mostrou quatro
 prompts informais no bloco workspaceObject alemão (`Wähle`, `Füge`, `Gib`) e
 quatro no húngaro (`Válassz`, `Adj`) em contraste com o registro formal já
 usado nos field editors. O GREEN altera somente essas oito linhas U5/U6 para
-formas formais e adiciona expectativa exata independente da key parity. O teste
-focado passou 1/1 (2 expects), a suíte locale focada passou 24/24 (41 expects),
+formas formais e adiciona assertions de registro independentes da key parity,
+sem congelar wording ou pontuação completos. O teste
+focado passou 1/1 (16 expects), a suíte locale focada passou 24/24 (55 expects),
 paridade oficial confirmou sete locales com 1.803 keys, e `typecheck:all`,
 OpenSpec strict e `git diff --check` ficaram verdes. 7.5 permanece desmarcado.
 
@@ -450,6 +451,15 @@ payload projetado byte a byte e mantêm `MAX(version)=3` sem marker v4. O teste
 focado passou 1/1 (11 expects), a suíte do domínio passou 57/57 em cinco
 arquivos (172 expects), e `typecheck:all`, paridade i18n, tool contracts,
 OpenSpec strict e `git diff --check` ficaram verdes. 7.5 permanece desmarcado.
+
+Re-review corretivo 5.1 de Phase B (2026-08-01): o teste de conteúdo do Lote 5
+congelava oito frases completas. A cobertura agora permanece nas mesmas keys,
+rejeita os tokens informais alemães/húngaros, exige sinais de registro formal e
+usa fixtures das formas antigas para provar a rejeição, sem fixar wording ou
+pontuação. Nenhum locale foi alterado. O teste focado passou 1/1 (16 expects).
+A suíte locale focada passou 24/24 (55 expects), e `typecheck:all`, paridade
+i18n, tool contracts, OpenSpec strict e `git diff --check` ficaram verdes. 7.5
+permanece desmarcado.
 
 ## 8. Phase C — U7: discovery e health
 

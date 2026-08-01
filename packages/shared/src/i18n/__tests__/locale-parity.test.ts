@@ -40,6 +40,19 @@ function pluralBase(key: string): string {
   return key.replace(/_(?:zero|one|two|few|many|other)$/, "");
 }
 
+const workspaceObjectFormalActionKeys = [
+  "chat.workspaceObjectAdapterMissingField",
+  "chat.workspaceObjectAdapterNoCompatibleField",
+  "chat.workspaceObjectFilterFieldRequired",
+  "chat.workspaceObjectViewNameRequired",
+] as const;
+
+function usesFormalWorkspaceObjectRegister(lang: "de" | "hu", value: string): boolean {
+  if (lang === "de") return !/\b(?:Wähle|Füge|Gib)\b/.test(value) && /\bSie\b/.test(value);
+  return !/\b(?:Válassz|válassz|Adj|adj)\b/.test(value)
+    && /\b(?:Válasszon|válasszon|Adjon|adjon)\b/.test(value);
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -58,18 +71,18 @@ describe("i18n locale parity", () => {
   });
 
   it("uses the established formal register for German and Hungarian workspace-object actions", () => {
-    expect(locales.de).toMatchObject({
-      "chat.workspaceObjectAdapterMissingField": "Wählen Sie ein kompatibles Feld für diese Ansicht.",
-      "chat.workspaceObjectAdapterNoCompatibleField": "Fügen Sie vor der Nutzung dieser Ansicht ein kompatibles Feld hinzu.",
-      "chat.workspaceObjectFilterFieldRequired": "Wählen Sie zuerst ein Feld aus.",
-      "chat.workspaceObjectViewNameRequired": "Geben Sie vor dem Speichern einen Namen ein.",
-    });
-    expect(locales.hu).toMatchObject({
-      "chat.workspaceObjectAdapterMissingField": "Válasszon kompatibilis mezőt a nézet beállításához.",
-      "chat.workspaceObjectAdapterNoCompatibleField": "Adjon hozzá kompatibilis mezőt a nézet használata előtt.",
-      "chat.workspaceObjectFilterFieldRequired": "Előbb válasszon mezőt.",
-      "chat.workspaceObjectViewNameRequired": "Adjon nevet a nézetnek mentés előtt.",
-    });
+    for (const lang of ["de", "hu"] as const) {
+      for (const key of workspaceObjectFormalActionKeys) {
+        expect(usesFormalWorkspaceObjectRegister(lang, locales[lang]?.[key] ?? ""), `${lang}:${key}`).toBe(true);
+      }
+    }
+
+    for (const oldGerman of ["Wähle ein Feld.", "Füge ein Feld hinzu.", "Wähle zuerst ein Feld.", "Gib einen Namen ein."]) {
+      expect(usesFormalWorkspaceObjectRegister("de", oldGerman)).toBe(false);
+    }
+    for (const oldHungarian of ["Válassz mezőt.", "Adj hozzá mezőt.", "Előbb válassz mezőt.", "Adj nevet."]) {
+      expect(usesFormalWorkspaceObjectRegister("hu", oldHungarian)).toBe(false);
+    }
   });
 
   // Key parity — run for each non-EN locale

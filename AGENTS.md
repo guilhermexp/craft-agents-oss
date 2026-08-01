@@ -168,7 +168,8 @@ The Phase A local-first object contract is tracked by
   the SWR payload reaches that revision and confirms the canonical value. Busy
   field edits use `chat.workspaceObjectSavingField`, not the saved-view label.
   German and Hungarian action prompts added by U5/U6 use the formal register
-  consistently (`Sie` forms in German and `-jon/-jen` forms in Hungarian).
+  consistently (`Sie` forms in German and polite third-person imperatives in
+  Hungarian).
   Relation option failures use stable codes (`invalid-response`,
   `stale-snapshot`, `changed-while-loading`, `transport`); render translated
   primary copy and expose only optional transport detail as secondary text.
