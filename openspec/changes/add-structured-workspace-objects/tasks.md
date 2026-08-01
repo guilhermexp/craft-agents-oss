@@ -86,6 +86,15 @@ com status `ready`; a janela Electron recebeu o evento sem reload e exibiu uma
 única entrada `Ana / Active`. Os processos de teste encerraram com teardown dos
 watchers e recursos do workspace.
 
+Regressão MCP SDK de 6.4 (2026-08-01):
+`packages/session-mcp-server/src/workspace-objects-schema.test.ts` valida com o
+AJV do SDK que o `outputSchema` publicado aceita o `structuredContent` real sem
+exigir o envelope interno `content`. Após rebuild de `session-mcp-server`, um
+`Client` oficial com `StdioClientTransport` listou 30 tools, observou
+`workspace_objects` com raiz `type: object` e sete branches, e executou via
+`client.callTool()` `define-object` na revisão 1, `upsert-entries` na revisão 2
+e `get-object` com a entry `Ana / Active`, todos sem bypass de validação.
+
 Artefato rastreável de 6.4: `docs/artifacts/structured-workspace-objects-phase-a/`
 preserva o roteiro, o payload observado e as capturas do Electron real para a
 revisão 2 → 3, troca sem vazamento para o workspace de controle, restauração da

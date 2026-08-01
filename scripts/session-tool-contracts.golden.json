@@ -76,63 +76,7 @@
     },
     "name": "automation_tool",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -166,63 +110,7 @@
     },
     "name": "browser_tool",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "allow"
@@ -340,63 +228,7 @@
     },
     "name": "call_llm",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
@@ -434,63 +266,7 @@
     },
     "name": "channel_dispatch",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -528,63 +304,7 @@
     },
     "name": "config_validate",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
@@ -606,63 +326,7 @@
     },
     "name": "get_session_info",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
@@ -684,63 +348,7 @@
     },
     "name": "list_background_tasks",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
@@ -762,63 +370,7 @@
     },
     "name": "list_messaging_channels",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
@@ -865,63 +417,7 @@
     },
     "name": "list_sessions",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
@@ -972,63 +468,7 @@
     },
     "name": "meeting_tool",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -1075,63 +515,7 @@
     },
     "name": "memory_recall",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
@@ -1197,63 +581,7 @@
     },
     "name": "memory_store",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -1281,63 +609,7 @@
     },
     "name": "mermaid_validate",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
@@ -1373,63 +645,7 @@
     },
     "name": "render_template",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "allow"
@@ -1480,63 +696,7 @@
     },
     "name": "script_sandbox",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "allow"
@@ -1586,63 +746,7 @@
     },
     "name": "send_agent_message",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -1666,63 +770,7 @@
     },
     "name": "send_developer_feedback",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "allow"
@@ -1753,63 +801,7 @@
     },
     "name": "set_session_labels",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -1837,63 +829,7 @@
     },
     "name": "set_session_status",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -1917,63 +853,7 @@
     },
     "name": "skill_validate",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
@@ -2045,63 +925,7 @@
     },
     "name": "source_credential_prompt",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -2125,63 +949,7 @@
     },
     "name": "source_google_oauth_trigger",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -2205,63 +973,7 @@
     },
     "name": "source_microsoft_oauth_trigger",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -2285,63 +997,7 @@
     },
     "name": "source_oauth_trigger",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -2365,63 +1021,7 @@
     },
     "name": "source_slack_oauth_trigger",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -2449,63 +1049,7 @@
     },
     "name": "source_test",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "allow"
@@ -2606,63 +1150,7 @@
     },
     "name": "spawn_session",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -2686,63 +1174,7 @@
     },
     "name": "SubmitPlan",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "allow"
@@ -2789,63 +1221,7 @@
     },
     "name": "transform_data",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "allow"
@@ -2871,63 +1247,7 @@
     },
     "name": "unbind_messaging_channel",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -2972,63 +1292,7 @@
     },
     "name": "update_user_preferences",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -3332,67 +1596,12 @@
           ],
           "type": "object"
         }
-      ]
+      ],
+      "type": "object"
     },
     "name": "workspace_objects",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"

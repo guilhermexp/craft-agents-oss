@@ -1025,12 +1025,20 @@ export function toJsonSchemaToolDef(def: SessionToolDef, prefix = ''): JsonSchem
   // Explicit `as any` avoids TS2589 ("type instantiation is excessively deep")
   // caused by zodToJsonSchema inferring deep generic chains from union schemas.
   const inputSchema = zodToJsonSchema(def.inputSchema as any, { $refStrategy: 'none' }) as Record<string, unknown>;
-  const outputSchema = zodToJsonSchema(def.outputSchema as any, { $refStrategy: 'none' }) as Record<string, unknown>;
+  const outputEnvelopeSchema = zodToJsonSchema(def.outputSchema as any, { $refStrategy: 'none' }) as Record<string, unknown>;
+  const outputProperties = outputEnvelopeSchema.properties as Record<string, unknown> | undefined;
+  const structuredContentSchema = outputProperties?.structuredContent;
+  // MCP validates outputSchema against structuredContent, not the full ToolResult envelope.
+  if (!structuredContentSchema || typeof structuredContentSchema !== 'object' || Array.isArray(structuredContentSchema)) {
+    throw new Error(`Session tool '${def.name}' output schema must declare structuredContent`);
+  }
+  const outputSchema = { ...structuredContentSchema } as Record<string, unknown>;
   // Strip metadata not needed by MCP/Pi consumers
   delete inputSchema.$schema;
   delete inputSchema.additionalProperties;
   delete outputSchema.$schema;
-  delete outputSchema.additionalProperties;
+  // MCP Tool input schemas require an object root; Zod unions emit only anyOf.
+  inputSchema.type = 'object';
   return {
     name: prefix + def.name,
     apiVersion: def.apiVersion,
