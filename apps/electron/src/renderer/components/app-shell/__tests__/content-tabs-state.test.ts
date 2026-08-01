@@ -211,7 +211,27 @@ describe('content tabs state', () => {
     };
 
     const retargeted = contentTabsReducer(state, { type: 'retarget', id: contentTabId(source), target });
+    const ids = retargeted.tabs.map(tab => tab.id);
 
+    expect(retargeted.tabs).toHaveLength(3);
+    expect(ids).not.toContain(contentTabId(source));
+    expect(ids).not.toContain(contentTabId(destinationPreview));
+    expect(ids.filter(id => id === contentTabId(target))).toHaveLength(1);
+    expect(retargeted.tabs.find(tab => tab.id === contentTabId(target))).toMatchObject({
+      target,
+      mode: 'preview',
+      pinned: false,
+    });
+    expect(retargeted.tabs.find(tab => tab.id === contentTabId(destinationPermanent))).toMatchObject({
+      target: destinationPermanent,
+      mode: 'permanent',
+      pinned: false,
+    });
+    expect(retargeted.tabs.find(tab => tab.id === contentTabId(destinationPinned))).toMatchObject({
+      target: destinationPinned,
+      mode: 'permanent',
+      pinned: true,
+    });
     expect(retargeted.activeId).toBe(contentTabId(target));
   });
 });
