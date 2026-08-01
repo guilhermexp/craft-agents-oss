@@ -64,9 +64,10 @@ export class WorkspaceObjectRepository {
     if (currentVersion < 2) db.runSql(WORKSPACE_OBJECT_SCHEMA_V2);
     const repository = new WorkspaceObjectRepository(db, databasePath);
     const migratedVersion = (db.prepare('SELECT MAX(version) AS version FROM workspace_object_schema_version').get() as VersionRow | undefined)?.version ?? 0;
-    if (migratedVersion < 3) {
+    if (migratedVersion < WORKSPACE_OBJECT_SCHEMA_VERSION) {
       try {
-        repository.migrateLegacySavedViews();
+        if (migratedVersion < 3) repository.migrateLegacySavedViews(3);
+        if (migratedVersion < 4) repository.migrateLegacySavedViews(4);
       } catch (error) {
         repository.close();
         throw error;
@@ -313,7 +314,7 @@ export class WorkspaceObjectRepository {
     }
   }
 
-  private migrateLegacySavedViews(): void {
+  private migrateLegacySavedViews(targetVersion = WORKSPACE_OBJECT_SCHEMA_VERSION): void {
     this.transaction(() => {
       const rows = this.db.prepare('SELECT id, object_id, name, config_json FROM workspace_object_saved_views')
         .all() as Array<{ id: string; object_id: string; name: string; config_json: string }>;
@@ -322,7 +323,10 @@ export class WorkspaceObjectRepository {
         let config: unknown = {};
         try { config = JSON.parse(row.config_json); } catch { /* Fall back per row below. */ }
         const strict = WorkspaceObjectSavedViewSchema.safeParse({ id: row.id, name: row.name, config });
-        if (strict.success) continue;
+        if (
+          strict.success
+          && Buffer.byteLength(JSON.stringify(strict.data.config), 'utf8') <= WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES
+        ) continue;
         try {
           const normalized = normalizeLegacyWorkspaceObjectSavedView({
             id: row.id,
@@ -344,7 +348,8 @@ export class WorkspaceObjectRepository {
         const payload = buildWorkspaceObjectPayload(this.db, objectId);
         if (payload) storeWorkspaceObjectPayload(this.db, payload);
       }
-      this.db.prepare('INSERT OR IGNORE INTO workspace_object_schema_version(version) VALUES (3)').run();
+      this.db.prepare('INSERT OR IGNORE INTO workspace_object_schema_version(version) VALUES (?)')
+        .run(targetVersion);
     });
   }
 

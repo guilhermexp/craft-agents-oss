@@ -399,6 +399,16 @@ active caller sobrevivente. A matriz afetada passou 112/112 em dez arquivos
 (370 expects), com `typecheck:all`, tool contracts, OpenSpec strict e
 `git diff --check` verdes. 7.5 permanece desmarcado.
 
+Lote corretivo 3.1 de Phase B (2026-08-01): dois REDs focados provaram que uma
+config strict v1 oversized retornava com 64.135 bytes e que um workspace já
+marcado como v3 não executava nova correção. O GREEN limita o early return do
+normalizador a configs estritas dentro do budget e adiciona migration v4 para
+reavaliar, persistir e reprojetar rows oversized, mantendo rows estritas válidas
+dentro do limite sem rewrite. Os RED/GREEN focados passaram 2/2 (13 expects), a
+suíte do domínio passou 56/56 em cinco arquivos (153 expects), e
+`typecheck:all`, paridade i18n, tool contracts, OpenSpec strict e
+`git diff --check` ficaram verdes. 7.5 permanece desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

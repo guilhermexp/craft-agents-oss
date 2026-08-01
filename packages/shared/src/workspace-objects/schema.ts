@@ -1,4 +1,4 @@
-export const WORKSPACE_OBJECT_SCHEMA_VERSION = 3;
+export const WORKSPACE_OBJECT_SCHEMA_VERSION = 4;
 
 export const WORKSPACE_OBJECT_SCHEMA_V1 = `
 CREATE TABLE IF NOT EXISTS workspace_object_schema_version (

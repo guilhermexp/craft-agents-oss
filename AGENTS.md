@@ -148,6 +148,10 @@ The Phase A local-first object contract is tracked by
   legacy saved views so it cannot overwrite a concurrent canonical update. A
   normalized legacy config must fit the 64,000-byte UTF-8 limit after JSON
   escaping and the full config wrapper so the migrated view can be resaved.
+  Migration v4 rechecks strict v1 rows that v3 previously accepted without a
+  byte-budget check: rows already within budget remain unchanged, while an
+  oversized row is normalized, persisted and projected again before v4 is
+  marked complete.
   `query-object` evaluates the complete canonical
   snapshot before bounding its response to 200 entries and reports
   `totalEntries` plus `truncated`; serialized relation labels are limited to

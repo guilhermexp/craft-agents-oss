@@ -5,7 +5,11 @@ import { join } from 'node:path';
 import { openSQLite } from '../../memory/sqlite-driver.ts';
 import { WORKSPACE_OBJECT_SCHEMA_V1 } from '../schema.ts';
 import { WorkspaceObjectRepository } from '../storage.ts';
-import { DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW, normalizeLegacyWorkspaceObjectSavedView } from '../view-schema.ts';
+import {
+  DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW,
+  normalizeLegacyWorkspaceObjectSavedView,
+  WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES,
+} from '../view-schema.ts';
 
 const roots: string[] = [];
 
@@ -69,6 +73,32 @@ describe('WorkspaceObjectRepository', () => {
     repository.defineObject({ id: 'object_legacy', slug: 'legacy', name: 'Legacy', fields: [] });
     expect(() => repository.upsertSavedView('object_legacy', normalized)).not.toThrow();
     repository.close();
+  });
+
+  test('rebudgets strict v1 config only when its final UTF-8 encoding exceeds the storage limit', () => {
+    const withinBudget = {
+      id: 'view_strict_small',
+      name: 'Strict small',
+      config: {
+        ...DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW,
+        presentation: { adapter: 'gallery' as const, settings: { density: 'compact' } },
+      },
+    };
+    expect(normalizeLegacyWorkspaceObjectSavedView(withinBudget)).toEqual(withinBudget);
+
+    const oversized = {
+      id: 'view_strict_oversized',
+      name: 'Strict oversized',
+      config: {
+        ...DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW,
+        presentation: { adapter: 'table' as const, settings: { note: '😀'.repeat(16_000) } },
+      },
+    };
+    const normalized = normalizeLegacyWorkspaceObjectSavedView(oversized);
+
+    expect(Buffer.byteLength(JSON.stringify(oversized.config), 'utf8')).toBeGreaterThan(WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES);
+    expect(Buffer.byteLength(JSON.stringify(normalized.config), 'utf8')).toBeLessThanOrEqual(WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES);
+    expect(normalized).not.toEqual(oversized);
   });
 
   test('initializes idempotently and preserves typed fields and stable ids', () => {
@@ -138,7 +168,7 @@ describe('WorkspaceObjectRepository', () => {
 
     const verification = openSQLite(databasePath);
     expect(verification.prepare('SELECT version FROM workspace_object_schema_version ORDER BY version').all()).toEqual([
-      { version: 1 }, { version: 2 }, { version: 3 },
+      { version: 1 }, { version: 2 }, { version: 3 }, { version: 4 },
     ]);
     expect(verification.prepare(`SELECT object_id, caller_id FROM workspace_object_fields
       ORDER BY object_id`).all()).toEqual([
@@ -312,8 +342,55 @@ describe('WorkspaceObjectRepository', () => {
     const persisted = openSQLite(path);
     const row = persisted.prepare('SELECT config_json FROM workspace_object_saved_views WHERE id = ?').get('view_seed') as { config_json: string };
     expect(JSON.parse(row.config_json)).toMatchObject({ schemaVersion: 1, search: 'legacy' });
-    expect(persisted.prepare('SELECT MAX(version) AS version FROM workspace_object_schema_version').get()).toEqual({ version: 3 });
+    expect(persisted.prepare('SELECT MAX(version) AS version FROM workspace_object_schema_version').get()).toEqual({ version: 4 });
     persisted.close();
+  });
+
+  test('reopens a v3 database by rebudgeting an oversized strict v1 saved view', () => {
+    const root = makeRoot();
+    const repository = WorkspaceObjectRepository.open(root);
+    repository.defineObject({ id: 'object_tasks', slug: 'tasks', name: 'Tasks', fields: [] });
+    repository.upsertSavedView('object_tasks', {
+      id: 'view_seed', name: 'Seed', config: DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW,
+    });
+    repository.close();
+
+    const path = join(root, 'objects', 'objects.sqlite');
+    const oversizedConfig = {
+      ...DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW,
+      presentation: { adapter: 'table' as const, settings: { note: '😀'.repeat(16_000) } },
+    };
+    const setup = openSQLite(path);
+    setup.prepare('UPDATE workspace_object_saved_views SET config_json = ? WHERE id = ?')
+      .run(JSON.stringify(oversizedConfig), 'view_seed');
+    setup.prepare('DELETE FROM workspace_object_schema_version WHERE version > 3').run();
+    setup.prepare('INSERT OR IGNORE INTO workspace_object_schema_version(version) VALUES (3)').run();
+    expect(setup.prepare('SELECT MAX(version) AS version FROM workspace_object_schema_version').get()).toEqual({ version: 3 });
+    setup.close();
+
+    const reopened = WorkspaceObjectRepository.open(root);
+    const savedView = reopened.getObject('object_tasks')?.savedViews.find(view => view.id === 'view_seed');
+    expect(savedView).toBeDefined();
+    expect(Buffer.byteLength(JSON.stringify(savedView?.config), 'utf8')).toBeLessThanOrEqual(WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES);
+    expect(typeof savedView?.config.presentation.settings.legacyConfig).toBe('string');
+
+    const migrated = openSQLite(path);
+    const migratedRow = migrated.prepare('SELECT config_json FROM workspace_object_saved_views WHERE id = ?')
+      .get('view_seed') as { config_json: string };
+    expect(Buffer.byteLength(migratedRow.config_json, 'utf8')).toBeLessThanOrEqual(WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES);
+    expect(migrated.prepare('SELECT MAX(version) AS version FROM workspace_object_schema_version').get()).toEqual({ version: 4 });
+    migrated.close();
+
+    expect(() => reopened.upsertSavedView('object_tasks', savedView!)).not.toThrow();
+    reopened.close();
+
+    const verification = openSQLite(path);
+    const row = verification.prepare('SELECT config_json FROM workspace_object_saved_views WHERE id = ?')
+      .get('view_seed') as { config_json: string };
+    expect(Buffer.byteLength(row.config_json, 'utf8')).toBeLessThanOrEqual(WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES);
+    expect(verification.prepare('SELECT MAX(version) AS version FROM workspace_object_schema_version').get())
+      .toEqual({ version: 4 });
+    verification.close();
   });
 
   test('rechecks legacy saved views after acquiring the migration writer lock', async () => {
@@ -400,7 +477,7 @@ describe('WorkspaceObjectRepository', () => {
     reopened.close();
 
     const verification = openSQLite(path);
-    expect(verification.prepare('SELECT MAX(version) AS version FROM workspace_object_schema_version').get()).toEqual({ version: 3 });
+    expect(verification.prepare('SELECT MAX(version) AS version FROM workspace_object_schema_version').get()).toEqual({ version: 4 });
     verification.close();
   });
 

@@ -144,7 +144,10 @@ resolver relation labels por stable ID e somente confirmar sucesso após commit.
 Migration v3 SHALL adquirir o writer lock antes de ler e normalizar legacy
 saved views, reavaliando updates concorrentes sob a mesma transação. O config
 normalizado MUST ocupar no máximo 64.000 bytes UTF-8 após JSON escaping e
-wrapper completo e MUST poder ser salvo novamente. Filtros de
+wrapper completo e MUST poder ser salvo novamente. Migration v4 SHALL reavaliar
+rows estritas v1 já marcadas como v3: uma config dentro do limite MUST
+permanecer inalterada e uma config oversized MUST ser reorçada, persistida e
+reprojetada antes do marker v4. Filtros de
 relation SHALL comparar stable ID e label corrente, usando OR para operadores
 positivos e AND para operadores negados.
 `query-object` SHALL avaliar o snapshot canônico completo antes de limitar a
@@ -181,6 +184,20 @@ locales, distinta da key de salvar view.
 - **GIVEN** um config legacy com Unicode multibyte e caracteres escapáveis acima do limite
 - **WHEN** migration v3 o normaliza
 - **THEN** o JSON final completo ocupa no máximo 64.000 bytes UTF-8, não termina em surrogate dividido e pode ser salvo novamente
+- **Test:** `unit`
+
+#### Scenario: Migration v4 recupera strict v1 oversized já marcado
+
+- **GIVEN** um workspace com marker v3 e uma saved view estrita v1 cujo JSON UTF-8 excede 64.000 bytes
+- **WHEN** o repository reabre sob schema v4
+- **THEN** a row e a projeção são reorçadas para no máximo 64.000 bytes, o resave passa e o marker avança para v4
+- **Test:** `integration`
+
+#### Scenario: Normalização preserva strict v1 dentro do budget
+
+- **GIVEN** uma saved view estrita v1 cujo JSON UTF-8 já cabe no limite
+- **WHEN** o normalizador avalia a view
+- **THEN** id, nome e config permanecem inalterados
 - **Test:** `unit`
 
 #### Scenario: Relation options reutilizam a regra compartilhada de label

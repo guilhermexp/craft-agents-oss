@@ -178,7 +178,9 @@ export function normalizeLegacyWorkspaceObjectSavedView(view: {
   config: Record<string, unknown>
 }): WorkspaceObjectSavedView {
   const strict = WorkspaceObjectSavedViewSchema.safeParse(view)
-  if (strict.success) return strict.data
+  if (strict.success && serializedConfigBytes(strict.data.config) <= WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES) {
+    return strict.data
+  }
   let serializedLegacy = '{}'
   try {
     serializedLegacy = JSON.stringify(view.config) ?? '{}'

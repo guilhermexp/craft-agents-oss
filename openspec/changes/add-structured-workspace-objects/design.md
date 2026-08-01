@@ -147,6 +147,10 @@ views, de modo que uma atualização canônica concorrente seja reavaliada sob o
 writer lock em vez de sobrescrita. A normalização mede o JSON final em bytes
 UTF-8, incluindo escaping e wrapper, e corta `legacyConfig` sem dividir surrogate
 pair para que a view migrada permaneça resavável sob o limite de 64.000 bytes.
+A migration v4 fecha o gap de rows já estritas em v1 que a v3 pulava antes da
+medição: reabre workspaces marcados como v3, mantém configs estritas dentro do
+budget sem rewrite e reorça/persiste/reprojeta somente as que excedem 64.000
+bytes antes de gravar o novo marker.
 Sort usa a ordem canônica da entry como
 desempate; relation values continuam IDs e recebem labels dos payloads
 relacionados somente na leitura. Filtros relation comparam ID estável e label:
