@@ -357,7 +357,9 @@ Revision e opções são lidas no mesmo snapshot SQLite, inclusive quando
 revisions antes de montar `relationLabels`, recusando um lote inconsistente.
 No Desktop, mismatch concorrente ou rejeição de transporte no load-more não
 escapa pelo updater nem pela promise: a página canônica coerente é preservada,
-um erro recuperável é exibido e o retry recarrega a primeira página.
+um erro recuperável é exibido e o retry recarrega a primeira página mais todos
+os IDs atualmente referenciados em batches de até 200, sob a mesma revision.
+Preview inicial e recovery usam o mesmo helper para não divergir.
 
 O alvo da tab agora inclui o `viewId` salvo, é retargetado somente após a view
 aparecer no payload canônico e recebe uma key por objeto/view; isso impede

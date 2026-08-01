@@ -220,6 +220,16 @@ mudança no contrato público da tool, portanto golden/tool contracts não foram
 regenerados. U6, 7.3, 7.4, smoke/auditoria de Phase B e 7.5 continuam não
 iniciados e desmarcados.
 
+Residual final U5 7.1/7.2 (2026-08-01): o RED observou que o retry fazia apenas
+uma request e aceitava páginas de revisions diferentes, perdendo labels e IDs
+válidos acima da primeira página de 200. O GREEN extrai o lookup inicial para
+um helper compartilhado com a table e refaz first-page mais todos os IDs
+referenciados em batches de até 200. O cache só é substituído depois que todas
+as páginas concordam na revision; transporte ou mismatch preservam o snapshot
+anterior com erro recuperável. As suítes focadas de UI/relation passaram 51/51
+(143 expects), com typechecks shared e Electron verdes. U6, 7.3, 7.4, smoke e
+7.5 permanecem não iniciados e desmarcados.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

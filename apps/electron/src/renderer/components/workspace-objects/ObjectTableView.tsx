@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button'
 import { DataTable } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
 import { ObjectFieldEditor, type ObjectRelationOption } from './ObjectFieldEditor'
+import { collectReferencedRelationEntryIds, loadReferencedRelationOptions } from './relation-options'
 
 type MutateWorkspaceObject = (action: WorkspaceObjectAction) => Promise<WorkspaceObjectServiceResult>
 export interface RelationOptionPage {
@@ -58,8 +59,15 @@ export function appendRelationOptionPage(current: RelationOptionPage, incoming: 
 export async function requestRelationOptionPage(
   action: Extract<WorkspaceObjectAction, { action: 'list-relation-options' }>,
   mutate: MutateWorkspaceObject,
+  referencedIds?: string[],
 ): Promise<RelationOptionLoadResult> {
   try {
+    if (referencedIds) {
+      return {
+        status: 'success',
+        page: await loadReferencedRelationOptions(action.objectId, referencedIds, mutate),
+      }
+    }
     const result = await mutate(action)
     if (!('relationOptions' in result)) return { status: 'error', message: 'Invalid relation options response' }
     return {
@@ -75,9 +83,13 @@ export function applyRelationOptionLoadResult(
   state: RelationOptionViewState,
   relationObjectId: string,
   result: RelationOptionLoadResult,
+  mode: 'append' | 'replace' = 'append',
 ): RelationOptionViewState {
   if (result.status === 'error') {
     return { ...state, error: { relationObjectId, message: result.message } }
+  }
+  if (mode === 'replace') {
+    return { pages: { ...state.pages, [relationObjectId]: result.page }, error: null }
   }
   const current = state.pages[relationObjectId]
   if (!current) {
@@ -283,14 +295,12 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
     try {
       const result = await requestRelationOptionPage({
         action: 'list-relation-options', objectId: relationObjectId, limit: 200,
-      }, mutate)
-      setRelationState(state => result.status === 'success'
-        ? { pages: { ...state.pages, [relationObjectId]: result.page }, error: null }
-        : { ...state, error: { relationObjectId, message: result.message } })
+      }, mutate, collectReferencedRelationEntryIds(payload, relationObjectId))
+      setRelationState(state => applyRelationOptionLoadResult(state, relationObjectId, result, 'replace'))
     } finally {
       setLoadingRelationObjectId(null)
     }
-  }, [loadingRelationObjectId, mutate])
+  }, [loadingRelationObjectId, mutate, payload])
 
   const selectView = (viewId: string) => {
     if (!viewId) {

@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { WorkspaceObjectPayload } from '@craft-agent/shared/workspace-objects/types';
 import { WorkspaceObjectListLoader, type WorkspaceObjectListLoadCallbacks } from '../workspace-objects-section.tsx';
-import { collectReferencedRelationEntryIds, isWorkspaceObjectPreviewDataCurrent, loadReferencedRelationOptions, workspaceObjectPreviewRenderKey } from '../workspace-object-preview-panel.tsx';
+import { isWorkspaceObjectPreviewDataCurrent, workspaceObjectPreviewRenderKey } from '../workspace-object-preview-panel.tsx';
+import { collectReferencedRelationEntryIds, loadReferencedRelationOptions } from '../../workspace-objects/relation-options.ts';
 import { contentTabId } from '../../app-shell/content-tabs-state.ts';
 
 function deferred<T>() {

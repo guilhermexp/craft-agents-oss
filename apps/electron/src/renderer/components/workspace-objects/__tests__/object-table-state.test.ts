@@ -287,6 +287,70 @@ describe('saved table view state', () => {
       throw new Error('transport offline')
     })).resolves.toEqual({ status: 'error', message: 'transport offline' })
   })
+
+  test('recovers every currently referenced relation id in bounded coherent batches', async () => {
+    const referencedIds = Array.from({ length: 401 }, (_, index) => `entry_${String(index).padStart(3, '0')}`)
+    const requests: Array<{ includeEntryIds?: string[] }> = []
+    const result = await requestRelationOptionPage({
+      action: 'list-relation-options', objectId: 'object_companies', limit: 200,
+    }, async request => {
+      if (request.action !== 'list-relation-options') throw new Error('Unexpected workspace object action')
+      requests.push(request)
+      return {
+        relationOptions: request.includeEntryIds
+          ? request.includeEntryIds.map(id => ({ id, label: `Label ${id}` }))
+          : [{ id: 'first_page', label: 'First page' }],
+        nextCursor: request.includeEntryIds ? null : 'first_page',
+        revision: 8,
+      }
+    }, referencedIds)
+
+    expect(requests.map(request => request.includeEntryIds?.length ?? 0)).toEqual([0, 200, 200, 1])
+    expect(result).toMatchObject({
+      status: 'success',
+      page: { revision: 8, nextCursor: 'first_page' },
+    })
+    if (result.status !== 'success') throw new Error('Expected relation recovery to succeed')
+    expect(result.page.options).toContainEqual({ id: 'entry_400', label: 'Label entry_400' })
+  })
+
+  test('replaces a mismatched snapshot only after coherent recovery keeps a relation beyond page 200 valid', async () => {
+    let requestIndex = 0
+    const mismatch = await requestRelationOptionPage({
+      action: 'list-relation-options', objectId: 'object_companies', limit: 200,
+    }, async request => {
+      if (request.action !== 'list-relation-options') throw new Error('Unexpected workspace object action')
+      return {
+        relationOptions: request.includeEntryIds?.map(id => ({ id, label: `Label ${id}` })) ?? [],
+        nextCursor: null,
+        revision: requestIndex++ === 0 ? 8 : 9,
+      }
+    }, ['entry_400'])
+    expect(mismatch).toEqual({ status: 'error', message: 'Relation options changed during lookup: object_companies' })
+
+    const recoveredPage = {
+      options: [
+        { id: 'first_page', label: 'First page' },
+        { id: 'entry_400', label: 'Recovered label' },
+      ],
+      nextCursor: 'first_page',
+      revision: 9,
+    }
+    const recovered = applyRelationOptionLoadResult({
+      pages: {
+        object_companies: {
+          options: [{ id: 'stale', label: 'Stale' }],
+          nextCursor: 'stale',
+          revision: 8,
+        },
+      },
+      error: { relationObjectId: 'object_companies', message: 'changed' },
+    }, 'object_companies', { status: 'success', page: recoveredPage }, 'replace')
+
+    expect(recovered).toEqual({ pages: { object_companies: recoveredPage }, error: null })
+    const validRelationIds = new Set(recovered.pages.object_companies?.options.map(option => option.id))
+    expect(parseObjectFieldDraft(fields.relation, 'entry_400', validRelationIds)).toEqual({ success: true, value: 'entry_400' })
+  })
 })
 
 const _payloadCompileGuard: WorkspaceObjectPayload | null = null
