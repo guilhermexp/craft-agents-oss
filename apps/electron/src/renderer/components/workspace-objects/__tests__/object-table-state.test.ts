@@ -147,6 +147,28 @@ describe('object field commit state', () => {
 })
 
 describe('saved table view state', () => {
+  test('rejects blank binary filter drafts before coercion for every UI field family', () => {
+    const buildFilterRule = Reflect.get(objectTableModule, 'buildWorkspaceObjectFilterRule')
+    expect(buildFilterRule).toBeFunction()
+    if (typeof buildFilterRule !== 'function') return
+    const formatError = (key: string, values: { field: string }) => `${key}:${values.field}`
+
+    for (const field of [fields.number, fields.text, fields.relation, fields.select, fields.status, fields.boolean]) {
+      expect(buildFilterRule(field, '   ', formatError), field.type).toEqual({
+        success: false,
+        error: `chat.workspaceObjectFilterValueRequired:${field.name}`,
+      })
+    }
+    expect(buildFilterRule(fields.number, '0', formatError)).toEqual({
+      success: true,
+      rule: { type: 'rule', fieldId: 'field_number', operator: 'equals', value: 0 },
+    })
+    expect(buildFilterRule(fields.text, 'Ada', formatError)).toEqual({
+      success: true,
+      rule: { type: 'rule', fieldId: 'field_text', operator: 'contains', value: 'Ada' },
+    })
+  })
+
   test('round-trips filter, search, multi-sort, hidden columns and presentation settings', () => {
     const saved = createSavedTableView('view_active', 'Active', {
       schemaVersion: 1,

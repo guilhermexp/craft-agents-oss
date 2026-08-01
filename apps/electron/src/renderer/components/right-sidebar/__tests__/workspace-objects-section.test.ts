@@ -1,12 +1,22 @@
 import { describe, expect, test } from 'bun:test';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { createInstance } from 'i18next';
+import { I18nextProvider } from 'react-i18next';
 import type { WorkspaceObjectPayload } from '@craft-agent/shared/workspace-objects/types';
 import { WorkspaceObjectListLoader, type WorkspaceObjectListLoadCallbacks } from '../workspace-objects-section.tsx';
+import * as previewPanelModule from '../workspace-object-preview-panel.tsx';
 import {
   buildWorkspaceObjectPreviewRevisions,
   isWorkspaceObjectPreviewDataCurrent,
   workspaceObjectPreviewRenderKey,
 } from '../workspace-object-preview-panel.tsx';
-import { collectReferencedRelationEntryIds, loadReferencedRelationOptions } from '../../workspace-objects/relation-options.ts';
+import * as relationOptionsModule from '../../workspace-objects/relation-options.ts';
+import {
+  collectReferencedRelationEntryIds,
+  loadReferencedRelationOptions,
+  RelationOptionLoadError,
+} from '../../workspace-objects/relation-options.ts';
 import { contentTabId } from '../../app-shell/content-tabs-state.ts';
 
 function deferred<T>() {
@@ -125,6 +135,39 @@ describe('workspace object preview target identity', () => {
     expect(revisions).toEqual(new Map([
       ['object_people', { revision: 3, projectionStatus: 'projection-error' }],
     ]));
+  });
+
+  test('renders localized preview relation errors and exposes detail only for transport', async () => {
+    const Alert = Reflect.get(previewPanelModule, 'WorkspaceObjectPreviewErrorAlert');
+    const normalizeError = Reflect.get(relationOptionsModule, 'normalizeRelationOptionFailure');
+    expect(Alert).toBeFunction();
+    expect(normalizeError).toBeFunction();
+    if (typeof Alert !== 'function' || typeof normalizeError !== 'function') return;
+    const i18n = createInstance();
+    await i18n.init({
+      lng: 'pt-BR',
+      resources: { 'pt-BR': { translation: {
+        'chat.workspaceObjectRelationInvalidResponse': 'Resposta de relação inválida.',
+        'chat.workspaceObjectRelationTransportError': 'Não foi possível carregar as relações.',
+        'chat.workspaceObjectRetry': 'Tentar novamente',
+      } } },
+    });
+
+    const invalidMarkup = renderToStaticMarkup(React.createElement(I18nextProvider, { i18n }, React.createElement(Alert, {
+      error: normalizeError(new RelationOptionLoadError('invalid-response')),
+      onRetry: () => {},
+    })));
+    const transportMarkup = renderToStaticMarkup(React.createElement(I18nextProvider, { i18n }, React.createElement(Alert, {
+      error: normalizeError(new Error('ECONNRESET')),
+      onRetry: () => {},
+    })));
+
+    expect(invalidMarkup).toContain('Resposta de relação inválida.')
+    expect(invalidMarkup).not.toContain('invalid-response')
+    expect(invalidMarkup).not.toContain('data-object-relation-error-detail="true"')
+    expect(transportMarkup).toContain('Não foi possível carregar as relações.')
+    expect(transportMarkup).toContain('data-object-relation-error-detail="true"')
+    expect(transportMarkup).toContain('ECONNRESET')
   });
 
   test('includes currently referenced relation ids in bounded option lookups', () => {

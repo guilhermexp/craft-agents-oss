@@ -96,6 +96,14 @@ describe("i18n locale parity", () => {
     }
   });
 
+  it("every locale defines the workspace-object filter-value error with field context", () => {
+    for (const [lang, translations] of Object.entries(locales)) {
+      const value = translations["chat.workspaceObjectFilterValueRequired"];
+      expect(value, lang).toBeString();
+      expect(value, lang).toContain("{{field}}");
+    }
+  });
+
   it("uses the feminine Polish form for the saved value", () => {
     expect(locales.pl?.["chat.workspaceObjectEditNotConfirmed"]).toContain("zapisanej wartości");
     expect(locales.pl?.["chat.workspaceObjectEditNotConfirmed"]).not.toContain("zapisanego wartości");

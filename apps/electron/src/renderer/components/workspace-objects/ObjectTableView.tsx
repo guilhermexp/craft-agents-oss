@@ -18,6 +18,7 @@ import {
   WorkspaceObjectSavedViewSchema,
   WorkspaceObjectViewConfigSchema,
   type WorkspaceObjectFilterClause,
+  type WorkspaceObjectFilterRule,
   type WorkspaceObjectSavedView,
   type WorkspaceObjectViewConfig,
 } from '@craft-agent/shared/workspace-objects/view-schema'
@@ -34,8 +35,10 @@ import {
 import {
   collectReferencedRelationEntryIds,
   loadReferencedRelationOptions,
-  RelationOptionLoadError,
+  normalizeRelationOptionFailure,
+  RELATION_OPTION_ERROR_KEYS,
   type RelationOptionErrorCode,
+  type RelationOptionFailure,
 } from './relation-options'
 
 type MutateWorkspaceObject = (action: WorkspaceObjectAction) => Promise<WorkspaceObjectServiceResult>
@@ -48,9 +51,6 @@ export interface RelationOptionViewState {
   pages: Record<string, RelationOptionPage>
   error: RelationOptionViewError | null
 }
-type RelationOptionFailure =
-  | { code: Exclude<RelationOptionErrorCode, 'transport'>; detail?: never }
-  | { code: 'transport'; detail?: string }
 export type RelationOptionViewError = RelationOptionFailure & { relationObjectId: string }
 export type RelationOptionLoadResult =
   | { status: 'success'; page: RelationOptionPage }
@@ -98,12 +98,7 @@ export async function requestRelationOptionPage(
       page: { options: result.relationOptions, nextCursor: result.nextCursor, revision: result.revision },
     }
   } catch (error) {
-    if (error instanceof RelationOptionLoadError) {
-      return error.code === 'transport'
-        ? { status: 'error', code: 'transport' }
-        : { status: 'error', code: error.code }
-    }
-    return { status: 'error', code: 'transport', detail: error instanceof Error ? error.message : String(error) }
+    return { status: 'error', ...normalizeRelationOptionFailure(error) }
   }
 }
 
@@ -147,13 +142,6 @@ export function applyRelationOptionLoadResult(
         ...state,
         error: { relationObjectId, code: 'changed-while-loading' },
       }
-}
-
-const RELATION_OPTION_ERROR_KEYS: Record<RelationOptionErrorCode, string> = {
-  'invalid-response': 'chat.workspaceObjectRelationInvalidResponse',
-  'stale-snapshot': 'chat.workspaceObjectRelationStaleSnapshot',
-  'changed-while-loading': 'chat.workspaceObjectRelationChangedWhileLoading',
-  transport: 'chat.workspaceObjectRelationTransportError',
 }
 
 export function ObjectRelationOptionErrorAlert({
@@ -281,10 +269,20 @@ function nextSort(config: WorkspaceObjectViewConfig, fieldId: string): Workspace
   return config.sort.filter(sort => sort.fieldId !== fieldId)
 }
 
+type WorkspaceObjectFilterErrorKey =
+  | 'chat.workspaceObjectFilterValueRequired'
+  | 'chat.workspaceObjectFieldFiniteNumber'
+  | 'chat.workspaceObjectFieldBoolean'
+
+type WorkspaceObjectFilterErrorFormatter = (
+  key: WorkspaceObjectFilterErrorKey,
+  values: { field: string },
+) => string
+
 function parseFilterValue(
   field: WorkspaceObjectField,
   draft: string,
-  formatError: (key: 'chat.workspaceObjectFieldFiniteNumber' | 'chat.workspaceObjectFieldBoolean', values: { field: string }) => string,
+  formatError: WorkspaceObjectFilterErrorFormatter,
 ): WorkspaceObjectValue {
   if (field.type === 'number') {
     const value = Number(draft)
@@ -296,6 +294,26 @@ function parseFilterValue(
     return draft === 'true'
   }
   return draft
+}
+
+export function buildWorkspaceObjectFilterRule(
+  field: WorkspaceObjectField,
+  draft: string,
+  formatError: WorkspaceObjectFilterErrorFormatter,
+): { success: true; rule: WorkspaceObjectFilterRule } | { success: false; error: string } {
+  if (draft.trim() === '') {
+    return {
+      success: false,
+      error: formatError('chat.workspaceObjectFilterValueRequired', { field: field.name }),
+    }
+  }
+  try {
+    const value = parseFilterValue(field, draft, formatError)
+    const operator = field.type === 'text' || field.type === 'file' || field.type === 'relation' ? 'contains' : 'equals'
+    return { success: true, rule: { type: 'rule', fieldId: field.id, operator, value } }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 export interface ObjectTableViewProps {
@@ -400,18 +418,17 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
       setFilterError(t('chat.workspaceObjectFilterFieldRequired'))
       return
     }
-    try {
-      const value = parseFilterValue(field, filterDraft, (key, values) => t(key, values))
-      const operator = field.type === 'text' || field.type === 'file' || field.type === 'relation' ? 'contains' : 'equals'
-      setConfig(current => ({
-        ...current,
-        filter: appendAndFilter(current.filter, { type: 'rule', fieldId: field.id, operator, value }),
-      }))
-      setFilterDraft('')
-      setFilterError(null)
-    } catch (error) {
-      setFilterError(error instanceof Error ? error.message : String(error))
+    const result = buildWorkspaceObjectFilterRule(field, filterDraft, (key, values) => t(key, values))
+    if (!result.success) {
+      setFilterError(result.error)
+      return
     }
+    setConfig(current => ({
+      ...current,
+      filter: appendAndFilter(current.filter, result.rule),
+    }))
+    setFilterDraft('')
+    setFilterError(null)
   }
 
   const configureAdapterSetting = React.useCallback((settingKey: string, fieldId: string) => {

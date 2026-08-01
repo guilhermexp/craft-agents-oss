@@ -3,11 +3,31 @@ import type { WorkspaceObjectPayload } from '@craft-agent/shared/workspace-objec
 
 type RelationOptionsAction = Extract<WorkspaceObjectAction, { action: 'list-relation-options' }>
 export type RelationOptionErrorCode = 'invalid-response' | 'stale-snapshot' | 'changed-while-loading' | 'transport'
+export type RelationOptionFailure =
+  | { code: Exclude<RelationOptionErrorCode, 'transport'>; detail?: never }
+  | { code: 'transport'; detail?: string }
+
+export const RELATION_OPTION_ERROR_KEYS: Record<RelationOptionErrorCode, string> = {
+  'invalid-response': 'chat.workspaceObjectRelationInvalidResponse',
+  'stale-snapshot': 'chat.workspaceObjectRelationStaleSnapshot',
+  'changed-while-loading': 'chat.workspaceObjectRelationChangedWhileLoading',
+  transport: 'chat.workspaceObjectRelationTransportError',
+}
 
 export class RelationOptionLoadError extends Error {
   constructor(readonly code: RelationOptionErrorCode) {
     super(code)
     this.name = 'RelationOptionLoadError'
+  }
+}
+
+export function normalizeRelationOptionFailure(error: unknown): RelationOptionFailure {
+  if (error instanceof RelationOptionLoadError) {
+    return error.code === 'transport' ? { code: 'transport' } : { code: error.code }
+  }
+  return {
+    code: 'transport',
+    detail: error instanceof Error ? error.message : String(error),
   }
 }
 

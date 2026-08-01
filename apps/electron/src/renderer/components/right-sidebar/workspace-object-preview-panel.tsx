@@ -7,7 +7,13 @@ import { acceptWorkspaceObjectEvent } from '../app-shell/workspace-object-events
 import { onWorkspaceObjectsReload } from '../app-shell/workspace-object-reconnect'
 import { contentTabId } from '../app-shell/content-tabs-state'
 import { ObjectTableView } from '../workspace-objects/ObjectTableView'
-import { collectReferencedRelationEntryIds, loadReferencedRelationOptions } from '../workspace-objects/relation-options'
+import {
+  collectReferencedRelationEntryIds,
+  loadReferencedRelationOptions,
+  normalizeRelationOptionFailure,
+  RELATION_OPTION_ERROR_KEYS,
+  type RelationOptionFailure,
+} from '../workspace-objects/relation-options'
 
 interface WorkspaceObjectPreviewData {
   targetKey: string
@@ -55,6 +61,27 @@ export function workspaceObjectPreviewRenderKey(payload: WorkspaceObjectPayload,
   return `${payload.id}:${viewId ?? 'default'}`
 }
 
+export function WorkspaceObjectPreviewErrorAlert({
+  error,
+  onRetry,
+}: {
+  error: RelationOptionFailure
+  onRetry: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive" role="alert">
+      <div>{t(RELATION_OPTION_ERROR_KEYS[error.code])}</div>
+      {error.code === 'transport' && error.detail ? (
+        <div data-object-relation-error-detail="true" className="mt-1 break-words text-[11px] opacity-80">{error.detail}</div>
+      ) : null}
+      <button type="button" className="mt-2 underline underline-offset-2" onClick={onRetry}>
+        {t('chat.workspaceObjectRetry')}
+      </button>
+    </div>
+  )
+}
+
 export function WorkspaceObjectPreviewPanel({
   workspaceId,
   objectId,
@@ -70,7 +97,7 @@ export function WorkspaceObjectPreviewPanel({
   const resolverRef = React.useRef<ContentResolver<WorkspaceObjectPreviewData> | null>(null)
   if (!resolverRef.current) resolverRef.current = new ContentResolver<WorkspaceObjectPreviewData>(20)
   const [data, setData] = React.useState<WorkspaceObjectPreviewData | null>(null)
-  const [refreshError, setRefreshError] = React.useState<Error | null>(null)
+  const [refreshError, setRefreshError] = React.useState<RelationOptionFailure | null>(null)
   const retryRef = React.useRef<() => void>(() => {})
   const revisionsRef = React.useRef(new Map<string, WorkspaceObjectPreviewRevision>())
   const relationObjectIdsRef = React.useRef(new Set<string>())
@@ -115,9 +142,9 @@ export function WorkspaceObjectPreviewPanel({
     const reportError = (error: unknown) => {
       if (!active) return
       if (error instanceof DOMException && error.name === 'AbortError') return
-      const normalized = error instanceof Error ? error : new Error(String(error))
+      const normalized = normalizeRelationOptionFailure(error)
       setRefreshError(normalized)
-      console.error('[WorkspaceObjectPreview]', normalized)
+      console.error('[WorkspaceObjectPreview]', error)
     }
     const refreshPayload = () => {
       const refresh = resolver.refresh(target, fetchData)
@@ -153,12 +180,7 @@ export function WorkspaceObjectPreviewPanel({
         <span className="text-[11px] text-muted-foreground">r{visibleData.payload.revision}</span>
       </div> : null}
       {refreshError ? (
-        <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive" role="alert">
-          <div>{t('chat.workspaceObjectRefreshFailed')}: {refreshError.message}</div>
-          <button type="button" className="mt-2 underline underline-offset-2" onClick={() => retryRef.current()}>
-            {t('chat.workspaceObjectRetry')}
-          </button>
-        </div>
+        <WorkspaceObjectPreviewErrorAlert error={refreshError} onRetry={() => retryRef.current()} />
       ) : null}
       {visibleData?.payload.projectionStatus === 'projection-error' ? (
         <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">{t('chat.workspaceObjectProjectionRepair')}</div>

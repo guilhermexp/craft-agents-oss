@@ -177,6 +177,15 @@ locales, distinta da key de salvar view.
 O tracker de revisions do preview MUST manter revision e projection status do
 payload primário como autoridade quando uma relation aponta para o próprio
 objeto; uma relation-option page self-referente não pode sobrescrevê-los.
+Filtros binários adicionados pela table MUST rejeitar draft vazio após `trim`
+antes de coerção, usando `workspaceObjectFilterValueRequired` com contexto do
+field. Operadores sem valor `is-empty`/`is-not-empty` MUST permanecer válidos se
+forem expostos futuramente; eles não fazem parte da UI atual.
+Falhas do load inicial e refresh de relation options no preview MUST usar a
+mesma união `code`/`detail` e o mesmo mapping localizado da table. Headline MUST
+ser traduzida pelo código; detalhe técnico MUST aparecer apenas em `transport`.
+Todos os locale JSON MUST permanecer em ordem canônica de key, verificada pelo
+mesmo sorter em CI, sem alterar valores durante a normalização mecânica.
 Prompts de ação U5/U6 em alemão e húngaro MUST usar registro formal consistente
 dentro do bloco workspaceObject.
 
@@ -269,6 +278,18 @@ dentro do bloco workspaceObject.
 
 - **WHEN** um editor envia valor incompatível com o field type
 - **THEN** o editor mostra erro e nenhuma revisão de sucesso é publicada
+- **Test:** `unit`
+
+#### Scenario: Filtro binário vazio é rejeitado antes da coerção
+
+- **WHEN** number, text, relation, select, status ou boolean recebe draft vazio/whitespace
+- **THEN** a table mostra erro localizado com o field e não cria regra nem converte vazio para zero
+- **Test:** `unit`
+
+#### Scenario: Preview traduz falha de relation options
+
+- **WHEN** load inicial ou refresh falha com código estável ou erro de transporte
+- **THEN** o preview usa a headline localizada compartilhada, oculta códigos internos e mostra detalhe apenas para transporte
 - **Test:** `unit`
 
 #### Scenario: Match após o limite de resposta continua visível

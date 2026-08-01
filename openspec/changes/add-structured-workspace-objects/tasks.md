@@ -514,6 +514,23 @@ e sidebar passou 71/71 (215 expects), e `typecheck:all`, tool contracts,
 paridade i18n, OpenSpec strict e `git diff --check` ficaram verdes. O falso
 positivo de reconcile pages não foi alterado. 7.5 permanece desmarcado.
 
+Re-review corretivo 7 de Phase B (2026-08-01): os REDs mostraram que filtros
+binários aceitavam draft vazio antes da coerção, que falhas de relation options
+no preview exibiam códigos crus, que a nova key não existia nos oito locales e
+que a ordem canônica não era validada pelo CI; o alias documentado
+`sort-locales` também estava ausente. O GREEN centraliza o guard de valor vazio
+antes do parse para number, text, relation, select, status e boolean, com erro
+localizado e contexto do campo. Operadores sem valor continuam permitidos pelo
+contrato, embora a UI atual não exponha `is-empty`/`is-not-empty`. Preview e
+tabela agora compartilham a união estruturada e o mapa i18n; detalhe livre só é
+renderizado para transporte. Os oito locales ganharam apenas a nova key e foram
+ordenados pelo script mecânico existente; a comparação semântica confirmou que
+nenhum valor anterior mudou. Os focos passaram 11/11 (33 expects); a regressão
+de domínio/sidebar/i18n passou 71/71 (212 expects), e `typecheck:all`, paridade
+i18n (1.804 keys por locale), ordem i18n via CI, tool contracts, OpenSpec strict
+e `git diff --check` ficaram verdes. O falso positivo de reconcile pages não
+foi alterado. 7.5 permanece desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.
