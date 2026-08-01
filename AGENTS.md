@@ -147,6 +147,10 @@ The Phase A local-first object contract is tracked by
   state instead of silently falling back to table. If no compatible field
   exists, the explicit table action changes only the local saved-view config so
   the user can persist that adapter through the existing save flow.
+- Electron renderer imports of workspace-object modules are public package
+  boundaries. Keep `query`, `service`, `types` and `view-schema` explicitly
+  exported by `packages/shared/package.json`; the consumer-side package export
+  test must pass in addition to TypeScript checks before a renderer build.
 - Object Kanban groups only by a configured canonical select/status field. A
   translated no-group column retains entries with null, absent or unknown
   values. Optional fields persist `null` when that column is targeted; for
@@ -182,6 +186,7 @@ The Phase A local-first object contract is tracked by
 | Layer / path | Required tier | Command |
 | --- | --- | --- |
 | `packages/shared/src/workspace-objects/**` | integration | `bun test packages/shared/src/workspace-objects/__tests__/*.test.ts` |
+| `packages/shared/package.json` workspace-object exports | integration | `bun test apps/electron/src/shared/workspace-objects-package-exports.test.ts` |
 | `apps/electron/src/renderer/components/workspace-objects/**` | unit | `bun test apps/electron/src/renderer/components/workspace-objects/__tests__/*.test.ts*` |
 | `apps/electron/src/renderer/components/right-sidebar/workspace-object*` | unit | `bun test apps/electron/src/renderer/components/right-sidebar/__tests__/workspace-objects-section.test.ts` |
 

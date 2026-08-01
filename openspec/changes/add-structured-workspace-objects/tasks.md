@@ -313,6 +313,18 @@ respeita os dois boundaries e ignora a coluna sem grupo required desabilitada
 sem mutar `active.data`. A suíte focada passou 17/17 (100 expects); 7.5 permanece
 desmarcado.
 
+Preparação do gate 7.5 (2026-08-01): o build real de `2713b854` encontrou P1 no
+renderer porque `query` e `view-schema` eram importados como subpaths públicos,
+mas não existiam em `packages/shared/package.json#exports`; typecheck e Bun test
+mascaravam o boundary por resolverem fontes do workspace. O teste consumidor
+ficou RED com 2 pass / 2 fail e agora valida o mapa publicado, a resolução e a
+importação de `query`, `service`, `types` e `view-schema`. Após exportar apenas
+os dois subpaths ausentes, o teste passou 4/4, `electron:build` completou main,
+preload, renderer, resources e assets, e a matriz U5/U6 passou 89/89 em nove
+arquivos (295 expects). Typechecks shared/Electron, OpenSpec strict e
+`git diff --check` passaram. 7.5 continua desmarcado até Electron real e auditor
+GO do root.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.
