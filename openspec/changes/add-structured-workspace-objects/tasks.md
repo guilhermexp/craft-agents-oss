@@ -121,7 +121,7 @@ GO sem blocker concreto, liberando a Phase B.
       Kanban para rejeição e transporte antes da implementação de U6.
 - [x] 7.4 Implementar table, Kanban, calendar, timeline, gallery e list sobre um
       único payload.
-- [ ] 7.5 Validar testes, Electron real e auditor GO antes de Phase C.
+- [x] 7.5 Validar testes, Electron real e auditor GO antes de Phase C.
 
 Evidência U5 7.1/7.2 (2026-08-01): o primeiro RED executou as duas suítes U5
 antes dos arquivos de produção e retornou `0 pass / 2 fail`, com
@@ -583,6 +583,31 @@ relation `transport` permanece inalterado. Os focos passaram 3/3 (32 expects),
 o sidebar passou 13/13 (55 expects) e a regressão de domínio/sidebar passou
 75/75 (250 expects). `typecheck:all`, paridade e ordem i18n, tool contracts,
 OpenSpec strict e `git diff --check` ficaram verdes. 7.5 permanece desmarcado.
+
+Closeout 7.5 de Phase B (2026-08-01): a regressão consolidada final passou
+219/219 em 24 arquivos (1.094 expects), incluindo domínio, AJV, catálogos
+Claude/Pi, Electron, app-shell e locale. `typecheck:all`, tool contracts (30
+native + 2 MCP-only), paridade i18n (sete traduções com 1.804 keys), ordem dos
+locales, OpenSpec strict e `git diff --check` ficaram verdes. React Doctor
+v0.9.3 line-scoped sobre a base `8442836f` não reportou error, warning ou
+diagnóstico no gate da fase; o score global de 82/100 permaneceu evidência
+separada, não finding do delta. O `electron:build` final passou para o runtime
+`9a904c04`; o smoke real foi repetido no HEAD test-only `724677a6` e comprovou
+table edit, drag Kanban, seis adapters no mesmo payload, empty guidance, saved
+view, restart restore, filtro vazio rejeitado, storage e teardown completos. O
+JSON/PNG/log/README dessa evidência foram registrados em `e6f411f7`.
+
+`vibe-security` não encontrou finding e o Gitleaks incremental saiu limpo. O
+CodeRabbit full de `8442836f..e432a62c` terminou com seis findings: os quatro
+válidos de semântica HU e retarget foram corrigidos em `fd362754`/`9a904c04`, e
+os dois restantes foram verificados como falsos positivos de budget e
+`includeEntryIds`. O incremental `e432a62c..9a904c04` terminou com um minor de
+cobertura, resolvido pelo teste-only `724677a6`. O retry residual
+`9a904c04..e6f411f7`, restrito a teste e evidências/docs, confirmou base e
+cobertura mas ficou rate-limited antes da análise; o auditor considerou essa
+indisponibilidade não bloqueante por não haver produção nova. O auditor Phase B
+revisou o delta completo `8442836f..e6f411f7` e retornou GO. Phase C não foi
+iniciada.
 
 ## 8. Phase C — U7: discovery e health
 
