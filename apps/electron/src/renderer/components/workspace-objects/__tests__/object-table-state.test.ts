@@ -351,6 +351,48 @@ describe('saved table view state', () => {
     const validRelationIds = new Set(recovered.pages.object_companies?.options.map(option => option.id))
     expect(parseObjectFieldDraft(fields.relation, 'entry_400', validRelationIds)).toEqual({ success: true, value: 'entry_400' })
   })
+
+  test('discards a stale retry response after refresh installs a newer relation snapshot', () => {
+    const revision9 = {
+      options: [{ id: 'entry_current', label: 'Current label' }],
+      nextCursor: 'current_cursor',
+      revision: 9,
+    }
+    const state = {
+      pages: { object_companies: revision9 },
+      error: null,
+    }
+
+    expect(applyRelationOptionLoadResult(state, 'object_companies', {
+      status: 'success',
+      page: {
+        options: [{ id: 'entry_stale', label: 'Stale label' }],
+        nextCursor: 'stale_cursor',
+        revision: 8,
+      },
+    }, 'replace')).toEqual({
+      pages: { object_companies: revision9 },
+      error: { relationObjectId: 'object_companies', message: 'A newer relation snapshot is already loaded' },
+    })
+
+    const equalRevision = {
+      options: [{ id: 'entry_equal', label: 'Equal revision refresh' }],
+      nextCursor: 'equal_cursor',
+      revision: 9,
+    }
+    expect(applyRelationOptionLoadResult(state, 'object_companies', {
+      status: 'success', page: equalRevision,
+    }, 'replace')).toEqual({ pages: { object_companies: equalRevision }, error: null })
+
+    const revision10 = {
+      options: [{ id: 'entry_newer', label: 'Newer label' }],
+      nextCursor: 'newer_cursor',
+      revision: 10,
+    }
+    expect(applyRelationOptionLoadResult(state, 'object_companies', {
+      status: 'success', page: revision10,
+    }, 'replace')).toEqual({ pages: { object_companies: revision10 }, error: null })
+  })
 })
 
 const _payloadCompileGuard: WorkspaceObjectPayload | null = null

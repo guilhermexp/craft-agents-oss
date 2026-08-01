@@ -230,6 +230,14 @@ anterior com erro recuperável. As suítes focadas de UI/relation passaram 51/51
 (143 expects), com typechecks shared e Electron verdes. U6, 7.3, 7.4, smoke e
 7.5 permanecem não iniciados e desmarcados.
 
+Race final U5 7.1/7.2 (2026-08-01): o RED reproduziu retry r8 em voo, refresh
+instalando r9 e resposta r8 sobrescrevendo cache, cursor e label novos. O GREEN
+aplica monotonicidade no replace: revision menor é descartada com erro
+recuperável, enquanto igual ou maior substitui normalmente, sem throw nem
+generation token. A matriz focada passou 52/52 (146 expects), e os typechecks
+shared/Electron passaram. U6, 7.3, 7.4, smoke e 7.5 continuam não iniciados e
+desmarcados.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

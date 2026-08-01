@@ -89,6 +89,13 @@ export function applyRelationOptionLoadResult(
     return { ...state, error: { relationObjectId, message: result.message } }
   }
   if (mode === 'replace') {
+    const current = state.pages[relationObjectId]
+    if (current && result.page.revision < current.revision) {
+      return {
+        ...state,
+        error: { relationObjectId, message: 'A newer relation snapshot is already loaded' },
+      }
+    }
     return { pages: { ...state.pages, [relationObjectId]: result.page }, error: null }
   }
   const current = state.pages[relationObjectId]

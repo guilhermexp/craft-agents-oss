@@ -360,6 +360,9 @@ escapa pelo updater nem pela promise: a página canônica coerente é preservada
 um erro recuperável é exibido e o retry recarrega a primeira página mais todos
 os IDs atualmente referenciados em batches de até 200, sob a mesma revision.
 Preview inicial e recovery usam o mesmo helper para não divergir.
+Se um refresh instala uma revision maior enquanto o retry está em voo, a
+resposta mais antiga é descartada sem alterar cache, cursor ou labels; revision
+igual ou maior pode substituir o snapshot.
 
 O alvo da tab agora inclui o `viewId` salvo, é retargetado somente após a view
 aparecer no payload canônico e recebe uma key por objeto/view; isso impede
