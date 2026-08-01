@@ -115,6 +115,24 @@ describe('public source DTO boundary', () => {
     'https://mcp.example.test/source?signature=query-secret',
     'https://mcp.example.test/source#securityToken=fragment-secret',
     'https://mcp.example.test/source?signed-url=query-secret',
+    'https://mcp.example.test/source?id_token=query-secret',
+    'https://mcp.example.test/source?idToken=query-secret',
+    'https://mcp.example.test/source?id-token=query-secret',
+    'https://mcp.example.test/source?session_token=query-secret',
+    'https://mcp.example.test/source?sessionToken=query-secret',
+    'https://mcp.example.test/source?session-token=query-secret',
+    'https://mcp.example.test/source?oauth_token_secret=query-secret',
+    'https://mcp.example.test/source?oauthTokenSecret=query-secret',
+    'https://mcp.example.test/source?oauth-token-secret=query-secret',
+    'https://mcp.example.test/source?aws_secret_access_key=query-secret',
+    'https://mcp.example.test/source?awsSecretAccessKey=query-secret',
+    'https://mcp.example.test/source?aws-secret-access-key=query-secret',
+    'https://mcp.example.test/source?oauth_token=query-secret',
+    'https://mcp.example.test/source?access_key_id=query-secret',
+    'https://mcp.example.test/source?secret_access_key=query-secret',
+    'https://mcp.example.test/source?aws_access_key_id=query-secret',
+    'https://mcp.example.test/source?aws_session_token=query-secret',
+    'https://mcp.example.test/source?oauth_consumer_secret=query-secret',
   ])('removes explicit credentials from public URLs: %s', (url) => {
     const sanitized = sanitizePublicSourceUrl(url)
     expect(sanitized).toBeDefined()
@@ -151,6 +169,16 @@ describe('public source DTO boundary', () => {
       'signature=signature value',
       'security_token=security token value',
       'signedUrl=signed url value',
+      'id_token=id token value',
+      'sessionToken=session token value',
+      'oauth-token-secret=oauth token secret value',
+      'aws_secret_access_key=aws secret access key value',
+      'oauth_token=oauth token value',
+      'access-key-id=access key id value',
+      'secretAccessKey=secret access key value',
+      'aws_access_key_id=aws access key id value',
+      'aws-session-token=aws session token value',
+      'oauthConsumerSecret=oauth consumer secret value',
     ].join('; ')
 
     const sanitized = sanitizePublicSourceError(text)
@@ -162,6 +190,16 @@ describe('public source DTO boundary', () => {
       'signature value',
       'security token value',
       'signed url value',
+      'id token value',
+      'session token value',
+      'oauth token secret value',
+      'aws secret access key value',
+      'oauth token value',
+      'access key id value',
+      'secret access key value',
+      'aws access key id value',
+      'aws session token value',
+      'oauth consumer secret value',
     ]) {
       expect(sanitized).not.toContain(sentinel)
     }

@@ -10,7 +10,9 @@
 
 export type OAuthProvider = 'mcp' | 'google' | 'slack' | 'microsoft' | 'generic'
 
-export type OAuthFailureReason = 'oauth-token-exchange-failed'
+export type OAuthFailureReason =
+  | 'oauth-token-exchange-failed'
+  | 'source-oauth-authentication-failed'
 
 /**
  * Everything the server produces during the "prepare" phase.

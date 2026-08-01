@@ -10,6 +10,7 @@ import type { HandlerDeps } from '../handler-deps'
 let workspaceRootPath = ''
 let mcpListToolsError: Error | null = null
 let mcpListToolsResult: Array<{ name: string; description?: string }> = []
+let mcpCloseCalls = 0
 
 mock.module('@craft-agent/shared/mcp', () => ({
   CraftMcpClient: class {
@@ -18,7 +19,7 @@ mock.module('@craft-agent/shared/mcp', () => ({
       return mcpListToolsResult
     }
 
-    async close() {}
+    async close() { mcpCloseCalls += 1 }
   },
 }))
 
@@ -85,6 +86,7 @@ function createHarness(options?: {
 beforeEach(() => {
   mcpListToolsError = null
   mcpListToolsResult = []
+  mcpCloseCalls = 0
   workspaceRootPath = mkdtempSync(join(tmpdir(), 'craft-sources-rpc-'))
   const sourcePath = join(workspaceRootPath, 'sources', 'mail')
   mkdirSync(sourcePath, { recursive: true })
@@ -249,9 +251,10 @@ describe('SOURCES_GET_MCP_TOOLS public errors', () => {
     expect(publicEvidence).not.toContain('url-secret')
     expect(publicEvidence).not.toContain('thrown-secret')
     expect(publicEvidence).not.toContain('error-url-secret')
+    expect(mcpCloseCalls).toBe(1)
   })
 
-  test('sanitizes untrusted MCP tool descriptions before returning them', async () => {
+  test('sanitizes untrusted MCP tool metadata before returning it', async () => {
     const sourcePath = join(workspaceRootPath, 'sources', 'mail')
     writeFileSync(join(sourcePath, 'config.json'), JSON.stringify({
       id: 'mail_1234',
@@ -263,10 +266,16 @@ describe('SOURCES_GET_MCP_TOOLS public errors', () => {
       mcp: { transport: 'http', url: 'https://mcp.example.test/connect', authType: 'none' },
       connectionStatus: 'connected',
     }))
-    mcpListToolsResult = [{
-      name: 'messages_list',
-      description: 'List messages token=tool-secret client_secret=client-secret Authorization: Bearer auth-secret https://user:pass@example.test/private?credential=url-secret',
-    }]
+    mcpListToolsResult = [
+      {
+        name: 'messages_list',
+        description: 'List messages token=tool-secret client_secret=client-secret Authorization: Bearer auth-secret https://user:pass@example.test/private?credential=url-secret',
+      },
+      {
+        name: 'Authorization Bearer name-secret token=name-token https://user:pass@example.test/private?credential=name-url-secret',
+        description: 'Untrusted tool name must not cross the public boundary',
+      },
+    ]
     const { handlers, ctx } = createHarness()
     const getMcpTools = handlers.get(RPC_NAMESPACES.sources.GET_MCP_TOOLS)
 
@@ -281,9 +290,10 @@ describe('SOURCES_GET_MCP_TOOLS public errors', () => {
         allowed: true,
       }],
     })
-    for (const secret of ['tool-secret', 'client-secret', 'auth-secret', 'user:pass', 'url-secret']) {
+    for (const secret of ['tool-secret', 'client-secret', 'auth-secret', 'user:pass', 'url-secret', 'name-secret', 'name-token', 'name-url-secret']) {
       expect(payload).not.toContain(secret)
     }
+    expect(mcpCloseCalls).toBe(1)
   })
 })
 

@@ -78,6 +78,17 @@ export interface AuthResult {
   email?: string;
 }
 
+const SOURCE_OAUTH_FAILURE = {
+  success: false,
+  error: 'OAuth authentication failed',
+  errorCode: 'source-oauth-authentication-failed',
+} as const satisfies AuthResult;
+
+function sourceOAuthFailure(callbacks?: OAuthCallbacks): AuthResult {
+  callbacks?.onError(SOURCE_OAUTH_FAILURE.error);
+  return { ...SOURCE_OAUTH_FAILURE };
+}
+
 /**
  * API credential types (string for simple auth, object for basic auth or multi-header)
  */
@@ -683,10 +694,8 @@ export class SourceCredentialManager {
       markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
 
       return { success: true };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      callbacks.onError(message);
-      return { success: false, error: message };
+    } catch {
+      return sourceOAuthFailure(callbacks);
     }
   }
 
@@ -742,7 +751,7 @@ export class SourceCredentialManager {
       const result: GoogleOAuthResult = await startGoogleOAuth(options);
 
       if (!result.success) {
-        return { success: false, error: result.error || 'Google OAuth failed' };
+        return sourceOAuthFailure();
       }
 
       // Save the credentials (including clientId/clientSecret for token refresh)
@@ -759,10 +768,8 @@ export class SourceCredentialManager {
 
       callbacks.onStatus(`${serviceName} authentication successful`);
       return { success: true, email: result.email };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      callbacks.onError(message);
-      return { success: false, error: message };
+    } catch {
+      return sourceOAuthFailure(callbacks);
     }
   }
 
@@ -809,7 +816,7 @@ export class SourceCredentialManager {
       const result: SlackOAuthResult = await startSlackOAuth(options);
 
       if (!result.success) {
-        return { success: false, error: result.error || 'Slack OAuth failed' };
+        return sourceOAuthFailure();
       }
 
       // Save the credentials
@@ -825,10 +832,8 @@ export class SourceCredentialManager {
       callbacks.onStatus(`${serviceName} authentication successful`);
       // Use teamName as the identifier (similar to email for Google)
       return { success: true, email: result.teamName };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      callbacks.onError(message);
-      return { success: false, error: message };
+    } catch {
+      return sourceOAuthFailure(callbacks);
     }
   }
 
@@ -881,7 +886,7 @@ export class SourceCredentialManager {
       const result: MicrosoftOAuthResult = await startMicrosoftOAuth(options);
 
       if (!result.success) {
-        return { success: false, error: result.error || 'Microsoft OAuth failed' };
+        return sourceOAuthFailure();
       }
 
       // Save the credentials
@@ -896,10 +901,8 @@ export class SourceCredentialManager {
 
       callbacks.onStatus(`${serviceName} authentication successful`);
       return { success: true, email: result.email };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      callbacks.onError(message);
-      return { success: false, error: message };
+    } catch {
+      return sourceOAuthFailure(callbacks);
     }
   }
 

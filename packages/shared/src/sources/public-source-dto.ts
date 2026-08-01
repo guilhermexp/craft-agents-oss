@@ -91,12 +91,16 @@ export interface PublicSourceDto extends Omit<LoadedSource, 'config' | 'guide'> 
 
 const SAFE_TOOL_IDENTITY_PART = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/
 
+export function isPortablePublicToolName(value: string): boolean {
+  return SAFE_TOOL_IDENTITY_PART.test(value)
+}
+
 function toPublicToolIdentities(tools: SourceExpectedTool[] | undefined): PublicSourceExpectedTool[] | undefined {
   if (tools === undefined) return undefined
   const publicTools: PublicSourceExpectedTool[] = []
   for (const tool of tools) {
     if (
-      SAFE_TOOL_IDENTITY_PART.test(tool.name)
+      isPortablePublicToolName(tool.name)
       && SAFE_TOOL_IDENTITY_PART.test(tool.apiVersion)
     ) {
       publicTools.push({ name: tool.name, apiVersion: tool.apiVersion })
