@@ -162,8 +162,8 @@ export class TokenRefreshManager {
 
         return { success: true, token };
       } else {
-        const reason = 'Refresh returned null';
-        this.log(`[TokenRefresh] ${reason} for ${slug}`);
+        const reason = 'token-refresh-failed';
+        this.log(`[TokenRefresh] Refresh failed for ${slug}`);
         this.credManager.markSourceNeedsReauth(source, 'Token refresh failed');
         // Mirror disk write to in-memory state so isSourceUsable() returns false
         // and the failed source is excluded from intendedSlugs by callers.
@@ -173,13 +173,13 @@ export class TokenRefreshManager {
         this.recordFailure(slug);
         return { success: false, reason };
       }
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      this.log(`[TokenRefresh] Failed for ${slug}: ${reason}`);
-      this.credManager.markSourceNeedsReauth(source, `Refresh error: ${reason}`);
+    } catch {
+      const reason = 'token-refresh-failed';
+      this.log(`[TokenRefresh] Failed for ${slug}`);
+      this.credManager.markSourceNeedsReauth(source, 'Token refresh failed');
       source.config['isAuthenticated'] = false;
       source.config.connectionStatus = 'needs_auth';
-      source.config.connectionError = `Refresh error: ${reason}`;
+      source.config.connectionError = 'Token refresh failed';
       this.recordFailure(slug);
       return { success: false, reason };
     }

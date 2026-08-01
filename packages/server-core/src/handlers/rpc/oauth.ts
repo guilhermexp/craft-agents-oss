@@ -26,7 +26,7 @@ export async function completeOAuthFlow(opts: {
   logger: { info(msg: string): void; }
   clientId?: string
   workspaceId?: string | null
-}): Promise<{ success: boolean; error?: string; email?: string }> {
+}): Promise<{ success: boolean; error?: string; errorCode?: 'oauth-token-exchange-failed'; email?: string }> {
   const { code, state, flowStore, credManager, sessionManager, pushSourcesChanged, logger } = opts
 
   const flow = flowStore.getByState(state)
@@ -49,6 +49,14 @@ export async function completeOAuthFlow(opts: {
     redirectUri: flow.redirectUri,
   })
 
+  const publicResult = result.success
+    ? { success: true as const, email: result.email }
+    : {
+        success: false as const,
+        error: 'OAuth authentication failed',
+        errorCode: 'oauth-token-exchange-failed' as const,
+      }
+
   flowStore.remove(state)
 
   // If this was triggered from a session auth card, complete it
@@ -56,17 +64,17 @@ export async function completeOAuthFlow(opts: {
     await sessionManager.completeAuthRequest(flow.sessionId, {
       requestId: flow.authRequestId,
       sourceSlug: flow.sourceSlug,
-      success: result.success,
-      email: result.email,
-      error: result.error,
+      success: publicResult.success,
+      email: publicResult.email,
+      error: publicResult.error,
     })
   }
 
   // Push source status update to all clients in this workspace
   pushSourcesChanged(flow.workspaceId)
 
-  logger.info(`[OAuth] Flow complete for ${flow.sourceSlug} (success=${result.success})`)
-  return result
+  logger.info(`[OAuth] Flow complete for ${flow.sourceSlug} (success=${publicResult.success})`)
+  return publicResult
 }
 
 export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): void {

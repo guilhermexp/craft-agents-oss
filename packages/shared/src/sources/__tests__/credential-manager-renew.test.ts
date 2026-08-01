@@ -185,6 +185,51 @@ describe('refreshApiRenew via refresh()', () => {
     expect(await credManager.refresh(source)).toBeNull();
   });
 
+  test('fails closed without persisting a credential-bearing renew response', async () => {
+    mockGet.mockImplementationOnce(() => Promise.resolve({
+      value: 'old-token', expiresAt: Date.now() - 60_000,
+    }));
+    const providerFailure = 'token=renew-secret client_secret=client-secret Authorization: Bearer auth-secret https://user:pass@example.test/private?credential=url-secret arbitrary-provider-text';
+    mockFetchText(providerFailure, 500);
+    const markSourceNeedsReauth = spyOn(credManager, 'markSourceNeedsReauth').mockImplementation(() => {});
+    const source = createRenewSource();
+
+    const result = await credManager.refresh(source);
+
+    expect(result).toBeNull();
+    expect(markSourceNeedsReauth).toHaveBeenCalledWith(source, 'Token refresh failed');
+    expect(JSON.stringify(markSourceNeedsReauth.mock.calls)).not.toContain(providerFailure);
+    markSourceNeedsReauth.mockRestore();
+  });
+
+  test('fails closed without persisting a credential-bearing generic OAuth refresh response', async () => {
+    mockGet.mockImplementationOnce(() => Promise.resolve({
+      value: 'old-token', refreshToken: 'refresh-token', expiresAt: Date.now() - 60_000,
+    }));
+    const providerFailure = 'token=generic-secret client_secret=client-secret Authorization: Bearer auth-secret https://user:pass@example.test/private?credential=url-secret arbitrary-provider-text';
+    mockFetchText(providerFailure, 500);
+    const markSourceNeedsReauth = spyOn(credManager, 'markSourceNeedsReauth').mockImplementation(() => {});
+    const source = createRenewSource({
+      provider: 'custom-oauth',
+      api: {
+        baseUrl: 'https://api.example.test',
+        authType: 'oauth',
+        oauth: {
+          authorizationUrl: 'https://auth.example.test/authorize',
+          tokenUrl: 'https://auth.example.test/token',
+          clientId: 'client-id',
+        },
+      },
+    });
+
+    const result = await credManager.refresh(source);
+
+    expect(result).toBeNull();
+    expect(markSourceNeedsReauth).toHaveBeenCalledWith(source, 'Token refresh failed');
+    expect(JSON.stringify(markSourceNeedsReauth.mock.calls)).not.toContain(providerFailure);
+    markSourceNeedsReauth.mockRestore();
+  });
+
   test('uses fallbackTtlSecs when response has no expiry', async () => {
     mockGet.mockImplementationOnce(() => Promise.resolve({
       value: 'old-token', expiresAt: Date.now() - 60_000,

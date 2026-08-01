@@ -291,14 +291,13 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
       const code = url.searchParams.get('code')
       const state = url.searchParams.get('state')
       const error = url.searchParams.get('error')
-      const errorDescription = url.searchParams.get('error_description')
 
       if (error) {
         const flow = state ? options.oauthCallbackDeps.flowStore.getByState(state) : null
         if (flow && state) options.oauthCallbackDeps.flowStore.remove(state)
-        const errorMsg = errorDescription || error
-        logger.warn(`[webui] OAuth callback error: ${errorMsg}`)
-        return new Response(generateCallbackPage({ title: 'Authorization Failed', isSuccess: false, errorDetail: errorMsg }), {
+        const publicError = 'OAuth authorization failed'
+        logger.warn(`[webui] OAuth callback error`)
+        return new Response(generateCallbackPage({ title: 'Authorization Failed', isSuccess: false, errorDetail: publicError }), {
           status: 200,
           headers: { 'Content-Type': 'text/html; charset=utf-8' },
         })
@@ -335,10 +334,10 @@ export function createWebuiHandler(options: WebuiHandlerOptions): WebuiHandler {
             headers: { 'Content-Type': 'text/html; charset=utf-8' },
           })
         }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Token exchange failed'
-        logger.error(`[webui] OAuth callback failed: ${msg}`)
-        return new Response(generateCallbackPage({ title: 'Authorization Failed', isSuccess: false, errorDetail: msg }), {
+      } catch {
+        const publicError = 'OAuth authentication failed'
+        logger.error(`[webui] OAuth callback failed`)
+        return new Response(generateCallbackPage({ title: 'Authorization Failed', isSuccess: false, errorDetail: publicError }), {
           status: 200,
           headers: { 'Content-Type': 'text/html; charset=utf-8' },
         })

@@ -7,7 +7,7 @@
  * 3. buildHeaders() - applies credentials to HTTP request headers
  */
 
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, spyOn } from 'bun:test';
 import { SourceServerBuilder } from '../server-builder.ts';
 import { buildHeaders } from '../api-tools.ts';
 import { isMultiHeaderCredential, type MultiHeaderCredential } from '../credential-manager.ts';
@@ -246,5 +246,25 @@ describe('Full flow: Source config → ApiConfig → Headers', () => {
     const headers = buildHeaders(apiConfig.auth, 'my-simple-key');
 
     expect(headers['X-API-Key']).toBe('my-simple-key');
+  });
+});
+
+describe('SourceServerBuilder.buildAll public failures', () => {
+  test('returns a stable reason code without exposing caught build errors', async () => {
+    const builder = new SourceServerBuilder();
+    const source = createMockSource({ isAuthenticated: true, connectionStatus: 'connected' });
+    const providerFailure = 'token=build-secret client_secret=client-secret Authorization: Bearer auth-secret https://user:pass@example.test/private?credential=url-secret arbitrary-provider-text';
+    const buildSpy = spyOn(builder, 'buildApiServer').mockImplementation(() => {
+      throw new Error(providerFailure);
+    });
+
+    const result = await builder.buildAll([{ source, credential: 'credential' }]);
+
+    expect(result.errors).toEqual([{ sourceSlug: 'test-source', error: 'source-server-build-failed' }]);
+    const payload = JSON.stringify(result);
+    for (const secret of ['build-secret', 'client-secret', 'auth-secret', 'user:pass', 'url-secret', 'arbitrary-provider-text']) {
+      expect(payload).not.toContain(secret);
+    }
+    buildSpy.mockRestore();
   });
 });

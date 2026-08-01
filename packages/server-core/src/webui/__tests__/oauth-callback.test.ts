@@ -121,13 +121,61 @@ describe('WebUI /api/oauth/callback', () => {
     });
 
     try {
-      const response = await handler.fetch(
-        new Request('http://127.0.0.1/api/oauth/callback?error=access_denied&error_description=User%20denied&state=inner-state-456'),
-      );
+      const privateFailure = 'token=callback-secret client_secret=client-secret Authorization: Bearer auth-secret https://user:pass@example.test/private?credential=url-secret arbitrary-provider-text';
+      const response = await handler.fetch(new Request(
+        `http://127.0.0.1/api/oauth/callback?error=access_denied&error_description=${encodeURIComponent(privateFailure)}&state=inner-state-456`,
+      ));
 
       expect(response.status).toBe(200);
-      expect(await response.text()).toContain('Authorization Failed');
+      const html = await response.text();
+      expect(html).toContain('Authorization Failed');
+      expect(html).toContain('OAuth authorization failed');
+      expect(html).not.toContain('callback-secret');
+      expect(html).not.toContain('arbitrary-provider-text');
       expect(flows.has('inner-state-456')).toBe(false);
+    } finally {
+      handler.dispose();
+    }
+  });
+
+  it('does not render or log caught credential-bearing exchange errors', async () => {
+    const privateFailure = 'token=callback-secret client_secret=client-secret Authorization: Bearer auth-secret https://user:pass@example.test/private?credential=url-secret arbitrary-provider-text';
+    const logs: string[] = [];
+    const handler = createWebuiHandler({
+      webuiDir: createTestWebuiDir(),
+      secret: 'test-secret',
+      password: 'test-password',
+      wsProtocol: 'wss',
+      wsPort: 9100,
+      getHealthCheck: () => ({ status: 'ok' }),
+      logger: {
+        ...logger,
+        error: (...args: unknown[]) => logs.push(args.map(String).join(' ')),
+      },
+    });
+    handler.setOAuthCallbackDeps({
+      flowStore: {
+        getByState: () => ({
+          source: {}, provider: 'generic', sourceSlug: 'custom-oauth', workspaceId: 'workspace-1',
+          codeVerifier: 'verifier', tokenEndpoint: 'https://auth.example.test/token', clientId: 'client-id',
+          redirectUri: 'http://localhost/callback',
+        }),
+        remove: () => {},
+      },
+      credManager: { exchangeAndStore: async () => { throw new Error(privateFailure); } },
+      sessionManager: { completeAuthRequest: async () => {} },
+      pushSourcesChanged: () => {},
+    });
+
+    try {
+      const response = await handler.fetch(new Request(
+        'http://127.0.0.1/api/oauth/callback?code=auth-code-123&state=inner-state-789',
+      ));
+      const evidence = `${await response.text()} ${logs.join(' ')}`;
+
+      expect(evidence).toContain('OAuth authentication failed');
+      expect(evidence).not.toContain('callback-secret');
+      expect(evidence).not.toContain('arbitrary-provider-text');
     } finally {
       handler.dispose();
     }

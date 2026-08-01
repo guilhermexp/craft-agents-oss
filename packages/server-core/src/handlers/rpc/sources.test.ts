@@ -9,12 +9,13 @@ import type { HandlerDeps } from '../handler-deps'
 
 let workspaceRootPath = ''
 let mcpListToolsError: Error | null = null
+let mcpListToolsResult: Array<{ name: string; description?: string }> = []
 
 mock.module('@craft-agent/shared/mcp', () => ({
   CraftMcpClient: class {
     async listTools() {
       if (mcpListToolsError) throw mcpListToolsError
-      return []
+      return mcpListToolsResult
     }
 
     async close() {}
@@ -83,6 +84,7 @@ function createHarness(options?: {
 
 beforeEach(() => {
   mcpListToolsError = null
+  mcpListToolsResult = []
   workspaceRootPath = mkdtempSync(join(tmpdir(), 'craft-sources-rpc-'))
   const sourcePath = join(workspaceRootPath, 'sources', 'mail')
   mkdirSync(sourcePath, { recursive: true })
@@ -247,6 +249,41 @@ describe('SOURCES_GET_MCP_TOOLS public errors', () => {
     expect(publicEvidence).not.toContain('url-secret')
     expect(publicEvidence).not.toContain('thrown-secret')
     expect(publicEvidence).not.toContain('error-url-secret')
+  })
+
+  test('sanitizes untrusted MCP tool descriptions before returning them', async () => {
+    const sourcePath = join(workspaceRootPath, 'sources', 'mail')
+    writeFileSync(join(sourcePath, 'config.json'), JSON.stringify({
+      id: 'mail_1234',
+      name: 'Mail',
+      slug: 'mail',
+      enabled: true,
+      provider: 'gmail',
+      type: 'mcp',
+      mcp: { transport: 'http', url: 'https://mcp.example.test/connect', authType: 'none' },
+      connectionStatus: 'connected',
+    }))
+    mcpListToolsResult = [{
+      name: 'messages_list',
+      description: 'List messages token=tool-secret client_secret=client-secret Authorization: Bearer auth-secret https://user:pass@example.test/private?credential=url-secret',
+    }]
+    const { handlers, ctx } = createHarness()
+    const getMcpTools = handlers.get(RPC_NAMESPACES.sources.GET_MCP_TOOLS)
+
+    const result = await getMcpTools!(ctx, 'ws-1', 'mail')
+    const payload = JSON.stringify(result)
+
+    expect(result).toEqual({
+      success: true,
+      tools: [{
+        name: 'messages_list',
+        description: 'List messages token=[REDACTED] https://example.test/private?credential=[REDACTED]',
+        allowed: true,
+      }],
+    })
+    for (const secret of ['tool-secret', 'client-secret', 'auth-secret', 'user:pass', 'url-secret']) {
+      expect(payload).not.toContain(secret)
+    }
   })
 })
 

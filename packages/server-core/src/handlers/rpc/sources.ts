@@ -295,7 +295,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
         const allowed = mergedConfig.readOnlyMcpPatterns.some((pattern: RegExp) => pattern.test(tool.name))
         return {
           name: tool.name,
-          description: tool.description,
+          description: tool.description ? sanitizePublicSourceError(tool.description) : undefined,
           allowed,
         }
       })
