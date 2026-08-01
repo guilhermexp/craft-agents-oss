@@ -487,7 +487,7 @@ export const RPC_CONTRACT = {
   unwatchSessionFiles: invoke<(() => Promise<void>)>(RPC_NAMESPACES.sessions.UNWATCH_FILES),
   onSessionFilesChanged: event<((callback: (sessionId: string) => void) => () => void)>(RPC_NAMESPACES.sessions.FILES_CHANGED),
   getSources: invoke<((workspaceId: string) => Promise<PublicSourceDto[]>)>(RPC_NAMESPACES.sources.GET),
-  createSource: invoke<((workspaceId: string, config: Partial<FolderSourceConfig>) => Promise<FolderSourceConfig>)>(RPC_NAMESPACES.sources.CREATE),
+  createSource: invoke<((workspaceId: string, config: Partial<FolderSourceConfig>) => Promise<PublicSourceDto>)>(RPC_NAMESPACES.sources.CREATE),
   deleteSource: invoke<((workspaceId: string, sourceSlug: string) => Promise<void>)>(RPC_NAMESPACES.sources.DELETE),
   startSourceOAuth: invoke<((workspaceId: string, sourceSlug: string) => Promise<{ success: boolean; error?: string }>)>(RPC_NAMESPACES.sources.START_OAUTH),
   saveSourceCredentials: invoke<((workspaceId: string, sourceSlug: string, credential: string) => Promise<void>)>(RPC_NAMESPACES.sources.SAVE_CREDENTIALS),

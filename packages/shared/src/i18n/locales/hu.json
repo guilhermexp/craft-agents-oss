@@ -1532,6 +1532,7 @@
   "sourcesList.statusDisconnected": "Kapcsolat bontva",
   "sourcesList.statusNotTested": "Nem tesztelve",
   "sourcesList.statusReadinessFailed": "Készenléti hiba",
+  "sourcesList.statusReadinessFailedDescription": "A forrás csatlakozik, de a várt eszközök még nem állnak készen",
   "sourcesList.statusUnknown": "Ismeretlen",
   "sourcesList.typeApi": "API",
   "sourcesList.typeLocal": "Helyi",

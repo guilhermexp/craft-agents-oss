@@ -148,6 +148,13 @@ describe('collectComposioCatalog', () => {
     'https://mcp.example.test/token/path-secret',
     'https://mcp.example.test/api-key/path-secret',
     'https://mcp.example.test/credential/path-secret',
+    'https://mcp.example.test/clientSecret/path-secret',
+    'https://mcp.example.test/connect?client_secret=query-secret',
+    'https://mcp.example.test/connect?privateKey=query-secret',
+    'https://mcp.example.test/connect?consumer-secret=query-secret',
+    'https://mcp.example.test/connect?signature=query-secret',
+    'https://mcp.example.test/connect#securityToken=fragment-secret',
+    'https://mcp.example.test/connect?signed-url=query-secret',
   ])('rejects explicit credential material in catalog URLs: %s', (url) => {
     expect(() => toPortableComposioSourceInput({
       providerId: 'linear',

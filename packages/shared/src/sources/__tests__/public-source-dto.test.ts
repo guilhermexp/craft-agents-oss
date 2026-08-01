@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  sanitizePublicSourceError,
   sanitizePublicSourceUrl,
   toPublicSourceDto,
   toPublicSourceDtos,
@@ -107,6 +108,13 @@ describe('public source DTO boundary', () => {
     'https://mcp.example.test/source#credential=fragment-secret',
     'https://mcp.example.test/source#safe=value&token=nested-fragment-secret',
     'https://mcp.example.test/token/path-secret',
+    'https://mcp.example.test/clientSecret/path-secret',
+    'https://mcp.example.test/source?client_secret=query-secret',
+    'https://mcp.example.test/source?privateKey=query-secret',
+    'https://mcp.example.test/source?consumer-secret=query-secret',
+    'https://mcp.example.test/source?signature=query-secret',
+    'https://mcp.example.test/source#securityToken=fragment-secret',
+    'https://mcp.example.test/source?signed-url=query-secret',
   ])('removes explicit credentials from public URLs: %s', (url) => {
     const sanitized = sanitizePublicSourceUrl(url)
     expect(sanitized).toBeDefined()
@@ -114,6 +122,49 @@ describe('public source DTO boundary', () => {
     expect(sanitized).not.toContain('query-secret')
     expect(sanitized).not.toContain('fragment-secret')
     expect(sanitized).not.toContain('path-secret')
+  })
+
+  test.each([
+    ['{"password":"alpha beta"}', '{"password":"[REDACTED]"}'],
+    ['{"access_token" : "json secret with spaces"}', '{"access_token" : "[REDACTED]"}'],
+    ['{password: alpha beta, safe: visible}', '{password: [REDACTED], safe: visible}'],
+    ['\\{"access_token":\\"escaped-secret\\"}', '\\{"access_token":\\"[REDACTED]\\"}'],
+    ['\\{\\"access_token\\":\\"fully-escaped-secret\\"}', '\\{\\"access_token\\":\\"[REDACTED]\\"}'],
+    [String.raw`\{\"password\":\"alpha\\\"beta-secret\"}`, String.raw`\{\"password\":\"[REDACTED]\"}`],
+    ['Authorization: Bearer auth value with spaces', 'Authorization: Bearer [REDACTED]'],
+  ])('redacts the complete public-text credential value in %s', (input, expected) => {
+    expect(sanitizePublicSourceError(input)).toBe(expected)
+  })
+
+  test('sanitizes credential-bearing JSON-escaped URLs embedded in public text', () => {
+    expect(sanitizePublicSourceError(
+      String.raw`Guide https:\/\/user:password@example.test/privateKey/path-secret`,
+    )).toBe('Guide https://example.test/privateKey/[REDACTED]')
+  })
+
+  test('uses the same normalized secret-name classifier in text and URLs', () => {
+    const text = [
+      'client_secret=client secret value',
+      'clientSecret=camel secret value',
+      'private-key=private key value',
+      'consumerSecret=consumer secret value',
+      'signature=signature value',
+      'security_token=security token value',
+      'signedUrl=signed url value',
+    ].join('; ')
+
+    const sanitized = sanitizePublicSourceError(text)
+    for (const sentinel of [
+      'client secret value',
+      'camel secret value',
+      'private key value',
+      'consumer secret value',
+      'signature value',
+      'security token value',
+      'signed url value',
+    ]) {
+      expect(sanitized).not.toContain(sentinel)
+    }
   })
 
   test('redacts quoted JSON credentials and credential-bearing URLs from every public text field', () => {

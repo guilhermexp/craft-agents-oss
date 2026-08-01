@@ -1534,6 +1534,7 @@
   "sourcesList.statusDisconnected": "Rozłączone",
   "sourcesList.statusNotTested": "Nie przetestowane",
   "sourcesList.statusReadinessFailed": "Test gotowości nieudany",
+  "sourcesList.statusReadinessFailedDescription": "Źródło jest połączone, ale oczekiwane narzędzia nie są jeszcze gotowe",
   "sourcesList.statusUnknown": "Nieznany",
   "sourcesList.typeApi": "API",
   "sourcesList.typeLocal": "Lokalne",

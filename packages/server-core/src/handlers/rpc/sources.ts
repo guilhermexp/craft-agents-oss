@@ -93,7 +93,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
     const { createSource } = await import('@craft-agent/shared/sources')
-    return createSource(workspace.rootPath, {
+    const createdConfig = await createSource(workspace.rootPath, {
       name: config.name || 'New Source',
       provider: config.provider || 'custom',
       type: config.type || 'mcp',
@@ -102,6 +102,11 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
       api: config.api,
       local: config.local,
     })
+    const createdSource = loadWorkspaceSources(workspace.rootPath).find((source) => (
+      source.config.id === createdConfig.id
+    ))
+    if (!createdSource) throw new Error('Created source could not be loaded')
+    return toPublicSourceDto(createdSource)
   })
 
   // Delete a source

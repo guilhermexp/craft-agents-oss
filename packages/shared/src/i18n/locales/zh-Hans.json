@@ -1532,6 +1532,7 @@
   "sourcesList.statusDisconnected": "已断开",
   "sourcesList.statusNotTested": "未测试",
   "sourcesList.statusReadinessFailed": "就绪检查失败",
+  "sourcesList.statusReadinessFailedDescription": "数据源已连接，但预期工具尚未就绪",
   "sourcesList.statusUnknown": "未知",
   "sourcesList.typeApi": "API",
   "sourcesList.typeLocal": "本地",

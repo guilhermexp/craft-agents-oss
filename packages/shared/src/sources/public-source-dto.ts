@@ -12,7 +12,7 @@ import type {
   SourceReadinessReason,
   SourceType,
 } from './types.ts'
-import { sanitizePublicUrl } from './public-url.ts'
+import { isSensitiveCredentialName, sanitizePublicUrl } from './public-url.ts'
 
 export type PublicMcpSourceConfig = Pick<
   McpSourceConfig,
@@ -107,23 +107,107 @@ function toPublicToolIdentities(tools: SourceExpectedTool[] | undefined): Public
 
 export const sanitizePublicSourceUrl = sanitizePublicUrl
 
+const REDACTED_VALUE = '[REDACTED]'
+const PUBLIC_URL_IN_TEXT = /https?:(?:\/\/|\\\/\\\/)(?:[^\s<>"'\\,;}\]]|\\\/)+/gi
+const CREDENTIAL_ASSIGNMENT = /(?:\\?["']?)([A-Za-z][A-Za-z0-9_-]*)(?:\\?["']?)\s*[:=]\s*/g
+
+function redactCredentialValue(key: string, value: string): string {
+  if (key.toLowerCase() !== 'authorization') return REDACTED_VALUE
+  const scheme = value.match(/^\s*((?:bearer|basic)\s+)/i)
+  return scheme ? `${scheme[1]}${REDACTED_VALUE}` : REDACTED_VALUE
+}
+
+function findQuotedValueEnd(value: string, start: number, delimiter: '"' | "'" | '\\"' | "\\'"): number {
+  if (delimiter.startsWith('\\')) {
+    let candidate = value.indexOf(delimiter, start + delimiter.length)
+    let lastCandidate = -1
+    while (candidate !== -1) {
+      lastCandidate = candidate
+      const remainder = value.slice(candidate + delimiter.length)
+      const next = remainder.match(/^\s*([,;}\]\r\n]|$)/)?.[1]
+      if (next !== undefined) return candidate
+      candidate = value.indexOf(delimiter, candidate + delimiter.length)
+    }
+    return lastCandidate
+  }
+
+  for (let index = start + 1; index < value.length; index += 1) {
+    if (value[index] === '\\') {
+      index += 1
+      continue
+    }
+    if (value[index] === delimiter) return index
+  }
+  return -1
+}
+
+function sanitizeCredentialAssignments(value: string): string {
+  let result = ''
+  let cursor = 0
+  CREDENTIAL_ASSIGNMENT.lastIndex = 0
+
+  for (let match = CREDENTIAL_ASSIGNMENT.exec(value); match; match = CREDENTIAL_ASSIGNMENT.exec(value)) {
+    const key = match[1]
+    if (!key || !isSensitiveCredentialName(key)) continue
+
+    const valueStart = CREDENTIAL_ASSIGNMENT.lastIndex
+    result += value.slice(cursor, valueStart)
+
+    const first = value[valueStart]
+    const escapedQuote = first === '\\' && (value[valueStart + 1] === '"' || value[valueStart + 1] === "'")
+    const delimiter = escapedQuote
+      ? value.slice(valueStart, valueStart + 2) as '\\"' | "\\'"
+      : first === '"' || first === "'"
+        ? first
+        : undefined
+
+    if (delimiter !== undefined) {
+      const end = findQuotedValueEnd(value, valueStart, delimiter)
+      const contentStart = valueStart + delimiter.length
+      const contentEnd = end === -1 ? value.length : end
+      result += delimiter
+      result += redactCredentialValue(key, value.slice(contentStart, contentEnd))
+      if (end !== -1) result += delimiter
+      cursor = end === -1 ? value.length : end + delimiter.length
+      CREDENTIAL_ASSIGNMENT.lastIndex = cursor
+      continue
+    }
+
+    let valueEnd = valueStart
+    while (valueEnd < value.length && !/[,;}\]\r\n\uE000]/.test(value[valueEnd] ?? '')) {
+      valueEnd += 1
+    }
+    const rawValueWithContext = value.slice(valueStart, valueEnd)
+    const contextSuffix = value[valueEnd] === '\uE000'
+      ? rawValueWithContext.match(/\s+(?:at|from)\s*$/i)?.[0]
+      : undefined
+    if (contextSuffix) valueEnd -= contextSuffix.length
+    const rawValue = value.slice(valueStart, valueEnd)
+    const trailingWhitespace = rawValue.match(/[ \t]*$/)?.[0] ?? ''
+    result += redactCredentialValue(key, rawValue.trimEnd())
+    result += trailingWhitespace
+    cursor = valueEnd
+    CREDENTIAL_ASSIGNMENT.lastIndex = valueEnd
+  }
+
+  return result + value.slice(cursor)
+}
+
 export function sanitizeSourceConnectionError(value: string): string {
-  return value
-    .replace(
-      /(\bauthorization"?\s*:\s*"?(?:bearer|basic)\s+)[^"\s,;}]+/gi,
-      '$1[REDACTED]',
-    )
-    .replace(
-      /(\b(?:access[_-]?token|refresh[_-]?token|token|api[_-]?key|provider[_-]?secret|secret|credentials?|password)"?\s*[:=]\s*"?)[^"\s,;}]+/gi,
-      '$1[REDACTED]',
-    )
+  const sanitizedUrls: string[] = []
+  const withoutUrls = value.replace(PUBLIC_URL_IN_TEXT, (url) => {
+    const normalizedUrl = url.replace(/\\\//g, '/')
+    const index = sanitizedUrls.push(sanitizePublicUrl(normalizedUrl) ?? REDACTED_VALUE) - 1
+    return `\uE000${index}\uE001`
+  })
+  const sanitized = sanitizeCredentialAssignments(withoutUrls)
+  return sanitized.replace(/\uE000(\d+)\uE001/g, (_placeholder, index: string) => (
+    sanitizedUrls[Number(index)] ?? REDACTED_VALUE
+  ))
 }
 
 export function sanitizePublicSourceError(value: string): string {
-  const sanitizedUrls = value.replace(/https?:\/\/[^\s,;]+/gi, (url) => (
-    sanitizePublicUrl(url) ?? '[REDACTED]'
-  ))
-  return sanitizeSourceConnectionError(sanitizedUrls)
+  return sanitizeSourceConnectionError(value)
 }
 
 function sanitizePublicIcon(value: string | undefined): string | undefined {

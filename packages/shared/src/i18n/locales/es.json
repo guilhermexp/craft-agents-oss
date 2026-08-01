@@ -1532,6 +1532,7 @@
   "sourcesList.statusDisconnected": "Desconectada",
   "sourcesList.statusNotTested": "Sin probar",
   "sourcesList.statusReadinessFailed": "Preparación fallida",
+  "sourcesList.statusReadinessFailedDescription": "La fuente está conectada, pero las herramientas esperadas aún no están listas",
   "sourcesList.statusUnknown": "Desconocido",
   "sourcesList.typeApi": "API",
   "sourcesList.typeLocal": "Local",

@@ -169,6 +169,36 @@ describe('SOURCES_GET public DTO', () => {
   })
 })
 
+describe('SOURCES_CREATE public DTO', () => {
+  test('returns the same allowlisted DTO boundary as reads', async () => {
+    const { handlers, ctx } = createHarness()
+    const createSource = handlers.get(RPC_NAMESPACES.sources.CREATE)
+
+    const source = await createSource!(ctx, 'ws-1', {
+      name: 'Created',
+      slug: 'created',
+      provider: 'custom',
+      type: 'mcp',
+      mcp: {
+        transport: 'http',
+        url: 'https://mcp.example.test/source',
+        authType: 'none',
+        headers: { Authorization: 'Bearer create-secret' },
+      },
+    })
+    const payload = JSON.stringify(source)
+
+    expect(source.config.name).toBe('Created')
+    expect(source.config.mcp).toEqual({
+      transport: 'http',
+      url: 'https://mcp.example.test/source',
+      authType: 'none',
+    })
+    expect(payload).not.toContain('create-secret')
+    expect(payload).not.toContain('headers')
+  })
+})
+
 describe('SOURCES_GET_MCP_TOOLS public errors', () => {
   test('redacts persisted connection errors before returning them', async () => {
     const { handlers, ctx } = createHarness()

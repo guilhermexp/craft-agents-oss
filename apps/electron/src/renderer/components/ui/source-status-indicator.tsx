@@ -11,6 +11,7 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import {
   Tooltip,
@@ -20,6 +21,7 @@ import {
 import type { SourceConnectionStatus } from '../../../shared/types'
 import {
   SOURCE_STATUS_CONFIG,
+  getSourceStatusLabel,
   getSourceStatusTooltipDescription,
 } from './source-status'
 
@@ -47,11 +49,13 @@ export function SourceStatusIndicator({
   size = 'sm',
   className,
 }: SourceStatusIndicatorProps) {
+  const { t } = useTranslation()
   const config = SOURCE_STATUS_CONFIG[status]
   const sizeClass = SIZE_CONFIG[size]
 
   // Build tooltip description
-  const tooltipDescription = getSourceStatusTooltipDescription(status, errorMessage)
+  const tooltipDescription = getSourceStatusTooltipDescription(status, errorMessage, t)
+  const label = getSourceStatusLabel(status, t)
 
   return (
     <Tooltip>
@@ -85,7 +89,7 @@ export function SourceStatusIndicator({
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs">
         <div className="flex flex-col gap-0.5">
-          <span className="font-medium">{config.label}</span>
+          <span className="font-medium">{label}</span>
           <span className="text-foreground/60">{tooltipDescription}</span>
         </div>
       </TooltipContent>
