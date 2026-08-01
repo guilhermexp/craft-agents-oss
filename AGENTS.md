@@ -128,8 +128,10 @@ The Phase A local-first object contract is tracked by
   workspace/object/view. Load and refresh share abort/generation guards, and
   eviction must remove payloads rather than only LRU metadata. Retargeting an
   unpinned preview across scopes replaces only the disposable preview already
-  in the destination scope; pinned/permanent tabs and a surviving active tab
-  keep their current semantics.
+  in the destination scope. If the active tab is the source preview or the
+  discarded destination preview, active selection follows the new target;
+  pinned/permanent tabs and any other surviving active tab keep their current
+  semantics.
 - The existing right sidebar remains the product owner. Structured objects
   extend `SessionInfoPopover`/`AppShell` and reuse current file viewers; do not
   create a parallel panel. U5 extends the same `WorkspaceObjectPreviewPanel`

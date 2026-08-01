@@ -21,7 +21,8 @@ e `viewId` quando presente.
 
 - **GIVEN** previews não-pinned no scope de origem e no destino, além de tabs pinned/permanentes
 - **WHEN** o preview de origem é retargetado para o scope destino
-- **THEN** o preview descartável do destino é substituído, pinned/permanentes sobrevivem e o active target sobrevivente não muda
+- **THEN** os IDs antigos dos previews de origem e destino ficam ausentes, o novo target aparece uma única vez e pinned/permanentes sobrevivem
+- **AND** se o active target era o preview de origem ou o preview descartado do destino, `activeId` passa ao novo target; qualquer active target sobrevivente permanece inalterado
 - **Test:** `unit`
 
 #### Scenario: Restore contém active target ausente

@@ -172,4 +172,46 @@ describe('content tabs state', () => {
     expect(retargeted.tabs.filter(tab => tab.mode === 'preview' && !tab.pinned)).toHaveLength(1);
     expect(retargeted.activeId).toBe(contentTabId(destinationPinned));
   });
+
+  test('maps an active source preview to one cross-scope target while removing both old preview ids', () => {
+    const source = file('source.md', 's1');
+    const destinationPreview = file('old-preview.md', 's2');
+    const target = file('new-preview.md', 's2');
+    const state: ContentTabsState = {
+      tabs: [
+        { id: contentTabId(source), target: source, mode: 'preview', pinned: false },
+        { id: contentTabId(destinationPreview), target: destinationPreview, mode: 'preview', pinned: false },
+      ],
+      activeId: contentTabId(source),
+    };
+
+    const retargeted = contentTabsReducer(state, { type: 'retarget', id: contentTabId(source), target });
+    const ids = retargeted.tabs.map(tab => tab.id);
+
+    expect(ids).not.toContain(contentTabId(source));
+    expect(ids).not.toContain(contentTabId(destinationPreview));
+    expect(ids.filter(id => id === contentTabId(target))).toHaveLength(1);
+    expect(retargeted.activeId).toBe(contentTabId(target));
+  });
+
+  test('maps an active disposable destination preview to the cross-scope target', () => {
+    const source = file('source.md', 's1');
+    const destinationPreview = file('old-preview.md', 's2');
+    const destinationPermanent = file('permanent.md', 's2');
+    const destinationPinned = file('pinned.md', 's2');
+    const target = file('new-preview.md', 's2');
+    const state: ContentTabsState = {
+      tabs: [
+        { id: contentTabId(destinationPermanent), target: destinationPermanent, mode: 'permanent', pinned: false },
+        { id: contentTabId(destinationPinned), target: destinationPinned, mode: 'permanent', pinned: true },
+        { id: contentTabId(source), target: source, mode: 'preview', pinned: false },
+        { id: contentTabId(destinationPreview), target: destinationPreview, mode: 'preview', pinned: false },
+      ],
+      activeId: contentTabId(destinationPreview),
+    };
+
+    const retargeted = contentTabsReducer(state, { type: 'retarget', id: contentTabId(source), target });
+
+    expect(retargeted.activeId).toBe(contentTabId(target));
+  });
 });

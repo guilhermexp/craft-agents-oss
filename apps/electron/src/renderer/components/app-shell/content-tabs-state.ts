@@ -93,6 +93,18 @@ export function contentTabsReducer(state: ContentTabsState, action: ContentTabsA
           || previewScope(tab.target) !== previewScope(target)
         ))
       : state.tabs;
+    const activeWasDiscardedDestinationPreview = replacesScopedPreview
+      && state.activeId !== null
+      && state.tabs.some(tab => (
+        tab.id === state.activeId
+        && tab.mode === 'preview'
+        && !tab.pinned
+        && previewScope(tab.target) === previewScope(target)
+      ))
+      && !scopedTabs.some(tab => tab.id === state.activeId);
+    const nextActiveId = state.activeId === action.id || activeWasDiscardedDestinationPreview
+      ? nextId
+      : state.activeId;
     if (source && existing) {
       const tabs = scopedTabs.flatMap(tab => {
         if (tab.id === action.id) return [];
@@ -102,10 +114,10 @@ export function contentTabsReducer(state: ContentTabsState, action: ContentTabsA
           mode: tab.mode === 'permanent' || source.mode === 'permanent' ? 'permanent' as const : 'preview' as const,
         } : tab];
       });
-      return repairActive(tabs, state.activeId === action.id ? nextId : state.activeId);
+      return repairActive(tabs, nextActiveId);
     }
     const tabs = scopedTabs.map(tab => tab.id === action.id ? { ...tab, id: nextId, target } : tab);
-    return repairActive(tabs, state.activeId === action.id ? nextId : state.activeId);
+    return repairActive(tabs, nextActiveId);
   }
   const tabs = state.tabs.map(tab => tab.id === action.id
     ? action.type === 'pin' ? { ...tab, pinned: true, mode: 'permanent' as const } : { ...tab, mode: 'permanent' as const }
