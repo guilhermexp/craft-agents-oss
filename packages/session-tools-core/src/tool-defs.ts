@@ -44,6 +44,7 @@ import { handleSendAgentMessage } from './handlers/send-agent-message.ts';
 import { handleChannelDispatch } from './handlers/channel-dispatch.ts';
 import { handleListMessagingChannels, handleUnbindMessagingChannel } from './handlers/messaging.ts';
 import { handleListBackgroundTasks } from './handlers/list-background-tasks.ts';
+import { handleWorkspaceObjects } from './handlers/workspace-objects.ts';
 
 // ============================================================
 // Canonical Zod Schemas
@@ -81,6 +82,41 @@ export const SourceTestSchema = z.object({
 export const SourceOAuthTriggerSchema = z.object({
   sourceSlug: z.string().describe('The slug of the source to authenticate'),
 });
+
+const WorkspaceObjectFieldSchema = z.object({
+  id: z.string().min(1).max(120),
+  name: z.string().min(1).max(160),
+  type: z.enum(['text', 'number', 'boolean', 'date', 'datetime', 'select', 'status', 'relation', 'file']),
+  required: z.boolean().optional(),
+  options: z.array(z.string().min(1).max(160)).max(200).optional(),
+  relationObjectId: z.string().min(1).max(120).optional(),
+}).strict();
+
+const WorkspaceObjectEntrySchema = z.object({
+  id: z.string().min(1).max(120),
+  values: z.record(z.string().min(1).max(120), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+}).strict();
+
+const WorkspaceObjectSavedViewSchema = z.object({
+  id: z.string().min(1).max(120),
+  name: z.string().min(1).max(160),
+  config: z.record(z.string(), z.unknown()),
+}).strict();
+
+export const WorkspaceObjectsSchema = z.object({
+  action: z.enum(['define-object', 'upsert-entries', 'delete-entries', 'upsert-view', 'get-object', 'list-objects', 'repair-projection']),
+  object: z.object({
+    id: z.string().min(1).max(120),
+    slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(120),
+    name: z.string().min(1).max(160),
+    fields: z.array(WorkspaceObjectFieldSchema).max(200),
+  }).strict().optional(),
+  objectId: z.string().min(1).max(120).optional(),
+  entries: z.array(WorkspaceObjectEntrySchema).min(1).max(200).optional(),
+  entryIds: z.array(z.string().min(1).max(120)).min(1).max(200).optional(),
+  view: WorkspaceObjectSavedViewSchema.optional(),
+  limit: z.number().int().min(1).max(200).optional(),
+}).strict();
 
 export const CredentialPromptSchema = z.object({
   sourceSlug: z.string().describe('The slug of the source to authenticate'),
@@ -283,6 +319,7 @@ const MeetingToolSchema = z.object({
 // ============================================================
 
 export const TOOL_DESCRIPTIONS = {
+  workspace_objects: `Create, update, query, and repair structured workspace objects through one validated workspace-scoped data plane. SQLite is canonical; manifests are derived. Never use raw SQL or place secrets in values intended for manifests.`,
   SubmitPlan: `Submit a plan for user review.
 
 Call this after you have written your plan to a markdown file using the Write tool.
@@ -761,6 +798,7 @@ const FRONTIER_TOOL_DEFAULTS = {
 // ============================================================
 
 export const SESSION_TOOL_DEFS: SessionToolDef[] = [
+  defineTool('workspace_objects', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.workspace_objects, inputSchema: WorkspaceObjectsSchema, executionMode: 'registry', safeMode: 'block', handler: handleWorkspaceObjects }),
   defineTool('SubmitPlan', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.SubmitPlan, inputSchema: SubmitPlanSchema, executionMode: 'registry', safeMode: 'allow', handler: handleSubmitPlan }),
   defineTool('config_validate', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.config_validate, inputSchema: ConfigValidateSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleConfigValidate }),
   defineTool('skill_validate', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.skill_validate, inputSchema: SkillValidateSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleSkillValidate }),
@@ -815,6 +853,8 @@ export interface SessionToolFilterOptions {
   includeDeveloperFeedback?: boolean;
   /** Include memory tools (memory_store, memory_recall). */
   includeMemory?: boolean;
+  /** Include structured-object guidance/tooling only for compatible workspaces. */
+  includeWorkspaceObjects?: boolean;
 }
 
 const MEMORY_TOOL_NAMES = new Set(['memory_store', 'memory_recall']);
@@ -828,6 +868,7 @@ const MEMORY_TOOL_NAMES = new Set(['memory_store', 'memory_recall']);
 export function getSessionToolDefs(options?: SessionToolFilterOptions): SessionToolDef[] {
   const includeDeveloperFeedback = options?.includeDeveloperFeedback ?? true;
   const includeMemory = options?.includeMemory ?? false;
+  const includeWorkspaceObjects = options?.includeWorkspaceObjects ?? true;
 
   return SESSION_TOOL_DEFS.filter(def => {
     if (!includeDeveloperFeedback && def.name === 'send_developer_feedback') {
@@ -836,6 +877,7 @@ export function getSessionToolDefs(options?: SessionToolFilterOptions): SessionT
     if (!includeMemory && MEMORY_TOOL_NAMES.has(def.name)) {
       return false;
     }
+    if (!includeWorkspaceObjects && def.name === 'workspace_objects') return false;
     return true;
   });
 }
@@ -980,11 +1022,13 @@ export function getToolDefsAsJsonSchema(opts?: {
   prefix?: string;
   includeDeveloperFeedback?: boolean;
   includeMemory?: boolean;
+  includeWorkspaceObjects?: boolean;
 }): JsonSchemaToolDef[] {
   const prefix = opts?.prefix || '';
   const defs = getSessionToolDefs({
     includeDeveloperFeedback: opts?.includeDeveloperFeedback,
     includeMemory: opts?.includeMemory,
+    includeWorkspaceObjects: opts?.includeWorkspaceObjects,
   });
 
   return defs.map(def => toJsonSchemaToolDef(def, prefix));

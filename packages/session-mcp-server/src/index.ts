@@ -33,6 +33,8 @@ import {
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeveloperFeedbackEnabled, isMemoryEnabled } from '@craft-agent/shared/feature-flags';
+import { basename } from 'node:path';
+import { WorkspaceObjectService, WorkspaceObjectActionSchema } from '../../shared/src/workspace-objects/service.ts';
 // Import from session-tools-core
 import {
   type SessionToolContext,
@@ -203,6 +205,16 @@ function createCodexContext(config: SessionConfig): SessionToolContext {
   return {
     sessionId,
     workspacePath: workspaceRootPath,
+    workspaceObjects: {
+      execute: (input) => {
+        const service = WorkspaceObjectService.open({ workspaceId: basename(workspaceRootPath), workspaceRootPath });
+        try {
+          return service.execute(WorkspaceObjectActionSchema.parse(input)) as unknown as Record<string, unknown>;
+        } finally {
+          service.close();
+        }
+      },
+    },
     get sourcesPath() { return join(workspaceRootPath, 'sources'); },
     get skillsPath() { return join(workspaceRootPath, 'skills'); },
     plansFolderPath,
@@ -261,10 +273,11 @@ function createCodexContext(config: SessionConfig): SessionToolContext {
 // Tool Definitions (from canonical registry)
 // ============================================================
 
-function createSessionTools(includeDeveloperFeedback: boolean): Tool[] {
+function createSessionTools(includeDeveloperFeedback: boolean, includeWorkspaceObjects: boolean): Tool[] {
   return getToolDefsAsJsonSchema({
     includeDeveloperFeedback,
     includeMemory: isMemoryEnabled(),
+    includeWorkspaceObjects,
   }).map(def => ({
     name: def.name,
     description: def.description,
@@ -517,7 +530,8 @@ async function main() {
 
   const includeDeveloperFeedback = isDeveloperFeedbackEnabled();
   const includeMemory = isMemoryEnabled();
-  const sessionToolRegistry = getSessionToolRegistry({ includeDeveloperFeedback, includeMemory });
+  const includeWorkspaceObjects = true;
+  const sessionToolRegistry = getSessionToolRegistry({ includeDeveloperFeedback, includeMemory, includeWorkspaceObjects });
 
   // Create MCP server
   const server = new Server(
@@ -537,7 +551,7 @@ async function main() {
 
   // Handle tool listing — session tools + docs upstream tools
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [...createSessionTools(includeDeveloperFeedback), ...docsTools],
+    tools: [...createSessionTools(includeDeveloperFeedback, includeWorkspaceObjects), ...docsTools],
   }));
 
   // Handle tool calls — route via canonical registry, call_llm, or docs upstream
@@ -565,7 +579,7 @@ async function main() {
       // Check canonical session tool registry first (feature-filtered)
       const def = sessionToolRegistry.get(name);
       if (def?.executionMode === 'registry') {
-        return await executeSessionTool(name, ctx, toolArgs ?? {}, { includeDeveloperFeedback, includeMemory });
+        return await executeSessionTool(name, ctx, toolArgs ?? {}, { includeDeveloperFeedback, includeMemory, includeWorkspaceObjects });
       }
 
       // Route to docs upstream if it's a docs tool

@@ -16,6 +16,8 @@ import { isLocalMcpEnabled } from '../../workspaces/storage.ts';
 import { formatPreferencesForPrompt } from '../../config/preferences.ts';
 import { formatSessionState } from '../mode-manager.ts';
 import { getDateTimeContext, getWorkingDirectoryContext } from '../../prompts/system.ts';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { getSessionPlansPath, getSessionDataPath, getSessionPath } from '../../sessions/storage.ts';
 import type {
   PromptBuilderConfig,
@@ -183,6 +185,10 @@ export class PromptBuilder {
       capabilities.push('local-mcp: enabled (stdio subprocess servers supported)');
     } else {
       capabilities.push('local-mcp: disabled (only HTTP/SSE servers)');
+    }
+
+    if (existsSync(join(this.workspaceRootPath, 'objects', 'objects.sqlite'))) {
+      capabilities.push('structured-objects: enabled; use workspace_objects for bounded schema, entry, view, and query operations; never issue raw SQL');
     }
 
     return `<workspace_capabilities>\n${capabilities.join('\n')}\n</workspace_capabilities>`;

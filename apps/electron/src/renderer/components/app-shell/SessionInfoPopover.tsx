@@ -13,6 +13,7 @@ import { getLanguageFromPath } from '@/lib/file-utils'
 import { cn } from '@/lib/utils'
 import { getFileManagerName } from '@/lib/platform'
 import { SessionFilesSection, WorkspaceFilesSection } from '../right-sidebar/SessionFilesSection'
+import { WorkspaceObjectsSection } from '../right-sidebar/WorkspaceObjectsSection'
 import { getInlinePreviewLoadState } from './right-sidebar-preview-state'
 
 interface SessionInfoPopoverProps {
@@ -105,7 +106,7 @@ export function SessionInfoPopover({
   )
 }
 
-export function SessionInfoPopoverContent({ sessionId, sessionFolderPath, onPreviewFileInline }: { sessionId: string; sessionFolderPath?: string; onPreviewFileInline?: (path: string) => void }) {
+export function SessionInfoPopoverContent({ sessionId, sessionFolderPath, onPreviewFileInline, onPreviewObjectInline }: { sessionId: string; sessionFolderPath?: string; onPreviewFileInline?: (path: string) => void; onPreviewObjectInline?: (objectId: string) => void }) {
   const { t } = useTranslation()
   const session = useSession(sessionId)
   const { onRenameSession } = useAppShellContext()
@@ -163,9 +164,10 @@ export function SessionInfoPopoverContent({ sessionId, sessionFolderPath, onPrev
       </div>
       <Tabs defaultValue="session" className="flex-1 min-h-0 flex flex-col overflow-hidden">
         <div className="shrink-0 border-b border-border/50 px-3 py-2">
-          <TabsList className="grid h-8 w-full grid-cols-2 rounded-[8px]">
+          <TabsList className="grid h-8 w-full grid-cols-3 rounded-[8px]">
             <TabsTrigger value="session" className="h-6 text-xs">{t('chat.sessionFilesTab')}</TabsTrigger>
             <TabsTrigger value="workspace" className="h-6 text-xs">{t('chat.workspaceFilesTab')}</TabsTrigger>
+            <TabsTrigger value="objects" className="h-6 text-xs">{t('chat.workspaceObjectsTab')}</TabsTrigger>
           </TabsList>
         </div>
         <TabsContent value="session" className="m-0 flex-1 min-h-0 overflow-hidden">
@@ -183,6 +185,9 @@ export function SessionInfoPopoverContent({ sessionId, sessionFolderPath, onPrev
             className="h-full min-h-0"
             onPreviewFileInline={onPreviewFileInline}
           />
+        </TabsContent>
+        <TabsContent value="objects" className="m-0 flex-1 min-h-0 overflow-hidden">
+          <WorkspaceObjectsSection onPreviewObject={onPreviewObjectInline ?? (() => {})} />
         </TabsContent>
       </Tabs>
     </div>

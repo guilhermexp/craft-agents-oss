@@ -3032,5 +3032,256 @@
       "type": "object"
     },
     "safeMode": "block"
+  },
+  "workspace_objects": {
+    "apiVersion": "v1",
+    "description": "Create, update, query, and repair structured workspace objects through one validated workspace-scoped data plane. SQLite is canonical; manifests are derived. Never use raw SQL or place secrets in values intended for manifests.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "enum": [
+            "define-object",
+            "upsert-entries",
+            "delete-entries",
+            "upsert-view",
+            "get-object",
+            "list-objects",
+            "repair-projection"
+          ],
+          "type": "string"
+        },
+        "entries": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              "values": {
+                "additionalProperties": {
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "propertyNames": {
+                  "maxLength": 120,
+                  "minLength": 1
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "id",
+              "values"
+            ],
+            "type": "object"
+          },
+          "maxItems": 200,
+          "minItems": 1,
+          "type": "array"
+        },
+        "entryIds": {
+          "items": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "minItems": 1,
+          "type": "array"
+        },
+        "limit": {
+          "maximum": 200,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "object": {
+          "additionalProperties": false,
+          "properties": {
+            "fields": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "name": {
+                    "maxLength": 160,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "options": {
+                    "items": {
+                      "maxLength": 160,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 200,
+                    "type": "array"
+                  },
+                  "relationObjectId": {
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "enum": [
+                      "text",
+                      "number",
+                      "boolean",
+                      "date",
+                      "datetime",
+                      "select",
+                      "status",
+                      "relation",
+                      "file"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "type"
+                ],
+                "type": "object"
+              },
+              "maxItems": 200,
+              "type": "array"
+            },
+            "id": {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            "name": {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            "slug": {
+              "maxLength": 120,
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "slug",
+            "name",
+            "fields"
+          ],
+          "type": "object"
+        },
+        "objectId": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        },
+        "view": {
+          "additionalProperties": false,
+          "properties": {
+            "config": {
+              "additionalProperties": {},
+              "type": "object"
+            },
+            "id": {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            "name": {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "config"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    "name": "workspace_objects",
+    "outputSchema": {
+      "properties": {
+        "content": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "data",
+                  "mimeType"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        },
+        "structuredContent": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "safeMode": "block"
   }
 }

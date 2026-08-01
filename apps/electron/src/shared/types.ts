@@ -11,6 +11,8 @@ import type { StatusConfig } from '@craft-agent/shared/statuses'
 import type { ThemeOverrides, PresetTheme } from '@config/theme'
 import type { ViewConfig } from '@craft-agent/shared/views'
 import type { WarRoomChannel, CreateWarRoomChannelInput, UpdateWarRoomChannelInput, DeleteChannelOptions, DeleteChannelResult, ChannelMessage, WarRoomDispatch } from '@craft-agent/shared/channels'
+import { WORKSPACE_OBJECT_RPC_CHANNELS, type WorkspaceObjectEvent, type WorkspaceObjectPayload } from '@craft-agent/shared/workspace-objects/types'
+import type { WorkspaceObjectAction, WorkspaceObjectServiceResult } from '@craft-agent/shared/workspace-objects/service'
 
 // =============================================================================
 // Package re-exports (convenience for renderer imports)
@@ -324,6 +326,11 @@ export const RPC_CONTRACT = {
   getPendingPlanExecution: invoke<((sessionId: string) => Promise<{ planPath: string; draftInputSnapshot?: string; awaitingCompaction: boolean; executionDispatched: boolean } | null>)>(RPC_NAMESPACES.sessions.GET_PENDING_PLAN_EXECUTION),
   getSessionPermissionModeState: invoke<((sessionId: string) => Promise<PermissionModeState | null>)>(RPC_NAMESPACES.sessions.GET_PERMISSION_MODE_STATE),
   getWorkspaces: invoke<(() => Promise<Workspace[]>)>(RPC_NAMESPACES.workspaces.GET),
+  listWorkspaceObjects: invoke<((workspaceId: string) => Promise<{ objects: WorkspaceObjectPayload[] }>)>(WORKSPACE_OBJECT_RPC_CHANNELS.LIST),
+  executeWorkspaceObjectAction: invoke<((workspaceId: string, input: WorkspaceObjectAction) => Promise<WorkspaceObjectServiceResult>)>(WORKSPACE_OBJECT_RPC_CHANNELS.EXECUTE),
+  subscribeWorkspaceObjects: invoke<((workspaceId: string) => Promise<void>)>(WORKSPACE_OBJECT_RPC_CHANNELS.SUBSCRIBE),
+  unsubscribeWorkspaceObjects: invoke<((workspaceId: string) => Promise<void>)>(WORKSPACE_OBJECT_RPC_CHANNELS.UNSUBSCRIBE),
+  onWorkspaceObjectEvent: event<((callback: (event: WorkspaceObjectEvent) => void) => () => void)>(WORKSPACE_OBJECT_RPC_CHANNELS.EVENT),
   createWorkspace: invoke<((folderPath: string, name: string, remoteServer?: { url: string; token: string; remoteWorkspaceId: string }) => Promise<Workspace>)>(RPC_NAMESPACES.workspaces.CREATE),
   checkWorkspaceSlug: invoke<((slug: string) => Promise<{ exists: boolean; path: string }>)>(RPC_NAMESPACES.workspaces.CHECK_SLUG),
   updateWorkspaceRemoteServer: invoke<((workspaceId: string, remoteServer: { url: string; token: string; remoteWorkspaceId: string }) => Promise<{ success: boolean }>)>(RPC_NAMESPACES.workspaces.UPDATE_REMOTE),

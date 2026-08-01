@@ -1,0 +1,221 @@
+## ADDED Requirements
+
+### Requirement: Structured workspaces have one canonical object model
+
+O sistema SHALL persistir objects, typed fields, entries, values, relations,
+statuses, linked documents, saved views e action history em um schema SQLite
+versionado por workspace. Inicialização, migrations e seeds SHALL ser
+idempotentes e identificadores de sistema MUST permanecer estáveis.
+
+#### Scenario: Inicialização repetida preserva identidade
+
+- **GIVEN** um workspace estruturado já inicializado
+- **WHEN** o runtime inicializa o object store novamente
+- **THEN** migrations e seeds não duplicam records nem alteram stable IDs
+- **Test:** `integration`
+
+#### Scenario: Mutação inválida não grava parcialmente
+
+- **GIVEN** uma mutação com múltiplas entries e um value inválido
+- **WHEN** o service valida e tenta aplicar a operação
+- **THEN** a transação inteira é rejeitada sem revisão ou evento de sucesso
+- **Test:** `integration`
+
+### Requirement: Object reads use a reconstructable revisioned projection
+
+O sistema SHALL manter um payload tabular indexado com a revisão das rows
+normalizadas e MUST reconstruí-lo das rows canônicas quando estiver ausente ou
+stale. Ausência da projeção MAY reduzir performance, mas MUST NOT reduzir
+correção ou visibilidade.
+
+#### Scenario: Projeção ausente é reconstruída
+
+- **GIVEN** um objeto canônico sem seu payload projetado
+- **WHEN** o objeto é consultado
+- **THEN** o runtime retorna dados equivalentes às rows normalizadas e recria a projeção
+- **Test:** `integration`
+
+#### Scenario: Revisão projetada está stale
+
+- **GIVEN** um payload cuja source revision é anterior à revisão do objeto
+- **WHEN** a consulta ocorre
+- **THEN** o payload stale não é tratado como atual e é reconstruído
+- **Test:** `unit`
+
+### Requirement: Filesystem manifests are recoverable projections
+
+SQLite SHALL ser a única autoridade de identidade. O manifest em
+`objects/<slug>/object.yaml` SHALL carregar stable ID e revision, SHALL ser
+escrito atomicamente e MUST ser reparado quando ausente. Divergência de stable
+ID MUST manter o objeto canônico visível e produzir conflito acionável.
+
+#### Scenario: Manifest deletado é reparado
+
+- **GIVEN** um objeto canônico cujo manifest foi removido
+- **WHEN** o watcher ou uma leitura detecta a ausência
+- **THEN** o runtime recria idempotentemente o manifest sem alterar a revisão do objeto
+- **Test:** `integration`
+
+#### Scenario: Stable ID divergente não substitui identidade
+
+- **GIVEN** um manifest cujo stable ID não corresponde ao objeto do diretório
+- **WHEN** o runtime valida a projeção
+- **THEN** ele preserva o objeto canônico, não importa o manifest e mostra o conflito
+- **Test:** `integration`
+
+### Requirement: Canonical commit and manifest projection form a recoverable protocol
+
+O service SHALL commit canonical rows e read projection antes de projetar o
+manifest. Depois do commit ele SHALL publicar exatamente um evento revisionado
+com status `ready` ou `projection-error`; ambos MUST permitir reload do objeto
+canônico e `projection-error` MUST expor repair state.
+
+#### Scenario: Commit e manifest concluem
+
+- **WHEN** uma mutação válida e seu manifest concluem
+- **THEN** o service publica um evento `ready` com workspace, object e revision
+- **Test:** `integration`
+
+#### Scenario: Manifest falha após commit
+
+- **GIVEN** uma revisão canônica já commitada
+- **WHEN** a escrita ou validação do manifest falha
+- **THEN** o service publica `projection-error`, mantém o objeto visível e permite repair idempotente
+- **Test:** `integration`
+
+### Requirement: Object events and watchers are workspace-scoped
+
+Eventos SHALL carregar workspace ID, object ID, revision, kind e projection
+status. Watchers SHALL ignorar DB/WAL/SHM e temporários, aplicar debounce por
+path, reference-count clients e encerrar handles e timers ao perder o último
+cliente.
+
+#### Scenario: Evento de outro workspace é ignorado
+
+- **GIVEN** um cliente inscrito no workspace A
+- **WHEN** uma revisão ocorre no workspace B
+- **THEN** nenhuma invalidação do workspace B chega ao cliente do workspace A
+- **Test:** `integration`
+
+#### Scenario: Último cliente sai
+
+- **GIVEN** um watcher com um cliente restante
+- **WHEN** esse cliente cancela a inscrição
+- **THEN** handles, debounce timers e registry entry são encerrados
+- **Test:** `unit`
+
+### Requirement: One payload powers all object views
+
+Table, Kanban, calendar, timeline, gallery e list SHALL consumir o mesmo payload
+canônico. Trocar adapter MUST NOT migrar dados nem alterar object/entry IDs.
+
+#### Scenario: Coleção alterna entre seis views
+
+- **GIVEN** uma saved view válida
+- **WHEN** o usuário alterna entre os seis adapters
+- **THEN** todos exibem o mesmo conjunto revisionado de entries e stable IDs
+- **Test:** `integration`
+
+### Requirement: Saved views and table edits are durable and typed
+
+Saved views SHALL preservar filtros aninhados, search, multi-sort, column
+visibility e settings do adapter. Table edits SHALL validar pelo field type,
+resolver relation labels por stable ID e somente confirmar sucesso após commit.
+
+#### Scenario: Saved view é restaurada
+
+- **WHEN** uma view com filtros aninhados e columns ocultas é reaberta
+- **THEN** query e apresentação correspondem ao estado salvo
+- **Test:** `integration`
+
+#### Scenario: Field edit inválido é rejeitado
+
+- **WHEN** um editor envia valor incompatível com o field type
+- **THEN** o editor mostra erro e nenhuma revisão de sucesso é publicada
+- **Test:** `unit`
+
+### Requirement: Kanban mutations fully roll back on failure
+
+Kanban SHALL agrupar por field configurável, SHALL explicar configuração
+incompatível e MUST restaurar a mutação original quando a persistência falhar
+por resposta ou transporte.
+
+#### Scenario: Group field está ausente
+
+- **WHEN** Kanban abre sem field compatível configurado
+- **THEN** ele mostra a configuração necessária em vez de um board vazio
+- **Test:** `unit`
+
+#### Scenario: Transporte falha após optimistic move
+
+- **WHEN** um card é movido e o request lança erro de transporte
+- **THEN** card e dados locais retornam à coluna original e o erro permanece visível
+- **Test:** `integration`
+
+### Requirement: Gmail sync is resumable and idempotent
+
+O sync SHALL checkpointar antes de cada page, deduplicar por provider ID,
+respeitar rate limits e excluir endereços do usuário autenticado da criação de
+counterparts.
+
+#### Scenario: Sync interrompe após checkpoint
+
+- **GIVEN** uma page checkpointada e parcialmente processada
+- **WHEN** o sync retoma
+- **THEN** pages anteriores não repetem e a page corrente não duplica messages ou interactions
+- **Test:** `integration`
+
+#### Scenario: Próprio usuário aparece nos recipients
+
+- **WHEN** uma message inclui um alias da conta autenticada
+- **THEN** esse alias não cria relationship profile
+- **Test:** `unit`
+
+### Requirement: Inbox hydrates full content on demand
+
+List payloads SHALL conter somente metadata e preview. Body HTML SHALL ser
+buscado ao selecionar a message e MUST atravessar a boundary sanitizada
+existente antes de renderizar.
+
+#### Scenario: Inbox lista mensagens
+
+- **WHEN** o inbox carrega uma page
+- **THEN** nenhum body HTML completo integra o list payload
+- **Test:** `integration`
+
+#### Scenario: Mensagem é aberta
+
+- **WHEN** o usuário seleciona uma message
+- **THEN** o body é hidratado sob demanda e renderizado sanitizado
+- **Test:** `integration`
+
+### Requirement: Calendar sync preserves provider semantics
+
+O sync SHALL preservar provider ID, timezone, cancellation, recurring-instance
+identity e incremental token. Token expirado SHALL iniciar full reconciliation
+idempotente sem remover dados visíveis antes da substituição.
+
+#### Scenario: Evento cancelado chega incrementalmente
+
+- **WHEN** o provider envia cancellation para um evento conhecido
+- **THEN** a entry correta é marcada cancelada sem criar duplicata
+- **Test:** `integration`
+
+#### Scenario: Incremental token expira
+
+- **WHEN** o provider rejeita o sync token
+- **THEN** o runtime agenda full reconciliation e conserva o calendar atual até convergir
+- **Test:** `integration`
+
+### Requirement: Relationships aggregate by counterpart with provenance
+
+Interactions de email, calendar e meetings SHALL agregar por identidade externa
+normalizada, SHALL preservar source provenance e MUST excluir identidades do
+usuário autenticado.
+
+#### Scenario: Email e meeting compartilham counterpart
+
+- **GIVEN** um email e uma meeting com a mesma identidade externa
+- **WHEN** o profile é consultado
+- **THEN** ambas aparecem em um profile com provenance separado por source
+- **Test:** `integration`

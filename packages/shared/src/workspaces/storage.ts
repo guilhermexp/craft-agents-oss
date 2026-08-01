@@ -109,6 +109,11 @@ export function getWorkspaceSkillsPath(rootPath: string): string {
   return join(rootPath, 'skills');
 }
 
+/** Canonical storage root for structured workspace objects. */
+export function getWorkspaceObjectsPath(rootPath: string): string {
+  return join(rootPath, 'objects');
+}
+
 /**
  * Get path to workspace meetings directory
  * @param rootPath - Absolute path to the user's workspace root folder

@@ -103,6 +103,50 @@ the `session-tools-mcp` frontier API:
 - Run `bun run lint:tool-contracts` after changing session tools, in addition
   to the focused Hermes/Craft tests below.
 
+## Structured workspace objects
+
+The Phase A local-first object contract is tracked by
+`openspec/changes/add-structured-workspace-objects/` and the evidence notes in
+`docs/denchclaw/`. Preserve these boundaries:
+
+- `packages/shared/src/workspace-objects/` owns the canonical SQLite schema,
+  repository, reconstructable read projection, manifest protocol and
+  revisioned domain events. SQLite commits first; a manifest is only a derived,
+  repairable projection. Publish exactly one post-commit event as `ready` or
+  `projection-error`; the latter must keep canonical data visible.
+- `packages/session-tools-core` owns the versioned `workspace_objects` frontier
+  definition. Claude, Pi, Hermes/session MCP and Desktop RPC must call the same
+  shared service; never add raw SQL, renderer-specific tools or secrets to the
+  public envelope/manifests.
+- `packages/server-core/src/workspace-objects/` owns the refcounted manifest
+  watcher. It is one watcher per workspace, debounced per path, ignores SQLite
+  sidecars/atomic temporaries, and closes all handles and timers when the last
+  client unsubscribes.
+- `apps/electron/src/renderer/components/app-shell/content-tabs-state.ts` and
+  `content-resolver.ts` own pure tab identity plus the bounded SWR lifecycle.
+  File identity includes workspace/session/path; object identity includes
+  workspace/object/view. Load and refresh share abort/generation guards, and
+  eviction must remove payloads rather than only LRU metadata.
+- The existing right sidebar remains the product owner. Structured objects
+  extend `SessionInfoPopover`/`AppShell` and reuse current file viewers; do not
+  create a parallel panel or implement Phase B view editors in this surface.
+
+### Structured-object child index
+
+| Subtree | Responsibility |
+| --- | --- |
+| `packages/shared/src/workspace-objects/` | SQLite authority, typed values, projections, manifests, service and events |
+| `packages/session-tools-core/src/handlers/workspace-objects.ts` | Validated generic frontier handler |
+| `packages/server-core/src/workspace-objects/` | Refcounted filesystem watcher |
+| `packages/server-core/src/handlers/rpc/workspace-objects.ts` | Workspace-scoped Desktop bridge |
+| `apps/electron/src/renderer/components/app-shell/content-*.ts` | Tabs, target identity, bounded resolver and SWR |
+| `apps/electron/src/renderer/components/right-sidebar/WorkspaceObject*.tsx` | Object list and Phase A read preview inside the existing sidebar |
+| `docs/denchclaw/` | Pinned upstream evidence, known defects and Craft decisions |
+
+After changing this contract, run the focused Phase A tests, `typecheck:all`,
+`lint:tool-contracts`, `lint:i18n:parity`, strict OpenSpec validation and
+`git diff --check`. Real Electron smoke and phase audit remain separate evidence.
+
 When bumping or automatically following the Hermes upstream pin, preserve these
 overlay behaviors:
 

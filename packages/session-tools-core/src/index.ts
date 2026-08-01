@@ -175,6 +175,7 @@ export {
   handleSendDeveloperFeedback,
   // Channel Dispatch
   handleChannelDispatch,
+  handleWorkspaceObjects,
 } from './handlers/index.ts';
 
 export type {
@@ -194,6 +195,7 @@ export type {
   RenderTemplateArgs,
   SendDeveloperFeedbackArgs,
   ChannelDispatchArgs,
+  WorkspaceObjectsArgs,
 } from './handlers/index.ts';
 
 // Tool definitions — single source of truth
@@ -220,6 +222,7 @@ export {
   // Developer feedback schema
   SendDeveloperFeedbackSchema,
   ChannelDispatchSchema,
+  WorkspaceObjectsSchema,
   // Descriptions
   TOOL_DESCRIPTIONS,
   // Registry

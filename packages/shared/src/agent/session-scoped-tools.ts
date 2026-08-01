@@ -275,9 +275,10 @@ export function getSessionScopedTools(
 
     // Create tools from the canonical registry — all tools with handlers.
     // Tool visibility is centrally filtered in session-tools-core to avoid backend drift.
-    tools = getSessionToolDefs({ includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback, includeMemory: FEATURE_FLAGS.memory })
-      .filter(def => def.executionMode === 'registry') // Skip backend-mode tools (call_llm/spawn_session/browser_tool)
-      .map(def => registryTool(def.name, def.inputSchema.shape));
+    tools = [];
+    for (const def of getSessionToolDefs({ includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback, includeMemory: FEATURE_FLAGS.memory, includeWorkspaceObjects: true })) {
+      if (def.executionMode === 'registry') tools.push(registryTool(def.name, def.inputSchema.shape));
+    }
 
     // Add call_llm — backend-specific (not in registry handler)
     const sessionPath = getSessionPath(workspaceRootPath, sessionId);

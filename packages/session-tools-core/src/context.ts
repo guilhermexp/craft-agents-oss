@@ -190,6 +190,11 @@ export interface SessionToolContext {
   /** Absolute path to workspace folder (~/.craft-agent/workspaces/{id}) */
   workspacePath: string;
 
+  /** Optional structured-object capability hosted by this backend. */
+  workspaceObjects?: {
+    execute(input: Record<string, unknown>): Promise<Record<string, unknown>> | Record<string, unknown>;
+  };
+
   /** Path to sources folder within workspace */
   get sourcesPath(): string;
 

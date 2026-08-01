@@ -73,7 +73,8 @@ import {
 import { SessionList, type ChatGroupingMode } from "./SessionList"
 import { MainContentPanel } from "./MainContentPanel"
 import { PanelStackContainer } from "./PanelStackContainer"
-import { InlineFilePreviewPanel, SessionInfoPopoverContent } from "./SessionInfoPopover"
+import { SessionInfoPopoverContent } from "./SessionInfoPopover"
+import { ContentPreviewHost } from './ContentPreviewHost'
 import { getRightSidebarFilePaneLayout } from "../right-sidebar/SessionFilesSection"
 import {
   getRightSidebarEffectiveWidth,
@@ -84,10 +85,7 @@ import {
   RIGHT_SIDEBAR_TREE_ONLY_MAX_WIDTH,
   RIGHT_SIDEBAR_SPLIT_DEFAULT_WIDTH,
 } from "./right-sidebar-sizing"
-import {
-  getActiveRightSidebarPreviewPath,
-  type RightSidebarPreviewSelection,
-} from "./right-sidebar-preview-state"
+import { contentTabsReducer, restoreContentTabs, type ContentTabsState } from "./content-tabs-state"
 import { useChatMatchWiring } from "@/hooks/useChatMatchWiring"
 import { LeftSidebar } from "./LeftSidebar"
 import { useSessionSelection } from "@/hooks/useSession"
@@ -653,15 +651,18 @@ function AppShellContent({
   const [rbWorkingDirectory, rbSdkCwd, rbSessionFolderPath] = useAtomValue(rightSidebarPathsAtom)
   const rightSidebarPanel = navState.rightSidebar
   const isRightSidebarVisible = !isAutoCompact && rightSidebarPanel?.type === 'session-info' && !!rightSidebarSessionId
-  const [rightSidebarPreviewSelection, setRightSidebarPreviewSelection] = React.useState<RightSidebarPreviewSelection | null>(null)
-  const rightSidebarPreviewPath = getActiveRightSidebarPreviewPath({
-    selection: rightSidebarPreviewSelection,
-    sessionId: rightSidebarSessionId ?? null,
-    isVisible: isRightSidebarVisible,
-  })
-  const rightSidebarFilePaneLayout = getRightSidebarFilePaneLayout(rightSidebarPreviewPath)
+  const [rightSidebarContentTabs, dispatchRightSidebarContentTabs] = React.useReducer(contentTabsReducer, { tabs: [], activeId: null } as ContentTabsState)
+  const restoringRightSidebarTabsRef = React.useRef(false)
+  const activeRightSidebarTab = rightSidebarContentTabs.tabs.find(tab => tab.id === rightSidebarContentTabs.activeId) ?? null
+  const rightSidebarContentTarget = isRightSidebarVisible
+    && activeRightSidebarTab?.target.workspaceId === activeWorkspaceId
+    && (activeRightSidebarTab.target.kind !== 'file' || activeRightSidebarTab.target.sessionId === rightSidebarSessionId)
+      ? activeRightSidebarTab.target
+      : null
+  const rightSidebarPreviewPath = rightSidebarContentTarget?.kind === 'file' ? rightSidebarContentTarget.path : null
+  const rightSidebarFilePaneLayout = getRightSidebarFilePaneLayout(rightSidebarContentTarget ? 'active-content' : null)
   const rightSidebarWidth = getRightSidebarEffectiveWidth({
-    width: rightSidebarPreviewPath ? rightSidebarPreviewPreferredWidth : rightSidebarPreferredWidth,
+    width: rightSidebarContentTarget ? rightSidebarPreviewPreferredWidth : rightSidebarPreferredWidth,
     windowWidth: shellWidth > 0
       ? shellWidth
       : typeof window === 'undefined'
@@ -669,17 +670,58 @@ function AppShellContent({
         : window.innerWidth,
     edgeInset: PANEL_EDGE_INSET,
     minWidth: RIGHT_SIDEBAR_MIN_WIDTH,
-    requiredMinWidth: rightSidebarPreviewPath
+    requiredMinWidth: rightSidebarContentTarget
       ? RIGHT_SIDEBAR_SPLIT_MIN_WIDTH
       : RIGHT_SIDEBAR_MIN_WIDTH,
     // File-list-only view stays compact; the preview split is the wide one.
-    maxWidthCap: rightSidebarPreviewPath ? undefined : RIGHT_SIDEBAR_TREE_ONLY_MAX_WIDTH,
+    maxWidthCap: rightSidebarContentTarget ? undefined : RIGHT_SIDEBAR_TREE_ONLY_MAX_WIDTH,
   })
 
   const handleRightSidebarPreviewFile = React.useCallback((filePath: string) => {
-    if (!rightSidebarSessionId) return
-    setRightSidebarPreviewSelection({ sessionId: rightSidebarSessionId, filePath })
-  }, [rightSidebarSessionId])
+    if (!rightSidebarSessionId || !activeWorkspaceId) return
+    dispatchRightSidebarContentTabs({ type: 'open', mode: 'preview', target: { kind: 'file', workspaceId: activeWorkspaceId, sessionId: rightSidebarSessionId, path: filePath } })
+  }, [rightSidebarSessionId, activeWorkspaceId])
+
+  const handleRightSidebarPreviewObject = React.useCallback((objectId: string) => {
+    if (!activeWorkspaceId) return
+    dispatchRightSidebarContentTabs({ type: 'open', mode: 'preview', target: { kind: 'object', workspaceId: activeWorkspaceId, objectId } })
+  }, [activeWorkspaceId])
+
+  React.useEffect(() => {
+    restoringRightSidebarTabsRef.current = true
+    if (!activeWorkspaceId || !rightSidebarSessionId) {
+      dispatchRightSidebarContentTabs({ type: 'restore', state: { tabs: [], activeId: null } })
+      return
+    }
+    const objectState = storage.get<ContentTabsState>(storage.KEYS.workspaceObjectTabs, { tabs: [], activeId: null }, `${activeWorkspaceId}:objects`)
+    const fileState = storage.get<ContentTabsState>(storage.KEYS.workspaceObjectTabs, { tabs: [], activeId: null }, `${activeWorkspaceId}:${rightSidebarSessionId}:files`)
+    const merged = { tabs: [...objectState.tabs, ...fileState.tabs], activeId: fileState.activeId ?? objectState.activeId }
+    dispatchRightSidebarContentTabs({ type: 'restore', state: restoreContentTabs(merged, activeWorkspaceId, rightSidebarSessionId) })
+  }, [activeWorkspaceId, rightSidebarSessionId])
+
+  React.useEffect(() => {
+    if (!activeWorkspaceId || !rightSidebarSessionId) return
+    if (restoringRightSidebarTabsRef.current) {
+      restoringRightSidebarTabsRef.current = false
+      return
+    }
+    const objectTabs = rightSidebarContentTabs.tabs.filter(tab => tab.target.kind === 'object')
+    const fileTabs = rightSidebarContentTabs.tabs.filter(tab => tab.target.kind === 'file')
+    storage.set(storage.KEYS.workspaceObjectTabs, { tabs: objectTabs, activeId: objectTabs.some(tab => tab.id === rightSidebarContentTabs.activeId) ? rightSidebarContentTabs.activeId : null }, `${activeWorkspaceId}:objects`)
+    storage.set(storage.KEYS.workspaceObjectTabs, { tabs: fileTabs, activeId: fileTabs.some(tab => tab.id === rightSidebarContentTabs.activeId) ? rightSidebarContentTabs.activeId : null }, `${activeWorkspaceId}:${rightSidebarSessionId}:files`)
+  }, [activeWorkspaceId, rightSidebarSessionId, rightSidebarContentTabs])
+
+  React.useEffect(() => {
+    if (!activeWorkspaceId) return
+    void window.electronAPI.subscribeWorkspaceObjects(activeWorkspaceId)
+    const unsubscribeReconnect = window.electronAPI.onReconnected(() => {
+      void window.electronAPI.subscribeWorkspaceObjects(activeWorkspaceId)
+    })
+    return () => {
+      unsubscribeReconnect()
+      void window.electronAPI.unsubscribeWorkspaceObjects(activeWorkspaceId)
+    }
+  }, [activeWorkspaceId])
 
   // Navigate the focused panel to a session.
   // If the session is already open in another panel, focus that panel instead.
@@ -3652,7 +3694,6 @@ function AppShellContent({
                       icon={<X className="size-4" />}
                       tooltip={t("common.close")}
                       onClick={() => {
-                        setRightSidebarPreviewSelection(null)
                         updateRightSidebar(undefined)
                       }}
                     />
@@ -3668,17 +3709,43 @@ function AppShellContent({
                         sessionId={rightSidebarSessionId}
                         sessionFolderPath={rbSessionFolderPath}
                         onPreviewFileInline={handleRightSidebarPreviewFile}
+                        onPreviewObjectInline={handleRightSidebarPreviewObject}
                       />
                     </div>
-                    {rightSidebarFilePaneLayout.showPreview && rightSidebarPreviewPath ? (
+                    {rightSidebarFilePaneLayout.showPreview && rightSidebarContentTarget ? (
                       <>
                         <div className="bg-border/60" />
-                        <div className="min-h-0 min-w-0 overflow-hidden">
-                          <InlineFilePreviewPanel
-                            filePath={rightSidebarPreviewPath}
-                            onBack={() => setRightSidebarPreviewSelection(null)}
-                            onOpenDialog={handleContextOpenFile}
-                          />
+                        <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+                          <div className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-border/60 px-2">
+                            {rightSidebarContentTabs.tabs.map(tab => (
+                              <div
+                                key={tab.id}
+                                className={cn(
+                                  "group flex max-w-44 items-center gap-1 rounded-md px-2 py-1 text-xs",
+                                  tab.id === rightSidebarContentTabs.activeId ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5",
+                                )}
+                              >
+                                <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => dispatchRightSidebarContentTabs({ type: 'select', id: tab.id })} onDoubleClick={() => dispatchRightSidebarContentTabs({ type: 'promote', id: tab.id })}>
+                                  {tab.target.kind === 'file' ? tab.target.path.split(/[\\/]/).pop() : tab.target.objectId}
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label={t('common.close')}
+                                  onClick={() => dispatchRightSidebarContentTabs({ type: 'close', id: tab.id })}
+                                  className="rounded-sm opacity-0 group-hover:opacity-100"
+                                >
+                                  <X className="size-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="min-h-0 flex-1 overflow-hidden">
+                            <ContentPreviewHost
+                              target={rightSidebarContentTarget}
+                              onClose={() => activeRightSidebarTab && dispatchRightSidebarContentTabs({ type: 'close', id: activeRightSidebarTab.id })}
+                              onOpenFileDialog={handleContextOpenFile}
+                            />
+                          </div>
                         </div>
                       </>
                     ) : null}

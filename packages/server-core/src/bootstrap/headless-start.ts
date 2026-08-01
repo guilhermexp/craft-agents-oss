@@ -9,6 +9,7 @@ import { WsRpcServer, type WsRpcTlsOptions } from '../transport/server'
 import type { EventSink, RpcServer } from '../transport/types'
 import { createHeadlessPlatform } from '../runtime/platform-headless'
 import type { PlatformServices } from '../runtime/platform'
+import { cleanupWorkspaceObjectClient } from '../handlers/rpc/workspace-objects'
 
 interface ModelRefreshServiceLike {
   startAll(): void
@@ -306,6 +307,7 @@ export async function bootstrapServer<TSessionManager, THandlerDeps>(
     httpHandler: options.httpHandler,
     onClientConnected: options.onClientConnected,
     onClientDisconnected: (clientId) => {
+      cleanupWorkspaceObjectClient(clientId)
       options.cleanupClientResources?.(clientId)
       // Best-effort: notify SM so it can drop browser-host pins for this client.
       // Duck-typed because TSessionManager is generic at the bootstrap layer.

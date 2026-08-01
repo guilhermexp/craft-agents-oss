@@ -67,6 +67,9 @@ export type { SendDeveloperFeedbackArgs } from './send-developer-feedback.ts';
 export { handleChannelDispatch } from './channel-dispatch.ts';
 export type { ChannelDispatchArgs } from './channel-dispatch.ts';
 
+export { handleWorkspaceObjects } from './workspace-objects.ts';
+export type { WorkspaceObjectsArgs } from './workspace-objects.ts';
+
 // Session Self-Management
 export { handleSetSessionLabels } from './set-session-labels.ts';
 export type { SetSessionLabelsArgs } from './set-session-labels.ts';
