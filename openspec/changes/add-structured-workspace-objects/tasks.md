@@ -304,6 +304,15 @@ ArrowLeft/ArrowRight alcançam o vizinho na primeira tecla, boundaries retornam
 sem destino e a coluna sem grupo required desabilitada continua ignorada. A
 suíte focada passou 17/17 (97 expects); 7.5 permanece desmarcado.
 
+Residual sequencial de teclado U6 7.3/7.4 (2026-08-01): o RED focado retornou
+0/1 no segundo passo do mesmo drag, pois a fonte original continuava excluída
+depois de Right alcançar outra coluna. O GREEN usa `context.over.id` quando ele
+é uma coluna estrutural habilitada e mantém `active.data` apenas como fallback
+da ativação inicial. A sequência Right/Left/Left/Right pode voltar à origem,
+respeita os dois boundaries e ignora a coluna sem grupo required desabilitada
+sem mutar `active.data`. A suíte focada passou 17/17 (100 expects); 7.5 permanece
+desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

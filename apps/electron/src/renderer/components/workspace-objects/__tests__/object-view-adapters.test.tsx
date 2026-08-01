@@ -189,7 +189,7 @@ describe('object view adapter registry', () => {
     expect(withObjectViewAdapter(viewConfig, 'table').presentation.adapter).toBe('table')
   })
 
-  test('moves a padded draggable card to the adjacent enabled column without selecting its source', () => {
+  test('moves sequentially in one drag using the current over column and the initial source only as fallback', () => {
     expect(OBJECT_KANBAN_KEYBOARD_SENSOR).toBe(KeyboardSensor)
 
     const rect = (left: number) => ({
@@ -213,7 +213,7 @@ describe('object view adapter registry', () => {
         toArray: () => droppables,
       },
       droppableRects: new Map(droppables.map(candidate => [candidate.id, candidate.rect.current])),
-      over: { id: 'object-kanban-column:option:1' },
+      over: null,
       scrollableAncestors: [],
     } as unknown as Parameters<typeof OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER>[1]['context']
     let prevented = 0
@@ -222,19 +222,32 @@ describe('object view adapter registry', () => {
       preventDefault: () => { prevented += 1 },
     }) as KeyboardEvent
 
-    const moveFrom = (sourceColumnId: string, code: 'ArrowLeft' | 'ArrowRight', x: number) => {
-      context.active!.data.current = { objectKanbanColumnId: sourceColumnId }
-      return OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER(event(code), {
-        active: 'object-kanban-entry:entry_a', currentCoordinates: { x, y: 12 }, context,
+    let currentCoordinates = { x: 224, y: 12 }
+    const press = (code: 'ArrowLeft' | 'ArrowRight') => {
+      const next = OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER(event(code), {
+        active: 'object-kanban-entry:entry_a', currentCoordinates, context,
       })
+      if (next) currentCoordinates = next
+      return next
+    }
+    const setOver = (id: string, left: number) => {
+      context.over = { id, rect: rect(left), disabled: false, data: { current: undefined } }
     }
 
-    expect(moveFrom('object-kanban-column:option:1', 'ArrowLeft', 224)).toEqual({ x: 0, y: 0 })
-    expect(moveFrom('object-kanban-column:option:1', 'ArrowRight', 224)).toEqual({ x: 400, y: 0 })
-    expect(moveFrom('object-kanban-column:option:0', 'ArrowLeft', 24)).toBeUndefined()
-    expect(moveFrom('object-kanban-column:option:2', 'ArrowRight', 424)).toBeUndefined()
-    expect(moveFrom('object-kanban-column:no-group', 'ArrowLeft', 624)).toEqual({ x: 400, y: 0 })
-    expect(prevented).toBe(3)
+    expect(press('ArrowRight')).toEqual({ x: 400, y: 0 })
+    setOver('object-kanban-column:option:2', 400)
+    expect(press('ArrowLeft')).toEqual({ x: 200, y: 0 })
+    setOver('object-kanban-column:option:1', 200)
+    expect(press('ArrowLeft')).toEqual({ x: 0, y: 0 })
+    setOver('object-kanban-column:option:0', 0)
+    expect(press('ArrowLeft')).toBeUndefined()
+    expect(press('ArrowRight')).toEqual({ x: 200, y: 0 })
+    setOver('object-kanban-column:option:1', 200)
+    expect(press('ArrowRight')).toEqual({ x: 400, y: 0 })
+    setOver('object-kanban-column:option:2', 400)
+    expect(press('ArrowRight')).toBeUndefined()
+    expect(context.active?.data.current).toEqual({ objectKanbanColumnId: 'object-kanban-column:option:1' })
+    expect(prevented).toBe(5)
 
     const viewConfig = config('kanban')
     const markup = renderToStaticMarkup(

@@ -407,8 +407,9 @@ O Kanban reutiliza `DndContext` e o sensor visual existente, mas seus cards são
 entries genéricas, sem modelos de task/session. IDs de drop são estruturais e
 não colidem com option values. O pointer preserva o fluxo existente; o teclado
 resolve ArrowLeft/ArrowRight pela coluna estrutural habilitada vizinha depois de
-excluir explicitamente a coluna fonte, sem depender de o card draggable também
-ser um droppable sortable. Toda entry da
+excluir a coluna `over` atual, usando a fonte apenas como fallback da ativação
+inicial. Assim o mesmo drag pode avançar e voltar à origem sem depender de o card
+draggable também ser um droppable sortable. Toda entry da
 query aparece: valores `null`, ausentes ou desconhecidos ficam na coluna
 traduzida `Sem grupo`. Em fields opcionais esse drop persiste `null`; em fields
 required a coluna continua visível para recuperar dados inconsistentes, mas fica

@@ -404,10 +404,20 @@ export const OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER: KeyboardCoordinateGetter 
 ) => {
   if (event.code !== KeyboardCode.Left && event.code !== KeyboardCode.Right) return undefined
   const sourceColumnId = context.active?.data.current?.objectKanbanColumnId
+  const enabledContainers = context.droppableContainers.getEnabled()
+  let currentColumnId = sourceColumnId
+  if (isObjectKanbanColumnId(context.over?.id)) {
+    for (const container of enabledContainers) {
+      if (container.id === context.over.id) {
+        currentColumnId = context.over.id
+        break
+      }
+    }
+  }
   const columns: Array<{ rect: NonNullable<ReturnType<typeof context.droppableRects.get>> }> = []
-  for (const container of context.droppableContainers.getEnabled()) {
+  for (const container of enabledContainers) {
     if (!isObjectKanbanColumnId(container.id)) continue
-    if (container.id === sourceColumnId) continue
+    if (container.id === currentColumnId) continue
     const rect = context.droppableRects.get(container.id)
     if (!rect) continue
     const isAhead = event.code === KeyboardCode.Right
