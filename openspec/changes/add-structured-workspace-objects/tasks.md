@@ -204,6 +204,22 @@ continua com 32 tools, nove actions de `workspace_objects`, 19 refs locais e
 zero `items: {}`. U6, 7.3, 7.4, smoke/auditoria de Phase B e 7.5 permanecem não
 iniciados e desmarcados.
 
+Terceiro re-review corretivo U5 7.1/7.2 (2026-08-01): os REDs focados
+reproduziram uma exceção síncrona no updater de load-more, rejeição de
+transporte escapando como promise rejeitada, ausência de snapshot de leitura
+atômico entre revision e opções e merge de batches com revisions divergentes.
+O GREEN transforma falhas/mismatch do load-more em estado recuperável sem
+descartar a página canônica mais nova, permite retry da primeira página e
+executa revision, options e batches de `query-object` no mesmo snapshot SQLite.
+Uma validação defensiva rejeita qualquer lote misto antes de montar labels.
+
+A regressão ampliada passou 107/107 em 18 arquivos (705 expects), e os
+typechecks de shared e Electron passaram. React Doctor latest 0.9.3 line-scoped
+terminou com 0 issues; OpenSpec strict e `git diff --check` passaram. Não houve
+mudança no contrato público da tool, portanto golden/tool contracts não foram
+regenerados. U6, 7.3, 7.4, smoke/auditoria de Phase B e 7.5 continuam não
+iniciados e desmarcados.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

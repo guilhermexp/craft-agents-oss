@@ -3,6 +3,7 @@ import { WorkspaceObjectEventBus } from './events.ts';
 import { writeWorkspaceObjectEventProjection } from './event-projection.ts';
 import { writeWorkspaceObjectManifest } from './manifest.ts';
 import { WorkspaceObjectRepository } from './storage.ts';
+import type { WorkspaceObjectRelationOptionsPage } from './storage.ts';
 import { evaluateWorkspaceObjectQuery } from './query.ts';
 import { DefineWorkspaceObjectSchema, WorkspaceObjectEntryInputSchema, type WorkspaceObjectChangeKind, type WorkspaceObjectEvent, type WorkspaceObjectPayload, type WorkspaceObjectProjectionStatus, type WorkspaceObjectValue } from './types.ts';
 import { WorkspaceObjectSavedViewSchema, WorkspaceObjectViewConfigSchema } from './view-schema.ts';
@@ -60,6 +61,23 @@ export interface WorkspaceObjectServiceOptions {
   writeEventProjection?: (workspaceRootPath: string, event: WorkspaceObjectEvent) => string;
 }
 
+export function buildRelationLabelsFromSnapshotPages(
+  referencedIds: ReadonlySet<string>,
+  pages: readonly WorkspaceObjectRelationOptionsPage[],
+): Map<string, string> {
+  const revision = pages[0]?.revision;
+  if (revision !== undefined && pages.some(page => page.revision !== revision)) {
+    throw new Error('Relation options changed during query');
+  }
+  const labels = new Map<string, string>();
+  for (const page of pages) {
+    for (const option of page.options) {
+      if (referencedIds.has(option.id)) labels.set(option.id, option.label);
+    }
+  }
+  return labels;
+}
+
 export class WorkspaceObjectService {
   readonly events = new WorkspaceObjectEventBus();
   private readonly writeManifest: (workspaceRootPath: string, payload: WorkspaceObjectPayload) => string;
@@ -86,42 +104,7 @@ export class WorkspaceObjectService {
       return { relationOptions: page.options, nextCursor: page.nextCursor, revision: page.revision };
     }
     if (action.action === 'query-object') {
-      const payload = this.repository.getObject(action.objectId);
-      if (!payload) throw new Error(`Unknown object: ${action.objectId}`);
-      const viewId = 'viewId' in action.query ? action.query.viewId : null;
-      const config = 'config' in action.query
-        ? action.query.config
-        : payload.savedViews.find(view => view.id === viewId)?.config;
-      if (!config) throw new Error(`Unknown saved view: ${'viewId' in action.query ? action.query.viewId : ''}`);
-      const relationLabels = new Map<string, string>();
-      for (const relationObjectId of new Set(payload.fields.flatMap(field => field.relationObjectId ? [field.relationObjectId] : []))) {
-        const fieldIds = new Set(payload.fields.flatMap(field => field.relationObjectId === relationObjectId ? [field.id] : []));
-        const referencedIdSet = new Set<string>();
-        for (const entry of payload.entries) {
-          for (const [fieldId, value] of Object.entries(entry.values)) {
-            if (fieldIds.has(fieldId) && typeof value === 'string') referencedIdSet.add(value);
-          }
-        }
-        const referencedIds = [...referencedIdSet];
-        for (let offset = 0; offset < referencedIds.length; offset += 200) {
-          const page = this.repository.listRelationOptions(relationObjectId, {
-            limit: 1,
-            includeEntryIds: referencedIds.slice(offset, offset + 200),
-          });
-          for (const option of page.options) if (referencedIdSet.has(option.id)) relationLabels.set(option.id, option.label);
-        }
-      }
-      const query = evaluateWorkspaceObjectQuery(payload, config, {
-        relationLabels,
-      });
-      return { query: {
-        objectId: payload.id,
-        revision: payload.revision,
-        fields: query.fields,
-        entries: query.entries,
-        displayValues: Object.fromEntries(query.entries.map(entry => [entry.id, query.displayValues.get(entry.id) ?? {}])),
-        relationLabels: Object.fromEntries(relationLabels),
-      } };
+      return this.repository.withReadSnapshot(() => this.queryObject(action));
     }
     if (action.action === 'repair-projection') {
       const payload = this.repository.getObject(action.objectId);
@@ -132,6 +115,46 @@ export class WorkspaceObjectService {
     if (action.action === 'upsert-entries') return this.projectAndPublish(this.repository.upsertEntries(action.objectId, action.entries), 'entries-upserted');
     if (action.action === 'delete-entries') return this.projectAndPublish(this.repository.deleteEntries(action.objectId, action.entryIds), 'entries-deleted');
     return this.projectAndPublish(this.repository.upsertSavedView(action.objectId, action.view), 'view-upserted');
+  }
+
+  private queryObject(action: z.infer<typeof QueryWorkspaceObjectActionSchema>): Extract<WorkspaceObjectServiceResult, { query: unknown }> {
+    const payload = this.repository.getObject(action.objectId);
+    if (!payload) throw new Error(`Unknown object: ${action.objectId}`);
+    const viewId = 'viewId' in action.query ? action.query.viewId : null;
+    const config = 'config' in action.query
+      ? action.query.config
+      : payload.savedViews.find(view => view.id === viewId)?.config;
+    if (!config) throw new Error(`Unknown saved view: ${'viewId' in action.query ? action.query.viewId : ''}`);
+    const relationLabels = new Map<string, string>();
+    for (const relationObjectId of new Set(payload.fields.flatMap(field => field.relationObjectId ? [field.relationObjectId] : []))) {
+      const fieldIds = new Set(payload.fields.flatMap(field => field.relationObjectId === relationObjectId ? [field.id] : []));
+      const referencedIdSet = new Set<string>();
+      for (const entry of payload.entries) {
+        for (const [fieldId, value] of Object.entries(entry.values)) {
+          if (fieldIds.has(fieldId) && typeof value === 'string') referencedIdSet.add(value);
+        }
+      }
+      const referencedIds = [...referencedIdSet];
+      const pages: WorkspaceObjectRelationOptionsPage[] = [];
+      for (let offset = 0; offset < referencedIds.length; offset += 200) {
+        pages.push(this.repository.listRelationOptions(relationObjectId, {
+          limit: 1,
+          includeEntryIds: referencedIds.slice(offset, offset + 200),
+        }));
+      }
+      for (const [id, label] of buildRelationLabelsFromSnapshotPages(referencedIdSet, pages)) relationLabels.set(id, label);
+    }
+    const query = evaluateWorkspaceObjectQuery(payload, config, {
+      relationLabels,
+    });
+    return { query: {
+      objectId: payload.id,
+      revision: payload.revision,
+      fields: query.fields,
+      entries: query.entries,
+      displayValues: Object.fromEntries(query.entries.map(entry => [entry.id, query.displayValues.get(entry.id) ?? {}])),
+      relationLabels: Object.fromEntries(relationLabels),
+    } };
   }
 
   close(): void {

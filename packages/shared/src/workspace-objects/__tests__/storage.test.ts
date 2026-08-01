@@ -332,6 +332,31 @@ describe('WorkspaceObjectRepository', () => {
     verification.close();
   });
 
+  test('keeps relation revision and option reads on one atomic snapshot while a writer commits', () => {
+    const root = makeRoot();
+    const repository = WorkspaceObjectRepository.open(root);
+    repository.defineObject({
+      id: 'object_companies', slug: 'companies', name: 'Companies',
+      fields: [{ id: 'field_name', name: 'Name', type: 'text' }],
+    });
+    repository.upsertEntries('object_companies', [{ id: 'entry_acme', values: { field_name: 'Acme' } }]);
+    const writer = openSQLite(join(root, 'objects', 'objects.sqlite'));
+    writer.pragma('journal_mode = WAL');
+
+    const observed = repository.withReadSnapshot(() => {
+      const before = repository.listRelationOptions('object_companies', { limit: 10 });
+      writer.prepare('UPDATE workspace_objects SET revision = revision + 1 WHERE id = ?').run('object_companies');
+      const after = repository.listRelationOptions('object_companies', { limit: 10 });
+      return { before, after };
+    });
+
+    expect(observed.before).toEqual(observed.after);
+    expect(observed.before).toMatchObject({ revision: 2, options: [{ id: 'entry_acme', label: 'Acme' }] });
+    expect(repository.listRelationOptions('object_companies', { limit: 10 }).revision).toBe(3);
+    writer.close();
+    repository.close();
+  });
+
   test('supports nested projection transactions with savepoints', () => {
     const repository = WorkspaceObjectRepository.open(makeRoot());
     expect(() => repository.withProjectionLock(() => {

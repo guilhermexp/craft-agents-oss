@@ -32,6 +32,13 @@ export interface RelationOptionPage {
   nextCursor: string | null
   revision: number
 }
+export interface RelationOptionViewState {
+  pages: Record<string, RelationOptionPage>
+  error: { relationObjectId: string; message: string } | null
+}
+export type RelationOptionLoadResult =
+  | { status: 'success'; page: RelationOptionPage }
+  | { status: 'error'; message: string }
 const EMPTY_RELATION_OPTION_PAGES: Record<string, RelationOptionPage> = {}
 
 export function canonicalSavedViewFingerprint(payload: WorkspaceObjectPayload, viewId?: string): string | null {
@@ -39,13 +46,50 @@ export function canonicalSavedViewFingerprint(payload: WorkspaceObjectPayload, v
   return view ? JSON.stringify(view) : null
 }
 
-export function appendRelationOptionPage(current: RelationOptionPage, incoming: RelationOptionPage): RelationOptionPage {
-  if (current.revision !== incoming.revision) throw new Error('Relation options changed while loading more')
+export function appendRelationOptionPage(current: RelationOptionPage, incoming: RelationOptionPage): RelationOptionPage | null {
+  if (current.revision !== incoming.revision) return null
   return {
     options: [...new Map([...current.options, ...incoming.options].map(option => [option.id, option])).values()],
     nextCursor: incoming.nextCursor,
     revision: current.revision,
   }
+}
+
+export async function requestRelationOptionPage(
+  action: Extract<WorkspaceObjectAction, { action: 'list-relation-options' }>,
+  mutate: MutateWorkspaceObject,
+): Promise<RelationOptionLoadResult> {
+  try {
+    const result = await mutate(action)
+    if (!('relationOptions' in result)) return { status: 'error', message: 'Invalid relation options response' }
+    return {
+      status: 'success',
+      page: { options: result.relationOptions, nextCursor: result.nextCursor, revision: result.revision },
+    }
+  } catch (error) {
+    return { status: 'error', message: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+export function applyRelationOptionLoadResult(
+  state: RelationOptionViewState,
+  relationObjectId: string,
+  result: RelationOptionLoadResult,
+): RelationOptionViewState {
+  if (result.status === 'error') {
+    return { ...state, error: { relationObjectId, message: result.message } }
+  }
+  const current = state.pages[relationObjectId]
+  if (!current) {
+    return { pages: { ...state.pages, [relationObjectId]: result.page }, error: null }
+  }
+  const page = appendRelationOptionPage(current, result.page)
+  return page
+    ? { pages: { ...state.pages, [relationObjectId]: page }, error: null }
+    : {
+        ...state,
+        error: { relationObjectId, message: 'Relation options changed while loading more' },
+      }
 }
 
 export function reconcileRelationOptionPages(
@@ -185,7 +229,8 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
   const [filterFieldId, setFilterFieldId] = React.useState(payload.fields[0]?.id ?? '')
   const [filterDraft, setFilterDraft] = React.useState('')
   const [filterError, setFilterError] = React.useState<string | null>(null)
-  const [relationPages, setRelationPages] = React.useState(relationOptionPages)
+  const [relationState, setRelationState] = React.useState<RelationOptionViewState>({ pages: relationOptionPages, error: null })
+  const relationPages = relationState.pages
   const [loadingRelationObjectId, setLoadingRelationObjectId] = React.useState<string | null>(null)
 
   const relationContext = React.useMemo(() => {
@@ -215,7 +260,7 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
   }, [activeViewId, initialViewId, onViewIdChange, payload])
 
   React.useEffect(() => {
-    setRelationPages(current => reconcileRelationOptionPages(current, relationOptionPages))
+    setRelationState(current => ({ pages: reconcileRelationOptionPages(current.pages, relationOptionPages), error: null }))
   }, [relationOptionPages])
 
   const loadMoreRelationOptions = React.useCallback(async (relationObjectId: string) => {
@@ -223,22 +268,29 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
     if (!current?.nextCursor || loadingRelationObjectId) return
     setLoadingRelationObjectId(relationObjectId)
     try {
-      const result = await mutate({
+      const result = await requestRelationOptionPage({
         action: 'list-relation-options', objectId: relationObjectId, after: current.nextCursor, limit: 200,
-      })
-      if (!('relationOptions' in result)) return
-      setRelationPages(pages => ({
-        ...pages,
-        [relationObjectId]: appendRelationOptionPage(pages[relationObjectId] ?? current, {
-          options: result.relationOptions,
-          nextCursor: result.nextCursor,
-          revision: result.revision,
-        }),
-      }))
+      }, mutate)
+      setRelationState(state => applyRelationOptionLoadResult(state, relationObjectId, result))
     } finally {
       setLoadingRelationObjectId(null)
     }
   }, [loadingRelationObjectId, mutate, relationPages])
+
+  const reloadRelationOptions = React.useCallback(async (relationObjectId: string) => {
+    if (loadingRelationObjectId) return
+    setLoadingRelationObjectId(relationObjectId)
+    try {
+      const result = await requestRelationOptionPage({
+        action: 'list-relation-options', objectId: relationObjectId, limit: 200,
+      }, mutate)
+      setRelationState(state => result.status === 'success'
+        ? { pages: { ...state.pages, [relationObjectId]: result.page }, error: null }
+        : { ...state, error: { relationObjectId, message: result.message } })
+    } finally {
+      setLoadingRelationObjectId(null)
+    }
+  }, [loadingRelationObjectId, mutate])
 
   const selectView = (viewId: string) => {
     if (!viewId) {
@@ -334,6 +386,14 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
   const tablePresentation = resolveTablePresentation(config)
   return (
     <div className="space-y-3">
+      {relationState.error ? (
+        <div className="flex items-center justify-between gap-2 rounded border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive" role="alert">
+          <span>{relationState.error.message}</span>
+          <Button type="button" size="sm" variant="outline" onClick={() => void reloadRelationOptions(relationState.error!.relationObjectId)}>
+            {t('chat.workspaceObjectPreviewRetry')}
+          </Button>
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <select
           className="h-8 min-w-36 rounded border border-foreground/15 bg-background px-2 text-xs"

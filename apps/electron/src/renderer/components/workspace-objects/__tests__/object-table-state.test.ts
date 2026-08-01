@@ -14,10 +14,12 @@ import {
 } from '../ObjectFieldEditor'
 import {
   ObjectTableView,
+  applyRelationOptionLoadResult,
   appendRelationOptionPage,
   canonicalSavedViewFingerprint,
   createSavedTableView,
   reconcileRelationOptionPages,
+  requestRelationOptionPage,
   resolveSavedTableViewState,
   resolveTablePresentation,
   restoreSavedTableView,
@@ -224,6 +226,7 @@ describe('saved table view state', () => {
       nextCursor: 'entry_003',
       revision: 4,
     })
+    if (!accumulated) throw new Error('Expected a same-revision relation page')
     const sameRevision = reconcileRelationOptionPages({ object_companies: accumulated }, { object_companies: initial })
 
     expect(sameRevision.object_companies).toEqual({
@@ -247,6 +250,42 @@ describe('saved table view state', () => {
       nextCursor: 'entry_001',
       revision: 5,
     })
+  })
+
+  test('keeps the newer canonical relation snapshot coherent on a concurrent load-more mismatch', () => {
+    const canonical = {
+      options: [{ id: 'entry_new', label: 'New snapshot' }],
+      nextCursor: 'entry_new',
+      revision: 5,
+    }
+    const staleLoadMore = {
+      options: [{ id: 'entry_stale', label: 'Stale page' }],
+      nextCursor: null,
+      revision: 4,
+    }
+
+    expect(() => appendRelationOptionPage(canonical, staleLoadMore)).not.toThrow()
+    expect(appendRelationOptionPage(canonical, staleLoadMore)).toBeNull()
+    expect(applyRelationOptionLoadResult(
+      { pages: { object_companies: canonical }, error: null },
+      'object_companies',
+      { status: 'success', page: staleLoadMore },
+    )).toEqual({
+      pages: { object_companies: canonical },
+      error: { relationObjectId: 'object_companies', message: 'Relation options changed while loading more' },
+    })
+  })
+
+  test('turns relation transport rejection into a recoverable result', async () => {
+    const request = {
+      action: 'list-relation-options' as const,
+      objectId: 'object_companies',
+      after: 'entry_200',
+      limit: 200,
+    }
+    await expect(requestRelationOptionPage(request, async () => {
+      throw new Error('transport offline')
+    })).resolves.toEqual({ status: 'error', message: 'transport offline' })
   })
 })
 

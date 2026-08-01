@@ -194,6 +194,13 @@ export class WorkspaceObjectRepository {
     objectId: string,
     options: { after?: string; limit?: number; includeEntryIds?: string[] } = {},
   ): WorkspaceObjectRelationOptionsPage {
+    return this.withReadSnapshot(() => this.listRelationOptionsInSnapshot(objectId, options));
+  }
+
+  private listRelationOptionsInSnapshot(
+    objectId: string,
+    options: { after?: string; limit?: number; includeEntryIds?: string[] },
+  ): WorkspaceObjectRelationOptionsPage {
     if (!this.objectExists(objectId)) throw new Error(`Unknown object: ${objectId}`);
     const revision = this.requireRevision(objectId);
     const limit = Math.max(1, Math.min(options.limit ?? 100, 200));
@@ -248,6 +255,10 @@ export class WorkspaceObjectRepository {
     return this.transaction(operation);
   }
 
+  withReadSnapshot<T>(operation: () => T): T {
+    return this.transaction(operation, 'read');
+  }
+
   deleteProjectionForTest(objectId: string): void { this.db.prepare('DELETE FROM workspace_object_payloads WHERE object_id = ?').run(objectId); }
   markProjectionStaleForTest(objectId: string): void { this.db.prepare('UPDATE workspace_object_payloads SET source_revision = -1 WHERE object_id = ?').run(objectId); }
   hasFreshProjectionForTest(objectId: string): boolean {
@@ -260,10 +271,10 @@ export class WorkspaceObjectRepository {
     this.db.prepare('INSERT INTO workspace_object_schema_version(version) VALUES (?)').run(version);
   }
 
-  private transaction<T>(operation: () => T): T {
+  private transaction<T>(operation: () => T, mode: 'read' | 'write' = 'write'): T {
     const isOuterTransaction = this.transactionDepth === 0;
     const savepoint = `workspace_object_${++this.savepointSequence}`;
-    this.db.runSql(isOuterTransaction ? 'BEGIN IMMEDIATE' : `SAVEPOINT ${savepoint}`);
+    this.db.runSql(isOuterTransaction ? (mode === 'read' ? 'BEGIN' : 'BEGIN IMMEDIATE') : `SAVEPOINT ${savepoint}`);
     this.transactionDepth += 1;
     try {
       const result = operation();

@@ -3,13 +3,26 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getWorkspaceObjectEventProjectionPath, readWorkspaceObjectEventProjection } from '../event-projection.ts';
-import { WorkspaceObjectService } from '../service.ts';
+import { buildRelationLabelsFromSnapshotPages, WorkspaceObjectService } from '../service.ts';
 
 const roots: string[] = [];
 const makeRoot = () => { const root = mkdtempSync(join(tmpdir(), 'craft-object-service-')); roots.push(root); return root; };
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe('WorkspaceObjectService', () => {
+  test('rejects relation batches from mixed snapshots before merging labels', () => {
+    const referencedIds = new Set(['entry_a', 'entry_b']);
+    expect(() => buildRelationLabelsFromSnapshotPages(referencedIds, [
+      { options: [{ id: 'entry_a', label: 'A' }], nextCursor: null, revision: 4 },
+      { options: [{ id: 'entry_b', label: 'B' }], nextCursor: null, revision: 5 },
+    ])).toThrow('changed during query');
+
+    expect(buildRelationLabelsFromSnapshotPages(referencedIds, [
+      { options: [{ id: 'entry_a', label: 'A' }], nextCursor: null, revision: 4 },
+      { options: [{ id: 'entry_b', label: 'B' }], nextCursor: null, revision: 4 },
+    ])).toEqual(new Map([['entry_a', 'A'], ['entry_b', 'B']]));
+  });
+
   test('publishes one ready event after canonical commit and writes a matching manifest', () => {
     const root = makeRoot();
     const events: unknown[] = [];
