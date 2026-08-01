@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { z } from 'zod';
@@ -30,10 +30,16 @@ export function getWorkspaceObjectManifestPath(workspaceRootPath: string, slug: 
 }
 
 export function readWorkspaceObjectManifest(path: string): WorkspaceObjectManifest | null {
-  if (!existsSync(path)) return null;
+  let source: string;
+  try {
+    source = readFileSync(path, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
   let parsed: unknown;
   try {
-    parsed = parse(readFileSync(path, 'utf8'));
+    parsed = parse(source);
   } catch {
     throw new Error(`Invalid workspace object manifest: ${path}`);
   }
@@ -50,9 +56,8 @@ export function writeWorkspaceObjectManifest(workspaceRootPath: string, payload:
   } catch (error) {
     if (!(error instanceof Error) || !error.message.startsWith('Invalid workspace object manifest:')) throw error;
   }
-  if (existing && existing.id !== payload.id) {
-    throw new Error(`Workspace object manifest identity conflict at ${path}`);
-  }
+  if (existing && existing.id !== payload.id) throw new Error(`Workspace object manifest identity conflict at ${path}`);
+  if (existing && existing.slug !== payload.slug) throw new Error(`Workspace object manifest slug conflict at ${path}`);
   const manifest: WorkspaceObjectManifest = {
     schemaVersion: 1,
     id: payload.id,
@@ -62,9 +67,6 @@ export function writeWorkspaceObjectManifest(workspaceRootPath: string, payload:
     fields: payload.fields.map(field => ({ id: field.id, name: field.name, type: field.type, required: field.required ?? false })),
   };
   const serialized = stringify(manifest);
-  if (existing && existing.revision > payload.revision) {
-    throw new Error(`Workspace object manifest at ${path} is newer than revision ${payload.revision}`);
-  }
   if (existing && stringify(existing) === serialized) return path;
   mkdirSync(dirname(path), { recursive: true });
   atomicWriteFileSync(path, serialized);

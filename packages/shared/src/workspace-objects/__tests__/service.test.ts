@@ -71,7 +71,7 @@ describe('WorkspaceObjectService', () => {
     service.close();
   });
 
-  test('repairs a deleted manifest without changing revision and refuses identity conflicts', () => {
+  test('repairs a deleted manifest without changing revision and refuses identity or slug conflicts', () => {
     const root = makeRoot();
     const service = WorkspaceObjectService.open({ workspaceId: 'ws_three', workspaceRootPath: root });
     service.execute({ action: 'define-object', object: { id: 'object_notes', slug: 'notes', name: 'Notes', fields: [] } });
@@ -79,9 +79,12 @@ describe('WorkspaceObjectService', () => {
     rmSync(manifestPath);
     expect(service.execute({ action: 'repair-projection', objectId: 'object_notes' })).toMatchObject({ revision: 1, projectionStatus: 'ready' });
     expect(existsSync(manifestPath)).toBe(true);
-    const conflicting = readFileSync(manifestPath, 'utf8').replace('id: object_notes', 'id: object_other');
-    writeFileSync(manifestPath, conflicting);
+    const canonical = readFileSync(manifestPath, 'utf8');
+    writeFileSync(manifestPath, canonical.replace('id: object_notes', 'id: object_other'));
     expect(() => service.execute({ action: 'repair-projection', objectId: 'object_notes' })).toThrow('identity conflict');
+
+    writeFileSync(manifestPath, canonical.replace('slug: notes', 'slug: other-notes'));
+    expect(() => service.execute({ action: 'repair-projection', objectId: 'object_notes' })).toThrow('slug conflict');
     expect(service.execute({ action: 'get-object', objectId: 'object_notes' })).toMatchObject({ payload: { id: 'object_notes' } });
     service.close();
   });

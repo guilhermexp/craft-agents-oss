@@ -21,12 +21,19 @@ export type ContentTabsAction =
 
 function normalizeTarget(target: ContentTarget): ContentTarget {
   if (target.kind === 'object') return target;
+  const path = target.path.replaceAll('\\', '/');
+  const absolute = path.startsWith('/');
   const parts: string[] = [];
-  for (const part of target.path.replaceAll('\\', '/').split('/')) {
+  for (const part of path.split('/')) {
     if (!part || part === '.') continue;
-    if (part === '..') parts.pop(); else parts.push(part);
+    if (part === '..') {
+      if (parts.length > 0 && parts[parts.length - 1] !== '..') parts.pop();
+      else if (!absolute) parts.push(part);
+    } else {
+      parts.push(part);
+    }
   }
-  const prefix = target.path.startsWith('/') ? '/' : '';
+  const prefix = absolute ? '/' : '';
   const normalized = `${prefix}${parts.join('/')}`;
   return { ...target, path: normalized };
 }
@@ -35,11 +42,13 @@ export function contentTabId(rawTarget: ContentTarget): string {
   const target = normalizeTarget(rawTarget);
   return target.kind === 'file'
     ? `file:${encodeURIComponent(target.workspaceId)}:${encodeURIComponent(target.sessionId)}:${encodeURIComponent(target.path)}`
-    : `object:${encodeURIComponent(target.workspaceId)}:${encodeURIComponent(target.objectId)}:${encodeURIComponent(target.viewId ?? '')}`;
+    : `object:${encodeURIComponent(target.workspaceId)}:${encodeURIComponent(target.objectId)}:${target.viewId === undefined ? 'absent' : `present:${encodeURIComponent(target.viewId)}`}`;
 }
 
 function previewScope(target: ContentTarget): string {
-  return target.kind === 'file' ? `file:${target.workspaceId}:${target.sessionId}` : `object:${target.workspaceId}`;
+  return target.kind === 'file'
+    ? `file:${encodeURIComponent(target.workspaceId)}:${encodeURIComponent(target.sessionId)}`
+    : `object:${encodeURIComponent(target.workspaceId)}`;
 }
 
 function repairActive(tabs: ContentTab[], activeId: string | null): ContentTabsState {
@@ -84,7 +93,7 @@ function parsePersistedTab(value: unknown): ContentTab | null {
     parsedTarget = { kind: 'file', workspaceId: target.workspaceId, sessionId: target.sessionId, path: target.path };
   } else if (target.kind === 'object') {
     if (typeof target.objectId !== 'string' || (target.viewId !== undefined && typeof target.viewId !== 'string')) return null;
-    parsedTarget = { kind: 'object', workspaceId: target.workspaceId, objectId: target.objectId, ...(target.viewId ? { viewId: target.viewId } : {}) };
+    parsedTarget = { kind: 'object', workspaceId: target.workspaceId, objectId: target.objectId, ...(target.viewId !== undefined ? { viewId: target.viewId } : {}) };
   } else {
     return null;
   }
@@ -96,12 +105,24 @@ export function restoreContentTabs(value: unknown, workspaceId: string, sessionI
   const persisted = value as { tabs?: unknown; activeId?: unknown };
   if (!Array.isArray(persisted.tabs)) return { tabs: [], activeId: null };
   const tabs: ContentTab[] = [];
+  const canonicalIds = new Set<string>();
+  const persistedIdAliases = new Map<string, string>();
   for (const valueTab of persisted.tabs) {
     const tab = parsePersistedTab(valueTab);
     if (!tab) continue;
     if (tab.target.workspaceId !== workspaceId) continue;
     if (tab.target.kind === 'file' && (!sessionId || tab.target.sessionId !== sessionId)) continue;
+    if (valueTab && typeof valueTab === 'object') {
+      const persistedId = (valueTab as Record<string, unknown>).id;
+      if (typeof persistedId === 'string' && !persistedIdAliases.has(persistedId)) persistedIdAliases.set(persistedId, tab.id);
+    }
+    if (canonicalIds.has(tab.id)) continue;
+    canonicalIds.add(tab.id);
     tabs.push(tab);
   }
-  return repairActive(tabs, typeof persisted.activeId === 'string' ? persisted.activeId : null);
+  const persistedActiveId = typeof persisted.activeId === 'string' ? persisted.activeId : null;
+  const activeId = persistedActiveId
+    ? (persistedIdAliases.get(persistedActiveId) ?? persistedActiveId)
+    : persistedActiveId;
+  return repairActive(tabs, activeId);
 }

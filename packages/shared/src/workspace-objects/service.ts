@@ -85,7 +85,7 @@ export class WorkspaceObjectService {
       const message = error instanceof Error ? error.message : String(error);
       this.repository.setProjectionStatus(payload.id, projectionStatus, message);
       projectionStatus = this.publish({ workspaceId: this.options.workspaceId, objectId: payload.id, revision: payload.revision, changeKind, projectionStatus });
-      if (changeKind === 'projection-repaired' && message.includes('identity conflict')) throw error;
+      if (changeKind === 'projection-repaired' && (message.includes('identity conflict') || message.includes('slug conflict'))) throw error;
       return { objectId: payload.id, revision: payload.revision, projectionStatus };
     }
     projectionStatus = this.publish({ workspaceId: this.options.workspaceId, objectId: payload.id, revision: payload.revision, changeKind, projectionStatus });

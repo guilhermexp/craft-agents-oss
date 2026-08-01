@@ -49,7 +49,7 @@
 
 ## 6. Gate Phase A
 
-- [x] 6.1 Testes focados de U1-U4, typechecks afetados e validações do repo
+- [x] 6.1 Testes de regressão focados de U1-U4, typechecks afetados e validações do repo
       passam sem skips novos.
 - [x] 6.2 DOX pass atualiza a cadeia de documentação afetada e o OpenSpec volta a
       validar em strict.
@@ -57,6 +57,14 @@
 - [x] 6.4 Smoke real no Electron comprova agente → create/update object → evento →
       sidebar, tabs, SWR, workspace switch e watcher teardown.
 - [ ] 6.5 `openspec-phase-auditor` retorna GO antes de Phase B.
+
+Closeout de regressão de 6.1/6.2 (2026-08-01): a suíte focada U1-U4 passou
+56/56 em 13 arquivos; os typechecks afetados de shared, server-core e Electron
+passaram, assim como `typecheck:all`. `lint:tool-contracts` confirmou 30 tools
+native + 2 MCP-only, `lint:i18n:parity` confirmou 7 locales com 1.755 keys cada,
+`openspec validate add-structured-workspace-objects --strict` retornou valid e
+`git diff --check` saiu limpo. O DOX pass corrigiu o lifecycle Craft do watcher
+e esta evidência sem alterar proposal, design ou specs.
 
 Evidência parcial de 6.3 (2026-08-01): `vibe-security` não encontrou blocker
 no delta e o Gitleaks ficou limpo tanto no commit da fase quanto no staged

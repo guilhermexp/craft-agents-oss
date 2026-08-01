@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openSQLite } from '../../memory/sqlite-driver.ts';
+import { WORKSPACE_OBJECT_SCHEMA_V1 } from '../schema.ts';
 import { WorkspaceObjectRepository } from '../storage.ts';
 
 const roots: string[] = [];
@@ -64,6 +65,37 @@ describe('WorkspaceObjectRepository', () => {
       entries: [{ id: 'entry_ada', values: { field_score: 9.5, field_active: true } }],
     });
     repository.close();
+  });
+
+  test('replays repository opens after a V1 upgrade without nullable or duplicate caller ids', () => {
+    const root = makeRoot();
+    const databasePath = join(root, 'objects', 'objects.sqlite');
+    mkdirSync(join(root, 'objects'), { recursive: true });
+    const v1 = openSQLite(databasePath);
+    v1.pragma('foreign_keys = ON');
+    v1.runSql(WORKSPACE_OBJECT_SCHEMA_V1);
+    v1.close();
+
+    const migrated = WorkspaceObjectRepository.open(root);
+    migrated.defineObject({ id: 'object_people', slug: 'people', name: 'People', fields: [{ id: 'field_name', name: 'Name', type: 'text' }] });
+    migrated.defineObject({ id: 'object_companies', slug: 'companies', name: 'Companies', fields: [{ id: 'field_name', name: 'Name', type: 'text' }] });
+    migrated.close();
+
+    WorkspaceObjectRepository.open(root).close();
+    WorkspaceObjectRepository.open(root).close();
+
+    const verification = openSQLite(databasePath);
+    expect(verification.prepare('SELECT version FROM workspace_object_schema_version ORDER BY version').all()).toEqual([
+      { version: 1 }, { version: 2 },
+    ]);
+    expect(verification.prepare(`SELECT object_id, caller_id FROM workspace_object_fields
+      ORDER BY object_id`).all()).toEqual([
+      { object_id: 'object_companies', caller_id: 'field_name' },
+      { object_id: 'object_people', caller_id: 'field_name' },
+    ]);
+    expect(verification.prepare(`SELECT COUNT(*) AS count FROM workspace_object_fields
+      WHERE caller_id IS NULL`).get()).toEqual({ count: 0 });
+    verification.close();
   });
 
   test('rolls back an invalid multi-entry mutation', () => {

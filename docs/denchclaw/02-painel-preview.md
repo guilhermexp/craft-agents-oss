@@ -372,9 +372,15 @@ O Craft roda em Electron, o que muda três coisas para melhor:
 
 O modelo de 4 camadas não muda; só a camada 2 troca de transporte.
 
+Na adaptação Craft da Fase A, o lifecycle do watcher também difere do histórico
+acima: existe uma instância refcounted por workspace, o debounce é independente
+por path, sidecars SQLite (`-wal`/`-shm`) e temporários de escrita atômica são
+ignorados, e o último unsubscribe fecha todos os handles e limpa todos os timers
+antes de remover a entrada do registry.
+
 ### 8.5 Armadilhas conhecidas
 
 1. **Não faça IDs de aba aleatórios.** É o erro que o DenchClaw cometeu na v1 e teve que refatorar. ID derivado de `kind+path+meta`.
 2. **Não desmonte a view no refresh.** SWR obrigatório, senão a UI pisca a cada escrita do agente.
-3. **Não ignore o `.wal`/transcript nos watchers.** É a diferença entre "reativo" e "epilético".
+3. **Ignore o `.wal`/transcript nos watchers.** Sidecars e arquivos de streaming ruidosos não representam uma projeção pronta; observá-los transforma o fluxo "reativo" em "epilético".
 4. **Cuidado com o god-component.** `workspace-content.tsx` tem 4.370 linhas porque a inversão de renderização foi feita por conveniência de PR. Comece com `ContentRenderer` importando direto.

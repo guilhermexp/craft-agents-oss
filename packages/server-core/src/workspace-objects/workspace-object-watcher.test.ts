@@ -36,21 +36,30 @@ describe('WorkspaceObjectWatcherRegistry', () => {
     expect(registry.activeWatcherCount).toBe(0);
   });
 
-  test('tears down every workspace owned by a disconnected client', () => {
-    const handles: Array<{ close: () => void }> = [];
-    const registry = new WorkspaceObjectWatcherRegistry({ watch: () => {
-      const handle = { close: () => {} };
-      handles.push(handle);
+  test('tears down every handle and pending timer owned by a disconnected client', async () => {
+    const callbacks: Array<(event: string, filename: string | null) => void> = [];
+    const closes = [0, 0];
+    const events: string[] = [];
+    const reconciliations: string[] = [];
+    const registry = new WorkspaceObjectWatcherRegistry({ watch: (_path, listener) => {
+      const handleIndex = callbacks.length;
+      callbacks.push(listener);
+      const handle = { close: () => { closes[handleIndex] += 1; } };
       return handle;
-    } });
+    }, debounceMs: 20 });
     const root = mkdtempSync(join(tmpdir(), 'craft-watcher-'));
     try {
-      registry.subscribe('client-one', 'workspace-one', root, () => {});
-      registry.subscribe('client-one', 'workspace-two', root, () => {});
+      registry.subscribe('client-one', 'workspace-one', root, path => events.push(path), path => reconciliations.push(path));
+      registry.subscribe('client-one', 'workspace-two', root, path => events.push(path), path => reconciliations.push(path));
       expect(registry.activeWatcherCount).toBe(2);
+      callbacks[0]?.('change', 'people/object.yaml');
+      callbacks[1]?.('change', 'tasks/object.yaml');
       registry.unsubscribeClient('client-one');
       expect(registry.activeWatcherCount).toBe(0);
-      expect(handles).toHaveLength(2);
+      expect(closes).toEqual([1, 1]);
+      await Bun.sleep(30);
+      expect(events).toEqual([]);
+      expect(reconciliations).toEqual([]);
     } finally {
       registry.closeAll();
       rmSync(root, { recursive: true, force: true });
