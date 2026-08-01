@@ -12,7 +12,17 @@ import {
   reconcileObjectFieldEdit,
   type ObjectFieldEditState,
 } from '../ObjectFieldEditor'
-import { ObjectTableView, createSavedTableView, resolveSavedTableViewState, resolveTablePresentation, restoreSavedTableView, shouldPersistSavedViewTarget } from '../ObjectTableView'
+import {
+  ObjectTableView,
+  appendRelationOptionPage,
+  canonicalSavedViewFingerprint,
+  createSavedTableView,
+  reconcileRelationOptionPages,
+  resolveSavedTableViewState,
+  resolveTablePresentation,
+  restoreSavedTableView,
+  shouldPersistSavedViewTarget,
+} from '../ObjectTableView'
 
 const fields = {
   text: { id: 'field_text', name: 'Text', type: 'text' },
@@ -180,6 +190,63 @@ describe('saved table view state', () => {
     })
     expect(shouldPersistSavedViewTarget({ ...base, revision: 2, savedViews: [latest] }, 'view_live', undefined)).toBe(true)
     expect(shouldPersistSavedViewTarget({ ...base, revision: 1, savedViews: [first] }, 'view_missing', undefined)).toBe(false)
+  })
+
+  test('keeps unsaved local view state across unrelated entry revision bumps', () => {
+    const saved = createSavedTableView('view_live', 'Live', { ...DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW, search: 'canonical' })
+    const base: WorkspaceObjectPayload = {
+      id: 'object_people', slug: 'people', name: 'People', revision: 1, projectionStatus: 'ready',
+      fields: [fields.text], entries: [{ id: 'entry_ada', values: { field_text: 'Ada' } }], savedViews: [saved],
+    }
+    const unrelatedEntryRevision = {
+      ...base,
+      revision: 2,
+      entries: [{ id: 'entry_ada', values: { field_text: 'Ada updated' } }],
+    }
+    const changedSavedView = {
+      ...unrelatedEntryRevision,
+      revision: 3,
+      savedViews: [createSavedTableView('view_live', 'Live', { ...saved.config, search: 'canonical changed' })],
+    }
+
+    expect(canonicalSavedViewFingerprint(base, 'view_live')).toBe(canonicalSavedViewFingerprint(unrelatedEntryRevision, 'view_live'))
+    expect(canonicalSavedViewFingerprint(changedSavedView, 'view_live')).not.toBe(canonicalSavedViewFingerprint(base, 'view_live'))
+  })
+
+  test('preserves accumulated relation cursor on same revision and resets on canonical change', () => {
+    const initial = {
+      options: [{ id: 'entry_001', label: 'One' }, { id: 'entry_002', label: 'Two' }],
+      nextCursor: 'entry_002',
+      revision: 4,
+    }
+    const accumulated = appendRelationOptionPage(initial, {
+      options: [{ id: 'entry_003', label: 'Three' }],
+      nextCursor: 'entry_003',
+      revision: 4,
+    })
+    const sameRevision = reconcileRelationOptionPages({ object_companies: accumulated }, { object_companies: initial })
+
+    expect(sameRevision.object_companies).toEqual({
+      options: [
+        { id: 'entry_001', label: 'One' },
+        { id: 'entry_002', label: 'Two' },
+        { id: 'entry_003', label: 'Three' },
+      ],
+      nextCursor: 'entry_003',
+      revision: 4,
+    })
+
+    expect(reconcileRelationOptionPages(sameRevision, {
+      object_companies: {
+        options: [{ id: 'entry_001', label: 'One renamed' }],
+        nextCursor: 'entry_001',
+        revision: 5,
+      },
+    }).object_companies).toEqual({
+      options: [{ id: 'entry_001', label: 'One renamed' }],
+      nextCursor: 'entry_001',
+      revision: 5,
+    })
   })
 })
 

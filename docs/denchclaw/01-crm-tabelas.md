@@ -327,6 +327,11 @@ transação e marcada pela migration v3. O frontier e o storage recusam writes
 novos fora do contrato estrito. O payload e todas as novas views saem somente
 no formato versionado.
 
+O normalizador legacy isola cada row: IDs de coluna vazios, não-string ou acima
+de 120 caracteres são descartados; valores que não podem ser serializados e
+JSON corrompido caem no fallback v1 seguro, sem abortar o reopen do workspace
+nem as views válidas irmãs.
+
 Relações continuam armazenando `entryId`. O Desktop carrega opções e labels do
 objeto relacionado junto com o objeto aberto, deriva o label atual no render e
 revalida quando o alvo muda. Um rename altera o label sem regravar o stable ID
@@ -337,7 +342,15 @@ Na correção consolidada do U5, esse carregamento passou a usar
 explícita dos IDs já referenciados mesmo quando estão fora da primeira página.
 `query-object` devolve `displayValues` e `relationLabels` serializáveis, mas
 mantém os IDs estáveis em `entries`. Datas e datetimes são comparados pelo
-instante de `Date.parse`, inclusive em sort e operadores `before`/`after`.
+instante de `Date.parse`, inclusive em sort e operadores `before`/`after`,
+`equals`/`not-equals` e `in`/`not-in`.
+
+Referências acima de 200 são particionadas em batches bounded tanto no preview
+quanto no `query-object`, deduplicadas por ID e associadas à revisão canônica do
+objeto relacionado. A primeira página e seu cursor permanecem separados dos
+batches de referências; revalidation na mesma revisão preserva páginas já
+carregadas, enquanto uma nova revisão reseta opções e cursor. Falha ou mistura
+de revisões rejeita o lookup inteiro em vez de produzir labels parciais.
 
 O alvo da tab agora inclui o `viewId` salvo, é retargetado somente após a view
 aparecer no payload canônico e recebe uma key por objeto/view; isso impede
@@ -346,6 +359,14 @@ usa `entry.id` como row id. O parser local bloqueia strings acima de 64.000
 caracteres antes da mutation, e o JSON Schema MCP preserva recursão e
 refinements de `presentation.settings` por referências locais, sem cair em
 branches `{}` permissivos.
+
+O catálogo MCP continua publicando a union estrita. Para os adapters nativos,
+Claude usa o `nativeInputSchema.shape` e Pi/Anthropic/Copilot recebem a versão
+JSON Schema object-only do mesmo envelope, com `action`, `objectId` e payloads
+visíveis; a validação final ainda passa obrigatoriamente pela union canônica.
+Revalidation de entry/relation só restaura uma saved view quando o fingerprint
+da própria view canônica muda, preservando search, sort, filtros e colunas
+locais ainda não salvos em bumps de revisão não relacionados.
 
 Edição de célula não é otimista: o draft tipado permanece aberto durante a
 mutation. Input inválido não chama `upsert-entries`; rejeição e erro de

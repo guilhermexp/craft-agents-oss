@@ -20,7 +20,7 @@ describe('Pi backend session tool catalog equals the canonical catalog', () => {
     process.env.CRAFT_FEATURE_MEMORY = '1';
 
     const canonical = new Map(
-      getToolDefsAsJsonSchema({ includeDeveloperFeedback: true, includeMemory: true }).map((tool) => [tool.name, tool]),
+      getToolDefsAsJsonSchema({ includeDeveloperFeedback: true, includeMemory: true, useNativeInputSchemas: true }).map((tool) => [tool.name, tool]),
     );
     const proxy = getSessionToolProxyDefs();
 

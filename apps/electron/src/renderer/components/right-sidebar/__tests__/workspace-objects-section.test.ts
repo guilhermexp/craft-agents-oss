@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { WorkspaceObjectPayload } from '@craft-agent/shared/workspace-objects/types';
 import { WorkspaceObjectListLoader, type WorkspaceObjectListLoadCallbacks } from '../workspace-objects-section.tsx';
-import { collectReferencedRelationEntryIds, isWorkspaceObjectPreviewDataCurrent, workspaceObjectPreviewRenderKey } from '../workspace-object-preview-panel.tsx';
+import { collectReferencedRelationEntryIds, isWorkspaceObjectPreviewDataCurrent, loadReferencedRelationOptions, workspaceObjectPreviewRenderKey } from '../workspace-object-preview-panel.tsx';
 import { contentTabId } from '../../app-shell/content-tabs-state.ts';
 
 function deferred<T>() {
@@ -94,6 +94,45 @@ describe('workspace object preview target identity', () => {
       entries: [{ id: 'entry_person', values: { field_company: 'entry_249' } }],
     };
     expect(collectReferencedRelationEntryIds(payload, 'object_companies')).toEqual(['entry_249']);
+  });
+
+  test('loads the normal first page separately and batches every referenced id at 200', async () => {
+    const referencedIds = Array.from({ length: 401 }, (_, index) => `entry_${String(index).padStart(3, '0')}`);
+    const requests: Array<{ includeEntryIds?: string[] }> = [];
+    const page = await loadReferencedRelationOptions('object_companies', referencedIds, async request => {
+      requests.push(request);
+      if (!request.includeEntryIds) {
+        return { relationOptions: [{ id: 'normal_page', label: 'Normal page' }], nextCursor: 'normal_cursor', revision: 7 };
+      }
+      return {
+        relationOptions: request.includeEntryIds.map(id => ({ id, label: `Label ${id}` })),
+        nextCursor: null,
+        revision: 7,
+      };
+    });
+
+    expect(requests.map(request => request.includeEntryIds?.length ?? 0)).toEqual([0, 200, 200, 1]);
+    expect(page.nextCursor).toBe('normal_cursor');
+    expect(page.revision).toBe(7);
+    expect(page.options).toHaveLength(402);
+    expect(page.options.at(-1)).toEqual({ id: 'entry_400', label: 'Label entry_400' });
+  });
+
+  test('rejects the whole referenced lookup when any batch fails', async () => {
+    const referencedIds = Array.from({ length: 201 }, (_, index) => `entry_${index}`);
+    await expect(loadReferencedRelationOptions('object_companies', referencedIds, async request => {
+      if (request.includeEntryIds?.includes('entry_200')) throw new Error('batch unavailable');
+      return { relationOptions: [], nextCursor: request.includeEntryIds ? null : 'normal_cursor', revision: 7 };
+    })).rejects.toThrow('batch unavailable');
+  });
+
+  test('rejects relation batches from different canonical revisions', async () => {
+    let requestIndex = 0;
+    await expect(loadReferencedRelationOptions('object_companies', ['entry_001'], async request => ({
+      relationOptions: request.includeEntryIds ? [{ id: 'entry_001', label: 'One' }] : [],
+      nextCursor: request.includeEntryIds ? null : 'normal_cursor',
+      revision: requestIndex++ === 0 ? 7 : 8,
+    }))).rejects.toThrow('changed during lookup');
   });
 
   test('never renders data from the previous object and keys saved views independently', () => {

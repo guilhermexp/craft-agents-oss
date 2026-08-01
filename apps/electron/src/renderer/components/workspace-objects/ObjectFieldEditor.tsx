@@ -154,7 +154,7 @@ export async function submitObjectFieldEdit(options: {
         values: { ...options.currentValues, [options.field.id]: parsed.value },
       }],
     })
-    if (!('revision' in result) || result.objectId !== options.objectId) {
+    if (!('objectId' in result) || !('revision' in result) || result.objectId !== options.objectId) {
       return { status: 'editing', draft: options.state.draft, error: formatError('chat.workspaceObjectCommitMissing') }
     }
     return {

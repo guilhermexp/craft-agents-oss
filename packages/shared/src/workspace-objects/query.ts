@@ -74,7 +74,12 @@ function compareFieldValues(
   return deterministicCompare(left, right)
 }
 
-function equals(left: WorkspaceObjectValue, right: WorkspaceObjectFilterScalar): boolean {
+function equals(field: WorkspaceObjectField, left: WorkspaceObjectValue, right: WorkspaceObjectFilterScalar): boolean {
+  if ((field.type === 'date' || field.type === 'datetime') && typeof left === 'string' && typeof right === 'string') {
+    const leftInstant = Date.parse(left);
+    const rightInstant = Date.parse(right);
+    if (!Number.isNaN(leftInstant) && !Number.isNaN(rightInstant)) return leftInstant === rightInstant;
+  }
   if (typeof left === 'string' && typeof right === 'string') return normalizeString(left) === normalizeString(right);
   return left === right;
 }
@@ -86,12 +91,12 @@ function matchesRule(field: WorkspaceObjectField, value: WorkspaceObjectValue, r
   const expected = rule.value;
   if (expected === undefined) return false;
   if (rule.operator === 'in' || rule.operator === 'not-in') {
-    const matches = Array.isArray(expected) && expected.some(candidate => equals(value, candidate));
+    const matches = Array.isArray(expected) && expected.some(candidate => equals(field, value, candidate));
     return rule.operator === 'in' ? matches : !matches;
   }
   if (Array.isArray(expected)) return false;
-  if (rule.operator === 'equals') return equals(value, expected);
-  if (rule.operator === 'not-equals') return !equals(value, expected);
+  if (rule.operator === 'equals') return equals(field, value, expected);
+  if (rule.operator === 'not-equals') return !equals(field, value, expected);
   if (rule.operator === 'contains' || rule.operator === 'not-contains') {
     const matches = normalizeString(value).includes(normalizeString(expected));
     return rule.operator === 'contains' ? matches : !matches;

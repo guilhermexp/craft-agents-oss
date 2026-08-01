@@ -178,6 +178,32 @@ alterados; o scan global permaneceu em 72/100 com 48 issues fora deste escopo.
 U6, 7.3, 7.4, smoke/auditoria de Phase B e 7.5 continuam não iniciados e não
 foram marcados.
 
+Segundo re-review corretivo U5 7.1/7.2 (2026-08-01): REDs observados provaram
+`ZodError` para `columns: ['']`, abort da migration v3 no reopen, perda de 2
+labels entre 202 refs, ausência de batching no preview, `anyOf` na raiz do
+schema enviado ao Pi, resync local por revision genérica, cursor incoerente
+após revalidation e igualdade temporal textual para offsets equivalentes. Um
+RED adicional confirmou que `JSON.stringify` de valor legacy não serializável
+também escapava do normalizador.
+
+O GREEN isola/faz fallback de cada row Phase A, aceita apenas column IDs string
+de 1–120 caracteres, particiona refs em batches de até 200 e rejeita falha ou
+mistura de revisions. Relações carregam revision, preservam páginas/cursor no
+mesmo snapshot e resetam no snapshot novo. Saved views sincronizam apenas pelo
+fingerprint da própria config canônica; os quatro operadores de igualdade/set
+para date/datetime comparam `Date.parse`. MCP preserva a union estrita, enquanto
+Pi/Anthropic/Copilot recebem `nativeInputSchema` object-only com os payloads
+visíveis; o canonical parse continua obrigatório.
+
+A matriz final passou 102/102 em 16 arquivos (628 expects), incluindo AJV MCP e
+catálogo Pi; typechecks de shared, Electron, session-tools e pi-agent-server
+passaram. `lint:tool-contracts` confirmou 30 native + 2 MCP-only, i18n manteve
+7 locales com 1.781 keys, OpenSpec strict e `git diff --check` passaram. React
+Doctor latest 0.9.3 line-scoped terminou com 0 issues. O golden não mudou:
+continua com 32 tools, nove actions de `workspace_objects`, 19 refs locais e
+zero `items: {}`. U6, 7.3, 7.4, smoke/auditoria de Phase B e 7.5 permanecem não
+iniciados e desmarcados.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

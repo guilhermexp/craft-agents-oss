@@ -143,7 +143,12 @@ export function normalizeLegacyWorkspaceObjectSavedView(view: {
 }): WorkspaceObjectSavedView {
   const strict = WorkspaceObjectSavedViewSchema.safeParse(view)
   if (strict.success) return strict.data
-  const serializedLegacy = JSON.stringify(view.config) ?? '{}'
+  let serializedLegacy = '{}'
+  try {
+    serializedLegacy = JSON.stringify(view.config) ?? '{}'
+  } catch {
+    // Unsupported legacy values are preserved only when safely serializable.
+  }
   return WorkspaceObjectSavedViewSchema.parse({
     id: view.id,
     name: view.name,
@@ -152,12 +157,12 @@ export function normalizeLegacyWorkspaceObjectSavedView(view: {
       search: typeof view.config.search === 'string' ? view.config.search.slice(0, 500) : '',
       columnVisibility: Object.fromEntries(
         Array.isArray(view.config.columns)
-          ? view.config.columns.filter((fieldId): fieldId is string => typeof fieldId === 'string' && fieldId.length <= 120).map(fieldId => [fieldId, true])
+          ? view.config.columns.filter((fieldId): fieldId is string => typeof fieldId === 'string' && fieldId.length >= 1 && fieldId.length <= 120).map(fieldId => [fieldId, true])
           : [],
       ),
       presentation: {
         adapter: 'table',
-        settings: { legacyConfig: serializedLegacy.slice(0, 64_000) },
+        settings: serializedLegacy === '{}' ? {} : { legacyConfig: serializedLegacy.slice(0, 64_000) },
       },
     },
   })

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { openSQLite } from '../../memory/sqlite-driver.ts';
 import { WORKSPACE_OBJECT_SCHEMA_V1 } from '../schema.ts';
 import { WorkspaceObjectRepository } from '../storage.ts';
-import { DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW } from '../view-schema.ts';
+import { DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW, normalizeLegacyWorkspaceObjectSavedView } from '../view-schema.ts';
 
 const roots: string[] = [];
 
@@ -20,6 +20,36 @@ afterEach(() => {
 });
 
 describe('WorkspaceObjectRepository', () => {
+  test('normalizes every legacy record to a safe v1 fallback without throwing', () => {
+    const oversizedId = 'x'.repeat(121);
+    expect(() => normalizeLegacyWorkspaceObjectSavedView({
+      id: 'view_legacy',
+      name: 'Legacy',
+      config: {
+        schemaVersion: { arbitrary: true },
+        search: 42,
+        columns: ['', 'field_valid', oversizedId, 7, null],
+        malformed: { nested: ['still', 'serializable'] },
+      },
+    })).not.toThrow();
+
+    expect(normalizeLegacyWorkspaceObjectSavedView({
+      id: 'view_legacy',
+      name: 'Legacy',
+      config: { schemaVersion: 'phase-a', columns: ['', 'field_valid', oversizedId] },
+    }).config).toMatchObject({
+      schemaVersion: 1,
+      search: '',
+      columnVisibility: { field_valid: true },
+    });
+
+    expect(() => normalizeLegacyWorkspaceObjectSavedView({
+      id: 'view_non_serializable',
+      name: 'Non serializable',
+      config: { malformed: 1n },
+    })).not.toThrow();
+  });
+
   test('initializes idempotently and preserves typed fields and stable ids', () => {
     const root = makeRoot();
     const first = WorkspaceObjectRepository.open(root);
@@ -263,6 +293,43 @@ describe('WorkspaceObjectRepository', () => {
     expect(JSON.parse(row.config_json)).toMatchObject({ schemaVersion: 1, search: 'legacy' });
     expect(persisted.prepare('SELECT MAX(version) AS version FROM workspace_object_schema_version').get()).toEqual({ version: 3 });
     persisted.close();
+  });
+
+  test('isolates malformed migration rows while reopening and normalizing valid legacy siblings', () => {
+    const root = makeRoot();
+    const repository = WorkspaceObjectRepository.open(root);
+    repository.defineObject({ id: 'object_tasks', slug: 'tasks', name: 'Tasks', fields: [] });
+    for (const [id, name] of [['view_legacy', 'Legacy'], ['view_malformed', 'Malformed']] as const) {
+      repository.upsertSavedView('object_tasks', { id, name, config: DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW });
+    }
+    repository.close();
+
+    const path = join(root, 'objects', 'objects.sqlite');
+    const db = openSQLite(path);
+    db.prepare('UPDATE workspace_object_saved_views SET config_json = ? WHERE id = ?').run(
+      JSON.stringify({ schemaVersion: 999, columns: ['', 'field_valid', 'x'.repeat(121)] }),
+      'view_legacy',
+    );
+    db.prepare('UPDATE workspace_object_saved_views SET config_json = ? WHERE id = ?').run('{broken', 'view_malformed');
+    db.prepare('DELETE FROM workspace_object_schema_version WHERE version > 2').run();
+    db.close();
+
+    const reopened = WorkspaceObjectRepository.open(root);
+    expect(reopened.getObject('object_tasks')?.savedViews).toEqual([
+      expect.objectContaining({
+        id: 'view_legacy',
+        config: expect.objectContaining({ schemaVersion: 1, columnVisibility: { field_valid: true } }),
+      }),
+      expect.objectContaining({
+        id: 'view_malformed',
+        config: DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW,
+      }),
+    ]);
+    reopened.close();
+
+    const verification = openSQLite(path);
+    expect(verification.prepare('SELECT MAX(version) AS version FROM workspace_object_schema_version').get()).toEqual({ version: 3 });
+    verification.close();
   });
 
   test('supports nested projection transactions with savepoints', () => {

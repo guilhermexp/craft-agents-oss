@@ -214,6 +214,51 @@ describe('WorkspaceObjectService', () => {
     expect(result.relationOptions).toContainEqual({ id: 'entry_249', label: 'Company 249' });
     expect(result.relationOptions).toHaveLength(11);
     expect(result.nextCursor).toBe('entry_020');
+    expect(result.revision).toBe(3);
+    service.close();
+  });
+
+  test('resolves more than 200 unique relation references across fields without dropping labels', () => {
+    const service = WorkspaceObjectService.open({ workspaceId: 'ws_relation_batches', workspaceRootPath: makeRoot() });
+    service.execute({ action: 'define-object', object: {
+      id: 'object_companies', slug: 'companies', name: 'Companies',
+      fields: [{ id: 'field_name', name: 'Name', type: 'text' }],
+    } });
+    const companies = Array.from({ length: 202 }, (_, index) => ({
+      id: `company_${String(index).padStart(3, '0')}`,
+      values: { field_name: `Company ${index}` },
+    }));
+    service.execute({ action: 'upsert-entries', objectId: 'object_companies', entries: companies.slice(0, 200) });
+    service.execute({ action: 'upsert-entries', objectId: 'object_companies', entries: companies.slice(200) });
+    service.execute({ action: 'define-object', object: {
+      id: 'object_people', slug: 'people', name: 'People',
+      fields: [
+        { id: 'field_primary', name: 'Primary', type: 'relation', relationObjectId: 'object_companies' },
+        { id: 'field_secondary', name: 'Secondary', type: 'relation', relationObjectId: 'object_companies' },
+      ],
+    } });
+    service.execute({ action: 'upsert-entries', objectId: 'object_people', entries: Array.from({ length: 101 }, (_, index) => ({
+      id: `person_${String(index).padStart(3, '0')}`,
+      values: {
+        field_primary: companies[index * 2]!.id,
+        field_secondary: companies[index * 2 + 1]!.id,
+      },
+    })) });
+
+    const result = service.execute({
+      action: 'query-object', objectId: 'object_people',
+      query: { config: {
+        schemaVersion: 1, search: '', filter: null, sort: [], columnVisibility: {},
+        presentation: { adapter: 'table', settings: {} },
+      } },
+    });
+    expect('query' in result).toBe(true);
+    if (!('query' in result)) throw new Error('Expected query result');
+    expect(Object.keys(result.query.relationLabels)).toHaveLength(202);
+    expect(result.query.displayValues.person_100).toEqual({
+      field_primary: 'Company 200',
+      field_secondary: 'Company 201',
+    });
     service.close();
   });
 });

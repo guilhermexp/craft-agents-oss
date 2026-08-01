@@ -1093,13 +1093,20 @@ export interface JsonSchemaToolDef {
  * Shared by getToolDefsAsJsonSchema and by MCP bridges that expose extra
  * mcp-only tools defined via defineTool.
  */
-export function toJsonSchemaToolDef(def: SessionToolDef, prefix = ''): JsonSchemaToolDef {
+export function toJsonSchemaToolDef(
+  def: SessionToolDef,
+  prefix = '',
+  options?: { useNativeInputSchema?: boolean },
+): JsonSchemaToolDef {
   // Explicit `as any` avoids TS2589 ("type instantiation is excessively deep")
   // caused by zodToJsonSchema inferring deep generic chains from union schemas.
   // Keep recursive schemas precise for MCP consumers. `none` replaces recursive
   // branches with `{}`, which silently weakens contracts such as workspace view
   // presentation settings; `root` emits self-contained local JSON Schema refs.
-  const inputSchema = zodToJsonSchema(def.inputSchema as any, { $refStrategy: 'root' }) as Record<string, unknown>;
+  const inputZodSchema = options?.useNativeInputSchema && def.nativeInputSchema
+    ? def.nativeInputSchema
+    : def.inputSchema;
+  const inputSchema = zodToJsonSchema(inputZodSchema as any, { $refStrategy: 'root' }) as Record<string, unknown>;
   const outputEnvelopeSchema = zodToJsonSchema(def.outputSchema as any, { $refStrategy: 'none' }) as Record<string, unknown>;
   const outputProperties = outputEnvelopeSchema.properties as Record<string, unknown> | undefined;
   const structuredContentSchema = outputProperties?.structuredContent;
@@ -1139,6 +1146,7 @@ export function getToolDefsAsJsonSchema(opts?: {
   includeDeveloperFeedback?: boolean;
   includeMemory?: boolean;
   includeWorkspaceObjects?: boolean;
+  useNativeInputSchemas?: boolean;
 }): JsonSchemaToolDef[] {
   const prefix = opts?.prefix || '';
   const defs = getSessionToolDefs({
@@ -1147,5 +1155,5 @@ export function getToolDefsAsJsonSchema(opts?: {
     includeWorkspaceObjects: opts?.includeWorkspaceObjects,
   });
 
-  return defs.map(def => toJsonSchemaToolDef(def, prefix));
+  return defs.map(def => toJsonSchemaToolDef(def, prefix, { useNativeInputSchema: opts?.useNativeInputSchemas }));
 }

@@ -27,7 +27,41 @@ import { Input } from '@/components/ui/input'
 import { ObjectFieldEditor, type ObjectRelationOption } from './ObjectFieldEditor'
 
 type MutateWorkspaceObject = (action: WorkspaceObjectAction) => Promise<WorkspaceObjectServiceResult>
-const EMPTY_RELATION_OPTION_PAGES: Record<string, { options: ObjectRelationOption[]; nextCursor: string | null }> = {}
+export interface RelationOptionPage {
+  options: ObjectRelationOption[]
+  nextCursor: string | null
+  revision: number
+}
+const EMPTY_RELATION_OPTION_PAGES: Record<string, RelationOptionPage> = {}
+
+export function canonicalSavedViewFingerprint(payload: WorkspaceObjectPayload, viewId?: string): string | null {
+  const view = payload.savedViews.find(candidate => candidate.id === viewId)
+  return view ? JSON.stringify(view) : null
+}
+
+export function appendRelationOptionPage(current: RelationOptionPage, incoming: RelationOptionPage): RelationOptionPage {
+  if (current.revision !== incoming.revision) throw new Error('Relation options changed while loading more')
+  return {
+    options: [...new Map([...current.options, ...incoming.options].map(option => [option.id, option])).values()],
+    nextCursor: incoming.nextCursor,
+    revision: current.revision,
+  }
+}
+
+export function reconcileRelationOptionPages(
+  current: Record<string, RelationOptionPage>,
+  incoming: Record<string, RelationOptionPage>,
+): Record<string, RelationOptionPage> {
+  return Object.fromEntries(Object.entries(incoming).map(([objectId, page]) => {
+    const accumulated = current[objectId]
+    if (!accumulated || accumulated.revision !== page.revision) return [objectId, page]
+    return [objectId, {
+      options: [...new Map([...accumulated.options, ...page.options].map(option => [option.id, option])).values()],
+      nextCursor: accumulated.nextCursor,
+      revision: page.revision,
+    }]
+  }))
+}
 
 export function createSavedTableView(
   id: string,
@@ -137,7 +171,7 @@ export interface ObjectTableViewProps {
   mutate: MutateWorkspaceObject
   initialViewId?: string
   onViewIdChange?: (viewId: string | undefined) => void
-  relationOptionPages?: Record<string, { options: ObjectRelationOption[]; nextCursor: string | null }>
+  relationOptionPages?: Record<string, RelationOptionPage>
 }
 
 export function ObjectTableView({ payload, relationPayloads, mutate, initialViewId, onViewIdChange, relationOptionPages = EMPTY_RELATION_OPTION_PAGES }: ObjectTableViewProps) {
@@ -167,28 +201,21 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
     [payload, config, relationContext.labels],
   )
 
+  const canonicalViewFingerprint = canonicalSavedViewFingerprint(payload, initialViewId)
   React.useEffect(() => {
-    if (!initialViewId) return
-    const canonical = payload.savedViews.find(view => view.id === initialViewId)
-    if (!canonical) return
+    if (!canonicalViewFingerprint) return
+    const canonical = WorkspaceObjectSavedViewSchema.parse(JSON.parse(canonicalViewFingerprint))
     setActiveViewId(canonical.id)
     setViewName(canonical.name)
     setConfig(restoreSavedTableView(canonical))
-  }, [initialViewId, payload.revision, payload.savedViews])
+  }, [canonicalViewFingerprint])
 
   React.useEffect(() => {
     if (shouldPersistSavedViewTarget(payload, activeViewId, initialViewId)) onViewIdChange?.(activeViewId)
   }, [activeViewId, initialViewId, onViewIdChange, payload])
 
   React.useEffect(() => {
-    setRelationPages(current => {
-      const merged = { ...current }
-      for (const [objectId, page] of Object.entries(relationOptionPages)) {
-        const options = [...new Map([...(current[objectId]?.options ?? []), ...page.options].map(option => [option.id, option])).values()]
-        merged[objectId] = { options, nextCursor: page.nextCursor }
-      }
-      return merged
-    })
+    setRelationPages(current => reconcileRelationOptionPages(current, relationOptionPages))
   }, [relationOptionPages])
 
   const loadMoreRelationOptions = React.useCallback(async (relationObjectId: string) => {
@@ -202,10 +229,11 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
       if (!('relationOptions' in result)) return
       setRelationPages(pages => ({
         ...pages,
-        [relationObjectId]: {
-          options: [...new Map([...(pages[relationObjectId]?.options ?? []), ...result.relationOptions].map(option => [option.id, option])).values()],
+        [relationObjectId]: appendRelationOptionPage(pages[relationObjectId] ?? current, {
+          options: result.relationOptions,
           nextCursor: result.nextCursor,
-        },
+          revision: result.revision,
+        }),
       }))
     } finally {
       setLoadingRelationObjectId(null)
@@ -259,7 +287,7 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
     const view = createSavedTableView(id, normalizedName, config)
     try {
       const result = await mutate({ action: 'upsert-view', objectId: payload.id, view })
-      if (!('revision' in result) || result.objectId !== payload.id) throw new Error(t('chat.workspaceObjectCommitMissing'))
+      if (!('objectId' in result) || !('revision' in result) || result.objectId !== payload.id) throw new Error(t('chat.workspaceObjectCommitMissing'))
       setActiveViewId(id)
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error))

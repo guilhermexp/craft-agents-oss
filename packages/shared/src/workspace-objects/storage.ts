@@ -30,6 +30,7 @@ export interface WorkspaceObjectRelationOption { id: string; label: string }
 export interface WorkspaceObjectRelationOptionsPage {
   options: WorkspaceObjectRelationOption[];
   nextCursor: string | null;
+  revision: number;
 }
 
 export class WorkspaceObjectRepository {
@@ -194,6 +195,7 @@ export class WorkspaceObjectRepository {
     options: { after?: string; limit?: number; includeEntryIds?: string[] } = {},
   ): WorkspaceObjectRelationOptionsPage {
     if (!this.objectExists(objectId)) throw new Error(`Unknown object: ${objectId}`);
+    const revision = this.requireRevision(objectId);
     const limit = Math.max(1, Math.min(options.limit ?? 100, 200));
     const includeEntryIds = [...new Set(options.includeEntryIds ?? [])].slice(0, 200);
     const pageRows = this.db.prepare(`SELECT id FROM workspace_object_entries
@@ -202,7 +204,7 @@ export class WorkspaceObjectRepository {
     const hasMore = pageRows.length > limit;
     const pageIds = pageRows.slice(0, limit).map(row => row.id);
     const candidateIds = [...new Set([...pageIds, ...includeEntryIds])];
-    if (candidateIds.length === 0) return { options: [], nextCursor: null };
+    if (candidateIds.length === 0) return { options: [], nextCursor: null, revision };
     const placeholders = candidateIds.map(() => '?').join(', ');
     const entries = this.db.prepare(`SELECT id FROM workspace_object_entries
       WHERE object_id = ? AND id IN (${placeholders})`).all(objectId, ...candidateIds) as Array<{ id: string }>;
@@ -227,6 +229,7 @@ export class WorkspaceObjectRepository {
     return {
       options: candidateIds.flatMap(id => ownedIds.has(id) ? [{ id, label: labels.get(id) ?? id }] : []),
       nextCursor: hasMore ? (pageIds.at(-1) ?? null) : null,
+      revision,
     };
   }
 
@@ -284,16 +287,22 @@ export class WorkspaceObjectRepository {
       .all() as Array<{ id: string; object_id: string; name: string; config_json: string }>;
     const migrations: Array<{ objectId: string; id: string; configJson: string }> = [];
     for (const row of rows) {
-      let config: unknown;
-      try { config = JSON.parse(row.config_json); } catch { continue; }
+      let config: unknown = {};
+      try { config = JSON.parse(row.config_json); } catch { /* Fall back per row below. */ }
       const strict = WorkspaceObjectSavedViewSchema.safeParse({ id: row.id, name: row.name, config });
-      if (strict.success || !config || typeof config !== 'object' || Array.isArray(config)) continue;
-      const normalized = normalizeLegacyWorkspaceObjectSavedView({
-        id: row.id,
-        name: row.name,
-        config: config as Record<string, unknown>,
-      });
-      migrations.push({ objectId: row.object_id, id: row.id, configJson: JSON.stringify(normalized.config) });
+      if (strict.success) continue;
+      try {
+        const normalized = normalizeLegacyWorkspaceObjectSavedView({
+          id: row.id,
+          name: row.name,
+          config: config && typeof config === 'object' && !Array.isArray(config)
+            ? config as Record<string, unknown>
+            : {},
+        });
+        migrations.push({ objectId: row.object_id, id: row.id, configJson: JSON.stringify(normalized.config) });
+      } catch {
+        // A single corrupt Phase A row must not prevent the workspace opening.
+      }
     }
     this.transaction(() => {
       for (const migration of migrations) {

@@ -106,6 +106,35 @@ describe('evaluateWorkspaceObjectQuery', () => {
     expect(result.entries.map(entry => entry.id)).toEqual(['later_text_first']);
   });
 
+  test('matches temporal equality and set operators by instant across equivalent offsets', () => {
+    const temporalPayload: WorkspaceObjectPayload = {
+      ...payload,
+      fields: [{ id: 'field_when', name: 'When', type: 'datetime' }],
+      entries: [
+        { id: 'same_instant', values: { field_when: '2026-08-01T08:00:00-03:00' } },
+        { id: 'different_instant', values: { field_when: '2026-08-01T12:00:00Z' } },
+      ],
+    };
+    const equivalent = '2026-08-01T11:00:00Z';
+
+    const cases: Array<{
+      operator: 'equals' | 'not-equals' | 'in' | 'not-in';
+      value: string | string[];
+      expected: string[];
+    }> = [
+      { operator: 'equals', value: equivalent, expected: ['same_instant'] },
+      { operator: 'not-equals', value: equivalent, expected: ['different_instant'] },
+      { operator: 'in', value: [equivalent], expected: ['same_instant'] },
+      { operator: 'not-in', value: [equivalent], expected: ['different_instant'] },
+    ];
+    for (const { operator, value, expected } of cases) {
+      const result = evaluateWorkspaceObjectQuery(temporalPayload, view({
+        filter: { type: 'rule', fieldId: 'field_when', operator, value },
+      }));
+      expect(result.entries.map(entry => entry.id)).toEqual(expected);
+    }
+  });
+
   test('evaluates nested filters, search and a stable multi-sort deterministically', () => {
     const result = evaluateWorkspaceObjectQuery(payload, view({
       search: 'a',

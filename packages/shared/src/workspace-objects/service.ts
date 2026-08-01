@@ -51,7 +51,7 @@ export type WorkspaceObjectServiceResult =
       displayValues: Record<string, Record<string, WorkspaceObjectValue>>;
       relationLabels: Record<string, string>;
     } }
-  | { relationOptions: Array<{ id: string; label: string }>; nextCursor: string | null };
+  | { relationOptions: Array<{ id: string; label: string }>; nextCursor: string | null; revision: number };
 
 export interface WorkspaceObjectServiceOptions {
   workspaceId: string;
@@ -83,7 +83,7 @@ export class WorkspaceObjectService {
     if (action.action === 'list-objects') return { objects: this.repository.listObjects(action.limit) };
     if (action.action === 'list-relation-options') {
       const page = this.repository.listRelationOptions(action.objectId, action);
-      return { relationOptions: page.options, nextCursor: page.nextCursor };
+      return { relationOptions: page.options, nextCursor: page.nextCursor, revision: page.revision };
     }
     if (action.action === 'query-object') {
       const payload = this.repository.getObject(action.objectId);
@@ -103,8 +103,13 @@ export class WorkspaceObjectService {
           }
         }
         const referencedIds = [...referencedIdSet];
-        const page = this.repository.listRelationOptions(relationObjectId, { limit: 1, includeEntryIds: referencedIds });
-        for (const option of page.options) if (referencedIdSet.has(option.id)) relationLabels.set(option.id, option.label);
+        for (let offset = 0; offset < referencedIds.length; offset += 200) {
+          const page = this.repository.listRelationOptions(relationObjectId, {
+            limit: 1,
+            includeEntryIds: referencedIds.slice(offset, offset + 200),
+          });
+          for (const option of page.options) if (referencedIdSet.has(option.id)) relationLabels.set(option.id, option.label);
+        }
       }
       const query = evaluateWorkspaceObjectQuery(payload, config, {
         relationLabels,

@@ -12,7 +12,7 @@ interface WorkspaceObjectPreviewData {
   targetKey: string
   payload: WorkspaceObjectPayload
   relationPayloads: WorkspaceObjectPayload[]
-  relationOptionPages?: Record<string, { options: Array<{ id: string; label: string }>; nextCursor: string | null }>
+  relationOptionPages?: Record<string, { options: Array<{ id: string; label: string }>; nextCursor: string | null; revision: number }>
 }
 
 interface WorkspaceObjectPreviewTarget {
@@ -46,6 +46,44 @@ export function collectReferencedRelationEntryIds(
   return [...referencedIds]
 }
 
+type RelationOptionsAction = Extract<WorkspaceObjectAction, { action: 'list-relation-options' }>
+
+export async function loadReferencedRelationOptions(
+  relationObjectId: string,
+  referencedIds: string[],
+  load: (action: RelationOptionsAction) => Promise<WorkspaceObjectServiceResult>,
+): Promise<{ options: Array<{ id: string; label: string }>; nextCursor: string | null; revision: number }> {
+  const requests: RelationOptionsAction[] = [
+    { action: 'list-relation-options', objectId: relationObjectId, limit: 200 },
+  ]
+  for (let offset = 0; offset < referencedIds.length; offset += 200) {
+    requests.push({
+      action: 'list-relation-options',
+      objectId: relationObjectId,
+      limit: 1,
+      includeEntryIds: referencedIds.slice(offset, offset + 200),
+    })
+  }
+  const results = await Promise.all(requests.map(load))
+  const pages = results.map(result => {
+    if (!('relationOptions' in result)) throw new Error(`Invalid relation options response: ${relationObjectId}`)
+    return result
+  })
+  const revision = pages[0]?.revision
+  if (revision === undefined || pages.some(page => page.revision !== revision)) {
+    throw new Error(`Relation options changed during lookup: ${relationObjectId}`)
+  }
+  const optionsById = new Map<string, { id: string; label: string }>()
+  for (const page of pages) {
+    for (const option of page.relationOptions) optionsById.set(option.id, option)
+  }
+  return {
+    options: [...optionsById.values()],
+    nextCursor: pages[0]?.nextCursor ?? null,
+    revision,
+  }
+}
+
 export function WorkspaceObjectPreviewPanel({
   workspaceId,
   objectId,
@@ -74,9 +112,9 @@ export function WorkspaceObjectPreviewPanel({
     const relationObjectIds = new Set(result.payload.fields.flatMap(field => field.relationObjectId ? [field.relationObjectId] : []))
     const relationResults = await Promise.all([...relationObjectIds].map(async relationObjectId => {
       const includeEntryIds = collectReferencedRelationEntryIds(result.payload!, relationObjectId)
-      const page = await window.electronAPI.executeWorkspaceObjectAction(workspaceId, {
-        action: 'list-relation-options', objectId: relationObjectId, limit: 200, includeEntryIds,
-      })
+      const page = await loadReferencedRelationOptions(relationObjectId, includeEntryIds, action => (
+        window.electronAPI.executeWorkspaceObjectAction(workspaceId, action)
+      ))
       return { relationObjectId, page }
     }))
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
@@ -84,9 +122,7 @@ export function WorkspaceObjectPreviewPanel({
       targetKey: contentTabId(target),
       payload: result.payload,
       relationPayloads: [],
-      relationOptionPages: Object.fromEntries(relationResults.flatMap(({ relationObjectId, page }) => (
-        'relationOptions' in page ? [[relationObjectId, { options: page.relationOptions, nextCursor: page.nextCursor }]] : []
-      ))),
+      relationOptionPages: Object.fromEntries(relationResults.map(({ relationObjectId, page }) => [relationObjectId, page])),
     }
   }, [workspaceId, objectId, target])
 
