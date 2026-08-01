@@ -78,6 +78,19 @@ beforeEach(() => {
     },
     connectionStatus: 'failed',
     connectionError: '401 Authorization: Bearer error-token; refresh_token=refresh-secret; provider_secret=provider-secret; credentials=credential-secret',
+    expectedTools: [
+      { name: 'messages_list', apiVersion: 'v1' },
+      { name: 'Authorization Bearer tool-secret', apiVersion: 'token=version-secret' },
+    ],
+    readiness: {
+      status: 'unhealthy',
+      reason: 'missing-tools',
+      observedTools: [
+        { name: 'messages_list', apiVersion: 'v1' },
+        { name: 'Authorization Bearer observed-secret', apiVersion: 'credential=health-secret' },
+      ],
+      checkedAt: 123,
+    },
   }))
   writeFileSync(join(sourcePath, 'guide.md'), '# Mail\n\n## Context\n\nAuthorization: Bearer guide-token')
 })
@@ -105,6 +118,13 @@ describe('SOURCES_GET public DTO', () => {
     expect(sources[0]?.config.connectionError).toBe(
       '401 Authorization: Bearer [REDACTED]; refresh_token=[REDACTED]; provider_secret=[REDACTED]; credentials=[REDACTED]',
     )
+    expect(sources[0]?.config.expectedTools).toEqual([{ name: 'messages_list', apiVersion: 'v1' }])
+    expect(sources[0]?.config.readiness).toEqual({
+      status: 'unhealthy',
+      reason: 'missing-tools',
+      observedTools: [{ name: 'messages_list', apiVersion: 'v1' }],
+      checkedAt: 123,
+    })
     const publicPayload = JSON.stringify(sources)
     expect(publicPayload).not.toContain('provider-secret')
     expect(publicPayload).not.toContain('header-token')
@@ -115,5 +135,9 @@ describe('SOURCES_GET public DTO', () => {
     expect(publicPayload).not.toContain('guide-token')
     expect(publicPayload).not.toContain('credential-secret')
     expect(publicPayload).not.toContain('PROVIDER_SECRET')
+    expect(publicPayload).not.toContain('tool-secret')
+    expect(publicPayload).not.toContain('version-secret')
+    expect(publicPayload).not.toContain('observed-secret')
+    expect(publicPayload).not.toContain('health-secret')
   })
 })

@@ -16,6 +16,8 @@ import type {
   MicrosoftService,
   McpSourceConfig,
   ValidationResult,
+  SourceProbeBackend,
+  SourceToolIdentity,
 } from './types.ts';
 
 // ============================================================
@@ -427,6 +429,18 @@ export interface SessionToolContext {
     reason?: string;
     availability?: 'next-turn';
   }>;
+
+  /** Backend family used by the fail-closed U7 source readiness probe. */
+  sourceProbeBackend?: SourceProbeBackend;
+
+  /** Temporarily inject one source into this session without persisting exposure. */
+  injectSourceForProbe?(sourceSlug: string): Promise<{ probeId: string }>;
+
+  /** Observe the canonical source toolset only after temporary session injection. */
+  observeSourceToolsForProbe?(probeId: string): Promise<SourceToolIdentity[]>;
+
+  /** Restore the exact pre-probe session source set. */
+  removeSourceProbe?(probeId: string): Promise<void>;
 
   // ============================================================
   // Messaging Gateway (for list/unbind messaging channels)

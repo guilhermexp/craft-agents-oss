@@ -196,6 +196,19 @@ The Phase A local-first object contract is tracked by
   config. Desktop `SOURCES_GET` must return the explicit allowlisted DTO from
   `public-source-dto.ts`, including a sanitized `connectionError`, rather than a
   raw `LoadedSource`.
+- U7 readiness applies only to sources carrying `expectedTools`. Each expected
+  tool uses the source-local canonical MCP name plus `apiVersion`; compatibility
+  is an exact version match. A newly materialized Composio source starts
+  disabled/unhealthy. `source_test` must pass before a temporary injection into
+  the current compatible session, and the shared MCP pool must observe every
+  expected pair after that injection. Claude, Codex/Pi and Hermes use this same
+  pool-derived toolset. Missing tools, version mismatch, unsupported backend,
+  injection/observation/cleanup failure or health-persistence failure keeps the
+  source disabled/unhealthy and restores the prior session source set. Legacy
+  sources without `expectedTools` retain their existing activation behavior.
+  Persisted/public health and logs may contain only allowlisted status, stable
+  reason codes and portable expected-tool identities; never caught error text,
+  credentials, tokens, provider secrets or authorization headers.
 - Object Kanban groups only by a configured canonical select/status field. A
   translated no-group column retains entries with null, absent or unknown
   values. Optional fields persist `null` when that column is targeted; for

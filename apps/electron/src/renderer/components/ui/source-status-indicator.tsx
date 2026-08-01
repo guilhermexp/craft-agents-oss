@@ -55,6 +55,12 @@ const STATUS_CONFIG: Record<SourceConnectionStatus, {
     label: 'Connection Failed',
     description: 'Failed to connect to source',
   },
+  unhealthy: {
+    color: 'bg-destructive',
+    pulseColor: 'bg-destructive/80',
+    label: 'Connection Failed',
+    description: 'Failed to connect to source',
+  },
   untested: {
     color: 'bg-foreground/40',
     pulseColor: 'bg-foreground/30',
@@ -86,7 +92,7 @@ export function SourceStatusIndicator({
   const sizeClass = SIZE_CONFIG[size]
 
   // Build tooltip description
-  const tooltipDescription = status === 'failed' && errorMessage
+  const tooltipDescription = (status === 'failed' || status === 'unhealthy') && errorMessage
     ? `${config.description}: ${errorMessage}`
     : config.description
 

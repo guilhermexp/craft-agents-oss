@@ -4,6 +4,11 @@ import { sanitizeSourceConnectionError } from './public-source-dto.ts'
 import { createSource, loadWorkspaceSources } from './storage.ts'
 import type { CreateSourceInput, FolderSourceConfig } from './types.ts'
 
+const sourceToolIdentityPartSchema = z.string().regex(
+  /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/,
+  'Tool identity must use portable name/version characters',
+)
+
 const composioMcpSchema = z.object({
   url: z.url(),
   authType: z.enum(['oauth', 'none']).optional(),
@@ -16,10 +21,18 @@ const composioCatalogItemSchema = z.object({
   description: z.string().trim().min(1).optional(),
   icon: z.string().trim().min(1).optional(),
   mcp: composioMcpSchema.optional(),
+  expectedTools: z.array(z.object({
+    name: sourceToolIdentityPartSchema,
+    apiVersion: sourceToolIdentityPartSchema,
+  })).min(1).optional(),
 })
 
 const materializableComposioItemSchema = composioCatalogItemSchema.extend({
   mcp: composioMcpSchema,
+  expectedTools: z.array(z.object({
+    name: sourceToolIdentityPartSchema,
+    apiVersion: sourceToolIdentityPartSchema,
+  })).min(1),
 })
 
 const composioCatalogPageSchema = z.object({
@@ -39,6 +52,7 @@ export interface ComposioCatalogItem {
     authType?: 'oauth' | 'none'
     clientId?: string
   }
+  expectedTools?: Array<{ name: string; apiVersion: string }>
 }
 
 export interface ComposioCatalogPageRequest {
@@ -91,6 +105,9 @@ function toPublicCatalogItem(item: ComposioCatalogItem): ComposioCatalogItem {
             ...(item.mcp.clientId === undefined ? {} : { clientId: item.mcp.clientId }),
           },
         }),
+    ...(item.expectedTools === undefined
+      ? {}
+      : { expectedTools: item.expectedTools.map((tool) => ({ ...tool })) }),
   }
 }
 
@@ -132,7 +149,9 @@ export function toPortableComposioSourceInput(input: unknown): CreateSourceInput
     name: item.name,
     provider: normalizeComposioProviderIdentity(item.providerId),
     type: 'mcp',
-    enabled: true,
+    enabled: false,
+    connectionStatus: 'unhealthy',
+    expectedTools: item.expectedTools!.map((tool) => ({ ...tool })),
     ...(item.icon === undefined ? {} : { icon: assertPortableIcon(item.icon) }),
     mcp: {
       transport: 'http',

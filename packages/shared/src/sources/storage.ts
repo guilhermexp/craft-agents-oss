@@ -399,6 +399,10 @@ export function getEnabledSources(workspaceRootPath: string): LoadedSource[] {
  */
 export function isSourceUsable(source: LoadedSource): boolean {
   if (!source.config.enabled) return false;
+  if (
+    (source.config.expectedTools?.length ?? 0) > 0
+    && source.config.readiness?.status !== 'ready'
+  ) return false;
 
   // Get auth type from MCP or API config
   const authType = source.config.mcp?.authType || source.config.api?.authType;
@@ -515,6 +519,10 @@ export async function createSource(
     type: input.type,
     createdAt: now,
     updatedAt: now,
+    ...(input.connectionStatus === undefined ? {} : { connectionStatus: input.connectionStatus }),
+    ...(input.expectedTools === undefined
+      ? {}
+      : { expectedTools: input.expectedTools.map((tool) => ({ ...tool })) }),
   };
 
   // Add type-specific config
@@ -620,4 +628,3 @@ export function sourceExists(workspaceRootPath: string, sourceSlug: string): boo
 // ============================================================
 
 export { parseGuideMarkdown };
-

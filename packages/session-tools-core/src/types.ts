@@ -299,7 +299,30 @@ export interface LocalSourceConfig {
 /**
  * Connection status for sources
  */
-export type ConnectionStatus = 'connected' | 'disconnected' | 'error' | 'unknown';
+export type ConnectionStatus = 'connected' | 'disconnected' | 'error' | 'unknown' | 'unhealthy';
+
+export interface SourceToolIdentity {
+  name: string;
+  apiVersion: string;
+}
+
+export type SourceProbeBackend = 'claude' | 'codex' | 'hermes' | 'unsupported';
+
+export type SourceReadinessReason =
+  | 'unsupported-backend'
+  | 'source-test-failed'
+  | 'backend-injection-failed'
+  | 'probe-failed'
+  | 'cleanup-failed'
+  | 'missing-tools'
+  | 'version-mismatch';
+
+export interface SourceReadinessEvidence {
+  status: 'ready' | 'unhealthy';
+  reason?: SourceReadinessReason;
+  observedTools?: SourceToolIdentity[];
+  checkedAt: number;
+}
 
 /**
  * Full source configuration (simplified version for core package)
@@ -324,4 +347,6 @@ export interface SourceConfig {
   // Connection tracking
   connectionStatus?: ConnectionStatus;
   connectionError?: string;
+  expectedTools?: SourceToolIdentity[];
+  readiness?: SourceReadinessEvidence;
 }

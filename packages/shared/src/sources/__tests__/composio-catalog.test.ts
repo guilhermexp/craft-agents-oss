@@ -8,7 +8,8 @@ import {
   materializeComposioSource,
   toPortableComposioSourceInput,
 } from '../composio-catalog'
-import { getSourcePath, loadWorkspaceSources } from '../storage'
+import type { LoadedSource } from '../types'
+import { getSourcePath, isSourceUsable, loadWorkspaceSources } from '../storage'
 
 const temporaryWorkspaces: string[] = []
 
@@ -60,6 +61,10 @@ describe('collectComposioCatalog', () => {
         headers: { Authorization: 'Bearer catalog-token' },
         token: 'catalog-token',
       },
+      expectedTools: [
+        { name: 'messages_list', apiVersion: 'v1' },
+        { name: 'messages_send', apiVersion: 'v1' },
+      ],
       credentials: { accessToken: 'catalog-token' },
       providerSecret: 'provider-secret',
     })
@@ -68,7 +73,12 @@ describe('collectComposioCatalog', () => {
       name: 'Gmail',
       provider: 'gmail',
       type: 'mcp',
-      enabled: true,
+      enabled: false,
+      connectionStatus: 'unhealthy',
+      expectedTools: [
+        { name: 'messages_list', apiVersion: 'v1' },
+        { name: 'messages_send', apiVersion: 'v1' },
+      ],
       icon: '📬',
       mcp: {
         transport: 'http',
@@ -91,6 +101,7 @@ describe('collectComposioCatalog', () => {
         url: 'https://connect.example.test/gmail/mcp',
         authType: 'oauth',
       },
+      expectedTools: [{ name: 'messages_list', apiVersion: 'v1' }],
     })).toThrow('credential parameters')
 
     expect(() => toPortableComposioSourceInput({
@@ -101,7 +112,15 @@ describe('collectComposioCatalog', () => {
         url: 'https://provider-secret:password@connect.example.test/gmail/mcp',
         authType: 'oauth',
       },
+      expectedTools: [{ name: 'messages_list', apiVersion: 'v1' }],
     })).toThrow('embedded credentials')
+
+    expect(() => toPortableComposioSourceInput({
+      providerId: 'gmail',
+      name: 'Gmail',
+      mcp: { url: 'https://connect.example.test/gmail/mcp', authType: 'oauth' },
+      expectedTools: [{ name: 'Authorization: Bearer tool-secret', apiVersion: 'v1' }],
+    })).toThrow()
   })
 
   test('never returns credentials embedded in public catalog metadata', async () => {
@@ -145,6 +164,7 @@ describe('collectComposioCatalog', () => {
         url: 'https://connect.example.test/gmail/mcp',
         authType: 'oauth' as const,
       },
+      expectedTools: [{ name: 'messages_list', apiVersion: 'v1' }],
     }
 
     const first = await materializeComposioSource(workspaceRootPath, toolkit)
@@ -160,5 +180,30 @@ describe('collectComposioCatalog', () => {
     expect(persisted).not.toContain('token')
     expect(persisted).not.toContain('credential')
     expect(persisted.toLowerCase()).not.toContain('authorization')
+  })
+
+  test('never exposes expected-tool sources before readiness is healthy', () => {
+    const loaded: LoadedSource = {
+      config: {
+        id: 'linear-id',
+        name: 'Linear',
+        slug: 'linear',
+        enabled: true,
+        provider: 'linear',
+        type: 'mcp',
+        isAuthenticated: true,
+        mcp: { transport: 'http', url: 'https://linear.example.test/mcp', authType: 'oauth' },
+        expectedTools: [{ name: 'issues_list', apiVersion: 'v1' }],
+        readiness: { status: 'unhealthy', reason: 'missing-tools', checkedAt: 1 },
+      },
+      guide: null,
+      folderPath: '/workspace/sources/linear',
+      workspaceRootPath: '/workspace',
+      workspaceId: 'workspace',
+    }
+
+    expect(isSourceUsable(loaded)).toBe(false)
+    loaded.config.readiness = { status: 'ready', checkedAt: 2 }
+    expect(isSourceUsable(loaded)).toBe(true)
   })
 })

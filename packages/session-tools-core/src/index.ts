@@ -52,6 +52,10 @@ export type {
   LocalSourceConfig,
   SourceConfig,
   ConnectionStatus,
+  SourceToolIdentity,
+  SourceProbeBackend,
+  SourceReadinessReason,
+  SourceReadinessEvidence,
 } from './types.ts';
 
 // Response helpers

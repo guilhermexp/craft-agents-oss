@@ -99,6 +99,10 @@ export interface SessionScopedToolCallbacks {
     reason?: string;
     availability?: 'immediate' | 'next-turn';
   }>;
+  sourceProbeBackend?: import('@craft-agent/session-tools-core').SourceProbeBackend;
+  injectSourceForProbeFn?: (sourceSlug: string) => Promise<{ probeId: string }>;
+  observeSourceToolsForProbeFn?: (probeId: string) => Promise<import('@craft-agent/session-tools-core').SourceToolIdentity[]>;
+  removeSourceProbeFn?: (probeId: string) => Promise<void>;
   /** Get messaging bindings for a session. */
   getMessagingBindingsFn?: (sessionId: string) => Array<{ platform: string; channelId: string; threadId?: number; channelName?: string; enabled: boolean }>;
   /** Unbind messaging channels from a session. Returns count of removed bindings. */

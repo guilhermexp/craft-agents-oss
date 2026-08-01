@@ -112,6 +112,38 @@ export function attachSessionSelfManagementBindings(
     enumerable: true,
   });
 
+  Object.defineProperty(context, 'sourceProbeBackend', {
+    get() {
+      return getSessionScopedToolCallbacks(sessionId)?.sourceProbeBackend;
+    },
+    configurable: true,
+    enumerable: true,
+  });
+
+  Object.defineProperty(context, 'injectSourceForProbe', {
+    get() {
+      return getSessionScopedToolCallbacks(sessionId)?.injectSourceForProbeFn;
+    },
+    configurable: true,
+    enumerable: true,
+  });
+
+  Object.defineProperty(context, 'observeSourceToolsForProbe', {
+    get() {
+      return getSessionScopedToolCallbacks(sessionId)?.observeSourceToolsForProbeFn;
+    },
+    configurable: true,
+    enumerable: true,
+  });
+
+  Object.defineProperty(context, 'removeSourceProbe', {
+    get() {
+      return getSessionScopedToolCallbacks(sessionId)?.removeSourceProbeFn;
+    },
+    configurable: true,
+    enumerable: true,
+  });
+
   // Messaging gateway bindings
   Object.defineProperty(context, 'getMessagingBindings', {
     get() {

@@ -107,6 +107,7 @@ import { resizeImageForAPI, resizeIconBuffer } from '@craft-agent/server-core/se
 import { SessionEventPublisher } from './session-event-publisher'
 import { SessionMessageStore, getPiTurnAnchor, savePiTurnAnchor, copyPiTurnAnchorsForBranch, getClaudeTurnAnchor, saveClaudeTurnAnchor, isClaudeMessageUuid } from './session-message-store'
 import { SessionArtifactRenderer } from './session-artifact-renderer'
+import { SessionSourceReadinessProbe } from './session-source-readiness-probe'
 export { sanitizeForTitle }
 
 // Module-level platform ref — set once during init via setSessionPlatform()
@@ -4325,6 +4326,55 @@ export class SessionManager implements ISessionManager {
       }
 
       // Wire up session self-management tools (set_session_labels, set_session_status, etc.)
+      const sourceReadinessProbe = new SessionSourceReadinessProbe({
+        backend: backendContext.provider === 'anthropic'
+          ? 'claude'
+          : backendContext.provider === 'pi'
+            ? 'codex'
+            : 'hermes',
+        getSource: (sourceSlug) => getSourcesBySlugs(managed.workspace.rootPath, [sourceSlug])[0],
+        getActiveSources: () => {
+          const activeSlugs = new Set(managed.enabledSourceSlugs ?? [])
+          return loadAllSources(managed.workspace.rootPath).filter(
+            (source) => activeSlugs.has(source.config.slug) && isSourceUsable(source),
+          )
+        },
+        buildServers: async (sources) => {
+          const built = await buildServersFromSources(
+            sources,
+            sessionPath,
+            managed.tokenRefreshManager,
+            managed.agent?.getSummarizeCallback(),
+          )
+          return {
+            mcpServers: built.mcpServers as Record<string, unknown>,
+            apiServers: built.apiServers as Record<string, unknown>,
+          }
+        },
+        applyServers: async (sources, servers, context) => {
+          const agent = managed.agent
+          if (!agent) throw new Error('Source probe injection failed')
+          const mcpServers = servers.mcpServers as Record<
+            string,
+            import('@craft-agent/shared/agent/backend').SdkMcpServerConfig
+          >
+          const apiServers = servers.apiServers as Record<string, unknown>
+          const intendedSlugs = sources.map((source) => source.config.slug)
+          await applyBridgeUpdates(
+            agent,
+            sessionPath,
+            sources,
+            mcpServers,
+            managed.id,
+            managed.workspace.rootPath,
+            context,
+            managed.poolServer?.url,
+          )
+          await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
+        },
+        getSourceTools: (sourceSlug) => managed.mcpPool?.getTools(sourceSlug) ?? [],
+      })
+
       mergeSessionScopedToolCallbacks(managed.id, {
         setSessionLabelsFn: async (sessionId: string | undefined, labels: string[]) => {
           await this.setSessionLabels(sessionId ?? managed.id, labels)
@@ -4494,6 +4544,10 @@ export class SessionManager implements ISessionManager {
           }
           return { ok: true, availability: 'next-turn' as const }
         },
+        sourceProbeBackend: sourceReadinessProbe.backend,
+        injectSourceForProbeFn: (sourceSlug) => sourceReadinessProbe.inject(sourceSlug),
+        observeSourceToolsForProbeFn: async (probeId) => sourceReadinessProbe.observe(probeId),
+        removeSourceProbeFn: (probeId) => sourceReadinessProbe.remove(probeId),
       })
 
       // WS2 keep-alive: forward background task events that arrive BETWEEN turns

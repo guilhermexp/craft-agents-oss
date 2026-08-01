@@ -6,6 +6,7 @@ import type {
   LocalSourceConfig,
   McpSourceConfig,
   SourceGuide,
+  SourceExpectedTool,
 } from './types.ts'
 
 export type PublicMcpSourceConfig = Pick<
@@ -53,6 +54,21 @@ export interface PublicSourceDto extends Omit<LoadedSource, 'config' | 'guide'> 
 }
 
 const SENSITIVE_PARAMETER_NAME = /(?:^|[_-])(?:access|refresh|auth)?token(?:$|[_-])|secret|credential|password|api[_-]?key|authorization/i
+const SAFE_TOOL_IDENTITY_PART = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/
+
+function toPublicToolIdentities(tools: SourceExpectedTool[] | undefined): SourceExpectedTool[] | undefined {
+  if (tools === undefined) return undefined
+  const publicTools: SourceExpectedTool[] = []
+  for (const tool of tools) {
+    if (
+      SAFE_TOOL_IDENTITY_PART.test(tool.name)
+      && SAFE_TOOL_IDENTITY_PART.test(tool.apiVersion)
+    ) {
+      publicTools.push({ ...tool })
+    }
+  }
+  return publicTools
+}
 
 function sanitizePublicUrl(value: string | undefined): string | undefined {
   if (value === undefined) return undefined
@@ -152,6 +168,8 @@ export function toPublicSourceDto(source: LoadedSource): PublicSourceDto {
   const mcp = toPublicMcpConfig(config.mcp)
   const api = toPublicApiConfig(config.api)
   const icon = sanitizePublicIcon(config.icon)
+  const expectedTools = toPublicToolIdentities(config.expectedTools)
+  const observedTools = toPublicToolIdentities(config.readiness?.observedTools)
   return {
     config: {
       id: config.id,
@@ -172,6 +190,21 @@ export function toPublicSourceDto(source: LoadedSource): PublicSourceDto {
         ? {}
         : { connectionError: sanitizeSourceConnectionError(config.connectionError) }),
       ...(config.lastTestedAt === undefined ? {} : { lastTestedAt: config.lastTestedAt }),
+      ...(expectedTools === undefined
+        ? {}
+        : { expectedTools }),
+      ...(config.readiness === undefined
+        ? {}
+        : {
+            readiness: {
+              status: config.readiness.status,
+              checkedAt: config.readiness.checkedAt,
+              ...(config.readiness.reason === undefined ? {} : { reason: config.readiness.reason }),
+              ...(observedTools === undefined
+                ? {}
+                : { observedTools }),
+            },
+          }),
       ...(config.createdAt === undefined ? {} : { createdAt: config.createdAt }),
       ...(config.updatedAt === undefined ? {} : { updatedAt: config.updatedAt }),
     },

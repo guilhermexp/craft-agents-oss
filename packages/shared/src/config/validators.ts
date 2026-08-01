@@ -436,6 +436,26 @@ const SourceBrandSchema = z.object({
   color: EntityColorSchema.optional(),
 });
 
+const SourceExpectedToolSchema = z.object({
+  name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/),
+  apiVersion: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/),
+});
+
+const SourceReadinessEvidenceSchema = z.object({
+  status: z.enum(['ready', 'unhealthy']),
+  reason: z.enum([
+    'unsupported-backend',
+    'source-test-failed',
+    'backend-injection-failed',
+    'probe-failed',
+    'cleanup-failed',
+    'missing-tools',
+    'version-mismatch',
+  ]).optional(),
+  observedTools: z.array(SourceExpectedToolSchema).optional(),
+  checkedAt: z.number().int().min(0),
+});
+
 export const FolderSourceConfigSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -447,6 +467,20 @@ export const FolderSourceConfigSchema = z.object({
   api: ApiSourceConfigSchema.optional(),
   local: LocalSourceConfigSchema.optional(),
   brand: SourceBrandSchema.optional(),
+  connectionStatus: z.enum([
+    'connected',
+    'needs_auth',
+    'failed',
+    'untested',
+    'local_disabled',
+    'unhealthy',
+    'disconnected',
+    'error',
+    'unknown',
+  ]).optional(),
+  connectionError: z.string().optional(),
+  expectedTools: z.array(SourceExpectedToolSchema).min(1).optional(),
+  readiness: SourceReadinessEvidenceSchema.optional(),
   isAuthenticated: z.boolean().optional(),
   lastTestedAt: z.number().int().min(0).optional(),
   // Timestamps are optional - manually created configs may not have them

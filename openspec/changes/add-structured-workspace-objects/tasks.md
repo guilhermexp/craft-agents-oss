@@ -612,8 +612,8 @@ iniciada.
 ## 8. Phase C — U7: discovery e health
 
 - [x] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.
-- [ ] 8.2 Escrever testes de catálogo, OAuth metadata, redaction e session probe.
-- [ ] 8.3 Implementar catálogo Composio subordinado a sources/OAuth e credential
+- [x] 8.2 Escrever testes de catálogo, OAuth metadata, redaction e session probe.
+- [x] 8.3 Implementar catálogo Composio subordinado a sources/OAuth e credential
       storage existentes.
 - [ ] 8.4 Validar toolkit real, logs/payloads redacted e auditor GO antes de
       Phase D.
@@ -634,9 +634,27 @@ normalizado, materialização portátil/idempotente e DTO público allowlistado 
 regressão completa de sources + RPC passou 173/173 (343 asserts), com
 typechecks shared, server-core e Electron verdes.
 
-Esta evidência cobre somente C1. OAuth/probe de sessão, toolkit real, logs de
-runtime e auditor GO não foram executados; por isso 8.2 permanece aberta e 8.3/
-8.4 não são marcadas.
+O RED C2 executou antes da produção e cobriu, em falhas independentes: ausência
+do contrato exportado de readiness; materialização prematuramente habilitada;
+handler ignorando o probe; adaptador de sessão ausente; exposição de source
+unhealthy; health público vazando identidade extra; candidato temporário
+barrado pelo próprio readiness guard; persistência indevida após falha na
+ativação; exposição quando a persistência de health falha; e DTO RPC vazando
+campos maliciosos. O GREEN mantém sources legadas sem `expectedTools`
+inalteradas, inicia catálogo materializado desabilitado/unhealthy, exige
+identidade portátil e versão exata, injeta temporariamente a source na sessão
+real e observa o pool MCP compartilhado nos backends Claude, Codex/PI e Hermes.
+Falhas ficam fail-closed, tentam cleanup/restauração do conjunto anterior e
+persistem somente health redigido; ready/enabled só é exposto após probe,
+health e ativação final bem-sucedidos.
+
+A matriz final de sources + RPC + handler + probe + bindings passou 209/209
+(464 asserts em 22 arquivos); o teste de exports passou 4/4 (12 asserts).
+Também passaram `typecheck:all`, contratos de session tools (30 native + 2
+mcp-only), paridade i18n (7 locales, 1804 chaves), `impeccable detect`,
+React Doctor no delta (0 issues), `git diff --check` e OpenSpec strict. Assim,
+C1+C2 fecham 8.2 e 8.3. Toolkit real, logs/payloads de runtime real e auditor
+GO continuam não provados; 8.4 permanece aberta e Phase D não foi iniciada.
 
 ## 9. Phase D — U8/U9: inbox, calendário e relacionamentos
 
