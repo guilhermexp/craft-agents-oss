@@ -113,8 +113,14 @@ describe('session tool filtering helpers', () => {
       'get-object',
       'list-objects',
       'repair-projection',
+      'list-relation-options',
       'query-object',
     ]);
+
+    const serializedInputSchema = JSON.stringify(workspaceObjects?.inputSchema);
+    expect(serializedInputSchema).toContain('"items":{"$ref":"#/');
+    expect(serializedInputSchema).toContain('"additionalProperties":{"$ref":"#/');
+    expect(serializedInputSchema).not.toContain('"items":{}');
 
     const canonicalDef = SESSION_TOOL_DEFS.find(def => def.name === 'workspace_objects');
     expect(canonicalDef).toBeDefined();

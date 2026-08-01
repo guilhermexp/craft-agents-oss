@@ -133,33 +133,41 @@ export type WorkspaceObjectSavedView = z.infer<typeof WorkspaceObjectSavedViewSc
 const LegacyWorkspaceObjectSavedViewSchema = z.strictObject({
   id: IdentifierSchema,
   name: z.string().min(1).max(160),
-  config: z.record(z.string(), z.unknown()).refine(config => !('schemaVersion' in config), {
-    message: 'Legacy saved views cannot declare schemaVersion',
-  }),
+  config: z.record(z.string(), z.unknown()),
 });
+
+export function normalizeLegacyWorkspaceObjectSavedView(view: {
+  id: string
+  name: string
+  config: Record<string, unknown>
+}): WorkspaceObjectSavedView {
+  const strict = WorkspaceObjectSavedViewSchema.safeParse(view)
+  if (strict.success) return strict.data
+  const serializedLegacy = JSON.stringify(view.config) ?? '{}'
+  return WorkspaceObjectSavedViewSchema.parse({
+    id: view.id,
+    name: view.name,
+    config: {
+      ...DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW,
+      search: typeof view.config.search === 'string' ? view.config.search.slice(0, 500) : '',
+      columnVisibility: Object.fromEntries(
+        Array.isArray(view.config.columns)
+          ? view.config.columns.filter((fieldId): fieldId is string => typeof fieldId === 'string' && fieldId.length <= 120).map(fieldId => [fieldId, true])
+          : [],
+      ),
+      presentation: {
+        adapter: 'table',
+        settings: { legacyConfig: serializedLegacy.slice(0, 64_000) },
+      },
+    },
+  })
+}
 
 export const WorkspaceObjectSavedViewInputSchema = z.union([
   WorkspaceObjectSavedViewSchema,
   LegacyWorkspaceObjectSavedViewSchema,
 ]).transform((view): WorkspaceObjectSavedView => {
-  if ('schemaVersion' in view.config) return view as WorkspaceObjectSavedView;
-  return {
-    id: view.id,
-    name: view.name,
-    config: {
-      ...DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW,
-      search: typeof view.config.search === 'string' ? view.config.search : '',
-      columnVisibility: Object.fromEntries(
-        Array.isArray(view.config.columns)
-          ? view.config.columns.filter((fieldId): fieldId is string => typeof fieldId === 'string').map(fieldId => [fieldId, true])
-          : [],
-      ),
-      presentation: {
-        adapter: 'table',
-        settings: { legacyConfig: JSON.stringify(view.config) ?? '{}' },
-      },
-    },
-  };
+  return normalizeLegacyWorkspaceObjectSavedView(view);
 });
 export type WorkspaceObjectSavedViewInput = z.input<typeof WorkspaceObjectSavedViewInputSchema>;
 

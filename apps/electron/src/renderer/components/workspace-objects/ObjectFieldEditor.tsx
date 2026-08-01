@@ -1,9 +1,10 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import type { WorkspaceObjectAction, WorkspaceObjectServiceResult } from '@craft-agent/shared/workspace-objects/service'
-import type {
-  WorkspaceObjectField,
-  WorkspaceObjectValue,
+import {
+  WORKSPACE_OBJECT_VALUE_MAX_LENGTH,
+  type WorkspaceObjectField,
+  type WorkspaceObjectValue,
 } from '@craft-agent/shared/workspace-objects/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,6 +37,7 @@ type ObjectFieldErrorKey =
   | 'chat.workspaceObjectFieldOption'
   | 'chat.workspaceObjectFieldRelation'
   | 'chat.workspaceObjectFieldFile'
+  | 'chat.workspaceObjectFieldTooLong'
   | 'chat.workspaceObjectCommitMissing'
   | 'chat.workspaceObjectEditNotCommitted'
   | 'chat.workspaceObjectEditNotConfirmed'
@@ -53,6 +55,7 @@ const defaultErrorFormatter: ObjectFieldErrorFormatter = (key, values = {}) => {
     'chat.workspaceObjectFieldOption': `Choose a supported ${field} option.`,
     'chat.workspaceObjectFieldRelation': `Choose an existing ${field} relation.`,
     'chat.workspaceObjectFieldFile': `${field} contains an invalid file path.`,
+    'chat.workspaceObjectFieldTooLong': `${field} cannot exceed ${WORKSPACE_OBJECT_VALUE_MAX_LENGTH} characters.`,
     'chat.workspaceObjectCommitMissing': 'The mutation did not return a canonical commit.',
     'chat.workspaceObjectEditNotCommitted': `The edit was not committed: ${message}`,
     'chat.workspaceObjectEditNotConfirmed': 'The committed value could not be confirmed after refresh. Review the current value and retry.',
@@ -83,6 +86,9 @@ export function parseObjectFieldDraft(
 ): ObjectFieldParseResult {
   if (draft === '' && !field.required) return { success: true, value: null }
   if (field.required && draft.trim() === '') return { success: false, error: formatError('chat.workspaceObjectFieldRequired', { field: field.name }) }
+  if (draft.length > WORKSPACE_OBJECT_VALUE_MAX_LENGTH) {
+    return { success: false, error: formatError('chat.workspaceObjectFieldTooLong', { field: field.name }) }
+  }
 
   if (field.type === 'number') {
     const value = Number(draft)
@@ -194,6 +200,9 @@ export interface ObjectFieldEditorProps {
   payloadRevision: number
   relationOptions?: ObjectRelationOption[]
   relationLabels?: ReadonlyMap<string, string>
+  hasMoreRelationOptions?: boolean
+  loadingRelationOptions?: boolean
+  onLoadMoreRelationOptions?: () => void
   mutate: MutateWorkspaceObject
 }
 
@@ -206,6 +215,9 @@ export function ObjectFieldEditor({
   payloadRevision,
   relationOptions = EMPTY_RELATION_OPTIONS,
   relationLabels = EMPTY_RELATION_LABELS,
+  hasMoreRelationOptions = false,
+  loadingRelationOptions = false,
+  onLoadMoreRelationOptions,
   mutate,
 }: ObjectFieldEditorProps) {
   const { t } = useTranslation()
@@ -295,6 +307,11 @@ export function ObjectFieldEditor({
   return (
     <div className="min-w-36 space-y-1.5">
       {input}
+      {field.type === 'relation' && hasMoreRelationOptions && onLoadMoreRelationOptions ? (
+        <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-[11px]" disabled={loadingRelationOptions} onClick={onLoadMoreRelationOptions}>
+          {loadingRelationOptions ? t('common.loading') : t('common.more')}
+        </Button>
+      ) : null}
       {error ? <div className="text-[11px] text-destructive" role="alert">{error}</div> : null}
       <div className="flex gap-1">
         <Button type="button" size="sm" className="h-7 px-2 text-[11px]" disabled={busy} onClick={() => void submit()}>

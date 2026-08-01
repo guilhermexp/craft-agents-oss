@@ -250,6 +250,7 @@
   "chat.workspaceObjectFieldFiniteNumber": "{{field}} 必须是有限数字。",
   "chat.workspaceObjectFieldOption": "请选择 {{field}} 支持的选项。",
   "chat.workspaceObjectFieldRelation": "请选择 {{field}} 的现有关系。",
+  "chat.workspaceObjectFieldTooLong": "{{field}} 不能超过 64,000 个字符。",
   "chat.workspaceObjectFieldRequired": "{{field}} 为必填项。",
   "chat.workspaceObjectDefaultView": "默认视图",
   "chat.workspaceObjectFilterField": "筛选字段",

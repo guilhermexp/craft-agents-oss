@@ -61,12 +61,25 @@ function deterministicCompare(left: WorkspaceObjectValue, right: WorkspaceObject
   return leftText < rightText ? -1 : 1;
 }
 
+function compareFieldValues(
+  field: WorkspaceObjectField,
+  left: WorkspaceObjectValue,
+  right: WorkspaceObjectValue,
+): number {
+  if ((field.type === 'date' || field.type === 'datetime') && typeof left === 'string' && typeof right === 'string') {
+    const leftInstant = Date.parse(left)
+    const rightInstant = Date.parse(right)
+    if (!Number.isNaN(leftInstant) && !Number.isNaN(rightInstant)) return leftInstant === rightInstant ? 0 : leftInstant < rightInstant ? -1 : 1
+  }
+  return deterministicCompare(left, right)
+}
+
 function equals(left: WorkspaceObjectValue, right: WorkspaceObjectFilterScalar): boolean {
   if (typeof left === 'string' && typeof right === 'string') return normalizeString(left) === normalizeString(right);
   return left === right;
 }
 
-function matchesRule(value: WorkspaceObjectValue, rule: WorkspaceObjectFilterRule): boolean {
+function matchesRule(field: WorkspaceObjectField, value: WorkspaceObjectValue, rule: WorkspaceObjectFilterRule): boolean {
   const empty = value === null || (typeof value === 'string' && value.trim() === '');
   if (rule.operator === 'is-empty') return empty;
   if (rule.operator === 'is-not-empty') return !empty;
@@ -83,7 +96,7 @@ function matchesRule(value: WorkspaceObjectValue, rule: WorkspaceObjectFilterRul
     const matches = normalizeString(value).includes(normalizeString(expected));
     return rule.operator === 'contains' ? matches : !matches;
   }
-  const comparison = deterministicCompare(value, expected);
+  const comparison = compareFieldValues(field, value, expected);
   if (rule.operator === 'gt' || rule.operator === 'after') return comparison > 0;
   if (rule.operator === 'gte') return comparison >= 0;
   if (rule.operator === 'lt' || rule.operator === 'before') return comparison < 0;
@@ -103,7 +116,7 @@ function matchesFilter(
   }
   const field = fieldById.get(clause.fieldId);
   if (!field) return false;
-  return matchesRule(displayValue(field, entry.values[field.id], context), clause);
+  return matchesRule(field, displayValue(field, entry.values[field.id], context), clause);
 }
 
 export function evaluateWorkspaceObjectQuery(
@@ -138,7 +151,7 @@ export function evaluateWorkspaceObjectQuery(
       if (!field) continue;
       const leftValue = displayValues.get(left.entry.id)?.[field.id] ?? null;
       const rightValue = displayValues.get(right.entry.id)?.[field.id] ?? null;
-      const comparison = deterministicCompare(leftValue, rightValue);
+      const comparison = compareFieldValues(field, leftValue, rightValue);
       if (comparison !== 0) return sort.direction === 'asc' ? comparison : -comparison;
     }
     return left.index - right.index;

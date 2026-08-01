@@ -3742,6 +3742,15 @@ function AppShellContent({
                               target={rightSidebarContentTarget}
                               onClose={() => activeRightSidebarTab && dispatchRightSidebarContentTabs({ type: 'close', id: activeRightSidebarTab.id })}
                               onOpenFileDialog={handleContextOpenFile}
+                              onObjectViewChange={viewId => {
+                                if (!activeRightSidebarTab || activeRightSidebarTab.target.kind !== 'object') return
+                                const { viewId: _previousViewId, ...objectTarget } = activeRightSidebarTab.target
+                                dispatchRightSidebarContentTabs({
+                                  type: 'retarget',
+                                  id: activeRightSidebarTab.id,
+                                  target: { ...objectTarget, ...(viewId === undefined ? {} : { viewId }) },
+                                })
+                              }}
                             />
                           </div>
                         </div>

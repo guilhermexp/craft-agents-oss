@@ -17,6 +17,7 @@ export type ContentTabsAction =
   | { type: 'close'; id: string }
   | { type: 'promote'; id: string }
   | { type: 'pin'; id: string }
+  | { type: 'retarget'; id: string; target: ContentTarget }
   | { type: 'restore'; state: ContentTabsState };
 
 function normalizeTarget(target: ContentTarget): ContentTarget {
@@ -74,6 +75,25 @@ export function contentTabsReducer(state: ContentTabsState, action: ContentTabsA
   }
   if (action.type === 'select') return repairActive(state.tabs, action.id);
   if (action.type === 'close') return repairActive(state.tabs.filter(tab => tab.id !== action.id), state.activeId === action.id ? null : state.activeId);
+  if (action.type === 'retarget') {
+    const target = normalizeTarget(action.target);
+    const nextId = contentTabId(target);
+    const source = state.tabs.find(tab => tab.id === action.id);
+    const existing = state.tabs.find(tab => tab.id === nextId && tab.id !== action.id);
+    if (source && existing) {
+      const tabs = state.tabs.flatMap(tab => {
+        if (tab.id === action.id) return [];
+        return [tab.id === nextId ? {
+          ...tab,
+          pinned: tab.pinned || source.pinned,
+          mode: tab.mode === 'permanent' || source.mode === 'permanent' ? 'permanent' as const : 'preview' as const,
+        } : tab];
+      });
+      return repairActive(tabs, state.activeId === action.id ? nextId : state.activeId);
+    }
+    const tabs = state.tabs.map(tab => tab.id === action.id ? { ...tab, id: nextId, target } : tab);
+    return repairActive(tabs, state.activeId === action.id ? nextId : state.activeId);
+  }
   const tabs = state.tabs.map(tab => tab.id === action.id
     ? action.type === 'pin' ? { ...tab, pinned: true, mode: 'permanent' as const } : { ...tab, mode: 'permanent' as const }
     : tab);

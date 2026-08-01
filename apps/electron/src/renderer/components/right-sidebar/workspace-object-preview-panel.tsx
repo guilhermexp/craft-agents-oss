@@ -5,21 +5,57 @@ import type { WorkspaceObjectPayload } from '@craft-agent/shared/workspace-objec
 import { ContentResolver } from '../app-shell/content-resolver'
 import { acceptWorkspaceObjectEvent } from '../app-shell/workspace-object-events'
 import { onWorkspaceObjectsReload } from '../app-shell/workspace-object-reconnect'
+import { contentTabId } from '../app-shell/content-tabs-state'
 import { ObjectTableView } from '../workspace-objects/ObjectTableView'
 
 interface WorkspaceObjectPreviewData {
+  targetKey: string
   payload: WorkspaceObjectPayload
   relationPayloads: WorkspaceObjectPayload[]
+  relationOptionPages?: Record<string, { options: Array<{ id: string; label: string }>; nextCursor: string | null }>
+}
+
+interface WorkspaceObjectPreviewTarget {
+  workspaceId: string
+  objectId: string
+  viewId?: string
+}
+
+export function isWorkspaceObjectPreviewDataCurrent(
+  data: WorkspaceObjectPreviewData,
+  target: WorkspaceObjectPreviewTarget,
+): boolean {
+  return data.targetKey === contentTabId({ kind: 'object', ...target })
+}
+
+export function workspaceObjectPreviewRenderKey(payload: WorkspaceObjectPayload, viewId?: string): string {
+  return `${payload.id}:${viewId ?? 'default'}`
+}
+
+export function collectReferencedRelationEntryIds(
+  payload: WorkspaceObjectPayload,
+  relationObjectId: string,
+): string[] {
+  const fieldIds = new Set(payload.fields.flatMap(field => field.relationObjectId === relationObjectId ? [field.id] : []))
+  const referencedIds = new Set<string>()
+  for (const entry of payload.entries) {
+    for (const [fieldId, value] of Object.entries(entry.values)) {
+      if (fieldIds.has(fieldId) && typeof value === 'string') referencedIds.add(value)
+    }
+  }
+  return [...referencedIds]
 }
 
 export function WorkspaceObjectPreviewPanel({
   workspaceId,
   objectId,
   viewId,
+  onViewIdChange,
 }: {
   workspaceId: string
   objectId: string
   viewId?: string
+  onViewIdChange?: (viewId: string | undefined) => void
 }) {
   const { t } = useTranslation()
   const resolverRef = React.useRef<ContentResolver<WorkspaceObjectPreviewData> | null>(null)
@@ -29,22 +65,30 @@ export function WorkspaceObjectPreviewPanel({
   const retryRef = React.useRef<() => void>(() => {})
   const revisionsRef = React.useRef(new Map<string, { revision: number; projectionStatus: WorkspaceObjectPayload['projectionStatus'] }>())
   const relationObjectIdsRef = React.useRef(new Set<string>())
-  const target = React.useMemo(() => ({ kind: 'object' as const, workspaceId, objectId }), [workspaceId, objectId])
+  const target = React.useMemo(() => ({ kind: 'object' as const, workspaceId, objectId, ...(viewId === undefined ? {} : { viewId }) }), [workspaceId, objectId, viewId])
 
   const fetchData = React.useCallback(async (signal: AbortSignal): Promise<WorkspaceObjectPreviewData> => {
     const result = await window.electronAPI.executeWorkspaceObjectAction(workspaceId, { action: 'get-object', objectId })
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
     if (!('payload' in result) || !result.payload) throw new Error(`Object not found: ${objectId}`)
     const relationObjectIds = new Set(result.payload.fields.flatMap(field => field.relationObjectId ? [field.relationObjectId] : []))
-    const relationResults = await Promise.all([...relationObjectIds].map(relationObjectId => (
-      window.electronAPI.executeWorkspaceObjectAction(workspaceId, { action: 'get-object', objectId: relationObjectId })
-    )))
+    const relationResults = await Promise.all([...relationObjectIds].map(async relationObjectId => {
+      const includeEntryIds = collectReferencedRelationEntryIds(result.payload!, relationObjectId)
+      const page = await window.electronAPI.executeWorkspaceObjectAction(workspaceId, {
+        action: 'list-relation-options', objectId: relationObjectId, limit: 200, includeEntryIds,
+      })
+      return { relationObjectId, page }
+    }))
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
     return {
+      targetKey: contentTabId(target),
       payload: result.payload,
-      relationPayloads: relationResults.flatMap(candidate => 'payload' in candidate && candidate.payload ? [candidate.payload] : []),
+      relationPayloads: [],
+      relationOptionPages: Object.fromEntries(relationResults.flatMap(({ relationObjectId, page }) => (
+        'relationOptions' in page ? [[relationObjectId, { options: page.relationOptions, nextCursor: page.nextCursor }]] : []
+      ))),
     }
-  }, [workspaceId, objectId])
+  }, [workspaceId, objectId, target])
 
   const mutate = React.useCallback((action: WorkspaceObjectAction): Promise<WorkspaceObjectServiceResult> => (
     window.electronAPI.executeWorkspaceObjectAction(workspaceId, action)
@@ -53,6 +97,9 @@ export function WorkspaceObjectPreviewPanel({
   React.useEffect(() => {
     const resolver = resolverRef.current!
     let active = true
+    setRefreshError(null)
+    revisionsRef.current.clear()
+    relationObjectIdsRef.current.clear()
     const applyData = (value: WorkspaceObjectPreviewData) => {
       revisionsRef.current.set(value.payload.id, { revision: value.payload.revision, projectionStatus: value.payload.projectionStatus })
       for (const relation of value.relationPayloads) {
@@ -94,12 +141,13 @@ export function WorkspaceObjectPreviewPanel({
 
   React.useEffect(() => () => resolverRef.current?.dispose(), [])
 
-  if (!data && !refreshError) return <div className="p-4 text-xs text-muted-foreground">{t('chat.workspaceObjectPreviewLoading')}</div>
+  const visibleData = data && isWorkspaceObjectPreviewDataCurrent(data, { workspaceId, objectId, viewId }) ? data : null
+  if (!visibleData && !refreshError) return <div className="p-4 text-xs text-muted-foreground">{t('chat.workspaceObjectPreviewLoading')}</div>
   return (
     <div className="h-full min-h-0 overflow-auto p-3">
-      {data ? <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="truncate text-sm font-medium">{data.payload.name}</h3>
-        <span className="text-[11px] text-muted-foreground">r{data.payload.revision}</span>
+      {visibleData ? <div className="mb-3 flex items-center justify-between gap-2">
+        <h3 className="truncate text-sm font-medium">{visibleData.payload.name}</h3>
+        <span className="text-[11px] text-muted-foreground">r{visibleData.payload.revision}</span>
       </div> : null}
       {refreshError ? (
         <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive" role="alert">
@@ -109,10 +157,10 @@ export function WorkspaceObjectPreviewPanel({
           </button>
         </div>
       ) : null}
-      {data?.payload.projectionStatus === 'projection-error' ? (
+      {visibleData?.payload.projectionStatus === 'projection-error' ? (
         <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">{t('chat.workspaceObjectProjectionRepair')}</div>
       ) : null}
-      {data ? <ObjectTableView key={viewId ?? 'default'} payload={data.payload} relationPayloads={data.relationPayloads} mutate={mutate} initialViewId={viewId} /> : null}
+      {visibleData ? <ObjectTableView key={workspaceObjectPreviewRenderKey(visibleData.payload, viewId)} payload={visibleData.payload} relationPayloads={visibleData.relationPayloads} relationOptionPages={visibleData.relationOptionPages} mutate={mutate} initialViewId={viewId} onViewIdChange={onViewIdChange} /> : null}
     </div>
   )
 }

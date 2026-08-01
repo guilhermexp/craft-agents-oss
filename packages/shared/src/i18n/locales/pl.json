@@ -250,6 +250,7 @@
   "chat.workspaceObjectFieldFiniteNumber": "{{field}} musi być liczbą skończoną.",
   "chat.workspaceObjectFieldOption": "Wybierz obsługiwaną opcję dla {{field}}.",
   "chat.workspaceObjectFieldRelation": "Wybierz istniejącą relację dla {{field}}.",
+  "chat.workspaceObjectFieldTooLong": "{{field}} nie może przekraczać 64 000 znaków.",
   "chat.workspaceObjectFieldRequired": "{{field}} jest wymagane.",
   "chat.workspaceObjectDefaultView": "Widok domyślny",
   "chat.workspaceObjectFilterField": "Pole filtra",

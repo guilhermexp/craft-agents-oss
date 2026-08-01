@@ -250,6 +250,7 @@
   "chat.workspaceObjectFieldFiniteNumber": "A(z) {{field}} véges szám legyen.",
   "chat.workspaceObjectFieldOption": "Válasszon támogatott {{field}} beállítást.",
   "chat.workspaceObjectFieldRelation": "Válasszon létező {{field}} kapcsolatot.",
+  "chat.workspaceObjectFieldTooLong": "A(z) {{field}} legfeljebb 64 000 karakter lehet.",
   "chat.workspaceObjectFieldRequired": "A(z) {{field}} kötelező.",
   "chat.workspaceObjectDefaultView": "Alapértelmezett nézet",
   "chat.workspaceObjectFilterField": "Szűrőmező",

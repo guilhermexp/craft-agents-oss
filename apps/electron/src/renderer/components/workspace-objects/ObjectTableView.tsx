@@ -27,6 +27,7 @@ import { Input } from '@/components/ui/input'
 import { ObjectFieldEditor, type ObjectRelationOption } from './ObjectFieldEditor'
 
 type MutateWorkspaceObject = (action: WorkspaceObjectAction) => Promise<WorkspaceObjectServiceResult>
+const EMPTY_RELATION_OPTION_PAGES: Record<string, { options: ObjectRelationOption[]; nextCursor: string | null }> = {}
 
 export function createSavedTableView(
   id: string,
@@ -38,6 +39,25 @@ export function createSavedTableView(
 
 export function restoreSavedTableView(view: WorkspaceObjectSavedView): WorkspaceObjectViewConfig {
   return WorkspaceObjectViewConfigSchema.parse(view.config)
+}
+
+export function resolveSavedTableViewState(payload: WorkspaceObjectPayload, viewId?: string): {
+  activeViewId: string
+  viewName: string
+  config: WorkspaceObjectViewConfig
+} {
+  const view = payload.savedViews.find(candidate => candidate.id === viewId)
+  return view
+    ? { activeViewId: view.id, viewName: view.name, config: restoreSavedTableView(view) }
+    : { activeViewId: '', viewName: '', config: DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW }
+}
+
+export function shouldPersistSavedViewTarget(
+  payload: WorkspaceObjectPayload,
+  activeViewId: string,
+  targetViewId?: string,
+): boolean {
+  return activeViewId !== targetViewId && payload.savedViews.some(view => view.id === activeViewId)
 }
 
 export function resolveTablePresentation(config: WorkspaceObjectViewConfig): {
@@ -116,33 +136,88 @@ export interface ObjectTableViewProps {
   relationPayloads: WorkspaceObjectPayload[]
   mutate: MutateWorkspaceObject
   initialViewId?: string
+  onViewIdChange?: (viewId: string | undefined) => void
+  relationOptionPages?: Record<string, { options: ObjectRelationOption[]; nextCursor: string | null }>
 }
 
-export function ObjectTableView({ payload, relationPayloads, mutate, initialViewId }: ObjectTableViewProps) {
+export function ObjectTableView({ payload, relationPayloads, mutate, initialViewId, onViewIdChange, relationOptionPages = EMPTY_RELATION_OPTION_PAGES }: ObjectTableViewProps) {
   const { t } = useTranslation()
-  const initialView = payload.savedViews.find(view => view.id === initialViewId)
-  const [config, setConfig] = React.useState<WorkspaceObjectViewConfig>(() => (
-    initialView ? restoreSavedTableView(initialView) : DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW
-  ))
-  const [activeViewId, setActiveViewId] = React.useState(initialView?.id ?? '')
-  const [viewName, setViewName] = React.useState(initialView?.name ?? '')
+  const initialState = resolveSavedTableViewState(payload, initialViewId)
+  const [config, setConfig] = React.useState<WorkspaceObjectViewConfig>(initialState.config)
+  const [activeViewId, setActiveViewId] = React.useState(initialState.activeViewId)
+  const [viewName, setViewName] = React.useState(initialState.viewName)
   const [saveError, setSaveError] = React.useState<string | null>(null)
   const [savingView, setSavingView] = React.useState(false)
   const [filterFieldId, setFilterFieldId] = React.useState(payload.fields[0]?.id ?? '')
   const [filterDraft, setFilterDraft] = React.useState('')
   const [filterError, setFilterError] = React.useState<string | null>(null)
+  const [relationPages, setRelationPages] = React.useState(relationOptionPages)
+  const [loadingRelationObjectId, setLoadingRelationObjectId] = React.useState<string | null>(null)
 
-  const relationContext = React.useMemo(() => buildRelationContext(relationPayloads), [relationPayloads])
+  const relationContext = React.useMemo(() => {
+    const context = buildRelationContext(relationPayloads)
+    for (const [objectId, page] of Object.entries(relationPages)) {
+      context.optionsByObjectId.set(objectId, page.options)
+      for (const option of page.options) context.labels.set(option.id, option.label)
+    }
+    return context
+  }, [relationPayloads, relationPages])
   const query = React.useMemo(
     () => evaluateWorkspaceObjectQuery(payload, config, { relationLabels: relationContext.labels }),
     [payload, config, relationContext.labels],
   )
+
+  React.useEffect(() => {
+    if (!initialViewId) return
+    const canonical = payload.savedViews.find(view => view.id === initialViewId)
+    if (!canonical) return
+    setActiveViewId(canonical.id)
+    setViewName(canonical.name)
+    setConfig(restoreSavedTableView(canonical))
+  }, [initialViewId, payload.revision, payload.savedViews])
+
+  React.useEffect(() => {
+    if (shouldPersistSavedViewTarget(payload, activeViewId, initialViewId)) onViewIdChange?.(activeViewId)
+  }, [activeViewId, initialViewId, onViewIdChange, payload])
+
+  React.useEffect(() => {
+    setRelationPages(current => {
+      const merged = { ...current }
+      for (const [objectId, page] of Object.entries(relationOptionPages)) {
+        const options = [...new Map([...(current[objectId]?.options ?? []), ...page.options].map(option => [option.id, option])).values()]
+        merged[objectId] = { options, nextCursor: page.nextCursor }
+      }
+      return merged
+    })
+  }, [relationOptionPages])
+
+  const loadMoreRelationOptions = React.useCallback(async (relationObjectId: string) => {
+    const current = relationPages[relationObjectId]
+    if (!current?.nextCursor || loadingRelationObjectId) return
+    setLoadingRelationObjectId(relationObjectId)
+    try {
+      const result = await mutate({
+        action: 'list-relation-options', objectId: relationObjectId, after: current.nextCursor, limit: 200,
+      })
+      if (!('relationOptions' in result)) return
+      setRelationPages(pages => ({
+        ...pages,
+        [relationObjectId]: {
+          options: [...new Map([...(pages[relationObjectId]?.options ?? []), ...result.relationOptions].map(option => [option.id, option])).values()],
+          nextCursor: result.nextCursor,
+        },
+      }))
+    } finally {
+      setLoadingRelationObjectId(null)
+    }
+  }, [loadingRelationObjectId, mutate, relationPages])
 
   const selectView = (viewId: string) => {
     if (!viewId) {
       setActiveViewId('')
       setConfig(DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW)
       setViewName('')
+      onViewIdChange?.(undefined)
       return
     }
     const view = payload.savedViews.find(candidate => candidate.id === viewId)
@@ -218,11 +293,14 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
           payloadRevision={payload.revision}
           relationOptions={field.relationObjectId ? relationContext.optionsByObjectId.get(field.relationObjectId) ?? [] : []}
           relationLabels={relationContext.labels}
+          hasMoreRelationOptions={field.relationObjectId ? Boolean(relationPages[field.relationObjectId]?.nextCursor) : false}
+          loadingRelationOptions={field.relationObjectId === loadingRelationObjectId}
+          onLoadMoreRelationOptions={field.relationObjectId ? () => loadMoreRelationOptions(field.relationObjectId!) : undefined}
           mutate={mutate}
         />
       ),
     }
-  }), [config.sort, mutate, payload.id, payload.revision, query.displayValues, query.fields, relationContext.labels, relationContext.optionsByObjectId])
+  }), [config.sort, loadMoreRelationOptions, loadingRelationObjectId, mutate, payload.id, payload.revision, query.displayValues, query.fields, relationContext.labels, relationContext.optionsByObjectId, relationPages])
 
   const filterField = payload.fields.find(field => field.id === filterFieldId)
   const tablePresentation = resolveTablePresentation(config)
@@ -324,6 +402,7 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
         key={`${tablePresentation.density}:${tablePresentation.pageSize}`}
         columns={columns}
         data={query.entries}
+        getRowId={entry => entry.id}
         pagination
         pageSize={tablePresentation.pageSize}
         className={tablePresentation.density === 'compact' ? '[&_td]:!p-1 [&_th]:!p-1' : undefined}

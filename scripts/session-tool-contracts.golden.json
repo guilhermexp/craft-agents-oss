@@ -1483,9 +1483,7 @@
               "type": "array"
             },
             "objectId": {
-              "maxLength": 120,
-              "minLength": 1,
-              "type": "string"
+              "$ref": "#/anyOf/1/properties/objectId"
             }
           },
           "required": [
@@ -1503,1026 +1501,468 @@
               "type": "string"
             },
             "objectId": {
-              "maxLength": 120,
-              "minLength": 1,
-              "type": "string"
+              "$ref": "#/anyOf/1/properties/objectId"
             },
             "view": {
-              "anyOf": [
-                {
+              "additionalProperties": false,
+              "properties": {
+                "config": {
                   "additionalProperties": false,
                   "properties": {
-                    "config": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "columnVisibility": {
-                          "additionalProperties": {
-                            "type": "boolean"
-                          },
-                          "propertyNames": {
-                            "maxLength": 120,
-                            "minLength": 1
-                          },
-                          "type": "object"
-                        },
-                        "filter": {
+                    "columnVisibility": {
+                      "additionalProperties": {
+                        "type": "boolean"
+                      },
+                      "propertyNames": {
+                        "maxLength": 120,
+                        "minLength": 1
+                      },
+                      "type": "object"
+                    },
+                    "filter": {
+                      "anyOf": [
+                        {
                           "anyOf": [
                             {
-                              "anyOf": [
-                                {
-                                  "additionalProperties": false,
-                                  "properties": {
-                                    "fieldId": {
-                                      "maxLength": 120,
-                                      "minLength": 1,
-                                      "type": "string"
-                                    },
-                                    "operator": {
-                                      "enum": [
-                                        "equals",
-                                        "not-equals",
-                                        "contains",
-                                        "not-contains",
-                                        "gt",
-                                        "gte",
-                                        "lt",
-                                        "lte",
-                                        "in",
-                                        "not-in",
-                                        "is-empty",
-                                        "is-not-empty",
-                                        "before",
-                                        "after"
-                                      ],
-                                      "type": "string"
-                                    },
-                                    "type": {
-                                      "const": "rule",
-                                      "type": "string"
-                                    },
-                                    "value": {
-                                      "anyOf": [
-                                        {
-                                          "maxLength": 64000,
-                                          "type": "string"
-                                        },
-                                        {
-                                          "type": "number"
-                                        },
-                                        {
-                                          "type": "boolean"
-                                        },
-                                        {
-                                          "type": "null"
-                                        },
-                                        {
-                                          "items": {
-                                            "anyOf": [
-                                              {
-                                                "maxLength": 64000,
-                                                "type": "string"
-                                              },
-                                              {
-                                                "type": "number"
-                                              },
-                                              {
-                                                "type": "boolean"
-                                              },
-                                              {
-                                                "type": "null"
-                                              }
-                                            ]
-                                          },
-                                          "maxItems": 200,
-                                          "type": "array"
-                                        }
-                                      ]
-                                    }
-                                  },
-                                  "required": [
-                                    "type",
-                                    "fieldId",
-                                    "operator"
-                                  ],
-                                  "type": "object"
+                              "additionalProperties": false,
+                              "properties": {
+                                "fieldId": {
+                                  "maxLength": 120,
+                                  "minLength": 1,
+                                  "type": "string"
                                 },
-                                {
-                                  "additionalProperties": false,
-                                  "properties": {
-                                    "clauses": {
+                                "operator": {
+                                  "enum": [
+                                    "equals",
+                                    "not-equals",
+                                    "contains",
+                                    "not-contains",
+                                    "gt",
+                                    "gte",
+                                    "lt",
+                                    "lte",
+                                    "in",
+                                    "not-in",
+                                    "is-empty",
+                                    "is-not-empty",
+                                    "before",
+                                    "after"
+                                  ],
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "const": "rule",
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 64000,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "type": "null"
+                                    },
+                                    {
                                       "items": {
                                         "anyOf": [
                                           {
-                                            "additionalProperties": false,
-                                            "properties": {
-                                              "fieldId": {
-                                                "maxLength": 120,
-                                                "minLength": 1,
-                                                "type": "string"
-                                              },
-                                              "operator": {
-                                                "enum": [
-                                                  "equals",
-                                                  "not-equals",
-                                                  "contains",
-                                                  "not-contains",
-                                                  "gt",
-                                                  "gte",
-                                                  "lt",
-                                                  "lte",
-                                                  "in",
-                                                  "not-in",
-                                                  "is-empty",
-                                                  "is-not-empty",
-                                                  "before",
-                                                  "after"
-                                                ],
-                                                "type": "string"
-                                              },
-                                              "type": {
-                                                "const": "rule",
-                                                "type": "string"
-                                              },
-                                              "value": {
-                                                "anyOf": [
-                                                  {
-                                                    "maxLength": 64000,
-                                                    "type": "string"
-                                                  },
-                                                  {
-                                                    "type": "number"
-                                                  },
-                                                  {
-                                                    "type": "boolean"
-                                                  },
-                                                  {
-                                                    "type": "null"
-                                                  },
-                                                  {
-                                                    "items": {
-                                                      "anyOf": [
-                                                        {
-                                                          "maxLength": 64000,
-                                                          "type": "string"
-                                                        },
-                                                        {
-                                                          "type": "number"
-                                                        },
-                                                        {
-                                                          "type": "boolean"
-                                                        },
-                                                        {
-                                                          "type": "null"
-                                                        }
-                                                      ]
-                                                    },
-                                                    "maxItems": 200,
-                                                    "type": "array"
-                                                  }
-                                                ]
-                                              }
-                                            },
-                                            "required": [
-                                              "type",
-                                              "fieldId",
-                                              "operator"
-                                            ],
-                                            "type": "object"
+                                            "maxLength": 64000,
+                                            "type": "string"
                                           },
                                           {
-                                            "additionalProperties": false,
-                                            "properties": {
-                                              "clauses": {
-                                                "items": {
-                                                  "anyOf": [
-                                                    {
-                                                      "additionalProperties": false,
-                                                      "properties": {
-                                                        "fieldId": {
-                                                          "maxLength": 120,
-                                                          "minLength": 1,
-                                                          "type": "string"
-                                                        },
-                                                        "operator": {
-                                                          "enum": [
-                                                            "equals",
-                                                            "not-equals",
-                                                            "contains",
-                                                            "not-contains",
-                                                            "gt",
-                                                            "gte",
-                                                            "lt",
-                                                            "lte",
-                                                            "in",
-                                                            "not-in",
-                                                            "is-empty",
-                                                            "is-not-empty",
-                                                            "before",
-                                                            "after"
-                                                          ],
-                                                          "type": "string"
-                                                        },
-                                                        "type": {
-                                                          "const": "rule",
-                                                          "type": "string"
-                                                        },
-                                                        "value": {
-                                                          "anyOf": [
-                                                            {
-                                                              "maxLength": 64000,
-                                                              "type": "string"
-                                                            },
-                                                            {
-                                                              "type": "number"
-                                                            },
-                                                            {
-                                                              "type": "boolean"
-                                                            },
-                                                            {
-                                                              "type": "null"
-                                                            },
-                                                            {
-                                                              "items": {
-                                                                "anyOf": [
-                                                                  {
-                                                                    "maxLength": 64000,
-                                                                    "type": "string"
-                                                                  },
-                                                                  {
-                                                                    "type": "number"
-                                                                  },
-                                                                  {
-                                                                    "type": "boolean"
-                                                                  },
-                                                                  {
-                                                                    "type": "null"
-                                                                  }
-                                                                ]
-                                                              },
-                                                              "maxItems": 200,
-                                                              "type": "array"
-                                                            }
-                                                          ]
-                                                        }
-                                                      },
-                                                      "required": [
-                                                        "type",
-                                                        "fieldId",
-                                                        "operator"
-                                                      ],
-                                                      "type": "object"
-                                                    },
-                                                    {
-                                                      "additionalProperties": false,
-                                                      "properties": {
-                                                        "clauses": {
-                                                          "items": {
-                                                            "anyOf": [
-                                                              {
-                                                                "additionalProperties": false,
-                                                                "properties": {
-                                                                  "fieldId": {
-                                                                    "maxLength": 120,
-                                                                    "minLength": 1,
-                                                                    "type": "string"
-                                                                  },
-                                                                  "operator": {
-                                                                    "enum": [
-                                                                      "equals",
-                                                                      "not-equals",
-                                                                      "contains",
-                                                                      "not-contains",
-                                                                      "gt",
-                                                                      "gte",
-                                                                      "lt",
-                                                                      "lte",
-                                                                      "in",
-                                                                      "not-in",
-                                                                      "is-empty",
-                                                                      "is-not-empty",
-                                                                      "before",
-                                                                      "after"
-                                                                    ],
-                                                                    "type": "string"
-                                                                  },
-                                                                  "type": {
-                                                                    "const": "rule",
-                                                                    "type": "string"
-                                                                  },
-                                                                  "value": {
-                                                                    "anyOf": [
-                                                                      {
-                                                                        "maxLength": 64000,
-                                                                        "type": "string"
-                                                                      },
-                                                                      {
-                                                                        "type": "number"
-                                                                      },
-                                                                      {
-                                                                        "type": "boolean"
-                                                                      },
-                                                                      {
-                                                                        "type": "null"
-                                                                      },
-                                                                      {
-                                                                        "items": {
-                                                                          "anyOf": [
-                                                                            {
-                                                                              "maxLength": 64000,
-                                                                              "type": "string"
-                                                                            },
-                                                                            {
-                                                                              "type": "number"
-                                                                            },
-                                                                            {
-                                                                              "type": "boolean"
-                                                                            },
-                                                                            {
-                                                                              "type": "null"
-                                                                            }
-                                                                          ]
-                                                                        },
-                                                                        "maxItems": 200,
-                                                                        "type": "array"
-                                                                      }
-                                                                    ]
-                                                                  }
-                                                                },
-                                                                "required": [
-                                                                  "type",
-                                                                  "fieldId",
-                                                                  "operator"
-                                                                ],
-                                                                "type": "object"
-                                                              },
-                                                              {
-                                                                "additionalProperties": false,
-                                                                "properties": {
-                                                                  "clauses": {
-                                                                    "items": {
-                                                                      "anyOf": [
-                                                                        {
-                                                                          "additionalProperties": false,
-                                                                          "properties": {
-                                                                            "fieldId": {
-                                                                              "maxLength": 120,
-                                                                              "minLength": 1,
-                                                                              "type": "string"
-                                                                            },
-                                                                            "operator": {
-                                                                              "enum": [
-                                                                                "equals",
-                                                                                "not-equals",
-                                                                                "contains",
-                                                                                "not-contains",
-                                                                                "gt",
-                                                                                "gte",
-                                                                                "lt",
-                                                                                "lte",
-                                                                                "in",
-                                                                                "not-in",
-                                                                                "is-empty",
-                                                                                "is-not-empty",
-                                                                                "before",
-                                                                                "after"
-                                                                              ],
-                                                                              "type": "string"
-                                                                            },
-                                                                            "type": {
-                                                                              "const": "rule",
-                                                                              "type": "string"
-                                                                            },
-                                                                            "value": {
-                                                                              "anyOf": [
-                                                                                {
-                                                                                  "maxLength": 64000,
-                                                                                  "type": "string"
-                                                                                },
-                                                                                {
-                                                                                  "type": "number"
-                                                                                },
-                                                                                {
-                                                                                  "type": "boolean"
-                                                                                },
-                                                                                {
-                                                                                  "type": "null"
-                                                                                },
-                                                                                {
-                                                                                  "items": {
-                                                                                    "anyOf": [
-                                                                                      {
-                                                                                        "maxLength": 64000,
-                                                                                        "type": "string"
-                                                                                      },
-                                                                                      {
-                                                                                        "type": "number"
-                                                                                      },
-                                                                                      {
-                                                                                        "type": "boolean"
-                                                                                      },
-                                                                                      {
-                                                                                        "type": "null"
-                                                                                      }
-                                                                                    ]
-                                                                                  },
-                                                                                  "maxItems": 200,
-                                                                                  "type": "array"
-                                                                                }
-                                                                              ]
-                                                                            }
-                                                                          },
-                                                                          "required": [
-                                                                            "type",
-                                                                            "fieldId",
-                                                                            "operator"
-                                                                          ],
-                                                                          "type": "object"
-                                                                        },
-                                                                        {
-                                                                          "additionalProperties": false,
-                                                                          "properties": {
-                                                                            "clauses": {
-                                                                              "items": {
-                                                                                "anyOf": [
-                                                                                  {
-                                                                                    "additionalProperties": false,
-                                                                                    "properties": {
-                                                                                      "fieldId": {
-                                                                                        "maxLength": 120,
-                                                                                        "minLength": 1,
-                                                                                        "type": "string"
-                                                                                      },
-                                                                                      "operator": {
-                                                                                        "enum": [
-                                                                                          "equals",
-                                                                                          "not-equals",
-                                                                                          "contains",
-                                                                                          "not-contains",
-                                                                                          "gt",
-                                                                                          "gte",
-                                                                                          "lt",
-                                                                                          "lte",
-                                                                                          "in",
-                                                                                          "not-in",
-                                                                                          "is-empty",
-                                                                                          "is-not-empty",
-                                                                                          "before",
-                                                                                          "after"
-                                                                                        ],
-                                                                                        "type": "string"
-                                                                                      },
-                                                                                      "type": {
-                                                                                        "const": "rule",
-                                                                                        "type": "string"
-                                                                                      },
-                                                                                      "value": {
-                                                                                        "anyOf": [
-                                                                                          {
-                                                                                            "maxLength": 64000,
-                                                                                            "type": "string"
-                                                                                          },
-                                                                                          {
-                                                                                            "type": "number"
-                                                                                          },
-                                                                                          {
-                                                                                            "type": "boolean"
-                                                                                          },
-                                                                                          {
-                                                                                            "type": "null"
-                                                                                          },
-                                                                                          {
-                                                                                            "items": {
-                                                                                              "anyOf": [
-                                                                                                {
-                                                                                                  "maxLength": 64000,
-                                                                                                  "type": "string"
-                                                                                                },
-                                                                                                {
-                                                                                                  "type": "number"
-                                                                                                },
-                                                                                                {
-                                                                                                  "type": "boolean"
-                                                                                                },
-                                                                                                {
-                                                                                                  "type": "null"
-                                                                                                }
-                                                                                              ]
-                                                                                            },
-                                                                                            "maxItems": 200,
-                                                                                            "type": "array"
-                                                                                          }
-                                                                                        ]
-                                                                                      }
-                                                                                    },
-                                                                                    "required": [
-                                                                                      "type",
-                                                                                      "fieldId",
-                                                                                      "operator"
-                                                                                    ],
-                                                                                    "type": "object"
-                                                                                  },
-                                                                                  {
-                                                                                    "additionalProperties": false,
-                                                                                    "properties": {
-                                                                                      "clauses": {
-                                                                                        "items": {
-                                                                                          "anyOf": [
-                                                                                            {
-                                                                                              "additionalProperties": false,
-                                                                                              "properties": {
-                                                                                                "fieldId": {
-                                                                                                  "maxLength": 120,
-                                                                                                  "minLength": 1,
-                                                                                                  "type": "string"
-                                                                                                },
-                                                                                                "operator": {
-                                                                                                  "enum": [
-                                                                                                    "equals",
-                                                                                                    "not-equals",
-                                                                                                    "contains",
-                                                                                                    "not-contains",
-                                                                                                    "gt",
-                                                                                                    "gte",
-                                                                                                    "lt",
-                                                                                                    "lte",
-                                                                                                    "in",
-                                                                                                    "not-in",
-                                                                                                    "is-empty",
-                                                                                                    "is-not-empty",
-                                                                                                    "before",
-                                                                                                    "after"
-                                                                                                  ],
-                                                                                                  "type": "string"
-                                                                                                },
-                                                                                                "type": {
-                                                                                                  "const": "rule",
-                                                                                                  "type": "string"
-                                                                                                },
-                                                                                                "value": {
-                                                                                                  "anyOf": [
-                                                                                                    {
-                                                                                                      "maxLength": 64000,
-                                                                                                      "type": "string"
-                                                                                                    },
-                                                                                                    {
-                                                                                                      "type": "number"
-                                                                                                    },
-                                                                                                    {
-                                                                                                      "type": "boolean"
-                                                                                                    },
-                                                                                                    {
-                                                                                                      "type": "null"
-                                                                                                    },
-                                                                                                    {
-                                                                                                      "items": {
-                                                                                                        "anyOf": [
-                                                                                                          {
-                                                                                                            "maxLength": 64000,
-                                                                                                            "type": "string"
-                                                                                                          },
-                                                                                                          {
-                                                                                                            "type": "number"
-                                                                                                          },
-                                                                                                          {
-                                                                                                            "type": "boolean"
-                                                                                                          },
-                                                                                                          {
-                                                                                                            "type": "null"
-                                                                                                          }
-                                                                                                        ]
-                                                                                                      },
-                                                                                                      "maxItems": 200,
-                                                                                                      "type": "array"
-                                                                                                    }
-                                                                                                  ]
-                                                                                                }
-                                                                                              },
-                                                                                              "required": [
-                                                                                                "type",
-                                                                                                "fieldId",
-                                                                                                "operator"
-                                                                                              ],
-                                                                                              "type": "object"
-                                                                                            },
-                                                                                            {
-                                                                                              "additionalProperties": false,
-                                                                                              "properties": {
-                                                                                                "clauses": {
-                                                                                                  "items": {
-                                                                                                    "additionalProperties": false,
-                                                                                                    "properties": {
-                                                                                                      "fieldId": {
-                                                                                                        "maxLength": 120,
-                                                                                                        "minLength": 1,
-                                                                                                        "type": "string"
-                                                                                                      },
-                                                                                                      "operator": {
-                                                                                                        "enum": [
-                                                                                                          "equals",
-                                                                                                          "not-equals",
-                                                                                                          "contains",
-                                                                                                          "not-contains",
-                                                                                                          "gt",
-                                                                                                          "gte",
-                                                                                                          "lt",
-                                                                                                          "lte",
-                                                                                                          "in",
-                                                                                                          "not-in",
-                                                                                                          "is-empty",
-                                                                                                          "is-not-empty",
-                                                                                                          "before",
-                                                                                                          "after"
-                                                                                                        ],
-                                                                                                        "type": "string"
-                                                                                                      },
-                                                                                                      "type": {
-                                                                                                        "const": "rule",
-                                                                                                        "type": "string"
-                                                                                                      },
-                                                                                                      "value": {
-                                                                                                        "anyOf": [
-                                                                                                          {
-                                                                                                            "maxLength": 64000,
-                                                                                                            "type": "string"
-                                                                                                          },
-                                                                                                          {
-                                                                                                            "type": "number"
-                                                                                                          },
-                                                                                                          {
-                                                                                                            "type": "boolean"
-                                                                                                          },
-                                                                                                          {
-                                                                                                            "type": "null"
-                                                                                                          },
-                                                                                                          {
-                                                                                                            "items": {
-                                                                                                              "anyOf": [
-                                                                                                                {
-                                                                                                                  "maxLength": 64000,
-                                                                                                                  "type": "string"
-                                                                                                                },
-                                                                                                                {
-                                                                                                                  "type": "number"
-                                                                                                                },
-                                                                                                                {
-                                                                                                                  "type": "boolean"
-                                                                                                                },
-                                                                                                                {
-                                                                                                                  "type": "null"
-                                                                                                                }
-                                                                                                              ]
-                                                                                                            },
-                                                                                                            "maxItems": 200,
-                                                                                                            "type": "array"
-                                                                                                          }
-                                                                                                        ]
-                                                                                                      }
-                                                                                                    },
-                                                                                                    "required": [
-                                                                                                      "type",
-                                                                                                      "fieldId",
-                                                                                                      "operator"
-                                                                                                    ],
-                                                                                                    "type": "object"
-                                                                                                  },
-                                                                                                  "maxItems": 50,
-                                                                                                  "minItems": 1,
-                                                                                                  "type": "array"
-                                                                                                },
-                                                                                                "conjunction": {
-                                                                                                  "enum": [
-                                                                                                    "and",
-                                                                                                    "or"
-                                                                                                  ],
-                                                                                                  "type": "string"
-                                                                                                },
-                                                                                                "type": {
-                                                                                                  "const": "group",
-                                                                                                  "type": "string"
-                                                                                                }
-                                                                                              },
-                                                                                              "required": [
-                                                                                                "type",
-                                                                                                "conjunction",
-                                                                                                "clauses"
-                                                                                              ],
-                                                                                              "type": "object"
-                                                                                            }
-                                                                                          ]
-                                                                                        },
-                                                                                        "maxItems": 50,
-                                                                                        "minItems": 1,
-                                                                                        "type": "array"
-                                                                                      },
-                                                                                      "conjunction": {
-                                                                                        "enum": [
-                                                                                          "and",
-                                                                                          "or"
-                                                                                        ],
-                                                                                        "type": "string"
-                                                                                      },
-                                                                                      "type": {
-                                                                                        "const": "group",
-                                                                                        "type": "string"
-                                                                                      }
-                                                                                    },
-                                                                                    "required": [
-                                                                                      "type",
-                                                                                      "conjunction",
-                                                                                      "clauses"
-                                                                                    ],
-                                                                                    "type": "object"
-                                                                                  }
-                                                                                ]
-                                                                              },
-                                                                              "maxItems": 50,
-                                                                              "minItems": 1,
-                                                                              "type": "array"
-                                                                            },
-                                                                            "conjunction": {
-                                                                              "enum": [
-                                                                                "and",
-                                                                                "or"
-                                                                              ],
-                                                                              "type": "string"
-                                                                            },
-                                                                            "type": {
-                                                                              "const": "group",
-                                                                              "type": "string"
-                                                                            }
-                                                                          },
-                                                                          "required": [
-                                                                            "type",
-                                                                            "conjunction",
-                                                                            "clauses"
-                                                                          ],
-                                                                          "type": "object"
-                                                                        }
-                                                                      ]
-                                                                    },
-                                                                    "maxItems": 50,
-                                                                    "minItems": 1,
-                                                                    "type": "array"
-                                                                  },
-                                                                  "conjunction": {
-                                                                    "enum": [
-                                                                      "and",
-                                                                      "or"
-                                                                    ],
-                                                                    "type": "string"
-                                                                  },
-                                                                  "type": {
-                                                                    "const": "group",
-                                                                    "type": "string"
-                                                                  }
-                                                                },
-                                                                "required": [
-                                                                  "type",
-                                                                  "conjunction",
-                                                                  "clauses"
-                                                                ],
-                                                                "type": "object"
-                                                              }
-                                                            ]
-                                                          },
-                                                          "maxItems": 50,
-                                                          "minItems": 1,
-                                                          "type": "array"
-                                                        },
-                                                        "conjunction": {
-                                                          "enum": [
-                                                            "and",
-                                                            "or"
-                                                          ],
-                                                          "type": "string"
-                                                        },
-                                                        "type": {
-                                                          "const": "group",
-                                                          "type": "string"
-                                                        }
-                                                      },
-                                                      "required": [
-                                                        "type",
-                                                        "conjunction",
-                                                        "clauses"
-                                                      ],
-                                                      "type": "object"
-                                                    }
-                                                  ]
-                                                },
-                                                "maxItems": 50,
-                                                "minItems": 1,
-                                                "type": "array"
-                                              },
-                                              "conjunction": {
-                                                "enum": [
-                                                  "and",
-                                                  "or"
-                                                ],
-                                                "type": "string"
-                                              },
-                                              "type": {
-                                                "const": "group",
-                                                "type": "string"
-                                              }
-                                            },
-                                            "required": [
-                                              "type",
-                                              "conjunction",
-                                              "clauses"
-                                            ],
-                                            "type": "object"
+                                            "type": "number"
+                                          },
+                                          {
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "type": "null"
                                           }
                                         ]
                                       },
-                                      "maxItems": 50,
-                                      "minItems": 1,
+                                      "maxItems": 200,
                                       "type": "array"
-                                    },
-                                    "conjunction": {
-                                      "enum": [
-                                        "and",
-                                        "or"
-                                      ],
-                                      "type": "string"
-                                    },
-                                    "type": {
-                                      "const": "group",
-                                      "type": "string"
                                     }
-                                  },
-                                  "required": [
-                                    "type",
-                                    "conjunction",
-                                    "clauses"
-                                  ],
-                                  "type": "object"
+                                  ]
                                 }
-                              ]
+                              },
+                              "required": [
+                                "type",
+                                "fieldId",
+                                "operator"
+                              ],
+                              "type": "object"
                             },
                             {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "presentation": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "adapter": {
-                              "enum": [
-                                "table",
-                                "kanban",
-                                "calendar",
-                                "timeline",
-                                "gallery",
-                                "list"
-                              ],
-                              "type": "string"
-                            },
-                            "settings": {
-                              "additionalProperties": {
-                                "anyOf": [
-                                  {
+                              "additionalProperties": false,
+                              "properties": {
+                                "clauses": {
+                                  "items": {
                                     "anyOf": [
                                       {
-                                        "maxLength": 64000,
-                                        "type": "string"
+                                        "$ref": "#/anyOf/3/properties/view/properties/config/properties/filter/anyOf/0/anyOf/0"
                                       },
                                       {
-                                        "type": "number"
-                                      },
-                                      {
-                                        "type": "boolean"
-                                      },
-                                      {
-                                        "type": "null"
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "clauses": {
+                                            "items": {
+                                              "anyOf": [
+                                                {
+                                                  "$ref": "#/anyOf/3/properties/view/properties/config/properties/filter/anyOf/0/anyOf/0"
+                                                },
+                                                {
+                                                  "additionalProperties": false,
+                                                  "properties": {
+                                                    "clauses": {
+                                                      "items": {
+                                                        "anyOf": [
+                                                          {
+                                                            "$ref": "#/anyOf/3/properties/view/properties/config/properties/filter/anyOf/0/anyOf/0"
+                                                          },
+                                                          {
+                                                            "additionalProperties": false,
+                                                            "properties": {
+                                                              "clauses": {
+                                                                "items": {
+                                                                  "anyOf": [
+                                                                    {
+                                                                      "$ref": "#/anyOf/3/properties/view/properties/config/properties/filter/anyOf/0/anyOf/0"
+                                                                    },
+                                                                    {
+                                                                      "additionalProperties": false,
+                                                                      "properties": {
+                                                                        "clauses": {
+                                                                          "items": {
+                                                                            "anyOf": [
+                                                                              {
+                                                                                "$ref": "#/anyOf/3/properties/view/properties/config/properties/filter/anyOf/0/anyOf/0"
+                                                                              },
+                                                                              {
+                                                                                "additionalProperties": false,
+                                                                                "properties": {
+                                                                                  "clauses": {
+                                                                                    "items": {
+                                                                                      "anyOf": [
+                                                                                        {
+                                                                                          "$ref": "#/anyOf/3/properties/view/properties/config/properties/filter/anyOf/0/anyOf/0"
+                                                                                        },
+                                                                                        {
+                                                                                          "additionalProperties": false,
+                                                                                          "properties": {
+                                                                                            "clauses": {
+                                                                                              "items": {
+                                                                                                "$ref": "#/anyOf/3/properties/view/properties/config/properties/filter/anyOf/0/anyOf/0"
+                                                                                              },
+                                                                                              "maxItems": 50,
+                                                                                              "minItems": 1,
+                                                                                              "type": "array"
+                                                                                            },
+                                                                                            "conjunction": {
+                                                                                              "enum": [
+                                                                                                "and",
+                                                                                                "or"
+                                                                                              ],
+                                                                                              "type": "string"
+                                                                                            },
+                                                                                            "type": {
+                                                                                              "const": "group",
+                                                                                              "type": "string"
+                                                                                            }
+                                                                                          },
+                                                                                          "required": [
+                                                                                            "type",
+                                                                                            "conjunction",
+                                                                                            "clauses"
+                                                                                          ],
+                                                                                          "type": "object"
+                                                                                        }
+                                                                                      ]
+                                                                                    },
+                                                                                    "maxItems": 50,
+                                                                                    "minItems": 1,
+                                                                                    "type": "array"
+                                                                                  },
+                                                                                  "conjunction": {
+                                                                                    "enum": [
+                                                                                      "and",
+                                                                                      "or"
+                                                                                    ],
+                                                                                    "type": "string"
+                                                                                  },
+                                                                                  "type": {
+                                                                                    "const": "group",
+                                                                                    "type": "string"
+                                                                                  }
+                                                                                },
+                                                                                "required": [
+                                                                                  "type",
+                                                                                  "conjunction",
+                                                                                  "clauses"
+                                                                                ],
+                                                                                "type": "object"
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          "maxItems": 50,
+                                                                          "minItems": 1,
+                                                                          "type": "array"
+                                                                        },
+                                                                        "conjunction": {
+                                                                          "enum": [
+                                                                            "and",
+                                                                            "or"
+                                                                          ],
+                                                                          "type": "string"
+                                                                        },
+                                                                        "type": {
+                                                                          "const": "group",
+                                                                          "type": "string"
+                                                                        }
+                                                                      },
+                                                                      "required": [
+                                                                        "type",
+                                                                        "conjunction",
+                                                                        "clauses"
+                                                                      ],
+                                                                      "type": "object"
+                                                                    }
+                                                                  ]
+                                                                },
+                                                                "maxItems": 50,
+                                                                "minItems": 1,
+                                                                "type": "array"
+                                                              },
+                                                              "conjunction": {
+                                                                "enum": [
+                                                                  "and",
+                                                                  "or"
+                                                                ],
+                                                                "type": "string"
+                                                              },
+                                                              "type": {
+                                                                "const": "group",
+                                                                "type": "string"
+                                                              }
+                                                            },
+                                                            "required": [
+                                                              "type",
+                                                              "conjunction",
+                                                              "clauses"
+                                                            ],
+                                                            "type": "object"
+                                                          }
+                                                        ]
+                                                      },
+                                                      "maxItems": 50,
+                                                      "minItems": 1,
+                                                      "type": "array"
+                                                    },
+                                                    "conjunction": {
+                                                      "enum": [
+                                                        "and",
+                                                        "or"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "type": {
+                                                      "const": "group",
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "type",
+                                                    "conjunction",
+                                                    "clauses"
+                                                  ],
+                                                  "type": "object"
+                                                }
+                                              ]
+                                            },
+                                            "maxItems": 50,
+                                            "minItems": 1,
+                                            "type": "array"
+                                          },
+                                          "conjunction": {
+                                            "enum": [
+                                              "and",
+                                              "or"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "type": {
+                                            "const": "group",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "type",
+                                          "conjunction",
+                                          "clauses"
+                                        ],
+                                        "type": "object"
                                       }
                                     ]
                                   },
-                                  {
-                                    "items": {
-                                      "anyOf": [
-                                        {
-                                          "maxLength": 64000,
-                                          "type": "string"
-                                        },
-                                        {
-                                          "type": "number"
-                                        },
-                                        {
-                                          "type": "boolean"
-                                        },
-                                        {
-                                          "type": "null"
-                                        }
-                                      ]
-                                    },
-                                    "maxItems": 200,
-                                    "type": "array"
-                                  }
-                                ]
+                                  "maxItems": 50,
+                                  "minItems": 1,
+                                  "type": "array"
+                                },
+                                "conjunction": {
+                                  "enum": [
+                                    "and",
+                                    "or"
+                                  ],
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "const": "group",
+                                  "type": "string"
+                                }
                               },
-                              "propertyNames": {
-                                "maxLength": 120
-                              },
+                              "required": [
+                                "type",
+                                "conjunction",
+                                "clauses"
+                              ],
                               "type": "object"
                             }
-                          },
-                          "required": [
-                            "adapter",
-                            "settings"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "presentation": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "adapter": {
+                          "enum": [
+                            "table",
+                            "kanban",
+                            "calendar",
+                            "timeline",
+                            "gallery",
+                            "list"
                           ],
-                          "type": "object"
-                        },
-                        "schemaVersion": {
-                          "const": 1,
-                          "type": "number"
-                        },
-                        "search": {
-                          "maxLength": 500,
                           "type": "string"
                         },
-                        "sort": {
-                          "items": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "direction": {
-                                "enum": [
-                                  "asc",
-                                  "desc"
-                                ],
+                        "settings": {
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "maxLength": 64000,
                                 "type": "string"
                               },
-                              "fieldId": {
-                                "maxLength": 120,
-                                "minLength": 1,
-                                "type": "string"
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "items": {
+                                  "$ref": "#/anyOf/3/properties/view/properties/config/properties/presentation/properties/settings/additionalProperties"
+                                },
+                                "maxItems": 200,
+                                "type": "array"
+                              },
+                              {
+                                "additionalProperties": {
+                                  "$ref": "#/anyOf/3/properties/view/properties/config/properties/presentation/properties/settings/additionalProperties"
+                                },
+                                "propertyNames": {
+                                  "maxLength": 120
+                                },
+                                "type": "object"
                               }
-                            },
-                            "required": [
-                              "fieldId",
-                              "direction"
-                            ],
-                            "type": "object"
+                            ]
                           },
-                          "maxItems": 10,
-                          "type": "array"
+                          "propertyNames": {
+                            "maxLength": 120
+                          },
+                          "type": "object"
                         }
                       },
                       "required": [
-                        "schemaVersion",
-                        "search",
-                        "filter",
-                        "sort",
-                        "columnVisibility",
-                        "presentation"
+                        "adapter",
+                        "settings"
                       ],
                       "type": "object"
                     },
-                    "id": {
-                      "maxLength": 120,
-                      "minLength": 1,
+                    "schemaVersion": {
+                      "const": 1,
+                      "type": "number"
+                    },
+                    "search": {
+                      "maxLength": 500,
                       "type": "string"
                     },
-                    "name": {
-                      "maxLength": 160,
-                      "minLength": 1,
-                      "type": "string"
+                    "sort": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "direction": {
+                            "enum": [
+                              "asc",
+                              "desc"
+                            ],
+                            "type": "string"
+                          },
+                          "fieldId": {
+                            "maxLength": 120,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "fieldId",
+                          "direction"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 10,
+                      "type": "array"
                     }
                   },
                   "required": [
-                    "id",
-                    "name",
-                    "config"
+                    "schemaVersion",
+                    "search",
+                    "filter",
+                    "sort",
+                    "columnVisibility",
+                    "presentation"
                   ],
                   "type": "object"
                 },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "config": {
-                      "additionalProperties": {},
-                      "type": "object"
-                    },
-                    "id": {
-                      "maxLength": 120,
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "name": {
-                      "maxLength": 160,
-                      "minLength": 1,
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "name",
-                    "config"
-                  ],
-                  "type": "object"
+                "id": {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "name": {
+                  "maxLength": 160,
+                  "minLength": 1,
+                  "type": "string"
                 }
-              ]
+              },
+              "required": [
+                "id",
+                "name",
+                "config"
+              ],
+              "type": "object"
             }
           },
           "required": [
@@ -2540,9 +1980,7 @@
               "type": "string"
             },
             "objectId": {
-              "maxLength": 120,
-              "minLength": 1,
-              "type": "string"
+              "$ref": "#/anyOf/1/properties/objectId"
             }
           },
           "required": [
@@ -2577,9 +2015,39 @@
               "type": "string"
             },
             "objectId": {
-              "maxLength": 120,
-              "minLength": 1,
+              "$ref": "#/anyOf/1/properties/objectId"
+            }
+          },
+          "required": [
+            "action",
+            "objectId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "list-relation-options",
               "type": "string"
+            },
+            "after": {
+              "$ref": "#/anyOf/1/properties/objectId"
+            },
+            "includeEntryIds": {
+              "items": {
+                "$ref": "#/anyOf/1/properties/objectId"
+              },
+              "maxItems": 200,
+              "type": "array"
+            },
+            "limit": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "objectId": {
+              "$ref": "#/anyOf/1/properties/objectId"
             }
           },
           "required": [
@@ -2596,9 +2064,7 @@
               "type": "string"
             },
             "objectId": {
-              "maxLength": 120,
-              "minLength": 1,
-              "type": "string"
+              "$ref": "#/anyOf/1/properties/objectId"
             },
             "query": {
               "anyOf": [
@@ -2606,9 +2072,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "viewId": {
-                      "maxLength": 120,
-                      "minLength": 1,
-                      "type": "string"
+                      "$ref": "#/anyOf/1/properties/objectId"
                     }
                   },
                   "required": [
@@ -2620,971 +2084,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "config": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "columnVisibility": {
-                          "additionalProperties": {
-                            "type": "boolean"
-                          },
-                          "propertyNames": {
-                            "maxLength": 120,
-                            "minLength": 1
-                          },
-                          "type": "object"
-                        },
-                        "filter": {
-                          "anyOf": [
-                            {
-                              "anyOf": [
-                                {
-                                  "additionalProperties": false,
-                                  "properties": {
-                                    "fieldId": {
-                                      "maxLength": 120,
-                                      "minLength": 1,
-                                      "type": "string"
-                                    },
-                                    "operator": {
-                                      "enum": [
-                                        "equals",
-                                        "not-equals",
-                                        "contains",
-                                        "not-contains",
-                                        "gt",
-                                        "gte",
-                                        "lt",
-                                        "lte",
-                                        "in",
-                                        "not-in",
-                                        "is-empty",
-                                        "is-not-empty",
-                                        "before",
-                                        "after"
-                                      ],
-                                      "type": "string"
-                                    },
-                                    "type": {
-                                      "const": "rule",
-                                      "type": "string"
-                                    },
-                                    "value": {
-                                      "anyOf": [
-                                        {
-                                          "maxLength": 64000,
-                                          "type": "string"
-                                        },
-                                        {
-                                          "type": "number"
-                                        },
-                                        {
-                                          "type": "boolean"
-                                        },
-                                        {
-                                          "type": "null"
-                                        },
-                                        {
-                                          "items": {
-                                            "anyOf": [
-                                              {
-                                                "maxLength": 64000,
-                                                "type": "string"
-                                              },
-                                              {
-                                                "type": "number"
-                                              },
-                                              {
-                                                "type": "boolean"
-                                              },
-                                              {
-                                                "type": "null"
-                                              }
-                                            ]
-                                          },
-                                          "maxItems": 200,
-                                          "type": "array"
-                                        }
-                                      ]
-                                    }
-                                  },
-                                  "required": [
-                                    "type",
-                                    "fieldId",
-                                    "operator"
-                                  ],
-                                  "type": "object"
-                                },
-                                {
-                                  "additionalProperties": false,
-                                  "properties": {
-                                    "clauses": {
-                                      "items": {
-                                        "anyOf": [
-                                          {
-                                            "additionalProperties": false,
-                                            "properties": {
-                                              "fieldId": {
-                                                "maxLength": 120,
-                                                "minLength": 1,
-                                                "type": "string"
-                                              },
-                                              "operator": {
-                                                "enum": [
-                                                  "equals",
-                                                  "not-equals",
-                                                  "contains",
-                                                  "not-contains",
-                                                  "gt",
-                                                  "gte",
-                                                  "lt",
-                                                  "lte",
-                                                  "in",
-                                                  "not-in",
-                                                  "is-empty",
-                                                  "is-not-empty",
-                                                  "before",
-                                                  "after"
-                                                ],
-                                                "type": "string"
-                                              },
-                                              "type": {
-                                                "const": "rule",
-                                                "type": "string"
-                                              },
-                                              "value": {
-                                                "anyOf": [
-                                                  {
-                                                    "maxLength": 64000,
-                                                    "type": "string"
-                                                  },
-                                                  {
-                                                    "type": "number"
-                                                  },
-                                                  {
-                                                    "type": "boolean"
-                                                  },
-                                                  {
-                                                    "type": "null"
-                                                  },
-                                                  {
-                                                    "items": {
-                                                      "anyOf": [
-                                                        {
-                                                          "maxLength": 64000,
-                                                          "type": "string"
-                                                        },
-                                                        {
-                                                          "type": "number"
-                                                        },
-                                                        {
-                                                          "type": "boolean"
-                                                        },
-                                                        {
-                                                          "type": "null"
-                                                        }
-                                                      ]
-                                                    },
-                                                    "maxItems": 200,
-                                                    "type": "array"
-                                                  }
-                                                ]
-                                              }
-                                            },
-                                            "required": [
-                                              "type",
-                                              "fieldId",
-                                              "operator"
-                                            ],
-                                            "type": "object"
-                                          },
-                                          {
-                                            "additionalProperties": false,
-                                            "properties": {
-                                              "clauses": {
-                                                "items": {
-                                                  "anyOf": [
-                                                    {
-                                                      "additionalProperties": false,
-                                                      "properties": {
-                                                        "fieldId": {
-                                                          "maxLength": 120,
-                                                          "minLength": 1,
-                                                          "type": "string"
-                                                        },
-                                                        "operator": {
-                                                          "enum": [
-                                                            "equals",
-                                                            "not-equals",
-                                                            "contains",
-                                                            "not-contains",
-                                                            "gt",
-                                                            "gte",
-                                                            "lt",
-                                                            "lte",
-                                                            "in",
-                                                            "not-in",
-                                                            "is-empty",
-                                                            "is-not-empty",
-                                                            "before",
-                                                            "after"
-                                                          ],
-                                                          "type": "string"
-                                                        },
-                                                        "type": {
-                                                          "const": "rule",
-                                                          "type": "string"
-                                                        },
-                                                        "value": {
-                                                          "anyOf": [
-                                                            {
-                                                              "maxLength": 64000,
-                                                              "type": "string"
-                                                            },
-                                                            {
-                                                              "type": "number"
-                                                            },
-                                                            {
-                                                              "type": "boolean"
-                                                            },
-                                                            {
-                                                              "type": "null"
-                                                            },
-                                                            {
-                                                              "items": {
-                                                                "anyOf": [
-                                                                  {
-                                                                    "maxLength": 64000,
-                                                                    "type": "string"
-                                                                  },
-                                                                  {
-                                                                    "type": "number"
-                                                                  },
-                                                                  {
-                                                                    "type": "boolean"
-                                                                  },
-                                                                  {
-                                                                    "type": "null"
-                                                                  }
-                                                                ]
-                                                              },
-                                                              "maxItems": 200,
-                                                              "type": "array"
-                                                            }
-                                                          ]
-                                                        }
-                                                      },
-                                                      "required": [
-                                                        "type",
-                                                        "fieldId",
-                                                        "operator"
-                                                      ],
-                                                      "type": "object"
-                                                    },
-                                                    {
-                                                      "additionalProperties": false,
-                                                      "properties": {
-                                                        "clauses": {
-                                                          "items": {
-                                                            "anyOf": [
-                                                              {
-                                                                "additionalProperties": false,
-                                                                "properties": {
-                                                                  "fieldId": {
-                                                                    "maxLength": 120,
-                                                                    "minLength": 1,
-                                                                    "type": "string"
-                                                                  },
-                                                                  "operator": {
-                                                                    "enum": [
-                                                                      "equals",
-                                                                      "not-equals",
-                                                                      "contains",
-                                                                      "not-contains",
-                                                                      "gt",
-                                                                      "gte",
-                                                                      "lt",
-                                                                      "lte",
-                                                                      "in",
-                                                                      "not-in",
-                                                                      "is-empty",
-                                                                      "is-not-empty",
-                                                                      "before",
-                                                                      "after"
-                                                                    ],
-                                                                    "type": "string"
-                                                                  },
-                                                                  "type": {
-                                                                    "const": "rule",
-                                                                    "type": "string"
-                                                                  },
-                                                                  "value": {
-                                                                    "anyOf": [
-                                                                      {
-                                                                        "maxLength": 64000,
-                                                                        "type": "string"
-                                                                      },
-                                                                      {
-                                                                        "type": "number"
-                                                                      },
-                                                                      {
-                                                                        "type": "boolean"
-                                                                      },
-                                                                      {
-                                                                        "type": "null"
-                                                                      },
-                                                                      {
-                                                                        "items": {
-                                                                          "anyOf": [
-                                                                            {
-                                                                              "maxLength": 64000,
-                                                                              "type": "string"
-                                                                            },
-                                                                            {
-                                                                              "type": "number"
-                                                                            },
-                                                                            {
-                                                                              "type": "boolean"
-                                                                            },
-                                                                            {
-                                                                              "type": "null"
-                                                                            }
-                                                                          ]
-                                                                        },
-                                                                        "maxItems": 200,
-                                                                        "type": "array"
-                                                                      }
-                                                                    ]
-                                                                  }
-                                                                },
-                                                                "required": [
-                                                                  "type",
-                                                                  "fieldId",
-                                                                  "operator"
-                                                                ],
-                                                                "type": "object"
-                                                              },
-                                                              {
-                                                                "additionalProperties": false,
-                                                                "properties": {
-                                                                  "clauses": {
-                                                                    "items": {
-                                                                      "anyOf": [
-                                                                        {
-                                                                          "additionalProperties": false,
-                                                                          "properties": {
-                                                                            "fieldId": {
-                                                                              "maxLength": 120,
-                                                                              "minLength": 1,
-                                                                              "type": "string"
-                                                                            },
-                                                                            "operator": {
-                                                                              "enum": [
-                                                                                "equals",
-                                                                                "not-equals",
-                                                                                "contains",
-                                                                                "not-contains",
-                                                                                "gt",
-                                                                                "gte",
-                                                                                "lt",
-                                                                                "lte",
-                                                                                "in",
-                                                                                "not-in",
-                                                                                "is-empty",
-                                                                                "is-not-empty",
-                                                                                "before",
-                                                                                "after"
-                                                                              ],
-                                                                              "type": "string"
-                                                                            },
-                                                                            "type": {
-                                                                              "const": "rule",
-                                                                              "type": "string"
-                                                                            },
-                                                                            "value": {
-                                                                              "anyOf": [
-                                                                                {
-                                                                                  "maxLength": 64000,
-                                                                                  "type": "string"
-                                                                                },
-                                                                                {
-                                                                                  "type": "number"
-                                                                                },
-                                                                                {
-                                                                                  "type": "boolean"
-                                                                                },
-                                                                                {
-                                                                                  "type": "null"
-                                                                                },
-                                                                                {
-                                                                                  "items": {
-                                                                                    "anyOf": [
-                                                                                      {
-                                                                                        "maxLength": 64000,
-                                                                                        "type": "string"
-                                                                                      },
-                                                                                      {
-                                                                                        "type": "number"
-                                                                                      },
-                                                                                      {
-                                                                                        "type": "boolean"
-                                                                                      },
-                                                                                      {
-                                                                                        "type": "null"
-                                                                                      }
-                                                                                    ]
-                                                                                  },
-                                                                                  "maxItems": 200,
-                                                                                  "type": "array"
-                                                                                }
-                                                                              ]
-                                                                            }
-                                                                          },
-                                                                          "required": [
-                                                                            "type",
-                                                                            "fieldId",
-                                                                            "operator"
-                                                                          ],
-                                                                          "type": "object"
-                                                                        },
-                                                                        {
-                                                                          "additionalProperties": false,
-                                                                          "properties": {
-                                                                            "clauses": {
-                                                                              "items": {
-                                                                                "anyOf": [
-                                                                                  {
-                                                                                    "additionalProperties": false,
-                                                                                    "properties": {
-                                                                                      "fieldId": {
-                                                                                        "maxLength": 120,
-                                                                                        "minLength": 1,
-                                                                                        "type": "string"
-                                                                                      },
-                                                                                      "operator": {
-                                                                                        "enum": [
-                                                                                          "equals",
-                                                                                          "not-equals",
-                                                                                          "contains",
-                                                                                          "not-contains",
-                                                                                          "gt",
-                                                                                          "gte",
-                                                                                          "lt",
-                                                                                          "lte",
-                                                                                          "in",
-                                                                                          "not-in",
-                                                                                          "is-empty",
-                                                                                          "is-not-empty",
-                                                                                          "before",
-                                                                                          "after"
-                                                                                        ],
-                                                                                        "type": "string"
-                                                                                      },
-                                                                                      "type": {
-                                                                                        "const": "rule",
-                                                                                        "type": "string"
-                                                                                      },
-                                                                                      "value": {
-                                                                                        "anyOf": [
-                                                                                          {
-                                                                                            "maxLength": 64000,
-                                                                                            "type": "string"
-                                                                                          },
-                                                                                          {
-                                                                                            "type": "number"
-                                                                                          },
-                                                                                          {
-                                                                                            "type": "boolean"
-                                                                                          },
-                                                                                          {
-                                                                                            "type": "null"
-                                                                                          },
-                                                                                          {
-                                                                                            "items": {
-                                                                                              "anyOf": [
-                                                                                                {
-                                                                                                  "maxLength": 64000,
-                                                                                                  "type": "string"
-                                                                                                },
-                                                                                                {
-                                                                                                  "type": "number"
-                                                                                                },
-                                                                                                {
-                                                                                                  "type": "boolean"
-                                                                                                },
-                                                                                                {
-                                                                                                  "type": "null"
-                                                                                                }
-                                                                                              ]
-                                                                                            },
-                                                                                            "maxItems": 200,
-                                                                                            "type": "array"
-                                                                                          }
-                                                                                        ]
-                                                                                      }
-                                                                                    },
-                                                                                    "required": [
-                                                                                      "type",
-                                                                                      "fieldId",
-                                                                                      "operator"
-                                                                                    ],
-                                                                                    "type": "object"
-                                                                                  },
-                                                                                  {
-                                                                                    "additionalProperties": false,
-                                                                                    "properties": {
-                                                                                      "clauses": {
-                                                                                        "items": {
-                                                                                          "anyOf": [
-                                                                                            {
-                                                                                              "additionalProperties": false,
-                                                                                              "properties": {
-                                                                                                "fieldId": {
-                                                                                                  "maxLength": 120,
-                                                                                                  "minLength": 1,
-                                                                                                  "type": "string"
-                                                                                                },
-                                                                                                "operator": {
-                                                                                                  "enum": [
-                                                                                                    "equals",
-                                                                                                    "not-equals",
-                                                                                                    "contains",
-                                                                                                    "not-contains",
-                                                                                                    "gt",
-                                                                                                    "gte",
-                                                                                                    "lt",
-                                                                                                    "lte",
-                                                                                                    "in",
-                                                                                                    "not-in",
-                                                                                                    "is-empty",
-                                                                                                    "is-not-empty",
-                                                                                                    "before",
-                                                                                                    "after"
-                                                                                                  ],
-                                                                                                  "type": "string"
-                                                                                                },
-                                                                                                "type": {
-                                                                                                  "const": "rule",
-                                                                                                  "type": "string"
-                                                                                                },
-                                                                                                "value": {
-                                                                                                  "anyOf": [
-                                                                                                    {
-                                                                                                      "maxLength": 64000,
-                                                                                                      "type": "string"
-                                                                                                    },
-                                                                                                    {
-                                                                                                      "type": "number"
-                                                                                                    },
-                                                                                                    {
-                                                                                                      "type": "boolean"
-                                                                                                    },
-                                                                                                    {
-                                                                                                      "type": "null"
-                                                                                                    },
-                                                                                                    {
-                                                                                                      "items": {
-                                                                                                        "anyOf": [
-                                                                                                          {
-                                                                                                            "maxLength": 64000,
-                                                                                                            "type": "string"
-                                                                                                          },
-                                                                                                          {
-                                                                                                            "type": "number"
-                                                                                                          },
-                                                                                                          {
-                                                                                                            "type": "boolean"
-                                                                                                          },
-                                                                                                          {
-                                                                                                            "type": "null"
-                                                                                                          }
-                                                                                                        ]
-                                                                                                      },
-                                                                                                      "maxItems": 200,
-                                                                                                      "type": "array"
-                                                                                                    }
-                                                                                                  ]
-                                                                                                }
-                                                                                              },
-                                                                                              "required": [
-                                                                                                "type",
-                                                                                                "fieldId",
-                                                                                                "operator"
-                                                                                              ],
-                                                                                              "type": "object"
-                                                                                            },
-                                                                                            {
-                                                                                              "additionalProperties": false,
-                                                                                              "properties": {
-                                                                                                "clauses": {
-                                                                                                  "items": {
-                                                                                                    "additionalProperties": false,
-                                                                                                    "properties": {
-                                                                                                      "fieldId": {
-                                                                                                        "maxLength": 120,
-                                                                                                        "minLength": 1,
-                                                                                                        "type": "string"
-                                                                                                      },
-                                                                                                      "operator": {
-                                                                                                        "enum": [
-                                                                                                          "equals",
-                                                                                                          "not-equals",
-                                                                                                          "contains",
-                                                                                                          "not-contains",
-                                                                                                          "gt",
-                                                                                                          "gte",
-                                                                                                          "lt",
-                                                                                                          "lte",
-                                                                                                          "in",
-                                                                                                          "not-in",
-                                                                                                          "is-empty",
-                                                                                                          "is-not-empty",
-                                                                                                          "before",
-                                                                                                          "after"
-                                                                                                        ],
-                                                                                                        "type": "string"
-                                                                                                      },
-                                                                                                      "type": {
-                                                                                                        "const": "rule",
-                                                                                                        "type": "string"
-                                                                                                      },
-                                                                                                      "value": {
-                                                                                                        "anyOf": [
-                                                                                                          {
-                                                                                                            "maxLength": 64000,
-                                                                                                            "type": "string"
-                                                                                                          },
-                                                                                                          {
-                                                                                                            "type": "number"
-                                                                                                          },
-                                                                                                          {
-                                                                                                            "type": "boolean"
-                                                                                                          },
-                                                                                                          {
-                                                                                                            "type": "null"
-                                                                                                          },
-                                                                                                          {
-                                                                                                            "items": {
-                                                                                                              "anyOf": [
-                                                                                                                {
-                                                                                                                  "maxLength": 64000,
-                                                                                                                  "type": "string"
-                                                                                                                },
-                                                                                                                {
-                                                                                                                  "type": "number"
-                                                                                                                },
-                                                                                                                {
-                                                                                                                  "type": "boolean"
-                                                                                                                },
-                                                                                                                {
-                                                                                                                  "type": "null"
-                                                                                                                }
-                                                                                                              ]
-                                                                                                            },
-                                                                                                            "maxItems": 200,
-                                                                                                            "type": "array"
-                                                                                                          }
-                                                                                                        ]
-                                                                                                      }
-                                                                                                    },
-                                                                                                    "required": [
-                                                                                                      "type",
-                                                                                                      "fieldId",
-                                                                                                      "operator"
-                                                                                                    ],
-                                                                                                    "type": "object"
-                                                                                                  },
-                                                                                                  "maxItems": 50,
-                                                                                                  "minItems": 1,
-                                                                                                  "type": "array"
-                                                                                                },
-                                                                                                "conjunction": {
-                                                                                                  "enum": [
-                                                                                                    "and",
-                                                                                                    "or"
-                                                                                                  ],
-                                                                                                  "type": "string"
-                                                                                                },
-                                                                                                "type": {
-                                                                                                  "const": "group",
-                                                                                                  "type": "string"
-                                                                                                }
-                                                                                              },
-                                                                                              "required": [
-                                                                                                "type",
-                                                                                                "conjunction",
-                                                                                                "clauses"
-                                                                                              ],
-                                                                                              "type": "object"
-                                                                                            }
-                                                                                          ]
-                                                                                        },
-                                                                                        "maxItems": 50,
-                                                                                        "minItems": 1,
-                                                                                        "type": "array"
-                                                                                      },
-                                                                                      "conjunction": {
-                                                                                        "enum": [
-                                                                                          "and",
-                                                                                          "or"
-                                                                                        ],
-                                                                                        "type": "string"
-                                                                                      },
-                                                                                      "type": {
-                                                                                        "const": "group",
-                                                                                        "type": "string"
-                                                                                      }
-                                                                                    },
-                                                                                    "required": [
-                                                                                      "type",
-                                                                                      "conjunction",
-                                                                                      "clauses"
-                                                                                    ],
-                                                                                    "type": "object"
-                                                                                  }
-                                                                                ]
-                                                                              },
-                                                                              "maxItems": 50,
-                                                                              "minItems": 1,
-                                                                              "type": "array"
-                                                                            },
-                                                                            "conjunction": {
-                                                                              "enum": [
-                                                                                "and",
-                                                                                "or"
-                                                                              ],
-                                                                              "type": "string"
-                                                                            },
-                                                                            "type": {
-                                                                              "const": "group",
-                                                                              "type": "string"
-                                                                            }
-                                                                          },
-                                                                          "required": [
-                                                                            "type",
-                                                                            "conjunction",
-                                                                            "clauses"
-                                                                          ],
-                                                                          "type": "object"
-                                                                        }
-                                                                      ]
-                                                                    },
-                                                                    "maxItems": 50,
-                                                                    "minItems": 1,
-                                                                    "type": "array"
-                                                                  },
-                                                                  "conjunction": {
-                                                                    "enum": [
-                                                                      "and",
-                                                                      "or"
-                                                                    ],
-                                                                    "type": "string"
-                                                                  },
-                                                                  "type": {
-                                                                    "const": "group",
-                                                                    "type": "string"
-                                                                  }
-                                                                },
-                                                                "required": [
-                                                                  "type",
-                                                                  "conjunction",
-                                                                  "clauses"
-                                                                ],
-                                                                "type": "object"
-                                                              }
-                                                            ]
-                                                          },
-                                                          "maxItems": 50,
-                                                          "minItems": 1,
-                                                          "type": "array"
-                                                        },
-                                                        "conjunction": {
-                                                          "enum": [
-                                                            "and",
-                                                            "or"
-                                                          ],
-                                                          "type": "string"
-                                                        },
-                                                        "type": {
-                                                          "const": "group",
-                                                          "type": "string"
-                                                        }
-                                                      },
-                                                      "required": [
-                                                        "type",
-                                                        "conjunction",
-                                                        "clauses"
-                                                      ],
-                                                      "type": "object"
-                                                    }
-                                                  ]
-                                                },
-                                                "maxItems": 50,
-                                                "minItems": 1,
-                                                "type": "array"
-                                              },
-                                              "conjunction": {
-                                                "enum": [
-                                                  "and",
-                                                  "or"
-                                                ],
-                                                "type": "string"
-                                              },
-                                              "type": {
-                                                "const": "group",
-                                                "type": "string"
-                                              }
-                                            },
-                                            "required": [
-                                              "type",
-                                              "conjunction",
-                                              "clauses"
-                                            ],
-                                            "type": "object"
-                                          }
-                                        ]
-                                      },
-                                      "maxItems": 50,
-                                      "minItems": 1,
-                                      "type": "array"
-                                    },
-                                    "conjunction": {
-                                      "enum": [
-                                        "and",
-                                        "or"
-                                      ],
-                                      "type": "string"
-                                    },
-                                    "type": {
-                                      "const": "group",
-                                      "type": "string"
-                                    }
-                                  },
-                                  "required": [
-                                    "type",
-                                    "conjunction",
-                                    "clauses"
-                                  ],
-                                  "type": "object"
-                                }
-                              ]
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "presentation": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "adapter": {
-                              "enum": [
-                                "table",
-                                "kanban",
-                                "calendar",
-                                "timeline",
-                                "gallery",
-                                "list"
-                              ],
-                              "type": "string"
-                            },
-                            "settings": {
-                              "additionalProperties": {
-                                "anyOf": [
-                                  {
-                                    "anyOf": [
-                                      {
-                                        "maxLength": 64000,
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "number"
-                                      },
-                                      {
-                                        "type": "boolean"
-                                      },
-                                      {
-                                        "type": "null"
-                                      }
-                                    ]
-                                  },
-                                  {
-                                    "items": {
-                                      "anyOf": [
-                                        {
-                                          "maxLength": 64000,
-                                          "type": "string"
-                                        },
-                                        {
-                                          "type": "number"
-                                        },
-                                        {
-                                          "type": "boolean"
-                                        },
-                                        {
-                                          "type": "null"
-                                        }
-                                      ]
-                                    },
-                                    "maxItems": 200,
-                                    "type": "array"
-                                  }
-                                ]
-                              },
-                              "propertyNames": {
-                                "maxLength": 120
-                              },
-                              "type": "object"
-                            }
-                          },
-                          "required": [
-                            "adapter",
-                            "settings"
-                          ],
-                          "type": "object"
-                        },
-                        "schemaVersion": {
-                          "const": 1,
-                          "type": "number"
-                        },
-                        "search": {
-                          "maxLength": 500,
-                          "type": "string"
-                        },
-                        "sort": {
-                          "items": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "direction": {
-                                "enum": [
-                                  "asc",
-                                  "desc"
-                                ],
-                                "type": "string"
-                              },
-                              "fieldId": {
-                                "maxLength": 120,
-                                "minLength": 1,
-                                "type": "string"
-                              }
-                            },
-                            "required": [
-                              "fieldId",
-                              "direction"
-                            ],
-                            "type": "object"
-                          },
-                          "maxItems": 10,
-                          "type": "array"
-                        }
-                      },
-                      "required": [
-                        "schemaVersion",
-                        "search",
-                        "filter",
-                        "sort",
-                        "columnVisibility",
-                        "presentation"
-                      ],
-                      "type": "object"
+                      "$ref": "#/anyOf/3/properties/view/properties/config"
                     }
                   },
                   "required": [

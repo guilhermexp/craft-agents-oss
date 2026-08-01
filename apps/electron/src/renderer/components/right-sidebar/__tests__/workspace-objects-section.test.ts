@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { WorkspaceObjectPayload } from '@craft-agent/shared/workspace-objects/types';
 import { WorkspaceObjectListLoader, type WorkspaceObjectListLoadCallbacks } from '../workspace-objects-section.tsx';
+import { collectReferencedRelationEntryIds, isWorkspaceObjectPreviewDataCurrent, workspaceObjectPreviewRenderKey } from '../workspace-object-preview-panel.tsx';
+import { contentTabId } from '../../app-shell/content-tabs-state.ts';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -81,5 +83,29 @@ describe('WorkspaceObjectListLoader', () => {
 
     await loader.load('workspace-one', callbacks);
     expect(state).toMatchObject({ objects: [{ id: 'recovered', revision: 3 }], loading: false, error: null });
+  });
+});
+
+describe('workspace object preview target identity', () => {
+  test('includes currently referenced relation ids in bounded option lookups', () => {
+    const payload: WorkspaceObjectPayload = {
+      ...object('object_people', 1),
+      fields: [{ id: 'field_company', name: 'Company', type: 'relation', relationObjectId: 'object_companies' }],
+      entries: [{ id: 'entry_person', values: { field_company: 'entry_249' } }],
+    };
+    expect(collectReferencedRelationEntryIds(payload, 'object_companies')).toEqual(['entry_249']);
+  });
+
+  test('never renders data from the previous object and keys saved views independently', () => {
+    const data = {
+      targetKey: contentTabId({ kind: 'object', workspaceId: 'w1', objectId: 'object_old', viewId: 'view_a' }),
+      payload: object('object_old', 1), relationPayloads: [],
+    };
+    expect(isWorkspaceObjectPreviewDataCurrent(data, { workspaceId: 'w1', objectId: 'object_new', viewId: 'view_a' })).toBe(false);
+    expect(isWorkspaceObjectPreviewDataCurrent(data, { workspaceId: 'w1', objectId: 'object_old', viewId: 'view_a' })).toBe(true);
+    expect(isWorkspaceObjectPreviewDataCurrent(data, { workspaceId: 'w2', objectId: 'object_old', viewId: 'view_a' })).toBe(false);
+    expect(isWorkspaceObjectPreviewDataCurrent(data, { workspaceId: 'w1', objectId: 'object_old', viewId: 'view_b' })).toBe(false);
+    expect(workspaceObjectPreviewRenderKey(data.payload, 'view_a')).toBe('object_old:view_a');
+    expect(workspaceObjectPreviewRenderKey(data.payload, 'view_b')).toBe('object_old:view_b');
   });
 });

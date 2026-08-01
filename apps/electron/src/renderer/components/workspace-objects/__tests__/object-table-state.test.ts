@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { createInstance } from 'i18next'
 import { I18nextProvider } from 'react-i18next'
 import type { WorkspaceObjectField, WorkspaceObjectPayload } from '@craft-agent/shared/workspace-objects/types'
+import { DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW } from '@craft-agent/shared/workspace-objects/view-schema'
 import {
   parseObjectFieldDraft,
   resolveObjectFieldDisplayValue,
@@ -11,7 +12,7 @@ import {
   reconcileObjectFieldEdit,
   type ObjectFieldEditState,
 } from '../ObjectFieldEditor'
-import { ObjectTableView, createSavedTableView, resolveTablePresentation, restoreSavedTableView } from '../ObjectTableView'
+import { ObjectTableView, createSavedTableView, resolveSavedTableViewState, resolveTablePresentation, restoreSavedTableView, shouldPersistSavedViewTarget } from '../ObjectTableView'
 
 const fields = {
   text: { id: 'field_text', name: 'Text', type: 'text' },
@@ -51,6 +52,7 @@ describe('typed object field parsing', () => {
     expect(parseObjectFieldDraft(fields.status, 'Missing').success).toBe(false)
     expect(parseObjectFieldDraft(fields.relation, 'entry_missing', new Set(['entry_acme'])).success).toBe(false)
     expect(parseObjectFieldDraft(fields.file, '\0bad').success).toBe(false)
+    expect(parseObjectFieldDraft(fields.text, 'x'.repeat(64_001)).success).toBe(false)
   })
 })
 
@@ -159,6 +161,25 @@ describe('saved table view state', () => {
     expect(html).not.toContain('Alpha Secret')
     expect(html).not.toContain('Beta Secret')
     expect(html).not.toContain('>Alpha<')
+  })
+
+  test('resolves the latest canonical saved-view config after an external update', () => {
+    const first = createSavedTableView('view_live', 'Live', { ...DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW, search: 'before' })
+    const latest = createSavedTableView('view_live', 'Live renamed', {
+      ...DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW,
+      search: 'after',
+      presentation: { adapter: 'table', settings: { nested: { lane: ['a', { color: 'blue' }] } } },
+    })
+    const base = { id: 'object_people', slug: 'people', name: 'People', projectionStatus: 'ready' as const, fields: [], entries: [] }
+
+    expect(resolveSavedTableViewState({ ...base, revision: 1, savedViews: [first] }, 'view_live')).toMatchObject({
+      activeViewId: 'view_live', viewName: 'Live', config: { search: 'before' },
+    })
+    expect(resolveSavedTableViewState({ ...base, revision: 2, savedViews: [latest] }, 'view_live')).toMatchObject({
+      activeViewId: 'view_live', viewName: 'Live renamed', config: { search: 'after' },
+    })
+    expect(shouldPersistSavedViewTarget({ ...base, revision: 2, savedViews: [latest] }, 'view_live', undefined)).toBe(true)
+    expect(shouldPersistSavedViewTarget({ ...base, revision: 1, savedViews: [first] }, 'view_missing', undefined)).toBe(false)
   })
 })
 

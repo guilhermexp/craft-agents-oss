@@ -320,14 +320,32 @@ adapter. `query.ts` avalia esse contrato deterministicamente para os dois
 caminhos: `workspace_objects.query-object` usado pelo agente e
 `ObjectTableView` usado pelo Desktop. A ordem original é o desempate estável.
 
-Views antigas aceitas pelo placeholder da Phase A continuam entrando pelo
-frontier v1 e também são normalizadas ao reconstruir projeções gravadas antes
-do U5. O payload e todas as novas views saem somente no formato versionado.
+Views antigas aceitas pelo placeholder da Phase A são migradas no primeiro
+reopen do SQLite: qualquer config legada que ainda seja um objeto é
+normalizada para o schema v1, regravada junto com a projeção numa única
+transação e marcada pela migration v3. O frontier e o storage recusam writes
+novos fora do contrato estrito. O payload e todas as novas views saem somente
+no formato versionado.
 
-Relações continuam armazenando `entryId`. O Desktop carrega o payload atual do
-objeto relacionado em paralelo com o objeto aberto, deriva o label atual no
-render e revalida quando o alvo muda. Um rename altera o label sem regravar o
-stable ID da célula.
+Relações continuam armazenando `entryId`. O Desktop carrega opções e labels do
+objeto relacionado junto com o objeto aberto, deriva o label atual no render e
+revalida quando o alvo muda. Um rename altera o label sem regravar o stable ID
+da célula.
+
+Na correção consolidada do U5, esse carregamento passou a usar
+`list-relation-options`, com páginas de no máximo 200 opções e inclusão
+explícita dos IDs já referenciados mesmo quando estão fora da primeira página.
+`query-object` devolve `displayValues` e `relationLabels` serializáveis, mas
+mantém os IDs estáveis em `entries`. Datas e datetimes são comparados pelo
+instante de `Date.parse`, inclusive em sort e operadores `before`/`after`.
+
+O alvo da tab agora inclui o `viewId` salvo, é retargetado somente após a view
+aparecer no payload canônico e recebe uma key por objeto/view; isso impede
+restauração local incompleta e vazamento visual do payload anterior. A table
+usa `entry.id` como row id. O parser local bloqueia strings acima de 64.000
+caracteres antes da mutation, e o JSON Schema MCP preserva recursão e
+refinements de `presentation.settings` por referências locais, sem cair em
+branches `{}` permissivos.
 
 Edição de célula não é otimista: o draft tipado permanece aberto durante a
 mutation. Input inválido não chama `upsert-entries`; rejeição e erro de

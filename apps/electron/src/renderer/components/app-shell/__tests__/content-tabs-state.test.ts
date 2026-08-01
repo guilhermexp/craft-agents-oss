@@ -122,4 +122,27 @@ describe('content tabs state', () => {
 
     expect(restored.activeId).toBe(contentTabId(namedAbsentView));
   });
+
+  test('retargets an object tab to its selected saved view so persistence survives restart', () => {
+    const target = object('object_people');
+    const opened = contentTabsReducer(empty, { type: 'open', target, mode: 'permanent' });
+    const selected = object('object_people', 'view_active');
+    const retargeted = contentTabsReducer(opened, { type: 'retarget', id: contentTabId(target), target: selected });
+
+    expect(retargeted.activeId).toBe(contentTabId(selected));
+    expect(retargeted.tabs[0]?.target).toEqual(selected);
+    expect(restoreContentTabs(retargeted, 'w1', null)).toEqual(retargeted);
+  });
+
+  test('deduplicates when retargeting to a saved view that already has a tab', () => {
+    const base = object('object_people');
+    const saved = object('object_people', 'view_active');
+    let state = contentTabsReducer(empty, { type: 'open', target: base, mode: 'permanent' });
+    state = contentTabsReducer(state, { type: 'open', target: saved, mode: 'permanent' });
+    state = contentTabsReducer(state, { type: 'retarget', id: contentTabId(base), target: saved });
+
+    expect(state.tabs).toHaveLength(1);
+    expect(state.tabs[0]?.id).toBe(contentTabId(saved));
+    expect(state.activeId).toBe(contentTabId(saved));
+  });
 });

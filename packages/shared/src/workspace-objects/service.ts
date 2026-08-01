@@ -3,9 +3,9 @@ import { WorkspaceObjectEventBus } from './events.ts';
 import { writeWorkspaceObjectEventProjection } from './event-projection.ts';
 import { writeWorkspaceObjectManifest } from './manifest.ts';
 import { WorkspaceObjectRepository } from './storage.ts';
-import { buildWorkspaceObjectRelationLabels, evaluateWorkspaceObjectQuery } from './query.ts';
-import { DefineWorkspaceObjectSchema, WorkspaceObjectEntryInputSchema, type WorkspaceObjectChangeKind, type WorkspaceObjectEvent, type WorkspaceObjectPayload, type WorkspaceObjectProjectionStatus } from './types.ts';
-import { WorkspaceObjectSavedViewInputSchema, WorkspaceObjectViewConfigSchema } from './view-schema.ts';
+import { evaluateWorkspaceObjectQuery } from './query.ts';
+import { DefineWorkspaceObjectSchema, WorkspaceObjectEntryInputSchema, type WorkspaceObjectChangeKind, type WorkspaceObjectEvent, type WorkspaceObjectPayload, type WorkspaceObjectProjectionStatus, type WorkspaceObjectValue } from './types.ts';
+import { WorkspaceObjectSavedViewSchema, WorkspaceObjectViewConfigSchema } from './view-schema.ts';
 
 const QueryWorkspaceObjectActionSchema = z.strictObject({
   action: z.literal('query-object'),
@@ -20,10 +20,17 @@ export const WorkspaceObjectActionSchema = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('define-object'), object: DefineWorkspaceObjectSchema }),
   z.strictObject({ action: z.literal('upsert-entries'), objectId: z.string().min(1).max(120), entries: z.array(WorkspaceObjectEntryInputSchema).min(1).max(200) }),
   z.strictObject({ action: z.literal('delete-entries'), objectId: z.string().min(1).max(120), entryIds: z.array(z.string().min(1).max(120)).min(1).max(200) }),
-  z.strictObject({ action: z.literal('upsert-view'), objectId: z.string().min(1).max(120), view: WorkspaceObjectSavedViewInputSchema }),
+  z.strictObject({ action: z.literal('upsert-view'), objectId: z.string().min(1).max(120), view: WorkspaceObjectSavedViewSchema }),
   z.strictObject({ action: z.literal('get-object'), objectId: z.string().min(1).max(120) }),
   z.strictObject({ action: z.literal('list-objects'), limit: z.number().int().min(1).max(200).optional() }),
   z.strictObject({ action: z.literal('repair-projection'), objectId: z.string().min(1).max(120) }),
+  z.strictObject({
+    action: z.literal('list-relation-options'),
+    objectId: z.string().min(1).max(120),
+    after: z.string().min(1).max(120).optional(),
+    limit: z.number().int().min(1).max(200).optional(),
+    includeEntryIds: z.array(z.string().min(1).max(120)).max(200).optional(),
+  }),
   QueryWorkspaceObjectActionSchema,
 ]);
 export type WorkspaceObjectAction = z.input<typeof WorkspaceObjectActionSchema>;
@@ -38,7 +45,13 @@ export type WorkspaceObjectServiceResult =
   | WorkspaceObjectMutationResult
   | { payload: WorkspaceObjectPayload | null }
   | { objects: WorkspaceObjectPayload[] }
-  | { query: Pick<WorkspaceObjectPayload, 'fields' | 'entries'> & { objectId: string; revision: number } };
+  | { query: Pick<WorkspaceObjectPayload, 'fields' | 'entries'> & {
+      objectId: string;
+      revision: number;
+      displayValues: Record<string, Record<string, WorkspaceObjectValue>>;
+      relationLabels: Record<string, string>;
+    } }
+  | { relationOptions: Array<{ id: string; label: string }>; nextCursor: string | null };
 
 export interface WorkspaceObjectServiceOptions {
   workspaceId: string;
@@ -68,6 +81,10 @@ export class WorkspaceObjectService {
     const action = WorkspaceObjectActionSchema.parse(input);
     if (action.action === 'get-object') return { payload: this.repository.getObject(action.objectId) };
     if (action.action === 'list-objects') return { objects: this.repository.listObjects(action.limit) };
+    if (action.action === 'list-relation-options') {
+      const page = this.repository.listRelationOptions(action.objectId, action);
+      return { relationOptions: page.options, nextCursor: page.nextCursor };
+    }
     if (action.action === 'query-object') {
       const payload = this.repository.getObject(action.objectId);
       if (!payload) throw new Error(`Unknown object: ${action.objectId}`);
@@ -76,15 +93,30 @@ export class WorkspaceObjectService {
         ? action.query.config
         : payload.savedViews.find(view => view.id === viewId)?.config;
       if (!config) throw new Error(`Unknown saved view: ${'viewId' in action.query ? action.query.viewId : ''}`);
-      const relationObjectIds = new Set(payload.fields.flatMap(field => field.relationObjectId ? [field.relationObjectId] : []));
-      const relationPayloads = [...relationObjectIds].flatMap(objectId => {
-        const relationPayload = this.repository.getObject(objectId);
-        return relationPayload ? [relationPayload] : [];
-      });
+      const relationLabels = new Map<string, string>();
+      for (const relationObjectId of new Set(payload.fields.flatMap(field => field.relationObjectId ? [field.relationObjectId] : []))) {
+        const fieldIds = new Set(payload.fields.flatMap(field => field.relationObjectId === relationObjectId ? [field.id] : []));
+        const referencedIdSet = new Set<string>();
+        for (const entry of payload.entries) {
+          for (const [fieldId, value] of Object.entries(entry.values)) {
+            if (fieldIds.has(fieldId) && typeof value === 'string') referencedIdSet.add(value);
+          }
+        }
+        const referencedIds = [...referencedIdSet];
+        const page = this.repository.listRelationOptions(relationObjectId, { limit: 1, includeEntryIds: referencedIds });
+        for (const option of page.options) if (referencedIdSet.has(option.id)) relationLabels.set(option.id, option.label);
+      }
       const query = evaluateWorkspaceObjectQuery(payload, config, {
-        relationLabels: buildWorkspaceObjectRelationLabels(relationPayloads),
+        relationLabels,
       });
-      return { query: { objectId: payload.id, revision: payload.revision, fields: query.fields, entries: query.entries } };
+      return { query: {
+        objectId: payload.id,
+        revision: payload.revision,
+        fields: query.fields,
+        entries: query.entries,
+        displayValues: Object.fromEntries(query.entries.map(entry => [entry.id, query.displayValues.get(entry.id) ?? {}])),
+        relationLabels: Object.fromEntries(relationLabels),
+      } };
     }
     if (action.action === 'repair-projection') {
       const payload = this.repository.getObject(action.objectId);

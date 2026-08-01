@@ -89,6 +89,23 @@ describe('WorkspaceObjectSavedViewSchema', () => {
 });
 
 describe('evaluateWorkspaceObjectQuery', () => {
+  test('sorts and filters temporal fields by instant instead of offset text', () => {
+    const temporalPayload: WorkspaceObjectPayload = {
+      ...payload,
+      fields: [{ id: 'field_when', name: 'When', type: 'datetime' }],
+      entries: [
+        { id: 'later_text_first', values: { field_when: '2026-08-01T08:00:00-03:00' } },
+        { id: 'earlier_text_last', values: { field_when: '2026-08-01T10:30:00Z' } },
+      ],
+    };
+    const result = evaluateWorkspaceObjectQuery(temporalPayload, view({
+      filter: { type: 'rule', fieldId: 'field_when', operator: 'after', value: '2026-08-01T10:45:00Z' },
+      sort: [{ fieldId: 'field_when', direction: 'asc' }],
+    }));
+
+    expect(result.entries.map(entry => entry.id)).toEqual(['later_text_first']);
+  });
+
   test('evaluates nested filters, search and a stable multi-sort deterministically', () => {
     const result = evaluateWorkspaceObjectQuery(payload, view({
       search: 'a',

@@ -250,6 +250,7 @@
   "chat.workspaceObjectFieldFiniteNumber": "{{field}} は有限の数値である必要があります。",
   "chat.workspaceObjectFieldOption": "{{field}} の有効な選択肢を選んでください。",
   "chat.workspaceObjectFieldRelation": "{{field}} の既存の関連先を選んでください。",
+  "chat.workspaceObjectFieldTooLong": "{{field}} は64,000文字を超えることはできません。",
   "chat.workspaceObjectFieldRequired": "{{field}} は必須です。",
   "chat.workspaceObjectDefaultView": "既定のビュー",
   "chat.workspaceObjectFilterField": "フィルターフィールド",

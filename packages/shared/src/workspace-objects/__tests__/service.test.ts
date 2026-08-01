@@ -98,8 +98,14 @@ describe('WorkspaceObjectService', () => {
     service.execute({ action: 'upsert-entries', objectId: 'object_deals', entries: [
       { id: 'entry_one', values: { field_name: 'One' } },
     ] });
+    expect(() => service.execute({ action: 'upsert-view', objectId: 'object_deals', view: {
+      id: 'view_loose', name: 'Loose', config: { search: 'One', columns: ['field_name'] },
+    } } as never)).toThrow();
     expect(service.execute({ action: 'upsert-view', objectId: 'object_deals', view: {
-      id: 'view_open', name: 'Open', config: { search: 'One', columns: ['field_name'] },
+      id: 'view_open', name: 'Open', config: {
+        schemaVersion: 1, search: 'One', filter: null, sort: [], columnVisibility: { field_name: true },
+        presentation: { adapter: 'table', settings: {} },
+      },
     } })).toMatchObject({ objectId: 'object_deals', revision: 3, projectionStatus: 'ready' });
     expect(service.execute({ action: 'delete-entries', objectId: 'object_deals', entryIds: ['entry_one'] }))
       .toMatchObject({ revision: 4 });
@@ -177,8 +183,37 @@ describe('WorkspaceObjectService', () => {
     };
 
     expect(service.execute({ action: 'query-object', objectId: 'object_people', query: { config } })).toMatchObject({
-      query: { entries: [{ id: 'entry_ada', values: { field_company: 'entry_acme' } }] },
+      query: {
+        entries: [{ id: 'entry_ada', values: { field_company: 'entry_acme' } }],
+        displayValues: { entry_ada: { field_company: 'Acme Renamed' } },
+        relationLabels: { entry_acme: 'Acme Renamed' },
+      },
     });
+    service.close();
+  });
+
+  test('paginates relation options while including referenced stable ids beyond the page', () => {
+    const service = WorkspaceObjectService.open({ workspaceId: 'ws_relation_options', workspaceRootPath: makeRoot() });
+    service.execute({ action: 'define-object', object: {
+      id: 'object_companies', slug: 'companies', name: 'Companies',
+      fields: [{ id: 'field_name', name: 'Name', type: 'text' }],
+    } });
+    const entries = Array.from({ length: 250 }, (_, index) => ({
+      id: `entry_${String(index).padStart(3, '0')}`,
+      values: { field_name: `Company ${index}` },
+    }));
+    service.execute({ action: 'upsert-entries', objectId: 'object_companies', entries: entries.slice(0, 200) });
+    service.execute({ action: 'upsert-entries', objectId: 'object_companies', entries: entries.slice(200) });
+
+    const result = service.execute({
+      action: 'list-relation-options', objectId: 'object_companies', limit: 10,
+      after: 'entry_010', includeEntryIds: ['entry_249'],
+    });
+    expect('relationOptions' in result).toBe(true);
+    if (!('relationOptions' in result)) throw new Error('Expected relation options result');
+    expect(result.relationOptions).toContainEqual({ id: 'entry_249', label: 'Company 249' });
+    expect(result.relationOptions).toHaveLength(11);
+    expect(result.nextCursor).toBe('entry_020');
     service.close();
   });
 });

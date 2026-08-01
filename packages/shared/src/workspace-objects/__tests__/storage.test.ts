@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { openSQLite } from '../../memory/sqlite-driver.ts';
 import { WORKSPACE_OBJECT_SCHEMA_V1 } from '../schema.ts';
 import { WorkspaceObjectRepository } from '../storage.ts';
+import { DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW } from '../view-schema.ts';
 
 const roots: string[] = [];
 
@@ -86,7 +87,7 @@ describe('WorkspaceObjectRepository', () => {
 
     const verification = openSQLite(databasePath);
     expect(verification.prepare('SELECT version FROM workspace_object_schema_version ORDER BY version').all()).toEqual([
-      { version: 1 }, { version: 2 },
+      { version: 1 }, { version: 2 }, { version: 3 },
     ]);
     expect(verification.prepare(`SELECT object_id, caller_id FROM workspace_object_fields
       ORDER BY object_id`).all()).toEqual([
@@ -127,8 +128,8 @@ describe('WorkspaceObjectRepository', () => {
     }
     repository.upsertEntries('object_a', [{ id: 'entry_shared', values: { field_a: 'A' } }]);
     expect(() => repository.upsertEntries('object_b', [{ id: 'entry_shared', values: { field_b: 'B' } }])).toThrow('another workspace object');
-    repository.upsertSavedView('object_a', { id: 'view_shared', name: 'A', config: {} });
-    expect(() => repository.upsertSavedView('object_b', { id: 'view_shared', name: 'B', config: {} })).toThrow('another workspace object');
+    repository.upsertSavedView('object_a', { id: 'view_shared', name: 'A', config: DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW });
+    expect(() => repository.upsertSavedView('object_b', { id: 'view_shared', name: 'B', config: DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW })).toThrow('another workspace object');
     expect(repository.getObject('object_a')?.entries[0]?.values).toEqual({ field_a: 'A' });
     expect(repository.getObject('object_b')?.entries).toEqual([]);
     repository.close();
@@ -203,7 +204,7 @@ describe('WorkspaceObjectRepository', () => {
     const root = makeRoot();
     const repository = WorkspaceObjectRepository.open(root);
     repository.defineObject({ id: 'object_tasks', slug: 'tasks', name: 'Tasks', fields: [] });
-    repository.upsertSavedView('object_tasks', { id: 'view_bad', name: 'Bad', config: { search: 'ok' } });
+    repository.upsertSavedView('object_tasks', { id: 'view_bad', name: 'Bad', config: DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW });
     repository.close();
 
     const db = openSQLite(join(root, 'objects', 'objects.sqlite'));
@@ -220,12 +221,13 @@ describe('WorkspaceObjectRepository', () => {
     const root = makeRoot();
     const repository = WorkspaceObjectRepository.open(root);
     repository.defineObject({ id: 'object_tasks', slug: 'tasks', name: 'Tasks', fields: [] });
-    repository.upsertSavedView('object_tasks', { id: 'view_legacy', name: 'Legacy', config: { search: 'open' } });
+    repository.upsertSavedView('object_tasks', { id: 'view_legacy', name: 'Legacy', config: DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW });
     repository.close();
 
     const db = openSQLite(join(root, 'objects', 'objects.sqlite'));
     db.prepare('UPDATE workspace_object_saved_views SET config_json = ? WHERE id = ?')
       .run(JSON.stringify({ search: 'phase-a', columns: ['field_name'] }), 'view_legacy');
+    db.prepare('DELETE FROM workspace_object_schema_version WHERE version > 2').run();
     db.prepare('DELETE FROM workspace_object_payloads WHERE object_id = ?').run('object_tasks');
     db.close();
 
@@ -235,6 +237,32 @@ describe('WorkspaceObjectRepository', () => {
       config: { schemaVersion: 1, search: 'phase-a', columnVisibility: { field_name: true } },
     });
     reopened.close();
+  });
+
+  test('transactionally rewrites arbitrary pre-v2 saved views to canonical schema v1 on reopen', () => {
+    const root = makeRoot();
+    const repository = WorkspaceObjectRepository.open(root);
+    repository.defineObject({ id: 'object_tasks', slug: 'tasks', name: 'Tasks', fields: [] });
+    repository.upsertSavedView('object_tasks', {
+      id: 'view_seed', name: 'Seed',
+      config: { schemaVersion: 1, search: '', filter: null, sort: [], columnVisibility: {}, presentation: { adapter: 'table', settings: {} } },
+    });
+    repository.close();
+    const path = join(root, 'objects', 'objects.sqlite');
+    const db = openSQLite(path);
+    db.prepare('UPDATE workspace_object_saved_views SET config_json = ? WHERE id = ?')
+      .run(JSON.stringify({ schemaVersion: 'phase-a-custom', search: 'legacy', columns: ['field_name'], custom: { keep: true } }), 'view_seed');
+    db.prepare('DELETE FROM workspace_object_schema_version WHERE version > 2').run();
+    db.close();
+
+    const reopened = WorkspaceObjectRepository.open(root);
+    expect(reopened.getObject('object_tasks')?.savedViews[0]?.config).toMatchObject({ schemaVersion: 1, search: 'legacy' });
+    reopened.close();
+    const persisted = openSQLite(path);
+    const row = persisted.prepare('SELECT config_json FROM workspace_object_saved_views WHERE id = ?').get('view_seed') as { config_json: string };
+    expect(JSON.parse(row.config_json)).toMatchObject({ schemaVersion: 1, search: 'legacy' });
+    expect(persisted.prepare('SELECT MAX(version) AS version FROM workspace_object_schema_version').get()).toEqual({ version: 3 });
+    persisted.close();
   });
 
   test('supports nested projection transactions with savepoints', () => {

@@ -7,6 +7,7 @@ interface ContentPreviewHostProps {
   target: ContentTarget
   onClose: () => void
   onOpenFileDialog: (path: string) => void
+  onObjectViewChange: (viewId: string | undefined) => void
 }
 
 type ContentRenderer = (props: ContentPreviewHostProps) => ReactNode
@@ -15,8 +16,8 @@ const CONTENT_RENDERERS: Record<ContentTarget['kind'], ContentRenderer> = {
   file: ({ target, onClose, onOpenFileDialog }) => target.kind === 'file' ? (
     <InlineFilePreviewPanel filePath={target.path} onBack={onClose} onOpenDialog={onOpenFileDialog} />
   ) : null,
-  object: ({ target }) => target.kind === 'object' ? (
-    <WorkspaceObjectPreviewPanel workspaceId={target.workspaceId} objectId={target.objectId} viewId={target.viewId} />
+  object: ({ target, onObjectViewChange }) => target.kind === 'object' ? (
+    <WorkspaceObjectPreviewPanel workspaceId={target.workspaceId} objectId={target.objectId} viewId={target.viewId} onViewIdChange={onObjectViewChange} />
   ) : null,
 }
 

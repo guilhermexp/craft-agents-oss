@@ -115,6 +115,12 @@ const WorkspaceObjectFilterRuleSchema = z.strictObject({
   fieldId: z.string().min(1).max(120),
   operator: z.enum(['equals', 'not-equals', 'contains', 'not-contains', 'gt', 'gte', 'lt', 'lte', 'in', 'not-in', 'is-empty', 'is-not-empty', 'before', 'after']),
   value: WorkspaceObjectFilterValueSchema.optional(),
+}).superRefine((rule, context) => {
+  const unary = rule.operator === 'is-empty' || rule.operator === 'is-not-empty';
+  if (!unary && rule.value === undefined) context.addIssue({ code: 'custom', path: ['value'], message: `${rule.operator} requires a value` });
+  if (unary && rule.value !== undefined) context.addIssue({ code: 'custom', path: ['value'], message: `${rule.operator} does not accept a value` });
+  const setOperator = rule.operator === 'in' || rule.operator === 'not-in';
+  if (setOperator && !Array.isArray(rule.value)) context.addIssue({ code: 'custom', path: ['value'], message: `${rule.operator} requires an array value` });
 });
 function buildWorkspaceObjectFilterClauseSchema(depth: number): z.ZodType<WorkspaceObjectFilterClause> {
   if (depth === 1) return WorkspaceObjectFilterRuleSchema;
@@ -129,13 +135,12 @@ function buildWorkspaceObjectFilterClauseSchema(depth: number): z.ZodType<Worksp
   ]);
 }
 const WorkspaceObjectFilterClauseSchema = buildWorkspaceObjectFilterClauseSchema(8);
-const WorkspaceObjectAdapterSettingScalarSchema = z.union([
+type WorkspaceObjectAdapterSetting = string | number | boolean | null | WorkspaceObjectAdapterSetting[] | { [key: string]: WorkspaceObjectAdapterSetting };
+const WorkspaceObjectAdapterSettingSchema: z.ZodType<WorkspaceObjectAdapterSetting> = z.lazy(() => z.union([
   z.string().max(64_000), z.number().finite(), z.boolean(), z.null(),
-]);
-const WorkspaceObjectAdapterSettingSchema = z.union([
-  WorkspaceObjectAdapterSettingScalarSchema,
-  z.array(WorkspaceObjectAdapterSettingScalarSchema).max(200),
-]);
+  z.array(WorkspaceObjectAdapterSettingSchema).max(200),
+  z.record(z.string().max(120), WorkspaceObjectAdapterSettingSchema),
+]));
 const WorkspaceObjectViewConfigSchema = z.strictObject({
   schemaVersion: z.literal(1),
   search: z.string().max(500),
@@ -146,18 +151,15 @@ const WorkspaceObjectViewConfigSchema = z.strictObject({
     adapter: z.enum(['table', 'kanban', 'calendar', 'timeline', 'gallery', 'list']),
     settings: z.record(z.string().max(120), WorkspaceObjectAdapterSettingSchema),
   }),
+}).superRefine((config, context) => {
+  const duplicateSort = config.sort.find((sort, index) => config.sort.findIndex(candidate => candidate.fieldId === sort.fieldId) !== index);
+  if (duplicateSort) context.addIssue({ code: 'custom', path: ['sort'], message: `Duplicate sort field: ${duplicateSort.fieldId}` });
 });
-const WorkspaceObjectSavedViewSchema = z.union([z.strictObject({
+const WorkspaceObjectSavedViewSchema = z.strictObject({
   id: z.string().min(1).max(120),
   name: z.string().min(1).max(160),
   config: WorkspaceObjectViewConfigSchema,
-}), z.strictObject({
-  id: z.string().min(1).max(120),
-  name: z.string().min(1).max(160),
-  config: z.record(z.string(), z.unknown()).refine(config => !('schemaVersion' in config), {
-    message: 'Legacy saved views cannot declare schemaVersion',
-  }),
-})]);
+});
 
 const WorkspaceObjectDefinitionSchema = z.strictObject({
   id: z.string().min(1).max(120),
@@ -185,6 +187,12 @@ export const WorkspaceObjectsSchema = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('list-objects'), limit: z.number().int().min(1).max(200).optional() }),
   z.strictObject({ action: z.literal('repair-projection'), objectId: WorkspaceObjectIdSchema }),
   z.strictObject({
+    action: z.literal('list-relation-options'), objectId: WorkspaceObjectIdSchema,
+    after: WorkspaceObjectIdSchema.optional(),
+    limit: z.number().int().min(1).max(200).optional(),
+    includeEntryIds: z.array(WorkspaceObjectIdSchema).max(200).optional(),
+  }),
+  z.strictObject({
     action: z.literal('query-object'), objectId: WorkspaceObjectIdSchema,
     query: z.union([
       z.strictObject({ viewId: WorkspaceObjectIdSchema }),
@@ -197,13 +205,15 @@ export const WorkspaceObjectsSchema = z.discriminatedUnion('action', [
 // remains WorkspaceObjectsSchema; this envelope only describes the union frontier
 // to the native adapter before executeSessionTool() performs action-specific parse.
 const WorkspaceObjectsNativeSchema = z.strictObject({
-  action: z.enum(['define-object', 'upsert-entries', 'delete-entries', 'upsert-view', 'get-object', 'list-objects', 'repair-projection', 'query-object']),
+  action: z.enum(['define-object', 'upsert-entries', 'delete-entries', 'upsert-view', 'get-object', 'list-objects', 'repair-projection', 'query-object', 'list-relation-options']),
   object: WorkspaceObjectDefinitionSchema.optional(),
   objectId: WorkspaceObjectIdSchema.optional(),
   entries: z.array(WorkspaceObjectEntrySchema).min(1).max(200).optional(),
   entryIds: z.array(z.string().min(1).max(120)).min(1).max(200).optional(),
   view: WorkspaceObjectSavedViewSchema.optional(),
   limit: z.number().int().min(1).max(200).optional(),
+  after: WorkspaceObjectIdSchema.optional(),
+  includeEntryIds: z.array(WorkspaceObjectIdSchema).max(200).optional(),
   query: z.union([
     z.strictObject({ viewId: WorkspaceObjectIdSchema }),
     z.strictObject({ config: WorkspaceObjectViewConfigSchema }),
@@ -1086,7 +1096,10 @@ export interface JsonSchemaToolDef {
 export function toJsonSchemaToolDef(def: SessionToolDef, prefix = ''): JsonSchemaToolDef {
   // Explicit `as any` avoids TS2589 ("type instantiation is excessively deep")
   // caused by zodToJsonSchema inferring deep generic chains from union schemas.
-  const inputSchema = zodToJsonSchema(def.inputSchema as any, { $refStrategy: 'none' }) as Record<string, unknown>;
+  // Keep recursive schemas precise for MCP consumers. `none` replaces recursive
+  // branches with `{}`, which silently weakens contracts such as workspace view
+  // presentation settings; `root` emits self-contained local JSON Schema refs.
+  const inputSchema = zodToJsonSchema(def.inputSchema as any, { $refStrategy: 'root' }) as Record<string, unknown>;
   const outputEnvelopeSchema = zodToJsonSchema(def.outputSchema as any, { $refStrategy: 'none' }) as Record<string, unknown>;
   const outputProperties = outputEnvelopeSchema.properties as Record<string, unknown> | undefined;
   const structuredContentSchema = outputProperties?.structuredContent;

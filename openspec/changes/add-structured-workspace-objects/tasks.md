@@ -152,6 +152,32 @@ React Doctor retornou 100/100; `impeccable detect` saiu 0; OpenSpec strict e
 `upsert-entries`/`upsert-view` e preserva o resolver SWR existente. U6, smoke
 Electron/auditoria de Phase B e 7.5 não foram iniciados nem marcados.
 
+Correção consolidada U5 7.1/7.2 (2026-08-01): REDs focados reproduziram nove
+falhas comportamentais e duas exports ausentes, seguidos por regressões
+incrementais para deduplicação do retarget, isolamento por workspace/view,
+lookup dos relation IDs referenciados e migration marker v3. As correções
+persistem `viewId` no target canônico da tab, impedem payload stale durante a
+troca, usam `entry.id` no TanStack Table, migram configs Phase A arbitrárias
+para v1 numa transação e mantêm novos writes estritos. O frontier MCP espelha
+settings recursivos e refinements shared sem converter a recursão em `{}`.
+
+O mesmo round tornou `query-object` serializável com `displayValues` e
+`relationLabels` sem substituir IDs em `entries`, adicionou paginação bounded
+de relações com inclusão das referências atuais, rejeitou strings locais acima
+de 64.000 caracteres antes da mutation e passou a ordenar/filtrar datas pelo
+instante. O GREEN focado final passou 88/88 em 14 arquivos (437 expects),
+incluindo validação AJV do transporte MCP; os typechecks de shared, Electron e
+session-tools passaram. `lint:tool-contracts` confirmou 30 tools native + 2
+MCP-only e `lint:i18n:parity` confirmou 7 locales com 1.781 keys.
+
+O golden de contratos foi regenerado com 32 tools: o delta de +437/-1.937
+linhas decorre de `$refStrategy: root`, que deduplica schemas repetidos em 19
+refs locais; `workspace_objects` preserva todos os nove branches e não contém
+`items: {}`. React Doctor latest 0.9.3 não reportou diagnóstico nos hunks U5
+alterados; o scan global permaneceu em 72/100 com 48 issues fora deste escopo.
+U6, 7.3, 7.4, smoke/auditoria de Phase B e 7.5 continuam não iniciados e não
+foram marcados.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

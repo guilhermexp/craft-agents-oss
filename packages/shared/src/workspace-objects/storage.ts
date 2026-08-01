@@ -14,14 +14,23 @@ import {
   type WorkspaceObjectPayload,
   WorkspaceObjectPayloadSchema,
   type WorkspaceObjectValue,
-  type WorkspaceObjectSavedView,
 } from './types.ts';
-import { WorkspaceObjectSavedViewInputSchema, type WorkspaceObjectSavedViewInput } from './view-schema.ts';
+import {
+  normalizeLegacyWorkspaceObjectSavedView,
+  WorkspaceObjectSavedViewSchema,
+  type WorkspaceObjectSavedView,
+} from './view-schema.ts';
 
 interface VersionRow { version: number }
 interface ObjectRevisionRow { revision: number }
 interface FieldRow { id: string; storage_id: string; type: WorkspaceObjectField['type']; required: number; options_json: string | null; relation_object_id: string | null }
+interface RelationOptionValueRow { entry_id: string; value_text: string | null; value_number: number | null; value_boolean: number | null }
 const MAX_READ_ENTRIES = 200;
+export interface WorkspaceObjectRelationOption { id: string; label: string }
+export interface WorkspaceObjectRelationOptionsPage {
+  options: WorkspaceObjectRelationOption[];
+  nextCursor: string | null;
+}
 
 export class WorkspaceObjectRepository {
   private closed = false;
@@ -50,7 +59,17 @@ export class WorkspaceObjectRepository {
     db.runSql(WORKSPACE_OBJECT_SCHEMA_V1);
     const currentVersion = (db.prepare('SELECT MAX(version) AS version FROM workspace_object_schema_version').get() as VersionRow | undefined)?.version ?? 0;
     if (currentVersion < 2) db.runSql(WORKSPACE_OBJECT_SCHEMA_V2);
-    return new WorkspaceObjectRepository(db, databasePath);
+    const repository = new WorkspaceObjectRepository(db, databasePath);
+    const migratedVersion = (db.prepare('SELECT MAX(version) AS version FROM workspace_object_schema_version').get() as VersionRow | undefined)?.version ?? 0;
+    if (migratedVersion < 3) {
+      try {
+        repository.migrateLegacySavedViews();
+      } catch (error) {
+        repository.close();
+        throw error;
+      }
+    }
+    return repository;
   }
 
   close(): void {
@@ -127,9 +146,9 @@ export class WorkspaceObjectRepository {
     return this.requireObject(objectId);
   }
 
-  upsertSavedView(objectId: string, input: WorkspaceObjectSavedViewInput): WorkspaceObjectPayload {
+  upsertSavedView(objectId: string, input: WorkspaceObjectSavedView): WorkspaceObjectPayload {
     if (!this.objectExists(objectId)) throw new Error(`Unknown object: ${objectId}`);
-    const view = WorkspaceObjectSavedViewInputSchema.parse(input);
+    const view = WorkspaceObjectSavedViewSchema.parse(input);
     this.assertOwnedByObject('workspace_object_saved_views', view.id, objectId);
     const configJson = JSON.stringify(view.config);
     if (Buffer.byteLength(configJson, 'utf8') > 64_000) throw new Error('Saved view config exceeds 64KB');
@@ -168,6 +187,47 @@ export class WorkspaceObjectRepository {
     const bounded = Math.max(1, Math.min(limit, 200));
     const rows = this.db.prepare('SELECT id FROM workspace_objects ORDER BY updated_at DESC LIMIT ?').all(bounded) as Array<{ id: string }>;
     return rows.map(row => this.getObject(row.id)).filter((value): value is WorkspaceObjectPayload => value !== null);
+  }
+
+  listRelationOptions(
+    objectId: string,
+    options: { after?: string; limit?: number; includeEntryIds?: string[] } = {},
+  ): WorkspaceObjectRelationOptionsPage {
+    if (!this.objectExists(objectId)) throw new Error(`Unknown object: ${objectId}`);
+    const limit = Math.max(1, Math.min(options.limit ?? 100, 200));
+    const includeEntryIds = [...new Set(options.includeEntryIds ?? [])].slice(0, 200);
+    const pageRows = this.db.prepare(`SELECT id FROM workspace_object_entries
+      WHERE object_id = ? AND (? IS NULL OR id > ?)
+      ORDER BY id LIMIT ?`).all(objectId, options.after ?? null, options.after ?? null, limit + 1) as Array<{ id: string }>;
+    const hasMore = pageRows.length > limit;
+    const pageIds = pageRows.slice(0, limit).map(row => row.id);
+    const candidateIds = [...new Set([...pageIds, ...includeEntryIds])];
+    if (candidateIds.length === 0) return { options: [], nextCursor: null };
+    const placeholders = candidateIds.map(() => '?').join(', ');
+    const entries = this.db.prepare(`SELECT id FROM workspace_object_entries
+      WHERE object_id = ? AND id IN (${placeholders})`).all(objectId, ...candidateIds) as Array<{ id: string }>;
+    const ownedIds = new Set(entries.map(entry => entry.id));
+    const labelField = this.db.prepare(`SELECT id AS storage_id, type FROM workspace_object_fields
+      WHERE object_id = ? ORDER BY CASE WHEN type = 'text' THEN 0 ELSE 1 END, sort_order, id LIMIT 1`)
+      .get(objectId) as Pick<FieldRow, 'storage_id' | 'type'> | undefined;
+    const labels = new Map<string, string>();
+    if (labelField) {
+      const valueRows = this.db.prepare(`SELECT entry_id, value_text, value_number, value_boolean
+        FROM workspace_object_values WHERE field_id = ? AND entry_id IN (${placeholders})`)
+        .all(labelField.storage_id, ...candidateIds) as RelationOptionValueRow[];
+      for (const row of valueRows) {
+        const value = labelField.type === 'number'
+          ? row.value_number
+          : labelField.type === 'boolean'
+            ? row.value_boolean === null ? null : row.value_boolean === 1
+            : row.value_text;
+        if (value !== null && value !== '') labels.set(row.entry_id, String(value));
+      }
+    }
+    return {
+      options: candidateIds.flatMap(id => ownedIds.has(id) ? [{ id, label: labels.get(id) ?? id }] : []),
+      nextCursor: hasMore ? (pageIds.at(-1) ?? null) : null,
+    };
   }
 
   setProjectionStatus(objectId: string, status: 'ready' | 'projection-error', error?: string): void {
@@ -217,6 +277,35 @@ export class WorkspaceObjectRepository {
     } finally {
       this.transactionDepth -= 1;
     }
+  }
+
+  private migrateLegacySavedViews(): void {
+    const rows = this.db.prepare('SELECT id, object_id, name, config_json FROM workspace_object_saved_views')
+      .all() as Array<{ id: string; object_id: string; name: string; config_json: string }>;
+    const migrations: Array<{ objectId: string; id: string; configJson: string }> = [];
+    for (const row of rows) {
+      let config: unknown;
+      try { config = JSON.parse(row.config_json); } catch { continue; }
+      const strict = WorkspaceObjectSavedViewSchema.safeParse({ id: row.id, name: row.name, config });
+      if (strict.success || !config || typeof config !== 'object' || Array.isArray(config)) continue;
+      const normalized = normalizeLegacyWorkspaceObjectSavedView({
+        id: row.id,
+        name: row.name,
+        config: config as Record<string, unknown>,
+      });
+      migrations.push({ objectId: row.object_id, id: row.id, configJson: JSON.stringify(normalized.config) });
+    }
+    this.transaction(() => {
+      for (const migration of migrations) {
+        this.db.prepare('UPDATE workspace_object_saved_views SET config_json = ? WHERE id = ?')
+          .run(migration.configJson, migration.id);
+      }
+      for (const objectId of new Set(migrations.map(migration => migration.objectId))) {
+        const payload = buildWorkspaceObjectPayload(this.db, objectId);
+        if (payload) storeWorkspaceObjectPayload(this.db, payload);
+      }
+      this.db.prepare('INSERT OR IGNORE INTO workspace_object_schema_version(version) VALUES (3)').run();
+    });
   }
 
   private refreshProjection(objectId: string, revision: number): void {

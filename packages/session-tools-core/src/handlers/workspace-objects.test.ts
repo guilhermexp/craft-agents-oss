@@ -2,6 +2,20 @@ import { describe, expect, test } from 'bun:test';
 import { SESSION_TOOL_REGISTRY, WorkspaceObjectsSchema } from '../tool-defs.ts';
 
 describe('workspace_objects frontier contract', () => {
+  test('matches shared recursive presentation settings and refinements', () => {
+    const nested = {
+      action: 'query-object', objectId: 'object_people', query: { config: {
+        schemaVersion: 1, search: '', filter: null, sort: [], columnVisibility: {},
+        presentation: { adapter: 'table', settings: { board: { lanes: [{ id: 'lead', style: { color: 'blue' } }] } } },
+      } },
+    };
+    expect(WorkspaceObjectsSchema.safeParse(nested).success).toBe(true);
+    expect(WorkspaceObjectsSchema.safeParse({
+      ...nested,
+      query: { config: { ...nested.query.config, sort: [{ fieldId: 'field_name', direction: 'asc' }, { fieldId: 'field_name', direction: 'desc' }] } },
+    }).success).toBe(false);
+  });
+
   test('registers one strict generic v1 tool for native and MCP consumers', () => {
     const def = SESSION_TOOL_REGISTRY.get('workspace_objects');
     expect(def).toMatchObject({ apiVersion: 'v1', exposure: 'native-and-mcp', executionMode: 'registry' });
