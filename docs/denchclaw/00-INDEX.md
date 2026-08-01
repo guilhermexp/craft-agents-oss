@@ -4,8 +4,8 @@
 
 Esta importação foi reconciliada contra
 `DenchHQ/DenchClaw@f14eb4c239002d7b28673c60955b689b9d69db22`. As descrições
-dos sete documentos são evidência do comportamento observado nesse SHA, não um
-contrato normativo do Craft.
+dos seis documentos técnicos abaixo são evidência do comportamento observado
+nesse SHA, não um contrato normativo do Craft.
 
 - **Confirmado no upstream:** EAV/DuckDB, manifests `.object.yaml`, reducer de
   tabs, resolver SWR, renderers especializados, watcher e o data loop descrito
@@ -24,7 +24,8 @@ subordinadas às decisões acima e ao OpenSpec
 `add-structured-workspace-objects`.
 
 > Documentação técnica derivada de análise direta do repositório
-> `github.com/DenchHQ/DenchClaw` (commit HEAD, clonado em 2026-08-01).
+> `github.com/DenchHQ/DenchClaw`
+> (`f14eb4c239002d7b28673c60955b689b9d69db22`, clonado em 2026-08-01).
 >
 > **Escopo desta doc:** descrever como cada feature funciona no DenchClaw
 > com detalhe suficiente para reimplementar, e propor o caminho de
