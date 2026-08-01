@@ -668,17 +668,78 @@ describe('WorkspaceObjectRepository', () => {
     repository.close();
   });
 
+  test('reads getObject revision and canonical rows from one snapshot when a writer commits between payload selects', () => {
+    const root = makeRoot();
+    const repository = WorkspaceObjectRepository.open(root);
+    repository.defineObject({ id: 'object_atomic_read', slug: 'atomic-read', name: 'Atomic read', fields: [] });
+    repository.upsertEntries('object_atomic_read', [{ id: 'entry_before', values: {} }]);
+    repository.markProjectionStaleForTest('object_atomic_read');
+    const database = Reflect.get(repository, 'db') as ReturnType<typeof openSQLite>;
+    database.pragma('busy_timeout = 1');
+    const writer = openSQLite(join(root, 'objects', 'objects.sqlite'));
+    writer.pragma('journal_mode = WAL');
+    writer.runSql('BEGIN IMMEDIATE');
+    writer.prepare('UPDATE workspace_objects SET revision = revision + 1, updated_at = ? WHERE id = ?')
+      .run(Date.now(), 'object_atomic_read');
+    writer.prepare('INSERT INTO workspace_object_entries(id, object_id, created_at, updated_at) VALUES (?, ?, ?, ?)')
+      .run('entry_after', 'object_atomic_read', Date.now() + 1, Date.now() + 1);
+
+    const originalPrepare = database.prepare.bind(database);
+    let writerCommitted = false;
+    database.prepare = sql => {
+      const statement = originalPrepare(sql);
+      if (sql !== 'SELECT id, slug, name, revision FROM workspace_objects WHERE id = ?') return statement;
+      return {
+        get: (...params: unknown[]) => {
+          const row = statement.get(...params);
+          if (!writerCommitted) {
+            writer.runSql('COMMIT');
+            writerCommitted = true;
+          }
+          return row;
+        },
+        all: (...params: unknown[]) => statement.all(...params),
+        run: (...params: unknown[]) => statement.run(...params),
+      };
+    };
+
+    let payload: ReturnType<WorkspaceObjectRepository['getObject']> = null;
+    try {
+      payload = repository.getObject('object_atomic_read');
+    } finally {
+      database.prepare = originalPrepare;
+      if (!writerCommitted) writer.runSql('ROLLBACK');
+      writer.close();
+      repository.close();
+    }
+
+    expect(writerCommitted).toBe(true);
+    expect(payload).toMatchObject({
+      id: 'object_atomic_read',
+      revision: 2,
+      entries: [{ id: 'entry_before' }],
+    });
+  });
+
   test('treats node:sqlite busy during getObject repair as a read-only fallback', () => {
     const repository = WorkspaceObjectRepository.open(makeRoot());
     repository.defineObject({ id: 'object_node_busy', slug: 'node-busy', name: 'Node busy', fields: [] });
     repository.upsertEntries('object_node_busy', [{ id: 'entry_one', values: {} }]);
     repository.markProjectionStaleForTest('object_node_busy');
     const nodeBusy = Object.assign(new Error('database is locked'), { code: 'ERR_SQLITE_ERROR', errcode: 261 });
-    Reflect.set(repository, 'transaction', () => { throw nodeBusy; });
+    const transaction = Reflect.get(repository, 'transaction').bind(repository) as
+      <T>(operation: () => T, mode?: 'read' | 'write') => T;
+    let attempts = 0;
+    Reflect.set(repository, 'transaction', <T>(operation: () => T, mode?: 'read' | 'write') => {
+      attempts += 1;
+      if (attempts === 1) throw nodeBusy;
+      return transaction(operation, mode);
+    });
 
     expect(repository.getObject('object_node_busy')).toMatchObject({
       id: 'object_node_busy', revision: 2, entries: [{ id: 'entry_one' }],
     });
+    expect(attempts).toBeGreaterThanOrEqual(1);
     expect(repository.hasFreshProjectionForTest('object_node_busy')).toBe(false);
     repository.close();
   });

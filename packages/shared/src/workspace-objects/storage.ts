@@ -171,14 +171,13 @@ export class WorkspaceObjectRepository {
 
   getObject(objectId: string, entryLimit = MAX_READ_ENTRIES): WorkspaceObjectPayload | null {
     const boundedEntryLimit = Math.max(1, Math.min(entryLimit, MAX_READ_ENTRIES));
-    const revision = this.db.prepare('SELECT revision FROM workspace_objects WHERE id = ?').get(objectId) as ObjectRevisionRow | undefined;
-    if (!revision) return null;
-    const projected = this.readFreshProjection(objectId, revision.revision);
-    if (projected) return { ...projected, entries: projected.entries.slice(0, boundedEntryLimit) };
-    if (this.transactionDepth === 0) this.ensureFreshProjection(objectId);
-    const rebuilt = this.readFreshProjection(objectId, revision.revision)
-      ?? buildWorkspaceObjectPayload(this.db, objectId);
-    return rebuilt ? { ...rebuilt, entries: rebuilt.entries.slice(0, boundedEntryLimit) } : null;
+    const readBoundedSnapshot = (): WorkspaceObjectPayload | null => {
+      const payload = this.readObjectSnapshot(objectId);
+      return payload ? { ...payload, entries: payload.entries.slice(0, boundedEntryLimit) } : null;
+    };
+    if (this.transactionDepth > 0) return readBoundedSnapshot();
+    this.ensureFreshProjection(objectId);
+    return this.withReadSnapshot(readBoundedSnapshot);
   }
 
   ensureFreshProjection(objectId: string): boolean {

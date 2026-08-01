@@ -531,6 +531,20 @@ i18n (1.804 keys por locale), ordem i18n via CI, tool contracts, OpenSpec strict
 e `git diff --check` ficaram verdes. O falso positivo de reconcile pages não
 foi alterado. 7.5 permanece desmarcado.
 
+Re-review corretivo 6.1 de Phase B (2026-08-01): o RED confirmou a janela
+residual de `getObject`: um writer commitado entre os SELECTs produzia payload
+híbrido com revision 2 e entries da revision 3. O GREEN mantém o repair de
+projection como best-effort fora de transaction e depois relê revision,
+projection e fallback canônico em um único snapshot read-only; dentro de
+transaction existente, reutiliza diretamente o snapshot corrente. O teste de
+contenção `node:sqlite` agora falha apenas a tentativa de writer repair e deixa
+a leitura posterior provar o fallback read-only real. Design e spec registram
+essa fronteira e explicitam que relation-option pages self-referentes são
+auxiliares ao payload primário. Os focos passaram 5/5 (11 expects); a regressão
+do domínio e sidebar passou 73/73 (226 expects), e `typecheck:all`, paridade e
+ordem i18n, tool contracts, OpenSpec strict e `git diff --check` ficaram verdes.
+7.5 permanece desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

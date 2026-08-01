@@ -161,8 +161,12 @@ de projeção stale SHALL ser tentado antes do snapshot de leitura; se o writer
 lock estiver ocupado, a query MUST continuar com fallback read-only. O retorno
 MUST limitar relation labels aos IDs referenciados pelas entries devolvidas.
 `get-object` SHALL reutilizar o mesmo repair best-effort quando estiver fora de
-uma transaction; dentro de snapshot read, ou diante de contenção, MUST
-reconstruir das rows sem escrever a projection.
+uma transaction e MUST reler revision, projection e fallback de rows dentro de
+um único snapshot read-only após essa tentativa. Dentro de transaction
+existente, MUST usar diretamente o snapshot atual; diante de contenção, MUST
+reconstruir das rows sem escrever a projection. O payload retornado MUST
+pertencer integralmente a uma única revision, sem combinar cabeçalho antigo e
+rows de commit posterior.
 Contenção MUST reconhecer códigos Bun `SQLITE_BUSY`/`SQLITE_LOCKED` e primary
 `errcode` 5/6 de `node:sqlite`; erros SQLite não relacionados MUST propagar.
 A escolha do label relation MUST ter `query.ts` como autoridade única (primeiro
@@ -311,6 +315,13 @@ dentro do bloco workspaceObject.
 - **GIVEN** uma projection stale e um writer concorrente, ou um snapshot read já aberto
 - **WHEN** `get-object` tenta reparar a projection
 - **THEN** contenção Bun/node:sqlite vira miss best-effort e o retorno reconstrói rows sem escrever no snapshot
+- **Test:** `integration`
+
+#### Scenario: get-object não produz payload híbrido entre SELECTs
+
+- **GIVEN** uma projection stale e um writer que confirma N+1 depois da leitura do cabeçalho N
+- **WHEN** `get-object` reconstrói o payload canônico
+- **THEN** revision, projection e rows vêm do mesmo snapshot N ou N+1, nunca de revisões misturadas
 - **Test:** `integration`
 
 #### Scenario: Self-relation preserva a revisão primária

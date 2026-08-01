@@ -109,7 +109,9 @@ projection status. Server-core entrega apenas a clientes inscritos no mesmo
 workspace. O renderer deduplica por workspace/object/revision/status.
 Páginas de relation options inicializam somente a revision que realmente
 carregam; elas preservam um projection status já observado nessa mesma revision
-em vez de sintetizar `ready` a cada refresh.
+em vez de sintetizar `ready` a cada refresh. Em self-relations, essas páginas
+são dados auxiliares: revision e projection status do payload primário continuam
+autoritativos e não podem ser substituídos pelo envelope de options.
 
 O watcher de manifests possui uma instância por workspace e refcount de
 clientes. Ele ignora SQLite, WAL/SHM, temporários de atomic write e diretórios
@@ -163,6 +165,11 @@ antecipado. O envelope serializa somente relation labels referenciados nessas
 rows retornadas. Projeção stale tenta ser reparada antes de abrir o snapshot;
 se o writer lock estiver ocupado ou surgir nova divergência concorrente, o
 fallback reconstrói das rows sem escrever dentro da transação de leitura. A
+mesma fronteira vale para `getObject`: fora de transaction, o repair é
+best-effort e todo o retorno final relê revision, projection e fallback de rows
+em um único snapshot read-only; dentro de transaction existente, a leitura usa
+diretamente esse snapshot, sem promover para writer. Assim, um commit entre os
+SELECTs do payload não combina revision antiga com rows novas. A
 classificação de contenção cobre códigos string `SQLITE_BUSY`/`SQLITE_LOCKED`
 do Bun e o `errcode` numérico de `node:sqlite` cujo primary code é 5 ou 6;
 outros erros SQLite continuam sendo propagados.
