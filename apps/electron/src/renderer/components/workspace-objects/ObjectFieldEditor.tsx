@@ -205,6 +205,7 @@ export interface ObjectFieldEditorProps {
   hasMoreRelationOptions?: boolean
   loadingRelationOptions?: boolean
   onLoadMoreRelationOptions?: () => void
+  initialEditState?: ObjectFieldEditState
   mutate: MutateWorkspaceObject
 }
 
@@ -220,11 +221,12 @@ export function ObjectFieldEditor({
   hasMoreRelationOptions = false,
   loadingRelationOptions = false,
   onLoadMoreRelationOptions,
+  initialEditState = { status: 'idle' },
   mutate,
 }: ObjectFieldEditorProps) {
   const { t } = useTranslation()
   const formatError = React.useCallback<ObjectFieldErrorFormatter>((key, values) => t(key, values), [t])
-  const [state, setState] = React.useState<ObjectFieldEditState>({ status: 'idle' })
+  const [state, setState] = React.useState<ObjectFieldEditState>(initialEditState)
   const validRelationIds = React.useMemo(() => new Set(relationOptions.map(option => option.id)), [relationOptions])
   const latestCanonicalRef = React.useRef({ payloadRevision, value })
   const editing = state.status !== 'idle'

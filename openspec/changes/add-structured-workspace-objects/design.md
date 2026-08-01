@@ -181,7 +181,9 @@ Falhas ao carregar relation options cruzam reducer/render por códigos estáveis
 `invalid-response`, `stale-snapshot`, `changed-while-loading` e `transport`.
 O renderer traduz o código como mensagem principal; somente transporte pode
 preservar detalhe técnico opcional, exibido separadamente e nunca promovido a
-headline crua em inglês.
+headline crua em inglês. O estado usa uma união discriminada que exclui
+`detail` das três variantes não-transport, e o JSX repete esse guard antes de
+renderizar o texto secundário.
 
 Os seis adapters consomem um payload comum. Kanban conserva a mutação original
 durante optimistic update e reverte tanto em resposta rejeitada quanto em

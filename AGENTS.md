@@ -168,6 +168,8 @@ The Phase A local-first object contract is tracked by
   Relation option failures use stable codes (`invalid-response`,
   `stale-snapshot`, `changed-while-loading`, `transport`); render translated
   primary copy and expose only optional transport detail as secondary text.
+  Model this as a discriminated union: non-transport variants must not carry a
+  `detail` property, and the renderer must guard detail on `code === 'transport'`.
 - U6 adapters consume only the `WorkspaceObjectQueryResult` produced by the U5
   evaluator and retain stable entry IDs/current relation labels. The adapter
   registry owns no storage and incomplete settings render a configurable empty

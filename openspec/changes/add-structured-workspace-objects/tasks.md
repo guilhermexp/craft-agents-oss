@@ -409,6 +409,17 @@ suíte do domínio passou 56/56 em cinco arquivos (153 expects), e
 `typecheck:all`, paridade i18n, tool contracts, OpenSpec strict e
 `git diff --check` ficaram verdes. 7.5 permanece desmarcado.
 
+Re-review corretivo 4.1 de Phase B (2026-08-01): os REDs provaram que `detail`
+era aceito e renderizado também para `invalid-response`, `stale-snapshot` e
+`changed-while-loading`, e que o teste da key busy não exercitava o JSX real.
+O GREEN usa união discriminada com detalhe exclusivo de `transport`, repete o
+guard no renderer, cobre os quatro headlines em tabela e renderiza o
+`ObjectFieldEditor` real em estado busy para provar `workspaceObjectSavingField`.
+Os testes focados passaram 2/2 (18 expects), a regressão Electron afetada passou
+27/27 em dois arquivos (97 expects), e `typecheck:all`, paridade i18n, tool
+contracts, OpenSpec strict e `git diff --check` ficaram verdes. 7.5 permanece
+desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

@@ -48,14 +48,13 @@ export interface RelationOptionViewState {
   pages: Record<string, RelationOptionPage>
   error: RelationOptionViewError | null
 }
-export interface RelationOptionViewError {
-  relationObjectId: string
-  code: RelationOptionErrorCode
-  detail?: string
-}
+type RelationOptionFailure =
+  | { code: Exclude<RelationOptionErrorCode, 'transport'>; detail?: never }
+  | { code: 'transport'; detail?: string }
+export type RelationOptionViewError = RelationOptionFailure & { relationObjectId: string }
 export type RelationOptionLoadResult =
   | { status: 'success'; page: RelationOptionPage }
-  | { status: 'error'; code: RelationOptionErrorCode; detail?: string }
+  | ({ status: 'error' } & RelationOptionFailure)
 const EMPTY_RELATION_OPTION_PAGES: Record<string, RelationOptionPage> = {}
 const OBJECT_VIEW_ADAPTER_LABEL_KEYS: Record<ObjectViewAdapterId, string> = {
   table: 'chat.workspaceObjectAdapterTable',
@@ -99,7 +98,11 @@ export async function requestRelationOptionPage(
       page: { options: result.relationOptions, nextCursor: result.nextCursor, revision: result.revision },
     }
   } catch (error) {
-    if (error instanceof RelationOptionLoadError) return { status: 'error', code: error.code }
+    if (error instanceof RelationOptionLoadError) {
+      return error.code === 'transport'
+        ? { status: 'error', code: 'transport' }
+        : { status: 'error', code: error.code }
+    }
     return { status: 'error', code: 'transport', detail: error instanceof Error ? error.message : String(error) }
   }
 }
@@ -111,9 +114,16 @@ export function applyRelationOptionLoadResult(
   mode: 'append' | 'replace' = 'append',
 ): RelationOptionViewState {
   if (result.status === 'error') {
+    const error: RelationOptionViewError = result.code === 'transport'
+      ? {
+          relationObjectId,
+          code: 'transport',
+          ...(result.detail === undefined ? {} : { detail: result.detail }),
+        }
+      : { relationObjectId, code: result.code }
     return {
       ...state,
-      error: { relationObjectId, code: result.code, ...(result.detail === undefined ? {} : { detail: result.detail }) },
+      error,
     }
   }
   if (mode === 'replace') {
@@ -158,7 +168,7 @@ export function ObjectRelationOptionErrorAlert({
     <div className="flex items-center justify-between gap-2 rounded border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive" role="alert">
       <div>
         <div>{t(RELATION_OPTION_ERROR_KEYS[error.code])}</div>
-        {error.detail ? (
+        {error.code === 'transport' && error.detail ? (
           <div data-object-relation-error-detail="true" className="mt-1 break-words text-[11px] opacity-80">
             {error.detail}
           </div>

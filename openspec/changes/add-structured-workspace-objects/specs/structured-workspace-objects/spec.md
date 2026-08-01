@@ -163,7 +163,8 @@ fields e candidate IDs em batches bounded no mesmo snapshot, sem N+1.
 Erros de relation options MUST usar códigos estáveis para resposta inválida,
 snapshot stale, mudança durante load e transporte. O renderer MUST traduzir o
 código como texto principal e MAY exibir detalhe técnico de transporte apenas
-como texto secundário. Field editor busy MUST usar key dedicada em todos os
+como texto secundário. As variantes não-transport MUST excluir `detail` do tipo
+e o renderer MUST condicionar detalhe a `code === 'transport'`. Field editor busy MUST usar key dedicada em todos os
 locales, distinta da key de salvar view.
 
 #### Scenario: Saved view é restaurada
@@ -211,6 +212,12 @@ locales, distinta da key de salvar view.
 
 - **WHEN** load recebe resposta inválida, snapshot stale, mudança concorrente ou erro de transporte
 - **THEN** o estado usa código estável, o alert mostra tradução local e somente o transporte mantém detalhe técnico secundário opcional
+- **Test:** `unit`
+
+#### Scenario: Detalhe relation pertence somente ao transporte
+
+- **WHEN** o alert recebe qualquer um dos quatro códigos estáveis
+- **THEN** cada código resolve seu headline traduzido, somente `transport` aceita/renderiza detalhe e as demais variantes ignoram dado técnico residual
 - **Test:** `unit`
 
 #### Scenario: Field edit permanece busy

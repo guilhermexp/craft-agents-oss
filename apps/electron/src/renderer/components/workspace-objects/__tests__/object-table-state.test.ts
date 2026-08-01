@@ -6,13 +6,13 @@ import { I18nextProvider } from 'react-i18next'
 import type { WorkspaceObjectField, WorkspaceObjectPayload } from '@craft-agent/shared/workspace-objects/types'
 import { DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW } from '@craft-agent/shared/workspace-objects/view-schema'
 import {
+  ObjectFieldEditor,
   parseObjectFieldDraft,
   resolveObjectFieldDisplayValue,
   submitObjectFieldEdit,
   reconcileObjectFieldEdit,
   type ObjectFieldEditState,
 } from '../ObjectFieldEditor'
-import * as objectFieldEditorModule from '../ObjectFieldEditor'
 import * as objectTableModule from '../ObjectTableView'
 import {
   ObjectTableView,
@@ -26,6 +26,8 @@ import {
   resolveTablePresentation,
   restoreSavedTableView,
   shouldPersistSavedViewTarget,
+  type RelationOptionLoadResult,
+  type RelationOptionViewError,
 } from '../ObjectTableView'
 
 const fields = {
@@ -71,9 +73,29 @@ describe('typed object field parsing', () => {
 })
 
 describe('object field commit state', () => {
-  test('uses a dedicated saving-field translation key while the edit is busy', () => {
-    expect(Reflect.get(objectFieldEditorModule, 'OBJECT_FIELD_SAVING_TRANSLATION_KEY'))
-      .toBe('chat.workspaceObjectSavingField')
+  test('renders the dedicated saving-field translation from the real busy editor', async () => {
+    const i18n = createInstance()
+    await i18n.init({
+      lng: 'en',
+      resources: { en: { translation: {
+        'chat.workspaceObjectSavingField': 'Saving field...',
+        'chat.workspaceObjectSavingView': 'Saving view...',
+        'common.cancel': 'Cancel',
+      } } },
+    })
+    const markup = renderToStaticMarkup(React.createElement(I18nextProvider, { i18n }, React.createElement(ObjectFieldEditor, {
+      objectId: 'object_people',
+      entryId: 'entry_ada',
+      field: fields.text,
+      value: 'Ada',
+      currentValues: { field_text: 'Ada' },
+      payloadRevision: 3,
+      initialEditState: { status: 'submitting', draft: 'Ada', error: null },
+      mutate: async () => ({ objectId: 'object_people', revision: 4, projectionStatus: 'ready' as const }),
+    })))
+
+    expect(markup).toContain('Saving field...')
+    expect(markup).not.toContain('Saving view...')
   })
 
   test('invalid input keeps editing open and does not call the mutation transport', async () => {
@@ -296,6 +318,10 @@ describe('saved table view state', () => {
   })
 
   test('uses stable relation error codes and localized primary copy', async () => {
+    // @ts-expect-error Non-transport relation failures must not expose technical detail.
+    const invalidWithDetail: RelationOptionLoadResult = { status: 'error', code: 'invalid-response', detail: 'internal' }
+    void invalidWithDetail
+
     await expect(requestRelationOptionPage({
       action: 'list-relation-options', objectId: 'object_companies', limit: 200,
     }, async () => ({ payload: null }))).resolves.toEqual({ status: 'error', code: 'invalid-response' })
@@ -316,24 +342,44 @@ describe('saved table view state', () => {
       lng: 'pt-BR',
       resources: { 'pt-BR': { translation: {
         'chat.workspaceObjectRelationInvalidResponse': 'Resposta de relação inválida.',
+        'chat.workspaceObjectRelationStaleSnapshot': 'Snapshot de relação desatualizado.',
+        'chat.workspaceObjectRelationChangedWhileLoading': 'Relações mudaram durante o carregamento.',
         'chat.workspaceObjectRelationTransportError': 'Não foi possível carregar as relações.',
         'chat.workspaceObjectPreviewRetry': 'Tentar novamente',
       } } },
     })
-    const invalidMarkup = renderToStaticMarkup(React.createElement(I18nextProvider, { i18n }, React.createElement(Alert, {
-      error: { relationObjectId: 'object_companies', code: 'invalid-response' },
-      onRetry: () => {},
-    })))
-    expect(invalidMarkup).toContain('Resposta de relação inválida.')
-    expect(invalidMarkup).not.toContain('Invalid relation options response')
-
-    const transportMarkup = renderToStaticMarkup(React.createElement(I18nextProvider, { i18n }, React.createElement(Alert, {
-      error: { relationObjectId: 'object_companies', code: 'transport', detail: 'ECONNRESET' },
-      onRetry: () => {},
-    })))
-    expect(transportMarkup).toContain('Não foi possível carregar as relações.')
-    expect(transportMarkup).toContain('data-object-relation-error-detail="true"')
-    expect(transportMarkup).toContain('ECONNRESET')
+    const cases: Array<{ error: RelationOptionViewError; headline: string; rendersDetail: boolean }> = [
+      {
+        error: { relationObjectId: 'object_companies', code: 'invalid-response', detail: 'INVALID_INTERNAL' } as unknown as RelationOptionViewError,
+        headline: 'Resposta de relação inválida.',
+        rendersDetail: false,
+      },
+      {
+        error: { relationObjectId: 'object_companies', code: 'stale-snapshot', detail: 'STALE_INTERNAL' } as unknown as RelationOptionViewError,
+        headline: 'Snapshot de relação desatualizado.',
+        rendersDetail: false,
+      },
+      {
+        error: { relationObjectId: 'object_companies', code: 'changed-while-loading', detail: 'CHANGED_INTERNAL' } as unknown as RelationOptionViewError,
+        headline: 'Relações mudaram durante o carregamento.',
+        rendersDetail: false,
+      },
+      {
+        error: { relationObjectId: 'object_companies', code: 'transport', detail: 'ECONNRESET' },
+        headline: 'Não foi possível carregar as relações.',
+        rendersDetail: true,
+      },
+    ]
+    for (const testCase of cases) {
+      const markup = renderToStaticMarkup(React.createElement(I18nextProvider, { i18n }, React.createElement(Alert, {
+        error: testCase.error,
+        onRetry: () => {},
+      })))
+      expect(markup).toContain(testCase.headline)
+      expect(markup.includes('data-object-relation-error-detail="true"')).toBe(testCase.rendersDetail)
+      if (testCase.rendersDetail) expect(markup).toContain('ECONNRESET')
+      else expect(markup).not.toContain('INTERNAL')
+    }
   })
 
   test('recovers every currently referenced relation id in bounded coherent batches', async () => {
