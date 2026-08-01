@@ -159,7 +159,11 @@ The Phase A local-first object contract is tracked by
 - Table edits submit the full current entry through the existing
   `upsert-entries` action. Invalid drafts never call the mutation. A returned
   revision means the canonical commit exists, but the editor closes only after
-  the SWR payload reaches that revision and confirms the canonical value.
+  the SWR payload reaches that revision and confirms the canonical value. Busy
+  field edits use `chat.workspaceObjectSavingField`, not the saved-view label.
+  Relation option failures use stable codes (`invalid-response`,
+  `stale-snapshot`, `changed-while-loading`, `transport`); render translated
+  primary copy and expose only optional transport detail as secondary text.
 - U6 adapters consume only the `WorkspaceObjectQueryResult` produced by the U5
   evaluator and retain stable entry IDs/current relation labels. The adapter
   registry owns no storage and incomplete settings render a configurable empty

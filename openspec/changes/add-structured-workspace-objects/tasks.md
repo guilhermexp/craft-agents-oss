@@ -377,6 +377,17 @@ novo `projection-error` a substitui. A matriz de objetos passou 97/97 em nove
 arquivos (332 expects), com `typecheck:all`, OpenSpec strict e
 `git diff --check` verdes. 7.5 permanece desmarcado.
 
+Lote corretivo 4 de Phase B (2026-08-01): três REDs focados observaram mensagem
+English crua como contrato de relation load, ausência da key dedicada de field
+saving nos locales e a forma polonesa incorreta `zapisanego wartości`. O GREEN
+introduz quatro códigos estáveis com headline traduzida e detalhe técnico de
+transporte secundário opcional, usa `workspaceObjectSavingField` no editor e
+corrige para `zapisanej wartości`. A matriz afetada passou 114/114 em dez
+arquivos (380 expects), os testes focados de locale passaram 23/23 (39 expects)
+e a paridade oficial passou com sete locales não-English e 1.803 keys cada;
+`typecheck:all`, tool contracts, OpenSpec strict e `git diff --check` ficaram
+verdes. 7.5 permanece desmarcado.
+
 Lote corretivo 3 de Phase B (2026-08-01): três REDs focados observaram helper
 de label compartilhado ausente, config legacy Unicode/escaped normalizado com
 128.137 bytes e retarget entre scopes mantendo dois previews descartáveis no

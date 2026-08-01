@@ -157,6 +157,11 @@ Contenção MUST reconhecer códigos Bun `SQLITE_BUSY`/`SQLITE_LOCKED` e primary
 A escolha do label relation MUST ter `query.ts` como autoridade única (primeiro
 text na ordem canônica, senão primeiro field), enquanto o storage MUST resolver
 fields e candidate IDs em batches bounded no mesmo snapshot, sem N+1.
+Erros de relation options MUST usar códigos estáveis para resposta inválida,
+snapshot stale, mudança durante load e transporte. O renderer MUST traduzir o
+código como texto principal e MAY exibir detalhe técnico de transporte apenas
+como texto secundário. Field editor busy MUST usar key dedicada em todos os
+locales, distinta da key de salvar view.
 
 #### Scenario: Saved view é restaurada
 
@@ -183,6 +188,18 @@ fields e candidate IDs em batches bounded no mesmo snapshot, sem N+1.
 - **GIVEN** até 200 fields ordenados e candidate IDs bounded
 - **WHEN** relation options são lidas no snapshot
 - **THEN** storage usa o selector de `query.ts` e resolve valores em batch sem N+1 ou scan global
+- **Test:** `unit`
+
+#### Scenario: Relation options falham sem headline interna
+
+- **WHEN** load recebe resposta inválida, snapshot stale, mudança concorrente ou erro de transporte
+- **THEN** o estado usa código estável, o alert mostra tradução local e somente o transporte mantém detalhe técnico secundário opcional
+- **Test:** `unit`
+
+#### Scenario: Field edit permanece busy
+
+- **WHEN** uma edição de field aguarda commit
+- **THEN** o botão usa `workspaceObjectSavingField` nos locales suportados e não reutiliza `workspaceObjectSavingView`
 - **Test:** `unit`
 
 #### Scenario: Relation filtra por ID estável e label

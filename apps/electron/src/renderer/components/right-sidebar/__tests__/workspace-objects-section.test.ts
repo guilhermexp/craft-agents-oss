@@ -157,7 +157,7 @@ describe('workspace object preview target identity', () => {
       relationOptions: request.includeEntryIds ? [{ id: 'entry_001', label: 'One' }] : [],
       nextCursor: request.includeEntryIds ? null : 'normal_cursor',
       revision: requestIndex++ === 0 ? 7 : 8,
-    }))).rejects.toThrow('changed during lookup');
+    }))).rejects.toMatchObject({ code: 'changed-while-loading' });
   });
 
   test('never renders data from the previous object and keys saved views independently', () => {

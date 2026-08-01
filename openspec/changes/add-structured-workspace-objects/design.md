@@ -170,7 +170,14 @@ A table não confirma de forma otimista. O RPC `upsert-entries` precisa retornar
 a revisão commitada e o editor permanece em `awaiting-revalidation` até o SWR
 observar revisão igual ou superior com o valor esperado. Validação local,
 resposta sem envelope de commit e exceção de transporte preservam o draft e não
-produzem estado visual de sucesso.
+produzem estado visual de sucesso. O estado busy do field editor usa uma key
+própria em todos os locales, distinta de salvar view.
+
+Falhas ao carregar relation options cruzam reducer/render por códigos estáveis:
+`invalid-response`, `stale-snapshot`, `changed-while-loading` e `transport`.
+O renderer traduz o código como mensagem principal; somente transporte pode
+preservar detalhe técnico opcional, exibido separadamente e nunca promovido a
+headline crua em inglês.
 
 Os seis adapters consomem um payload comum. Kanban conserva a mutação original
 durante optimistic update e reverte tanto em resposta rejeitada quanto em

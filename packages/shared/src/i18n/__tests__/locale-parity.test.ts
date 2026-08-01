@@ -45,6 +45,18 @@ function pluralBase(key: string): string {
 // ---------------------------------------------------------------------------
 
 describe("i18n locale parity", () => {
+  it("every locale defines the dedicated workspace-object saving-field label", () => {
+    for (const [lang, translations] of Object.entries(locales)) {
+      expect(translations["chat.workspaceObjectSavingField"], lang).toBeString();
+      expect(translations["chat.workspaceObjectSavingField"], lang).not.toBe("");
+    }
+  });
+
+  it("uses the feminine Polish form for the saved value", () => {
+    expect(locales.pl?.["chat.workspaceObjectEditNotConfirmed"]).toContain("zapisanej wartości");
+    expect(locales.pl?.["chat.workspaceObjectEditNotConfirmed"]).not.toContain("zapisanego wartości");
+  });
+
   // Key parity — run for each non-EN locale
   for (const [lang, translations] of otherLangs) {
     const langKeys = Object.keys(translations);

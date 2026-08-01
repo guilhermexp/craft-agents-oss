@@ -12,6 +12,8 @@ import {
   reconcileObjectFieldEdit,
   type ObjectFieldEditState,
 } from '../ObjectFieldEditor'
+import * as objectFieldEditorModule from '../ObjectFieldEditor'
+import * as objectTableModule from '../ObjectTableView'
 import {
   ObjectTableView,
   applyRelationOptionLoadResult,
@@ -69,6 +71,11 @@ describe('typed object field parsing', () => {
 })
 
 describe('object field commit state', () => {
+  test('uses a dedicated saving-field translation key while the edit is busy', () => {
+    expect(Reflect.get(objectFieldEditorModule, 'OBJECT_FIELD_SAVING_TRANSLATION_KEY'))
+      .toBe('chat.workspaceObjectSavingField')
+  })
+
   test('invalid input keeps editing open and does not call the mutation transport', async () => {
     const mutate = mock(async () => ({ objectId: 'object_people', revision: 3, projectionStatus: 'ready' as const }))
     const result = await submitObjectFieldEdit({
@@ -272,7 +279,7 @@ describe('saved table view state', () => {
       { status: 'success', page: staleLoadMore },
     )).toEqual({
       pages: { object_companies: canonical },
-      error: { relationObjectId: 'object_companies', message: 'Relation options changed while loading more' },
+      error: { relationObjectId: 'object_companies', code: 'changed-while-loading' },
     })
   })
 
@@ -285,7 +292,48 @@ describe('saved table view state', () => {
     }
     await expect(requestRelationOptionPage(request, async () => {
       throw new Error('transport offline')
-    })).resolves.toEqual({ status: 'error', message: 'transport offline' })
+    })).resolves.toEqual({ status: 'error', code: 'transport', detail: 'transport offline' })
+  })
+
+  test('uses stable relation error codes and localized primary copy', async () => {
+    await expect(requestRelationOptionPage({
+      action: 'list-relation-options', objectId: 'object_companies', limit: 200,
+    }, async () => ({ payload: null }))).resolves.toEqual({ status: 'error', code: 'invalid-response' })
+
+    const current = { options: [], nextCursor: null, revision: 5 }
+    expect(applyRelationOptionLoadResult({ pages: { object_companies: current }, error: null }, 'object_companies', {
+      status: 'success', page: { options: [], nextCursor: null, revision: 4 },
+    }, 'replace').error).toEqual({ relationObjectId: 'object_companies', code: 'stale-snapshot' })
+    expect(applyRelationOptionLoadResult({ pages: { object_companies: current }, error: null }, 'object_companies', {
+      status: 'success', page: { options: [], nextCursor: null, revision: 4 },
+    }).error).toEqual({ relationObjectId: 'object_companies', code: 'changed-while-loading' })
+
+    const Alert = Reflect.get(objectTableModule, 'ObjectRelationOptionErrorAlert')
+    expect(Alert).toBeFunction()
+    if (typeof Alert !== 'function') return
+    const i18n = createInstance()
+    await i18n.init({
+      lng: 'pt-BR',
+      resources: { 'pt-BR': { translation: {
+        'chat.workspaceObjectRelationInvalidResponse': 'Resposta de relação inválida.',
+        'chat.workspaceObjectRelationTransportError': 'Não foi possível carregar as relações.',
+        'chat.workspaceObjectPreviewRetry': 'Tentar novamente',
+      } } },
+    })
+    const invalidMarkup = renderToStaticMarkup(React.createElement(I18nextProvider, { i18n }, React.createElement(Alert, {
+      error: { relationObjectId: 'object_companies', code: 'invalid-response' },
+      onRetry: () => {},
+    })))
+    expect(invalidMarkup).toContain('Resposta de relação inválida.')
+    expect(invalidMarkup).not.toContain('Invalid relation options response')
+
+    const transportMarkup = renderToStaticMarkup(React.createElement(I18nextProvider, { i18n }, React.createElement(Alert, {
+      error: { relationObjectId: 'object_companies', code: 'transport', detail: 'ECONNRESET' },
+      onRetry: () => {},
+    })))
+    expect(transportMarkup).toContain('Não foi possível carregar as relações.')
+    expect(transportMarkup).toContain('data-object-relation-error-detail="true"')
+    expect(transportMarkup).toContain('ECONNRESET')
   })
 
   test('recovers every currently referenced relation id in bounded coherent batches', async () => {
@@ -326,7 +374,7 @@ describe('saved table view state', () => {
         revision: requestIndex++ === 0 ? 8 : 9,
       }
     }, ['entry_400'])
-    expect(mismatch).toEqual({ status: 'error', message: 'Relation options changed during lookup: object_companies' })
+    expect(mismatch).toEqual({ status: 'error', code: 'changed-while-loading' })
 
     const recoveredPage = {
       options: [
@@ -344,7 +392,7 @@ describe('saved table view state', () => {
           revision: 8,
         },
       },
-      error: { relationObjectId: 'object_companies', message: 'changed' },
+      error: { relationObjectId: 'object_companies', code: 'transport', detail: 'changed' },
     }, 'object_companies', { status: 'success', page: recoveredPage }, 'replace')
 
     expect(recovered).toEqual({ pages: { object_companies: recoveredPage }, error: null })
@@ -372,7 +420,7 @@ describe('saved table view state', () => {
       },
     }, 'replace')).toEqual({
       pages: { object_companies: revision9 },
-      error: { relationObjectId: 'object_companies', message: 'A newer relation snapshot is already loaded' },
+      error: { relationObjectId: 'object_companies', code: 'stale-snapshot' },
     })
 
     const equalRevision = {

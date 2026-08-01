@@ -31,7 +31,12 @@ import {
   withObjectViewAdapter,
   type ObjectViewAdapterId,
 } from './ObjectViewHost'
-import { collectReferencedRelationEntryIds, loadReferencedRelationOptions } from './relation-options'
+import {
+  collectReferencedRelationEntryIds,
+  loadReferencedRelationOptions,
+  RelationOptionLoadError,
+  type RelationOptionErrorCode,
+} from './relation-options'
 
 type MutateWorkspaceObject = (action: WorkspaceObjectAction) => Promise<WorkspaceObjectServiceResult>
 export interface RelationOptionPage {
@@ -41,11 +46,16 @@ export interface RelationOptionPage {
 }
 export interface RelationOptionViewState {
   pages: Record<string, RelationOptionPage>
-  error: { relationObjectId: string; message: string } | null
+  error: RelationOptionViewError | null
+}
+export interface RelationOptionViewError {
+  relationObjectId: string
+  code: RelationOptionErrorCode
+  detail?: string
 }
 export type RelationOptionLoadResult =
   | { status: 'success'; page: RelationOptionPage }
-  | { status: 'error'; message: string }
+  | { status: 'error'; code: RelationOptionErrorCode; detail?: string }
 const EMPTY_RELATION_OPTION_PAGES: Record<string, RelationOptionPage> = {}
 const OBJECT_VIEW_ADAPTER_LABEL_KEYS: Record<ObjectViewAdapterId, string> = {
   table: 'chat.workspaceObjectAdapterTable',
@@ -83,13 +93,14 @@ export async function requestRelationOptionPage(
       }
     }
     const result = await mutate(action)
-    if (!('relationOptions' in result)) return { status: 'error', message: 'Invalid relation options response' }
+    if (!('relationOptions' in result)) return { status: 'error', code: 'invalid-response' }
     return {
       status: 'success',
       page: { options: result.relationOptions, nextCursor: result.nextCursor, revision: result.revision },
     }
   } catch (error) {
-    return { status: 'error', message: error instanceof Error ? error.message : String(error) }
+    if (error instanceof RelationOptionLoadError) return { status: 'error', code: error.code }
+    return { status: 'error', code: 'transport', detail: error instanceof Error ? error.message : String(error) }
   }
 }
 
@@ -100,14 +111,17 @@ export function applyRelationOptionLoadResult(
   mode: 'append' | 'replace' = 'append',
 ): RelationOptionViewState {
   if (result.status === 'error') {
-    return { ...state, error: { relationObjectId, message: result.message } }
+    return {
+      ...state,
+      error: { relationObjectId, code: result.code, ...(result.detail === undefined ? {} : { detail: result.detail }) },
+    }
   }
   if (mode === 'replace') {
     const current = state.pages[relationObjectId]
     if (current && result.page.revision < current.revision) {
       return {
         ...state,
-        error: { relationObjectId, message: 'A newer relation snapshot is already loaded' },
+        error: { relationObjectId, code: 'stale-snapshot' },
       }
     }
     return { pages: { ...state.pages, [relationObjectId]: result.page }, error: null }
@@ -121,8 +135,40 @@ export function applyRelationOptionLoadResult(
     ? { pages: { ...state.pages, [relationObjectId]: page }, error: null }
     : {
         ...state,
-        error: { relationObjectId, message: 'Relation options changed while loading more' },
+        error: { relationObjectId, code: 'changed-while-loading' },
       }
+}
+
+const RELATION_OPTION_ERROR_KEYS: Record<RelationOptionErrorCode, string> = {
+  'invalid-response': 'chat.workspaceObjectRelationInvalidResponse',
+  'stale-snapshot': 'chat.workspaceObjectRelationStaleSnapshot',
+  'changed-while-loading': 'chat.workspaceObjectRelationChangedWhileLoading',
+  transport: 'chat.workspaceObjectRelationTransportError',
+}
+
+export function ObjectRelationOptionErrorAlert({
+  error,
+  onRetry,
+}: {
+  error: RelationOptionViewError
+  onRetry: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex items-center justify-between gap-2 rounded border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive" role="alert">
+      <div>
+        <div>{t(RELATION_OPTION_ERROR_KEYS[error.code])}</div>
+        {error.detail ? (
+          <div data-object-relation-error-detail="true" className="mt-1 break-words text-[11px] opacity-80">
+            {error.detail}
+          </div>
+        ) : null}
+      </div>
+      <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+        {t('chat.workspaceObjectPreviewRetry')}
+      </Button>
+    </div>
+  )
 }
 
 export function reconcileRelationOptionPages(
@@ -428,12 +474,10 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
   return (
     <div className="space-y-3">
       {relationState.error ? (
-        <div className="flex items-center justify-between gap-2 rounded border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive" role="alert">
-          <span>{relationState.error.message}</span>
-          <Button type="button" size="sm" variant="outline" onClick={() => void reloadRelationOptions(relationState.error!.relationObjectId)}>
-            {t('chat.workspaceObjectPreviewRetry')}
-          </Button>
-        </div>
+        <ObjectRelationOptionErrorAlert
+          error={relationState.error}
+          onRetry={() => void reloadRelationOptions(relationState.error!.relationObjectId)}
+        />
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <select

@@ -2,6 +2,14 @@ import type { WorkspaceObjectAction, WorkspaceObjectServiceResult } from '@craft
 import type { WorkspaceObjectPayload } from '@craft-agent/shared/workspace-objects/types'
 
 type RelationOptionsAction = Extract<WorkspaceObjectAction, { action: 'list-relation-options' }>
+export type RelationOptionErrorCode = 'invalid-response' | 'stale-snapshot' | 'changed-while-loading' | 'transport'
+
+export class RelationOptionLoadError extends Error {
+  constructor(readonly code: RelationOptionErrorCode) {
+    super(code)
+    this.name = 'RelationOptionLoadError'
+  }
+}
 
 export interface LoadedRelationOptions {
   options: Array<{ id: string; label: string }>
@@ -41,12 +49,12 @@ export async function loadReferencedRelationOptions(
   }
   const results = await Promise.all(requests.map(load))
   const pages = results.map(result => {
-    if (!('relationOptions' in result)) throw new Error(`Invalid relation options response: ${relationObjectId}`)
+    if (!('relationOptions' in result)) throw new RelationOptionLoadError('invalid-response')
     return result
   })
   const revision = pages[0]?.revision
   if (revision === undefined || pages.some(page => page.revision !== revision)) {
-    throw new Error(`Relation options changed during lookup: ${relationObjectId}`)
+    throw new RelationOptionLoadError('changed-while-loading')
   }
   const optionsById = new Map<string, { id: string; label: string }>()
   for (const page of pages) {

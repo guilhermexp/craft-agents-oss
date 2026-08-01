@@ -24,6 +24,8 @@ export interface ObjectRelationOption {
   label: string
 }
 
+export const OBJECT_FIELD_SAVING_TRANSLATION_KEY = 'chat.workspaceObjectSavingField' as const
+
 const EMPTY_RELATION_OPTIONS: ObjectRelationOption[] = []
 const EMPTY_RELATION_LABELS: ReadonlyMap<string, string> = new Map()
 
@@ -315,7 +317,7 @@ export function ObjectFieldEditor({
       {error ? <div className="text-[11px] text-destructive" role="alert">{error}</div> : null}
       <div className="flex gap-1">
         <Button type="button" size="sm" className="h-7 px-2 text-[11px]" disabled={busy} onClick={() => void submit()}>
-          {busy ? t('chat.workspaceObjectSavingView') : t('common.save')}
+          {busy ? t(OBJECT_FIELD_SAVING_TRANSLATION_KEY) : t('common.save')}
         </Button>
         <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-[11px]" disabled={busy} onClick={() => setState({ status: 'idle' })}>
           {t('common.cancel')}
