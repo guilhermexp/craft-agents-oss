@@ -428,6 +428,64 @@ describe('WorkspaceObjectRepository', () => {
     verification.close();
   });
 
+  test('rolls back v4 when a strict v1 functional base cannot fit without legacyConfig', () => {
+    const root = makeRoot();
+    const repository = WorkspaceObjectRepository.open(root);
+    repository.defineObject({ id: 'object_tasks', slug: 'tasks', name: 'Tasks', fields: [] });
+    repository.upsertSavedView('object_tasks', {
+      id: 'view_seed', name: 'Seed', config: DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW,
+    });
+    repository.close();
+
+    const path = join(root, 'objects', 'objects.sqlite');
+    const irreducibleConfig: WorkspaceObjectViewConfig = {
+      ...DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW,
+      search: 'must survive rollback',
+      presentation: {
+        adapter: 'gallery',
+        settings: { functionalDescription: '😀'.repeat(16_000), cardSize: 'large' },
+      },
+    };
+    expect(Buffer.byteLength(JSON.stringify(irreducibleConfig), 'utf8'))
+      .toBeGreaterThan(WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES);
+
+    const setup = openSQLite(path);
+    setup.prepare('UPDATE workspace_object_saved_views SET config_json = ? WHERE id = ?')
+      .run(JSON.stringify(irreducibleConfig), 'view_seed');
+    setup.prepare('DELETE FROM workspace_object_schema_version WHERE version > 3').run();
+    setup.prepare('INSERT OR IGNORE INTO workspace_object_schema_version(version) VALUES (3)').run();
+    const rowBefore = setup.prepare('SELECT config_json, revision FROM workspace_object_saved_views WHERE id = ?')
+      .get('view_seed');
+    const projectionBefore = setup.prepare('SELECT source_revision, payload_json FROM workspace_object_payloads WHERE object_id = ?')
+      .get('object_tasks');
+    setup.close();
+    expect(rowBefore).toBeDefined();
+    expect(projectionBefore).toBeDefined();
+
+    expect(() => WorkspaceObjectRepository.open(root))
+      .toThrow('Strict saved view exceeds 64KB without a reducible legacyConfig');
+
+    const verification = openSQLite(path);
+    expect(verification.prepare('SELECT config_json, revision FROM workspace_object_saved_views WHERE id = ?')
+      .get('view_seed')).toEqual(rowBefore);
+    expect(verification.prepare('SELECT source_revision, payload_json FROM workspace_object_payloads WHERE object_id = ?')
+      .get('object_tasks')).toEqual(projectionBefore);
+    expect(verification.prepare('SELECT MAX(version) AS version FROM workspace_object_schema_version').get())
+      .toEqual({ version: 3 });
+    verification.close();
+
+    expect(() => WorkspaceObjectRepository.open(root))
+      .toThrow('Strict saved view exceeds 64KB without a reducible legacyConfig');
+    const verificationAgain = openSQLite(path);
+    expect(verificationAgain.prepare('SELECT config_json, revision FROM workspace_object_saved_views WHERE id = ?')
+      .get('view_seed')).toEqual(rowBefore);
+    expect(verificationAgain.prepare('SELECT source_revision, payload_json FROM workspace_object_payloads WHERE object_id = ?')
+      .get('object_tasks')).toEqual(projectionBefore);
+    expect(verificationAgain.prepare('SELECT MAX(version) AS version FROM workspace_object_schema_version').get())
+      .toEqual({ version: 3 });
+    verificationAgain.close();
+  });
+
   test('rechecks legacy saved views after acquiring the migration writer lock', async () => {
     const root = makeRoot();
     const repository = WorkspaceObjectRepository.open(root);

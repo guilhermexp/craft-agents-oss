@@ -200,6 +200,13 @@ dentro do bloco workspaceObject.
 - **AND** uma segunda reabertura mantém config idêntica e resavável
 - **Test:** `integration`
 
+#### Scenario: Migration v4 rejeita strict v1 irredutível atomicamente
+
+- **GIVEN** um workspace com marker v3 e uma saved view estrita v1 cuja base funcional excede 64.000 bytes sem `legacyConfig` string redutível
+- **WHEN** o repository tenta reabrir sob schema v4, inclusive em uma segunda tentativa
+- **THEN** cada abertura falha, row e projeção permanecem byte a byte iguais e o maior marker continua v3 sem marker v4
+- **Test:** `integration`
+
 #### Scenario: Normalização preserva strict v1 dentro do budget
 
 - **GIVEN** uma saved view estrita v1 cujo JSON UTF-8 já cabe no limite

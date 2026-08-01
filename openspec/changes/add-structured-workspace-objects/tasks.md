@@ -440,6 +440,17 @@ focado passou 1/1 (2 expects), a suíte locale focada passou 24/24 (41 expects),
 paridade oficial confirmou sete locales com 1.803 keys, e `typecheck:all`,
 OpenSpec strict e `git diff --check` ficaram verdes. 7.5 permanece desmarcado.
 
+Re-review corretivo 3.3 de Phase B (2026-08-01): o review encontrou ausência de
+evidência para o MUST atômico do strict v1 irredutível, não nova falha de
+produção. O teste de integração entrou GREEN imediato porque o Lote 3.2 já
+lançava esse caso fora do catch best-effort e dentro da transaction. A fixture
+marker v3 usa outro setting funcional acima de 64 KB sem `legacyConfig`
+redutível; duas tentativas de open v4 falham da mesma forma, preservam row e
+payload projetado byte a byte e mantêm `MAX(version)=3` sem marker v4. O teste
+focado passou 1/1 (11 expects), a suíte do domínio passou 57/57 em cinco
+arquivos (172 expects), e `typecheck:all`, paridade i18n, tool contracts,
+OpenSpec strict e `git diff --check` ficaram verdes. 7.5 permanece desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.
