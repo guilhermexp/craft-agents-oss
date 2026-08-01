@@ -477,11 +477,25 @@ húngara por sufixo aceitava palavras sem relação com a ação e não modelava
 formas definidas, além de os tokens informais NFD escaparem antes da comparação.
 O GREEN normaliza NFC e valida pares semânticos por key: seleção exige uma forma
 formal da família `válassz`/`jelölj` e entrada exige uma forma formal da família
-`adj`/`írj`, sempre rejeitando a contraparte informal, inclusive quando uma
+`adj`/`írj`, inicialmente compartilhada pelas duas keys restantes, sempre
+rejeitando a contraparte informal, inclusive quando uma
 frase mistura registros. O alemão também normaliza NFC antes dos limites
 Unicode case-insensitive. Fixtures cobrem `Válassza`/`Adja`, `haszon`, mistura
 formal-informal e DE/HU em NFD. Nenhum locale foi alterado. O teste focado
 passou 1/1 (28 expects); a suíte locale focada passou 24/24 (67 expects), e
+`typecheck:all`, paridade i18n, OpenSpec strict e `git diff --check` ficaram
+verdes. 7.5 permanece desmarcado.
+
+Re-review corretivo 5.4 de Phase B (2026-08-01): o RED mostrou que compartilhar
+`írjon`/`írja` entre `AdapterNoCompatibleField` e `ViewNameRequired` permitia
+trocar a semântica de adicionar campo pela de escrever um nome. O GREEN mantém
+as keys de selecionar/marcar em sua família; exige `adjon`/`adja` com `hozzá`
+para adicionar campo; e permite dar/escrever nome apenas em `ViewNameRequired`.
+Negativos cruzados impedem a troca das frases, e a blacklist cobre também as
+formas informais longas de segunda pessoa (`válasszál`/`válasszad`,
+`jelöljél`/`jelöljed`, `adjál`/`adjad`, `írjál`/`írjad`) misturadas a tokens
+formais. NFC permanece na fronteira. Nenhum locale foi alterado. O teste focado
+passou 1/1 (34 expects); a suíte locale focada passou 24/24 (73 expects), e
 `typecheck:all`, paridade i18n, OpenSpec strict e `git diff --check` ficaram
 verdes. 7.5 permanece desmarcado.
 

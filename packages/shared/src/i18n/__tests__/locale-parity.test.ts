@@ -66,12 +66,22 @@ function usesFormalWorkspaceObjectRegister(
   }
 
   if (workspaceObjectSelectActionKeys.has(key)) {
-    return !/(?<!\p{L})(?:válassz|válaszd|jelölj|jelöld)(?!\p{L})/iu.test(normalized)
+    return !/(?<!\p{L})(?:válassz|válaszd|válasszál|válasszad|jelölj|jelöld|jelöljél|jelöljed)(?!\p{L})/iu.test(normalized)
       && /(?<!\p{L})(?:válasszon|válassza|jelöljön|jelölje)(?!\p{L})/iu.test(normalized);
   }
 
-  return !/(?<!\p{L})(?:adj|add|írj|írd)(?!\p{L})/iu.test(normalized)
-    && /(?<!\p{L})(?:adjon|adja|írjon|írja)(?!\p{L})/iu.test(normalized);
+  const usesInformalAdd = /(?<!\p{L})(?:adj|add|adjál|adjad)(?!\p{L})/iu.test(normalized);
+  const usesFormalAdd = /(?<!\p{L})(?:adjon|adja)(?!\p{L})/iu.test(normalized);
+  const usesInformalWrite = /(?<!\p{L})(?:írj|írd|írjál|írjad)(?!\p{L})/iu.test(normalized);
+  const usesFormalWrite = /(?<!\p{L})(?:írjon|írja)(?!\p{L})/iu.test(normalized);
+  const usesExplicitAdd = /(?<!\p{L})hozzá(?!\p{L})/iu.test(normalized);
+  if (key === "chat.workspaceObjectAdapterNoCompatibleField") {
+    return !usesInformalAdd && !usesInformalWrite && !usesFormalWrite && usesFormalAdd && usesExplicitAdd;
+  }
+
+  return !usesInformalAdd
+    && !usesInformalWrite
+    && (usesFormalWrite || (usesFormalAdd && !usesExplicitAdd));
 }
 
 // ---------------------------------------------------------------------------
@@ -116,15 +126,21 @@ describe("i18n locale parity", () => {
     }
     for (const [key, value] of [
       ["chat.workspaceObjectAdapterMissingField", "Jelöljön ki egy mezőt."],
-      ["chat.workspaceObjectAdapterNoCompatibleField", "Írjon be egy nevet."],
+      ["chat.workspaceObjectAdapterNoCompatibleField", "Adja hozzá a mezőt."],
       ["chat.workspaceObjectFilterFieldRequired", "Válassza ki a mezőt."],
-      ["chat.workspaceObjectViewNameRequired", "Adja meg a nevet."],
+      ["chat.workspaceObjectViewNameRequired", "Írjon be egy nevet."],
     ] as const) {
       expect(usesFormalWorkspaceObjectRegister("hu", key, value)).toBe(true);
     }
+    expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectAdapterNoCompatibleField", "Írjon be egy nevet.")).toBe(false);
+    expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectAdapterNoCompatibleField", "Adjon nevet a nézetnek.")).toBe(false);
+    expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectViewNameRequired", "Adjon hozzá kompatibilis mezőt.")).toBe(false);
     expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectAdapterMissingField", "A haszon fontos.")).toBe(false);
     expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectAdapterMissingField", "Válassz, majd válasszon mezőt.")).toBe(false);
+    expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectFilterFieldRequired", "Jelöljél, majd jelöljön mezőt.")).toBe(false);
     expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectViewNameRequired", "Adj, majd adjon nevet.")).toBe(false);
+    expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectAdapterNoCompatibleField", "Adjál, majd adjon hozzá mezőt.")).toBe(false);
+    expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectViewNameRequired", "Írjál, majd írjon be nevet.")).toBe(false);
     expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectAdapterMissingField", "Va\u0301lassz mezőt.")).toBe(false);
   });
 
