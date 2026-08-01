@@ -19,6 +19,7 @@ import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopo
 import { useTheme } from '@/context/ThemeContext'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { routes } from '@/lib/navigate'
+import { cn } from '@/lib/utils'
 import { Image as ImageIcon, Monitor, Sun, Moon } from 'lucide-react'
 import type { DetailsPageMeta } from '@/lib/navigation-registry'
 import type { ToolIconMapping } from '../../../shared/types'
@@ -414,6 +415,27 @@ export default function AppearanceSettingsPage() {
     }
   }, [appTheme, setAppTheme, t])
 
+  // Thumbnails for every scenic background shipped by an installed preset theme,
+  // so the user can swap the image without leaving this panel.
+  const scenicBackgroundOptions = useMemo(() => (
+    presetThemes.flatMap(preset => (
+      preset.theme.mode === 'scenic' && preset.theme.backgroundImage
+        ? [{ id: preset.id, label: preset.theme.name || preset.id, image: preset.theme.backgroundImage }]
+        : []
+    ))
+  ), [presetThemes])
+
+  const handleSelectScenicBackgroundPreset = useCallback(async (image: string) => {
+    try {
+      await setAppTheme(buildNextAppTheme(appTheme, { backgroundImage: image }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(t('settings.appearance.failedToSetBackgroundImage', { defaultValue: 'Failed to update background image.' }), {
+        description: message,
+      })
+    }
+  }, [appTheme, setAppTheme, t])
+
   const handleScenicOpacityChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
     const nextOpacity = Number(event.target.value) / 100
 
@@ -667,6 +689,28 @@ export default function AppearanceSettingsPage() {
                                 { value: 'gray', label: t('settings.appearance.scenicBackgroundGrayOption', { defaultValue: 'Gray' }) },
                               ]}
                             />
+                            {scenicBackgroundType === 'image' && scenicBackgroundOptions.length > 0 && (
+                              <div className="flex gap-2 overflow-x-auto pb-1">
+                                {scenicBackgroundOptions.map(option => (
+                                  <button
+                                    key={option.id}
+                                    type="button"
+                                    title={option.label}
+                                    aria-label={option.label}
+                                    aria-pressed={scenicBackgroundPreview === option.image}
+                                    onClick={() => void handleSelectScenicBackgroundPreset(option.image)}
+                                    className={cn(
+                                      'h-14 w-20 shrink-0 overflow-hidden rounded-md border transition',
+                                      scenicBackgroundPreview === option.image
+                                        ? 'border-transparent ring-2 ring-[var(--accent)]'
+                                        : 'border-border/50 hover:border-border opacity-80 hover:opacity-100'
+                                    )}
+                                  >
+                                    <img src={option.image} alt="" className="size-full object-cover" />
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </>
                         )}
                         {showScenicBackgroundControls && (

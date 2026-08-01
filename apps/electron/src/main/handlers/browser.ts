@@ -38,6 +38,50 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     browserPaneManager.destroyInstance(id)
   })
 
+  // Display mode moves native views between windows, so it only exists on the
+  // desktop manager. The host is whichever window asked — correct for
+  // multi-window Craft, and avoids coupling the pane manager to WindowManager.
+  server.handle(RPC_NAMESPACES.browserPane.SET_DISPLAY_MODE, (ctx, id: string, mode: 'floating' | 'integrated') => {
+    const manager = browserPaneManager as Partial<{
+      setDisplayMode(id: string, mode: 'floating' | 'integrated', host?: unknown): boolean
+    }>
+    if (typeof manager.setDisplayMode !== 'function') return false
+
+    const host = mode === 'integrated'
+      ? windowManager?.getWindowByWebContentsId(ctx.webContentsId!) ?? null
+      : null
+    return manager.setDisplayMode(id, mode, host)
+  })
+
+  server.handle(
+    RPC_NAMESPACES.browserPane.SET_EMBEDDED_BOUNDS,
+    (
+      ctx,
+      id: string,
+      rect: { x: number; y: number; width: number; height: number },
+      radius?: number,
+    ) => {
+      // The renderer measures in its own CSS px. Resolve the zoom factor here
+      // from the requesting window rather than trusting the renderer to report
+      // it — the main process is the only side that knows the real value.
+      const hostWindow = windowManager?.getWindowByWebContentsId(ctx.webContentsId!)
+      const zoomFactor = hostWindow && !hostWindow.isDestroyed()
+        ? hostWindow.webContents.getZoomFactor()
+        : 1
+
+      const manager = browserPaneManager as Partial<{
+        setEmbeddedBounds(
+          id: string,
+          rect: { x: number; y: number; width: number; height: number },
+          radius?: number,
+          zoomFactor?: number,
+        ): boolean
+      }>
+      if (typeof manager.setEmbeddedBounds !== 'function') return false
+      return manager.setEmbeddedBounds(id, rect, radius, zoomFactor)
+    },
+  )
+
   server.handle(RPC_NAMESPACES.browserPane.LIST, () => {
     return browserPaneManager.listInstances()
   })

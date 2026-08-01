@@ -25,6 +25,7 @@ import {
   setBrowserInstancesAtom,
   updateBrowserInstanceAtom,
   removeBrowserInstanceAtom,
+  integratedBrowserInstanceIdAtom,
 } from '@/atoms/browser-pane'
 import { BrowserTabBadge } from './BrowserTabBadge'
 import type { BrowserInstanceInfo } from '../../../shared/types'
@@ -42,6 +43,8 @@ interface BrowserActionsProps {
 }
 
 function BrowserActions({ instance, instancesOverride, onFocus, onOpenSession, onTerminate }: BrowserActionsProps) {
+  const [integratedInstanceId, setIntegratedInstanceId] = useAtom(integratedBrowserInstanceIdAtom)
+  const isIntegrated = integratedInstanceId === instance.id
   const canUseLiveWindowActions = !instancesOverride
   const targetSessionId = instance.boundSessionId ?? instance.ownerSessionId
   const canOpenSession = !!targetSessionId
@@ -57,6 +60,16 @@ function BrowserActions({ instance, instancesOverride, onFocus, onOpenSession, o
       >
         <Icons.Monitor className="size-3.5" />
         Show Browser Window
+      </StyledDropdownMenuItem>
+
+      {/* Same browser, different presentation: integrated reparents the native
+          views into a card inside the app, floating gives them their own window. */}
+      <StyledDropdownMenuItem
+        disabled={!canUseLiveWindowActions}
+        onSelect={() => setIntegratedInstanceId(isIntegrated ? null : instance.id)}
+      >
+        <Icons.PanelsTopLeft className="size-3.5" />
+        {isIntegrated ? 'Show as Separate Window' : 'Show Inside App'}
       </StyledDropdownMenuItem>
 
       <StyledDropdownMenuItem

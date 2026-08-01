@@ -187,6 +187,10 @@ export const LOCAL_ONLY_NAMESPACES = new Set<string>([
   RPC_NAMESPACES.browserPane.EVALUATE,
   RPC_NAMESPACES.browserPane.SCROLL,
   RPC_NAMESPACES.browserPane.LAUNCH,
+  // Display mode is a desktop-only concern: it moves native views between the
+  // instance window and a host window, which has no meaning for remote panes.
+  RPC_NAMESPACES.browserPane.SET_DISPLAY_MODE,
+  RPC_NAMESPACES.browserPane.SET_EMBEDDED_BOUNDS,
   RPC_NAMESPACES.browserPane.STATE_CHANGED,
   RPC_NAMESPACES.browserPane.REMOVED,
   RPC_NAMESPACES.browserPane.INTERACTED,

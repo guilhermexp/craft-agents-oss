@@ -1,7 +1,7 @@
 import * as React from "react"
 import { useTranslation, Trans } from "react-i18next"
 import { useRef, useState, useEffect, useCallback, useMemo } from "react"
-import { useAtomValue, useStore } from "jotai"
+import { useAtom, useAtomValue, useStore } from "jotai"
 import { selectAtom } from "jotai/utils"
 import { LazyMotion, m, AnimatePresence, domAnimation } from "motion/react"
 import {
@@ -162,6 +162,8 @@ import {
 } from "./panel-constants"
 import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { BrowserProfilePicker } from "@/components/browser/BrowserProfilePicker"
+import { IntegratedBrowserCard } from "@/components/browser/IntegratedBrowserCard"
+import { integratedBrowserInstanceIdAtom } from "@/atoms/browser-pane"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
 
@@ -2184,6 +2186,7 @@ function AppShellContent({
   // Browser profile picker state — opens before creating a new window when
   // the user has multiple profiles or has the "always ask" preference set.
   const [browserPickerOpen, setBrowserPickerOpen] = useState(false)
+  const [integratedBrowserInstanceId, setIntegratedBrowserInstanceId] = useAtom(integratedBrowserInstanceIdAtom)
   // When the picker was opened from inside an existing browser window, this
   // holds the source instance id so we can switch its profile in place.
   const [browserPickerSwitchInstanceId, setBrowserPickerSwitchInstanceId] = useState<string | null>(null)
@@ -4165,6 +4168,15 @@ function AppShellContent({
       {/* Messaging dialogs (pairing-code + WA connect) — driven by messagingDialogAtom.
           Mounted here so they survive context-menu / dropdown close. */}
       <MessagingDialogHost />
+
+      {/* Browser shown as a card inside the app. The native views are reparented
+          into this window and positioned into the card's hole; closing it sends
+          them back to their own window. */}
+      <IntegratedBrowserCard
+        instanceId={integratedBrowserInstanceId}
+        open={integratedBrowserInstanceId !== null}
+        onClose={() => setIntegratedBrowserInstanceId(null)}
+      />
 
       {/* Browser profile picker — opens before creating a new browser window
           when the user has multiple profiles or "always ask" is enabled. */}

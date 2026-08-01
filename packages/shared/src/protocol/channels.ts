@@ -449,6 +449,8 @@ export const RPC_NAMESPACES = {
     SET_PROFILE_SETTINGS: 'browser-pane:set-profile-settings',
     PROFILES_CHANGED: 'browser-pane:profiles-changed',
     PICKER_REQUESTED: 'browser-pane:picker-requested',
+    SET_DISPLAY_MODE: 'browser-pane:set-display-mode',
+    SET_EMBEDDED_BOUNDS: 'browser-pane:set-embedded-bounds',
   },
   automations: {
     GET: 'automations:get',

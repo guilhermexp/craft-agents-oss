@@ -10,7 +10,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import ReactDOM from 'react-dom/client'
 import { initReactI18next, useTranslation } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
-import { EyeOff, Sparkles, Square, Video, X, XCircle } from 'lucide-react'
+import { EyeOff, PanelRight, Sparkles, Square, Video, X, XCircle } from 'lucide-react'
 import { BrowserControls } from '@craft-agent/ui'
 import { setupI18n } from '@craft-agent/shared/i18n'
 import { HeaderIconButton } from '@/components/ui/HeaderIconButton'
@@ -49,6 +49,8 @@ interface ToolbarState {
   themeColor?: string | null
   profile?: ToolbarProfile | null
   availableProfiles?: ToolbarProfile[]
+  /** True when a session is bound to this browser and can be tiled beside it. */
+  hasBoundSession?: boolean
 }
 
 declare global {
@@ -65,6 +67,7 @@ declare global {
       closeWindowEntirely: () => Promise<void>
       requestProfileManagement: () => Promise<void>
       switchProfile: (profileId: string) => Promise<string | null>
+      openSessionBeside: () => Promise<boolean>
       inviteHermesToMeet: (payload: { urlOrCode: string; profileId?: string }) => Promise<{ status?: string; error?: string }>
       prepareRecording: (payload: { urlOrCode: string; workspaceId?: string; mimeType: string }) => Promise<{ recordingId: string; meetingId?: string; outputPath: string }>
       appendRecordingChunk: (recordingId: string, chunk: ArrayBuffer) => Promise<void>
@@ -561,6 +564,18 @@ function BrowserToolbarApp() {
         leadingContent={meetActionsContent}
         trailingContent={(
           <div className="ml-2 flex items-center gap-1.5 titlebar-no-drag">
+            {/* Bring the agent chat alongside the page. Always available: with a
+                bound session it opens that one, otherwise the session list, so
+                the user can start one without leaving the browser. */}
+            {(
+              <HeaderIconButton
+                icon={<PanelRight className="size-3.5" />}
+                aria-label={t('browser.openSessionBeside', { defaultValue: 'Open session beside browser' })}
+                title={t('browser.openSessionBeside', { defaultValue: 'Open session beside browser' })}
+                onClick={() => { void api?.openSessionBeside() }}
+                className={themeColor ? '' : 'bg-background shadow-minimal hover:bg-foreground/5'}
+              />
+            )}
             {state.profile && (
               <ProfileMenu
                 current={state.profile}

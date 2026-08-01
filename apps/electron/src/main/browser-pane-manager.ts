@@ -9,7 +9,7 @@
 import { join, parse as parsePath } from 'path'
 import { existsSync, mkdirSync } from 'fs'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
-import { BrowserView, BrowserWindow, app, ipcMain, nativeTheme, session, shell, webContents, type Session as ElectronSession, type Streams } from 'electron'
+import { BrowserWindow, WebContentsView, app, ipcMain, nativeTheme, screen, session, shell, webContents, type Session as ElectronSession, type Streams } from 'electron'
 import { mainLog } from './logger'
 import type { WindowManager } from './window-manager'
 import { BrowserCDP, type AccessibilitySnapshot, type ElementGeometry } from './browser-cdp'
@@ -95,14 +95,37 @@ export interface BrowserPaneCaptureLock {
   since: number
 }
 
+export type BrowserDisplayMode = 'floating' | 'integrated'
+
+export interface EmbeddedBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 export interface BrowserInstance {
   id: string
   profileId: string
   workspaceId: string | null
   window: BrowserWindow
-  toolbarView: BrowserView
-  pageView: BrowserView
-  nativeOverlayView: BrowserView
+  toolbarView: WebContentsView
+  pageView: WebContentsView
+  nativeOverlayView: WebContentsView
+  /**
+   * `floating` keeps the views in the instance's own frameless window (the
+   * historical behaviour). `integrated` reparents them into a host window's
+   * contentView so they render as a card inside the app, positioned by bounds
+   * the renderer measures. The WebContents survive the move, so the page keeps
+   * its session, scroll position and navigation history.
+   */
+  displayMode: BrowserDisplayMode
+  /** Window the views are currently parented to while integrated. */
+  hostWindow: BrowserWindow | null
+  /** Card rect in host content coordinates (DIPs). Null until the renderer reports it. */
+  embeddedBounds: EmbeddedBounds | null
+  /** Corner radius of the React card, in host CSS px. */
+  embeddedRadius: number
   cdp: BrowserCDP
   currentUrl: string
   title: string
@@ -368,6 +391,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     layoutAllViews: (instance) => this.layoutAllViews(instance),
     switchProfile: (instanceId, targetProfileId) => this.switchProfile(instanceId, targetProfileId),
     requestProfileManagement: (instanceId) => this.profileManagementRequestCallback?.(instanceId),
+    openSessionBeside: (instanceId) => this.openSessionBeside(instanceId),
     emitStateChange: (instance) => this.emitStateChange(instance),
     sleep: (ms) => this.sleep(ms),
   })
@@ -460,7 +484,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       minHeight: 500,
       show: false, // Always hidden until toolbar is painted (ready-to-show)
       backgroundColor: chromeBgColor,
-      // Fully chromeless — toolbar is rendered in a dedicated BrowserView
+      // Fully chromeless — toolbar is rendered in a dedicated WebContentsView
       frame: false,
       webPreferences: {
         partition,
@@ -471,7 +495,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       },
     })
 
-    const toolbarView = new BrowserView({
+    const toolbarView = new WebContentsView({
       webPreferences: {
         preload: join(__dirname, 'browser-toolbar-preload.cjs'),
         partition,
@@ -482,7 +506,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       },
     })
 
-    const pageView = new BrowserView({
+    const pageView = new WebContentsView({
       webPreferences: {
         partition,
         session: ses,
@@ -492,12 +516,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       },
     })
 
-    const supportsMultiView = typeof window.addBrowserView === 'function' && typeof window.setTopBrowserView === 'function'
+    const supportsMultiView = typeof window.contentView?.addChildView === 'function'
     if (!supportsMultiView) {
-      throw new Error('[browser-pane] Native overlay requires BrowserWindow.addBrowserView + setTopBrowserView')
+      throw new Error('[browser-pane] Native overlay requires BrowserWindow.contentView.addChildView')
     }
 
-    const nativeOverlayView = new BrowserView({
+    const nativeOverlayView = new WebContentsView({
       webPreferences: {
         partition,
         session: ses,
@@ -507,7 +531,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       },
     })
 
-    // Set BrowserView backgrounds. External pages should not inherit Craft's dark
+    // Set view backgrounds. External pages should not inherit Craft's dark
     // chrome color behind transparent document areas.
     const toolbarWcWithBg = toolbarView.webContents as typeof toolbarView.webContents & { setBackgroundColor?: (color: string) => void }
     toolbarWcWithBg.setBackgroundColor?.('#00000000')
@@ -515,6 +539,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     pageWcWithBg.setBackgroundColor?.(pageBgColor)
     const overlayWcWithBg = nativeOverlayView.webContents as typeof nativeOverlayView.webContents & { setBackgroundColor?: (color: string) => void }
     overlayWcWithBg.setBackgroundColor?.('#00000000')
+
+    // A WebContentsView paints its own background *behind* the page, and it
+    // defaults to opaque white. BrowserView had no such layer, so setting the
+    // webContents colour used to be enough. Without this the toolbar — which
+    // expands to cover the window while its menu is open — turns the whole
+    // browser white, and the overlay tap-catcher stops being see-through.
+    toolbarView.setBackgroundColor('#00000000')
+    nativeOverlayView.setBackgroundColor('#00000000')
+    pageView.setBackgroundColor(pageBgColor)
 
     const cdp = new BrowserCDP(pageView.webContents)
 
@@ -526,6 +559,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       toolbarView,
       pageView,
       nativeOverlayView,
+      displayMode: 'floating',
+      hostWindow: null,
+      embeddedBounds: null,
+      embeddedRadius: 0,
       cdp,
       currentUrl: 'about:blank',
       title: 'New Tab',
@@ -595,10 +632,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       }
     }
 
-    window.addBrowserView(pageView)
-    window.addBrowserView(nativeOverlayView)
-    window.addBrowserView(toolbarView)
-    window.setTopBrowserView(toolbarView)
+    // Stacking order is the child order: last added paints on top.
+    window.contentView.addChildView(pageView)
+    window.contentView.addChildView(nativeOverlayView)
+    window.contentView.addChildView(toolbarView)
     void this.loadNativeOverlayPage(instance)
 
     this.layoutAllViews(instance)
@@ -633,7 +670,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       void this.loadEmptyStatePage(instance).catch((error) => {
         const message = error instanceof Error ? error.message : String(error)
         mainLog.warn(`[browser-pane] empty-state load failed id=${instance.id}: ${message}`)
-        // If a caller navigates immediately after creating the BrowserView, the empty
+        // If a caller navigates immediately after creating the view, the empty
         // state data URL can be aborted by the real navigation. Loading about:blank
         // here races and can overwrite the requested page, so only blank on real errors.
         if (!message.includes('ERR_ABORTED')) {
@@ -1856,16 +1893,61 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private getToolbarEffectiveHeight(instance: BrowserInstance): number {
     if (!instance.toolbarMenuOpen) return TOOLBAR_HEIGHT
 
+    // An open toolbar menu grows the toolbar view to cover its container so the
+    // dropdown is not clipped — the card's height when integrated.
+    if (instance.displayMode === 'integrated') {
+      return Math.max(TOOLBAR_HEIGHT, instance.embeddedBounds?.height ?? TOOLBAR_HEIGHT)
+    }
+
     const [, contentHeight] = instance.window.getContentSize()
     return Math.max(TOOLBAR_HEIGHT, contentHeight)
   }
 
+  /** Window the views are currently parented to, or null if it is gone. */
+  private getContainerWindow(instance: BrowserInstance): BrowserWindow | null {
+    const container = instance.displayMode === 'integrated' ? instance.hostWindow : instance.window
+    if (!container || container.isDestroyed()) return null
+    return container
+  }
+
+  /**
+   * Rect the whole browser chrome occupies inside its container, in DIPs.
+   * Floating fills the instance window; integrated uses the card rect the
+   * renderer measured. Returns null when the container is gone or the card
+   * has not reported bounds yet.
+   */
+  private getLayoutFrame(instance: BrowserInstance): (EmbeddedBounds & { container: BrowserWindow }) | null {
+    const container = this.getContainerWindow(instance)
+    if (!container) return null
+
+    if (instance.displayMode === 'integrated') {
+      const bounds = instance.embeddedBounds
+      if (!bounds) return null
+      return { ...bounds, container }
+    }
+
+    const [width, height] = container.getContentSize()
+    return { x: 0, y: 0, width, height, container }
+  }
+
+  /**
+   * Re-adding an existing child reorders it to the top of the stack — the
+   * WebContentsView equivalent of the removed `setTopBrowserView`.
+   */
+  private raiseToolbar(instance: BrowserInstance): void {
+    const container = this.getContainerWindow(instance)
+    if (!container) return
+    container.contentView.addChildView(instance.toolbarView)
+  }
+
   private layoutToolbarView(instance: BrowserInstance): void {
-    const [width] = instance.window.getContentSize()
+    const frame = this.getLayoutFrame(instance)
+    if (!frame) return
     const toolbarHeight = this.getToolbarEffectiveHeight(instance)
 
-    instance.toolbarView.setBounds({ x: 0, y: 0, width, height: toolbarHeight })
-    instance.toolbarView.setAutoResize({ width: true, height: false })
+    // No setAutoResize on WebContentsView: bounds are recomputed by the window
+    // 'resize' listener, which already calls layoutAllViews.
+    instance.toolbarView.setBounds({ x: frame.x, y: frame.y, width: frame.width, height: toolbarHeight })
   }
 
   private updateNativeOverlayState(instance: BrowserInstance): void {
@@ -1874,19 +1956,16 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const menuActive = !!instance.toolbarMenuOverlayActive
     const shouldShow = agentActive || menuActive
 
-    if (!shouldShow || !instance.nativeOverlayReady || instance.window.isDestroyed()) {
+    const frame = this.getLayoutFrame(instance)
+    if (!shouldShow || !instance.nativeOverlayReady || !frame) {
       instance.nativeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 })
-      if (!instance.window.isDestroyed()) {
-        instance.window.setTopBrowserView(instance.toolbarView)
-      }
+      this.raiseToolbar(instance)
       return
     }
 
-    const [width, height] = instance.window.getContentSize()
-    const overlayHeight = Math.max(100, height - TOOLBAR_HEIGHT)
-    instance.nativeOverlayView.setBounds({ x: 0, y: TOOLBAR_HEIGHT, width, height: overlayHeight })
-    instance.nativeOverlayView.setAutoResize({ width: true, height: true })
-    instance.window.setTopBrowserView(instance.toolbarView)
+    const overlayHeight = Math.max(100, frame.height - TOOLBAR_HEIGHT)
+    instance.nativeOverlayView.setBounds({ x: frame.x, y: frame.y + TOOLBAR_HEIGHT, width: frame.width, height: overlayHeight })
+    this.raiseToolbar(instance)
 
     if (agentActive) {
       const label = this.getAgentControlLabel(control)
@@ -1975,28 +2054,219 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         mainLog.warn(`[browser-pane] finalize cleanup failed id=${instance.id} step=${label} error=${error instanceof Error ? error.message : String(error)}`)
       }
     }
+    // While integrated the views live in the host window, so destroying the
+    // instance's own window does not take them down — detach them explicitly
+    // or they keep painting over the app.
+    safe('detachFromHost', () => {
+      const host = instance.hostWindow
+      if (!host || host.isDestroyed()) return
+      for (const view of this.orderedViews(instance)) {
+        host.contentView.removeChildView(view)
+      }
+      instance.hostWindow = null
+    })
     safe('closePopupsForParent', () => this.closePopupsForParent(instance.id, 'parent_destroy'))
     safe('applyAgentControlLock', () => this.applyAgentControlLock(instance, false))
     safe('updateNativeOverlayState', () => this.updateNativeOverlayState(instance))
     safe('cdp.detach', () => instance.cdp.detach())
+    // Destroying the window used to take the attached BrowserViews' webContents
+    // with it. WebContentsView does not work that way: the view is a child of
+    // contentView and its webContents outlives the window unless closed here,
+    // leaving an orphan composited on screen and three renderers leaked.
+    safe('closeViewWebContents', () => {
+      for (const view of this.orderedViews(instance)) {
+        if (!view.webContents.isDestroyed()) {
+          view.webContents.close()
+        }
+      }
+    })
     this.instances.delete(instance.id)
     this.removedCallback?.(instance.id)
     mainLog.info(`[browser-pane] Destroyed instance: ${instance.id} (${source})`)
   }
 
   private layoutPageView(instance: BrowserInstance): void {
-    const [width, height] = instance.window.getContentSize()
-    instance.pageView.setBounds({ x: 0, y: TOOLBAR_HEIGHT, width, height: Math.max(100, height - TOOLBAR_HEIGHT) })
-    instance.pageView.setAutoResize({ width: true, height: true })
+    const frame = this.getLayoutFrame(instance)
+    if (!frame) return
+
+    instance.pageView.setBounds({
+      x: frame.x,
+      y: frame.y + TOOLBAR_HEIGHT,
+      width: frame.width,
+      height: Math.max(100, frame.height - TOOLBAR_HEIGHT),
+    })
     this.updateNativeOverlayState(instance)
   }
 
   private layoutAllViews(instance: BrowserInstance): void {
     this.layoutToolbarView(instance)
     this.layoutPageView(instance)
-    if (!instance.window.isDestroyed()) {
-      instance.window.setTopBrowserView(instance.toolbarView)
+    this.raiseToolbar(instance)
+  }
+
+  /** Ordered back-to-front; the toolbar must end up on top. */
+  private orderedViews(instance: BrowserInstance): WebContentsView[] {
+    return [instance.pageView, instance.nativeOverlayView, instance.toolbarView]
+  }
+
+  /**
+   * Move the three views from one window to another. A WebContentsView can only
+   * be presented in one window at a time, so the removal must happen first.
+   * The underlying WebContents is untouched — the page keeps its session,
+   * history and scroll position across the move.
+   */
+  private reparentViews(instance: BrowserInstance, from: BrowserWindow | null, to: BrowserWindow): void {
+    const views = this.orderedViews(instance)
+
+    if (from && !from.isDestroyed()) {
+      for (const view of views) {
+        from.contentView.removeChildView(view)
+      }
     }
+    for (const view of views) {
+      to.contentView.addChildView(view)
+    }
+  }
+
+  /**
+   * Switch an instance between its own window and a card inside `hostWindow`.
+   * Returns false when the mode could not be applied (unknown instance, or a
+   * host window was required but not supplied).
+   */
+  setDisplayMode(instanceId: string, mode: BrowserDisplayMode, hostWindow?: BrowserWindow | null): boolean {
+    const instance = this.instances.get(instanceId)
+    if (!instance) return false
+    if (instance.displayMode === mode && (mode === 'floating' || instance.hostWindow === hostWindow)) {
+      return true
+    }
+
+    if (mode === 'integrated') {
+      if (!hostWindow || hostWindow.isDestroyed()) {
+        mainLog.warn(`[browser-pane] integrated mode needs a live host window id=${instanceId}`)
+        return false
+      }
+
+      const previous = this.getContainerWindow(instance)
+      instance.displayMode = 'integrated'
+      instance.hostWindow = hostWindow
+      this.reparentViews(instance, previous, hostWindow)
+      // If the host goes away the views would be orphaned, so fall back to the
+      // instance's own window instead of leaking them.
+      hostWindow.once('closed', () => {
+        if (this.instances.get(instanceId) === instance && instance.hostWindow === hostWindow) {
+          instance.hostWindow = null
+          this.setDisplayMode(instanceId, 'floating')
+        }
+      })
+      // The instance's own window stays alive but hidden: destroying it would
+      // take the WebContents with it.
+      if (!instance.window.isDestroyed() && instance.window.isVisible()) {
+        instance.window.hide()
+      }
+      this.layoutAllViews(instance)
+      mainLog.info(`[browser-pane] display mode=integrated id=${instanceId}`)
+      return true
+    }
+
+    const previous = this.getContainerWindow(instance)
+    if (instance.window.isDestroyed()) {
+      mainLog.warn(`[browser-pane] cannot float: instance window is gone id=${instanceId}`)
+      return false
+    }
+
+    instance.displayMode = 'floating'
+    instance.hostWindow = null
+    instance.embeddedBounds = null
+    this.reparentViews(instance, previous, instance.window)
+    // Corner rounding is a card affordance; a full window must not keep it.
+    instance.pageView.setBorderRadius(0)
+    instance.toolbarView.setBorderRadius(0)
+    this.layoutAllViews(instance)
+    mainLog.info(`[browser-pane] display mode=floating id=${instanceId}`)
+    return true
+  }
+
+  /**
+   * Card geometry reported by the renderer.
+   *
+   * `rect` and `radius` are in the host renderer's CSS pixels; view bounds are
+   * in window DIPs. On displays with fractional scaling Electron applies a
+   * zoom factor to the renderer, so the two spaces diverge and the views would
+   * bleed outside the card. Multiply by the zoom to convert, and floor every
+   * axis so the view edge can never exceed the card's.
+   */
+  setEmbeddedBounds(instanceId: string, rect: EmbeddedBounds, radius = 0, zoomFactor = 1): boolean {
+    const instance = this.instances.get(instanceId)
+    if (!instance || instance.displayMode !== 'integrated') return false
+
+    const zoom = Number.isFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1
+    instance.embeddedBounds = {
+      x: Math.max(0, Math.floor(rect.x * zoom)),
+      y: Math.max(0, Math.floor(rect.y * zoom)),
+      width: Math.max(1, Math.floor(rect.width * zoom)),
+      height: Math.max(1, Math.floor(rect.height * zoom)),
+    }
+    instance.embeddedRadius = radius
+
+    const scaledRadius = Math.round(radius * zoom)
+    instance.pageView.setBorderRadius(scaledRadius)
+    instance.toolbarView.setBorderRadius(scaledRadius)
+
+    this.layoutAllViews(instance)
+    return true
+  }
+
+  getDisplayMode(instanceId: string): BrowserDisplayMode | null {
+    return this.instances.get(instanceId)?.displayMode ?? null
+  }
+
+  /**
+   * Put the browser and its bound session side by side on the browser's current
+   * display: browser left, session right.
+   *
+   * Deliberately splits the *browser's* screen rather than the whole work area,
+   * so a browser the user parked on a second monitor stays there.
+   */
+  openSessionBeside(instanceId: string): boolean {
+    const instance = this.instances.get(instanceId)
+    if (!instance || instance.window.isDestroyed()) return false
+
+    // No bound session is not a failure: open the session list so the user can
+    // pick or start one without leaving the browser.
+    const sessionId = instance.boundSessionId ?? instance.ownerSessionId
+    const deepLink = sessionId
+      ? `craftagents://allSessions/session/${sessionId}`
+      : 'craftagents://allSessions'
+
+    if (!this.windowManager) {
+      mainLog.warn('[browser-pane] openSessionBeside: no window manager')
+      return false
+    }
+
+    // Focused mode is already the shape we want: smaller window, no sidebars,
+    // a single session. The deep link lands it directly on that session.
+    const sessionWindow = this.windowManager.createWindow({
+      workspaceId: instance.workspaceId ?? '',
+      focused: true,
+      initialDeepLink: deepLink,
+    })
+    if (!sessionWindow || sessionWindow.isDestroyed()) return false
+
+    const display = screen.getDisplayMatching(instance.window.getBounds())
+    const area = display.workArea
+    // The session panel is the narrower half: the page needs the room.
+    const sessionWidth = Math.max(420, Math.round(area.width * 0.34))
+    const browserWidth = area.width - sessionWidth
+
+    instance.window.setBounds({ x: area.x, y: area.y, width: browserWidth, height: area.height })
+    sessionWindow.setBounds({ x: area.x + browserWidth, y: area.y, width: sessionWidth, height: area.height })
+
+    if (!instance.window.isVisible()) instance.window.show()
+    sessionWindow.show()
+    sessionWindow.focus()
+
+    mainLog.info(`[browser-pane] tiled session=${sessionId ?? "list"} beside browser=${instanceId}`)
+    return true
   }
 
   private forceCloseToolbarMenu(instance: BrowserInstance, reason: string): void {
@@ -2198,7 +2468,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
    * Extract a plain {@link BrowserInstanceSnapshot} from a live `BrowserInstance`.
    *
    * `this.getLiveInstance(id)` returns the full instance, which has non-cloneable
-   * Electron native references (`window: BrowserWindow`, `pageView: BrowserView`,
+   * Electron native references (`window: BrowserWindow`, `pageView: WebContentsView`,
    * `toolbarView`, ...). When we ship the result back over the `__browser:invoke`
    * IPC channel, Electron's structured-clone serializer throws
    * "An object could not be cloned". Always pass the live instance through this
@@ -2935,7 +3205,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     pageWc.on('before-input-event', (event, input) => {
-      // DevTools toggle. The browser pane is a chromeless BrowserView with no
+      // DevTools toggle. The browser pane is a chromeless WebContentsView with no
       // menu, so the usual DevTools shortcut never reaches it. Wire it directly:
       // Cmd+Opt+I (mac), Ctrl+Shift+I, or F12. Use input.code (physical key) so
       // Option-composed characters on mac don't break the match. The automation

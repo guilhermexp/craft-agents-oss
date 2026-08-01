@@ -50,6 +50,8 @@ export interface ToolbarHostDeps {
   switchProfile(instanceId: string, targetProfileId: string): string | null
   /** Notify the app that profile management was requested for an instance. */
   requestProfileManagement(instanceId: string): void
+  /** Opens the bound session in a focused window tiled beside the browser. */
+  openSessionBeside(instanceId: string): boolean
   /** Notify listeners that an instance's state changed. */
   emitStateChange(instance: BrowserInstance): void
   /** Bounded sleep (used between toolbar load retries). */
@@ -144,6 +146,9 @@ export class BrowserToolbarHost {
       canGoBack: instance.canGoBack,
       canGoForward: instance.canGoForward,
       themeColor: instance.themeColor,
+      // Drives the "open session beside" affordance: without a bound session
+      // there is nothing to tile, so the toolbar hides the button.
+      hasBoundSession: !!(instance.boundSessionId ?? instance.ownerSessionId),
       profile: profile ? {
         id: profile.id,
         name: profile.name,
@@ -254,6 +259,13 @@ export class BrowserToolbarHost {
       const inst = this.deps.getInstance(instanceId)
       mainLog.info(`[browser-pane] toolbar ipc requestProfileManagement instanceId=${instanceId} resolved=${inst?.id ?? 'none'}`)
       this.deps.requestProfileManagement(inst?.id ?? instanceId)
+    })
+
+    ipcMain.handle(TOOLBAR_CHANNELS.OPEN_SESSION_BESIDE, async (_event, instanceId: string) => {
+      const inst = this.deps.getInstance(instanceId)
+      mainLog.info(`[browser-pane] toolbar ipc openSessionBeside instanceId=${instanceId} resolved=${inst?.id ?? 'none'}`)
+      if (!inst) return false
+      return this.deps.openSessionBeside(inst.id)
     })
 
     ipcMain.handle(TOOLBAR_CHANNELS.SWITCH_PROFILE, async (_event, instanceId: string, profileId: string) => {

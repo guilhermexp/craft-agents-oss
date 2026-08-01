@@ -34,7 +34,7 @@ function createMockWebContents() {
       }
     }),
     loadFile: mock(async (path: string, _opts?: unknown) => {
-      // Only the toolbar BrowserView loads via loadFile with the toolbar HTML;
+      // Only the toolbar view loads via loadFile with the toolbar HTML;
       // scope the simulated failure to it so an unrelated loadFile (e.g. the
       // page's empty-state) does not consume a toolbar retry budget.
       const isToolbarFile = typeof path === 'string' && path.includes('browser-toolbar.html')
@@ -54,6 +54,7 @@ function createMockWebContents() {
     setUserAgent: mock(() => {}),
     setBackgroundColor: mock(() => {}),
     isDestroyed: mock(() => false),
+    close: mock(() => {}),
     capturePage: mock(async () => {
       const img = {
         isEmpty: () => false,
@@ -81,12 +82,14 @@ function createMockWebContents() {
   }
 }
 
-function createMockBrowserView() {
+function createMockWebContentsView() {
   const webContents = createMockWebContents()
   return {
     webContents,
     setBounds: mock(() => {}),
-    setAutoResize: mock(() => {}),
+    setBorderRadius: mock((_radius: number) => {}),
+    setVisible: mock((_visible: boolean) => {}),
+    setBackgroundColor: mock((_color: string) => {}),
   }
 }
 
@@ -97,6 +100,7 @@ function createMockWindow(opts?: { width?: number; height?: number; minWidth?: n
   let contentHeight = opts?.height ?? 900
   const minWidth = opts?.minWidth ?? 0
   const minHeight = opts?.minHeight ?? 0
+  let visible = true
 
   const win = {
     webContents,
@@ -117,20 +121,40 @@ function createMockWindow(opts?: { width?: number; height?: number; minWidth?: n
     },
     isDestroyed: mock(() => false),
     isMinimized: mock(() => false),
+    isVisible: mock(() => visible),
     restore: mock(() => {}),
-    show: mock(() => {}),
-    showInactive: mock(() => {}),
+    show: mock(() => {
+      visible = true
+    }),
+    showInactive: mock(() => {
+      visible = true
+    }),
     setWindowButtonVisibility: mock((_visible: boolean) => {}),
     hide: mock(() => {
+      visible = false
       win._emit('hide')
     }),
     focus: mock(() => {}),
     destroy: mock(() => {
       win._emit('closed')
     }),
-    setBrowserView: mock((_view: any) => {}),
-    addBrowserView: mock((_view: any) => {}),
-    setTopBrowserView: mock((_view: any) => {}),
+    // WebContentsView children live under window.contentView. Re-adding an
+    // existing child reorders it to the top, which is how the manager raises
+    // the toolbar now that setTopBrowserView is gone.
+    contentView: {
+      children: [] as any[],
+      addChildView: mock(function (this: any, view: any) {
+        const existing = win.contentView.children.indexOf(view)
+        if (existing !== -1) win.contentView.children.splice(existing, 1)
+        win.contentView.children.push(view)
+      }),
+      removeChildView: mock((view: any) => {
+        const idx = win.contentView.children.indexOf(view)
+        if (idx !== -1) win.contentView.children.splice(idx, 1)
+      }),
+    },
+    getBounds: mock(() => ({ x: 0, y: 0, width: contentWidth, height: contentHeight })),
+    setBounds: mock((_bounds: { x: number; y: number; width: number; height: number }) => {}),
     getContentSize: mock(() => [contentWidth, contentHeight]),
     setContentSize: mock((width: number, height: number) => {
       contentWidth = Math.max(minWidth, Math.floor(width))
@@ -161,16 +185,23 @@ mock.module('electron', () => ({
       Object.assign(this, win)
     }
   },
-  BrowserView: class MockBrowserView {
+  WebContentsView: class MockWebContentsView {
     webContents: any
     constructor(_opts?: any) {
-      const view = createMockBrowserView()
+      const view = createMockWebContentsView()
       this.webContents = view.webContents
       Object.assign(this, view)
     }
   },
   ipcMain: {
     handle: mockIpcMainHandle,
+  },
+  screen: {
+    // 1440x900 work area with a menu-bar inset, so tiling maths that ignore
+    // workArea.x/y show up as wrong coordinates instead of passing by accident.
+    getDisplayMatching: mock(() => ({
+      workArea: { x: 0, y: 25, width: 1440, height: 875 },
+    })),
   },
   Menu: {
     buildFromTemplate: mock(() => ({
@@ -313,6 +344,136 @@ describe('BrowserPaneManager', () => {
     expect(list).toHaveLength(1)
     expect(list[0].id).toBe('test-1')
     expect(list[0].agentControlActive).toBe(false)
+  })
+
+  it('reparents views into the host window when switching to integrated mode', () => {
+    manager.createInstance('mode-1')
+    const instance = (manager as any).instances.get('mode-1')
+    const host = createMockWindow()
+
+    expect(instance.window.contentView.children).toHaveLength(3)
+
+    const ok = manager.setDisplayMode('mode-1', 'integrated', host as any)
+
+    expect(ok).toBe(true)
+    expect(manager.getDisplayMode('mode-1')).toBe('integrated')
+    // A view can only be presented in one window at a time.
+    expect(instance.window.contentView.children).toHaveLength(0)
+    expect(host.contentView.children).toHaveLength(3)
+    // Toolbar must stay on top after the move.
+    expect(host.contentView.children[2]).toBe(instance.toolbarView)
+    expect(instance.window.hide).toHaveBeenCalled()
+  })
+
+  it('refuses integrated mode without a live host window', () => {
+    manager.createInstance('mode-2')
+    expect(manager.setDisplayMode('mode-2', 'integrated', null)).toBe(false)
+    expect(manager.getDisplayMode('mode-2')).toBe('floating')
+  })
+
+  it('returns views to the instance window and clears rounding when going back to floating', () => {
+    manager.createInstance('mode-3')
+    const instance = (manager as any).instances.get('mode-3')
+    const host = createMockWindow()
+
+    manager.setDisplayMode('mode-3', 'integrated', host as any)
+    manager.setDisplayMode('mode-3', 'floating')
+
+    expect(manager.getDisplayMode('mode-3')).toBe('floating')
+    expect(host.contentView.children).toHaveLength(0)
+    expect(instance.window.contentView.children).toHaveLength(3)
+    expect(instance.embeddedBounds).toBeNull()
+    expect(instance.pageView.setBorderRadius).toHaveBeenCalledWith(0)
+  })
+
+  it('converts CSS px to DIPs with floor so the view never exceeds the card', () => {
+    manager.createInstance('bounds-1')
+    const instance = (manager as any).instances.get('bounds-1')
+    const host = createMockWindow()
+    manager.setDisplayMode('bounds-1', 'integrated', host as any)
+
+    // zoom 1.5 with fractional results: every axis must round down.
+    manager.setEmbeddedBounds('bounds-1', { x: 10.4, y: 20.7, width: 800.9, height: 600.9 }, 32, 1.5)
+
+    expect(instance.embeddedBounds).toEqual({ x: 15, y: 31, width: 1201, height: 901 })
+    expect(instance.pageView.setBorderRadius).toHaveBeenCalledWith(48)
+  })
+
+  it('ignores bounds reported while floating', () => {
+    manager.createInstance('bounds-2')
+    const instance = (manager as any).instances.get('bounds-2')
+
+    expect(manager.setEmbeddedBounds('bounds-2', { x: 0, y: 0, width: 10, height: 10 })).toBe(false)
+    expect(instance.embeddedBounds).toBeNull()
+  })
+
+  it('falls back to floating when the host window closes', () => {
+    manager.createInstance('host-close')
+    const instance = (manager as any).instances.get('host-close')
+    const host = createMockWindow()
+
+    manager.setDisplayMode('host-close', 'integrated', host as any)
+    host._emit('closed')
+
+    expect(manager.getDisplayMode('host-close')).toBe('floating')
+    expect(instance.window.contentView.children).toHaveLength(3)
+  })
+
+  it('tiles the browser and the bound session across the browser display', () => {
+    manager.createInstance('tile-1')
+    const instance = (manager as any).instances.get('tile-1')
+    instance.boundSessionId = 'session-abc'
+
+    const sessionWindow = createMockWindow()
+    const createWindow = mock((_options: unknown) => sessionWindow)
+    manager.setWindowManager({ createWindow } as any)
+
+    expect(manager.openSessionBeside('tile-1')).toBe(true)
+
+    // Focused mode + deep link straight to the session.
+    expect(createWindow.mock.calls[0][0]).toMatchObject({
+      focused: true,
+      initialDeepLink: 'craftagents://allSessions/session/session-abc',
+    })
+
+    // workArea is 1440x875 at y=25 → session is 34% (round(489.6) = 490),
+    // browser takes the remainder. Both must honour workArea.y, not 0.
+    expect(instance.window.setBounds).toHaveBeenCalledWith({ x: 0, y: 25, width: 950, height: 875 })
+    expect(sessionWindow.setBounds).toHaveBeenCalledWith({ x: 950, y: 25, width: 490, height: 875 })
+  })
+
+  it('falls back to the session list when no session is bound', () => {
+    manager.createInstance('tile-2')
+    const sessionWindow = createMockWindow()
+    const createWindow = mock((_options: unknown) => sessionWindow)
+    manager.setWindowManager({ createWindow } as any)
+
+    expect(manager.openSessionBeside('tile-2')).toBe(true)
+    expect(createWindow.mock.calls[0][0]).toMatchObject({
+      focused: true,
+      initialDeepLink: 'craftagents://allSessions',
+    })
+  })
+
+  it('paints the toolbar and overlay views transparent', () => {
+    manager.createInstance('bg-1')
+    const instance = (manager as any).instances.get('bg-1')
+
+    // The View layer, not just the webContents: WebContentsView defaults to
+    // opaque white and would white out the window when the toolbar expands.
+    expect(instance.toolbarView.setBackgroundColor).toHaveBeenCalledWith('#00000000')
+    expect(instance.nativeOverlayView.setBackgroundColor).toHaveBeenCalledWith('#00000000')
+  })
+
+  it('closes every view webContents on destroy so none outlive the window', () => {
+    manager.createInstance('leak-1')
+    const instance = (manager as any).instances.get('leak-1')
+
+    manager.destroyInstance('leak-1')
+
+    expect(instance.pageView.webContents.close).toHaveBeenCalled()
+    expect(instance.toolbarView.webContents.close).toHaveBeenCalled()
+    expect(instance.nativeOverlayView.webContents.close).toHaveBeenCalled()
   })
 
   it('is idempotent when explicit ID already exists', async () => {

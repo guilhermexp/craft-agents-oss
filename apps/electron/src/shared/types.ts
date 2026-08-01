@@ -706,6 +706,10 @@ export const RPC_CONTRACT = {
   'browserPane.renameProfile': invoke<((payload: { id: string; name: string }) => Promise<BrowserProfile>)>(RPC_NAMESPACES.browserPane.RENAME_PROFILE),
   'browserPane.switchProfile': invoke<((payload: { instanceId: string; profileId: string }) => Promise<string | null>)>(RPC_NAMESPACES.browserPane.SWITCH_PROFILE),
   'browserPane.deleteProfile': invoke<((id: string) => Promise<void>)>(RPC_NAMESPACES.browserPane.DELETE_PROFILE),
+  /** Desktop only: move the native views between the instance window and a card inside the app. */
+  'browserPane.setDisplayMode': invoke<((id: string, mode: 'floating' | 'integrated') => Promise<boolean>)>(RPC_NAMESPACES.browserPane.SET_DISPLAY_MODE),
+  /** Card geometry in host CSS px; the main process resolves the zoom factor and converts to DIPs. */
+  'browserPane.setEmbeddedBounds': invoke<((id: string, rect: { x: number; y: number; width: number; height: number }, radius?: number) => Promise<boolean>)>(RPC_NAMESPACES.browserPane.SET_EMBEDDED_BOUNDS),
   'browserPane.onProfilesChanged': event<((callback: (settings: BrowserProfileSettings) => void) => () => void)>(RPC_NAMESPACES.browserPane.PROFILES_CHANGED),
   'browserPane.onPickerRequested': event<((callback: (data: { instanceId: string }) => void) => () => void)>(RPC_NAMESPACES.browserPane.PICKER_REQUESTED),
 } satisfies Record<string, RpcLeaf<RpcLeafKind, unknown>>

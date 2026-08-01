@@ -1468,3 +1468,71 @@ html[data-scenic] .overlay-solid-surface::before {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* =============================================================================
+   VISION OS THEME EXPRESSION
+
+   Scoped to the "vision-os" preset (ThemeContext sets html[data-theme=<id>]).
+   The theme JSON only carries color; the visionOS language is geometry and
+   material, so it lives here. Values come from vision-ui/DESIGN.md:
+   §4.4/§10.1 radii, §4.5 glass thickness, §4.6 strokes and elevation.
+
+   Deliberately does NOT re-enable backdrop-filter on .shadow-middle /
+   .shadow-strong — see "SCENIC MODE - TRANSLUCENT PANEL EFFECTS" above:
+   Chromium/Metal recomposes the scenic surface while descendants scroll and
+   flashes the whole app. Glass is applied only to non-scrolling chrome.
+============================================================================= */
+html[data-theme='vision-os'] {
+  /* §10.1 radius scale */
+  --radius-sm: 6px;
+  --radius-md: 8px; /* --vision-radius-control */
+  --radius-lg: 12px; /* --vision-radius-nav */
+  --radius-xl: 16px; /* --vision-radius-group */
+  --radius-2xl: 22px;
+  --radius-3xl: 32px; /* --vision-radius-card */
+
+  /* §10.1 alpha scale */
+  --vision-fill-soft: rgb(255 255 255 / 0.07);
+  --vision-fill-control: rgb(255 255 255 / 0.14);
+  --vision-stroke: rgb(255 255 255 / 0.1);
+  --vision-stroke-strong: rgb(255 255 255 / 0.2);
+  --vision-scrim-control: rgb(0 0 0 / 0.35);
+}
+
+/* §4.6: elevation separates planes with a soft drop plus an inner highlight,
+   never a heavy black halo. Mirrors .vision-surface from §10.2. */
+html[data-theme='vision-os'][data-scenic] .shadow-middle,
+html[data-theme='vision-os'][data-scenic] .shadow-strong {
+  border-radius: var(--radius-3xl);
+  box-shadow:
+    0 8px 12px rgb(0 0 0 / 0.05),
+    -0.55px 1px 0.45px -1.5px rgb(255 255 255 / 0.3) inset,
+    0 1px 2px rgb(255 255 255 / 0.3) inset;
+}
+
+/* §10.2: asymmetric highlight — light hits the top-left corner and only grazes
+   the bottom-right. Craft's default is a vertical gradient in soft-light, which
+   reads flat; the visionOS material needs the diagonal pair at full strength. */
+html[data-theme='vision-os'][data-scenic] .shadow-middle::before,
+html[data-theme='vision-os'][data-scenic] .shadow-strong::before {
+  background:
+    linear-gradient(135deg, rgb(255 255 255 / 0.34), transparent 28%),
+    linear-gradient(315deg, rgb(255 255 255 / 0.12), transparent 24%);
+  mix-blend-mode: normal;
+}
+
+/* §4.5 thickness "normal" (48px). Popovers are the one surface Craft already
+   blurs, so this is where real glass is affordable. */
+html[data-theme='vision-os'][data-scenic] .popover-styled {
+  border-radius: var(--radius-2xl);
+  border: 1px solid var(--vision-stroke-strong);
+  backdrop-filter: saturate(1.5) blur(48px) brightness(0.85);
+  -webkit-backdrop-filter: saturate(1.5) blur(48px) brightness(0.85);
+}
+
+/* §4.1 --vision-scrim-control: search and text fields sit in a dark well
+   instead of a light fill, so they read as cut into the material. */
+html[data-theme='vision-os'][data-scenic] .input-container {
+  background: var(--vision-scrim-control);
+  border-radius: var(--radius-xl);
+}
