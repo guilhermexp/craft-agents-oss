@@ -90,7 +90,12 @@ export async function createCallbackServer(options?: CreateCallbackServerOptions
       const hasCode = !!query.code;
       const hasError = !!query.error;
       const payload: CallbackPayload = {
-        query: hasError ? { error: 'oauth-provider-error' } : query,
+        query: hasError
+          ? {
+              error: 'oauth-provider-error',
+              ...(query.state ? { state: query.state } : {}),
+            }
+          : query,
       };
 
       // Send a styled success/error page

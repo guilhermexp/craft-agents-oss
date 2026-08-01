@@ -22,6 +22,17 @@ export interface OAuthCallbacks {
   onError: (error: string) => void;
 }
 
+export function toPublicMcpOAuthProviderFailure(providerError: string | null): {
+  errorDetail: string;
+  reason: string;
+} | undefined {
+  if (!providerError) return undefined;
+  return {
+    errorDetail: 'OAuth provider rejected the authorization request',
+    reason: 'oauth-provider-error',
+  };
+}
+
 // Port range for OAuth callback server - tries ports sequentially until one is available
 const CALLBACK_PORT_START = 8914;
 const CALLBACK_PORT_END = 8924;
@@ -334,18 +345,18 @@ export class CraftOAuth {
         if (url.pathname === CALLBACK_PATH) {
           const code = url.searchParams.get('code');
           const state = url.searchParams.get('state');
-          const error = url.searchParams.get('error');
+          const providerFailure = toPublicMcpOAuthProviderFailure(url.searchParams.get('error'));
 
-          if (error) {
+          if (providerFailure) {
             res.writeHead(400, { 'Content-Type': 'text/html' });
             res.end(generateCallbackPage({
               title: 'Authorization Failed',
               isSuccess: false,
-              errorDetail: error,
+              errorDetail: providerFailure.errorDetail,
             }));
             clearTimeout(timeout);
             this.stopServer();
-            rejectCode(new Error(`OAuth error: ${error}`));
+            rejectCode(new Error(providerFailure.reason));
             return;
           }
 

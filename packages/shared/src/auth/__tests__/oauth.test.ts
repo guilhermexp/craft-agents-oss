@@ -1,5 +1,13 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
-import { CraftOAuth, getMcpBaseUrl, discoverOAuthMetadata, prepareMcpOAuth, exchangeMcpOAuth, isUrlSafeToFetch } from '../oauth';
+import {
+  CraftOAuth,
+  getMcpBaseUrl,
+  discoverOAuthMetadata,
+  prepareMcpOAuth,
+  exchangeMcpOAuth,
+  isUrlSafeToFetch,
+  toPublicMcpOAuthProviderFailure,
+} from '../oauth';
 
 // ============================================================
 // Unit tests for internal helpers exported only for testing
@@ -46,6 +54,19 @@ describe('getMcpBaseUrl', () => {
 
   it('returns as-is for empty string', () => {
     expect(getMcpBaseUrl('')).toBe('');
+  });
+});
+
+describe('MCP OAuth callback errors', () => {
+  it('maps provider-controlled errors to fixed public evidence', () => {
+    const providerFailure = 'token=provider-secret client_secret=client-secret Authorization: Bearer auth-secret';
+
+    expect(toPublicMcpOAuthProviderFailure(providerFailure)).toEqual({
+      errorDetail: 'OAuth provider rejected the authorization request',
+      reason: 'oauth-provider-error',
+    });
+    expect(JSON.stringify(toPublicMcpOAuthProviderFailure(providerFailure))).not.toContain('provider-secret');
+    expect(toPublicMcpOAuthProviderFailure(null)).toBeUndefined();
   });
 });
 

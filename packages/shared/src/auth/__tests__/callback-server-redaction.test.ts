@@ -14,14 +14,14 @@ describe('OAuth callback server public errors', () => {
 
     try {
       const response = await fetch(
-        `${callback.url}/callback?error=access_denied&error_description=${encodeURIComponent(providerError)}`,
+        `${callback.url}/callback?error=access_denied&state=expected-state&error_description=${encodeURIComponent(providerError)}`,
       );
       const html = await response.text();
       const payload = await callback.promise;
       const evidence = `${html}\n${JSON.stringify(payload)}`;
 
       expect(response.status).toBe(200);
-      expect(payload).toEqual({ query: { error: 'oauth-provider-error' } });
+      expect(payload).toEqual({ query: { error: 'oauth-provider-error', state: 'expected-state' } });
       for (const secret of ['provider-secret', 'client-secret', 'auth-secret', 'user:password', 'url-secret']) {
         expect(evidence).not.toContain(secret);
       }
