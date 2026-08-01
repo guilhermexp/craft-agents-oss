@@ -573,6 +573,17 @@ em `object-table-state`, `object-view-adapters`, `query` e `service`; os focos
 passaram 5/5 (16 expects). OpenSpec strict, DOX pass e `git diff --check` ficaram
 verdes. 7.5 permanece desmarcado.
 
+Re-review corretivo 7.2 de Phase B (2026-08-01): os REDs adversariais provaram
+que o detalhe primário renderizava path local, SQL, token/credential sintéticos
+e o object ID do caso not-found. O GREEN torna a variante `primary` fail-closed,
+sem propriedade `detail`, e renderiza somente o headline localizado
+`workspaceObjectRefreshFailed`; a exceção estruturada também usa mensagem
+genérica, sem reter o erro backend. O contrato separado de detalhe opcional para
+relation `transport` permanece inalterado. Os focos passaram 3/3 (32 expects),
+o sidebar passou 13/13 (55 expects) e a regressão de domínio/sidebar passou
+75/75 (250 expects). `typecheck:all`, paridade e ordem i18n, tool contracts,
+OpenSpec strict e `git diff --check` ficaram verdes. 7.5 permanece desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

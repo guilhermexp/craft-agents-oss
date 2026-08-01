@@ -170,33 +170,13 @@ describe('workspace object preview target identity', () => {
     expect(transportMarkup).toContain('ECONNRESET')
   });
 
-  test('classifies a real get-object rejection as primary and renders the refresh headline', async () => {
+  test('classifies real get-object rejections as primary without exposing backend details', async () => {
     const fetchPreview = Reflect.get(previewPanelModule, 'fetchWorkspaceObjectPreviewData');
     const Alert = Reflect.get(previewPanelModule, 'WorkspaceObjectPreviewErrorAlert');
     expect(fetchPreview).toBeFunction();
     expect(Alert).toBeFunction();
     if (typeof fetchPreview !== 'function' || typeof Alert !== 'function') return;
     const actions: unknown[] = [];
-    let observedError: unknown;
-    try {
-      await fetchPreview(
-        { workspaceId: 'workspace-one', objectId: 'object_missing' },
-        new AbortController().signal,
-        async (_workspaceId: string, action: unknown) => {
-          actions.push(action);
-          throw new Error('primary backend unavailable');
-        },
-      );
-    } catch (error) {
-      observedError = error;
-    }
-
-    expect(actions).toEqual([{ action: 'get-object', objectId: 'object_missing' }]);
-    expect(observedError).toMatchObject({
-      failure: { source: 'primary', detail: 'primary backend unavailable' },
-    });
-
-    const failure = Reflect.get(observedError as object, 'failure');
     const i18n = createInstance();
     await i18n.init({
       lng: 'pt-BR',
@@ -206,21 +186,47 @@ describe('workspace object preview target identity', () => {
         'chat.workspaceObjectRetry': 'Tentar novamente',
       } } },
     });
-    const markup = renderToStaticMarkup(React.createElement(I18nextProvider, { i18n }, React.createElement(Alert, {
-      failure,
-      onRetry: () => {},
-    })));
-
-    expect(markup).toContain('Falha ao atualizar o objeto');
-    expect(markup).toContain('data-object-preview-error-detail="true"');
-    expect(markup).toContain('primary backend unavailable');
-    expect(markup).not.toContain('Não foi possível carregar as relações.');
+    const backendMessages = [
+      'SQLITE_ERROR at /Users/example/private/workspace.db: SELECT * FROM credentials',
+      'Authorization: Bearer TEST_TOKEN_MUST_NOT_RENDER',
+      'password=TEST_CREDENTIAL_MUST_NOT_RENDER',
+    ];
+    for (const backendMessage of backendMessages) {
+      let observedError: unknown;
+      try {
+        await fetchPreview(
+          { workspaceId: 'workspace-one', objectId: 'object_missing' },
+          new AbortController().signal,
+          async (_workspaceId: string, action: unknown) => {
+            actions.push(action);
+            throw new Error(backendMessage);
+          },
+        );
+      } catch (error) {
+        observedError = error;
+      }
+      const failure = Reflect.get(observedError as object, 'failure');
+      expect(failure).toEqual({ source: 'primary' });
+      const markup = renderToStaticMarkup(React.createElement(I18nextProvider, { i18n }, React.createElement(Alert, {
+        failure,
+        onRetry: () => {},
+      })));
+      expect(markup).toContain('Falha ao atualizar o objeto');
+      expect(markup).not.toContain('data-object-preview-error-detail="true"');
+      expect(markup).not.toContain(backendMessage);
+      expect(markup).not.toContain('Não foi possível carregar as relações.');
+    }
+    expect(actions).toEqual(Array.from({ length: backendMessages.length }, () => (
+      { action: 'get-object', objectId: 'object_missing' }
+    )));
   });
 
-  test('classifies a missing get-object payload as a primary object-not-found failure', async () => {
+  test('classifies a missing get-object payload as primary without exposing the object id', async () => {
     const fetchPreview = Reflect.get(previewPanelModule, 'fetchWorkspaceObjectPreviewData');
+    const Alert = Reflect.get(previewPanelModule, 'WorkspaceObjectPreviewErrorAlert');
     expect(fetchPreview).toBeFunction();
-    if (typeof fetchPreview !== 'function') return;
+    expect(Alert).toBeFunction();
+    if (typeof fetchPreview !== 'function' || typeof Alert !== 'function') return;
     let observedError: unknown;
     try {
       await fetchPreview(
@@ -232,9 +238,23 @@ describe('workspace object preview target identity', () => {
       observedError = error;
     }
 
-    expect(observedError).toMatchObject({
-      failure: { source: 'primary', detail: 'Object not found: object_missing' },
+    const failure = Reflect.get(observedError as object, 'failure');
+    expect(failure).toEqual({ source: 'primary' });
+    const i18n = createInstance();
+    await i18n.init({
+      lng: 'pt-BR',
+      resources: { 'pt-BR': { translation: {
+        'chat.workspaceObjectRefreshFailed': 'Falha ao atualizar o objeto',
+        'chat.workspaceObjectRetry': 'Tentar novamente',
+      } } },
     });
+    const markup = renderToStaticMarkup(React.createElement(I18nextProvider, { i18n }, React.createElement(Alert, {
+      failure,
+      onRetry: () => {},
+    })));
+    expect(markup).toContain('Falha ao atualizar o objeto');
+    expect(markup).not.toContain('object_missing');
+    expect(markup).not.toContain('data-object-preview-error-detail="true"');
   });
 
   test('includes currently referenced relation ids in bounded option lookups', () => {

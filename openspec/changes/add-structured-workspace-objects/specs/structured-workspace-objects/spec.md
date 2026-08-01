@@ -195,9 +195,10 @@ mesma união `code`/`detail` e o mesmo mapping localizado da table. Headline MUS
 ser traduzida pelo código; detalhe técnico MUST aparecer apenas em `transport`.
 Falhas do request primário `get-object`, inclusive payload ausente, MUST ficar
 fora dessa união e desse mapping: o headline MUST permanecer
-`workspaceObjectRefreshFailed`, com mensagem segura somente como detalhe
-secundário. Apenas falhas ocorridas após o payload primário, durante relation
-options, MUST usar `RelationOptionFailure`.
+`workspaceObjectRefreshFailed` e o renderer MUST NOT expor detalhe arbitrário do
+backend, paths, SQL, credenciais ou o object ID. Apenas falhas ocorridas após o
+payload primário, durante relation options, MUST usar `RelationOptionFailure`;
+o detalhe opcional de `transport` desse branch permanece seu contrato separado.
 Todos os locale JSON MUST permanecer em ordem canônica de key, verificada pelo
 mesmo sorter em CI, sem alterar valores durante a normalização mecânica.
 Prompts de ação U5/U6 em alemão e húngaro MUST usar registro formal consistente
@@ -317,7 +318,7 @@ dentro do bloco workspaceObject.
 
 - **GIVEN** `get-object` rejeita ou retorna payload ausente antes de carregar relation options
 - **WHEN** o preview reporta a falha
-- **THEN** o headline usa `workspaceObjectRefreshFailed`, a mensagem segura aparece apenas como detalhe secundário e nenhum texto de falha relation é usado
+- **THEN** o headline usa `workspaceObjectRefreshFailed`, nenhum detalhe backend/object ID é renderizado e nenhum texto de falha relation é usado
 - **Test:** `unit`
 
 #### Scenario: Match após o limite de resposta continua visível

@@ -22,12 +22,12 @@ interface WorkspaceObjectPreviewData {
 }
 
 export type WorkspaceObjectPreviewFailure =
-  | { source: 'primary'; detail?: string }
+  | { source: 'primary' }
   | { source: 'relation'; error: RelationOptionFailure }
 
 export class WorkspaceObjectPreviewLoadError extends Error {
   constructor(readonly failure: WorkspaceObjectPreviewFailure) {
-    super(failure.source === 'primary' ? (failure.detail ?? 'Workspace object preview load failed') : failure.error.code)
+    super(failure.source === 'primary' ? 'Workspace object preview load failed' : failure.error.code)
     this.name = 'WorkspaceObjectPreviewLoadError'
   }
 }
@@ -66,12 +66,6 @@ type ExecuteWorkspaceObjectAction = (
   action: WorkspaceObjectAction,
 ) => Promise<WorkspaceObjectServiceResult>
 
-function safePreviewErrorDetail(error: unknown): string | undefined {
-  const detail = error instanceof Error ? error.message : typeof error === 'string' ? error : undefined
-  const trimmed = detail?.trim()
-  return trimmed ? trimmed.slice(0, 1_000) : undefined
-}
-
 function throwIfPreviewLoadAborted(signal: AbortSignal, error?: unknown): void {
   if (signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
     throw new DOMException('Aborted', 'AbortError')
@@ -89,11 +83,11 @@ export async function fetchWorkspaceObjectPreviewData(
     result = await execute(workspaceId, { action: 'get-object', objectId })
   } catch (error) {
     throwIfPreviewLoadAborted(signal, error)
-    throw new WorkspaceObjectPreviewLoadError({ source: 'primary', detail: safePreviewErrorDetail(error) })
+    throw new WorkspaceObjectPreviewLoadError({ source: 'primary' })
   }
   throwIfPreviewLoadAborted(signal)
   if (!('payload' in result) || !result.payload) {
-    throw new WorkspaceObjectPreviewLoadError({ source: 'primary', detail: `Object not found: ${objectId}` })
+    throw new WorkspaceObjectPreviewLoadError({ source: 'primary' })
   }
   const payload = result.payload
   const relationObjectIds = new Set(payload.fields.flatMap(field => field.relationObjectId ? [field.relationObjectId] : []))
@@ -146,12 +140,7 @@ export function WorkspaceObjectPreviewErrorAlert({
           ) : null}
         </>
       ) : (
-        <>
-          <div>{t('chat.workspaceObjectRefreshFailed')}</div>
-          {failure.detail ? (
-            <div data-object-preview-error-detail="true" className="mt-1 break-words text-[11px] opacity-80">{failure.detail}</div>
-          ) : null}
-        </>
+        <div>{t('chat.workspaceObjectRefreshFailed')}</div>
       )}
       <button type="button" className="mt-2 underline underline-offset-2" onClick={onRetry}>
         {t('chat.workspaceObjectRetry')}
@@ -208,7 +197,7 @@ export function WorkspaceObjectPreviewPanel({
       if (error instanceof DOMException && error.name === 'AbortError') return
       const failure = error instanceof WorkspaceObjectPreviewLoadError
         ? error.failure
-        : { source: 'primary' as const, detail: safePreviewErrorDetail(error) }
+        : { source: 'primary' as const }
       setRefreshError(failure)
       console.error('[WorkspaceObjectPreview]', error)
     }
