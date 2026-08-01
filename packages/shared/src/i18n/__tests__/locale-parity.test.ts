@@ -48,9 +48,12 @@ const workspaceObjectFormalActionKeys = [
 ] as const;
 
 function usesFormalWorkspaceObjectRegister(lang: "de" | "hu", value: string): boolean {
-  if (lang === "de") return !/\b(?:Wähle|Füge|Gib)\b/.test(value) && /\bSie\b/.test(value);
-  return !/\b(?:Válassz|válassz|Adj|adj)\b/.test(value)
-    && /\b(?:Válasszon|válasszon|Adjon|adjon)\b/.test(value);
+  if (lang === "de") {
+    return !/(?<!\p{L})(?:wähle|füge|gib)(?!\p{L})/iu.test(value)
+      && /(?<!\p{L})Sie(?!\p{L})/u.test(value);
+  }
+  return !/(?<!\p{L})(?:válassz|adj)(?!\p{L})/iu.test(value)
+    && /(?<!\p{L})\p{L}*(?:j|sz)(?:on|en|ön)(?!\p{L})/iu.test(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -80,8 +83,14 @@ describe("i18n locale parity", () => {
     for (const oldGerman of ["Wähle ein Feld.", "Füge ein Feld hinzu.", "Wähle zuerst ein Feld.", "Gib einen Namen ein."]) {
       expect(usesFormalWorkspaceObjectRegister("de", oldGerman)).toBe(false);
     }
+    for (const adversarialGerman of ["Bitte wähle Sie ein Feld.", "Bitte fÜgE Sie ein Feld hinzu.", "Bitte gIb Sie einen Namen ein."]) {
+      expect(usesFormalWorkspaceObjectRegister("de", adversarialGerman)).toBe(false);
+    }
     for (const oldHungarian of ["Válassz mezőt.", "Adj hozzá mezőt.", "Előbb válassz mezőt.", "Adj nevet."]) {
       expect(usesFormalWorkspaceObjectRegister("hu", oldHungarian)).toBe(false);
+    }
+    for (const alternateFormalHungarian of ["Jelöljön ki egy mezőt.", "Írjon be egy nevet."]) {
+      expect(usesFormalWorkspaceObjectRegister("hu", alternateFormalHungarian)).toBe(true);
     }
   });
 

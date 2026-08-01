@@ -461,6 +461,17 @@ A suíte locale focada passou 24/24 (55 expects), e `typecheck:all`, paridade
 i18n, tool contracts, OpenSpec strict e `git diff --check` ficaram verdes. 7.5
 permanece desmarcado.
 
+Re-review corretivo 5.2 de Phase B (2026-08-01): o RED mostrou que tokens
+alemães informais em lowercase/mixed-case passavam quando a frase também tinha
+`Sie`, enquanto verbos húngaros formais alternativos eram rejeitados pela
+allowlist lexical. O GREEN usa limites Unicode e comparação case-insensitive
+para rejeitar os tokens alemães, e no húngaro combina blacklist informal com
+morfologia de imperativo polido de terceira pessoa, aceitando também
+`Jelöljön`/`Írjon`. Nenhum locale foi alterado. O teste focado passou 1/1 (21
+expects); a suíte locale focada passou 24/24 (60 expects), e `typecheck:all`,
+paridade i18n, OpenSpec strict e `git diff --check` ficaram verdes. 7.5
+permanece desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.
