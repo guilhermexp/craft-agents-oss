@@ -130,8 +130,8 @@ The Phase A local-first object contract is tracked by
 - The existing right sidebar remains the product owner. Structured objects
   extend `SessionInfoPopover`/`AppShell` and reuse current file viewers; do not
   create a parallel panel. U5 extends the same `WorkspaceObjectPreviewPanel`
-  with the typed table; U6 adapters remain outside this surface until their own
-  test-first unit lands.
+  with the typed table; U6 routes table, Kanban, calendar, timeline, gallery and
+  list through `ObjectViewHost` inside that same preview.
 - `packages/shared/src/workspace-objects/view-schema.ts` owns the strict saved
   view v1 contract. `query.ts` is the only evaluator for nested filters, search,
   stable multi-sort, visibility and current relation labels. Both
@@ -141,6 +141,15 @@ The Phase A local-first object contract is tracked by
   `upsert-entries` action. Invalid drafts never call the mutation. A returned
   revision means the canonical commit exists, but the editor closes only after
   the SWR payload reaches that revision and confirms the canonical value.
+- U6 adapters consume only the `WorkspaceObjectQueryResult` produced by the U5
+  evaluator and retain stable entry IDs/current relation labels. The adapter
+  registry owns no storage and incomplete settings render a configurable empty
+  state instead of silently falling back to table.
+- Object Kanban groups only by a configured canonical select/status field. A
+  drag keeps its optimistic value through a `ready` commit envelope, then waits
+  for payload revalidation; rejected envelopes, `projection-error`, transport
+  throws or canonical mismatch remove the optimistic override and expose the
+  rollback error.
 
 ### Structured-object child index
 
@@ -152,8 +161,16 @@ The Phase A local-first object contract is tracked by
 | `packages/server-core/src/handlers/rpc/workspace-objects.ts` | Workspace-scoped Desktop bridge |
 | `apps/electron/src/renderer/components/app-shell/content-*.ts` | Tabs, target identity, bounded resolver and SWR |
 | `apps/electron/src/renderer/components/right-sidebar/workspace-object*.tsx` | Object list and Phase A read preview inside the existing sidebar |
-| `apps/electron/src/renderer/components/workspace-objects/` | U5 saved table state and commit-gated typed field editors |
+| `apps/electron/src/renderer/components/workspace-objects/` | U5 query/table editors plus U6 registry, six adapters and Kanban commit lifecycle |
 | `docs/denchclaw/` | Pinned upstream evidence, known defects and Craft decisions |
+
+### Structured-object verification matrix
+
+| Layer / path | Required tier | Command |
+| --- | --- | --- |
+| `packages/shared/src/workspace-objects/**` | integration | `bun test packages/shared/src/workspace-objects/__tests__/*.test.ts` |
+| `apps/electron/src/renderer/components/workspace-objects/**` | unit | `bun test apps/electron/src/renderer/components/workspace-objects/__tests__/*.test.ts*` |
+| `apps/electron/src/renderer/components/right-sidebar/workspace-object*` | unit | `bun test apps/electron/src/renderer/components/right-sidebar/__tests__/workspace-objects-section.test.ts` |
 
 After changing this contract, run the focused Phase A tests, `typecheck:all`,
 `lint:tool-contracts`, `lint:i18n:parity`, strict OpenSpec validation and

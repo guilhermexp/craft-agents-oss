@@ -386,6 +386,29 @@ transporte mantêm o draft com mensagem acionável. Mesmo uma resposta de sucess
 só fecha o editor quando o resolver SWR entrega um payload cuja revisão alcança
 o commit e cujo valor canônico coincide.
 
+### Implementação Craft U6
+
+`ObjectViewHost` vive dentro do `ObjectTableView`/preview existente e resolve um
+registry fechado de table, Kanban, calendar, timeline, gallery e list. Todos os
+adapters recebem o mesmo `WorkspaceObjectPayload` e o mesmo resultado de
+`evaluateWorkspaceObjectQuery`; nenhum mantém storage, IDs ou projeção de dados
+paralela. A table é exatamente a implementação editável do U5.
+
+Os demais adapters leem `presentation.adapter/settings` da saved view. Kanban
+exige `groupFieldId` select/status, calendar e timeline exigem `dateFieldId`,
+gallery exige `mediaFieldId` file e list exige `primaryFieldId`. Setting ausente,
+field incompatível ou falta de field compatível produz estado vazio explícito
+com ação de configuração, nunca fallback silencioso para table. Salvar a view
+persiste adapter e settings no contrato v1 já validado.
+
+O Kanban reutiliza `DndContext` e o sensor visual existente, mas seus cards são
+entries genéricas, sem modelos de task/session. O drop aplica somente um
+override otimista local e envia a entry completa por `upsert-entries`. Envelope
+rejeitado, `projection-error` ou exceção de transporte removem o override e
+restauram a coluna original com erro visível; resposta `ready` mantém a posição
+até o payload SWR alcançar a revisão do commit, evitando flicker, e também faz
+rollback se o valor canônico não confirmar o move.
+
 `apps/web/lib/object-filters.ts` é a peça mais reaproveitável do repo. Define:
 
 ```ts

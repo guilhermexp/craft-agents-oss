@@ -117,9 +117,9 @@ GO sem blocker concreto, liberando a Phase B.
       field editors antes da implementação de U5.
 - [x] 7.2 Implementar query compartilhada, saved views e table editável com
       confirmação somente após commit.
-- [ ] 7.3 Escrever testes do registry de adapters, configurações vazias e rollback
+- [x] 7.3 Escrever testes do registry de adapters, configurações vazias e rollback
       Kanban para rejeição e transporte antes da implementação de U6.
-- [ ] 7.4 Implementar table, Kanban, calendar, timeline, gallery e list sobre um
+- [x] 7.4 Implementar table, Kanban, calendar, timeline, gallery e list sobre um
       único payload.
 - [ ] 7.5 Validar testes, Electron real e auditor GO antes de Phase C.
 
@@ -237,6 +237,24 @@ recuperável, enquanto igual ou maior substitui normalmente, sem throw nem
 generation token. A matriz focada passou 52/52 (146 expects), e os typechecks
 shared/Electron passaram. U6, 7.3, 7.4, smoke e 7.5 continuam não iniciados e
 desmarcados.
+
+Evidência U6 7.3/7.4 (2026-08-01): o RED da nova suíte executou antes da
+produção e retornou `0 pass / 1 fail`, com `Cannot find module
+'../ObjectViewHost'`. O GREEN registra table, Kanban, calendar, timeline,
+gallery e list num host único dentro do preview existente. Todos recebem o
+mesmo `WorkspaceObjectPayload` e `WorkspaceObjectQueryResult` do evaluator U5;
+adapter/settings continuam no saved view v1, sem storage ou projeção paralela.
+
+Config ausente ou incompatível produz estado vazio com seleção de field e ação
+de configuração. O Kanban usa entries/stable IDs genéricos e as primitives DnD
+existentes, persiste a entry completa pelo commit envelope e mantém o override
+otimista até revalidation. Envelope rejeitado, `projection-error`, canonical
+mismatch ou throw de transporte removem o override e restauram a coluna
+original com erro visível. A matriz U5+U6 passou 75/75 em oito arquivos (224
+expects); typechecks Electron/shared e i18n parity passaram, com 7 locales e
+1.792 keys. React Doctor latest 0.9.3 terminou com 0 issues e `impeccable@3
+detect` saiu 0. O DOX e a documentação DenchClaw foram atualizados. 7.5,
+Electron real e auditoria Phase B não foram executados nem marcados.
 
 ## 8. Phase C — U7: discovery e health
 

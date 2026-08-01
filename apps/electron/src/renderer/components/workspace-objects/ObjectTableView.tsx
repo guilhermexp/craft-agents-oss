@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button'
 import { DataTable } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
 import { ObjectFieldEditor, type ObjectRelationOption } from './ObjectFieldEditor'
+import { OBJECT_VIEW_ADAPTERS, ObjectViewHost, type ObjectViewAdapterId } from './ObjectViewHost'
 import { collectReferencedRelationEntryIds, loadReferencedRelationOptions } from './relation-options'
 
 type MutateWorkspaceObject = (action: WorkspaceObjectAction) => Promise<WorkspaceObjectServiceResult>
@@ -41,6 +42,14 @@ export type RelationOptionLoadResult =
   | { status: 'success'; page: RelationOptionPage }
   | { status: 'error'; message: string }
 const EMPTY_RELATION_OPTION_PAGES: Record<string, RelationOptionPage> = {}
+const OBJECT_VIEW_ADAPTER_LABEL_KEYS: Record<ObjectViewAdapterId, string> = {
+  table: 'chat.workspaceObjectAdapterTable',
+  kanban: 'chat.workspaceObjectAdapterKanban',
+  calendar: 'chat.workspaceObjectAdapterCalendar',
+  timeline: 'chat.workspaceObjectAdapterTimeline',
+  gallery: 'chat.workspaceObjectAdapterGallery',
+  list: 'chat.workspaceObjectAdapterList',
+}
 
 export function canonicalSavedViewFingerprint(payload: WorkspaceObjectPayload, viewId?: string): string | null {
   const view = payload.savedViews.find(candidate => candidate.id === viewId)
@@ -344,6 +353,16 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
     }
   }
 
+  const configureAdapterSetting = React.useCallback((settingKey: string, fieldId: string) => {
+    setConfig(current => ({
+      ...current,
+      presentation: {
+        ...current.presentation,
+        settings: { ...current.presentation.settings, [settingKey]: fieldId },
+      },
+    }))
+  }, [])
+
   const saveView = async () => {
     const normalizedName = viewName.trim()
     if (!normalizedName) {
@@ -420,6 +439,22 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
         >
           <option value="">{t('chat.workspaceObjectDefaultView')}</option>
           {payload.savedViews.map(view => <option key={view.id} value={view.id}>{view.name}</option>)}
+        </select>
+        <select
+          className="h-8 min-w-32 rounded border border-foreground/15 bg-background px-2 text-xs"
+          value={config.presentation.adapter}
+          aria-label={t('chat.workspaceObjectViewAdapter')}
+          onChange={event => setConfig(current => ({
+            ...current,
+            presentation: {
+              ...current.presentation,
+              adapter: event.target.value as ObjectViewAdapterId,
+            },
+          }))}
+        >
+          {OBJECT_VIEW_ADAPTERS.map(adapter => (
+            <option key={adapter.id} value={adapter.id}>{t(OBJECT_VIEW_ADAPTER_LABEL_KEYS[adapter.id])}</option>
+          ))}
         </select>
         <Input
           className="h-8 min-w-40 flex-1 text-xs"
@@ -503,15 +538,24 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
         {saveError ? <div className="w-full text-[11px] text-destructive" role="alert">{saveError}</div> : null}
       </div>
 
-      <DataTable
-        key={`${tablePresentation.density}:${tablePresentation.pageSize}`}
-        columns={columns}
-        data={query.entries}
-        getRowId={entry => entry.id}
-        pagination
-        pageSize={tablePresentation.pageSize}
-        className={tablePresentation.density === 'compact' ? '[&_td]:!p-1 [&_th]:!p-1' : undefined}
-        emptyContent={t('chat.workspaceObjectNoRows')}
+      <ObjectViewHost
+        payload={payload}
+        config={config}
+        query={query}
+        mutate={mutate}
+        onConfigureSetting={configureAdapterSetting}
+        tableContent={(
+          <DataTable
+            key={`${tablePresentation.density}:${tablePresentation.pageSize}`}
+            columns={columns}
+            data={query.entries}
+            getRowId={entry => entry.id}
+            pagination
+            pageSize={tablePresentation.pageSize}
+            className={tablePresentation.density === 'compact' ? '[&_td]:!p-1 [&_th]:!p-1' : undefined}
+            emptyContent={t('chat.workspaceObjectNoRows')}
+          />
+        )}
       />
     </div>
   )
