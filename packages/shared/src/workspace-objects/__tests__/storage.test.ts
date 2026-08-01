@@ -295,6 +295,57 @@ describe('WorkspaceObjectRepository', () => {
     persisted.close();
   });
 
+  test('rechecks legacy saved views after acquiring the migration writer lock', async () => {
+    const root = makeRoot();
+    const repository = WorkspaceObjectRepository.open(root);
+    repository.defineObject({ id: 'object_tasks', slug: 'tasks', name: 'Tasks', fields: [] });
+    repository.upsertSavedView('object_tasks', {
+      id: 'view_seed', name: 'Seed',
+      config: { schemaVersion: 1, search: '', filter: null, sort: [], columnVisibility: {}, presentation: { adapter: 'table', settings: {} } },
+    });
+    const path = join(root, 'objects', 'objects.sqlite');
+    const setup = openSQLite(path);
+    setup.prepare('UPDATE workspace_object_saved_views SET config_json = ? WHERE id = ?')
+      .run(JSON.stringify({ schemaVersion: 'phase-a', search: 'legacy' }), 'view_seed');
+    setup.prepare('DELETE FROM workspace_object_schema_version WHERE version > 2').run();
+    setup.close();
+    (Reflect.get(repository, 'db') as ReturnType<typeof openSQLite>).pragma('busy_timeout = 2000');
+
+    const concurrentConfig = {
+      schemaVersion: 1,
+      search: 'concurrent',
+      filter: null,
+      sort: [],
+      columnVisibility: {},
+      presentation: { adapter: 'table', settings: {} },
+    };
+    const writer = Bun.spawn([
+      process.execPath,
+      '-e',
+      `import { Database } from 'bun:sqlite';
+       const db = new Database(process.argv[1]);
+       db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=2000; BEGIN IMMEDIATE');
+       db.query('UPDATE workspace_object_saved_views SET config_json = ? WHERE id = ?').run(process.argv[2], 'view_seed');
+       process.stdout.write('LOCKED');
+       await Bun.sleep(250);
+       db.exec('COMMIT');
+       db.close();`,
+      path,
+      JSON.stringify(concurrentConfig),
+    ], { stdout: 'pipe', stderr: 'pipe' });
+    const signal = await writer.stdout.getReader().read();
+    expect(new TextDecoder().decode(signal.value)).toContain('LOCKED');
+
+    (repository as unknown as { migrateLegacySavedViews(): void }).migrateLegacySavedViews();
+    expect(await writer.exited).toBe(0);
+    const verification = openSQLite(path);
+    const persisted = verification.prepare('SELECT config_json FROM workspace_object_saved_views WHERE id = ?')
+      .get('view_seed') as { config_json: string };
+    expect(JSON.parse(persisted.config_json)).toEqual(concurrentConfig);
+    verification.close();
+    repository.close();
+  });
+
   test('isolates malformed migration rows while reopening and normalizing valid legacy siblings', () => {
     const root = makeRoot();
     const repository = WorkspaceObjectRepository.open(root);

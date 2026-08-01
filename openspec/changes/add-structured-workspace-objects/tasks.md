@@ -346,6 +346,17 @@ revision sem inventar status para a page e filtra labels pelos IDs usados nas
 entries retornadas. A matriz afetada passou 91/91 em nove arquivos (302
 expects), com typechecks shared/Electron verdes. 7.5 permanece desmarcado.
 
+Lote corretivo 2 de Phase B (2026-08-01): três REDs focados provaram que a
+migration v3 lia legacy saved views antes do writer lock e sobrescrevia update
+concorrente, filtros relation só comparavam o label renderizado e um envelope
+canônico `projection-error` causava rollback falso no Kanban. O GREEN move
+leitura/normalização/marker da migration para a mesma transação `BEGIN
+IMMEDIATE`, combina stable ID e label com OR positivo/AND negado e mantém o move
+Kanban aguardando revalidation com warning de repair separado até payload
+`ready`. A matriz de objetos passou 94/94 em nove arquivos (319 expects), com
+`typecheck:all`, tool contracts, OpenSpec strict e `git diff --check` verdes.
+7.5 permanece desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

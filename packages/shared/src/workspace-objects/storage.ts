@@ -311,28 +311,28 @@ export class WorkspaceObjectRepository {
   }
 
   private migrateLegacySavedViews(): void {
-    const rows = this.db.prepare('SELECT id, object_id, name, config_json FROM workspace_object_saved_views')
-      .all() as Array<{ id: string; object_id: string; name: string; config_json: string }>;
-    const migrations: Array<{ objectId: string; id: string; configJson: string }> = [];
-    for (const row of rows) {
-      let config: unknown = {};
-      try { config = JSON.parse(row.config_json); } catch { /* Fall back per row below. */ }
-      const strict = WorkspaceObjectSavedViewSchema.safeParse({ id: row.id, name: row.name, config });
-      if (strict.success) continue;
-      try {
-        const normalized = normalizeLegacyWorkspaceObjectSavedView({
-          id: row.id,
-          name: row.name,
-          config: config && typeof config === 'object' && !Array.isArray(config)
-            ? config as Record<string, unknown>
-            : {},
-        });
-        migrations.push({ objectId: row.object_id, id: row.id, configJson: JSON.stringify(normalized.config) });
-      } catch {
-        // A single corrupt Phase A row must not prevent the workspace opening.
-      }
-    }
     this.transaction(() => {
+      const rows = this.db.prepare('SELECT id, object_id, name, config_json FROM workspace_object_saved_views')
+        .all() as Array<{ id: string; object_id: string; name: string; config_json: string }>;
+      const migrations: Array<{ objectId: string; id: string; configJson: string }> = [];
+      for (const row of rows) {
+        let config: unknown = {};
+        try { config = JSON.parse(row.config_json); } catch { /* Fall back per row below. */ }
+        const strict = WorkspaceObjectSavedViewSchema.safeParse({ id: row.id, name: row.name, config });
+        if (strict.success) continue;
+        try {
+          const normalized = normalizeLegacyWorkspaceObjectSavedView({
+            id: row.id,
+            name: row.name,
+            config: config && typeof config === 'object' && !Array.isArray(config)
+              ? config as Record<string, unknown>
+              : {},
+          });
+          migrations.push({ objectId: row.object_id, id: row.id, configJson: JSON.stringify(normalized.config) });
+        } catch {
+          // A single corrupt Phase A row must not prevent the workspace opening.
+        }
+      }
       for (const migration of migrations) {
         this.db.prepare('UPDATE workspace_object_saved_views SET config_json = ? WHERE id = ?')
           .run(migration.configJson, migration.id);

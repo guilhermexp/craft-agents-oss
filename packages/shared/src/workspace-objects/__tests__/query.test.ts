@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { evaluateWorkspaceObjectQuery } from '../query.ts';
-import { WorkspaceObjectSavedViewSchema, type WorkspaceObjectViewConfig } from '../view-schema.ts';
+import { WorkspaceObjectSavedViewSchema, type WorkspaceObjectFilterRule, type WorkspaceObjectViewConfig } from '../view-schema.ts';
 import type { WorkspaceObjectPayload } from '../types.ts';
 
 const payload: WorkspaceObjectPayload = {
@@ -197,5 +197,28 @@ describe('evaluateWorkspaceObjectQuery', () => {
     expect(first.entries[0]?.values.field_company).toBe('company_2');
     expect(renamed.entries.map(entry => entry.id)).toEqual(['entry_c', 'entry_b', 'entry_a', 'entry_d']);
     expect(renamed.entries[0]?.values.field_company).toBe('company_2');
+  });
+
+  test('matches relation filters against both stable ids and current labels', () => {
+    const relationLabels = new Map([['company_1', 'Acme'], ['company_2', 'Zenith']]);
+    const cases: Array<{
+      operator: WorkspaceObjectFilterRule['operator'];
+      value: string | string[];
+      expected: string[];
+    }> = [
+      { operator: 'equals', value: 'company_1', expected: ['entry_a', 'entry_d'] },
+      { operator: 'contains', value: 'company_1', expected: ['entry_a', 'entry_d'] },
+      { operator: 'in', value: ['company_1'], expected: ['entry_a', 'entry_d'] },
+      { operator: 'not-equals', value: 'company_1', expected: ['entry_c', 'entry_b'] },
+      { operator: 'not-contains', value: 'company_1', expected: ['entry_c', 'entry_b'] },
+      { operator: 'not-in', value: ['company_1'], expected: ['entry_c', 'entry_b'] },
+    ];
+
+    for (const { operator, value, expected } of cases) {
+      const result = evaluateWorkspaceObjectQuery(payload, view({
+        filter: { type: 'rule', fieldId: 'field_company', operator, value },
+      }), { relationLabels });
+      expect(result.entries.map(entry => entry.id), operator).toEqual(expected);
+    }
   });
 });

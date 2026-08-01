@@ -121,7 +121,16 @@ function matchesFilter(
   }
   const field = fieldById.get(clause.fieldId);
   if (!field) return false;
-  return matchesRule(field, displayValue(field, entry.values[field.id], context), clause);
+  const rawValue = entry.values[field.id] ?? null;
+  const displayedValue = displayValue(field, rawValue, context);
+  if (field.type !== 'relation') return matchesRule(field, displayedValue, clause);
+  const rawMatches = matchesRule(field, rawValue, clause);
+  const displayMatches = matchesRule(field, displayedValue, clause);
+  const negated = clause.operator === 'not-equals'
+    || clause.operator === 'not-in'
+    || clause.operator === 'not-contains'
+    || clause.operator === 'is-not-empty';
+  return negated ? rawMatches && displayMatches : rawMatches || displayMatches;
 }
 
 export function evaluateWorkspaceObjectQuery(

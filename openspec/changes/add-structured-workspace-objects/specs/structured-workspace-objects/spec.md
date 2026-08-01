@@ -141,6 +141,10 @@ canônico. Trocar adapter MUST NOT migrar dados nem alterar object/entry IDs.
 Saved views SHALL preservar filtros aninhados, search, multi-sort, column
 visibility e settings do adapter. Table edits SHALL validar pelo field type,
 resolver relation labels por stable ID e somente confirmar sucesso após commit.
+Migration v3 SHALL adquirir o writer lock antes de ler e normalizar legacy
+saved views, reavaliando updates concorrentes sob a mesma transação. Filtros de
+relation SHALL comparar stable ID e label corrente, usando OR para operadores
+positivos e AND para operadores negados.
 `query-object` SHALL avaliar o snapshot canônico completo antes de limitar a
 resposta a 200 entries e SHALL retornar `totalEntries` e `truncated`. O repair
 de projeção stale SHALL ser tentado antes do snapshot de leitura; se o writer
@@ -152,6 +156,19 @@ MUST limitar relation labels aos IDs referenciados pelas entries devolvidas.
 - **WHEN** uma view com filtros aninhados e columns ocultas é reaberta
 - **THEN** query e apresentação correspondem ao estado salvo
 - **Test:** `integration`
+
+#### Scenario: Update concorrente vence migration v3
+
+- **GIVEN** uma legacy saved view e outro writer atualizando-a para config v1 válida
+- **WHEN** migration v3 aguarda e adquire o writer lock
+- **THEN** ela relê a row sob o lock e não sobrescreve a atualização concorrente
+- **Test:** `integration`
+
+#### Scenario: Relation filtra por ID estável e label
+
+- **WHEN** filtros relation positivos ou negados usam o stable ID enquanto existe label corrente
+- **THEN** positivos aceitam match no ID ou label e negados excluem match em qualquer representação
+- **Test:** `unit`
 
 #### Scenario: Field edit inválido é rejeitado
 
@@ -187,11 +204,13 @@ MUST limitar relation labels aos IDs referenciados pelas entries devolvidas.
 - **THEN** `relationLabels` contém somente IDs usados pelas entries dessa página
 - **Test:** `integration`
 
-### Requirement: Kanban mutations fully roll back on failure
+### Requirement: Kanban mutations distinguish persistence failure from projection repair
 
 Kanban SHALL agrupar por field configurável, SHALL explicar configuração
 incompatível e MUST restaurar a mutação original quando a persistência falhar
-por resposta ou transporte.
+por resposta ou transporte. Um envelope com object ID e revisão canônicos mais
+`projection-error` MUST manter a mutação aguardando revalidation, MUST mostrar
+warning de repair separado e MUST NOT alegar rollback do commit.
 
 #### Scenario: Group field está ausente
 
@@ -203,6 +222,12 @@ por resposta ou transporte.
 
 - **WHEN** um card é movido e o request lança erro de transporte
 - **THEN** card e dados locais retornam à coluna original e o erro permanece visível
+- **Test:** `integration`
+
+#### Scenario: Commit canônico requer repair de projeção
+
+- **WHEN** o move retorna object ID e revisão canônicos com `projection-error`
+- **THEN** o card aguarda confirmação canônica, mostra warning separado e limpa o warning somente após payload `ready` na revisão commitada
 - **Test:** `integration`
 
 ### Requirement: Gmail sync is resumable and idempotent

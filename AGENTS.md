@@ -136,7 +136,11 @@ The Phase A local-first object contract is tracked by
   view v1 contract. `query.ts` is the only evaluator for nested filters, search,
   stable multi-sort, visibility and current relation labels. Both
   `query-object` and the Desktop table call it; do not fork query semantics in
-  the renderer or an adapter. `query-object` evaluates the complete canonical
+  the renderer or an adapter. Relation filters compare both stable IDs and
+  current labels (positive operators use OR; negated operators use AND).
+  Migration v3 acquires its writer transaction before reading and normalizing
+  legacy saved views so it cannot overwrite a concurrent canonical update.
+  `query-object` evaluates the complete canonical
   snapshot before bounding its response to 200 entries and reports
   `totalEntries` plus `truncated`; serialized relation labels are limited to
   IDs referenced by those returned entries. Projection repair is best-effort
@@ -169,9 +173,11 @@ The Phase A local-first object contract is tracked by
   stale responses cannot cross moves; entries remain independent. A drag keeps
   its optimistic value through a `ready` commit envelope and reconciles against
   the latest payload immediately, including when revalidation arrived before the
-  commit result. Rejected envelopes, `projection-error`, transport throws or
-  canonical mismatch remove only that entry's optimistic override and expose a
-  localized error isolated by entry.
+  commit result. Rejected envelopes, transport throws or canonical mismatch
+  remove only that entry's optimistic override and expose a localized error
+  isolated by entry. A canonical commit envelope with `projection-error` stays
+  awaiting revalidation and exposes a separate repair warning until a `ready`
+  payload at the committed revision is observed; it never reports rollback.
 
 ### Structured-object child index
 

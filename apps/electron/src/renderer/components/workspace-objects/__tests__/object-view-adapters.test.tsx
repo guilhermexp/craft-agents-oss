@@ -15,6 +15,7 @@ import {
   OBJECT_VIEW_ADAPTERS,
   ObjectKanbanErrorAlert,
   ObjectKanbanErrorAlerts,
+  ObjectKanbanWarningAlerts,
   ObjectViewHost,
   applyObjectKanbanCommit,
   beginObjectKanbanMove,
@@ -307,13 +308,9 @@ describe('object Kanban commit lifecycle', () => {
     expect(resolveObjectKanbanEntryValue(confirmed, confirmedPayload.entries[0]!, 'field_status')).toBe('Doing')
   })
 
-  test('rolls back rejected envelopes and projection-error responses', async () => {
+  test('rolls back rejected envelopes', async () => {
     const cases: Array<{ response: WorkspaceObjectServiceResult; errorCode: ObjectKanbanErrorCode }> = [
       { response: { payload: null }, errorCode: 'commit-missing' },
-      {
-        response: { objectId: payload.id, revision: 5, projectionStatus: 'projection-error' },
-        errorCode: 'projection-error',
-      },
     ]
     for (const { response, errorCode } of cases) {
       const optimistic = beginObjectKanbanMove(EMPTY_OBJECT_KANBAN_MOVE_STATE, entry, 'field_status', 'Doing', 'operation-1')
@@ -331,6 +328,57 @@ describe('object Kanban commit lifecycle', () => {
       expect(resolveObjectKanbanEntryValue(rolledBack, entry, 'field_status')).toBe('Todo')
       expect(rolledBack.errors[entry.id]?.code).toBe(errorCode)
     }
+  })
+
+  test('keeps a canonical projection-error commit pending and reports repair separately', async () => {
+    const optimistic = beginObjectKanbanMove(EMPTY_OBJECT_KANBAN_MOVE_STATE, entry, 'field_status', 'Doing', 'operation-1')
+    const result = await commitObjectKanbanMove({
+      objectId: payload.id,
+      entry,
+      fieldId: 'field_status',
+      nextValue: 'Doing',
+      operationId: 'operation-1',
+      mutate: async () => ({ objectId: payload.id, revision: 5, projectionStatus: 'projection-error' }),
+    })
+
+    expect(result).toEqual({
+      status: 'awaiting-revalidation',
+      entryId: entry.id,
+      operationId: 'operation-1',
+      revision: 5,
+      warning: { code: 'projection-error', revision: 5 },
+    })
+    const awaiting = applyObjectKanbanCommit(optimistic, result)
+    expect(resolveObjectKanbanEntryValue(awaiting, entry, 'field_status')).toBe('Doing')
+    expect(awaiting.errors).toEqual({})
+    expect(awaiting.warnings).toEqual({ [entry.id]: { code: 'projection-error', revision: 5 } })
+
+    const canonicalProjectionError = {
+      ...payload,
+      revision: 5,
+      projectionStatus: 'projection-error' as const,
+      entries: payload.entries.map(candidate => candidate.id === entry.id
+        ? { ...candidate, values: { ...candidate.values, field_status: 'Doing' } }
+        : candidate),
+    }
+    const confirmed = reconcileObjectKanbanMoves(awaiting, canonicalProjectionError)
+    expect(confirmed.pending).toEqual({})
+    expect(confirmed.errors).toEqual({})
+    expect(confirmed.warnings).toEqual({ [entry.id]: { code: 'projection-error', revision: 5 } })
+
+    const staleReady = reconcileObjectKanbanMoves(confirmed, { ...payload, projectionStatus: 'ready' })
+    expect(staleReady.warnings).toEqual({ [entry.id]: { code: 'projection-error', revision: 5 } })
+    const repaired = reconcileObjectKanbanMoves(confirmed, { ...canonicalProjectionError, projectionStatus: 'ready' })
+    expect(repaired.warnings).toEqual({})
+
+    const warningMarkup = renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <ObjectKanbanWarningAlerts warnings={confirmed.warnings} />
+      </I18nextProvider>,
+    )
+    expect(warningMarkup).toContain('data-object-kanban-warning-entry="entry_a"')
+    expect(warningMarkup).toContain('role="status"')
+    expect(warningMarkup).toContain('committed but its projection requires repair')
   })
 
   test('rolls back when the mutation transport throws', async () => {

@@ -98,16 +98,22 @@ interface PendingObjectKanbanMove {
 export interface ObjectKanbanMoveState {
   pending: Record<string, PendingObjectKanbanMove>
   errors: Record<string, ObjectKanbanError>
+  warnings: Record<string, ObjectKanbanWarning>
 }
 
-export type ObjectKanbanErrorCode = 'commit-missing' | 'projection-error' | 'canonical-mismatch' | 'transport'
+export type ObjectKanbanErrorCode = 'commit-missing' | 'canonical-mismatch' | 'transport'
 
 export interface ObjectKanbanError {
   code: ObjectKanbanErrorCode
   detail?: string
 }
 
-export const EMPTY_OBJECT_KANBAN_MOVE_STATE: ObjectKanbanMoveState = { pending: {}, errors: {} }
+export interface ObjectKanbanWarning {
+  code: 'projection-error'
+  revision: number
+}
+
+export const EMPTY_OBJECT_KANBAN_MOVE_STATE: ObjectKanbanMoveState = { pending: {}, errors: {}, warnings: {} }
 
 export function beginObjectKanbanMove(
   state: ObjectKanbanMoveState,
@@ -118,13 +124,16 @@ export function beginObjectKanbanMove(
 ): ObjectKanbanMoveState {
   if (state.pending[entry.id]) return state
   const errors = { ...state.errors }
+  const warnings = { ...state.warnings }
   delete errors[entry.id]
+  delete warnings[entry.id]
   return {
     pending: {
       ...state.pending,
       [entry.id]: { operationId, fieldId, originalValue: entry.values[fieldId], nextValue },
     },
     errors,
+    warnings,
   }
 }
 
@@ -138,7 +147,7 @@ export function resolveObjectKanbanEntryValue(
 }
 
 export type ObjectKanbanCommitResult =
-  | { status: 'awaiting-revalidation'; entryId: string; operationId: string; revision: number }
+  | { status: 'awaiting-revalidation'; entryId: string; operationId: string; revision: number; warning?: ObjectKanbanWarning }
   | { status: 'rollback'; entryId: string; operationId: string; error: ObjectKanbanError }
 
 export async function commitObjectKanbanMove(options: {
@@ -166,19 +175,14 @@ export async function commitObjectKanbanMove(options: {
         error: { code: 'commit-missing' },
       }
     }
-    if (result.projectionStatus !== 'ready') {
-      return {
-        status: 'rollback',
-        entryId: options.entry.id,
-        operationId: options.operationId,
-        error: { code: 'projection-error' },
-      }
-    }
     return {
       status: 'awaiting-revalidation',
       entryId: options.entry.id,
       operationId: options.operationId,
       revision: result.revision,
+      ...(result.projectionStatus === 'projection-error'
+        ? { warning: { code: 'projection-error' as const, revision: result.revision } }
+        : {}),
     }
   } catch (error) {
     return {
@@ -200,10 +204,13 @@ export function applyObjectKanbanCommit(
   if (!move || move.operationId !== result.operationId) return state
   if (result.status === 'rollback') {
     delete pending[result.entryId]
-    return { pending, errors: { ...state.errors, [result.entryId]: result.error } }
+    return { pending, errors: { ...state.errors, [result.entryId]: result.error }, warnings: state.warnings }
   }
   pending[result.entryId] = { ...move, commitRevision: result.revision }
-  const awaiting = { pending, errors: state.errors }
+  const warnings = { ...state.warnings }
+  if (result.warning) warnings[result.entryId] = result.warning
+  else delete warnings[result.entryId]
+  const awaiting = { pending, errors: state.errors, warnings }
   return latestPayload ? reconcileObjectKanbanMoves(awaiting, latestPayload) : awaiting
 }
 
@@ -213,7 +220,15 @@ export function reconcileObjectKanbanMoves(
 ): ObjectKanbanMoveState {
   const pending = { ...state.pending }
   const errors = { ...state.errors }
+  const warnings = { ...state.warnings }
   let changed = false
+  if (payload.projectionStatus === 'ready') {
+    for (const [entryId, warning] of Object.entries(warnings)) {
+      if (payload.revision < warning.revision) continue
+      delete warnings[entryId]
+      changed = true
+    }
+  }
   for (const [entryId, move] of Object.entries(state.pending)) {
     if (move.commitRevision === undefined || payload.revision < move.commitRevision) continue
     const canonical = payload.entries.find(entry => entry.id === entryId)
@@ -225,12 +240,11 @@ export function reconcileObjectKanbanMoves(
       delete errors[entryId]
     }
   }
-  return changed ? { pending, errors } : state
+  return changed ? { pending, errors, warnings } : state
 }
 
 const OBJECT_KANBAN_ERROR_KEYS: Record<ObjectKanbanErrorCode, string> = {
   'commit-missing': 'chat.workspaceObjectKanbanCommitMissing',
-  'projection-error': 'chat.workspaceObjectKanbanProjectionError',
   'canonical-mismatch': 'chat.workspaceObjectKanbanNotConfirmed',
   transport: 'chat.workspaceObjectKanbanTransportError',
 }
@@ -258,6 +272,20 @@ export function ObjectKanbanErrorAlert({
 export function ObjectKanbanErrorAlerts({ errors }: { errors: Record<string, ObjectKanbanError> }) {
   return Object.entries(errors).map(([entryId, error]) => (
     <ObjectKanbanErrorAlert key={entryId} entryId={entryId} error={error} />
+  ))
+}
+
+export function ObjectKanbanWarningAlerts({ warnings }: { warnings: Record<string, ObjectKanbanWarning> }) {
+  const { t } = useTranslation()
+  return Object.keys(warnings).map(entryId => (
+    <div
+      key={entryId}
+      data-object-kanban-warning-entry={entryId}
+      className="mb-3 rounded border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-700 dark:text-amber-300"
+      role="status"
+    >
+      {t('chat.workspaceObjectKanbanProjectionError')}
+    </div>
   ))
 }
 
@@ -603,6 +631,7 @@ function ObjectKanbanView({
   return (
     <div>
       <ObjectKanbanErrorAlerts errors={moveState.errors} />
+      <ObjectKanbanWarningAlerts warnings={moveState.warnings} />
       <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
         <div className="flex gap-3 overflow-x-auto pb-2">
           {columns.map(column => (

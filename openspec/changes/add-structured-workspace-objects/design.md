@@ -139,8 +139,12 @@ No U5, o contrato persistido é `schemaVersion: 1` e estrito. O action adicional
 `query-object` aceita exatamente uma saved view por ID ou uma config inline e
 chama o mesmo evaluator usado pela table. Inputs legacy do placeholder Phase A
 permanecem compatíveis no frontier v1, mas são normalizados para v1 antes da
-gravação. Sort usa a ordem canônica da entry como desempate; relation values
-continuam IDs e recebem labels dos payloads relacionados somente na leitura. A
+gravação. A migration v3 adquire `BEGIN IMMEDIATE` antes de ler e normalizar as
+views, de modo que uma atualização canônica concorrente seja reavaliada sob o
+writer lock em vez de sobrescrita. Sort usa a ordem canônica da entry como
+desempate; relation values continuam IDs e recebem labels dos payloads
+relacionados somente na leitura. Filtros relation comparam ID estável e label:
+operadores positivos combinam os matches com OR, e negados com AND. A
 query avalia todas as entries do snapshot canônico antes de limitar a resposta
 a 200 rows e inclui `totalEntries`/`truncated`, evitando falso vazio por corte
 antecipado. O envelope serializa somente relation labels referenciados nessas
@@ -156,8 +160,11 @@ produzem estado visual de sucesso.
 
 Os seis adapters consomem um payload comum. Kanban conserva a mutação original
 durante optimistic update e reverte tanto em resposta rejeitada quanto em
-exceção de transporte. Calendar é primeiro um adapter genérico de date/datetime;
-sync de Google Calendar apenas materializa dados nesse contrato.
+exceção de transporte. Um envelope com revisão canônica e `projection-error`
+permanece aguardando revalidation, mostra warning de repair separado e só limpa
+o warning quando um payload `ready` alcança a revisão commitada; não existe
+rollback falso. Calendar é primeiro um adapter genérico de date/datetime; sync
+de Google Calendar apenas materializa dados nesse contrato.
 
 ## Integrações
 
