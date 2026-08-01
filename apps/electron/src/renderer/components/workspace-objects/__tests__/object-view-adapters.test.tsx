@@ -4,7 +4,6 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { createInstance } from 'i18next'
 import { I18nextProvider } from 'react-i18next'
 import { KeyboardSensor } from '@dnd-kit/core'
-import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { evaluateWorkspaceObjectQuery } from '@craft-agent/shared/workspace-objects/query'
 import type { WorkspaceObjectServiceResult } from '@craft-agent/shared/workspace-objects/service'
 import type { WorkspaceObjectPayload } from '@craft-agent/shared/workspace-objects/types'
@@ -15,6 +14,7 @@ import {
   OBJECT_KANBAN_KEYBOARD_SENSOR,
   OBJECT_VIEW_ADAPTERS,
   ObjectKanbanErrorAlert,
+  ObjectKanbanErrorAlerts,
   ObjectViewHost,
   applyObjectKanbanCommit,
   beginObjectKanbanMove,
@@ -189,9 +189,61 @@ describe('object view adapter registry', () => {
     expect(withObjectViewAdapter(viewConfig, 'table').presentation.adapter).toBe('table')
   })
 
-  test('wires the keyboard sensor with sortable coordinates', () => {
+  test('moves a draggable-only card between droppable columns with ArrowRight and ArrowLeft', () => {
     expect(OBJECT_KANBAN_KEYBOARD_SENSOR).toBe(KeyboardSensor)
-    expect(OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER).toBe(sortableKeyboardCoordinates)
+
+    const rect = (left: number) => ({
+      width: 100, height: 200, top: 0, left, right: left + 100, bottom: 200,
+    })
+    const droppables = [
+      { id: 'object-kanban-column:option:0', disabled: false, node: { current: null }, rect: { current: rect(0) } },
+      { id: 'object-kanban-column:option:1', disabled: false, node: { current: null }, rect: { current: rect(200) } },
+      { id: 'object-kanban-column:no-group', disabled: false, node: { current: null }, rect: { current: rect(400) } },
+    ]
+    const context = {
+      active: {
+        id: 'object-kanban-entry:entry_a',
+        data: { current: { objectKanbanColumnId: 'object-kanban-column:option:0' } },
+      },
+      collisionRect: rect(0),
+      droppableContainers: {
+        getEnabled: () => droppables.filter(candidate => !candidate.disabled),
+        get: (id: string) => droppables.find(candidate => candidate.id === id),
+        toArray: () => droppables,
+      },
+      droppableRects: new Map(droppables.map(candidate => [candidate.id, candidate.rect.current])),
+      over: { id: 'object-kanban-column:option:0' },
+      scrollableAncestors: [],
+    } as unknown as Parameters<typeof OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER>[1]['context']
+    let prevented = 0
+    const event = (code: 'ArrowLeft' | 'ArrowRight') => ({
+      code,
+      preventDefault: () => { prevented += 1 },
+    }) as KeyboardEvent
+
+    expect(OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER(event('ArrowRight'), {
+      active: 'object-kanban-entry:entry_a', currentCoordinates: { x: 0, y: 0 }, context,
+    })).toEqual({ x: 200, y: 0 })
+    context.over = {
+      id: 'object-kanban-column:option:1',
+      rect: rect(200),
+      disabled: false,
+      data: { current: undefined },
+    }
+    expect(OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER(event('ArrowLeft'), {
+      active: 'object-kanban-entry:entry_a', currentCoordinates: { x: 200, y: 0 }, context,
+    })).toEqual({ x: 0, y: 0 })
+    droppables[2]!.disabled = true
+    context.over = {
+      id: 'object-kanban-column:no-group',
+      rect: rect(400),
+      disabled: true,
+      data: { current: undefined },
+    }
+    expect(OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER(event('ArrowLeft'), {
+      active: 'object-kanban-entry:entry_inconsistent', currentCoordinates: { x: 400, y: 0 }, context,
+    })).toEqual({ x: 200, y: 0 })
+    expect(prevented).toBe(3)
 
     const viewConfig = config('kanban')
     const markup = renderToStaticMarkup(
@@ -273,7 +325,7 @@ describe('object Kanban commit lifecycle', () => {
       expect(result.status).toBe('rollback')
       if (result.status === 'rollback') expect(result.error.code).toBe(errorCode)
       expect(resolveObjectKanbanEntryValue(rolledBack, entry, 'field_status')).toBe('Todo')
-      expect(rolledBack.error).not.toBeNull()
+      expect(rolledBack.errors[entry.id]?.code).toBe(errorCode)
     }
   })
 
@@ -403,7 +455,86 @@ describe('object Kanban commit lifecycle', () => {
       status: 'awaiting-revalidation', entryId: entry.id, operationId: 'operation-1', revision: 5,
     })
     const mismatch = reconcileObjectKanbanMoves(awaiting, { ...payload, revision: 5 })
-    expect(mismatch.error).toEqual({ code: 'canonical-mismatch' })
+    expect(mismatch.errors[entry.id]).toEqual({ code: 'canonical-mismatch' })
     expect(mismatch.pending).toEqual({})
+  })
+
+  test('settles immediately when the confirming payload arrived before the commit result', () => {
+    const optimistic = beginObjectKanbanMove(EMPTY_OBJECT_KANBAN_MOVE_STATE, entry, 'field_status', 'Doing', 'operation-early')
+    const alreadyConfirmedPayload: WorkspaceObjectPayload = {
+      ...payload,
+      revision: 5,
+      entries: payload.entries.map(candidate => candidate.id === entry.id
+        ? { ...candidate, values: { ...candidate.values, field_status: 'Doing' } }
+        : candidate),
+    }
+    const settled = applyObjectKanbanCommit(optimistic, {
+      status: 'awaiting-revalidation', entryId: entry.id, operationId: 'operation-early', revision: 5,
+    }, alreadyConfirmedPayload)
+    expect(settled.pending).toEqual({})
+    expect(settled.errors).toEqual({})
+  })
+
+  test('shows inconsistent required values in no-group but disables null drops', () => {
+    const requiredPayload: WorkspaceObjectPayload = {
+      ...payload,
+      fields: payload.fields.map(field => field.id === 'field_status' ? { ...field, required: true } : field),
+      entries: [
+        ...payload.entries,
+        { id: 'entry_inconsistent', values: { field_name: 'Inconsistent', field_status: null } },
+      ],
+    }
+    const viewConfig = config('kanban')
+    const markup = renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <ObjectViewHost
+          payload={requiredPayload}
+          config={viewConfig}
+          query={evaluateWorkspaceObjectQuery(requiredPayload, viewConfig)}
+          mutate={async () => ({ objectId: payload.id, revision: 5, projectionStatus: 'ready' })}
+          tableContent={null}
+          onConfigureSetting={() => {}}
+          onChangeAdapter={() => {}}
+        />
+      </I18nextProvider>,
+    )
+    expect(markup).toContain('data-entry-id="entry_inconsistent"')
+    expect(markup).toContain('data-object-kanban-column-id="object-kanban-column:no-group"')
+    expect(markup).toContain('data-object-kanban-column-disabled="true"')
+    expect(markup).toContain('role="group"')
+    expect(markup).toContain('aria-disabled="true"')
+    expect(resolveObjectKanbanDropValue(requiredPayload.fields[1]!, 'object-kanban-column:no-group')).toBeUndefined()
+  })
+
+  test('isolates errors by entry across another entry success and retry', () => {
+    const secondEntry = payload.entries[1]!
+    const moveA = beginObjectKanbanMove(EMPTY_OBJECT_KANBAN_MOVE_STATE, entry, 'field_status', 'Doing', 'operation-a')
+    const failedA = applyObjectKanbanCommit(moveA, {
+      status: 'rollback', entryId: entry.id, operationId: 'operation-a', error: { code: 'transport', detail: 'A failed' },
+    })
+    const moveB = beginObjectKanbanMove(failedA, secondEntry, 'field_status', 'Todo', 'operation-b')
+    expect(moveB.errors).toEqual({ [entry.id]: { code: 'transport', detail: 'A failed' } })
+
+    const committedB = applyObjectKanbanCommit(moveB, {
+      status: 'awaiting-revalidation', entryId: secondEntry.id, operationId: 'operation-b', revision: 5,
+    })
+    expect(committedB.errors).toEqual({ [entry.id]: { code: 'transport', detail: 'A failed' } })
+
+    const retryA = beginObjectKanbanMove(failedA, entry, 'field_status', 'Doing', 'operation-a-retry')
+    expect(retryA.errors).toEqual({})
+
+    expect(ObjectKanbanErrorAlerts).toBeFunction()
+    const markup = renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <ObjectKanbanErrorAlerts errors={{
+          entry_a: { code: 'transport', detail: 'A failed' },
+          entry_b: { code: 'canonical-mismatch' },
+        }} />
+      </I18nextProvider>,
+    )
+    expect(markup).toContain('data-object-kanban-error-entry="entry_a"')
+    expect(markup).toContain('data-object-kanban-error-entry="entry_b"')
+    expect(markup).toContain('The Kanban move could not be saved.')
+    expect(markup).toContain('The Kanban move could not be confirmed after refresh.')
   })
 })

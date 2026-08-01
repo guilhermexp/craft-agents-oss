@@ -149,13 +149,18 @@ The Phase A local-first object contract is tracked by
   the user can persist that adapter through the existing save flow.
 - Object Kanban groups only by a configured canonical select/status field. A
   translated no-group column retains entries with null, absent or unknown
-  values and persists `null` when targeted. Droppable IDs are structural rather
-  than option values. Pointer and keyboard sensors remain active, while a
-  pending entry is disabled and guarded by operation ID so stale responses
-  cannot cross moves; entries remain independent. A drag keeps its optimistic
-  value through a `ready` commit envelope, then waits for payload revalidation;
-  rejected envelopes, `projection-error`, transport throws or canonical
-  mismatch remove the optimistic override and expose a localized rollback code.
+  values. Optional fields persist `null` when that column is targeted; for
+  required fields the same recovery column stays visible but is disabled and
+  non-droppable. Droppable IDs are structural rather than option values. Pointer
+  navigation remains active and keyboard navigation resolves the nearest enabled
+  structural column geometrically, without requiring the draggable card to be a
+  sortable droppable. A pending entry is disabled and guarded by operation ID so
+  stale responses cannot cross moves; entries remain independent. A drag keeps
+  its optimistic value through a `ready` commit envelope and reconciles against
+  the latest payload immediately, including when revalidation arrived before the
+  commit result. Rejected envelopes, `projection-error`, transport throws or
+  canonical mismatch remove only that entry's optimistic override and expose a
+  localized error isolated by entry.
 
 ### Structured-object child index
 

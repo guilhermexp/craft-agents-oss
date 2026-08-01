@@ -279,6 +279,24 @@ saiu 0, OpenSpec strict e `git diff --check` passaram. 7.3/7.4 permanecem
 marcados; 7.5, Electron real e auditoria Phase B continuam não executados e
 desmarcados.
 
+Segundo lote corretivo U6 7.3/7.4 (2026-08-01): o RED focado partindo de
+`a54e802b` retornou 13 pass / 4 fail para os quatro achados restantes: payload
+confirmatório anterior à resposta de commit deixava pending preso; coordenadas
+sortable não moviam um card apenas draggable entre colunas apenas droppable; a
+coluna sem grupo de field required continuava aceitando `null`; e erro de uma
+entry era apagado pelo sucesso de outra. Um RED incremental adicional retornou
+0/1 antes de a navegação ignorar a coluna required desabilitada.
+
+O GREEN reconcilia a resposta de commit imediatamente contra o payload mais
+recente, usa um coordinate getter geométrico para ArrowLeft/ArrowRight sobre
+colunas estruturais habilitadas, mantém dados required inconsistentes visíveis
+numa coluna sem grupo desabilitada e isola pending/alertas por entry. A suíte
+focada passou 17/17 (95 expects) e a matriz Phase A/U5/U6 passou 85/85 em oito
+arquivos (278 expects). Typechecks Electron/shared, paridade i18n com 1.798 keys,
+React Doctor v0.9.3 line-scoped 100/100, impeccable, OpenSpec strict e
+`git diff --check` passaram. 7.3/7.4 permanecem marcados; 7.5, Electron real e
+auditoria Phase B continuam não executados e desmarcados.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

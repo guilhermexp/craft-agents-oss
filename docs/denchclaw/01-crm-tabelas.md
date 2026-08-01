@@ -404,10 +404,14 @@ config local; o fluxo existente de salvar view persiste essa escolha no contrato
 v1, sem alterar schema ou storage.
 
 O Kanban reutiliza `DndContext` e o sensor visual existente, mas seus cards são
-entries genéricas, sem modelos de task/session. Pointer e teclado usam os
-sensors do dnd-kit; IDs de drop são estruturais e não colidem com option values.
-Toda entry da query aparece: valores `null`, ausentes ou desconhecidos ficam na
-coluna traduzida `Sem grupo`, cujo drop persiste `null`.
+entries genéricas, sem modelos de task/session. IDs de drop são estruturais e
+não colidem com option values. O pointer preserva o fluxo existente; o teclado
+resolve ArrowLeft/ArrowRight pela coluna estrutural habilitada mais próxima, sem
+depender de o card draggable também ser um droppable sortable. Toda entry da
+query aparece: valores `null`, ausentes ou desconhecidos ficam na coluna
+traduzida `Sem grupo`. Em fields opcionais esse drop persiste `null`; em fields
+required a coluna continua visível para recuperar dados inconsistentes, mas fica
+desabilitada e não produz mutation nula.
 
 O drop aplica somente um override otimista local e envia a entry completa por
 `upsert-entries`. Apenas uma operação por entry pode ficar pendente; o card é
@@ -416,8 +420,11 @@ enquanto entries diferentes seguem independentes. Envelope rejeitado,
 `projection-error` ou exceção de transporte removem o override e restauram a
 coluna original; resposta `ready` mantém a posição até o payload SWR alcançar a
 revisão do commit, evitando flicker, e também faz rollback se o valor canônico
-não confirmar o move. Os quatro erros usam keys i18n, com detalhe dinâmico de
-transporte exibido separadamente.
+não confirmar o move. Se o payload confirmatório chegar antes da resposta do
+commit, a resposta reconcilia imediatamente com o payload mais recente e encerra
+o pending sem esperar outra revalidation. Os quatro erros usam keys i18n, com
+detalhe dinâmico de transporte exibido separadamente, e ficam isolados por entry:
+sucesso ou retry de outra entry não apaga alertas ainda ativos.
 
 O lote corretivo U6 foi coberto antes da correção por RED com 5 testes passando
 e 9 falhando nos cinco achados, seguido de um RED unitário adicional para o
@@ -426,6 +433,17 @@ passou 82/82 testes em oito arquivos, com 259 expects; typechecks Electron e
 shared, paridade i18n, React Doctor line-scoped, impeccable, OpenSpec strict e
 `git diff --check` também passaram. Esse lote não executa Electron real nem
 auditoria Phase B, que continuam reservados para 7.5.
+
+O segundo lote corretivo U6 reproduziu em RED as quatro regressões restantes:
+13/17 testes passaram e 4 falharam para race de revalidation antecipada,
+coordenadas sortable incompatíveis com card apenas draggable, `Sem grupo`
+required ainda aceitando `null` e erro global apagado por outra entry. Um RED
+incremental adicional falhou 0/1 ao tentar sair por teclado da coluna required
+desabilitada. O GREEN focado passou 17/17 (95 expects) e a matriz Phase A/U5/U6
+passou 85/85 em oito arquivos (278 expects). Typechecks Electron/shared,
+paridade i18n com 1.798 keys, React Doctor 100/100, impeccable, OpenSpec strict e
+`git diff --check` passaram. Electron real e auditoria Phase B continuam fora
+deste lote; 7.5 permanece desmarcado.
 
 `apps/web/lib/object-filters.ts` é a peça mais reaproveitável do repo. Define:
 

@@ -2,6 +2,7 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   DndContext,
+  KeyboardCode,
   KeyboardSensor,
   closestCorners,
   useDraggable,
@@ -9,8 +10,8 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type KeyboardCoordinateGetter,
 } from '@dnd-kit/core'
-import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import type { WorkspaceObjectQueryResult } from '@craft-agent/shared/workspace-objects/query'
 import type { WorkspaceObjectAction, WorkspaceObjectServiceResult } from '@craft-agent/shared/workspace-objects/service'
 import type {
@@ -96,7 +97,7 @@ interface PendingObjectKanbanMove {
 
 export interface ObjectKanbanMoveState {
   pending: Record<string, PendingObjectKanbanMove>
-  error: ObjectKanbanError | null
+  errors: Record<string, ObjectKanbanError>
 }
 
 export type ObjectKanbanErrorCode = 'commit-missing' | 'projection-error' | 'canonical-mismatch' | 'transport'
@@ -106,7 +107,7 @@ export interface ObjectKanbanError {
   detail?: string
 }
 
-export const EMPTY_OBJECT_KANBAN_MOVE_STATE: ObjectKanbanMoveState = { pending: {}, error: null }
+export const EMPTY_OBJECT_KANBAN_MOVE_STATE: ObjectKanbanMoveState = { pending: {}, errors: {} }
 
 export function beginObjectKanbanMove(
   state: ObjectKanbanMoveState,
@@ -116,12 +117,14 @@ export function beginObjectKanbanMove(
   operationId: string,
 ): ObjectKanbanMoveState {
   if (state.pending[entry.id]) return state
+  const errors = { ...state.errors }
+  delete errors[entry.id]
   return {
     pending: {
       ...state.pending,
       [entry.id]: { operationId, fieldId, originalValue: entry.values[fieldId], nextValue },
     },
-    error: null,
+    errors,
   }
 }
 
@@ -190,16 +193,18 @@ export async function commitObjectKanbanMove(options: {
 export function applyObjectKanbanCommit(
   state: ObjectKanbanMoveState,
   result: ObjectKanbanCommitResult,
+  latestPayload?: WorkspaceObjectPayload,
 ): ObjectKanbanMoveState {
   const pending = { ...state.pending }
   const move = pending[result.entryId]
   if (!move || move.operationId !== result.operationId) return state
   if (result.status === 'rollback') {
     delete pending[result.entryId]
-    return { pending, error: result.error }
+    return { pending, errors: { ...state.errors, [result.entryId]: result.error } }
   }
   pending[result.entryId] = { ...move, commitRevision: result.revision }
-  return { pending, error: null }
+  const awaiting = { pending, errors: state.errors }
+  return latestPayload ? reconcileObjectKanbanMoves(awaiting, latestPayload) : awaiting
 }
 
 export function reconcileObjectKanbanMoves(
@@ -207,7 +212,7 @@ export function reconcileObjectKanbanMoves(
   payload: WorkspaceObjectPayload,
 ): ObjectKanbanMoveState {
   const pending = { ...state.pending }
-  let error = state.error
+  const errors = { ...state.errors }
   let changed = false
   for (const [entryId, move] of Object.entries(state.pending)) {
     if (move.commitRevision === undefined || payload.revision < move.commitRevision) continue
@@ -215,10 +220,12 @@ export function reconcileObjectKanbanMoves(
     delete pending[entryId]
     changed = true
     if (canonical?.values[move.fieldId] !== move.nextValue) {
-      error = { code: 'canonical-mismatch' }
+      errors[entryId] = { code: 'canonical-mismatch' }
+    } else {
+      delete errors[entryId]
     }
   }
-  return changed ? { pending, error } : state
+  return changed ? { pending, errors } : state
 }
 
 const OBJECT_KANBAN_ERROR_KEYS: Record<ObjectKanbanErrorCode, string> = {
@@ -228,14 +235,30 @@ const OBJECT_KANBAN_ERROR_KEYS: Record<ObjectKanbanErrorCode, string> = {
   transport: 'chat.workspaceObjectKanbanTransportError',
 }
 
-export function ObjectKanbanErrorAlert({ error }: { error: ObjectKanbanError }) {
+export function ObjectKanbanErrorAlert({
+  error,
+  entryId,
+}: {
+  error: ObjectKanbanError
+  entryId?: string
+}) {
   const { t } = useTranslation()
   return (
-    <div className="mb-3 rounded border border-destructive/40 p-2 text-xs text-destructive" role="alert">
+    <div
+      data-object-kanban-error-entry={entryId}
+      className="mb-3 rounded border border-destructive/40 p-2 text-xs text-destructive"
+      role="alert"
+    >
       <div>{t(OBJECT_KANBAN_ERROR_KEYS[error.code])}</div>
       {error.detail ? <div className="mt-1 break-words text-[11px] opacity-80">{error.detail}</div> : null}
     </div>
   )
+}
+
+export function ObjectKanbanErrorAlerts({ errors }: { errors: Record<string, ObjectKanbanError> }) {
+  return Object.entries(errors).map(([entryId, error]) => (
+    <ObjectKanbanErrorAlert key={entryId} entryId={entryId} error={error} />
+  ))
 }
 
 function displayText(value: WorkspaceObjectValue | undefined): string {
@@ -369,13 +392,41 @@ function objectKanbanEntryId(entryId: string): string {
 }
 
 export const OBJECT_KANBAN_KEYBOARD_SENSOR = KeyboardSensor
-export const OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER = sortableKeyboardCoordinates
+
+function isObjectKanbanColumnId(id: unknown): id is string {
+  return typeof id === 'string'
+    && (id === OBJECT_KANBAN_NO_GROUP_ID || id.startsWith(OBJECT_KANBAN_COLUMN_PREFIX))
+}
+
+export const OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER: KeyboardCoordinateGetter = (
+  event,
+  { context, currentCoordinates },
+) => {
+  if (event.code !== KeyboardCode.Left && event.code !== KeyboardCode.Right) return undefined
+  const columns: Array<{ rect: NonNullable<ReturnType<typeof context.droppableRects.get>> }> = []
+  for (const container of context.droppableContainers.getEnabled()) {
+    if (!isObjectKanbanColumnId(container.id)) continue
+    const rect = context.droppableRects.get(container.id)
+    if (!rect) continue
+    const isAhead = event.code === KeyboardCode.Right
+      ? rect.left > currentCoordinates.x
+      : rect.left < currentCoordinates.x
+    if (isAhead) columns.push({ rect })
+  }
+  columns.sort((left, right) => event.code === KeyboardCode.Right
+    ? left.rect.left - right.rect.left
+    : right.rect.left - left.rect.left)
+  const target = columns[0]
+  if (!target) return undefined
+  event.preventDefault()
+  return { x: target.rect.left, y: target.rect.top }
+}
 
 export function resolveObjectKanbanDropValue(
   field: WorkspaceObjectField,
   dropId: string,
 ): string | null | undefined {
-  if (dropId === OBJECT_KANBAN_NO_GROUP_ID) return null
+  if (dropId === OBJECT_KANBAN_NO_GROUP_ID) return field.required ? undefined : null
   if (!dropId.startsWith(OBJECT_KANBAN_COLUMN_PREFIX)) return undefined
   const indexText = dropId.slice(OBJECT_KANBAN_COLUMN_PREFIX.length)
   if (!/^(0|[1-9]\d*)$/.test(indexText)) return undefined
@@ -387,6 +438,7 @@ interface ObjectKanbanColumnModel {
   value: string | null
   label: string
   entries: WorkspaceObjectEntry[]
+  disabled: boolean
 }
 
 function buildObjectKanbanColumns(
@@ -400,12 +452,14 @@ function buildObjectKanbanColumns(
     value,
     label: value,
     entries: [],
+    disabled: false,
   }))
   const noGroupColumn: ObjectKanbanColumnModel = {
     id: OBJECT_KANBAN_NO_GROUP_ID,
     value: null,
     label: noGroupLabel,
     entries: [],
+    disabled: field.required === true,
   }
   const columnByValue = new Map(optionColumns.map(column => [column.value, column]))
   for (const entry of query.entries) {
@@ -421,14 +475,17 @@ function ObjectKanbanCard({
   entry,
   query,
   pending,
+  columnId,
 }: {
   entry: WorkspaceObjectEntry
   query: WorkspaceObjectQueryResult
   pending: boolean
+  columnId: string
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: objectKanbanEntryId(entry.id),
     disabled: pending,
+    data: { objectKanbanColumnId: columnId },
   })
   return (
     <div
@@ -452,12 +509,15 @@ function ObjectKanbanColumn({
   query: WorkspaceObjectQueryResult
   pendingEntryIds: Set<string>
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: column.id })
+  const { setNodeRef, isOver } = useDroppable({ id: column.id, disabled: column.disabled })
   return (
     <section
       ref={setNodeRef}
       data-object-kanban-column-id={column.id}
-      className={`min-w-56 flex-1 rounded border p-2 ${isOver ? 'border-primary bg-primary/5' : 'border-foreground/10'}`}
+      data-object-kanban-column-disabled={column.disabled}
+      role="group"
+      aria-disabled={column.disabled}
+      className={`min-w-56 flex-1 rounded border p-2 ${column.disabled ? 'opacity-60' : ''} ${isOver ? 'border-primary bg-primary/5' : 'border-foreground/10'}`}
     >
       <header className="mb-2 flex items-center justify-between text-xs font-semibold">
         <span>{column.label}</span>
@@ -465,7 +525,13 @@ function ObjectKanbanColumn({
       </header>
       <div className="space-y-2">
         {column.entries.map(entry => (
-          <ObjectKanbanCard key={entry.id} entry={entry} query={query} pending={pendingEntryIds.has(entry.id)} />
+          <ObjectKanbanCard
+            key={entry.id}
+            entry={entry}
+            query={query}
+            pending={pendingEntryIds.has(entry.id)}
+            columnId={column.id}
+          />
         ))}
       </div>
     </section>
@@ -486,12 +552,17 @@ function ObjectKanbanView({
   const { t } = useTranslation()
   const [moveState, setMoveState] = React.useState<ObjectKanbanMoveState>(EMPTY_OBJECT_KANBAN_MOVE_STATE)
   const pendingOperationsRef = React.useRef(new Map<string, string>())
+  const latestPayloadRef = React.useRef(payload)
   const sensors = useSensors(
     useSensor(SmartPointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(OBJECT_KANBAN_KEYBOARD_SENSOR, { coordinateGetter: OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER }),
   )
   const columns = buildObjectKanbanColumns(field, query, moveState, t('chat.workspaceObjectKanbanNoGroup'))
   const pendingEntryIds = new Set(Object.keys(moveState.pending))
+
+  React.useLayoutEffect(() => {
+    latestPayloadRef.current = payload
+  }, [payload])
 
   React.useEffect(() => {
     pendingOperationsRef.current = new Map(
@@ -514,12 +585,12 @@ function ObjectKanbanView({
     pendingOperationsRef.current.set(entry.id, operationId)
     setMoveState(current => beginObjectKanbanMove(current, entry, field.id, nextValue, operationId))
     void commitObjectKanbanMove({ objectId: payload.id, entry, fieldId: field.id, nextValue, operationId, mutate })
-      .then(result => setMoveState(current => applyObjectKanbanCommit(current, result)))
+      .then(result => setMoveState(current => applyObjectKanbanCommit(current, result, latestPayloadRef.current)))
   }, [field, moveState, mutate, payload.id, query.entries])
 
   return (
     <div>
-      {moveState.error ? <ObjectKanbanErrorAlert error={moveState.error} /> : null}
+      <ObjectKanbanErrorAlerts errors={moveState.errors} />
       <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
         <div className="flex gap-3 overflow-x-auto pb-2">
           {columns.map(column => (
