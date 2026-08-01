@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { evaluateWorkspaceObjectQuery } from '../query.ts';
+import { evaluateWorkspaceObjectQuery, formatWorkspaceObjectEntryLabel, getWorkspaceObjectLabelField } from '../query.ts';
 import { WorkspaceObjectSavedViewSchema, type WorkspaceObjectFilterRule, type WorkspaceObjectViewConfig } from '../view-schema.ts';
 import type { WorkspaceObjectPayload } from '../types.ts';
 
@@ -85,6 +85,22 @@ describe('WorkspaceObjectSavedViewSchema', () => {
     expect(WorkspaceObjectSavedViewSchema.safeParse({
       id: 'view_deep', name: 'Deep', config: { ...view(), filter },
     }).success).toBe(false);
+  });
+});
+
+describe('workspace object relation labels', () => {
+  test('exposes the ordered label-field selector as the shared authority', () => {
+    expect(getWorkspaceObjectLabelField([
+      { id: 'field_amount', type: 'number' },
+      { id: 'field_name', type: 'text' },
+      { id: 'field_alias', type: 'text' },
+    ])).toEqual({ id: 'field_name', type: 'text' });
+    expect(getWorkspaceObjectLabelField([
+      { id: 'field_amount', type: 'number' },
+      { id: 'field_active', type: 'boolean' },
+    ])).toEqual({ id: 'field_amount', type: 'number' });
+    expect(formatWorkspaceObjectEntryLabel('entry_fallback', '')).toBe('entry_fallback');
+    expect(formatWorkspaceObjectEntryLabel('entry_false', false)).toBe('false');
   });
 });
 

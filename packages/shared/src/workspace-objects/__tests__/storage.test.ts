@@ -50,6 +50,27 @@ describe('WorkspaceObjectRepository', () => {
     })).not.toThrow();
   });
 
+  test('bounds migrated legacy config by final UTF-8 bytes and allows resave', () => {
+    const normalized = normalizeLegacyWorkspaceObjectSavedView({
+      id: 'view_unicode_legacy',
+      name: 'Unicode legacy',
+      config: {
+        unicode: `x${'😀'.repeat(40_000)}`,
+        escaped: '\\"'.repeat(20_000),
+      },
+    });
+    const configJson = JSON.stringify(normalized.config);
+    const legacyConfig = normalized.config.presentation.settings.legacyConfig;
+
+    expect(Buffer.byteLength(configJson, 'utf8')).toBeLessThanOrEqual(64_000);
+    expect(typeof legacyConfig === 'string' ? /[\uD800-\uDBFF]$/.test(legacyConfig) : false).toBe(false);
+
+    const repository = WorkspaceObjectRepository.open(makeRoot());
+    repository.defineObject({ id: 'object_legacy', slug: 'legacy', name: 'Legacy', fields: [] });
+    expect(() => repository.upsertSavedView('object_legacy', normalized)).not.toThrow();
+    repository.close();
+  });
+
   test('initializes idempotently and preserves typed fields and stable ids', () => {
     const root = makeRoot();
     const first = WorkspaceObjectRepository.open(root);

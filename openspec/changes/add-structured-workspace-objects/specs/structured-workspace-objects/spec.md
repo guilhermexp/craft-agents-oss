@@ -142,7 +142,9 @@ Saved views SHALL preservar filtros aninhados, search, multi-sort, column
 visibility e settings do adapter. Table edits SHALL validar pelo field type,
 resolver relation labels por stable ID e somente confirmar sucesso após commit.
 Migration v3 SHALL adquirir o writer lock antes de ler e normalizar legacy
-saved views, reavaliando updates concorrentes sob a mesma transação. Filtros de
+saved views, reavaliando updates concorrentes sob a mesma transação. O config
+normalizado MUST ocupar no máximo 64.000 bytes UTF-8 após JSON escaping e
+wrapper completo e MUST poder ser salvo novamente. Filtros de
 relation SHALL comparar stable ID e label corrente, usando OR para operadores
 positivos e AND para operadores negados.
 `query-object` SHALL avaliar o snapshot canônico completo antes de limitar a
@@ -152,6 +154,9 @@ lock estiver ocupado, a query MUST continuar com fallback read-only. O retorno
 MUST limitar relation labels aos IDs referenciados pelas entries devolvidas.
 Contenção MUST reconhecer códigos Bun `SQLITE_BUSY`/`SQLITE_LOCKED` e primary
 `errcode` 5/6 de `node:sqlite`; erros SQLite não relacionados MUST propagar.
+A escolha do label relation MUST ter `query.ts` como autoridade única (primeiro
+text na ordem canônica, senão primeiro field), enquanto o storage MUST resolver
+fields e candidate IDs em batches bounded no mesmo snapshot, sem N+1.
 
 #### Scenario: Saved view é restaurada
 
@@ -165,6 +170,20 @@ Contenção MUST reconhecer códigos Bun `SQLITE_BUSY`/`SQLITE_LOCKED` e primary
 - **WHEN** migration v3 aguarda e adquire o writer lock
 - **THEN** ela relê a row sob o lock e não sobrescreve a atualização concorrente
 - **Test:** `integration`
+
+#### Scenario: Legacy config Unicode permanece resavável
+
+- **GIVEN** um config legacy com Unicode multibyte e caracteres escapáveis acima do limite
+- **WHEN** migration v3 o normaliza
+- **THEN** o JSON final completo ocupa no máximo 64.000 bytes UTF-8, não termina em surrogate dividido e pode ser salvo novamente
+- **Test:** `unit`
+
+#### Scenario: Relation options reutilizam a regra compartilhada de label
+
+- **GIVEN** até 200 fields ordenados e candidate IDs bounded
+- **WHEN** relation options são lidas no snapshot
+- **THEN** storage usa o selector de `query.ts` e resolve valores em batch sem N+1 ou scan global
+- **Test:** `unit`
 
 #### Scenario: Relation filtra por ID estável e label
 

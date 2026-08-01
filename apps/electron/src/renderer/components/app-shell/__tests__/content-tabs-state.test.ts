@@ -145,4 +145,31 @@ describe('content tabs state', () => {
     expect(state.tabs[0]?.id).toBe(contentTabId(saved));
     expect(state.activeId).toBe(contentTabId(saved));
   });
+
+  test('retargets an unpinned preview into a new scope without duplicating its destination preview', () => {
+    const source = file('source.md', 's1');
+    const destinationPreview = file('old-preview.md', 's2');
+    const destinationPermanent = file('permanent.md', 's2');
+    const destinationPinned = file('pinned.md', 's2');
+    const target = file('new-preview.md', 's2');
+    const state: ContentTabsState = {
+      tabs: [
+        { id: contentTabId(source), target: source, mode: 'preview', pinned: false },
+        { id: contentTabId(destinationPreview), target: destinationPreview, mode: 'preview', pinned: false },
+        { id: contentTabId(destinationPermanent), target: destinationPermanent, mode: 'permanent', pinned: false },
+        { id: contentTabId(destinationPinned), target: destinationPinned, mode: 'permanent', pinned: true },
+      ],
+      activeId: contentTabId(destinationPinned),
+    };
+
+    const retargeted = contentTabsReducer(state, { type: 'retarget', id: contentTabId(source), target });
+
+    expect(retargeted.tabs.map(tab => tab.id)).toEqual([
+      contentTabId(target),
+      contentTabId(destinationPermanent),
+      contentTabId(destinationPinned),
+    ]);
+    expect(retargeted.tabs.filter(tab => tab.mode === 'preview' && !tab.pinned)).toHaveLength(1);
+    expect(retargeted.activeId).toBe(contentTabId(destinationPinned));
+  });
 });

@@ -126,7 +126,10 @@ The Phase A local-first object contract is tracked by
   `content-resolver.ts` own pure tab identity plus the bounded SWR lifecycle.
   File identity includes workspace/session/path; object identity includes
   workspace/object/view. Load and refresh share abort/generation guards, and
-  eviction must remove payloads rather than only LRU metadata.
+  eviction must remove payloads rather than only LRU metadata. Retargeting an
+  unpinned preview across scopes replaces only the disposable preview already
+  in the destination scope; pinned/permanent tabs and a surviving active tab
+  keep their current semantics.
 - The existing right sidebar remains the product owner. Structured objects
   extend `SessionInfoPopover`/`AppShell` and reuse current file viewers; do not
   create a parallel panel. U5 extends the same `WorkspaceObjectPreviewPanel`
@@ -134,12 +137,17 @@ The Phase A local-first object contract is tracked by
   list through `ObjectViewHost` inside that same preview.
 - `packages/shared/src/workspace-objects/view-schema.ts` owns the strict saved
   view v1 contract. `query.ts` is the only evaluator for nested filters, search,
-  stable multi-sort, visibility and current relation labels. Both
+  stable multi-sort, visibility and current relation labels, including the
+  ordered field selector used by bounded relation-option SQL reads. Storage may
+  materialize at most 200 fields and 400 candidate IDs in the same snapshot but
+  must not duplicate the label-selection rule or introduce N+1 reads. Both
   `query-object` and the Desktop table call it; do not fork query semantics in
   the renderer or an adapter. Relation filters compare both stable IDs and
   current labels (positive operators use OR; negated operators use AND).
   Migration v3 acquires its writer transaction before reading and normalizing
-  legacy saved views so it cannot overwrite a concurrent canonical update.
+  legacy saved views so it cannot overwrite a concurrent canonical update. A
+  normalized legacy config must fit the 64,000-byte UTF-8 limit after JSON
+  escaping and the full config wrapper so the migrated view can be resaved.
   `query-object` evaluates the complete canonical
   snapshot before bounding its response to 200 entries and reports
   `totalEntries` plus `truncated`; serialized relation labels are limited to

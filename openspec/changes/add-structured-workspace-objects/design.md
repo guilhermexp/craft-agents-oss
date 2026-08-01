@@ -91,8 +91,11 @@ Targets são uma união discriminada. IDs determinísticos incluem ownership:
 - objeto: workspace, object ID e view ID opcional.
 
 Há uma tab preview substituível por scope. Tabs promovidas ou pinned não são
-substituídas. Restore é workspace-scoped e sempre repara `activeId` inválido.
-Targets de arquivo de outra sessão não atravessam a troca de sessão.
+substituídas. Retarget de preview não-pinned entre scopes substitui o preview
+descartável já existente no destino, preservando pinned/permanent e o active
+caller quando ele continua válido. Restore é workspace-scoped e sempre repara
+`activeId` inválido. Targets de arquivo de outra sessão não atravessam a troca
+de sessão.
 
 O resolver mantém no máximo 20 payloads. Eviction remove o payload, não apenas a
 posição LRU. Load inicial e refresh usam a mesma geração monotônica e o mesmo
@@ -141,7 +144,10 @@ chama o mesmo evaluator usado pela table. Inputs legacy do placeholder Phase A
 permanecem compatíveis no frontier v1, mas são normalizados para v1 antes da
 gravação. A migration v3 adquire `BEGIN IMMEDIATE` antes de ler e normalizar as
 views, de modo que uma atualização canônica concorrente seja reavaliada sob o
-writer lock em vez de sobrescrita. Sort usa a ordem canônica da entry como
+writer lock em vez de sobrescrita. A normalização mede o JSON final em bytes
+UTF-8, incluindo escaping e wrapper, e corta `legacyConfig` sem dividir surrogate
+pair para que a view migrada permaneça resavável sob o limite de 64.000 bytes.
+Sort usa a ordem canônica da entry como
 desempate; relation values continuam IDs e recebem labels dos payloads
 relacionados somente na leitura. Filtros relation comparam ID estável e label:
 operadores positivos combinam os matches com OR, e negados com AND. A
@@ -154,6 +160,11 @@ fallback reconstrói das rows sem escrever dentro da transação de leitura. A
 classificação de contenção cobre códigos string `SQLITE_BUSY`/`SQLITE_LOCKED`
 do Bun e o `errcode` numérico de `node:sqlite` cujo primary code é 5 ou 6;
 outros erros SQLite continuam sendo propagados.
+
+A seleção do field que rotula relations pertence a `query.ts`: primeiro text
+na ordem canônica, ou o primeiro field como fallback. A leitura SQL reutiliza
+esse helper sobre no máximo 200 fields e materializa em batch somente os
+candidate IDs bounded do snapshot, sem N+1 ou scan global de entries.
 
 A table não confirma de forma otimista. O RPC `upsert-entries` precisa retornar
 a revisão commitada e o editor permanece em `awaiting-revalidation` até o SWR

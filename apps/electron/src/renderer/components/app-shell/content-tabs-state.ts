@@ -80,8 +80,21 @@ export function contentTabsReducer(state: ContentTabsState, action: ContentTabsA
     const nextId = contentTabId(target);
     const source = state.tabs.find(tab => tab.id === action.id);
     const existing = state.tabs.find(tab => tab.id === nextId && tab.id !== action.id);
+    const replacesScopedPreview = source?.mode === 'preview'
+      && !source.pinned
+      && previewScope(source.target) !== previewScope(target)
+      && (!existing || (existing.mode === 'preview' && !existing.pinned));
+    const scopedTabs = replacesScopedPreview
+      ? state.tabs.filter(tab => (
+          tab.id === action.id
+          || tab.id === nextId
+          || tab.mode !== 'preview'
+          || tab.pinned
+          || previewScope(tab.target) !== previewScope(target)
+        ))
+      : state.tabs;
     if (source && existing) {
-      const tabs = state.tabs.flatMap(tab => {
+      const tabs = scopedTabs.flatMap(tab => {
         if (tab.id === action.id) return [];
         return [tab.id === nextId ? {
           ...tab,
@@ -91,7 +104,7 @@ export function contentTabsReducer(state: ContentTabsState, action: ContentTabsA
       });
       return repairActive(tabs, state.activeId === action.id ? nextId : state.activeId);
     }
-    const tabs = state.tabs.map(tab => tab.id === action.id ? { ...tab, id: nextId, target } : tab);
+    const tabs = scopedTabs.map(tab => tab.id === action.id ? { ...tab, id: nextId, target } : tab);
     return repairActive(tabs, state.activeId === action.id ? nextId : state.activeId);
   }
   const tabs = state.tabs.map(tab => tab.id === action.id

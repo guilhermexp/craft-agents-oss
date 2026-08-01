@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { openSQLite, type SQLiteDatabase } from '../memory/sqlite-driver.ts';
 import { getWorkspaceObjectsPath } from '../workspaces/storage.ts';
 import { buildWorkspaceObjectPayload, storeWorkspaceObjectPayload } from './projection.ts';
+import { formatWorkspaceObjectEntryLabel, getWorkspaceObjectLabelField } from './query.ts';
 import { WORKSPACE_OBJECT_SCHEMA_V1, WORKSPACE_OBJECT_SCHEMA_V2, WORKSPACE_OBJECT_SCHEMA_VERSION } from './schema.ts';
 import {
   DefineWorkspaceObjectSchema,
@@ -17,6 +18,7 @@ import {
 } from './types.ts';
 import {
   normalizeLegacyWorkspaceObjectSavedView,
+  WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES,
   WorkspaceObjectSavedViewSchema,
   type WorkspaceObjectSavedView,
 } from './view-schema.ts';
@@ -152,7 +154,7 @@ export class WorkspaceObjectRepository {
     const view = WorkspaceObjectSavedViewSchema.parse(input);
     this.assertOwnedByObject('workspace_object_saved_views', view.id, objectId);
     const configJson = JSON.stringify(view.config);
-    if (Buffer.byteLength(configJson, 'utf8') > 64_000) throw new Error('Saved view config exceeds 64KB');
+    if (Buffer.byteLength(configJson, 'utf8') > WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES) throw new Error('Saved view config exceeds 64KB');
     const now = Date.now();
     this.transaction(() => {
       const revision = this.bumpRevision(objectId, now);
@@ -233,9 +235,10 @@ export class WorkspaceObjectRepository {
     const entries = this.db.prepare(`SELECT id FROM workspace_object_entries
       WHERE object_id = ? AND id IN (${placeholders})`).all(objectId, ...candidateIds) as Array<{ id: string }>;
     const ownedIds = new Set(entries.map(entry => entry.id));
-    const labelField = this.db.prepare(`SELECT id AS storage_id, type FROM workspace_object_fields
-      WHERE object_id = ? ORDER BY CASE WHEN type = 'text' THEN 0 ELSE 1 END, sort_order, id LIMIT 1`)
-      .get(objectId) as Pick<FieldRow, 'storage_id' | 'type'> | undefined;
+    const labelFields = this.db.prepare(`SELECT caller_id AS id, id AS storage_id, type FROM workspace_object_fields
+      WHERE object_id = ? ORDER BY sort_order, id LIMIT 200`)
+      .all(objectId) as Array<Pick<FieldRow, 'id' | 'storage_id' | 'type'>>;
+    const labelField = getWorkspaceObjectLabelField(labelFields);
     const labels = new Map<string, string>();
     if (labelField) {
       const valueRows = this.db.prepare(`SELECT entry_id, value_text, value_number, value_boolean
@@ -247,7 +250,7 @@ export class WorkspaceObjectRepository {
           : labelField.type === 'boolean'
             ? row.value_boolean === null ? null : row.value_boolean === 1
             : row.value_text;
-        if (value !== null && value !== '') labels.set(row.entry_id, String(value));
+        labels.set(row.entry_id, formatWorkspaceObjectEntryLabel(row.entry_id, value));
       }
     }
     return {

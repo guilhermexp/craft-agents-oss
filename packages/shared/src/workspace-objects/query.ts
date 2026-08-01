@@ -22,10 +22,20 @@ export interface WorkspaceObjectQueryResult {
   displayValues: Map<string, Record<string, WorkspaceObjectValue>>;
 }
 
+export function getWorkspaceObjectLabelField<T extends Pick<WorkspaceObjectField, 'id' | 'type'>>(
+  fields: readonly T[],
+): T | undefined {
+  return fields.find(field => field.type === 'text') ?? fields[0];
+}
+
+export function formatWorkspaceObjectEntryLabel(entryId: string, value: WorkspaceObjectValue | undefined): string {
+  return value === null || value === undefined || value === '' ? entryId : String(value);
+}
+
 export function getWorkspaceObjectEntryLabel(payload: WorkspaceObjectPayload, entry: WorkspaceObjectEntry): string {
-  const labelField = payload.fields.find(field => field.type === 'text') ?? payload.fields[0];
+  const labelField = getWorkspaceObjectLabelField(payload.fields);
   const value = labelField ? entry.values[labelField.id] : undefined;
-  return value === null || value === undefined || value === '' ? entry.id : String(value);
+  return formatWorkspaceObjectEntryLabel(entry.id, value);
 }
 
 export function buildWorkspaceObjectRelationLabels(payloads: readonly WorkspaceObjectPayload[]): Map<string, string> {

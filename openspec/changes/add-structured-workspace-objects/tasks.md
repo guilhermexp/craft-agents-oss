@@ -377,6 +377,17 @@ novo `projection-error` a substitui. A matriz de objetos passou 97/97 em nove
 arquivos (332 expects), com `typecheck:all`, OpenSpec strict e
 `git diff --check` verdes. 7.5 permanece desmarcado.
 
+Lote corretivo 3 de Phase B (2026-08-01): três REDs focados observaram helper
+de label compartilhado ausente, config legacy Unicode/escaped normalizado com
+128.137 bytes e retarget entre scopes mantendo dois previews descartáveis no
+destino. O GREEN torna `query.ts` autoridade do selector de label, mantendo
+queries bounded no mesmo snapshot; calcula o budget do JSON final por bytes
+UTF-8/escaping/wrapper com corte Unicode-safe e resave; e substitui somente o
+preview não-pinned do scope destino sem evictar pinned/permanent ou mudar um
+active caller sobrevivente. A matriz afetada passou 112/112 em dez arquivos
+(370 expects), com `typecheck:all`, tool contracts, OpenSpec strict e
+`git diff --check` verdes. 7.5 permanece desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

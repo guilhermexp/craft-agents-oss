@@ -129,12 +129,48 @@ export const WorkspaceObjectSavedViewSchema = z.strictObject({
   config: WorkspaceObjectViewConfigSchema,
 });
 export type WorkspaceObjectSavedView = z.infer<typeof WorkspaceObjectSavedViewSchema>;
+export const WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES = 64_000;
+const UTF8_ENCODER = new TextEncoder();
 
 const LegacyWorkspaceObjectSavedViewSchema = z.strictObject({
   id: IdentifierSchema,
   name: z.string().min(1).max(160),
   config: z.record(z.string(), z.unknown()),
 });
+
+function serializedConfigBytes(config: WorkspaceObjectViewConfig): number {
+  return UTF8_ENCODER.encode(JSON.stringify(config)).byteLength;
+}
+
+function safePrefixLength(value: string, length: number): number {
+  if (length <= 0 || length >= value.length) return Math.max(0, Math.min(length, value.length));
+  const previous = value.charCodeAt(length - 1);
+  const next = value.charCodeAt(length);
+  return previous >= 0xD800 && previous <= 0xDBFF && next >= 0xDC00 && next <= 0xDFFF
+    ? length - 1
+    : length;
+}
+
+function longestLegacyPrefixThatFits(
+  serializedLegacy: string,
+  build: (legacyConfig?: string) => WorkspaceObjectViewConfig,
+): string | undefined {
+  if (serializedConfigBytes(build(serializedLegacy)) <= WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES) return serializedLegacy;
+  let low = 0;
+  let high = serializedLegacy.length;
+  let best = 0;
+  while (low <= high) {
+    const midpoint = Math.floor((low + high) / 2);
+    const length = safePrefixLength(serializedLegacy, midpoint);
+    if (serializedConfigBytes(build(serializedLegacy.slice(0, length))) <= WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES) {
+      best = Math.max(best, length);
+      low = midpoint + 1;
+    } else {
+      high = midpoint - 1;
+    }
+  }
+  return best > 0 ? serializedLegacy.slice(0, best) : undefined;
+}
 
 export function normalizeLegacyWorkspaceObjectSavedView(view: {
   id: string
@@ -149,22 +185,40 @@ export function normalizeLegacyWorkspaceObjectSavedView(view: {
   } catch {
     // Unsupported legacy values are preserved only when safely serializable.
   }
+  const search = typeof view.config.search === 'string' ? view.config.search.slice(0, 500) : '';
+  const columnEntries = Array.isArray(view.config.columns)
+    ? view.config.columns
+      .filter((fieldId): fieldId is string => typeof fieldId === 'string' && fieldId.length >= 1 && fieldId.length <= 120)
+      .map(fieldId => [fieldId, true] as const)
+    : [];
+  const buildConfig = (visibleColumnCount: number, legacyConfig?: string): WorkspaceObjectViewConfig => ({
+      ...DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW,
+      search,
+      columnVisibility: Object.fromEntries(columnEntries.slice(0, visibleColumnCount)),
+      presentation: {
+        adapter: 'table',
+        settings: legacyConfig === undefined ? {} : { legacyConfig },
+      },
+  });
+  let visibleColumnCount = columnEntries.length;
+  if (serializedConfigBytes(buildConfig(visibleColumnCount)) > WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES) {
+    let low = 0;
+    let high = visibleColumnCount;
+    while (low < high) {
+      const midpoint = Math.ceil((low + high) / 2);
+      if (serializedConfigBytes(buildConfig(midpoint)) <= WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES) low = midpoint;
+      else high = midpoint - 1;
+    }
+    visibleColumnCount = low;
+  }
+  const buildBoundedConfig = (legacyConfig?: string): WorkspaceObjectViewConfig => buildConfig(visibleColumnCount, legacyConfig);
+  const legacyConfig = serializedLegacy === '{}'
+    ? undefined
+    : longestLegacyPrefixThatFits(serializedLegacy, buildBoundedConfig);
   return WorkspaceObjectSavedViewSchema.parse({
     id: view.id,
     name: view.name,
-    config: {
-      ...DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW,
-      search: typeof view.config.search === 'string' ? view.config.search.slice(0, 500) : '',
-      columnVisibility: Object.fromEntries(
-        Array.isArray(view.config.columns)
-          ? view.config.columns.filter((fieldId): fieldId is string => typeof fieldId === 'string' && fieldId.length >= 1 && fieldId.length <= 120).map(fieldId => [fieldId, true])
-          : [],
-      ),
-      presentation: {
-        adapter: 'table',
-        settings: serializedLegacy === '{}' ? {} : { legacyConfig: serializedLegacy.slice(0, 64_000) },
-      },
-    },
+    config: buildBoundedConfig(legacyConfig),
   })
 }
 
