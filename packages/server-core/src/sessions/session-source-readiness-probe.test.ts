@@ -52,6 +52,9 @@ describe('SessionSourceReadinessProbe', () => {
           appliedSlugs = sources.map((item) => item.config.slug)
           applyHistory.push(appliedSlugs)
         },
+        clearServers: async () => {
+          appliedSlugs = []
+        },
         getSourceTools: (slug) => appliedSlugs.includes(slug)
           ? [
               { name: 'issues_list', _meta: { craftApiVersion: 'v1' } },
@@ -98,6 +101,7 @@ describe('SessionSourceReadinessProbe', () => {
           throw new Error('backend apply failed authorization-sentinel')
         }
       },
+      clearServers: async () => {},
       getSourceTools: () => [],
     })
 

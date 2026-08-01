@@ -23,6 +23,7 @@ export interface SessionSourceReadinessProbeDependencies {
     servers: SourceProbeServers,
     context: 'source readiness probe' | 'source readiness cleanup',
   ): Promise<void>
+  clearServers(): Promise<void>
   getSourceTools(sourceSlug: string): SourceProbeTool[]
 }
 
@@ -68,34 +69,38 @@ function readApiVersion(meta: unknown): string {
 export class SessionSourceReadinessProbe {
   readonly backend: Exclude<SourceProbeBackend, 'unsupported'>
   private readonly snapshots = new Map<string, SourceProbeSnapshot>()
+  private activeProbeId: string | undefined
 
   constructor(private readonly dependencies: SessionSourceReadinessProbeDependencies) {
     this.backend = dependencies.backend
   }
 
   async inject(sourceSlug: string): Promise<{ probeId: string }> {
-    const source = this.dependencies.getSource(sourceSlug)
-    if (!source) throw new Error('Source probe injection failed')
-
-    const activeSources = this.dependencies.getActiveSources()
-    const probeSources = withProbeSource(activeSources, source)
     const probeId = randomUUID()
+    if (this.activeProbeId !== undefined) throw new Error('Source probe is already active')
+    this.activeProbeId = probeId
+    let applyAttempted = false
+    let activeSources: LoadedSource[] | undefined
 
     try {
+      const source = this.dependencies.getSource(sourceSlug)
+      if (!source) throw new Error('Source probe injection failed')
+
+      activeSources = this.dependencies.getActiveSources()
+      const probeSources = withProbeSource(activeSources, source)
       const servers = await this.dependencies.buildServers(probeSources)
       if (!(sourceSlug in servers.mcpServers) && !(sourceSlug in servers.apiServers)) {
         throw new Error('Source was not built for probe')
       }
+      applyAttempted = true
       await this.dependencies.applyServers(probeSources, servers, 'source readiness probe')
       this.snapshots.set(probeId, { sourceSlug, activeSources })
       return { probeId }
     } catch {
-      try {
-        const restoreServers = await this.dependencies.buildServers(activeSources)
-        await this.dependencies.applyServers(activeSources, restoreServers, 'source readiness cleanup')
-      } catch {
-        // The public failure remains fixed and redacted; callers persist unhealthy.
+      if (applyAttempted && activeSources !== undefined) {
+        await this.restoreOrClear(activeSources)
       }
+      if (this.activeProbeId === probeId) this.activeProbeId = undefined
       throw new Error('Source probe injection failed')
     }
   }
@@ -114,12 +119,40 @@ export class SessionSourceReadinessProbe {
     const snapshot = this.snapshots.get(probeId)
     if (!snapshot) throw new Error('Source probe is not active')
 
-    const servers = await this.dependencies.buildServers(snapshot.activeSources)
-    await this.dependencies.applyServers(
-      snapshot.activeSources,
-      servers,
-      'source readiness cleanup',
-    )
+    try {
+      const restored = await this.restoreOrClear(snapshot.activeSources)
+      if (!restored) throw new Error('Source probe cleanup failed')
+    } finally {
+      this.snapshots.delete(probeId)
+      if (this.activeProbeId === probeId) this.activeProbeId = undefined
+    }
+  }
+
+  commit(probeId: string, beforeCommit?: (sourceSlug: string) => void): string {
+    const snapshot = this.snapshots.get(probeId)
+    if (!snapshot) throw new Error('Source probe is not active')
+    beforeCommit?.(snapshot.sourceSlug)
     this.snapshots.delete(probeId)
+    if (this.activeProbeId === probeId) this.activeProbeId = undefined
+    return snapshot.sourceSlug
+  }
+
+  private async restoreOrClear(activeSources: LoadedSource[]): Promise<boolean> {
+    try {
+      const servers = await this.dependencies.buildServers(activeSources)
+      await this.dependencies.applyServers(
+        activeSources,
+        servers,
+        'source readiness cleanup',
+      )
+      return true
+    } catch {
+      try {
+        await this.dependencies.clearServers()
+      } catch {
+        // The fixed failure returned by the caller remains redacted.
+      }
+      return false
+    }
   }
 }

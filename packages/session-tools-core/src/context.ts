@@ -442,6 +442,15 @@ export interface SessionToolContext {
   /** Restore the exact pre-probe session source set. */
   removeSourceProbe?(probeId: string): Promise<void>;
 
+  /** Prepare final readiness exposure while retaining a rollback snapshot. */
+  prepareSourceReadinessActivation?(sourceSlug: string): Promise<{ activationId: string }>;
+
+  /** Commit a prepared readiness exposure after its ready config is durable. */
+  commitSourceReadinessActivation?(activationId: string): void;
+
+  /** Restore or clear a prepared readiness exposure when persistence fails. */
+  rollbackSourceReadinessActivation?(activationId: string): Promise<void>;
+
   // ============================================================
   // Messaging Gateway (for list/unbind messaging channels)
   // ============================================================

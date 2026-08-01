@@ -81,7 +81,7 @@ import { toolMetadataStore, getLastApiError } from '@craft-agent/shared/intercep
 import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
 import { restoreFiles } from '@craft-agent/shared/utils/bundle-files'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
-import { CraftMcpClient, McpClientPool, McpPoolServer } from '@craft-agent/shared/mcp'
+import { CraftMcpClient, McpClientPool, McpPoolServer, type ApiServerConfig } from '@craft-agent/shared/mcp'
 import { type Session, type FileAttachment, type SendMessageOptions, type UnreadSummary, type RemoteSessionTransferPayload, type ImportRemoteSessionTransferResult, type CreateSessionOptions, type AskUserQuestionResponse, generateMessageId } from '@craft-agent/shared/protocol'
 import { storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta, type TokenUsage } from '@craft-agent/core/types'
 import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlAsync, getEmojiIcon, resetSummarizationClient, resolveToolIcon, readFileAttachment, selectSpreadMessages, normalizePath } from '@craft-agent/shared/utils'
@@ -4358,19 +4358,51 @@ export class SessionManager implements ISessionManager {
             string,
             import('@craft-agent/shared/agent/backend').SdkMcpServerConfig
           >
-          const apiServers = servers.apiServers as Record<string, unknown>
+          const apiServers = servers.apiServers as Record<string, ApiServerConfig>
           const intendedSlugs = sources.map((source) => source.config.slug)
-          await applyBridgeUpdates(
-            agent,
-            sessionPath,
-            sources,
-            mcpServers,
-            managed.id,
-            managed.workspace.rootPath,
-            context,
-            managed.poolServer?.url,
-          )
+          await Promise.all([
+            applyBridgeUpdates(
+              agent,
+              sessionPath,
+              sources,
+              mcpServers,
+              managed.id,
+              managed.workspace.rootPath,
+              context,
+              managed.poolServer?.url,
+            ),
+            managed.mcpPool?.sync(mcpServers, apiServers),
+          ])
           await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
+        },
+        clearServers: async () => {
+          const agent = managed.agent
+          if (!agent) throw new Error('Source probe cleanup failed')
+          const clearResults = await Promise.allSettled([
+            applyBridgeUpdates(
+              agent,
+              sessionPath,
+              [],
+              {},
+              managed.id,
+              managed.workspace.rootPath,
+              'source readiness cleanup',
+              managed.poolServer?.url,
+            ),
+            agent.setSourceServers({}, {}, []),
+          ])
+          const poolResult = managed.mcpPool === undefined
+            ? { status: 'fulfilled' as const, value: undefined }
+            : await managed.mcpPool.sync({}, {}).then(
+                () => ({ status: 'fulfilled' as const, value: undefined }),
+                () => ({ status: 'rejected' as const }),
+              )
+          if (
+            clearResults.some((result) => result.status === 'rejected')
+            || poolResult.status === 'rejected'
+          ) {
+            throw new Error('Source probe cleanup failed')
+          }
         },
         getSourceTools: (sourceSlug) => managed.mcpPool?.getTools(sourceSlug) ?? [],
       })
@@ -4548,6 +4580,37 @@ export class SessionManager implements ISessionManager {
         injectSourceForProbeFn: (sourceSlug) => sourceReadinessProbe.inject(sourceSlug),
         observeSourceToolsForProbeFn: async (probeId) => sourceReadinessProbe.observe(probeId),
         removeSourceProbeFn: (probeId) => sourceReadinessProbe.remove(probeId),
+        prepareSourceReadinessActivationFn: async (sourceSlug) => {
+          const { probeId } = await sourceReadinessProbe.inject(sourceSlug)
+          return { activationId: probeId }
+        },
+        commitSourceReadinessActivationFn: (activationId) => {
+          sourceReadinessProbe.commit(activationId, (sourceSlug) => {
+            const previousEnabledSlugs = [...(managed.enabledSourceSlugs ?? [])]
+            const enabledSlugs = new Set(previousEnabledSlugs)
+            enabledSlugs.add(sourceSlug)
+            try {
+              managed.enabledSourceSlugs = [...enabledSlugs]
+              this.store.persist(managed)
+              this.events.sourcesChanged(managed, managed.enabledSourceSlugs)
+
+              const userMessage = managed.agent?.getCurrentTurnUserMessage?.() ?? ''
+              if (userMessage) {
+                managed.agent?.setPendingSourceActivationRestart({ sourceSlug, userMessage })
+              }
+            } catch {
+              managed.enabledSourceSlugs = previousEnabledSlugs
+              try {
+                this.store.persist(managed)
+                this.events.sourcesChanged(managed, previousEnabledSlugs)
+              } catch {
+                // The handler will still roll back runtime exposure and ready config.
+              }
+              throw new Error('Source readiness activation commit failed')
+            }
+          })
+        },
+        rollbackSourceReadinessActivationFn: (activationId) => sourceReadinessProbe.remove(activationId),
       })
 
       // WS2 keep-alive: forward background task events that arrive BETWEEN turns

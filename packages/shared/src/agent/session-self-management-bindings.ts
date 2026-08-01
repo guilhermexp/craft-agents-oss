@@ -144,6 +144,30 @@ export function attachSessionSelfManagementBindings(
     enumerable: true,
   });
 
+  Object.defineProperty(context, 'prepareSourceReadinessActivation', {
+    get() {
+      return getSessionScopedToolCallbacks(sessionId)?.prepareSourceReadinessActivationFn;
+    },
+    configurable: true,
+    enumerable: true,
+  });
+
+  Object.defineProperty(context, 'commitSourceReadinessActivation', {
+    get() {
+      return getSessionScopedToolCallbacks(sessionId)?.commitSourceReadinessActivationFn;
+    },
+    configurable: true,
+    enumerable: true,
+  });
+
+  Object.defineProperty(context, 'rollbackSourceReadinessActivation', {
+    get() {
+      return getSessionScopedToolCallbacks(sessionId)?.rollbackSourceReadinessActivationFn;
+    },
+    configurable: true,
+    enumerable: true,
+  });
+
   // Messaging gateway bindings
   Object.defineProperty(context, 'getMessagingBindings', {
     get() {

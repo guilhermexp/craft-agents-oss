@@ -89,7 +89,11 @@ export async function runSourceReadinessCheck(
           reason: result.reason,
           ...('observedTools' in result ? { observedTools: result.observedTools } : {}),
         };
-    await dependencies.writeHealth(health);
+    try {
+      await dependencies.writeHealth(health);
+    } catch {
+      throw new Error('Source readiness health persistence failed');
+    }
     dependencies.logHealth?.(health);
     return result;
   };
@@ -354,90 +358,150 @@ export async function handleSourceTest(
     && connectionStatus === 'connected'
     && readinessPassed;
   const willFlipEnabled = shouldAutoEnable && source.enabled === false;
-  let readinessStatePersisted = !requiresReadiness;
-  const persistReadinessExposureFailure = (): void => {
-    hasErrors = true;
-    connectionStatus = 'unhealthy';
-    connectionError = 'Source readiness failed: backend-injection-failed';
-    readiness = {
+  const testedAt = Date.now();
+
+  if (requiresReadiness && shouldAutoEnable) {
+    const saveSourceConfig = ctx.saveSourceConfig;
+    const stagedReadiness: SourceReadinessHealth & { checkedAt: number } = {
       status: 'unhealthy',
       reason: 'backend-injection-failed',
-      checkedAt: Date.now(),
+      checkedAt: testedAt,
     };
+    const stagedSource: SourceConfig = {
+      ...source,
+      enabled: false,
+      lastTestedAt: testedAt,
+      connectionStatus: 'unhealthy',
+      connectionError: 'Source readiness failed: backend-injection-failed',
+      readiness: stagedReadiness,
+    };
+
+    let stagedPersisted = false;
     try {
-      ctx.saveSourceConfig?.({
+      if (!saveSourceConfig) throw new Error('Source config persistence is unavailable');
+      saveSourceConfig(stagedSource);
+      stagedPersisted = true;
+    } catch {
+      hasErrors = true;
+      lines.push('✗ Fail-closed readiness state could not be persisted; activation was skipped');
+    }
+
+    if (stagedPersisted) {
+      const prepare = ctx.prepareSourceReadinessActivation;
+      const commit = ctx.commitSourceReadinessActivation;
+      const rollback = ctx.rollbackSourceReadinessActivation;
+      if (!prepare || !commit || !rollback) {
+        hasErrors = true;
+        lines.push('✗ Session readiness activation lifecycle is unavailable; source remains disabled');
+      } else {
+        let activationId: string | undefined;
+        try {
+          const prepared = await prepare(sourceSlug);
+          activationId = prepared.activationId;
+        } catch {
+          hasErrors = true;
+          lines.push('✗ Session exposure failed after readiness probe; source remains disabled');
+        }
+
+        if (activationId !== undefined) {
+          const readySource: SourceConfig = {
+            ...source,
+            enabled: true,
+            lastTestedAt: testedAt,
+            connectionStatus,
+            connectionError,
+            readiness,
+          };
+          try {
+            saveSourceConfig!(readySource);
+          } catch {
+            hasErrors = true;
+            try {
+              await rollback(activationId);
+              lines.push('✗ Ready health could not be persisted; temporary exposure was rolled back');
+            } catch {
+              lines.push('✗ Ready health could not be persisted and session exposure could not be confirmed closed');
+            }
+            activationId = undefined;
+          }
+
+          if (activationId !== undefined) {
+            try {
+              commit(activationId);
+              lines.push('\n_Config updated with test results._');
+              if (willFlipEnabled) lines.push('✓ Source auto-enabled in config');
+              lines.push('✓ Source activated — the current turn will auto-restart with tools available');
+            } catch {
+              hasErrors = true;
+              let rollbackConfirmed = false;
+              try {
+                await rollback(activationId);
+                rollbackConfirmed = true;
+              } catch {
+                // Report the unconfirmed exposure below without serializing the caught error.
+              }
+              try {
+                saveSourceConfig!(stagedSource);
+              } catch {
+                lines.push('✗ Session activation commit failed and ready config rollback could not be persisted');
+              }
+              lines.push(rollbackConfirmed
+                ? '✗ Session activation commit failed; temporary exposure was rolled back'
+                : '✗ Session activation commit failed and exposure could not be confirmed closed');
+            }
+          }
+        }
+      }
+    }
+  } else {
+    let configPersisted = ctx.saveSourceConfig === undefined;
+    if (ctx.saveSourceConfig) {
+      const updatedSource: SourceConfig = {
         ...source,
-        enabled: false,
-        lastTestedAt: Date.now(),
+        lastTestedAt: testedAt,
         connectionStatus,
         connectionError,
-        readiness,
-      });
-    } catch {
-      // Activation already failed; keep the public result fail-closed and redacted.
-    }
-  };
-
-  if (ctx.saveSourceConfig) {
-    const updatedSource: SourceConfig = {
-      ...source,
-      lastTestedAt: Date.now(),
-      connectionStatus,
-      connectionError,
-      ...(requiresReadiness ? { readiness, enabled: shouldAutoEnable } : {}),
-      // Fold enabled flip into the same save — one write, not two.
-      ...(!requiresReadiness && willFlipEnabled ? { enabled: true } : {}),
-    };
-    try {
-      ctx.saveSourceConfig(updatedSource);
-      readinessStatePersisted = true;
-      lines.push('\n_Config updated with test results._');
-      if (willFlipEnabled) {
-        lines.push('✓ Source auto-enabled in config');
-      }
-    } catch {
-      if (requiresReadiness) {
-        hasErrors = true;
-        lines.push('✗ Ready health could not be persisted; source remains disabled');
-      }
-    }
-  }
-
-  // Try to activate the source in the running session (backend may not support this).
-  if (shouldAutoEnable && readinessStatePersisted) {
-    if (ctx.activateSourceInSession) {
+        ...(requiresReadiness ? { readiness, enabled: false } : {}),
+        ...(!requiresReadiness && willFlipEnabled ? { enabled: true } : {}),
+      };
       try {
-        const result = await ctx.activateSourceInSession(sourceSlug);
-        if (result.ok) {
-          // Activation succeeded — the backend will abort this turn after the
-          // tool result lands, and the renderer auto-resends the original user
-          // message with a "[{slug} activated]" suffix. From the model's POV,
-          // the "next step" is a new turn where the tools are live.
-          lines.push('✓ Source activated — the current turn will auto-restart with tools available');
+        ctx.saveSourceConfig(updatedSource);
+        configPersisted = true;
+        lines.push('\n_Config updated with test results._');
+        if (willFlipEnabled) lines.push('✓ Source auto-enabled in config');
+      } catch {
+        if (requiresReadiness) {
+          hasErrors = true;
+          lines.push('✗ Ready health could not be persisted; source remains disabled');
         } else {
-          if (requiresReadiness) {
-            persistReadinessExposureFailure();
-            lines.push('✗ Session exposure failed after readiness probe; source remains disabled');
+          hasWarnings = true;
+          lines.push('⚠ Config could not be updated; session activation was skipped');
+        }
+      }
+    }
+
+    if (!requiresReadiness && shouldAutoEnable && configPersisted) {
+      if (ctx.activateSourceInSession) {
+        try {
+          const result = await ctx.activateSourceInSession(sourceSlug);
+          if (result.ok) {
+            lines.push('✓ Source activated — the current turn will auto-restart with tools available');
           } else {
             lines.push(`⚠ Config updated, but session activation failed: ${result.reason ?? 'unknown error'}. Restart session to load tools.`);
             hasWarnings = true;
           }
-        }
-      } catch (e) {
-        if (requiresReadiness) {
-          persistReadinessExposureFailure();
-          lines.push('✗ Session exposure threw after readiness probe; source remains disabled');
-        } else {
+        } catch (e) {
           const msg = e instanceof Error ? e.message : 'unknown error';
           lines.push(`⚠ Config updated, but session activation threw: ${msg}. Restart session to load tools.`);
           hasWarnings = true;
         }
+      } else if (willFlipEnabled) {
+        lines.push('ℹ Config updated. Restart session to load tools (mid-session activation not available in this backend).');
       }
-    } else if (willFlipEnabled) {
-      // Only nag about restart if we actually flipped the flag.
-      lines.push('ℹ Config updated. Restart session to load tools (mid-session activation not available in this backend).');
     }
-  } else if (autoEnable && !hasErrors && connectionStatus !== 'connected') {
+  }
+
+  if (autoEnable && !hasErrors && connectionStatus !== 'connected') {
     // The user asked to auto-enable but the connection probe didn't pass.
     // Tell them why activation is being skipped so they can act on it.
     lines.push(`ℹ Skipping activation because connection test did not succeed (status: ${connectionStatus}). Re-run source_test once the endpoint is reachable.`);

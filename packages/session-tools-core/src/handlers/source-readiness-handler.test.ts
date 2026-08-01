@@ -99,6 +99,16 @@ function createHarness(observedTools: typeof expectedTools): {
     },
   } as unknown as SessionToolContext
 
+  ctx.prepareSourceReadinessActivation = async (sourceSlug: string) => {
+    const result = await ctx.activateSourceInSession!(sourceSlug)
+    if (!result.ok) throw new Error('readiness activation failed')
+    return { activationId: 'activation-1' }
+  }
+  ctx.commitSourceReadinessActivation = () => {}
+  ctx.rollbackSourceReadinessActivation = async (activationId: string) => {
+    events.push(`rollback:${activationId}`)
+  }
+
   return { ctx, configPath, events }
 }
 
