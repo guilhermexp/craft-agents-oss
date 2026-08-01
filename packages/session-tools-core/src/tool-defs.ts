@@ -11,7 +11,10 @@
  * import, and one defineTool() entry in SESSION_TOOL_DEFS.
  */
 
-import { z } from 'zod';
+// zod-to-json-schema 3.x accepts Zod 4 as a peer dependency, but converts v3
+// schema instances. Import the compatibility surface explicitly so transport
+// schemas cannot silently collapse to an empty object after dependency install.
+import { z } from 'zod/v3';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { SessionToolContext } from './context.ts';
 import type { ToolResult } from './types.ts';
@@ -856,7 +859,7 @@ export function validateSessionToolInput(def: SessionToolDef, args: unknown): Re
 }
 
 export function validateSessionToolOutput(def: SessionToolDef, result: unknown): ToolResult {
-  return def.outputSchema.parse(result);
+  return def.outputSchema.parse(result) as ToolResult;
 }
 
 /**
