@@ -357,6 +357,34 @@ describe('WorkspaceObjectRepository', () => {
     repository.close();
   });
 
+  test('rebuilds a stale query payload without writing inside the read snapshot', () => {
+    const root = makeRoot();
+    const repository = WorkspaceObjectRepository.open(root);
+    repository.defineObject({ id: 'object_snapshot', slug: 'snapshot', name: 'Snapshot', fields: [] });
+    repository.upsertEntries('object_snapshot', [{ id: 'entry_one', values: {} }]);
+    repository.markProjectionStaleForTest('object_snapshot');
+    const writer = openSQLite(join(root, 'objects', 'objects.sqlite'));
+    writer.pragma('journal_mode = WAL');
+    let observedRevision: number | undefined;
+    let observedError: unknown = null;
+
+    try {
+      observedRevision = repository.withReadSnapshot(() => {
+        expect(repository.hasFreshProjectionForTest('object_snapshot')).toBe(false);
+        writer.prepare('UPDATE workspace_objects SET revision = revision + 1 WHERE id = ?').run('object_snapshot');
+        return repository.readObjectSnapshot('object_snapshot')?.revision;
+      });
+    } catch (error) {
+      observedError = error;
+    } finally {
+      writer.close();
+      repository.close();
+    }
+
+    expect(observedError).toBeNull();
+    expect(observedRevision).toBe(2);
+  });
+
   test('supports nested projection transactions with savepoints', () => {
     const repository = WorkspaceObjectRepository.open(makeRoot());
     expect(() => repository.withProjectionLock(() => {

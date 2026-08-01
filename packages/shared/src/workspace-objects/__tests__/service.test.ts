@@ -172,6 +172,39 @@ describe('WorkspaceObjectService', () => {
     service.close();
   });
 
+  test('evaluates every canonical entry before returning a bounded query page', () => {
+    const service = WorkspaceObjectService.open({ workspaceId: 'ws_query_bounds', workspaceRootPath: makeRoot() });
+    service.execute({ action: 'define-object', object: {
+      id: 'object_query_bounds', slug: 'query-bounds', name: 'Query bounds',
+      fields: [{ id: 'field_name', name: 'Name', type: 'text' }],
+    } });
+    const entries = Array.from({ length: 201 }, (_, index) => ({
+      id: `entry_${String(index).padStart(3, '0')}`,
+      values: { field_name: index === 200 ? 'Only beyond boundary' : `Entry ${index}` },
+    }));
+    service.execute({ action: 'upsert-entries', objectId: 'object_query_bounds', entries: entries.slice(0, 200) });
+    service.execute({ action: 'upsert-entries', objectId: 'object_query_bounds', entries: entries.slice(200) });
+    const config = {
+      schemaVersion: 1 as const, search: '', filter: null, sort: [], columnVisibility: {},
+      presentation: { adapter: 'table' as const, settings: {} },
+    };
+
+    const unfiltered = service.execute({ action: 'query-object', objectId: 'object_query_bounds', query: { config } });
+    expect(unfiltered).toMatchObject({
+      query: { totalEntries: 201, truncated: true },
+    });
+    if (!('query' in unfiltered)) throw new Error('Expected query result');
+    expect(unfiltered.query.entries).toHaveLength(200);
+    const filtered = service.execute({
+      action: 'query-object', objectId: 'object_query_bounds',
+      query: { config: { ...config, search: 'Only beyond boundary' } },
+    });
+    expect(filtered).toMatchObject({
+      query: { entries: [{ id: 'entry_200' }], totalEntries: 1, truncated: false },
+    });
+    service.close();
+  });
+
   test('queries relations by their current labels while returning the stored stable id', () => {
     const service = WorkspaceObjectService.open({ workspaceId: 'ws_relation_query', workspaceRootPath: makeRoot() });
     service.execute({ action: 'define-object', object: {

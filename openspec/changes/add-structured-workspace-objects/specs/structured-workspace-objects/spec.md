@@ -141,6 +141,10 @@ canônico. Trocar adapter MUST NOT migrar dados nem alterar object/entry IDs.
 Saved views SHALL preservar filtros aninhados, search, multi-sort, column
 visibility e settings do adapter. Table edits SHALL validar pelo field type,
 resolver relation labels por stable ID e somente confirmar sucesso após commit.
+`query-object` SHALL avaliar o snapshot canônico completo antes de limitar a
+resposta a 200 entries e SHALL retornar `totalEntries` e `truncated`. O repair
+de projeção stale SHALL ocorrer antes do snapshot de leitura; o fallback dentro
+dele MUST permanecer read-only.
 
 #### Scenario: Saved view é restaurada
 
@@ -153,6 +157,20 @@ resolver relation labels por stable ID e somente confirmar sucesso após commit.
 - **WHEN** um editor envia valor incompatível com o field type
 - **THEN** o editor mostra erro e nenhuma revisão de sucesso é publicada
 - **Test:** `unit`
+
+#### Scenario: Match após o limite de resposta continua visível
+
+- **GIVEN** um objeto com mais de 200 entries e o único match após a entry 200
+- **WHEN** `query-object` aplica search ou filtro
+- **THEN** o evaluator considera o conjunto inteiro, retorna o match e informa o total/truncamento da página
+- **Test:** `integration`
+
+#### Scenario: Projeção stale durante query não promove snapshot de leitura
+
+- **GIVEN** uma projeção stale e um writer concorrente após o snapshot começar
+- **WHEN** `query-object` precisa reconstruir o payload canônico
+- **THEN** a leitura usa rows do próprio snapshot sem tentar escrever nem produzir `SQLITE_BUSY_SNAPSHOT`
+- **Test:** `integration`
 
 ### Requirement: Kanban mutations fully roll back on failure
 

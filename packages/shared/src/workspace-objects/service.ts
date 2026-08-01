@@ -16,6 +16,7 @@ const QueryWorkspaceObjectActionSchema = z.strictObject({
     z.strictObject({ config: WorkspaceObjectViewConfigSchema }),
   ]),
 });
+const MAX_QUERY_ENTRIES = 200;
 
 export const WorkspaceObjectActionSchema = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('define-object'), object: DefineWorkspaceObjectSchema }),
@@ -49,6 +50,8 @@ export type WorkspaceObjectServiceResult =
   | { query: Pick<WorkspaceObjectPayload, 'fields' | 'entries'> & {
       objectId: string;
       revision: number;
+      totalEntries: number;
+      truncated: boolean;
       displayValues: Record<string, Record<string, WorkspaceObjectValue>>;
       relationLabels: Record<string, string>;
     } }
@@ -104,6 +107,7 @@ export class WorkspaceObjectService {
       return { relationOptions: page.options, nextCursor: page.nextCursor, revision: page.revision };
     }
     if (action.action === 'query-object') {
+      this.repository.ensureFreshProjection(action.objectId);
       return this.repository.withReadSnapshot(() => this.queryObject(action));
     }
     if (action.action === 'repair-projection') {
@@ -118,7 +122,7 @@ export class WorkspaceObjectService {
   }
 
   private queryObject(action: z.infer<typeof QueryWorkspaceObjectActionSchema>): Extract<WorkspaceObjectServiceResult, { query: unknown }> {
-    const payload = this.repository.getObject(action.objectId);
+    const payload = this.repository.readObjectSnapshot(action.objectId);
     if (!payload) throw new Error(`Unknown object: ${action.objectId}`);
     const viewId = 'viewId' in action.query ? action.query.viewId : null;
     const config = 'config' in action.query
@@ -147,12 +151,16 @@ export class WorkspaceObjectService {
     const query = evaluateWorkspaceObjectQuery(payload, config, {
       relationLabels,
     });
+    const totalEntries = query.entries.length;
+    const entries = query.entries.slice(0, MAX_QUERY_ENTRIES);
     return { query: {
       objectId: payload.id,
       revision: payload.revision,
+      totalEntries,
+      truncated: totalEntries > entries.length,
       fields: query.fields,
-      entries: query.entries,
-      displayValues: Object.fromEntries(query.entries.map(entry => [entry.id, query.displayValues.get(entry.id) ?? {}])),
+      entries,
+      displayValues: Object.fromEntries(entries.map(entry => [entry.id, query.displayValues.get(entry.id) ?? {}])),
       relationLabels: Object.fromEntries(relationLabels),
     } };
   }

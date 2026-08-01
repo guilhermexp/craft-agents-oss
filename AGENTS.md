@@ -136,7 +136,10 @@ The Phase A local-first object contract is tracked by
   view v1 contract. `query.ts` is the only evaluator for nested filters, search,
   stable multi-sort, visibility and current relation labels. Both
   `query-object` and the Desktop table call it; do not fork query semantics in
-  the renderer or an adapter.
+  the renderer or an adapter. `query-object` evaluates the complete canonical
+  snapshot before bounding its response to 200 entries and reports
+  `totalEntries` plus `truncated`; projection repair happens before the read
+  snapshot, whose fallback rebuild is read-only.
 - Table edits submit the full current entry through the existing
   `upsert-entries` action. Invalid drafts never call the mutation. A returned
   revision means the canonical commit exists, but the editor closes only after

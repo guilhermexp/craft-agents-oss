@@ -12,8 +12,27 @@ import { collectReferencedRelationEntryIds, loadReferencedRelationOptions } from
 interface WorkspaceObjectPreviewData {
   targetKey: string
   payload: WorkspaceObjectPayload
-  relationPayloads: WorkspaceObjectPayload[]
   relationOptionPages?: Record<string, { options: Array<{ id: string; label: string }>; nextCursor: string | null; revision: number }>
+}
+
+type WorkspaceObjectPreviewRevision = {
+  revision: number
+  projectionStatus: WorkspaceObjectPayload['projectionStatus']
+}
+
+const EMPTY_RELATION_PAYLOADS: WorkspaceObjectPayload[] = []
+
+export function buildWorkspaceObjectPreviewRevisions(
+  payload: WorkspaceObjectPayload,
+  relationOptionPages: WorkspaceObjectPreviewData['relationOptionPages'] = {},
+): Map<string, WorkspaceObjectPreviewRevision> {
+  const revisions = new Map<string, WorkspaceObjectPreviewRevision>([
+    [payload.id, { revision: payload.revision, projectionStatus: payload.projectionStatus }],
+  ])
+  for (const [relationObjectId, page] of Object.entries(relationOptionPages)) {
+    revisions.set(relationObjectId, { revision: page.revision, projectionStatus: 'ready' })
+  }
+  return revisions
 }
 
 interface WorkspaceObjectPreviewTarget {
@@ -70,7 +89,6 @@ export function WorkspaceObjectPreviewPanel({
     return {
       targetKey: contentTabId(target),
       payload: result.payload,
-      relationPayloads: [],
       relationOptionPages: Object.fromEntries(relationResults.map(({ relationObjectId, page }) => [relationObjectId, page])),
     }
   }, [workspaceId, objectId, target])
@@ -86,9 +104,8 @@ export function WorkspaceObjectPreviewPanel({
     revisionsRef.current.clear()
     relationObjectIdsRef.current.clear()
     const applyData = (value: WorkspaceObjectPreviewData) => {
-      revisionsRef.current.set(value.payload.id, { revision: value.payload.revision, projectionStatus: value.payload.projectionStatus })
-      for (const relation of value.relationPayloads) {
-        revisionsRef.current.set(relation.id, { revision: relation.revision, projectionStatus: relation.projectionStatus })
+      for (const [revisionObjectId, revision] of buildWorkspaceObjectPreviewRevisions(value.payload, value.relationOptionPages)) {
+        revisionsRef.current.set(revisionObjectId, revision)
       }
       relationObjectIdsRef.current = new Set(value.payload.fields.flatMap(field => field.relationObjectId ? [field.relationObjectId] : []))
       setData(value)
@@ -145,7 +162,7 @@ export function WorkspaceObjectPreviewPanel({
       {visibleData?.payload.projectionStatus === 'projection-error' ? (
         <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">{t('chat.workspaceObjectProjectionRepair')}</div>
       ) : null}
-      {visibleData ? <ObjectTableView key={workspaceObjectPreviewRenderKey(visibleData.payload, viewId)} payload={visibleData.payload} relationPayloads={visibleData.relationPayloads} relationOptionPages={visibleData.relationOptionPages} mutate={mutate} initialViewId={viewId} onViewIdChange={onViewIdChange} /> : null}
+      {visibleData ? <ObjectTableView key={workspaceObjectPreviewRenderKey(visibleData.payload, viewId)} payload={visibleData.payload} relationPayloads={EMPTY_RELATION_PAYLOADS} relationOptionPages={visibleData.relationOptionPages} mutate={mutate} initialViewId={viewId} onViewIdChange={onViewIdChange} /> : null}
     </div>
   )
 }

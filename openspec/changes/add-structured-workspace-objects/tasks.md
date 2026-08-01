@@ -326,6 +326,17 @@ arquivos (295 expects). Typechecks shared/Electron, OpenSpec strict e
 `git diff --check` passaram. 7.5 continua desmarcado até Electron real e auditor
 GO do root.
 
+Lote corretivo CodeRabbit 1 de Phase B (2026-08-01): três REDs focados
+reproduziram o mapa de revisions relacionais vazio, o corte antecipado em 200
+entries sem metadata e uma escrita de projection dentro do snapshot que falhou
+com `SQLITE_BUSY_SNAPSHOT` (errno 517). O GREEN inicializa revisions pelas
+`relationOptionPages`, avalia o snapshot completo antes de limitar a saída a
+200 com `totalEntries`/`truncated`, repara projection antes do snapshot e usa
+fallback read-only se houver nova divergência concorrente. A matriz afetada
+passou 88/88 em oito arquivos (290 expects); typechecks shared/Electron e
+`typecheck:all` passaram, tool contracts permaneceram 30 native + 2 MCP-only,
+OpenSpec strict e `git diff --check` ficaram verdes. 7.5 permanece desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

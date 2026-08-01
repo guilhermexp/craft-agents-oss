@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import type { WorkspaceObjectPayload } from '@craft-agent/shared/workspace-objects/types';
 import { WorkspaceObjectListLoader, type WorkspaceObjectListLoadCallbacks } from '../workspace-objects-section.tsx';
-import { isWorkspaceObjectPreviewDataCurrent, workspaceObjectPreviewRenderKey } from '../workspace-object-preview-panel.tsx';
+import {
+  buildWorkspaceObjectPreviewRevisions,
+  isWorkspaceObjectPreviewDataCurrent,
+  workspaceObjectPreviewRenderKey,
+} from '../workspace-object-preview-panel.tsx';
 import { collectReferencedRelationEntryIds, loadReferencedRelationOptions } from '../../workspace-objects/relation-options.ts';
 import { contentTabId } from '../../app-shell/content-tabs-state.ts';
 
@@ -88,6 +92,21 @@ describe('WorkspaceObjectListLoader', () => {
 });
 
 describe('workspace object preview target identity', () => {
+  test('seeds relation revisions from the loaded option pages', () => {
+    const payload: WorkspaceObjectPayload = {
+      ...object('object_people', 3),
+      fields: [{ id: 'field_company', name: 'Company', type: 'relation', relationObjectId: 'object_companies' }],
+    };
+    const revisions = buildWorkspaceObjectPreviewRevisions(payload, {
+      object_companies: { options: [], nextCursor: null, revision: 7 },
+    });
+
+    expect(revisions).toEqual(new Map([
+      ['object_people', { revision: 3, projectionStatus: 'ready' }],
+      ['object_companies', { revision: 7, projectionStatus: 'ready' }],
+    ]));
+  });
+
   test('includes currently referenced relation ids in bounded option lookups', () => {
     const payload: WorkspaceObjectPayload = {
       ...object('object_people', 1),
@@ -139,7 +158,7 @@ describe('workspace object preview target identity', () => {
   test('never renders data from the previous object and keys saved views independently', () => {
     const data = {
       targetKey: contentTabId({ kind: 'object', workspaceId: 'w1', objectId: 'object_old', viewId: 'view_a' }),
-      payload: object('object_old', 1), relationPayloads: [],
+      payload: object('object_old', 1),
     };
     expect(isWorkspaceObjectPreviewDataCurrent(data, { workspaceId: 'w1', objectId: 'object_new', viewId: 'view_a' })).toBe(false);
     expect(isWorkspaceObjectPreviewDataCurrent(data, { workspaceId: 'w1', objectId: 'object_old', viewId: 'view_a' })).toBe(true);

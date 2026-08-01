@@ -170,18 +170,29 @@ export class WorkspaceObjectRepository {
     const boundedEntryLimit = Math.max(1, Math.min(entryLimit, MAX_READ_ENTRIES));
     const revision = this.db.prepare('SELECT revision FROM workspace_objects WHERE id = ?').get(objectId) as ObjectRevisionRow | undefined;
     if (!revision) return null;
-    const projection = this.db.prepare('SELECT source_revision, payload_json FROM workspace_object_payloads WHERE object_id = ?').get(objectId) as { source_revision: number; payload_json: string } | undefined;
-    if (projection?.source_revision === revision.revision) {
-      try {
-        const result = WorkspaceObjectPayloadSchema.safeParse(JSON.parse(projection.payload_json));
-        if (result.success && result.data.id === objectId && result.data.revision === revision.revision) {
-          return { ...result.data, entries: result.data.entries.slice(0, boundedEntryLimit) };
-        }
-      } catch { /* rebuild below */ }
-    }
+    const projected = this.readFreshProjection(objectId, revision.revision);
+    if (projected) return { ...projected, entries: projected.entries.slice(0, boundedEntryLimit) };
     const rebuilt = buildWorkspaceObjectPayload(this.db, objectId);
     if (rebuilt) storeWorkspaceObjectPayload(this.db, rebuilt);
     return rebuilt ? { ...rebuilt, entries: rebuilt.entries.slice(0, boundedEntryLimit) } : null;
+  }
+
+  ensureFreshProjection(objectId: string): void {
+    const current = this.db.prepare('SELECT revision FROM workspace_objects WHERE id = ?').get(objectId) as ObjectRevisionRow | undefined;
+    if (!current || this.readFreshProjection(objectId, current.revision)) return;
+    this.transaction(() => {
+      const revision = this.db.prepare('SELECT revision FROM workspace_objects WHERE id = ?').get(objectId) as ObjectRevisionRow | undefined;
+      if (!revision || this.readFreshProjection(objectId, revision.revision)) return;
+      const rebuilt = buildWorkspaceObjectPayload(this.db, objectId);
+      if (rebuilt) storeWorkspaceObjectPayload(this.db, rebuilt);
+    });
+  }
+
+  readObjectSnapshot(objectId: string): WorkspaceObjectPayload | null {
+    const revision = this.db.prepare('SELECT revision FROM workspace_objects WHERE id = ?').get(objectId) as ObjectRevisionRow | undefined;
+    if (!revision) return null;
+    return this.readFreshProjection(objectId, revision.revision)
+      ?? buildWorkspaceObjectPayload(this.db, objectId);
   }
 
   listObjects(limit = 100): WorkspaceObjectPayload[] {
@@ -334,6 +345,20 @@ export class WorkspaceObjectRepository {
     const payload = buildWorkspaceObjectPayload(this.db, objectId);
     if (!payload) throw new Error(`Unable to build projection for ${objectId}`);
     storeWorkspaceObjectPayload(this.db, payload);
+  }
+
+  private readFreshProjection(objectId: string, revision: number): WorkspaceObjectPayload | null {
+    const projection = this.db.prepare('SELECT source_revision, payload_json FROM workspace_object_payloads WHERE object_id = ?')
+      .get(objectId) as { source_revision: number; payload_json: string } | undefined;
+    if (projection?.source_revision !== revision) return null;
+    try {
+      const result = WorkspaceObjectPayloadSchema.safeParse(JSON.parse(projection.payload_json));
+      return result.success && result.data.id === objectId && result.data.revision === revision
+        ? result.data
+        : null;
+    } catch {
+      return null;
+    }
   }
 
   private validateEntry(fields: Map<string, FieldRow>, input: WorkspaceObjectEntryInput): void {

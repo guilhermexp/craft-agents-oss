@@ -137,7 +137,12 @@ No U5, o contrato persistido é `schemaVersion: 1` e estrito. O action adicional
 chama o mesmo evaluator usado pela table. Inputs legacy do placeholder Phase A
 permanecem compatíveis no frontier v1, mas são normalizados para v1 antes da
 gravação. Sort usa a ordem canônica da entry como desempate; relation values
-continuam IDs e recebem labels dos payloads relacionados somente na leitura.
+continuam IDs e recebem labels dos payloads relacionados somente na leitura. A
+query avalia todas as entries do snapshot canônico antes de limitar a resposta
+a 200 rows e inclui `totalEntries`/`truncated`, evitando falso vazio por corte
+antecipado. Projeção stale é reparada antes de abrir o snapshot; se houver nova
+divergência concorrente, o fallback reconstrói das rows sem escrever dentro da
+transação de leitura.
 
 A table não confirma de forma otimista. O RPC `upsert-entries` precisa retornar
 a revisão commitada e o editor permanece em `awaiting-revalidation` até o SWR
