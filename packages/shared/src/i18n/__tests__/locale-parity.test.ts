@@ -57,6 +57,21 @@ describe("i18n locale parity", () => {
     expect(locales.pl?.["chat.workspaceObjectEditNotConfirmed"]).not.toContain("zapisanego wartości");
   });
 
+  it("uses the established formal register for German and Hungarian workspace-object actions", () => {
+    expect(locales.de).toMatchObject({
+      "chat.workspaceObjectAdapterMissingField": "Wählen Sie ein kompatibles Feld für diese Ansicht.",
+      "chat.workspaceObjectAdapterNoCompatibleField": "Fügen Sie vor der Nutzung dieser Ansicht ein kompatibles Feld hinzu.",
+      "chat.workspaceObjectFilterFieldRequired": "Wählen Sie zuerst ein Feld aus.",
+      "chat.workspaceObjectViewNameRequired": "Geben Sie vor dem Speichern einen Namen ein.",
+    });
+    expect(locales.hu).toMatchObject({
+      "chat.workspaceObjectAdapterMissingField": "Válasszon kompatibilis mezőt a nézet beállításához.",
+      "chat.workspaceObjectAdapterNoCompatibleField": "Adjon hozzá kompatibilis mezőt a nézet használata előtt.",
+      "chat.workspaceObjectFilterFieldRequired": "Előbb válasszon mezőt.",
+      "chat.workspaceObjectViewNameRequired": "Adjon nevet a nézetnek mentés előtt.",
+    });
+  });
+
   // Key parity — run for each non-EN locale
   for (const [lang, translations] of otherLangs) {
     const langKeys = Object.keys(translations);

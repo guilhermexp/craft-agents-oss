@@ -169,6 +169,8 @@ código como texto principal e MAY exibir detalhe técnico de transporte apenas
 como texto secundário. As variantes não-transport MUST excluir `detail` do tipo
 e o renderer MUST condicionar detalhe a `code === 'transport'`. Field editor busy MUST usar key dedicada em todos os
 locales, distinta da key de salvar view.
+Prompts de ação U5/U6 em alemão e húngaro MUST usar registro formal consistente
+dentro do bloco workspaceObject.
 
 #### Scenario: Saved view é restaurada
 
@@ -228,6 +230,12 @@ locales, distinta da key de salvar view.
 
 - **WHEN** uma edição de field aguarda commit
 - **THEN** o botão usa `workspaceObjectSavingField` nos locales suportados e não reutiliza `workspaceObjectSavingView`
+- **Test:** `unit`
+
+#### Scenario: Prompts de objeto preservam registro formal
+
+- **WHEN** alemão ou húngaro exibem ações de campo compatível, filtro obrigatório ou nome da view
+- **THEN** todas usam respectivamente formas formais `Sie` ou imperativo formal húngaro, sem alternar para o registro informal
 - **Test:** `unit`
 
 #### Scenario: Relation filtra por ID estável e label

@@ -178,6 +178,8 @@ observar revisão igual ou superior com o valor esperado. Validação local,
 resposta sem envelope de commit e exceção de transporte preservam o draft e não
 produzem estado visual de sucesso. O estado busy do field editor usa uma key
 própria em todos os locales, distinta de salvar view.
+Os prompts de ação U5/U6 em alemão e húngaro seguem o registro formal já usado
+pelos field editors, sem alternar para imperativos informais dentro do bloco.
 
 Falhas ao carregar relation options cruzam reducer/render por códigos estáveis:
 `invalid-response`, `stale-snapshot`, `changed-while-loading` e `transport`.
