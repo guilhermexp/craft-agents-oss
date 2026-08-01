@@ -109,6 +109,7 @@ import { SessionEventPublisher } from './session-event-publisher'
 import { SessionMessageStore, getPiTurnAnchor, savePiTurnAnchor, copyPiTurnAnchorsForBranch, getClaudeTurnAnchor, saveClaudeTurnAnchor, isClaudeMessageUuid } from './session-message-store'
 import { SessionArtifactRenderer } from './session-artifact-renderer'
 import { SessionSourceReadinessProbe } from './session-source-readiness-probe'
+import { applySourceServerBranches } from './session-source-server-application'
 export { sanitizeForTitle }
 
 // Module-level platform ref — set once during init via setSessionPlatform()
@@ -4361,8 +4362,8 @@ export class SessionManager implements ISessionManager {
           >
           const apiServers = servers.apiServers as Record<string, ApiServerConfig>
           const intendedSlugs = sources.map((source) => source.config.slug)
-          await Promise.all([
-            applyBridgeUpdates(
+          await applySourceServerBranches(
+            () => applyBridgeUpdates(
               agent,
               sessionPath,
               sources,
@@ -4372,8 +4373,10 @@ export class SessionManager implements ISessionManager {
               context,
               managed.poolServer?.url,
             ),
-            managed.mcpPool?.sync(mcpServers, apiServers),
-          ])
+            async () => {
+              await managed.mcpPool?.sync(mcpServers, apiServers)
+            },
+          )
           await agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
         },
         clearServers: async () => {
@@ -4407,6 +4410,8 @@ export class SessionManager implements ISessionManager {
         },
         getSourceTools: (sourceSlug) => managed.mcpPool?.getTools(sourceSlug) ?? [],
       })
+
+      const readinessActivationRollbackSlugs = new Map<string, string[]>()
 
       mergeSessionScopedToolCallbacks(managed.id, {
         setSessionLabelsFn: async (sessionId: string | undefined, labels: string[]) => {
@@ -4594,6 +4599,7 @@ export class SessionManager implements ISessionManager {
               managed.enabledSourceSlugs = [...enabledSlugs]
               this.store.persist(managed)
               this.events.sourcesChanged(managed, managed.enabledSourceSlugs)
+              readinessActivationRollbackSlugs.set(activationId, previousEnabledSlugs)
 
               const userMessage = managed.agent?.getCurrentTurnUserMessage?.() ?? ''
               if (userMessage) {
@@ -4611,7 +4617,32 @@ export class SessionManager implements ISessionManager {
             }
           })
         },
-        rollbackSourceReadinessActivationFn: (activationId) => sourceReadinessProbe.remove(activationId),
+        finalizeSourceReadinessActivationFn: (activationId) => {
+          sourceReadinessProbe.finalize(activationId)
+          readinessActivationRollbackSlugs.delete(activationId)
+        },
+        rollbackSourceReadinessActivationFn: async (activationId) => {
+          const previousEnabledSlugs = readinessActivationRollbackSlugs.get(activationId)
+          let bookkeepingFailed = false
+          if (previousEnabledSlugs !== undefined) {
+            managed.enabledSourceSlugs = previousEnabledSlugs
+            try {
+              this.store.persist(managed)
+              this.events.sourcesChanged(managed, previousEnabledSlugs)
+            } catch {
+              bookkeepingFailed = true
+            }
+          }
+          readinessActivationRollbackSlugs.delete(activationId)
+          try {
+            await sourceReadinessProbe.remove(activationId)
+          } catch {
+            throw new Error('Source readiness activation rollback failed')
+          }
+          if (bookkeepingFailed) {
+            throw new Error('Source readiness activation rollback failed')
+          }
+        },
       })
 
       // WS2 keep-alive: forward background task events that arrive BETWEEN turns

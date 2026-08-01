@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
+import { realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
 
-import type { LoadedSource } from '@craft-agent/shared/sources'
+import type { LoadedSource } from '@craft-agent/shared/sources/types'
 import type { SourceProbeBackend, SourceToolIdentity } from '@craft-agent/session-tools-core'
 
 export interface SourceProbeServers {
@@ -30,6 +32,22 @@ export interface SessionSourceReadinessProbeDependencies {
 interface SourceProbeSnapshot {
   sourceSlug: string
   activeSources: LoadedSource[]
+  lockKey: string
+}
+
+const activeProbeKeys = new Map<string, string>()
+
+function canonicalPath(path: string): string {
+  const absolute = resolve(path)
+  try {
+    return realpathSync.native(absolute)
+  } catch {
+    return absolute
+  }
+}
+
+function sourceLockKey(source: LoadedSource): string {
+  return `${canonicalPath(source.workspaceRootPath)}\0${source.config.slug}`
 }
 
 function withProbeSource(activeSources: LoadedSource[], source: LoadedSource): LoadedSource[] {
@@ -49,8 +67,8 @@ function withProbeSource(activeSources: LoadedSource[], source: LoadedSource): L
   return [...bySlug.values()]
 }
 
-function readApiVersion(meta: unknown): string {
-  if (meta === null || typeof meta !== 'object') return 'unversioned'
+function readApiVersion(meta: unknown): string | undefined {
+  if (meta === null || typeof meta !== 'object') return undefined
   const record = meta as Record<string, unknown>
   if (typeof record.craftApiVersion === 'string' && record.craftApiVersion.length > 0) {
     return record.craftApiVersion
@@ -58,7 +76,7 @@ function readApiVersion(meta: unknown): string {
   if (typeof record.apiVersion === 'string' && record.apiVersion.length > 0) {
     return record.apiVersion
   }
-  return 'unversioned'
+  return undefined
 }
 
 /**
@@ -78,14 +96,16 @@ export class SessionSourceReadinessProbe {
   async inject(sourceSlug: string): Promise<{ probeId: string }> {
     const probeId = randomUUID()
     if (this.activeProbeId !== undefined) throw new Error('Source probe is already active')
+    const source = this.dependencies.getSource(sourceSlug)
+    if (!source) throw new Error('Source probe injection failed')
+    const lockKey = sourceLockKey(source)
+    if (activeProbeKeys.has(lockKey)) throw new Error('Source probe is already active')
+    activeProbeKeys.set(lockKey, probeId)
     this.activeProbeId = probeId
     let applyAttempted = false
     let activeSources: LoadedSource[] | undefined
 
     try {
-      const source = this.dependencies.getSource(sourceSlug)
-      if (!source) throw new Error('Source probe injection failed')
-
       activeSources = this.dependencies.getActiveSources()
       const probeSources = withProbeSource(activeSources, source)
       const servers = await this.dependencies.buildServers(probeSources)
@@ -94,13 +114,14 @@ export class SessionSourceReadinessProbe {
       }
       applyAttempted = true
       await this.dependencies.applyServers(probeSources, servers, 'source readiness probe')
-      this.snapshots.set(probeId, { sourceSlug, activeSources })
+      this.snapshots.set(probeId, { sourceSlug, activeSources, lockKey })
       return { probeId }
     } catch {
       if (applyAttempted && activeSources !== undefined) {
         await this.restoreOrClear(activeSources)
       }
       if (this.activeProbeId === probeId) this.activeProbeId = undefined
+      if (activeProbeKeys.get(lockKey) === probeId) activeProbeKeys.delete(lockKey)
       throw new Error('Source probe injection failed')
     }
   }
@@ -111,7 +132,8 @@ export class SessionSourceReadinessProbe {
 
     return this.dependencies.getSourceTools(snapshot.sourceSlug).flatMap((tool) => {
       if (typeof tool.name !== 'string' || tool.name.length === 0) return []
-      return [{ name: tool.name, apiVersion: readApiVersion(tool._meta) }]
+      const apiVersion = readApiVersion(tool._meta)
+      return apiVersion === undefined ? [] : [{ name: tool.name, apiVersion }]
     })
   }
 
@@ -125,6 +147,7 @@ export class SessionSourceReadinessProbe {
     } finally {
       this.snapshots.delete(probeId)
       if (this.activeProbeId === probeId) this.activeProbeId = undefined
+      if (activeProbeKeys.get(snapshot.lockKey) === probeId) activeProbeKeys.delete(snapshot.lockKey)
     }
   }
 
@@ -132,8 +155,15 @@ export class SessionSourceReadinessProbe {
     const snapshot = this.snapshots.get(probeId)
     if (!snapshot) throw new Error('Source probe is not active')
     beforeCommit?.(snapshot.sourceSlug)
+    return snapshot.sourceSlug
+  }
+
+  finalize(probeId: string): string {
+    const snapshot = this.snapshots.get(probeId)
+    if (!snapshot) throw new Error('Source probe is not active')
     this.snapshots.delete(probeId)
     if (this.activeProbeId === probeId) this.activeProbeId = undefined
+    if (activeProbeKeys.get(snapshot.lockKey) === probeId) activeProbeKeys.delete(snapshot.lockKey)
     return snapshot.sourceSlug
   }
 

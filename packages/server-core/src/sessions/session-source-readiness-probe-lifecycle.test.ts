@@ -39,6 +39,56 @@ function servers(sources: LoadedSource[]) {
 }
 
 describe('SessionSourceReadinessProbe lifecycle', () => {
+  test('serializes the same canonical workspace source across probe instances while allowing different keys', async () => {
+    const baseline = source('github', true)
+    const candidate = source('composio-linear', false)
+    let releaseFirstApply: (() => void) | undefined
+    let firstApplyStarted: (() => void) | undefined
+    const firstApply = new Promise<void>((resolve) => {
+      firstApplyStarted = resolve
+    })
+    const waitForRelease = new Promise<void>((resolve) => {
+      releaseFirstApply = resolve
+    })
+
+    const dependencies = (workspaceRootPath: string, block: boolean) => ({
+      backend: 'claude' as const,
+      getSource: () => ({
+        ...candidate,
+        workspaceRootPath,
+        folderPath: `${workspaceRootPath}/sources/${candidate.config.slug}`,
+      }),
+      getActiveSources: () => [baseline],
+      buildServers: async (sources: LoadedSource[]) => servers(sources),
+      applyServers: async (sources: LoadedSource[]) => {
+        if (block && sources.some((item) => item.config.slug === candidate.config.slug)) {
+          firstApplyStarted?.()
+          await waitForRelease
+        }
+      },
+      clearServers: async () => {},
+      getSourceTools: () => [],
+    })
+
+    const firstProbe = new SessionSourceReadinessProbe(dependencies('/workspace', true))
+    const competingProbe = new SessionSourceReadinessProbe(dependencies('/workspace/./', false))
+    const independentProbe = new SessionSourceReadinessProbe(dependencies('/other-workspace', false))
+
+    const firstInjection = firstProbe.inject(candidate.config.slug)
+    await firstApply
+
+    await expect(competingProbe.inject(candidate.config.slug)).rejects.toThrow('Source probe is already active')
+    const independent = await independentProbe.inject(candidate.config.slug)
+    await independentProbe.remove(independent.probeId)
+
+    releaseFirstApply?.()
+    const first = await firstInjection
+    await firstProbe.remove(first.probeId)
+
+    const retry = await competingProbe.inject(candidate.config.slug)
+    await competingProbe.remove(retry.probeId)
+  })
+
   test('rejects an overlapping injection and releases the lock after cleanup', async () => {
     const baseline = source('github', true)
     const candidate = source('composio-linear', false)
@@ -146,6 +196,7 @@ describe('SessionSourceReadinessProbe lifecycle', () => {
     expect(probe.commit(activation.probeId)).toBe(candidate.config.slug)
     expect(appliedSlugs).toEqual(['github', 'composio-linear'])
     expect(cleanupCount).toBe(0)
+    expect(probe.finalize(activation.probeId)).toBe(candidate.config.slug)
 
     const next = await probe.inject(candidate.config.slug)
     await probe.remove(next.probeId)

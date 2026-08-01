@@ -30,6 +30,27 @@ export interface McpValidationResult {
   tools?: string[];
 }
 
+type McpValidationFailureCode =
+  | 'mcp-auth-required'
+  | 'mcp-command-not-found'
+  | 'mcp-command-permission-denied'
+  | 'mcp-connection-failed'
+  | 'mcp-initialize-ceiling-timeout'
+  | 'mcp-initialize-failed'
+  | 'mcp-initialize-idle-timeout'
+  | 'mcp-invalid-tool-schema'
+  | 'mcp-tools-list-timeout'
+  | 'mcp-validation-failed'
+  | 'mcp-validation-timeout'
+
+/** Raw validator details are classification input only and never cross a boundary. */
+function sanitizeMcpValidationFailure(
+  _rawFailure: unknown,
+  code: McpValidationFailureCode,
+): McpValidationFailureCode {
+  return code
+}
+
 /**
  * Pattern for valid property names in tool input schemas.
  * Must match: letters, numbers, underscores, dots, hyphens (1-64 chars)
@@ -132,7 +153,10 @@ function classifyConnectionError(err: unknown): McpValidationResult {
   }
   return {
     success: false,
-    error: message || 'Validation failed',
+    error: sanitizeMcpValidationFailure(
+      err,
+      errorType === 'needs-auth' ? 'mcp-auth-required' : 'mcp-connection-failed',
+    ),
     errorType,
   };
 }
@@ -145,7 +169,7 @@ function classifyConnectionError(err: unknown): McpValidationResult {
 export async function validateMcpConnection(
   config: McpValidationConfig
 ): Promise<McpValidationResult> {
-  debug('Validating MCP connection to', config.mcpUrl);
+  debug('[mcp-validation] validating configured endpoint');
 
   const mcpUrl = normalizeMcpUrl(config.mcpUrl);
 
@@ -189,12 +213,9 @@ export async function validateMcpConnection(
     }
 
     if (allInvalidProperties.length > 0) {
-      const toolsWithIssues = [
-        ...new Set(allInvalidProperties.map((p) => p.toolName)),
-      ];
       return {
         success: false,
-        error: `Server has ${allInvalidProperties.length} invalid property name(s) in ${toolsWithIssues.length} tool(s): ${toolsWithIssues.join(', ')}. Property names must match ^[a-zA-Z0-9_.-]{1,64}$`,
+        error: sanitizeMcpValidationFailure(allInvalidProperties, 'mcp-invalid-tool-schema'),
         errorType: 'invalid-schema',
         serverInfo,
         invalidProperties: allInvalidProperties,
@@ -208,8 +229,9 @@ export async function validateMcpConnection(
       tools: toolNames,
     };
   } catch (err) {
-    debug('[mcp-validation] error:', err instanceof Error ? err.message : err);
-    return classifyConnectionError(err);
+    const failure = classifyConnectionError(err);
+    debug('[mcp-validation] failed', { errorType: failure.errorType });
+    return failure;
   } finally {
     await mcpClient.close().catch(() => {});
   }
@@ -328,7 +350,7 @@ export async function validateStdioMcpConnection(
   const connectCeilingMs = Math.max(connectIdleMs, timeout - listToolsFloor);
   let listToolsTimeoutResolved = listToolsFloor;
 
-  debug(`[stdio-validation] Spawning: ${command} ${args.join(' ')}`);
+  debug('[stdio-validation] spawning configured command');
 
   const [{ Client }, { StdioClientTransport }] = await Promise.all([
     import('@modelcontextprotocol/sdk/client/index.js'),
@@ -337,7 +359,6 @@ export async function validateStdioMcpConnection(
 
   let client: InstanceType<typeof Client> | null = null;
   let transport: InstanceType<typeof StdioClientTransport> | null = null;
-  let stderrOutput = '';
   // Track which phase failed for richer diagnostics.
   let phase: 'connect' | 'list-tools' | 'unknown' = 'unknown';
 
@@ -400,11 +421,7 @@ export async function validateStdioMcpConnection(
     // listener catches early startup output too. Every stderr event resets
     // the idle watchdog — keeps cold-cache installs (`uv`/`uvx`/`npx`) from
     // timing out while they emit reassuring progress noise.
-    transport.stderr?.on('data', (data: Buffer | string) => {
-      stderrOutput += typeof data === 'string' ? data : data.toString();
-      if (stderrOutput.length > 10000) {
-        stderrOutput = stderrOutput.slice(-10000);
-      }
+    transport.stderr?.on('data', () => {
       watchdog.kick();
     });
 
@@ -452,12 +469,9 @@ export async function validateStdioMcpConnection(
     }
 
     if (allInvalidProperties.length > 0) {
-      const toolsWithIssues = [
-        ...new Set(allInvalidProperties.map((p) => p.toolName)),
-      ];
       return {
         success: false,
-        error: `Server has ${allInvalidProperties.length} invalid property name(s) in ${toolsWithIssues.length} tool(s): ${toolsWithIssues.join(', ')}. Property names must match ^[a-zA-Z0-9_.-]{1,64}$`,
+        error: sanitizeMcpValidationFailure(allInvalidProperties, 'mcp-invalid-tool-schema'),
         errorType: 'invalid-schema' as const,
         invalidProperties: allInvalidProperties,
         tools: toolNames,
@@ -467,74 +481,36 @@ export async function validateStdioMcpConnection(
     return {
       success: true,
       tools: toolNames,
-      serverInfo: {
-        name: command,
-        version: args.join(' '),
-      },
     };
   } catch (err) {
     const error = err as Error;
-    debug(`[stdio-validation] Error in phase=${phase}: ${error.message}`);
+    debug('[stdio-validation] failed', { phase });
 
-    const stderrSnippet = stderrOutput.trim().slice(-500);
     const errorType: McpValidationResult['errorType'] = 'failed';
     let errorMessage: string;
 
-    // Hint for any failure during the `initialize` handshake — by far the most
-    // common cause for users porting code from other RPC conventions is wrong
-    // framing on stdout. The MCP stdio spec mandates newline-delimited
-    // JSON-RPC. LSP-style `Content-Length: …\r\n\r\n{json}` is the typical
-    // misstep and reproducibly produces both timeouts and "Connection closed"
-    // errors here depending on exactly how the buffer fragments.
-    const framingHint =
-      'Check that the server speaks newline-delimited JSON-RPC (MCP stdio spec) on stdout, not LSP-style Content-Length framing.';
-
     if (error.message.includes('ENOENT') || error.message.includes('not found')) {
-      errorMessage = `Command not found: "${command}". Install the required dependency and try again.`;
+      errorMessage = sanitizeMcpValidationFailure(error, 'mcp-command-not-found');
     } else if (error.message.includes('EACCES') || error.message.includes('permission denied')) {
-      errorMessage = `Permission denied running "${command}". Check file permissions.`;
+      errorMessage = sanitizeMcpValidationFailure(error, 'mcp-command-permission-denied');
     } else if (error.message.includes('Timeout')) {
       // Phase split: connect timeouts are diagnostic, list-tools timeouts are not.
       if (phase === 'connect') {
-        // Connect-phase timeouts come from the two-watchdog setup:
-        //   - "stderr silence"  → server went quiet without completing init
-        //                         (likely wrong framing / hung handshake)
-        //   - "ceiling"         → server kept emitting stderr the whole time
-        //                         but never completed init (stuck in a setup
-        //                         loop, wrong entrypoint, etc.)
-        if (error.message.includes('stderr silence')) {
-          errorMessage = stderrSnippet
-            ? `MCP initialize not acknowledged within ${connectIdleMs}ms of stderr silence. ${framingHint}\nstderr (tail):\n${stderrSnippet}`
-            : `MCP initialize not acknowledged within ${connectIdleMs}ms of stderr silence and the server produced no stderr output. ${framingHint}`;
-        } else if (error.message.includes('ceiling')) {
-          errorMessage = stderrSnippet
-            ? `MCP server kept emitting startup output for ${connectCeilingMs}ms but never completed the \`initialize\` handshake. Check that the command actually launches an MCP server (not just a package installer or build step).\nstderr (tail):\n${stderrSnippet}`
-            : `MCP server hit the ${connectCeilingMs}ms connect ceiling without completing the \`initialize\` handshake. Check that the command actually launches an MCP server (not just a package installer or build step).`;
-        } else {
-          // Defensive fallback if some other Timeout-message shape sneaks in.
-          errorMessage = stderrSnippet
-            ? `MCP initialize did not complete within ${connectCeilingMs}ms.\nstderr (tail):\n${stderrSnippet}`
-            : `MCP initialize did not complete within ${connectCeilingMs}ms.`;
-        }
+        errorMessage = sanitizeMcpValidationFailure(
+          error,
+          error.message.includes('ceiling')
+            ? 'mcp-initialize-ceiling-timeout'
+            : 'mcp-initialize-idle-timeout',
+        );
       } else if (phase === 'list-tools') {
-        errorMessage = stderrSnippet
-          ? `tools/list did not respond within ${listToolsTimeoutResolved}ms.\nstderr (tail):\n${stderrSnippet}`
-          : `tools/list did not respond within ${listToolsTimeoutResolved}ms.`;
+        errorMessage = sanitizeMcpValidationFailure(error, 'mcp-tools-list-timeout');
       } else {
-        errorMessage = stderrSnippet
-          ? `Server did not respond within ${timeout}ms.\nstderr (tail):\n${stderrSnippet}`
-          : `Server did not respond within ${timeout}ms.`;
+        errorMessage = sanitizeMcpValidationFailure(error, 'mcp-validation-timeout');
       }
     } else if (phase === 'connect') {
-      // Anything else during connect (Connection closed, parse error, etc.)
-      // → still a protocol problem. Lead with the framing hint.
-      errorMessage = stderrSnippet
-        ? `MCP initialize failed: ${error.message}. ${framingHint}\nstderr (tail):\n${stderrSnippet}`
-        : `MCP initialize failed: ${error.message}. ${framingHint}`;
-    } else if (stderrSnippet) {
-      errorMessage = `${error.message}\nstderr (tail):\n${stderrSnippet}`;
+      errorMessage = sanitizeMcpValidationFailure(error, 'mcp-initialize-failed');
     } else {
-      errorMessage = error.message;
+      errorMessage = sanitizeMcpValidationFailure(error, 'mcp-validation-failed');
     }
 
     return {

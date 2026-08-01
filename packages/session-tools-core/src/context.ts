@@ -445,10 +445,13 @@ export interface SessionToolContext {
   /** Prepare final readiness exposure while retaining a rollback snapshot. */
   prepareSourceReadinessActivation?(sourceSlug: string): Promise<{ activationId: string }>;
 
-  /** Commit a prepared readiness exposure after its ready config is durable. */
+  /** Commit activation bookkeeping while retaining rollback state. */
   commitSourceReadinessActivation?(activationId: string): void;
 
-  /** Restore or clear a prepared readiness exposure when persistence fails. */
+  /** Release rollback state after both activation and ready config are durable. */
+  finalizeSourceReadinessActivation?(activationId: string): void;
+
+  /** Restore or clear a prepared readiness exposure when commit or persistence fails. */
   rollbackSourceReadinessActivation?(activationId: string): Promise<void>;
 
   // ============================================================

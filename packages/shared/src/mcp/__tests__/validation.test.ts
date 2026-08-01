@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { validateStdioMcpConnection } from '../validation.ts'
+import { disableDebug, enableDebug, isDebugEnabled } from '../../utils/debug.ts'
+import { validateMcpConnection, validateStdioMcpConnection } from '../validation.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const FIXTURE = (name: string) => join(HERE, 'fixtures', name)
@@ -34,14 +35,7 @@ describe('validateStdioMcpConnection', () => {
       })
       expect(result.success).toBe(false)
       expect(result.error).toBeDefined()
-      // Specific framing diagnostic surfaced for any connect-phase failure.
-      expect(result.error!).toContain('newline-delimited JSON-RPC')
-      // Stderr surfaces in the error message.
-      expect(result.error!).toContain('LSP-style framing')
-      // The idle copy fires here because the SDK's stdio reader silently
-      // skips lines that aren't valid JSON (the `Content-Length: …` header),
-      // so connect never rejects on its own — the idle watchdog stops the wait.
-      expect(result.error!).toContain('stderr silence')
+      expect(result.error).toBe('mcp-initialize-idle-timeout')
     },
     // Generous outer budget — Bun's setTimeout can lag under test load, so
     // even though idleMs=6000 the wall-clock can stretch to 20+ seconds.
@@ -78,9 +72,7 @@ describe('validateStdioMcpConnection', () => {
       })
       expect(result.success).toBe(false)
       expect(result.error).toBeDefined()
-      // "Stuck in startup" copy is distinct from the idle/framing copy.
-      expect(result.error!).toContain('never completed the `initialize` handshake')
-      expect(result.error!).toContain('package installer or build step')
+      expect(result.error).toBe('mcp-initialize-ceiling-timeout')
     },
     // Generous outer budget — Bun's setTimeout can lag under test load
     // (observed up to 4x expected on this machine), so we leave plenty of
@@ -98,8 +90,7 @@ describe('validateStdioMcpConnection', () => {
       })
       expect(result.success).toBe(false)
       expect(result.error).toBeDefined()
-      expect(result.error!).toContain('Command not found')
-      expect(result.error!).toContain('command-xyzzy')
+      expect(result.error).toBe('mcp-command-not-found')
     },
     10000,
   )
@@ -114,8 +105,36 @@ describe('validateStdioMcpConnection', () => {
       })
       expect(result.success).toBe(false)
       expect(result.error).toBeDefined()
-      expect(result.error!.toLowerCase()).toContain('boom from test server')
+      expect(result.error).toBe('mcp-initialize-failed')
     },
     15000,
   )
+})
+
+describe('validateMcpConnection redaction', () => {
+  it('never logs or returns the raw credential-bearing URL or caught error', async () => {
+    const rawUrl = 'http://127.0.0.1:1/mcp?token=%7B%22secret%22%3A%22value%20with%20spaces%22%7D'
+    const writes: string[] = []
+    const originalWrite = process.stderr.write
+    const wasDebugEnabled = isDebugEnabled()
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(String(chunk))
+      return true
+    }) as typeof process.stderr.write
+    enableDebug()
+
+    try {
+      const result = await validateMcpConnection({ mcpUrl: rawUrl })
+      const boundary = JSON.stringify({ result, logs: writes })
+
+      expect(result.error).toBe('mcp-connection-failed')
+      expect(boundary).not.toContain(rawUrl)
+      expect(boundary).not.toContain('127.0.0.1')
+      expect(boundary).not.toContain('secret')
+      expect(boundary).not.toContain('value%20with%20spaces')
+    } finally {
+      process.stderr.write = originalWrite
+      if (!wasDebugEnabled) disableDebug()
+    }
+  })
 })

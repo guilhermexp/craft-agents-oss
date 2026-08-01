@@ -27,6 +27,10 @@ import {
   getSourceGuidePath,
   getSourcePath,
 } from '../source-helpers.ts';
+import {
+  redactSourceTestFailure,
+  redactSourceTestMetadata,
+} from './source-test-sanitizer.ts';
 
 export interface SourceReadinessRequest {
   sourceSlug: string;
@@ -67,6 +71,11 @@ export interface SourceReadinessDependencies {
 }
 
 const SAFE_TOOL_IDENTITY_PART = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/;
+const NON_VERSION_METADATA = new Set(['invalid', 'unknown', 'unversioned']);
+
+function isExplicitSourceToolVersion(value: string): boolean {
+  return SAFE_TOOL_IDENTITY_PART.test(value) && !NON_VERSION_METADATA.has(value.toLowerCase());
+}
 
 /** Source tool API versions are compatible only when the declared versions match exactly. */
 export function isSourceToolVersionCompatible(expected: string, observed: string): boolean {
@@ -103,7 +112,7 @@ export async function runSourceReadinessCheck(
   }
 
   if (request.expectedTools.some(
-    (tool) => !SAFE_TOOL_IDENTITY_PART.test(tool.name) || !SAFE_TOOL_IDENTITY_PART.test(tool.apiVersion),
+    (tool) => !SAFE_TOOL_IDENTITY_PART.test(tool.name) || !isExplicitSourceToolVersion(tool.apiVersion),
   )) {
     return persist({ ready: false, reason: 'source-test-failed' });
   }
@@ -129,10 +138,9 @@ export async function runSourceReadinessCheck(
     const expectedNames = new Set(request.expectedTools.map((tool) => tool.name));
     const observedTools = rawObservedTools.flatMap((tool) => {
       if (!expectedNames.has(tool.name) || !SAFE_TOOL_IDENTITY_PART.test(tool.name)) return [];
-      return [{
-        name: tool.name,
-        apiVersion: SAFE_TOOL_IDENTITY_PART.test(tool.apiVersion) ? tool.apiVersion : 'invalid',
-      }];
+      return isExplicitSourceToolVersion(tool.apiVersion)
+        ? [{ name: tool.name, apiVersion: tool.apiVersion }]
+        : [];
     });
     const observedByName = new Map<string, string[]>();
     for (const tool of observedTools) {
@@ -348,7 +356,7 @@ export async function handleSourceTest(
     } else {
       hasErrors = true;
       connectionStatus = 'unhealthy';
-      connectionError = `Source readiness failed: ${readinessResult.reason}`;
+      connectionError = readinessResult.reason;
       lines.push(`✗ Session tool probe failed: ${readinessResult.reason}`);
     }
   }
@@ -372,7 +380,7 @@ export async function handleSourceTest(
       enabled: false,
       lastTestedAt: testedAt,
       connectionStatus: 'unhealthy',
-      connectionError: 'Source readiness failed: backend-injection-failed',
+      connectionError: 'backend-injection-failed',
       readiness: stagedReadiness,
     };
 
@@ -389,8 +397,9 @@ export async function handleSourceTest(
     if (stagedPersisted) {
       const prepare = ctx.prepareSourceReadinessActivation;
       const commit = ctx.commitSourceReadinessActivation;
+      const finalize = ctx.finalizeSourceReadinessActivation;
       const rollback = ctx.rollbackSourceReadinessActivation;
-      if (!prepare || !commit || !rollback) {
+      if (!prepare || !commit || !finalize || !rollback) {
         hasErrors = true;
         lines.push('✗ Session readiness activation lifecycle is unavailable; source remains disabled');
       } else {
@@ -412,43 +421,45 @@ export async function handleSourceTest(
             connectionError,
             readiness,
           };
+
           try {
-            saveSourceConfig!(readySource);
+            commit(activationId);
           } catch {
             hasErrors = true;
+            let rollbackConfirmed = false;
             try {
               await rollback(activationId);
-              lines.push('✗ Ready health could not be persisted; temporary exposure was rolled back');
+              rollbackConfirmed = true;
             } catch {
-              lines.push('✗ Ready health could not be persisted and session exposure could not be confirmed closed');
+              // The durable config is still the staged disabled/unhealthy state.
             }
+            lines.push(rollbackConfirmed
+              ? '✗ Session activation commit failed; temporary exposure was rolled back'
+              : '✗ Session activation commit failed and exposure could not be confirmed closed');
             activationId = undefined;
           }
 
           if (activationId !== undefined) {
             try {
-              commit(activationId);
-              lines.push('\n_Config updated with test results._');
-              if (willFlipEnabled) lines.push('✓ Source auto-enabled in config');
-              lines.push('✓ Source activated — the current turn will auto-restart with tools available');
+              saveSourceConfig!(readySource);
             } catch {
               hasErrors = true;
-              let rollbackConfirmed = false;
               try {
                 await rollback(activationId);
-                rollbackConfirmed = true;
+                lines.push('✗ Ready health could not be persisted; temporary exposure was rolled back');
               } catch {
-                // Report the unconfirmed exposure below without serializing the caught error.
+                lines.push('✗ Ready health could not be persisted and session exposure could not be confirmed closed');
               }
-              try {
-                saveSourceConfig!(stagedSource);
-              } catch {
-                lines.push('✗ Session activation commit failed and ready config rollback could not be persisted');
-              }
-              lines.push(rollbackConfirmed
-                ? '✗ Session activation commit failed; temporary exposure was rolled back'
-                : '✗ Session activation commit failed and exposure could not be confirmed closed');
+              activationId = undefined;
             }
+          }
+
+          if (activationId !== undefined) {
+            finalize(activationId);
+            activationId = undefined;
+            lines.push('\n_Config updated with test results._');
+            if (willFlipEnabled) lines.push('✓ Source auto-enabled in config');
+            lines.push('✓ Source activated — the current turn will auto-restart with tools available');
           }
         }
       }
@@ -487,12 +498,13 @@ export async function handleSourceTest(
           if (result.ok) {
             lines.push('✓ Source activated — the current turn will auto-restart with tools available');
           } else {
-            lines.push(`⚠ Config updated, but session activation failed: ${result.reason ?? 'unknown error'}. Restart session to load tools.`);
+            const reason = redactSourceTestFailure(result.reason, 'source-activation-failed');
+            lines.push(`⚠ Config updated, but session activation failed: ${reason}. Restart session to load tools.`);
             hasWarnings = true;
           }
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : 'unknown error';
-          lines.push(`⚠ Config updated, but session activation threw: ${msg}. Restart session to load tools.`);
+        } catch (caught) {
+          const reason = redactSourceTestFailure(caught, 'source-activation-exception');
+          lines.push(`⚠ Config updated, but session activation threw: ${reason}. Restart session to load tools.`);
           hasWarnings = true;
         }
       } else if (willFlipEnabled) {
@@ -555,19 +567,19 @@ async function handleIconCheck(
   // Check if icon is a URL that can be downloaded
   if (source.icon && ctx.isIconUrl && ctx.isIconUrl(source.icon)) {
     if (ctx.downloadSourceIcon) {
-      lines.push(`ℹ Icon URL detected: ${source.icon}`);
+      lines.push('ℹ Configured icon URL detected');
       try {
         const cachedPath = await ctx.downloadSourceIcon(sourceSlug, source.icon);
         if (cachedPath) {
           lines.push(`✓ Icon downloaded and cached`);
           return { lines, hasWarning };
         }
-      } catch (e) {
-        lines.push(`⚠ Failed to download icon: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      } catch (caught) {
+        lines.push(`⚠ Failed to download icon: ${redactSourceTestFailure(caught, 'icon-download-failed')}`);
         hasWarning = true;
       }
     } else {
-      lines.push(`ℹ Icon URL configured but download not available: ${source.icon}`);
+      lines.push('ℹ Icon URL configured but download not available');
     }
   }
 
@@ -755,11 +767,8 @@ async function testApiConnection(
         }
       } else {
         hasError = true;
-        error = result.error || 'Connection failed';
-        lines.push(`✗ ${result.error || 'Connection failed'}`);
-        if (result.hint) {
-          lines.push(`  ${result.hint}`);
-        }
+        error = redactSourceTestFailure(result.error, 'api-validation-failed');
+        lines.push(`✗ ${error}`);
       }
       return { lines, success, hasError, error };
     } catch (e) {
@@ -920,24 +929,21 @@ async function testApiConnectionWithAuth(
     } else if (response.status === 401 || response.status === 403) {
       lines.push(`✗ API returned ${response.status} (credentials invalid or expired)`);
       lines.push('  Re-authenticate the source to refresh credentials');
-      return { lines, success: false, hasError: true, error: `Auth failed: ${response.status}`, attempted: true };
+      return { lines, success: false, hasError: true, error: 'api-auth-failed', attempted: true };
     } else if (response.status === 404) {
       lines.push(`⚠ API returned 404 (endpoint not found)`);
       if (source.api!.testEndpoint) {
-        lines.push(`  Check if testEndpoint.path is correct: ${source.api!.testEndpoint.path}`);
+        lines.push('  Check whether the configured test endpoint path is correct');
       }
       return { lines, success: false, hasError: false, attempted: true };
     } else {
       lines.push(`⚠ API returned ${response.status}`);
       return { lines, success: false, hasError: false, attempted: true };
     }
-  } catch (e) {
-    const errorMsg = e instanceof Error ? e.message : 'Unknown error';
-    lines.push(`✗ Connection failed: ${errorMsg}`);
-    if (errorMsg.includes('abort')) {
-      lines.push('  Request timed out after 10 seconds');
-    }
-    return { lines, success: false, hasError: true, error: errorMsg, attempted: true };
+  } catch (caught) {
+    const errorCode = redactSourceTestFailure(caught, 'api-connection-failed');
+    lines.push(`✗ Connection failed: ${errorCode}`);
+    return { lines, success: false, hasError: true, error: errorCode, attempted: true };
   }
 }
 
@@ -992,7 +998,7 @@ async function testApiConnectionBasic(
     if (response) {
       if (response.ok) {
         success = true;
-        lines.push(`✓ API endpoint reachable (${testUrl})`);
+        lines.push('✓ API endpoint reachable');
       } else if (response.status === 401 || response.status === 403) {
         // Auth required - endpoint is reachable but needs credentials
         success = true;
@@ -1005,7 +1011,7 @@ async function testApiConnectionBasic(
       } else if (response.status === 404) {
         lines.push(`⚠ API returned 404 (endpoint not found)`);
         if (source.api?.testEndpoint) {
-          lines.push(`  Check if testEndpoint.path is correct: ${source.api.testEndpoint.path}`);
+          lines.push('  Check whether the configured test endpoint path is correct');
         } else {
           lines.push('  Consider adding testEndpoint configuration');
         }
@@ -1015,16 +1021,13 @@ async function testApiConnectionBasic(
     } else {
       hasError = true;
       error = 'Connection failed';
-      lines.push(`✗ Cannot reach API endpoint (${source.api?.baseUrl})`);
+      lines.push('✗ Cannot reach configured API endpoint');
       lines.push('  Check if the URL is correct and the service is running');
     }
-  } catch (e) {
+  } catch (caught) {
     hasError = true;
-    error = e instanceof Error ? e.message : 'Unknown error';
+    error = redactSourceTestFailure(caught, 'api-connection-failed');
     lines.push(`✗ Connection failed: ${error}`);
-    if (error.includes('abort')) {
-      lines.push('  Request timed out after 10 seconds');
-    }
   }
 
   return { lines, success, hasError, error };
@@ -1043,7 +1046,7 @@ async function testMcpConnection(
   if (source.mcp?.transport === 'stdio') {
     // Stdio MCP - use validateStdioMcpConnection if available
     if (ctx.validateStdioMcpConnection && source.mcp.command) {
-      lines.push(`ℹ Testing stdio MCP: ${source.mcp.command}`);
+      lines.push('ℹ Testing configured stdio MCP server');
       try {
         const result = await ctx.validateStdioMcpConnection({
           command: source.mcp.command,
@@ -1056,33 +1059,36 @@ async function testMcpConnection(
           if (result.toolCount !== undefined) {
             lines.push(`  Tools available: ${result.toolCount}`);
             if (result.toolNames && result.toolNames.length > 0) {
-              const preview = result.toolNames.slice(0, 5).join(', ');
-              if (result.toolNames.length > 5) {
+              const safeToolNames = result.toolNames.flatMap((name) => {
+                const safeName = redactSourceTestMetadata(name);
+                return safeName === undefined ? [] : [safeName];
+              });
+              const preview = safeToolNames.slice(0, 5).join(', ');
+              if (safeToolNames.length > 5) {
                 lines.push(`  Examples: ${preview}, ...`);
-              } else {
+              } else if (preview.length > 0) {
                 lines.push(`  Tools: ${preview}`);
               }
             }
           }
-          if (result.serverName) {
-            lines.push(`  Server: ${result.serverName} v${result.serverVersion || 'unknown'}`);
+          const safeServerName = redactSourceTestMetadata(result.serverName);
+          const safeServerVersion = redactSourceTestMetadata(result.serverVersion);
+          if (safeServerName) {
+            lines.push(`  Server: ${safeServerName}${safeServerVersion ? ` v${safeServerVersion}` : ''}`);
           }
         } else {
           hasError = true;
-          error = result.error || 'MCP validation failed';
+          error = redactSourceTestFailure(result.error, 'mcp-validation-failed');
           lines.push(`✗ ${error}`);
         }
-      } catch (e) {
+      } catch (caught) {
         hasError = true;
-        error = e instanceof Error ? e.message : 'Unknown error';
+        error = redactSourceTestFailure(caught, 'mcp-validation-failed');
         lines.push(`✗ Failed to test MCP server: ${error}`);
       }
     } else if (source.mcp?.command) {
       // Basic check - just report config
-      lines.push(`ℹ Stdio MCP source: ${source.mcp.command}`);
-      if (source.mcp.args?.length) {
-        lines.push(`  Args: ${source.mcp.args.join(' ')}`);
-      }
+      lines.push('ℹ Configured stdio MCP source');
       lines.push('  Connection test not available in this context — call the source\'s MCP tools directly to verify');
       success = true; // Config looks ok
     } else {
@@ -1093,7 +1099,7 @@ async function testMcpConnection(
   } else if (source.mcp?.url) {
     // HTTP/SSE MCP
     if (ctx.validateMcpConnection) {
-      lines.push(`ℹ Testing MCP server: ${source.mcp.url}`);
+      lines.push('ℹ Testing configured MCP server');
       try {
         // Merge static headers with credential-store headers (if headerNames configured)
         let headers = source.mcp.headers ? { ...source.mcp.headers } : undefined;
@@ -1146,8 +1152,10 @@ async function testMcpConnection(
           if (result.toolCount !== undefined) {
             lines.push(`  Tools available: ${result.toolCount}`);
           }
-          if (result.serverName) {
-            lines.push(`  Server: ${result.serverName} v${result.serverVersion || 'unknown'}`);
+          const safeServerName = redactSourceTestMetadata(result.serverName);
+          const safeServerVersion = redactSourceTestMetadata(result.serverVersion);
+          if (safeServerName) {
+            lines.push(`  Server: ${safeServerName}${safeServerVersion ? ` v${safeServerVersion}` : ''}`);
           }
         } else if (result.needsAuth) {
           lines.push(`⚠ MCP server requires authentication`);
@@ -1157,17 +1165,17 @@ async function testMcpConnection(
           success = true; // Server is reachable, just needs auth
         } else {
           hasError = true;
-          error = result.error || 'MCP connection failed';
+          error = redactSourceTestFailure(result.error, 'mcp-validation-failed');
           lines.push(`✗ ${error}`);
         }
-      } catch (e) {
+      } catch (caught) {
         hasError = true;
-        error = e instanceof Error ? e.message : 'Unknown error';
+        error = redactSourceTestFailure(caught, 'mcp-validation-failed');
         lines.push(`✗ Failed to connect to MCP server: ${error}`);
       }
     } else {
       // Basic URL check
-      lines.push(`ℹ MCP source URL: ${source.mcp.url}`);
+      lines.push('ℹ Configured MCP source endpoint');
       lines.push('  Connection test not available in this context — call the source\'s MCP tools directly to verify');
       success = true; // Config looks ok
     }

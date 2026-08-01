@@ -40,6 +40,9 @@ describe('source readiness session bindings', () => {
       commitSourceReadinessActivationFn: (activationId) => {
         events.push(`commit:${activationId}`)
       },
+      finalizeSourceReadinessActivationFn: (activationId) => {
+        events.push(`finalize:${activationId}`)
+      },
       rollbackSourceReadinessActivationFn: async (activationId) => {
         events.push(`rollback:${activationId}`)
       },
@@ -50,6 +53,7 @@ describe('source readiness session bindings', () => {
     await context.removeSourceProbe?.(injection!.probeId)
     const activation = await context.prepareSourceReadinessActivation?.('composio-linear')
     context.commitSourceReadinessActivation?.(activation!.activationId)
+    context.finalizeSourceReadinessActivation?.(activation!.activationId)
     const rolledBackActivation = await context.prepareSourceReadinessActivation?.('composio-github')
     await context.rollbackSourceReadinessActivation?.(rolledBackActivation!.activationId)
 
@@ -61,6 +65,7 @@ describe('source readiness session bindings', () => {
       'cleanup:probe-1',
       'prepare:composio-linear',
       'commit:activation-1',
+      'finalize:activation-1',
       'prepare:composio-github',
       'rollback:activation-2',
     ])

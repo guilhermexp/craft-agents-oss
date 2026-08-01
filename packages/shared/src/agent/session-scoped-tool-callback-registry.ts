@@ -105,6 +105,7 @@ export interface SessionScopedToolCallbacks {
   removeSourceProbeFn?: (probeId: string) => Promise<void>;
   prepareSourceReadinessActivationFn?: (sourceSlug: string) => Promise<{ activationId: string }>;
   commitSourceReadinessActivationFn?: (activationId: string) => void;
+  finalizeSourceReadinessActivationFn?: (activationId: string) => void;
   rollbackSourceReadinessActivationFn?: (activationId: string) => Promise<void>;
   /** Get messaging bindings for a session. */
   getMessagingBindingsFn?: (sessionId: string) => Array<{ platform: string; channelId: string; threadId?: number; channelName?: string; enabled: boolean }>;

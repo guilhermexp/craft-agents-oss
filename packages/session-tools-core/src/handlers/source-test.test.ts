@@ -254,7 +254,8 @@ describe('source_test auto-enable', () => {
     const result = await handleSourceTest(ctx, { sourceSlug: 'craft-kb' });
     const text = result.content[0]?.text ?? '';
 
-    expect(text).toContain('session activation failed: build failed');
+    expect(text).toContain('session activation failed: source-activation-failed');
+    expect(text).not.toContain('build failed');
 
     const persisted = JSON.parse(
       readFileSync(join(tempDir, 'sources', 'craft-kb', 'config.json'), 'utf-8')
@@ -779,5 +780,59 @@ describe('source_test basic-auth header (regression for #824)', () => {
     await handleSourceTest(ctx, { sourceSlug: 'garbage-basic', autoEnable: false });
 
     expect(authHeader()).toBe('Basic not-json');
+  });
+});
+
+describe('source_test MCP failure redaction', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'source-test-redaction-'));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('uses a stable reason code across tool output and persisted connection health', async () => {
+    const sourcePath = join(tempDir, 'sources', 'redacted-mcp');
+    mkdirSync(sourcePath, { recursive: true });
+    const config = {
+      id: 'redacted-mcp',
+      slug: 'redacted-mcp',
+      name: 'Redacted MCP',
+      enabled: false,
+      provider: 'test',
+      type: 'mcp',
+      tagline: 'A redaction regression source',
+      icon: '🧪',
+      mcp: {
+        transport: 'http',
+        url: 'https://configured.example.test/mcp',
+      },
+    } as SourceConfig;
+    writeFileSync(join(sourcePath, 'config.json'), JSON.stringify(config, null, 2));
+    writeFileSync(
+      join(sourcePath, 'guide.md'),
+      '# Guide\n\nThis guide intentionally contains enough words for the source test completeness check while the regression verifies that a caught validator failure cannot copy URLs, JSON credentials, authorization data, or whitespace-bearing secrets into any returned or persisted health boundary.'
+    );
+    const rawFailure = 'https://user:pass@evil.example/mcp {"token":"secret with spaces"} Authorization: Bearer raw-secret';
+    const ctx = createCtx(tempDir, {
+      validateMcpConnection: async () => ({ success: false, error: rawFailure }),
+    });
+
+    const result = await handleSourceTest(ctx, { sourceSlug: 'redacted-mcp' });
+    const text = result.content[0]?.text ?? '';
+    const persisted = JSON.parse(
+      readFileSync(join(sourcePath, 'config.json'), 'utf8')
+    ) as SourceConfig;
+
+    expect(text).toContain('mcp-validation-failed');
+    expect(text).not.toContain('configured.example.test');
+    expect(text).not.toContain('evil.example');
+    expect(text).not.toContain('secret with spaces');
+    expect(text).not.toContain('raw-secret');
+    expect(persisted.connectionError).toBe('mcp-validation-failed');
+    expect(JSON.stringify(persisted.connectionError)).not.toContain('secret');
   });
 });

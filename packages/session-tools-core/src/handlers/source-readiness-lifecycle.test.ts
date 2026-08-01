@@ -106,6 +106,9 @@ function createReadinessHarness(options: {
     rollbackSourceReadinessActivation: async (activationId: string) => {
       events.push(`rollback:${activationId}`)
     },
+    finalizeSourceReadinessActivation: (activationId: string) => {
+      events.push(`finalize:${activationId}`)
+    },
     activateSourceInSession: async (sourceSlug: string) => {
       events.push(`legacy-activate:${sourceSlug}`)
       return { ok: false, reason: 'readiness must not use legacy activation' }
@@ -141,6 +144,7 @@ describe('source_test readiness activation lifecycle', () => {
     const persisted = JSON.parse(readFileSync(harness.configPath, 'utf8')) as SourceConfig
     expect(harness.events).toEqual([
       'prepare:composio-linear',
+      'commit:activation-1',
       'rollback:activation-1',
     ])
     expect(persisted.enabled).toBe(false)
@@ -149,7 +153,7 @@ describe('source_test readiness activation lifecycle', () => {
     expect(JSON.stringify(result)).not.toContain('sentinel')
   })
 
-  test('commits exposure only after the final ready config is persisted', async () => {
+  test('persists ready only after activation commit and then finalizes rollback state', async () => {
     const harness = createReadinessHarness()
 
     const result = await handleSourceTest(harness.ctx, { sourceSlug: 'composio-linear' })
@@ -158,6 +162,7 @@ describe('source_test readiness activation lifecycle', () => {
     expect(harness.events).toEqual([
       'prepare:composio-linear',
       'commit:activation-1',
+      'finalize:activation-1',
     ])
     expect(harness.saveCount()).toBe(2)
     expect(persisted.enabled).toBe(true)
@@ -180,6 +185,27 @@ describe('source_test readiness activation lifecycle', () => {
     expect(persisted.readiness?.status).toBe('unhealthy')
     expect(result.isError).toBe(true)
     expect(JSON.stringify(result)).not.toContain('sentinel')
+  })
+
+  test('never persists ready when activation commit and rollback persistence both fail', async () => {
+    // Under the unsafe ready-before-commit order, save 3 was the rollback and
+    // this injected failure left save 2's ready state durable. The safe order
+    // never attempts either ready or rollback persistence after commit fails.
+    const harness = createReadinessHarness({ failCommit: true, failSaveAt: 3 })
+
+    const result = await handleSourceTest(harness.ctx, { sourceSlug: 'composio-linear' })
+
+    const persisted = JSON.parse(readFileSync(harness.configPath, 'utf8')) as SourceConfig
+    expect(harness.events).toEqual([
+      'prepare:composio-linear',
+      'commit:activation-1',
+      'rollback:activation-1',
+    ])
+    expect(harness.saveCount()).toBe(1)
+    expect(persisted.enabled).toBe(false)
+    expect(persisted.connectionStatus).toBe('unhealthy')
+    expect(persisted.readiness?.status).toBe('unhealthy')
+    expect(result.isError).toBe(true)
   })
 })
 

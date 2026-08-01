@@ -54,6 +54,10 @@ export function enableDebug(): void {
   debugEnabled = true;
 }
 
+export function disableDebug(): void {
+  debugEnabled = false;
+}
+
 /**
  * Check if debug mode is enabled.
  */

@@ -297,6 +297,15 @@ describe('collectComposioCatalog', () => {
     expect(isSourceUsable(loaded)).toBe(true)
   })
 
+  test('rejects U7 expected tools without a real explicit API version', () => {
+    expect(() => toPortableComposioSourceInput({
+      providerId: 'linear',
+      name: 'Linear',
+      mcp: { url: 'https://linear.example.test/mcp' },
+      expectedTools: [{ name: 'issues_list', apiVersion: 'unversioned' }],
+    })).toThrow()
+  })
+
   test('treats expectedTools empty as the explicit legacy no-readiness contract', () => {
     const parsed = FolderSourceConfigSchema.parse({
       id: 'legacy-id',

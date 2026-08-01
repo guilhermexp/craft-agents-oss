@@ -112,4 +112,27 @@ describe('SessionSourceReadinessProbe', () => {
     ])
     expect(JSON.stringify(applyHistory)).not.toContain('sentinel')
   })
+
+  test('does not invent a version for observed tools without explicit version metadata', async () => {
+    const candidate = source('composio-linear', false)
+    const probe = new SessionSourceReadinessProbe({
+      backend: 'claude',
+      getSource: () => candidate,
+      getActiveSources: () => [],
+      buildServers: async () => ({ mcpServers: { [candidate.config.slug]: {} }, apiServers: {} }),
+      applyServers: async () => {},
+      clearServers: async () => {},
+      getSourceTools: () => [
+        { name: 'missing_meta' },
+        { name: 'blank_version', _meta: { craftApiVersion: '' } },
+        { name: 'real_version', _meta: { apiVersion: 'v2' } },
+      ],
+    })
+
+    const injection = await probe.inject(candidate.config.slug)
+    expect(probe.observe(injection.probeId)).toEqual([
+      { name: 'real_version', apiVersion: 'v2' },
+    ])
+    await probe.remove(injection.probeId)
+  })
 })
