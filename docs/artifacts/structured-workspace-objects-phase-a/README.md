@@ -33,11 +33,19 @@ No files under the operator's real `~/.craft-agent` were read or modified.
 5. [`08-returned-preview-restored.png`](./08-returned-preview-restored.png)
    shows the scoped tab restored after returning to the Phase A workspace, with
    revision 3 still current.
+6. [`mcp-transcript.log`](./mcp-transcript.log) preserves the standard MCP SDK
+   `define-object` → `upsert-entries` → `get-object` requests and successful
+   responses for `object_agent_audit` revisions 1 and 2.
+7. [`09-agent-mcp-live.png`](./09-agent-mcp-live.png) shows that object in the
+   live Electron sidebar and preview as `MCP Agent / Updated` at revision 2.
+8. [`electron-teardown.log`](./electron-teardown.log) preserves the window-close,
+   RPC disconnect and final no-process/no-CDP postconditions.
 
-The Electron window was then closed. Runtime output recorded both the workspace
-window closing and the WebSocket RPC client disconnecting. The remaining app
-process and CDP endpoint were explicitly terminated and checked absent, covering
-the subscription-disconnect boundary without leaving a watcher process alive.
+The Electron window was then closed. The tracked runtime output records both the
+workspace window closing and the WebSocket RPC client disconnecting. The
+remaining app process and CDP endpoint were explicitly terminated and checked
+absent, covering the subscription-disconnect boundary without leaving a watcher
+process alive.
 
 Screenshots `01` through `03` retain the setup path (isolated onboarding,
 workspace load and real session creation) so the result is auditable from a

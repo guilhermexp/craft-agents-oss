@@ -96,9 +96,10 @@ exigir o envelope interno `content`. Após rebuild de `session-mcp-server`, um
 e `get-object` com a entry `Ana / Active`, todos sem bypass de validação.
 
 Artefato rastreável de 6.4: `docs/artifacts/structured-workspace-objects-phase-a/`
-preserva o roteiro, o payload observado e as capturas do Electron real para a
-revisão 2 → 3, troca sem vazamento para o workspace de controle, restauração da
-tab escopada e desconexão do cliente RPC no fechamento da janela.
+preserva o roteiro, os payloads MCP de create/update/get, as capturas do
+Electron real para as revisões 1 → 2 e 2 → 3, troca sem vazamento para o
+workspace de controle, restauração da tab escopada e o log de desconexão do
+cliente RPC no fechamento da janela.
 
 ## 7. Phase B — U5/U6: views editáveis
 

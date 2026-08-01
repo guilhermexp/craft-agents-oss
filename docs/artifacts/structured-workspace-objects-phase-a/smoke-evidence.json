@@ -20,6 +20,17 @@
       "Status": "Active"
     }
   },
+  "agentMcpChain": {
+    "toolVisible": true,
+    "objectId": "object_agent_audit",
+    "defineRevision": 1,
+    "upsertRevision": 2,
+    "projectionStatus": "ready",
+    "displayedRow": {
+      "Name": "MCP Agent",
+      "Status": "Updated"
+    }
+  },
   "observedEvent": {
     "workspaceId": "2ddce2e4-c280-6c4d-0a08-99b707766ca1",
     "objectId": "object_people",
@@ -31,6 +42,7 @@
     "livePreviewUpdatedWithoutReload": true,
     "controlWorkspaceHadNoObjectLeak": true,
     "scopedTabRestoredOnReturn": true,
-    "rpcClientDisconnectedOnWindowClose": true
+    "rpcClientDisconnectedOnWindowClose": true,
+    "electronAndCdpStoppedAfterSmoke": true
   }
 }
