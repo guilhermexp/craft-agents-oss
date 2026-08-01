@@ -150,8 +150,10 @@ The Phase A local-first object contract is tracked by
   escaping and the full config wrapper so the migrated view can be resaved.
   Migration v4 rechecks strict v1 rows that v3 previously accepted without a
   byte-budget check: rows already within budget remain unchanged, while an
-  oversized row is normalized, persisted and projected again before v4 is
-  marked complete.
+  oversized strict row preserves adapter, filter, sort, visibility and all
+  other settings while shortening only string `legacyConfig`; if the remaining
+  strict config cannot fit, fail the migration atomically instead of applying a
+  legacy/table fallback. Persist and project the bounded row before v4 is marked.
   `query-object` evaluates the complete canonical
   snapshot before bounding its response to 200 entries and reports
   `totalEntries` plus `truncated`; serialized relation labels are limited to

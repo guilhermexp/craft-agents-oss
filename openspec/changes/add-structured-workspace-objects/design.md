@@ -149,8 +149,10 @@ UTF-8, incluindo escaping e wrapper, e corta `legacyConfig` sem dividir surrogat
 pair para que a view migrada permaneça resavável sob o limite de 64.000 bytes.
 A migration v4 fecha o gap de rows já estritas em v1 que a v3 pulava antes da
 medição: reabre workspaces marcados como v3, mantém configs estritas dentro do
-budget sem rewrite e reorça/persiste/reprojeta somente as que excedem 64.000
-bytes antes de gravar o novo marker.
+budget sem rewrite e, para strict oversized, preserva search, filter, sort,
+visibility, adapter e settings, encurtando somente `legacyConfig`. Se o config
+sem esse campo ainda exceder o budget, a transação falha sem fallback para table
+nem marker v4. Rows corrigidas são persistidas/reprojetadas antes do marker.
 Sort usa a ordem canônica da entry como
 desempate; relation values continuam IDs e recebem labels dos payloads
 relacionados somente na leitura. Filtros relation comparam ID estável e label:

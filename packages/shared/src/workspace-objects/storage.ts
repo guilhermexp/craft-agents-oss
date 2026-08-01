@@ -327,6 +327,15 @@ export class WorkspaceObjectRepository {
           strict.success
           && Buffer.byteLength(JSON.stringify(strict.data.config), 'utf8') <= WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES
         ) continue;
+        if (strict.success) {
+          const normalized = normalizeLegacyWorkspaceObjectSavedView({
+            id: row.id,
+            name: row.name,
+            config: strict.data.config,
+          });
+          migrations.push({ objectId: row.object_id, id: row.id, configJson: JSON.stringify(normalized.config) });
+          continue;
+        }
         try {
           const normalized = normalizeLegacyWorkspaceObjectSavedView({
             id: row.id,

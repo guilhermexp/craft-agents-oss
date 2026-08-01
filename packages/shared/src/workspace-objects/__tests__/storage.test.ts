@@ -9,6 +9,7 @@ import {
   DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW,
   normalizeLegacyWorkspaceObjectSavedView,
   WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES,
+  type WorkspaceObjectViewConfig,
 } from '../view-schema.ts';
 
 const roots: string[] = [];
@@ -17,6 +18,30 @@ function makeRoot(): string {
   const root = mkdtempSync(join(tmpdir(), 'craft-objects-'));
   roots.push(root);
   return root;
+}
+
+function strictOversizedKanbanConfig(): WorkspaceObjectViewConfig {
+  return {
+    schemaVersion: 1,
+    search: 'active customer',
+    filter: { type: 'rule', fieldId: 'field_status', operator: 'equals', value: 'active' },
+    sort: [{ fieldId: 'field_rank', direction: 'desc' }],
+    columnVisibility: { field_name: true, field_secret: false },
+    presentation: {
+      adapter: 'kanban',
+      settings: {
+        groupByFieldId: 'field_status',
+        density: 'compact',
+        legacyConfig: `legacy:${'😀'.repeat(16_000)}`,
+      },
+    },
+  };
+}
+
+function withoutLegacyConfig(config: WorkspaceObjectViewConfig): WorkspaceObjectViewConfig {
+  const { legacyConfig, ...settings } = config.presentation.settings;
+  void legacyConfig;
+  return { ...config, presentation: { ...config.presentation, settings } };
 }
 
 afterEach(() => {
@@ -89,16 +114,20 @@ describe('WorkspaceObjectRepository', () => {
     const oversized = {
       id: 'view_strict_oversized',
       name: 'Strict oversized',
-      config: {
-        ...DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW,
-        presentation: { adapter: 'table' as const, settings: { note: '😀'.repeat(16_000) } },
-      },
+      config: strictOversizedKanbanConfig(),
     };
     const normalized = normalizeLegacyWorkspaceObjectSavedView(oversized);
+    const normalizedLegacy = normalized.config.presentation.settings.legacyConfig;
+    const originalLegacy = oversized.config.presentation.settings.legacyConfig;
 
     expect(Buffer.byteLength(JSON.stringify(oversized.config), 'utf8')).toBeGreaterThan(WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES);
     expect(Buffer.byteLength(JSON.stringify(normalized.config), 'utf8')).toBeLessThanOrEqual(WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES);
-    expect(normalized).not.toEqual(oversized);
+    expect(withoutLegacyConfig(normalized.config)).toEqual(withoutLegacyConfig(oversized.config));
+    expect(typeof normalizedLegacy).toBe('string');
+    expect(typeof originalLegacy).toBe('string');
+    if (typeof normalizedLegacy !== 'string' || typeof originalLegacy !== 'string') throw new Error('Expected string legacyConfig values');
+    expect(originalLegacy.startsWith(normalizedLegacy)).toBe(true);
+    expect(normalizedLegacy.length).toBeLessThan(originalLegacy.length);
   });
 
   test('initializes idempotently and preserves typed fields and stable ids', () => {
@@ -356,10 +385,7 @@ describe('WorkspaceObjectRepository', () => {
     repository.close();
 
     const path = join(root, 'objects', 'objects.sqlite');
-    const oversizedConfig = {
-      ...DEFAULT_WORKSPACE_OBJECT_TABLE_VIEW,
-      presentation: { adapter: 'table' as const, settings: { note: '😀'.repeat(16_000) } },
-    };
+    const oversizedConfig = strictOversizedKanbanConfig();
     const setup = openSQLite(path);
     setup.prepare('UPDATE workspace_object_saved_views SET config_json = ? WHERE id = ?')
       .run(JSON.stringify(oversizedConfig), 'view_seed');
@@ -373,6 +399,9 @@ describe('WorkspaceObjectRepository', () => {
     expect(savedView).toBeDefined();
     expect(Buffer.byteLength(JSON.stringify(savedView?.config), 'utf8')).toBeLessThanOrEqual(WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES);
     expect(typeof savedView?.config.presentation.settings.legacyConfig).toBe('string');
+    expect(withoutLegacyConfig(savedView!.config)).toEqual(withoutLegacyConfig(oversizedConfig));
+    expect(String(oversizedConfig.presentation.settings.legacyConfig)
+      .startsWith(String(savedView?.config.presentation.settings.legacyConfig))).toBe(true);
 
     const migrated = openSQLite(path);
     const migratedRow = migrated.prepare('SELECT config_json FROM workspace_object_saved_views WHERE id = ?')
@@ -383,6 +412,12 @@ describe('WorkspaceObjectRepository', () => {
 
     expect(() => reopened.upsertSavedView('object_tasks', savedView!)).not.toThrow();
     reopened.close();
+
+    const reopenedAgain = WorkspaceObjectRepository.open(root);
+    const savedAgain = reopenedAgain.getObject('object_tasks')?.savedViews.find(view => view.id === 'view_seed');
+    expect(savedAgain?.config).toEqual(savedView?.config);
+    expect(() => reopenedAgain.upsertSavedView('object_tasks', savedAgain!)).not.toThrow();
+    reopenedAgain.close();
 
     const verification = openSQLite(path);
     const row = verification.prepare('SELECT config_json FROM workspace_object_saved_views WHERE id = ?')

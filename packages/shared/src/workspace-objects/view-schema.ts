@@ -172,14 +172,35 @@ function longestLegacyPrefixThatFits(
   return best > 0 ? serializedLegacy.slice(0, best) : undefined;
 }
 
+function rebudgetStrictWorkspaceObjectSavedView(view: WorkspaceObjectSavedView): WorkspaceObjectSavedView | null {
+  const legacyConfig = view.config.presentation.settings.legacyConfig;
+  if (typeof legacyConfig !== 'string') return null;
+  const { legacyConfig: _legacyConfig, ...settings } = view.config.presentation.settings;
+  const buildConfig = (boundedLegacyConfig?: string): WorkspaceObjectViewConfig => ({
+    ...view.config,
+    presentation: {
+      ...view.config.presentation,
+      settings: boundedLegacyConfig === undefined
+        ? settings
+        : { ...settings, legacyConfig: boundedLegacyConfig },
+    },
+  });
+  if (serializedConfigBytes(buildConfig()) > WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES) return null;
+  const boundedLegacyConfig = longestLegacyPrefixThatFits(legacyConfig, buildConfig);
+  return WorkspaceObjectSavedViewSchema.parse({ ...view, config: buildConfig(boundedLegacyConfig) });
+}
+
 export function normalizeLegacyWorkspaceObjectSavedView(view: {
   id: string
   name: string
   config: Record<string, unknown>
 }): WorkspaceObjectSavedView {
   const strict = WorkspaceObjectSavedViewSchema.safeParse(view)
-  if (strict.success && serializedConfigBytes(strict.data.config) <= WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES) {
-    return strict.data
+  if (strict.success) {
+    if (serializedConfigBytes(strict.data.config) <= WORKSPACE_OBJECT_SAVED_VIEW_CONFIG_MAX_BYTES) return strict.data
+    const rebalanced = rebudgetStrictWorkspaceObjectSavedView(strict.data)
+    if (rebalanced) return rebalanced
+    throw new Error('Strict saved view exceeds 64KB without a reducible legacyConfig')
   }
   let serializedLegacy = '{}'
   try {

@@ -420,6 +420,17 @@ Os testes focados passaram 2/2 (18 expects), a regressão Electron afetada passo
 contracts, OpenSpec strict e `git diff --check` ficaram verdes. 7.5 permanece
 desmarcado.
 
+Re-review corretivo 3.2 de Phase B (2026-08-01): os REDs mostraram data loss no
+reorçamento strict v1 oversized: Kanban virava table, filter/sort/visibility
+eram zerados e settings funcionais sumiam tanto no normalizador quanto no reopen
+v3→v4. O GREEN usa caminho strict dedicado que preserva toda a config e encurta
+somente `legacyConfig`; sem budget mínimo, a migration falha atomicamente em vez
+de persistir fallback legacy. A segunda reabertura prova igualdade/idempotência
+e novo resave. Os testes focados passaram 2/2 (21 expects), a suíte do domínio
+passou 56/56 em cinco arquivos (161 expects), e `typecheck:all`, paridade i18n,
+tool contracts, OpenSpec strict e `git diff --check` ficaram verdes. 7.5
+permanece desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.
