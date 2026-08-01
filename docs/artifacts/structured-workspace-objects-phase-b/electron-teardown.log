@@ -1,0 +1,9 @@
+2026-08-01T11:18:15.768Z INFO  [window] Window closed for workspace 2ddce2e4-c280-6c4d-0a08-99b707766ca1
+2026-08-01T11:20:00.600Z WARN  [bootstrap] Stale lock file found (PID 27436), overwriting
+2026-08-01T11:20:00.676Z INFO  [window] Created window for workspace 2ddce2e4-c280-6c4d-0a08-99b707766ca1 (focused: false)
+2026-08-01T11:20:00.678Z INFO  [main] App initialized successfully
+2026-08-01T11:20:00.831Z INFO  [ws-rpc-server] Client connected (workspace 2ddce2e4-c280-6c4d-0a08-99b707766ca1)
+2026-08-01T11:21:18.628Z INFO  [window] Window closed for workspace 2ddce2e4-c280-6c4d-0a08-99b707766ca1
+2026-08-01T11:21:18.639Z INFO  [ws-rpc-server] Client disconnected
+2026-08-01T11:21:38Z CHECK Electron parent and child processes exited
+2026-08-01T11:21:38Z CHECK CDP port 9332 closed

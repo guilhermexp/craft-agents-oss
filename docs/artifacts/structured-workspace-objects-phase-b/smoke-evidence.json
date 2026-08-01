@@ -1,0 +1,63 @@
+{
+  "phase": "B",
+  "date": "2026-08-01",
+  "head": "fd2ac1a5",
+  "workspaceId": "2ddce2e4-c280-6c4d-0a08-99b707766ca1",
+  "workspaceRoot": "/tmp/craft-phase-b-smoke.yoifn5/home/.craft-agent/workspaces/phase-a",
+  "userDataDir": "/tmp/craft-phase-b-smoke.yoifn5/electron-user-data",
+  "object": {
+    "id": "object_phase_b_demo",
+    "name": "Phase B Demo",
+    "revisionBefore": 9,
+    "revisionAfter": 12,
+    "projectionStatus": "ready"
+  },
+  "checks": {
+    "tableEditCommitted": {
+      "entryId": "entry_alpha",
+      "field": "Name",
+      "before": "Alpha",
+      "after": "Alpha Edited",
+      "revision": 10
+    },
+    "kanbanMouseDragCommitted": {
+      "entryId": "entry_alpha",
+      "before": "Todo",
+      "after": "Doing",
+      "revision": 11,
+      "counts": {
+        "Todo": 0,
+        "Doing": 2,
+        "Done": 1,
+        "ungrouped": 1
+      }
+    },
+    "adaptersRenderedFromSamePayload": [
+      "table",
+      "kanban",
+      "calendar",
+      "timeline",
+      "gallery",
+      "list"
+    ],
+    "emptyConfigurationGuidance": true,
+    "savedViewCommitted": {
+      "id": "view_needs_config",
+      "adapter": "kanban",
+      "groupFieldId": "field_status",
+      "revision": 12
+    },
+    "restartRestored": {
+      "savedViewId": "view_needs_config",
+      "adapter": "kanban",
+      "revision": 12,
+      "entryName": "Alpha Edited",
+      "entryStatus": "Doing"
+    },
+    "storageVerified": true,
+    "windowClosed": true,
+    "rpcClientDisconnected": true,
+    "electronProcessesExited": true,
+    "cdpPortClosed": true
+  }
+}
