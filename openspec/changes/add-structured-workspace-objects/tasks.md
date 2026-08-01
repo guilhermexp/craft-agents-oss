@@ -337,6 +337,15 @@ passou 88/88 em oito arquivos (290 expects); typechecks shared/Electron e
 `typecheck:all` passaram, tool contracts permaneceram 30 native + 2 MCP-only,
 OpenSpec strict e `git diff --check` ficaram verdes. 7.5 permanece desmarcado.
 
+Re-review corretivo 1.1 de Phase B (2026-08-01): três REDs observaram
+`SQLITE_BUSY` no repair pré-snapshot, `projectionStatus: ready` sintetizado para
+uma relation page que carregava apenas revision e 201 relation labels
+serializados para uma página de 200 entries. O GREEN torna o repair best-effort
+e preserva o fallback read-only, mantém status de evento já observado na mesma
+revision sem inventar status para a page e filtra labels pelos IDs usados nas
+entries retornadas. A matriz afetada passou 91/91 em nove arquivos (302
+expects), com typechecks shared/Electron verdes. 7.5 permanece desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

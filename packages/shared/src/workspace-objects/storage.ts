@@ -177,15 +177,21 @@ export class WorkspaceObjectRepository {
     return rebuilt ? { ...rebuilt, entries: rebuilt.entries.slice(0, boundedEntryLimit) } : null;
   }
 
-  ensureFreshProjection(objectId: string): void {
+  ensureFreshProjection(objectId: string): boolean {
     const current = this.db.prepare('SELECT revision FROM workspace_objects WHERE id = ?').get(objectId) as ObjectRevisionRow | undefined;
-    if (!current || this.readFreshProjection(objectId, current.revision)) return;
-    this.transaction(() => {
-      const revision = this.db.prepare('SELECT revision FROM workspace_objects WHERE id = ?').get(objectId) as ObjectRevisionRow | undefined;
-      if (!revision || this.readFreshProjection(objectId, revision.revision)) return;
-      const rebuilt = buildWorkspaceObjectPayload(this.db, objectId);
-      if (rebuilt) storeWorkspaceObjectPayload(this.db, rebuilt);
-    });
+    if (!current || this.readFreshProjection(objectId, current.revision)) return true;
+    try {
+      this.transaction(() => {
+        const revision = this.db.prepare('SELECT revision FROM workspace_objects WHERE id = ?').get(objectId) as ObjectRevisionRow | undefined;
+        if (!revision || this.readFreshProjection(objectId, revision.revision)) return;
+        const rebuilt = buildWorkspaceObjectPayload(this.db, objectId);
+        if (rebuilt) storeWorkspaceObjectPayload(this.db, rebuilt);
+      });
+      return true;
+    } catch (error) {
+      if (isSQLiteBusyError(error)) return false;
+      throw error;
+    }
   }
 
   readObjectSnapshot(objectId: string): WorkspaceObjectPayload | null {
@@ -443,4 +449,10 @@ function isValidIsoDate(value: string): boolean {
 function isValidIsoDateTime(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
     && !Number.isNaN(Date.parse(value));
+}
+
+function isSQLiteBusyError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const code = Reflect.get(error, 'code');
+  return typeof code === 'string' && code.startsWith('SQLITE_BUSY');
 }

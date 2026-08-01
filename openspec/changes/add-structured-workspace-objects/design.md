@@ -104,6 +104,9 @@ revisão carrega; respostas antigas nunca vencem uma geração nova.
 O service publica eventos com workspace ID, object ID, revision, change kind e
 projection status. Server-core entrega apenas a clientes inscritos no mesmo
 workspace. O renderer deduplica por workspace/object/revision/status.
+Páginas de relation options inicializam somente a revision que realmente
+carregam; elas preservam um projection status já observado nessa mesma revision
+em vez de sintetizar `ready` a cada refresh.
 
 O watcher de manifests possui uma instância por workspace e refcount de
 clientes. Ele ignora SQLite, WAL/SHM, temporários de atomic write e diretórios
@@ -140,9 +143,10 @@ gravação. Sort usa a ordem canônica da entry como desempate; relation values
 continuam IDs e recebem labels dos payloads relacionados somente na leitura. A
 query avalia todas as entries do snapshot canônico antes de limitar a resposta
 a 200 rows e inclui `totalEntries`/`truncated`, evitando falso vazio por corte
-antecipado. Projeção stale é reparada antes de abrir o snapshot; se houver nova
-divergência concorrente, o fallback reconstrói das rows sem escrever dentro da
-transação de leitura.
+antecipado. O envelope serializa somente relation labels referenciados nessas
+rows retornadas. Projeção stale tenta ser reparada antes de abrir o snapshot;
+se o writer lock estiver ocupado ou surgir nova divergência concorrente, o
+fallback reconstrói das rows sem escrever dentro da transação de leitura.
 
 A table não confirma de forma otimista. O RPC `upsert-entries` precisa retornar
 a revisão commitada e o editor permanece em `awaiting-revalidation` até o SWR

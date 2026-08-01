@@ -138,8 +138,10 @@ The Phase A local-first object contract is tracked by
   `query-object` and the Desktop table call it; do not fork query semantics in
   the renderer or an adapter. `query-object` evaluates the complete canonical
   snapshot before bounding its response to 200 entries and reports
-  `totalEntries` plus `truncated`; projection repair happens before the read
-  snapshot, whose fallback rebuild is read-only.
+  `totalEntries` plus `truncated`; serialized relation labels are limited to
+  IDs referenced by those returned entries. Projection repair is best-effort
+  before the read snapshot, whose fallback rebuild remains read-only when the
+  writer lock is busy.
 - Table edits submit the full current entry through the existing
   `upsert-entries` action. Invalid drafts never call the mutation. A returned
   revision means the canonical commit exists, but the editor closes only after

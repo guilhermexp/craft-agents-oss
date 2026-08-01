@@ -143,8 +143,9 @@ visibility e settings do adapter. Table edits SHALL validar pelo field type,
 resolver relation labels por stable ID e somente confirmar sucesso após commit.
 `query-object` SHALL avaliar o snapshot canônico completo antes de limitar a
 resposta a 200 entries e SHALL retornar `totalEntries` e `truncated`. O repair
-de projeção stale SHALL ocorrer antes do snapshot de leitura; o fallback dentro
-dele MUST permanecer read-only.
+de projeção stale SHALL ser tentado antes do snapshot de leitura; se o writer
+lock estiver ocupado, a query MUST continuar com fallback read-only. O retorno
+MUST limitar relation labels aos IDs referenciados pelas entries devolvidas.
 
 #### Scenario: Saved view é restaurada
 
@@ -170,6 +171,20 @@ dele MUST permanecer read-only.
 - **GIVEN** uma projeção stale e um writer concorrente após o snapshot começar
 - **WHEN** `query-object` precisa reconstruir o payload canônico
 - **THEN** a leitura usa rows do próprio snapshot sem tentar escrever nem produzir `SQLITE_BUSY_SNAPSHOT`
+- **Test:** `integration`
+
+#### Scenario: Writer lock ocupado não bloqueia query canônica
+
+- **GIVEN** uma projeção stale e outro writer mantendo `BEGIN IMMEDIATE`
+- **WHEN** o repair best-effort não adquire o lock
+- **THEN** `query-object` continua pelo snapshot read-only e retorna as rows canônicas
+- **Test:** `integration`
+
+#### Scenario: Relation labels respeitam o limite da página
+
+- **GIVEN** mais de 200 entries com referências relacionais únicas
+- **WHEN** `query-object` devolve a primeira página bounded
+- **THEN** `relationLabels` contém somente IDs usados pelas entries dessa página
 - **Test:** `integration`
 
 ### Requirement: Kanban mutations fully roll back on failure

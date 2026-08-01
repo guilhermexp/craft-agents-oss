@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { openSQLite } from '../../memory/sqlite-driver.ts';
 import { getWorkspaceObjectEventProjectionPath, readWorkspaceObjectEventProjection } from '../event-projection.ts';
 import { buildRelationLabelsFromSnapshotPages, WorkspaceObjectService } from '../service.ts';
 
@@ -202,6 +203,85 @@ describe('WorkspaceObjectService', () => {
     expect(filtered).toMatchObject({
       query: { entries: [{ id: 'entry_200' }], totalEntries: 1, truncated: false },
     });
+    service.close();
+  });
+
+  test('falls back to a read-only query when projection repair cannot acquire the writer lock', () => {
+    const root = makeRoot();
+    const service = WorkspaceObjectService.open({ workspaceId: 'ws_query_busy', workspaceRootPath: root });
+    service.execute({ action: 'define-object', object: {
+      id: 'object_query_busy', slug: 'query-busy', name: 'Query busy',
+      fields: [{ id: 'field_name', name: 'Name', type: 'text' }],
+    } });
+    service.execute({ action: 'upsert-entries', objectId: 'object_query_busy', entries: [
+      { id: 'entry_one', values: { field_name: 'One' } },
+    ] });
+    const repository = Reflect.get(service, 'repository') as {
+      markProjectionStaleForTest: (objectId: string) => void;
+    };
+    repository.markProjectionStaleForTest('object_query_busy');
+    const repositoryDb = Reflect.get(repository, 'db') as { pragma: (statement: string) => unknown };
+    repositoryDb.pragma('busy_timeout = 1');
+    const writer = openSQLite(join(root, 'objects', 'objects.sqlite'));
+    writer.pragma('journal_mode = WAL');
+    writer.runSql('BEGIN IMMEDIATE');
+    let result: ReturnType<typeof service.execute> | undefined;
+    let observedError: unknown = null;
+
+    try {
+      result = service.execute({
+        action: 'query-object', objectId: 'object_query_busy',
+        query: { config: {
+          schemaVersion: 1, search: '', filter: null, sort: [], columnVisibility: {},
+          presentation: { adapter: 'table', settings: {} },
+        } },
+      });
+    } catch (error) {
+      observedError = error;
+    } finally {
+      writer.runSql('ROLLBACK');
+      writer.close();
+      service.close();
+    }
+
+    expect(observedError).toBeNull();
+    expect(result).toMatchObject({ query: { entries: [{ id: 'entry_one' }] } });
+  });
+
+  test('returns relation labels only for entries in the bounded query page', () => {
+    const service = WorkspaceObjectService.open({ workspaceId: 'ws_query_label_bounds', workspaceRootPath: makeRoot() });
+    service.execute({ action: 'define-object', object: {
+      id: 'object_companies_bounded', slug: 'companies-bounded', name: 'Companies',
+      fields: [{ id: 'field_name', name: 'Name', type: 'text' }],
+    } });
+    const companies = Array.from({ length: 201 }, (_, index) => ({
+      id: `company_${String(index).padStart(3, '0')}`,
+      values: { field_name: `Company ${index}` },
+    }));
+    service.execute({ action: 'upsert-entries', objectId: 'object_companies_bounded', entries: companies.slice(0, 200) });
+    service.execute({ action: 'upsert-entries', objectId: 'object_companies_bounded', entries: companies.slice(200) });
+    service.execute({ action: 'define-object', object: {
+      id: 'object_people_bounded', slug: 'people-bounded', name: 'People',
+      fields: [{ id: 'field_company', name: 'Company', type: 'relation', relationObjectId: 'object_companies_bounded' }],
+    } });
+    const people = companies.map((company, index) => ({
+      id: `person_${String(index).padStart(3, '0')}`,
+      values: { field_company: company.id },
+    }));
+    service.execute({ action: 'upsert-entries', objectId: 'object_people_bounded', entries: people.slice(0, 200) });
+    service.execute({ action: 'upsert-entries', objectId: 'object_people_bounded', entries: people.slice(200) });
+
+    const result = service.execute({
+      action: 'query-object', objectId: 'object_people_bounded',
+      query: { config: {
+        schemaVersion: 1, search: '', filter: null, sort: [], columnVisibility: {},
+        presentation: { adapter: 'table', settings: {} },
+      } },
+    });
+    expect('query' in result).toBe(true);
+    if (!('query' in result)) throw new Error('Expected query result');
+    expect(Object.keys(result.query.relationLabels)).toHaveLength(200);
+    expect(result.query.relationLabels.company_200).toBeUndefined();
     service.close();
   });
 

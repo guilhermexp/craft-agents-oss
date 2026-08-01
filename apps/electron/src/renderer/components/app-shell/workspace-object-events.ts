@@ -1,7 +1,7 @@
 import type { WorkspaceObjectEvent } from '@craft-agent/shared/workspace-objects/types';
 
 export function acceptWorkspaceObjectEvent(
-  revisions: Map<string, { revision: number; projectionStatus: WorkspaceObjectEvent['projectionStatus'] }>,
+  revisions: Map<string, { revision: number; projectionStatus?: WorkspaceObjectEvent['projectionStatus'] }>,
   workspaceId: string,
   event: WorkspaceObjectEvent,
 ): boolean {

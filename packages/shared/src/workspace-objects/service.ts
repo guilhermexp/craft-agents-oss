@@ -153,6 +153,10 @@ export class WorkspaceObjectService {
     });
     const totalEntries = query.entries.length;
     const entries = query.entries.slice(0, MAX_QUERY_ENTRIES);
+    const relationFieldIds = new Set(payload.fields.flatMap(field => field.type === 'relation' ? [field.id] : []));
+    const returnedRelationIds = new Set(entries.flatMap(entry => Object.entries(entry.values).flatMap(([fieldId, value]) => (
+      relationFieldIds.has(fieldId) && typeof value === 'string' ? [value] : []
+    ))));
     return { query: {
       objectId: payload.id,
       revision: payload.revision,
@@ -161,7 +165,7 @@ export class WorkspaceObjectService {
       fields: query.fields,
       entries,
       displayValues: Object.fromEntries(entries.map(entry => [entry.id, query.displayValues.get(entry.id) ?? {}])),
-      relationLabels: Object.fromEntries(relationLabels),
+      relationLabels: Object.fromEntries([...relationLabels].filter(([id]) => returnedRelationIds.has(id))),
     } };
   }
 

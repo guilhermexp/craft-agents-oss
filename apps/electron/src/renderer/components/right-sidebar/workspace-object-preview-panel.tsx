@@ -17,7 +17,7 @@ interface WorkspaceObjectPreviewData {
 
 type WorkspaceObjectPreviewRevision = {
   revision: number
-  projectionStatus: WorkspaceObjectPayload['projectionStatus']
+  projectionStatus?: WorkspaceObjectPayload['projectionStatus']
 }
 
 const EMPTY_RELATION_PAYLOADS: WorkspaceObjectPayload[] = []
@@ -25,12 +25,14 @@ const EMPTY_RELATION_PAYLOADS: WorkspaceObjectPayload[] = []
 export function buildWorkspaceObjectPreviewRevisions(
   payload: WorkspaceObjectPayload,
   relationOptionPages: WorkspaceObjectPreviewData['relationOptionPages'] = {},
+  previous: ReadonlyMap<string, WorkspaceObjectPreviewRevision> = new Map(),
 ): Map<string, WorkspaceObjectPreviewRevision> {
   const revisions = new Map<string, WorkspaceObjectPreviewRevision>([
     [payload.id, { revision: payload.revision, projectionStatus: payload.projectionStatus }],
   ])
   for (const [relationObjectId, page] of Object.entries(relationOptionPages)) {
-    revisions.set(relationObjectId, { revision: page.revision, projectionStatus: 'ready' })
+    const observed = previous.get(relationObjectId)
+    revisions.set(relationObjectId, observed?.revision === page.revision ? observed : { revision: page.revision })
   }
   return revisions
 }
@@ -69,7 +71,7 @@ export function WorkspaceObjectPreviewPanel({
   const [data, setData] = React.useState<WorkspaceObjectPreviewData | null>(null)
   const [refreshError, setRefreshError] = React.useState<Error | null>(null)
   const retryRef = React.useRef<() => void>(() => {})
-  const revisionsRef = React.useRef(new Map<string, { revision: number; projectionStatus: WorkspaceObjectPayload['projectionStatus'] }>())
+  const revisionsRef = React.useRef(new Map<string, WorkspaceObjectPreviewRevision>())
   const relationObjectIdsRef = React.useRef(new Set<string>())
   const target = React.useMemo(() => ({ kind: 'object' as const, workspaceId, objectId, ...(viewId === undefined ? {} : { viewId }) }), [workspaceId, objectId, viewId])
 
@@ -104,9 +106,7 @@ export function WorkspaceObjectPreviewPanel({
     revisionsRef.current.clear()
     relationObjectIdsRef.current.clear()
     const applyData = (value: WorkspaceObjectPreviewData) => {
-      for (const [revisionObjectId, revision] of buildWorkspaceObjectPreviewRevisions(value.payload, value.relationOptionPages)) {
-        revisionsRef.current.set(revisionObjectId, revision)
-      }
+      revisionsRef.current = buildWorkspaceObjectPreviewRevisions(value.payload, value.relationOptionPages, revisionsRef.current)
       relationObjectIdsRef.current = new Set(value.payload.fields.flatMap(field => field.relationObjectId ? [field.relationObjectId] : []))
       setData(value)
       setRefreshError(null)

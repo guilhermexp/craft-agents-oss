@@ -97,14 +97,19 @@ describe('workspace object preview target identity', () => {
       ...object('object_people', 3),
       fields: [{ id: 'field_company', name: 'Company', type: 'relation', relationObjectId: 'object_companies' }],
     };
-    const revisions = buildWorkspaceObjectPreviewRevisions(payload, {
+    const pages = {
       object_companies: { options: [], nextCursor: null, revision: 7 },
-    });
+    };
+    const revisions = buildWorkspaceObjectPreviewRevisions(payload, pages);
+    const observedProjectionError = buildWorkspaceObjectPreviewRevisions(payload, pages, new Map([
+      ['object_companies', { revision: 7, projectionStatus: 'projection-error' as const }],
+    ]));
 
     expect(revisions).toEqual(new Map([
       ['object_people', { revision: 3, projectionStatus: 'ready' }],
-      ['object_companies', { revision: 7, projectionStatus: 'ready' }],
+      ['object_companies', { revision: 7 }],
     ]));
+    expect(observedProjectionError.get('object_companies')).toEqual({ revision: 7, projectionStatus: 'projection-error' });
   });
 
   test('includes currently referenced relation ids in bounded option lookups', () => {
