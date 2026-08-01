@@ -109,6 +109,36 @@ describe("i18n locale parity", () => {
     expect(locales.pl?.["chat.workspaceObjectEditNotConfirmed"]).not.toContain("zapisanego wartości");
   });
 
+  it("uses one Hungarian term for canonical workspace-object finalization", () => {
+    for (const key of ["chat.workspaceObjectCommitMissing", "chat.workspaceObjectKanbanCommitMissing"] as const) {
+      const value = locales.hu?.[key] ?? "";
+      expect(value, key).toMatch(/kanonikus\s+véglegesít\p{L}*/iu);
+      expect(value, key).not.toMatch(/commit/iu);
+    }
+  });
+
+  it("uses Hungarian relation-option terminology without collapsing distinct failures", () => {
+    const optionFailureKeys = [
+      "chat.workspaceObjectRelationChangedWhileLoading",
+      "chat.workspaceObjectRelationInvalidResponse",
+      "chat.workspaceObjectRelationTransportError",
+    ] as const;
+    const values = optionFailureKeys.map((key) => locales.hu?.[key] ?? "");
+    for (const [index, value] of values.entries()) {
+      expect(value, optionFailureKeys[index]).toMatch(/kapcsolati\s+lehetőség\p{L}*/iu);
+      expect(value, optionFailureKeys[index]).not.toMatch(/beállítás/iu);
+    }
+
+    const stale = locales.hu?.["chat.workspaceObjectRelationStaleSnapshot"] ?? "";
+    expect(new Set([...values, stale]).size).toBe(4);
+  });
+
+  it("treats the interpolated Hungarian field as the target of option and relation choices", () => {
+    for (const key of ["chat.workspaceObjectFieldOption", "chat.workspaceObjectFieldRelation"] as const) {
+      expect(locales.hu?.[key] ?? "", key).toMatch(/\{\{field\}\}\s+mezőhöz/iu);
+    }
+  });
+
   it("uses the established formal register for German and Hungarian workspace-object actions", () => {
     for (const lang of ["de", "hu"] as const) {
       for (const key of workspaceObjectFormalActionKeys) {
