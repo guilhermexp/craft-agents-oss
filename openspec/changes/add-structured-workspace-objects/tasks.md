@@ -545,6 +545,21 @@ do domínio e sidebar passou 73/73 (226 expects), e `typecheck:all`, paridade e
 ordem i18n, tool contracts, OpenSpec strict e `git diff --check` ficaram verdes.
 7.5 permanece desmarcado.
 
+Re-review corretivo 7.1 de Phase B (2026-08-01): os REDs mostraram que o loader
+do preview não preservava a origem da falha primária e que os aliases históricos
+documentados `lint:i18n:sorted` e `sort:locales` não existiam. O GREEN faz o
+request real `get-object` produzir failure `primary` tanto em rejection quanto
+em payload ausente, mantendo `workspaceObjectRefreshFailed` como headline e
+mensagem textual aparada/bounded como detalhe secundário. Somente o estágio de
+relation options produz `RelationOptionFailure` e consulta seu mapping i18n. Os
+aliases históricos voltaram como compatibilidade para o mesmo sorter, os aliases
+novos permanecem disponíveis e `validate:ci` usa o nome documentado
+`lint:i18n:sorted`. Os focos passaram 3/3 (18 expects), o sidebar passou 13/13
+(41 expects), e a regressão de domínio/sidebar passou 75/75 (236 expects).
+`typecheck:all`, paridade i18n (1.804 keys), aliases de ordem antigo/novo, tool
+contracts, OpenSpec strict e `git diff --check` ficaram verdes. 7.5 permanece
+desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

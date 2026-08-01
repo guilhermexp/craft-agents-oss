@@ -154,11 +154,11 @@ describe('workspace object preview target identity', () => {
     });
 
     const invalidMarkup = renderToStaticMarkup(React.createElement(I18nextProvider, { i18n }, React.createElement(Alert, {
-      error: normalizeError(new RelationOptionLoadError('invalid-response')),
+      failure: { source: 'relation', error: normalizeError(new RelationOptionLoadError('invalid-response')) },
       onRetry: () => {},
     })));
     const transportMarkup = renderToStaticMarkup(React.createElement(I18nextProvider, { i18n }, React.createElement(Alert, {
-      error: normalizeError(new Error('ECONNRESET')),
+      failure: { source: 'relation', error: normalizeError(new Error('ECONNRESET')) },
       onRetry: () => {},
     })));
 
@@ -168,6 +168,73 @@ describe('workspace object preview target identity', () => {
     expect(transportMarkup).toContain('Não foi possível carregar as relações.')
     expect(transportMarkup).toContain('data-object-relation-error-detail="true"')
     expect(transportMarkup).toContain('ECONNRESET')
+  });
+
+  test('classifies a real get-object rejection as primary and renders the refresh headline', async () => {
+    const fetchPreview = Reflect.get(previewPanelModule, 'fetchWorkspaceObjectPreviewData');
+    const Alert = Reflect.get(previewPanelModule, 'WorkspaceObjectPreviewErrorAlert');
+    expect(fetchPreview).toBeFunction();
+    expect(Alert).toBeFunction();
+    if (typeof fetchPreview !== 'function' || typeof Alert !== 'function') return;
+    const actions: unknown[] = [];
+    let observedError: unknown;
+    try {
+      await fetchPreview(
+        { workspaceId: 'workspace-one', objectId: 'object_missing' },
+        new AbortController().signal,
+        async (_workspaceId: string, action: unknown) => {
+          actions.push(action);
+          throw new Error('primary backend unavailable');
+        },
+      );
+    } catch (error) {
+      observedError = error;
+    }
+
+    expect(actions).toEqual([{ action: 'get-object', objectId: 'object_missing' }]);
+    expect(observedError).toMatchObject({
+      failure: { source: 'primary', detail: 'primary backend unavailable' },
+    });
+
+    const failure = Reflect.get(observedError as object, 'failure');
+    const i18n = createInstance();
+    await i18n.init({
+      lng: 'pt-BR',
+      resources: { 'pt-BR': { translation: {
+        'chat.workspaceObjectRefreshFailed': 'Falha ao atualizar o objeto',
+        'chat.workspaceObjectRelationTransportError': 'Não foi possível carregar as relações.',
+        'chat.workspaceObjectRetry': 'Tentar novamente',
+      } } },
+    });
+    const markup = renderToStaticMarkup(React.createElement(I18nextProvider, { i18n }, React.createElement(Alert, {
+      failure,
+      onRetry: () => {},
+    })));
+
+    expect(markup).toContain('Falha ao atualizar o objeto');
+    expect(markup).toContain('data-object-preview-error-detail="true"');
+    expect(markup).toContain('primary backend unavailable');
+    expect(markup).not.toContain('Não foi possível carregar as relações.');
+  });
+
+  test('classifies a missing get-object payload as a primary object-not-found failure', async () => {
+    const fetchPreview = Reflect.get(previewPanelModule, 'fetchWorkspaceObjectPreviewData');
+    expect(fetchPreview).toBeFunction();
+    if (typeof fetchPreview !== 'function') return;
+    let observedError: unknown;
+    try {
+      await fetchPreview(
+        { workspaceId: 'workspace-one', objectId: 'object_missing' },
+        new AbortController().signal,
+        async () => ({ payload: null }),
+      );
+    } catch (error) {
+      observedError = error;
+    }
+
+    expect(observedError).toMatchObject({
+      failure: { source: 'primary', detail: 'Object not found: object_missing' },
+    });
   });
 
   test('includes currently referenced relation ids in bounded option lookups', () => {

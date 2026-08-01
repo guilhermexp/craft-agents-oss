@@ -21,6 +21,17 @@ interface WorkspaceObjectPreviewData {
   relationOptionPages?: Record<string, { options: Array<{ id: string; label: string }>; nextCursor: string | null; revision: number }>
 }
 
+export type WorkspaceObjectPreviewFailure =
+  | { source: 'primary'; detail?: string }
+  | { source: 'relation'; error: RelationOptionFailure }
+
+export class WorkspaceObjectPreviewLoadError extends Error {
+  constructor(readonly failure: WorkspaceObjectPreviewFailure) {
+    super(failure.source === 'primary' ? (failure.detail ?? 'Workspace object preview load failed') : failure.error.code)
+    this.name = 'WorkspaceObjectPreviewLoadError'
+  }
+}
+
 type WorkspaceObjectPreviewRevision = {
   revision: number
   projectionStatus?: WorkspaceObjectPayload['projectionStatus']
@@ -50,6 +61,62 @@ interface WorkspaceObjectPreviewTarget {
   viewId?: string
 }
 
+type ExecuteWorkspaceObjectAction = (
+  workspaceId: string,
+  action: WorkspaceObjectAction,
+) => Promise<WorkspaceObjectServiceResult>
+
+function safePreviewErrorDetail(error: unknown): string | undefined {
+  const detail = error instanceof Error ? error.message : typeof error === 'string' ? error : undefined
+  const trimmed = detail?.trim()
+  return trimmed ? trimmed.slice(0, 1_000) : undefined
+}
+
+function throwIfPreviewLoadAborted(signal: AbortSignal, error?: unknown): void {
+  if (signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
+    throw new DOMException('Aborted', 'AbortError')
+  }
+}
+
+export async function fetchWorkspaceObjectPreviewData(
+  target: WorkspaceObjectPreviewTarget,
+  signal: AbortSignal,
+  execute: ExecuteWorkspaceObjectAction,
+): Promise<WorkspaceObjectPreviewData> {
+  const { workspaceId, objectId } = target
+  let result: WorkspaceObjectServiceResult
+  try {
+    result = await execute(workspaceId, { action: 'get-object', objectId })
+  } catch (error) {
+    throwIfPreviewLoadAborted(signal, error)
+    throw new WorkspaceObjectPreviewLoadError({ source: 'primary', detail: safePreviewErrorDetail(error) })
+  }
+  throwIfPreviewLoadAborted(signal)
+  if (!('payload' in result) || !result.payload) {
+    throw new WorkspaceObjectPreviewLoadError({ source: 'primary', detail: `Object not found: ${objectId}` })
+  }
+  const payload = result.payload
+  const relationObjectIds = new Set(payload.fields.flatMap(field => field.relationObjectId ? [field.relationObjectId] : []))
+  try {
+    const relationResults = await Promise.all([...relationObjectIds].map(async relationObjectId => {
+      const includeEntryIds = collectReferencedRelationEntryIds(payload, relationObjectId)
+      const page = await loadReferencedRelationOptions(relationObjectId, includeEntryIds, action => (
+        execute(workspaceId, action)
+      ))
+      return { relationObjectId, page }
+    }))
+    throwIfPreviewLoadAborted(signal)
+    return {
+      targetKey: contentTabId({ kind: 'object', ...target }),
+      payload,
+      relationOptionPages: Object.fromEntries(relationResults.map(({ relationObjectId, page }) => [relationObjectId, page])),
+    }
+  } catch (error) {
+    throwIfPreviewLoadAborted(signal, error)
+    throw new WorkspaceObjectPreviewLoadError({ source: 'relation', error: normalizeRelationOptionFailure(error) })
+  }
+}
+
 export function isWorkspaceObjectPreviewDataCurrent(
   data: WorkspaceObjectPreviewData,
   target: WorkspaceObjectPreviewTarget,
@@ -62,19 +129,30 @@ export function workspaceObjectPreviewRenderKey(payload: WorkspaceObjectPayload,
 }
 
 export function WorkspaceObjectPreviewErrorAlert({
-  error,
+  failure,
   onRetry,
 }: {
-  error: RelationOptionFailure
+  failure: WorkspaceObjectPreviewFailure
   onRetry: () => void
 }) {
   const { t } = useTranslation()
   return (
     <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive" role="alert">
-      <div>{t(RELATION_OPTION_ERROR_KEYS[error.code])}</div>
-      {error.code === 'transport' && error.detail ? (
-        <div data-object-relation-error-detail="true" className="mt-1 break-words text-[11px] opacity-80">{error.detail}</div>
-      ) : null}
+      {failure.source === 'relation' ? (
+        <>
+          <div>{t(RELATION_OPTION_ERROR_KEYS[failure.error.code])}</div>
+          {failure.error.code === 'transport' && failure.error.detail ? (
+            <div data-object-relation-error-detail="true" className="mt-1 break-words text-[11px] opacity-80">{failure.error.detail}</div>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <div>{t('chat.workspaceObjectRefreshFailed')}</div>
+          {failure.detail ? (
+            <div data-object-preview-error-detail="true" className="mt-1 break-words text-[11px] opacity-80">{failure.detail}</div>
+          ) : null}
+        </>
+      )}
       <button type="button" className="mt-2 underline underline-offset-2" onClick={onRetry}>
         {t('chat.workspaceObjectRetry')}
       </button>
@@ -97,31 +175,17 @@ export function WorkspaceObjectPreviewPanel({
   const resolverRef = React.useRef<ContentResolver<WorkspaceObjectPreviewData> | null>(null)
   if (!resolverRef.current) resolverRef.current = new ContentResolver<WorkspaceObjectPreviewData>(20)
   const [data, setData] = React.useState<WorkspaceObjectPreviewData | null>(null)
-  const [refreshError, setRefreshError] = React.useState<RelationOptionFailure | null>(null)
+  const [refreshError, setRefreshError] = React.useState<WorkspaceObjectPreviewFailure | null>(null)
   const retryRef = React.useRef<() => void>(() => {})
   const revisionsRef = React.useRef(new Map<string, WorkspaceObjectPreviewRevision>())
   const relationObjectIdsRef = React.useRef(new Set<string>())
   const target = React.useMemo(() => ({ kind: 'object' as const, workspaceId, objectId, ...(viewId === undefined ? {} : { viewId }) }), [workspaceId, objectId, viewId])
 
-  const fetchData = React.useCallback(async (signal: AbortSignal): Promise<WorkspaceObjectPreviewData> => {
-    const result = await window.electronAPI.executeWorkspaceObjectAction(workspaceId, { action: 'get-object', objectId })
-    if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-    if (!('payload' in result) || !result.payload) throw new Error(`Object not found: ${objectId}`)
-    const relationObjectIds = new Set(result.payload.fields.flatMap(field => field.relationObjectId ? [field.relationObjectId] : []))
-    const relationResults = await Promise.all([...relationObjectIds].map(async relationObjectId => {
-      const includeEntryIds = collectReferencedRelationEntryIds(result.payload!, relationObjectId)
-      const page = await loadReferencedRelationOptions(relationObjectId, includeEntryIds, action => (
-        window.electronAPI.executeWorkspaceObjectAction(workspaceId, action)
-      ))
-      return { relationObjectId, page }
-    }))
-    if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-    return {
-      targetKey: contentTabId(target),
-      payload: result.payload,
-      relationOptionPages: Object.fromEntries(relationResults.map(({ relationObjectId, page }) => [relationObjectId, page])),
-    }
-  }, [workspaceId, objectId, target])
+  const fetchData = React.useCallback((signal: AbortSignal): Promise<WorkspaceObjectPreviewData> => (
+    fetchWorkspaceObjectPreviewData(target, signal, (targetWorkspaceId, action) => (
+      window.electronAPI.executeWorkspaceObjectAction(targetWorkspaceId, action)
+    ))
+  ), [target])
 
   const mutate = React.useCallback((action: WorkspaceObjectAction): Promise<WorkspaceObjectServiceResult> => (
     window.electronAPI.executeWorkspaceObjectAction(workspaceId, action)
@@ -142,8 +206,10 @@ export function WorkspaceObjectPreviewPanel({
     const reportError = (error: unknown) => {
       if (!active) return
       if (error instanceof DOMException && error.name === 'AbortError') return
-      const normalized = normalizeRelationOptionFailure(error)
-      setRefreshError(normalized)
+      const failure = error instanceof WorkspaceObjectPreviewLoadError
+        ? error.failure
+        : { source: 'primary' as const, detail: safePreviewErrorDetail(error) }
+      setRefreshError(failure)
       console.error('[WorkspaceObjectPreview]', error)
     }
     const refreshPayload = () => {
@@ -180,7 +246,7 @@ export function WorkspaceObjectPreviewPanel({
         <span className="text-[11px] text-muted-foreground">r{visibleData.payload.revision}</span>
       </div> : null}
       {refreshError ? (
-        <WorkspaceObjectPreviewErrorAlert error={refreshError} onRetry={() => retryRef.current()} />
+        <WorkspaceObjectPreviewErrorAlert failure={refreshError} onRetry={() => retryRef.current()} />
       ) : null}
       {visibleData?.payload.projectionStatus === 'projection-error' ? (
         <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">{t('chat.workspaceObjectProjectionRepair')}</div>
