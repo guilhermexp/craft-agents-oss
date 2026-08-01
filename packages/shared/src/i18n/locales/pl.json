@@ -238,6 +238,8 @@
   "chat.sessionFilesLoading": "Ładowanie...",
   "chat.sessionFilesTab": "Sesja",
   "chat.workspaceObjectPreviewLoading": "Ładowanie obiektu...",
+  "chat.workspaceObjectRefreshFailed": "Odświeżenie obiektu nie powiodło się",
+  "chat.workspaceObjectRetry": "Ponów odświeżenie",
   "chat.workspaceObjectProjectionRepair": "Projekcja manifestu wymaga naprawy.",
   "chat.workspaceObjectsEmpty": "Obiekty strukturalne tego obszaru roboczego pojawią się tutaj.",
   "chat.workspaceObjectsLoading": "Ładowanie obiektów...",

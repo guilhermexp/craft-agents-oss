@@ -54,6 +54,17 @@ visível. `projection-error` também apresenta estado acionável. Deletar um
 manifest dispara reconstrução idempotente. Um manifest com stable ID divergente
 é conflito: não é importado nem sobrescrito silenciosamente.
 
+Para atravessar processos, o mesmo envelope redacted é persistido atomicamente
+em `objects/.events/<object-id-hash>.json`. O watcher usa o workspace ID da
+subscription configurada ao reemitir esse envelope; ele nunca confia no alias
+de workspace produzido por um subprocesso agent/MCP. A projeção guarda somente
+workspace/object IDs, revision, change kind e projection status, sem payloads,
+paths canônicos ou secrets. Entrega duplicada pelo fast path e pelo watcher é
+aceitável e deduplicada por workspace ID, object ID, revision e projection
+status no renderer. Assim o fast path e o watcher não duplicam um envelope,
+mas um `ready` de repair na mesma revisão não é descartado após
+`projection-error`.
+
 ## Data plane do agente
 
 O frontier recebe uma tool genérica de objetos com variantes de action para:
@@ -64,7 +75,8 @@ O frontier recebe uma tool genérica de objetos com variantes de action para:
 - consultar objetos e payloads;
 - verificar ou reparar projeções.
 
-Cada variante possui schema Zod estrito, limites de tamanho e validação de
+Cada variante possui schema Zod estrito, limite de 64.000 caracteres por valor
+string, limites de cardinalidade e validação de
 workspace. O retorno inclui object ID, revision e projection status, nunca path
 do banco, SQL ou secrets. O mesmo service atende tool e RPC do Desktop.
 
@@ -91,7 +103,7 @@ revisão carrega; respostas antigas nunca vencem uma geração nova.
 
 O service publica eventos com workspace ID, object ID, revision, change kind e
 projection status. Server-core entrega apenas a clientes inscritos no mesmo
-workspace. O renderer deduplica por revision.
+workspace. O renderer deduplica por workspace/object/revision/status.
 
 O watcher de manifests possui uma instância por workspace e refcount de
 clientes. Ele ignora SQLite, WAL/SHM, temporários de atomic write e diretórios
@@ -141,8 +153,11 @@ pelo sanitizer existente.
 - Migration futura desconhecida bloqueia writes, preserva reads possíveis e
   retorna erro acionável.
 - Falha de manifest após commit mantém canonical visibility e agenda repair.
+- Falha da projeção durável de evento após commit retorna `projection-error` e
+  publica o mesmo status no fast path; nunca reporta rollback do commit canônico.
 - Falha de watcher não invalida mutations; reconnect restabelece uma subscription
-  e recarrega uma vez.
+  e emite uma única invalidação por workspace para recarregar lista e objeto
+  ativo. Falha de revalidation conserva o payload stale e mostra erro com retry.
 - Falha de provider preserva checkpoint e dados visíveis.
 - Token incremental expirado troca para full reconciliation idempotente sem
   limpar o estado atual antes do replacement.

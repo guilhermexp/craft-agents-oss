@@ -228,7 +228,8 @@ graph TD
 
 O bloco `datatable` cobre o caso read-only com sort e filtro. O caminho mais curto:
 
-1. Estender `datatable` para aceitar `editable: true` + callback de mutação
+1. Estender `datatable` para aceitar um target de objeto versionado; toda escrita
+   chama o RPC/service genérico `workspace_objects`
 2. Adicionar `viewType` ao mesmo bloco → o renderer escolhe table/kanban/gallery com os mesmos dados
 3. Adicionar `viewSettings` ao schema do bloco
 
@@ -244,7 +245,7 @@ Assim o agente emite um único bloco e o usuário troca de view na UI, sem round
     "kanbanField": "Status"
   },
   "editable": true,                  // NOVO
-  "onMutate": "crm://task/entries",  // NOVO — endpoint de escrita
+  "objectTarget": { "objectId": "task", "revision": 12 },
   "columns": [
     { "key": "Title",  "label": "Title",  "type": "text" },
     { "key": "Status", "label": "Status", "type": "badge",
@@ -253,6 +254,11 @@ Assim o agente emite um único bloco e o usuário troca de view na UI, sem round
   ]
 }
 ```
+
+`objectTarget` só identifica o conteúdo. O renderer converte uma edição na
+action genérica `upsert-entries`; não existem endpoints `crm://`, tools de
+Kanban/tabela ou handlers de mutação específicos da UI. Confirmação, revisão,
+projeção e evento continuam pertencendo ao service comum.
 
 ### 6.4 Armadilhas
 

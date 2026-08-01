@@ -140,7 +140,7 @@ The Phase A local-first object contract is tracked by
 | `packages/server-core/src/workspace-objects/` | Refcounted filesystem watcher |
 | `packages/server-core/src/handlers/rpc/workspace-objects.ts` | Workspace-scoped Desktop bridge |
 | `apps/electron/src/renderer/components/app-shell/content-*.ts` | Tabs, target identity, bounded resolver and SWR |
-| `apps/electron/src/renderer/components/right-sidebar/WorkspaceObject*.tsx` | Object list and Phase A read preview inside the existing sidebar |
+| `apps/electron/src/renderer/components/right-sidebar/workspace-object*.tsx` | Object list and Phase A read preview inside the existing sidebar |
 | `docs/denchclaw/` | Pinned upstream evidence, known defects and Craft decisions |
 
 After changing this contract, run the focused Phase A tests, `typecheck:all`,

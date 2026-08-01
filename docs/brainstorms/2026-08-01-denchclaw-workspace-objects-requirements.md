@@ -166,14 +166,17 @@ O DenchClaw demonstra um loop útil: o agente altera dados e arquivos; o runtime
 
 - O contrato existente de preview inline em `openspec/specs/audio-preview-and-markdown/spec.md` continua válido e deve ser estendido, não substituído.
 - O fluxo de sources/OAuth em `openspec/specs/workspace-and-sources/spec.md` continua sendo a autoridade para credenciais e isolamento por workspace.
-- A escolha do engine estruturado deve considerar os bindings e o empacotamento macOS, Windows e Linux já suportados pelo fork.
+- A escolha do engine estruturado foi resolvida no planejamento: o adapter SQLite
+  cross-runtime existente é a autoridade canônica em macOS, Windows e Linux;
+  DuckDB permanece apenas como referência upstream.
 - A implementação inicial é local-first e Electron-first; a camada de domínio deve evitar dependência do renderer para permitir paridade posterior.
 
 ---
 
 ## Deferred to Planning
 
-- Escolher o engine de storage e a estratégia de projeção tabular com fallback, comparando o stack SQLite existente com a adição de DuckDB.
+- Histórico resolvido: a comparação SQLite versus DuckDB resultou em SQLite
+  canônico com projeção tabular reconstruível mantida pela aplicação.
 - Definir a fronteira entre estado no workspace visível ao agente e estado app-scoped controlado pelo runtime.
 - Dividir o roadmap em changes OpenSpec ou fases auditáveis sem sobrepor changes ativas do preview e de credenciais.
 - Definir o limite do cache, a política de persistência das tabs e os eventos RPC/IPC necessários.

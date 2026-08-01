@@ -1,7 +1,7 @@
 import type { ContentTarget } from './content-tabs-state'
 import type { ReactNode } from 'react'
 import { InlineFilePreviewPanel } from './SessionInfoPopover'
-import { WorkspaceObjectPreviewPanel } from '../right-sidebar/WorkspaceObjectPreviewPanel'
+import { WorkspaceObjectPreviewPanel } from '../right-sidebar/workspace-object-preview-panel'
 
 interface ContentPreviewHostProps {
   target: ContentTarget

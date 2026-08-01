@@ -83,40 +83,70 @@ export const SourceOAuthTriggerSchema = z.object({
   sourceSlug: z.string().describe('The slug of the source to authenticate'),
 });
 
-const WorkspaceObjectFieldSchema = z.object({
+const WorkspaceObjectFieldSchema = z.strictObject({
   id: z.string().min(1).max(120),
   name: z.string().min(1).max(160),
   type: z.enum(['text', 'number', 'boolean', 'date', 'datetime', 'select', 'status', 'relation', 'file']),
   required: z.boolean().optional(),
   options: z.array(z.string().min(1).max(160)).max(200).optional(),
   relationObjectId: z.string().min(1).max(120).optional(),
-}).strict();
+});
 
-const WorkspaceObjectEntrySchema = z.object({
+const WorkspaceObjectEntrySchema = z.strictObject({
   id: z.string().min(1).max(120),
-  values: z.record(z.string().min(1).max(120), z.union([z.string(), z.number(), z.boolean(), z.null()])),
-}).strict();
+  values: z.record(z.string().min(1).max(120), z.union([
+    z.string().max(64_000),
+    z.number().finite(),
+    z.boolean(),
+    z.null(),
+  ])),
+});
 
-const WorkspaceObjectSavedViewSchema = z.object({
+const WorkspaceObjectSavedViewSchema = z.strictObject({
   id: z.string().min(1).max(120),
   name: z.string().min(1).max(160),
   config: z.record(z.string(), z.unknown()),
-}).strict();
+});
 
-export const WorkspaceObjectsSchema = z.object({
+const WorkspaceObjectDefinitionSchema = z.strictObject({
+  id: z.string().min(1).max(120),
+  slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(120),
+  name: z.string().min(1).max(160),
+  fields: z.array(WorkspaceObjectFieldSchema).max(200),
+});
+
+const WorkspaceObjectIdSchema = z.string().min(1).max(120);
+
+export const WorkspaceObjectsSchema = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('define-object'), object: WorkspaceObjectDefinitionSchema }),
+  z.strictObject({
+    action: z.literal('upsert-entries'),
+    objectId: WorkspaceObjectIdSchema,
+    entries: z.array(WorkspaceObjectEntrySchema).min(1).max(200),
+  }),
+  z.strictObject({
+    action: z.literal('delete-entries'),
+    objectId: WorkspaceObjectIdSchema,
+    entryIds: z.array(z.string().min(1).max(120)).min(1).max(200),
+  }),
+  z.strictObject({ action: z.literal('upsert-view'), objectId: WorkspaceObjectIdSchema, view: WorkspaceObjectSavedViewSchema }),
+  z.strictObject({ action: z.literal('get-object'), objectId: WorkspaceObjectIdSchema }),
+  z.strictObject({ action: z.literal('list-objects'), limit: z.number().int().min(1).max(200).optional() }),
+  z.strictObject({ action: z.literal('repair-projection'), objectId: WorkspaceObjectIdSchema }),
+]);
+
+// Claude SDK's tool() API still requires a Zod object shape. Canonical validation
+// remains WorkspaceObjectsSchema; this envelope only describes the union frontier
+// to the native adapter before executeSessionTool() performs action-specific parse.
+const WorkspaceObjectsNativeSchema = z.strictObject({
   action: z.enum(['define-object', 'upsert-entries', 'delete-entries', 'upsert-view', 'get-object', 'list-objects', 'repair-projection']),
-  object: z.object({
-    id: z.string().min(1).max(120),
-    slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(120),
-    name: z.string().min(1).max(160),
-    fields: z.array(WorkspaceObjectFieldSchema).max(200),
-  }).strict().optional(),
-  objectId: z.string().min(1).max(120).optional(),
+  object: WorkspaceObjectDefinitionSchema.optional(),
+  objectId: WorkspaceObjectIdSchema.optional(),
   entries: z.array(WorkspaceObjectEntrySchema).min(1).max(200).optional(),
   entryIds: z.array(z.string().min(1).max(120)).min(1).max(200).optional(),
   view: WorkspaceObjectSavedViewSchema.optional(),
   limit: z.number().int().min(1).max(200).optional(),
-}).strict();
+});
 
 export const CredentialPromptSchema = z.object({
   sourceSlug: z.string().describe('The slug of the source to authenticate'),
@@ -683,7 +713,9 @@ interface SessionToolDefBase {
   name: string;
   apiVersion: SessionToolApiVersion;
   description: string;
-  inputSchema: z.ZodObject<z.ZodRawShape>;
+  inputSchema: z.ZodTypeAny;
+  /** Object-only transport envelope for native SDKs whose tool API cannot accept unions. */
+  nativeInputSchema?: z.ZodObject<z.ZodRawShape>;
   outputSchema: z.ZodTypeAny;
   exposure: SessionToolExposure;
   /** Whether this tool is allowed in Explore/Safe mode. */
@@ -734,6 +766,7 @@ export function defineTool(name: string, config: DefineToolConfig): SessionToolD
     apiVersion: config.version,
     description: config.description,
     inputSchema: config.inputSchema,
+    ...(config.nativeInputSchema ? { nativeInputSchema: config.nativeInputSchema } : {}),
     outputSchema: config.outputSchema,
     exposure: config.exposure,
     safeMode: config.safeMode,
@@ -798,7 +831,7 @@ const FRONTIER_TOOL_DEFAULTS = {
 // ============================================================
 
 export const SESSION_TOOL_DEFS: SessionToolDef[] = [
-  defineTool('workspace_objects', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.workspace_objects, inputSchema: WorkspaceObjectsSchema, executionMode: 'registry', safeMode: 'block', handler: handleWorkspaceObjects }),
+  defineTool('workspace_objects', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.workspace_objects, inputSchema: WorkspaceObjectsSchema, nativeInputSchema: WorkspaceObjectsNativeSchema, executionMode: 'registry', safeMode: 'block', handler: handleWorkspaceObjects }),
   defineTool('SubmitPlan', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.SubmitPlan, inputSchema: SubmitPlanSchema, executionMode: 'registry', safeMode: 'allow', handler: handleSubmitPlan }),
   defineTool('config_validate', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.config_validate, inputSchema: ConfigValidateSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleConfigValidate }),
   defineTool('skill_validate', { ...FRONTIER_TOOL_DEFAULTS, description: TOOL_DESCRIPTIONS.skill_validate, inputSchema: SkillValidateSchema, executionMode: 'registry', safeMode: 'allow', readOnly: true, handler: handleSkillValidate }),

@@ -277,7 +277,12 @@ export function getSessionScopedTools(
     // Tool visibility is centrally filtered in session-tools-core to avoid backend drift.
     tools = [];
     for (const def of getSessionToolDefs({ includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback, includeMemory: FEATURE_FLAGS.memory, includeWorkspaceObjects: true })) {
-      if (def.executionMode === 'registry') tools.push(registryTool(def.name, def.inputSchema.shape));
+      if (def.executionMode !== 'registry') continue;
+      const nativeInputSchema = def.nativeInputSchema ?? def.inputSchema;
+      if (!('shape' in nativeInputSchema)) {
+        throw new Error(`Native session tool '${def.name}' requires an object input envelope`);
+      }
+      tools.push(registryTool(def.name, nativeInputSchema.shape));
     }
 
     // Add call_llm — backend-specific (not in registry handler)

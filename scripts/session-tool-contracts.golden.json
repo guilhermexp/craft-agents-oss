@@ -3039,73 +3039,112 @@
     "executionMode": "registry",
     "exposure": "native-and-mcp",
     "inputSchema": {
-      "properties": {
-        "action": {
-          "enum": [
-            "define-object",
-            "upsert-entries",
-            "delete-entries",
-            "upsert-view",
-            "get-object",
-            "list-objects",
-            "repair-projection"
-          ],
-          "type": "string"
-        },
-        "entries": {
-          "items": {
-            "additionalProperties": false,
-            "properties": {
-              "id": {
-                "maxLength": 120,
-                "minLength": 1,
-                "type": "string"
-              },
-              "values": {
-                "additionalProperties": {
-                  "type": [
-                    "string",
-                    "number",
-                    "boolean",
-                    "null"
-                  ]
-                },
-                "propertyNames": {
-                  "maxLength": 120,
-                  "minLength": 1
-                },
-                "type": "object"
-              }
-            },
-            "required": [
-              "id",
-              "values"
-            ],
-            "type": "object"
-          },
-          "maxItems": 200,
-          "minItems": 1,
-          "type": "array"
-        },
-        "entryIds": {
-          "items": {
-            "maxLength": 120,
-            "minLength": 1,
-            "type": "string"
-          },
-          "maxItems": 200,
-          "minItems": 1,
-          "type": "array"
-        },
-        "limit": {
-          "maximum": 200,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "object": {
+      "anyOf": [
+        {
           "additionalProperties": false,
           "properties": {
-            "fields": {
+            "action": {
+              "const": "define-object",
+              "type": "string"
+            },
+            "object": {
+              "additionalProperties": false,
+              "properties": {
+                "fields": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "maxLength": 120,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "name": {
+                        "maxLength": 160,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "options": {
+                        "items": {
+                          "maxLength": 160,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 200,
+                        "type": "array"
+                      },
+                      "relationObjectId": {
+                        "maxLength": 120,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "type": {
+                        "enum": [
+                          "text",
+                          "number",
+                          "boolean",
+                          "date",
+                          "datetime",
+                          "select",
+                          "status",
+                          "relation",
+                          "file"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "type"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 200,
+                  "type": "array"
+                },
+                "id": {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "name": {
+                  "maxLength": 160,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "slug": {
+                  "maxLength": 120,
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug",
+                "name",
+                "fields"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "action",
+            "object"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "upsert-entries",
+              "type": "string"
+            },
+            "entries": {
               "items": {
                 "additionalProperties": false,
                 "properties": {
@@ -3114,112 +3153,186 @@
                     "minLength": 1,
                     "type": "string"
                   },
-                  "name": {
-                    "maxLength": 160,
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "options": {
-                    "items": {
-                      "maxLength": 160,
-                      "minLength": 1,
-                      "type": "string"
+                  "values": {
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "maxLength": 64000,
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
-                    "maxItems": 200,
-                    "type": "array"
-                  },
-                  "relationObjectId": {
-                    "maxLength": 120,
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "required": {
-                    "type": "boolean"
-                  },
-                  "type": {
-                    "enum": [
-                      "text",
-                      "number",
-                      "boolean",
-                      "date",
-                      "datetime",
-                      "select",
-                      "status",
-                      "relation",
-                      "file"
-                    ],
-                    "type": "string"
+                    "propertyNames": {
+                      "maxLength": 120,
+                      "minLength": 1
+                    },
+                    "type": "object"
                   }
                 },
                 "required": [
                   "id",
-                  "name",
-                  "type"
+                  "values"
                 ],
                 "type": "object"
               },
               "maxItems": 200,
+              "minItems": 1,
               "type": "array"
             },
-            "id": {
+            "objectId": {
               "maxLength": 120,
               "minLength": 1,
-              "type": "string"
-            },
-            "name": {
-              "maxLength": 160,
-              "minLength": 1,
-              "type": "string"
-            },
-            "slug": {
-              "maxLength": 120,
-              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
               "type": "string"
             }
           },
           "required": [
-            "id",
-            "slug",
-            "name",
-            "fields"
+            "action",
+            "objectId",
+            "entries"
           ],
           "type": "object"
         },
-        "objectId": {
-          "maxLength": 120,
-          "minLength": 1,
-          "type": "string"
-        },
-        "view": {
+        {
           "additionalProperties": false,
           "properties": {
-            "config": {
-              "additionalProperties": {},
-              "type": "object"
-            },
-            "id": {
-              "maxLength": 120,
-              "minLength": 1,
+            "action": {
+              "const": "delete-entries",
               "type": "string"
             },
-            "name": {
-              "maxLength": 160,
+            "entryIds": {
+              "items": {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 200,
+              "minItems": 1,
+              "type": "array"
+            },
+            "objectId": {
+              "maxLength": 120,
               "minLength": 1,
               "type": "string"
             }
           },
           "required": [
-            "id",
-            "name",
-            "config"
+            "action",
+            "objectId",
+            "entryIds"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "upsert-view",
+              "type": "string"
+            },
+            "objectId": {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            "view": {
+              "additionalProperties": false,
+              "properties": {
+                "config": {
+                  "additionalProperties": {},
+                  "type": "object"
+                },
+                "id": {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "name": {
+                  "maxLength": 160,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "config"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "action",
+            "objectId",
+            "view"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "get-object",
+              "type": "string"
+            },
+            "objectId": {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "objectId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "list-objects",
+              "type": "string"
+            },
+            "limit": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "repair-projection",
+              "type": "string"
+            },
+            "objectId": {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "objectId"
           ],
           "type": "object"
         }
-      },
-      "required": [
-        "action"
-      ],
-      "type": "object"
+      ]
     },
     "name": "workspace_objects",
     "outputSchema": {

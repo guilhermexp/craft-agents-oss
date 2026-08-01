@@ -1,9 +1,10 @@
 import { existsSync, mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { openSQLite, type SQLiteDatabase } from '../memory/sqlite-driver.ts';
 import { getWorkspaceObjectsPath } from '../workspaces/storage.ts';
 import { buildWorkspaceObjectPayload, storeWorkspaceObjectPayload } from './projection.ts';
-import { WORKSPACE_OBJECT_SCHEMA_V1, WORKSPACE_OBJECT_SCHEMA_VERSION } from './schema.ts';
+import { WORKSPACE_OBJECT_SCHEMA_V1, WORKSPACE_OBJECT_SCHEMA_V2, WORKSPACE_OBJECT_SCHEMA_VERSION } from './schema.ts';
 import {
   DefineWorkspaceObjectSchema,
   WorkspaceObjectEntryInputSchema,
@@ -11,6 +12,7 @@ import {
   type WorkspaceObjectEntryInput,
   type WorkspaceObjectField,
   type WorkspaceObjectPayload,
+  WorkspaceObjectPayloadSchema,
   type WorkspaceObjectValue,
   WorkspaceObjectSavedViewSchema,
   type WorkspaceObjectSavedView,
@@ -18,11 +20,13 @@ import {
 
 interface VersionRow { version: number }
 interface ObjectRevisionRow { revision: number }
-interface FieldRow { id: string; type: WorkspaceObjectField['type']; required: number; options_json: string | null; relation_object_id: string | null }
+interface FieldRow { id: string; storage_id: string; type: WorkspaceObjectField['type']; required: number; options_json: string | null; relation_object_id: string | null }
 const MAX_READ_ENTRIES = 200;
 
 export class WorkspaceObjectRepository {
   private closed = false;
+  private transactionDepth = 0;
+  private savepointSequence = 0;
 
   private constructor(private readonly db: SQLiteDatabase, readonly databasePath: string) {}
 
@@ -44,6 +48,8 @@ export class WorkspaceObjectRepository {
       }
     }
     db.runSql(WORKSPACE_OBJECT_SCHEMA_V1);
+    const currentVersion = (db.prepare('SELECT MAX(version) AS version FROM workspace_object_schema_version').get() as VersionRow | undefined)?.version ?? 0;
+    if (currentVersion < 2) db.runSql(WORKSPACE_OBJECT_SCHEMA_V2);
     return new WorkspaceObjectRepository(db, databasePath);
   }
 
@@ -61,9 +67,9 @@ export class WorkspaceObjectRepository {
         .run(parsed.id, parsed.slug, parsed.name, now, now);
       parsed.fields.forEach((field, index) => {
         this.db.prepare(`INSERT INTO workspace_object_fields
-          (id, object_id, name, type, required, options_json, relation_object_id, sort_order)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-          .run(field.id, parsed.id, field.name, field.type, field.required ? 1 : 0,
+          (id, caller_id, object_id, name, type, required, options_json, relation_object_id, sort_order)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(storageFieldId(parsed.id, field.id), field.id, parsed.id, field.name, field.type, field.required ? 1 : 0,
             field.options ? JSON.stringify(field.options) : null, field.relationObjectId ?? null, index);
       });
       this.db.prepare('INSERT INTO workspace_object_action_history(object_id, revision, action, created_at) VALUES (?, 1, ?, ?)')
@@ -100,6 +106,17 @@ export class WorkspaceObjectRepository {
     const now = Date.now();
     this.transaction(() => {
       for (const entryId of entryIds) {
+        this.db.prepare(`UPDATE workspace_object_values AS value
+          SET value_text = NULL
+          WHERE EXISTS (
+            SELECT 1 FROM workspace_object_relations AS relation
+            WHERE relation.source_entry_id = value.entry_id
+              AND relation.field_id = value.field_id
+              AND relation.target_entry_id = ?
+          ) AND EXISTS (
+            SELECT 1 FROM workspace_object_entries AS target
+            WHERE target.id = ? AND target.object_id = ?
+          )`).run(entryId, entryId, objectId);
         this.db.prepare('DELETE FROM workspace_object_entries WHERE id = ? AND object_id = ?').run(entryId, objectId);
       }
       const revision = this.bumpRevision(objectId, now);
@@ -136,8 +153,10 @@ export class WorkspaceObjectRepository {
     const projection = this.db.prepare('SELECT source_revision, payload_json FROM workspace_object_payloads WHERE object_id = ?').get(objectId) as { source_revision: number; payload_json: string } | undefined;
     if (projection?.source_revision === revision.revision) {
       try {
-        const payload = JSON.parse(projection.payload_json) as WorkspaceObjectPayload;
-        return { ...payload, entries: payload.entries.slice(0, boundedEntryLimit) };
+        const result = WorkspaceObjectPayloadSchema.safeParse(JSON.parse(projection.payload_json));
+        if (result.success && result.data.id === objectId && result.data.revision === revision.revision) {
+          return { ...result.data, entries: result.data.entries.slice(0, boundedEntryLimit) };
+        }
       } catch { /* rebuild below */ }
     }
     const rebuilt = buildWorkspaceObjectPayload(this.db, objectId);
@@ -152,12 +171,14 @@ export class WorkspaceObjectRepository {
   }
 
   setProjectionStatus(objectId: string, status: 'ready' | 'projection-error', error?: string): void {
-    const revision = this.requireRevision(objectId);
-    this.db.prepare(`INSERT INTO workspace_object_projection_state(object_id, source_revision, status, error) VALUES (?, ?, ?, ?)
-      ON CONFLICT(object_id) DO UPDATE SET source_revision=excluded.source_revision, status=excluded.status, error=excluded.error`)
-      .run(objectId, revision, status, error ?? null);
-    const payload = buildWorkspaceObjectPayload(this.db, objectId);
-    if (payload) storeWorkspaceObjectPayload(this.db, payload);
+    this.transaction(() => {
+      const revision = this.requireRevision(objectId);
+      this.db.prepare(`INSERT INTO workspace_object_projection_state(object_id, source_revision, status, error) VALUES (?, ?, ?, ?)
+        ON CONFLICT(object_id) DO UPDATE SET source_revision=excluded.source_revision, status=excluded.status, error=excluded.error`)
+        .run(objectId, revision, status, error ?? null);
+      const payload = buildWorkspaceObjectPayload(this.db, objectId);
+      if (payload) storeWorkspaceObjectPayload(this.db, payload);
+    });
   }
 
   withProjectionLock<T>(operation: () => T): T {
@@ -177,14 +198,24 @@ export class WorkspaceObjectRepository {
   }
 
   private transaction<T>(operation: () => T): T {
-    this.db.runSql('BEGIN IMMEDIATE');
+    const isOuterTransaction = this.transactionDepth === 0;
+    const savepoint = `workspace_object_${++this.savepointSequence}`;
+    this.db.runSql(isOuterTransaction ? 'BEGIN IMMEDIATE' : `SAVEPOINT ${savepoint}`);
+    this.transactionDepth += 1;
     try {
       const result = operation();
-      this.db.runSql('COMMIT');
+      this.db.runSql(isOuterTransaction ? 'COMMIT' : `RELEASE SAVEPOINT ${savepoint}`);
       return result;
     } catch (error) {
-      this.db.runSql('ROLLBACK');
+      if (isOuterTransaction) {
+        this.db.runSql('ROLLBACK');
+      } else {
+        this.db.runSql(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+        this.db.runSql(`RELEASE SAVEPOINT ${savepoint}`);
+      }
       throw error;
+    } finally {
+      this.transactionDepth -= 1;
     }
   }
 
@@ -223,15 +254,16 @@ export class WorkspaceObjectRepository {
     const boolean = field.type === 'boolean' && value !== null ? (value ? 1 : 0) : null;
     this.db.prepare(`INSERT INTO workspace_object_values(entry_id, field_id, value_text, value_number, value_boolean) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(entry_id, field_id) DO UPDATE SET value_text=excluded.value_text, value_number=excluded.value_number, value_boolean=excluded.value_boolean`)
-      .run(entryId, fieldId, text, number, boolean);
-    this.db.prepare('DELETE FROM workspace_object_relations WHERE source_entry_id=? AND field_id=?').run(entryId, fieldId);
+      .run(entryId, field.storage_id, text, number, boolean);
+    this.db.prepare('DELETE FROM workspace_object_relations WHERE source_entry_id=? AND field_id=?').run(entryId, field.storage_id);
     if (field.type === 'relation' && typeof value === 'string') {
-      this.db.prepare('INSERT INTO workspace_object_relations(source_entry_id, field_id, target_entry_id) VALUES (?, ?, ?)').run(entryId, fieldId, value);
+      this.db.prepare('INSERT INTO workspace_object_relations(source_entry_id, field_id, target_entry_id) VALUES (?, ?, ?)').run(entryId, field.storage_id, value);
     }
   }
 
   private getFieldRows(objectId: string): Map<string, FieldRow> {
-    const rows = this.db.prepare('SELECT id, type, required, options_json, relation_object_id FROM workspace_object_fields WHERE object_id = ?').all(objectId) as FieldRow[];
+    const rows = this.db.prepare(`SELECT caller_id AS id, id AS storage_id, type, required, options_json, relation_object_id
+      FROM workspace_object_fields WHERE object_id = ?`).all(objectId) as FieldRow[];
     return new Map(rows.map(row => [row.id, row]));
   }
   private parseOptions(value: string | null): string[] {
@@ -258,6 +290,10 @@ export class WorkspaceObjectRepository {
     if (!payload) throw new Error(`Unknown object: ${objectId}`);
     return payload;
   }
+}
+
+function storageFieldId(objectId: string, callerId: string): string {
+  return `field_${createHash('sha256').update(objectId).update('\0').update(callerId).digest('hex')}`;
 }
 
 function isValidIsoDate(value: string): boolean {

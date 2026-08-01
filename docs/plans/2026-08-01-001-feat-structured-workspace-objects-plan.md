@@ -249,9 +249,17 @@ sequenceDiagram
 
 **Dependencies:** U2, U3; the completed behavior in `openspec/changes/harden-right-sidebar-inline-preview/` remains the baseline and is not reimplemented.
 
-**Files:** `packages/server-core/src/sessions/SessionManager.ts`, `packages/server-core/src/handlers/session-manager-interface.ts`, `packages/server-core/src/handlers/rpc/workspace-objects.ts`, `packages/server-core/src/handlers/rpc/index.ts`, `packages/shared/src/workspace-objects/watcher.ts`, `packages/shared/src/workspace-objects/__tests__/watcher.test.ts`, `apps/electron/src/shared/types.ts`, `apps/electron/src/preload/bootstrap.ts`, `apps/electron/src/renderer/components/app-shell/AppShell.tsx`, `apps/electron/src/renderer/components/app-shell/ContentTabs.tsx`, `apps/electron/src/renderer/components/app-shell/ContentPreview.tsx`, `apps/electron/src/renderer/components/right-sidebar/SessionFilesSection.tsx`, `apps/electron/src/renderer/components/right-sidebar/__tests__/session-files-section.test.ts`, `apps/electron/src/main/handlers/__tests__/sessions-watchers.test.ts`
+**Files:** `packages/server-core/src/handlers/rpc/workspace-objects.ts`, `packages/server-core/src/handlers/rpc/index.ts`, `packages/server-core/src/workspace-objects/workspace-object-watcher.ts`, `packages/server-core/src/workspace-objects/workspace-object-watcher.test.ts`, `packages/shared/src/workspace-objects/`, `apps/electron/src/shared/types.ts`, `apps/electron/src/preload/bootstrap.ts`, `apps/electron/src/renderer/components/app-shell/AppShell.tsx`, `apps/electron/src/renderer/components/app-shell/content-tabs-state.ts`, `apps/electron/src/renderer/components/app-shell/content-resolver.ts`, `apps/electron/src/renderer/components/app-shell/content-preview-host.tsx`, `apps/electron/src/renderer/components/right-sidebar/session-files-section.tsx`, `apps/electron/src/renderer/components/right-sidebar/workspace-objects-section.tsx`, `apps/electron/src/renderer/components/right-sidebar/workspace-object-preview-panel.tsx`
 
-**Approach:** Add server-core handlers for listing, resolving, and mutating object targets and a subscription bridge for post-commit revision events. Scope one debounced watcher registry per workspace, ignore SQLite database/WAL/SHM and temporary atomic-write files, reference-count clients, and stop handles/timers at zero clients. Extend `AppShell` so the existing file tree and structured objects open the same tab strip and modular preview host. Current file loaders and unsupported external-open behavior remain intact; object payloads initially route to the existing tabular/markdown/JSON primitives.
+**Approach:** Keep canonical storage, manifests and event envelopes in shared, but
+place filesystem watching and client reference counting in server-core. Add
+handlers for listing, resolving and mutating object targets plus a subscription
+bridge. Scope one debounced watcher registry per workspace, ignore SQLite
+database/WAL/SHM/journal and temporary atomic-write files, reference-count
+clients, and stop handles/timers at zero clients. Extend `AppShell` so the
+existing file tree and structured objects open the same tab strip and modular
+preview host. Current file loaders and unsupported external-open behavior remain
+intact; object payloads initially route to existing preview primitives.
 
 **Patterns to follow:** `packages/server-core/src/handlers/rpc/sessions.ts` and session watcher tests for client-scoped subscriptions; `apps/electron/src/renderer/components/right-sidebar/session-files-watch.ts` for reconnect restoration; `SessionFilesSection.tsx` for the current file tree; `packages/ui/src/components/markdown/MarkdownDatatableBlock.tsx` for Phase A tabular rendering.
 

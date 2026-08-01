@@ -1,37 +1,55 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parse, stringify } from 'yaml';
+import { z } from 'zod';
 import { atomicWriteFileSync } from '../utils/files.ts';
 import { getWorkspaceObjectsPath } from '../workspaces/storage.ts';
-import type { WorkspaceObjectPayload } from './types.ts';
+import { WorkspaceObjectFieldTypeSchema, type WorkspaceObjectPayload } from './types.ts';
 
-export interface WorkspaceObjectManifest {
-  schemaVersion: 1;
-  id: string;
-  slug: string;
-  name: string;
-  revision: number;
-  fields: Array<{ id: string; name: string; type: string; required: boolean }>;
-}
+const WorkspaceObjectSlugSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(120);
+
+export const WorkspaceObjectManifestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  id: z.string().min(1).max(120),
+  slug: WorkspaceObjectSlugSchema,
+  name: z.string().min(1).max(160),
+  revision: z.number().int().positive(),
+  fields: z.array(z.strictObject({
+    id: z.string().min(1).max(120),
+    name: z.string().min(1).max(160),
+    type: WorkspaceObjectFieldTypeSchema,
+    required: z.boolean(),
+  })).max(200),
+});
+export type WorkspaceObjectManifest = z.infer<typeof WorkspaceObjectManifestSchema>;
 
 export function getWorkspaceObjectManifestPath(workspaceRootPath: string, slug: string): string {
-  return join(getWorkspaceObjectsPath(workspaceRootPath), slug, 'object.yaml');
+  const result = WorkspaceObjectSlugSchema.safeParse(slug);
+  if (!result.success) throw new Error(`Invalid workspace object slug: ${slug}`);
+  return join(getWorkspaceObjectsPath(workspaceRootPath), result.data, 'object.yaml');
 }
 
 export function readWorkspaceObjectManifest(path: string): WorkspaceObjectManifest | null {
   if (!existsSync(path)) return null;
-  const parsed: unknown = parse(readFileSync(path, 'utf8'));
-  if (!parsed || typeof parsed !== 'object') throw new Error(`Invalid workspace object manifest: ${path}`);
-  const value = parsed as Partial<WorkspaceObjectManifest>;
-  if (value.schemaVersion !== 1 || typeof value.id !== 'string' || typeof value.slug !== 'string' || typeof value.revision !== 'number') {
+  let parsed: unknown;
+  try {
+    parsed = parse(readFileSync(path, 'utf8'));
+  } catch {
     throw new Error(`Invalid workspace object manifest: ${path}`);
   }
-  return value as WorkspaceObjectManifest;
+  const result = WorkspaceObjectManifestSchema.safeParse(parsed);
+  if (!result.success) throw new Error(`Invalid workspace object manifest: ${path}`);
+  return result.data;
 }
 
 export function writeWorkspaceObjectManifest(workspaceRootPath: string, payload: WorkspaceObjectPayload): string {
   const path = getWorkspaceObjectManifestPath(workspaceRootPath, payload.slug);
-  const existing = readWorkspaceObjectManifest(path);
+  let existing: WorkspaceObjectManifest | null = null;
+  try {
+    existing = readWorkspaceObjectManifest(path);
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.startsWith('Invalid workspace object manifest:')) throw error;
+  }
   if (existing && existing.id !== payload.id) {
     throw new Error(`Workspace object manifest identity conflict at ${path}`);
   }

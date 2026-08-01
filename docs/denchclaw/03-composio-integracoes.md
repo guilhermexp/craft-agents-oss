@@ -282,15 +282,18 @@ O padrão popup + `window.opener.postMessage` existe por ser web. Em Electron:
 const authWin = new BrowserWindow({ width: 500, height: 700, parent: mainWin, modal: true });
 authWin.loadURL(redirectUrl);
 authWin.webContents.on('will-redirect', (_e, url) => {
-  if (url.startsWith(CALLBACK_PREFIX)) {
-    const status = new URL(url).searchParams.get('status');
-    authWin.close();
-    mainWin.webContents.send('oauth:complete', { toolkit, status });
-  }
+  const candidate = new URL(url);
+  const trusted = new URL(CALLBACK_URL);
+  if (candidate.origin !== trusted.origin || candidate.pathname !== trusted.pathname) return;
+  if (candidate.searchParams.get('state') !== expectedState) return;
+  const status = candidate.searchParams.get('status');
+  authWin.close();
+  mainWin.webContents.send('oauth:complete', { toolkit, status });
 });
 ```
 
-Mais confiável: não depende de bloqueador de popup nem de same-origin.
+Mais confiável: não depende de bloqueador de popup. O callback só é aceito com
+origin, path e state exatos; prefix matching é insuficiente.
 
 ### 8.5 Checklist de implementação
 

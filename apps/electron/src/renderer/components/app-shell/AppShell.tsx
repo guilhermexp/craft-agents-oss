@@ -74,7 +74,7 @@ import { SessionList, type ChatGroupingMode } from "./SessionList"
 import { MainContentPanel } from "./MainContentPanel"
 import { PanelStackContainer } from "./PanelStackContainer"
 import { SessionInfoPopoverContent } from "./SessionInfoPopover"
-import { ContentPreviewHost } from './ContentPreviewHost'
+import { ContentPreviewHost } from './content-preview-host'
 import { getRightSidebarFilePaneLayout } from "../right-sidebar/SessionFilesSection"
 import {
   getRightSidebarEffectiveWidth,
@@ -86,6 +86,7 @@ import {
   RIGHT_SIDEBAR_SPLIT_DEFAULT_WIDTH,
 } from "./right-sidebar-sizing"
 import { contentTabsReducer, restoreContentTabs, type ContentTabsState } from "./content-tabs-state"
+import { bindWorkspaceObjectSubscription } from './workspace-object-reconnect'
 import { useChatMatchWiring } from "@/hooks/useChatMatchWiring"
 import { LeftSidebar } from "./LeftSidebar"
 import { useSessionSelection } from "@/hooks/useSession"
@@ -689,18 +690,20 @@ function AppShellContent({
 
   React.useEffect(() => {
     restoringRightSidebarTabsRef.current = true
-    if (!activeWorkspaceId || !rightSidebarSessionId) {
+    if (!activeWorkspaceId) {
       dispatchRightSidebarContentTabs({ type: 'restore', state: { tabs: [], activeId: null } })
       return
     }
     const objectState = storage.get<ContentTabsState>(storage.KEYS.workspaceObjectTabs, { tabs: [], activeId: null }, `${activeWorkspaceId}:objects`)
-    const fileState = storage.get<ContentTabsState>(storage.KEYS.workspaceObjectTabs, { tabs: [], activeId: null }, `${activeWorkspaceId}:${rightSidebarSessionId}:files`)
+    const fileState = rightSidebarSessionId
+      ? storage.get<ContentTabsState>(storage.KEYS.workspaceObjectTabs, { tabs: [], activeId: null }, `${activeWorkspaceId}:${rightSidebarSessionId}:files`)
+      : { tabs: [], activeId: null }
     const merged = { tabs: [...objectState.tabs, ...fileState.tabs], activeId: fileState.activeId ?? objectState.activeId }
     dispatchRightSidebarContentTabs({ type: 'restore', state: restoreContentTabs(merged, activeWorkspaceId, rightSidebarSessionId) })
   }, [activeWorkspaceId, rightSidebarSessionId])
 
   React.useEffect(() => {
-    if (!activeWorkspaceId || !rightSidebarSessionId) return
+    if (!activeWorkspaceId) return
     if (restoringRightSidebarTabsRef.current) {
       restoringRightSidebarTabsRef.current = false
       return
@@ -708,19 +711,14 @@ function AppShellContent({
     const objectTabs = rightSidebarContentTabs.tabs.filter(tab => tab.target.kind === 'object')
     const fileTabs = rightSidebarContentTabs.tabs.filter(tab => tab.target.kind === 'file')
     storage.set(storage.KEYS.workspaceObjectTabs, { tabs: objectTabs, activeId: objectTabs.some(tab => tab.id === rightSidebarContentTabs.activeId) ? rightSidebarContentTabs.activeId : null }, `${activeWorkspaceId}:objects`)
-    storage.set(storage.KEYS.workspaceObjectTabs, { tabs: fileTabs, activeId: fileTabs.some(tab => tab.id === rightSidebarContentTabs.activeId) ? rightSidebarContentTabs.activeId : null }, `${activeWorkspaceId}:${rightSidebarSessionId}:files`)
+    if (rightSidebarSessionId) {
+      storage.set(storage.KEYS.workspaceObjectTabs, { tabs: fileTabs, activeId: fileTabs.some(tab => tab.id === rightSidebarContentTabs.activeId) ? rightSidebarContentTabs.activeId : null }, `${activeWorkspaceId}:${rightSidebarSessionId}:files`)
+    }
   }, [activeWorkspaceId, rightSidebarSessionId, rightSidebarContentTabs])
 
   React.useEffect(() => {
     if (!activeWorkspaceId) return
-    void window.electronAPI.subscribeWorkspaceObjects(activeWorkspaceId)
-    const unsubscribeReconnect = window.electronAPI.onReconnected(() => {
-      void window.electronAPI.subscribeWorkspaceObjects(activeWorkspaceId)
-    })
-    return () => {
-      unsubscribeReconnect()
-      void window.electronAPI.unsubscribeWorkspaceObjects(activeWorkspaceId)
-    }
+    return bindWorkspaceObjectSubscription(window.electronAPI, activeWorkspaceId)
   }, [activeWorkspaceId])
 
   // Navigate the focused panel to a session.
@@ -3732,7 +3730,7 @@ function AppShellContent({
                                   type="button"
                                   aria-label={t('common.close')}
                                   onClick={() => dispatchRightSidebarContentTabs({ type: 'close', id: tab.id })}
-                                  className="rounded-sm opacity-0 group-hover:opacity-100"
+                                  className="rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                                 >
                                   <X className="size-3" />
                                 </button>

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getWorkspaceObjectEventProjectionPath, readWorkspaceObjectEventProjection } from '../event-projection.ts';
 import { WorkspaceObjectService } from '../service.ts';
 
 const roots: string[] = [];
@@ -40,6 +41,33 @@ describe('WorkspaceObjectService', () => {
     expect(service.execute({ action: 'get-object', objectId: 'object_tasks' })).toMatchObject({ payload: { id: 'object_tasks', revision: 1 } });
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ projectionStatus: 'projection-error' });
+    const durableEventPath = getWorkspaceObjectEventProjectionPath(root, 'object_tasks');
+    expect(readWorkspaceObjectEventProjection(durableEventPath)).toMatchObject({
+      workspaceId: 'ws_two', objectId: 'object_tasks', revision: 1, projectionStatus: 'projection-error',
+    });
+    service.close();
+  });
+
+  test('reports projection-error without ambiguous rollback when durable event projection fails after commit', () => {
+    const root = makeRoot();
+    const events: unknown[] = [];
+    const service = WorkspaceObjectService.open({
+      workspaceId: 'ws_event_failure',
+      workspaceRootPath: root,
+      writeEventProjection: () => { throw new Error('event sidecar unavailable'); },
+    });
+    service.events.subscribe(event => events.push(event));
+
+    expect(service.execute({ action: 'define-object', object: {
+      id: 'object_committed', slug: 'committed', name: 'Committed', fields: [],
+    } })).toEqual({ objectId: 'object_committed', revision: 1, projectionStatus: 'projection-error' });
+    expect(service.execute({ action: 'get-object', objectId: 'object_committed' })).toMatchObject({
+      payload: { id: 'object_committed', revision: 1, projectionStatus: 'projection-error' },
+    });
+    expect(events).toEqual([{
+      workspaceId: 'ws_event_failure', objectId: 'object_committed', revision: 1,
+      changeKind: 'defined', projectionStatus: 'projection-error',
+    }]);
     service.close();
   });
 

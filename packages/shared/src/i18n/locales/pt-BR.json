@@ -238,6 +238,8 @@
   "chat.sessionFilesLoading": "Carregando...",
   "chat.sessionFilesTab": "Sessão",
   "chat.workspaceObjectPreviewLoading": "Carregando objeto...",
+  "chat.workspaceObjectRefreshFailed": "Falha ao atualizar o objeto",
+  "chat.workspaceObjectRetry": "Tentar atualizar novamente",
   "chat.workspaceObjectProjectionRepair": "A projeção do manifesto precisa ser reparada.",
   "chat.workspaceObjectsEmpty": "Objetos estruturados criados neste workspace aparecerão aqui.",
   "chat.workspaceObjectsLoading": "Carregando objetos...",

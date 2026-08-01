@@ -13,7 +13,7 @@ import { getLanguageFromPath } from '@/lib/file-utils'
 import { cn } from '@/lib/utils'
 import { getFileManagerName } from '@/lib/platform'
 import { SessionFilesSection, WorkspaceFilesSection } from '../right-sidebar/SessionFilesSection'
-import { WorkspaceObjectsSection } from '../right-sidebar/WorkspaceObjectsSection'
+import { WorkspaceObjectsSection } from '../right-sidebar/workspace-objects-section'
 import { getInlinePreviewLoadState } from './right-sidebar-preview-state'
 
 interface SessionInfoPopoverProps {

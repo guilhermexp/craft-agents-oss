@@ -114,7 +114,7 @@ Invariantes garantidas por construção:
 
 ```ts
 function kindIsDerived(kind) {
-  return ["directory","browse","cron-dashboard","cron-job","skills",
+  return ["directory","browse","cron-dashboard","cron-job","skill-store",
           "integrations","cloud","crm-inbox","crm-calendar",
           "crm-person","crm-company"].includes(kind);
 }
@@ -153,7 +153,7 @@ graph TD
 ```
 
 Paths virtuais com prefixo `~` são roteados antes, por `inferContentTabKindFromPath`:
-`~cron` → cron-dashboard · `~cron/<id>` → cron-job · `~skills` → skills · `~integrations` · `~cloud` · `~crm/inbox` · `~crm/calendar`.
+`~cron` → cron-dashboard · `~cron/<id>` → cron-job · `~skills` → skill-store · `~integrations` · `~cloud` · `~crm/inbox` · `~crm/calendar`.
 
 ### Retries defensivos
 

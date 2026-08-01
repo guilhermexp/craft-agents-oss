@@ -52,7 +52,12 @@ export function contentTabsReducer(state: ContentTabsState, action: ContentTabsA
     const target = normalizeTarget(action.target);
     const id = contentTabId(target);
     const existing = state.tabs.find(tab => tab.id === id);
-    if (existing) return { tabs: state.tabs, activeId: id };
+    if (existing) {
+      const tabs = action.mode === 'permanent' && existing.mode !== 'permanent'
+        ? state.tabs.map(tab => tab.id === id ? { ...tab, mode: 'permanent' as const } : tab)
+        : state.tabs;
+      return { tabs, activeId: id };
+    }
     const retained = action.mode === 'preview'
       ? state.tabs.filter(tab => tab.mode !== 'preview' || tab.pinned || previewScope(tab.target) !== previewScope(target))
       : state.tabs;
@@ -66,12 +71,37 @@ export function contentTabsReducer(state: ContentTabsState, action: ContentTabsA
   return repairActive(tabs, state.activeId);
 }
 
-export function restoreContentTabs(value: ContentTabsState, workspaceId: string, sessionId: string): ContentTabsState {
-  const tabs: ContentTab[] = [];
-  for (const tab of value.tabs) {
-    if (tab.target.workspaceId !== workspaceId) continue;
-    if (tab.target.kind === 'file' && tab.target.sessionId !== sessionId) continue;
-    tabs.push({ ...tab, target: normalizeTarget(tab.target), id: contentTabId(tab.target) });
+function parsePersistedTab(value: unknown): ContentTab | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.mode !== 'preview' && candidate.mode !== 'permanent') return null;
+  if (typeof candidate.pinned !== 'boolean' || !candidate.target || typeof candidate.target !== 'object') return null;
+  const target = candidate.target as Record<string, unknown>;
+  if (typeof target.workspaceId !== 'string') return null;
+  let parsedTarget: ContentTarget;
+  if (target.kind === 'file') {
+    if (typeof target.sessionId !== 'string' || typeof target.path !== 'string') return null;
+    parsedTarget = { kind: 'file', workspaceId: target.workspaceId, sessionId: target.sessionId, path: target.path };
+  } else if (target.kind === 'object') {
+    if (typeof target.objectId !== 'string' || (target.viewId !== undefined && typeof target.viewId !== 'string')) return null;
+    parsedTarget = { kind: 'object', workspaceId: target.workspaceId, objectId: target.objectId, ...(target.viewId ? { viewId: target.viewId } : {}) };
+  } else {
+    return null;
   }
-  return repairActive(tabs, value.activeId);
+  return { id: contentTabId(parsedTarget), target: normalizeTarget(parsedTarget), mode: candidate.mode, pinned: candidate.pinned };
+}
+
+export function restoreContentTabs(value: unknown, workspaceId: string, sessionId: string | null): ContentTabsState {
+  if (!value || typeof value !== 'object') return { tabs: [], activeId: null };
+  const persisted = value as { tabs?: unknown; activeId?: unknown };
+  if (!Array.isArray(persisted.tabs)) return { tabs: [], activeId: null };
+  const tabs: ContentTab[] = [];
+  for (const valueTab of persisted.tabs) {
+    const tab = parsePersistedTab(valueTab);
+    if (!tab) continue;
+    if (tab.target.workspaceId !== workspaceId) continue;
+    if (tab.target.kind === 'file' && (!sessionId || tab.target.sessionId !== sessionId)) continue;
+    tabs.push(tab);
+  }
+  return repairActive(tabs, typeof persisted.activeId === 'string' ? persisted.activeId : null);
 }

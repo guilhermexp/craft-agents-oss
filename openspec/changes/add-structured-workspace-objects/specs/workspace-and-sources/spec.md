@@ -7,6 +7,10 @@ para discovery e delegated connector metadata, SHALL persistir conexões como
 Craft sources e MUST manter credentials no
 credential storage existente. Catalog records e renderer payloads MUST NOT
 conter tokens ou provider secrets.
+Redaction MUST cobrir toda boundary pública: object payloads, manifests, event
+envelopes, logs e health evidence. Tokens, credentials, provider secrets e
+authorization headers MUST permanecer exclusivamente no credential storage
+existente.
 
 #### Scenario: Toolkit é conectado
 

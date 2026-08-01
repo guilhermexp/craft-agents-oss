@@ -2,9 +2,10 @@ import { contentTabId, type ContentTarget } from './content-tabs-state.ts';
 
 export type ContentLoader<T> = (signal: AbortSignal) => Promise<T>;
 
-interface InFlight {
+interface InFlight<T> {
   controller: AbortController;
   generation: number;
+  promise: Promise<T | undefined>;
 }
 
 export interface ContentRefresh<T> {
@@ -14,8 +15,9 @@ export interface ContentRefresh<T> {
 
 export class ContentResolver<T> {
   private readonly payloads = new Map<string, T>();
-  private readonly inFlight = new Map<string, InFlight>();
+  private readonly inFlight = new Map<string, InFlight<T>>();
   private readonly generations = new Map<string, number>();
+  private readonly errors = new Map<string, Error>();
 
   constructor(private readonly capacity = 20) {
     if (capacity < 1) throw new Error('ContentResolver capacity must be positive');
@@ -25,6 +27,8 @@ export class ContentResolver<T> {
 
   peek(target: ContentTarget): T | undefined { return this.payloads.get(contentTabId(target)); }
 
+  getError(target: ContentTarget): Error | undefined { return this.errors.get(contentTabId(target)); }
+
   async load(target: ContentTarget, loader: ContentLoader<T>): Promise<T> {
     const key = contentTabId(target);
     const existing = this.payloads.get(key);
@@ -32,7 +36,7 @@ export class ContentResolver<T> {
       this.touch(key, existing);
       return existing;
     }
-    const value = await this.start(key, loader);
+    const value = await (this.inFlight.get(key)?.promise ?? this.start(key, loader));
     if (value === undefined) throw new Error(`Content load superseded for ${key}`);
     return value;
   }
@@ -49,29 +53,42 @@ export class ContentResolver<T> {
     this.inFlight.get(key)?.controller.abort();
     this.inFlight.delete(key);
     this.payloads.delete(key);
+    this.errors.delete(key);
+    this.generations.delete(key);
   }
 
   dispose(): void {
     for (const request of this.inFlight.values()) request.controller.abort();
     this.inFlight.clear();
     this.payloads.clear();
+    this.errors.clear();
+    this.generations.clear();
   }
 
-  private async start(key: string, loader: ContentLoader<T>): Promise<T | undefined> {
+  private start(key: string, loader: ContentLoader<T>): Promise<T | undefined> {
     this.inFlight.get(key)?.controller.abort();
     const generation = (this.generations.get(key) ?? 0) + 1;
     this.generations.set(key, generation);
     const controller = new AbortController();
-    this.inFlight.set(key, { controller, generation });
-    try {
-      const value = await loader(controller.signal);
-      if (controller.signal.aborted || this.generations.get(key) !== generation) return undefined;
-      this.touch(key, value);
-      this.evict();
-      return value;
-    } finally {
-      if (this.inFlight.get(key)?.generation === generation) this.inFlight.delete(key);
-    }
+    const promise = (async () => {
+      try {
+        const value = await loader(controller.signal);
+        if (controller.signal.aborted || this.generations.get(key) !== generation) return undefined;
+        this.errors.delete(key);
+        this.touch(key, value);
+        this.evict();
+        return value;
+      } catch (error) {
+        if (!controller.signal.aborted && this.generations.get(key) === generation) {
+          this.errors.set(key, error instanceof Error ? error : new Error(String(error)));
+        }
+        throw error;
+      } finally {
+        if (this.inFlight.get(key)?.generation === generation) this.inFlight.delete(key);
+      }
+    })();
+    this.inFlight.set(key, { controller, generation, promise });
+    return promise;
   }
 
   private touch(key: string, value: T): void {
@@ -84,6 +101,8 @@ export class ContentResolver<T> {
       const oldest = this.payloads.keys().next().value as string | undefined;
       if (!oldest) break;
       this.payloads.delete(oldest);
+      this.errors.delete(oldest);
+      this.generations.delete(oldest);
     }
   }
 }

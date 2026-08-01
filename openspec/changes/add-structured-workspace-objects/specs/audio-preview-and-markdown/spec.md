@@ -6,6 +6,9 @@ A sidebar direita SHALL abrir file e object targets em tabs com IDs
 determinísticos. Cada scope SHALL ter no máximo uma tab preview substituível;
 tabs permanentes ou pinned MUST sobreviver a novos previews. Restore SHALL ser
 workspace-scoped e MUST reparar active selection inválida.
+Identidade de file target MUST incluir `workspaceId`, `sessionId` e path
+normalizado. Identidade de object target MUST incluir `workspaceId`, `objectId`
+e `viewId` quando presente.
 
 #### Scenario: Preview substitui somente preview
 
@@ -50,7 +53,13 @@ generation guards em load inicial e refresh.
 
 - **GIVEN** um payload previamente carregado
 - **WHEN** o refresh falha
-- **THEN** o payload anterior permanece visível com erro acionável
+- **THEN** o payload anterior permanece visível com erro e ação explícita de retry
+- **Test:** `integration`
+
+#### Scenario: Transporte reconecta
+
+- **WHEN** a subscription de workspace é restabelecida
+- **THEN** lista e objeto ativo recebem exatamente uma invalidação de reload sem descartar payload stale
 - **Test:** `integration`
 
 ### Requirement: Content renderer dispatch remains modular

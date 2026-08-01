@@ -115,9 +115,15 @@ sequenceDiagram
 ### Invariantes que valem copiar textualmente
 
 1. **Idempotência total.** Rodar de novo no mesmo workspace é no-op. Unicidade em: `Gmail Message ID` + `Gmail Thread ID` + e-mail lowercased + root domain.
-2. **Crash perde ≤100 mensagens.** O `pageToken` é gravado em `sync-cursors.json` **antes** de processar a página. Nunca mais que uma página de trabalho é perdida.
+2. **Crash não pula a página em progresso.** `gmail.backfillPageToken` identifica
+   a página atual, é gravado **antes** de processá-la e só avança depois do lote.
+   Um restart repete a mesma página; upserts idempotentes impedem duplicação.
 3. **"Self" nunca vira contato.** A caixa autenticada + aliases manuais são excluídos do upsert de people. Sem isso o usuário aparece como contato dele mesmo.
-4. **Retomável.** `sync-cursors.json#gmail.backfillPageToken`.
+4. **Retomável.** `sync-cursors.json#gmail.backfillPageToken` é o token da página
+   em progresso a repetir, não o token da próxima página.
+5. **Teste obrigatório.** Interromper durante o processamento, reiniciar com o
+   mesmo token e provar que a página é reexecutada sem mensagens puladas ou
+   duplicadas.
 
 ### Incremental
 

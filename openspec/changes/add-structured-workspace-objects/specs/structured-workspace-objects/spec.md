@@ -46,7 +46,8 @@ correção ou visibilidade.
 
 SQLite SHALL ser a única autoridade de identidade. O manifest em
 `objects/<slug>/object.yaml` SHALL carregar stable ID e revision, SHALL ser
-escrito atomicamente e MUST ser reparado quando ausente. Divergência de stable
+escrito atomicamente, MUST ser integralmente validado por schema estrito e MUST
+ser reparado quando ausente. Divergência de stable
 ID MUST manter o objeto canônico visível e produzir conflito acionável.
 
 #### Scenario: Manifest deletado é reparado
@@ -68,7 +69,12 @@ ID MUST manter o objeto canônico visível e produzir conflito acionável.
 O service SHALL commit canonical rows e read projection antes de projetar o
 manifest. Depois do commit ele SHALL publicar exatamente um evento revisionado
 com status `ready` ou `projection-error`; ambos MUST permitir reload do objeto
-canônico e `projection-error` MUST expor repair state.
+canônico e `projection-error` MUST expor repair state. O envelope MUST possuir
+uma projeção durável redacted observável por outros processos; a bridge MUST
+substituir aliases do produtor pelo workspace ID da subscription configurada.
+Fast path e watcher MAY entregar o mesmo envelope físico, mas o renderer MUST
+deduplicar pela chave workspace/object/revision/status. Um repair `ready` na
+mesma revisão após `projection-error` MUST ser preservado.
 
 #### Scenario: Commit e manifest concluem
 
@@ -81,6 +87,20 @@ canônico e `projection-error` MUST expor repair state.
 - **GIVEN** uma revisão canônica já commitada
 - **WHEN** a escrita ou validação do manifest falha
 - **THEN** o service publica `projection-error`, mantém o objeto visível e permite repair idempotente
+- **Test:** `integration`
+
+#### Scenario: Agent/MCP usa alias de diretório como workspace
+
+- **GIVEN** um subprocesso grava evento com workspace ID derivado do basename
+- **WHEN** o watcher entrega o envelope ao cliente inscrito pelo ID configurado
+- **THEN** a bridge reemite object/revision/status no scope configurado sem expor payload ou secret
+- **Test:** `integration`
+
+#### Scenario: Projeção durável do evento falha após commit
+
+- **GIVEN** uma revisão canônica já commitada
+- **WHEN** a escrita do envelope cross-process falha
+- **THEN** a mutation retorna a revisão com `projection-error`, mantém o objeto visível e usa o evento in-process como único fallback, sem alegar rollback ou segunda entrega durável
 - **Test:** `integration`
 
 ### Requirement: Object events and watchers are workspace-scoped

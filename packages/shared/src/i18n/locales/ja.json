@@ -238,6 +238,8 @@
   "chat.sessionFilesLoading": "読み込み中...",
   "chat.sessionFilesTab": "セッション",
   "chat.workspaceObjectPreviewLoading": "オブジェクトを読み込み中...",
+  "chat.workspaceObjectRefreshFailed": "オブジェクトの更新に失敗しました",
+  "chat.workspaceObjectRetry": "更新を再試行",
   "chat.workspaceObjectProjectionRepair": "マニフェストのプロジェクションを修復する必要があります。",
   "chat.workspaceObjectsEmpty": "このワークスペースの構造化オブジェクトがここに表示されます。",
   "chat.workspaceObjectsLoading": "オブジェクトを読み込み中...",

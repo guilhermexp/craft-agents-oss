@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { openSQLite } from '../../memory/sqlite-driver.ts';
 import { WorkspaceObjectRepository } from '../storage.ts';
 
 const roots: string[] = [];
@@ -112,6 +113,101 @@ describe('WorkspaceObjectRepository', () => {
     });
     expect(() => repository.upsertEntries('object_dates', [{ id: 'bad_date', values: { field_date: '2026-99-99' } }])).toThrow('valid YYYY-MM-DD');
     expect(() => repository.upsertEntries('object_dates', [{ id: 'bad_datetime', values: { field_datetime: 'August 1, 2026' } }])).toThrow('ISO datetime');
+    repository.close();
+  });
+
+  test('allows the same caller-visible field id in different objects without mixing values', () => {
+    const repository = WorkspaceObjectRepository.open(makeRoot());
+    for (const [id, slug] of [['object_people', 'people'], ['object_companies', 'companies']] as const) {
+      repository.defineObject({ id, slug, name: id, fields: [{ id: 'field_name', name: 'Name', type: 'text' }] });
+    }
+    repository.upsertEntries('object_people', [{ id: 'entry_person', values: { field_name: 'Ada' } }]);
+    repository.upsertEntries('object_companies', [{ id: 'entry_company', values: { field_name: 'Analytical Engines' } }]);
+
+    expect(repository.getObject('object_people')).toMatchObject({
+      fields: [{ id: 'field_name' }], entries: [{ values: { field_name: 'Ada' } }],
+    });
+    expect(repository.getObject('object_companies')).toMatchObject({
+      fields: [{ id: 'field_name' }], entries: [{ values: { field_name: 'Analytical Engines' } }],
+    });
+    repository.close();
+  });
+
+  test('clears relation values that point to a deleted entry', () => {
+    const repository = WorkspaceObjectRepository.open(makeRoot());
+    repository.defineObject({ id: 'object_companies', slug: 'companies', name: 'Companies', fields: [] });
+    repository.upsertEntries('object_companies', [{ id: 'entry_acme', values: {} }]);
+    repository.defineObject({
+      id: 'object_people', slug: 'people', name: 'People',
+      fields: [{ id: 'field_company', name: 'Company', type: 'relation', relationObjectId: 'object_companies' }],
+    });
+    repository.upsertEntries('object_people', [{ id: 'entry_ada', values: { field_company: 'entry_acme' } }]);
+
+    repository.deleteEntries('object_companies', ['entry_acme']);
+    repository.deleteProjectionForTest('object_people');
+    expect(repository.getObject('object_people')).toMatchObject({
+      entries: [{ id: 'entry_ada', values: { field_company: null } }],
+    });
+    repository.close();
+  });
+
+  test('does not clear relations when the requested entry belongs to another object', () => {
+    const repository = WorkspaceObjectRepository.open(makeRoot());
+    repository.defineObject({ id: 'object_companies', slug: 'companies', name: 'Companies', fields: [] });
+    repository.upsertEntries('object_companies', [{ id: 'entry_acme', values: {} }]);
+    repository.defineObject({
+      id: 'object_people', slug: 'people', name: 'People',
+      fields: [{ id: 'field_company', name: 'Company', type: 'relation', relationObjectId: 'object_companies' }],
+    });
+    repository.upsertEntries('object_people', [{ id: 'entry_ada', values: { field_company: 'entry_acme' } }]);
+
+    repository.deleteEntries('object_people', ['entry_acme']);
+    repository.deleteProjectionForTest('object_people');
+    expect(repository.getObject('object_people')?.entries[0]?.values.field_company).toBe('entry_acme');
+    repository.close();
+  });
+
+  test('skips corrupt saved-view JSON without hiding the canonical object', () => {
+    const root = makeRoot();
+    const repository = WorkspaceObjectRepository.open(root);
+    repository.defineObject({ id: 'object_tasks', slug: 'tasks', name: 'Tasks', fields: [] });
+    repository.upsertSavedView('object_tasks', { id: 'view_bad', name: 'Bad', config: { search: 'ok' } });
+    repository.close();
+
+    const db = openSQLite(join(root, 'objects', 'objects.sqlite'));
+    db.prepare('UPDATE workspace_object_saved_views SET config_json = ? WHERE id = ?').run('{bad json', 'view_bad');
+    db.prepare('DELETE FROM workspace_object_payloads WHERE object_id = ?').run('object_tasks');
+    db.close();
+
+    const reopened = WorkspaceObjectRepository.open(root);
+    expect(reopened.getObject('object_tasks')).toMatchObject({ id: 'object_tasks', savedViews: [] });
+    reopened.close();
+  });
+
+  test('supports nested projection transactions with savepoints', () => {
+    const repository = WorkspaceObjectRepository.open(makeRoot());
+    expect(() => repository.withProjectionLock(() => {
+      repository.defineObject({ id: 'object_notes', slug: 'notes', name: 'Notes', fields: [] });
+      repository.setProjectionStatus('object_notes', 'projection-error', 'nested');
+    })).not.toThrow();
+    expect(repository.getObject('object_notes')?.projectionStatus).toBe('projection-error');
+    repository.close();
+  });
+
+  test('rolls back projection status when payload persistence fails', () => {
+    const root = makeRoot();
+    const repository = WorkspaceObjectRepository.open(root);
+    repository.defineObject({ id: 'object_atomic', slug: 'atomic', name: 'Atomic', fields: [] });
+    const db = openSQLite(join(root, 'objects', 'objects.sqlite'));
+    db.runSql(`CREATE TRIGGER fail_payload_update BEFORE UPDATE ON workspace_object_payloads
+      BEGIN SELECT RAISE(ABORT, 'payload write failed'); END;`);
+    db.close();
+
+    expect(() => repository.setProjectionStatus('object_atomic', 'projection-error', 'should rollback')).toThrow('payload write failed');
+    const verificationDb = openSQLite(join(root, 'objects', 'objects.sqlite'));
+    expect(verificationDb.prepare('SELECT status FROM workspace_object_projection_state WHERE object_id = ?')
+      .get('object_atomic')).toEqual({ status: 'ready' });
+    verificationDb.close();
     repository.close();
   });
 });

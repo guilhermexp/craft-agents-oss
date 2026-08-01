@@ -4,8 +4,12 @@
 
 O frontier versionado SHALL expor uma tool genérica com actions validadas para
 schema, entries, saved views, query e projection repair. A tool MUST usar o
-service compartilhado, MUST limitar payloads e MUST NOT aceitar SQL cru ou
-verbs específicos de renderer.
+service compartilhado, MUST limitar strings de value a 64.000 caracteres,
+MUST ser registrada por `defineTool(...)` com `apiVersion: v1` e schemas Zod
+explícitos de input/output, e MUST NOT aceitar SQL cru ou verbs específicos de
+renderer. Cada mutation aceita no máximo 200 entries/IDs; list aceita no máximo
+200 objects; cada object read retorna no máximo 200 entries; strings de value e
+de output permanecem limitadas a 64.000 caracteres.
 
 #### Scenario: Agente cria CRM sem tool de UI
 
@@ -48,6 +52,10 @@ objetos MUST NOT receber instruções que afirmem capability ausente.
 Uma source SHALL ser considerada pronta para agentes somente após source test e
 probe em sessão compatível confirmarem as tools esperadas. O probe MUST NOT
 retornar credentials, tokens ou headers secretos.
+O contrato da source MUST declarar `expectedTools` como pares
+`{ name, apiVersion }`. Sucesso do probe é um envelope redacted
+`{ ready: true, observedTools }` que contém todos os pares esperados com versões
+compatíveis; ausência ou versão incompatível mantém a source unhealthy.
 
 #### Scenario: OAuth funciona mas tool probe falha
 

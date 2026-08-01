@@ -54,9 +54,29 @@
 - [x] 6.2 DOX pass atualiza a cadeia de documentação afetada e o OpenSpec volta a
       validar em strict.
 - [ ] 6.3 `vibe-security` e Coderabbit não reportam blocker no delta da fase.
-- [ ] 6.4 Smoke real no Electron comprova agente → create/update object → evento →
+- [x] 6.4 Smoke real no Electron comprova agente → create/update object → evento →
       sidebar, tabs, SWR, workspace switch e watcher teardown.
 - [ ] 6.5 `openspec-phase-auditor` retorna GO antes de Phase B.
+
+Evidência parcial de 6.3 (2026-08-01): `vibe-security` não encontrou blocker
+no delta e o Gitleaks ficou limpo tanto no commit da fase quanto no staged
+follow-up. A segunda rodada do Coderabbit reportou cinco achados, todos
+corrigidos com regressões; a terceira rodada foi bloqueada pelo rate limit do
+serviço antes de revisar. O gate permanece aberto até a confirmação automática.
+
+Evidência de 6.4 (2026-08-01): o session MCP empacotado executou
+`workspace_objects` e retornou revisões 3 e 4 com status `ready`; a janela
+Electron isolada atualizou `People` de `Lead` para `Active` sem reload. Depois
+da troca para outro workspace, um listener de diagnóstico recebeu zero eventos
+do workspace anterior; ao voltar, a tab escopada restaurou a revisão 4. Um
+fault injection de leitura manteve o payload anterior visível, mostrou retry e
+recuperou após o storage voltar a ficar disponível.
+
+Reteste final de 6.4 (2026-08-01): após o build definitivo, o MCP empacotado
+migrou o fixture para schema SQLite v2 e concluiu delete/update até a revisão 7
+com status `ready`; a janela Electron recebeu o evento sem reload e exibiu uma
+única entrada `Ana / Active`. Os processos de teste encerraram com teardown dos
+watchers e recursos do workspace.
 
 ## 7. Phase B — U5/U6: views editáveis
 

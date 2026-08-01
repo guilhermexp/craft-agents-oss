@@ -238,6 +238,8 @@
   "chat.sessionFilesLoading": "Betöltés...",
   "chat.sessionFilesTab": "Munkamenet",
   "chat.workspaceObjectPreviewLoading": "Objektum betöltése...",
+  "chat.workspaceObjectRefreshFailed": "Az objektum frissítése sikertelen",
+  "chat.workspaceObjectRetry": "Frissítés újrapróbálása",
   "chat.workspaceObjectProjectionRepair": "A jegyzék vetületét javítani kell.",
   "chat.workspaceObjectsEmpty": "A munkaterület strukturált objektumai itt jelennek meg.",
   "chat.workspaceObjectsLoading": "Objektumok betöltése...",

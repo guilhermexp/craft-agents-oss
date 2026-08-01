@@ -238,6 +238,8 @@
   "chat.sessionFilesLoading": "加载中...",
   "chat.sessionFilesTab": "会话",
   "chat.workspaceObjectPreviewLoading": "正在加载对象...",
+  "chat.workspaceObjectRefreshFailed": "对象刷新失败",
+  "chat.workspaceObjectRetry": "重试刷新",
   "chat.workspaceObjectProjectionRepair": "清单投影需要修复。",
   "chat.workspaceObjectsEmpty": "此工作区中的结构化对象将显示在这里。",
   "chat.workspaceObjectsLoading": "正在加载对象...",

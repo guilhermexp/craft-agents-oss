@@ -238,6 +238,8 @@
   "chat.sessionFilesLoading": "Laden...",
   "chat.sessionFilesTab": "Sitzung",
   "chat.workspaceObjectPreviewLoading": "Objekt wird geladen...",
+  "chat.workspaceObjectRefreshFailed": "Objektaktualisierung fehlgeschlagen",
+  "chat.workspaceObjectRetry": "Aktualisierung wiederholen",
   "chat.workspaceObjectProjectionRepair": "Die Manifestprojektion muss repariert werden.",
   "chat.workspaceObjectsEmpty": "Strukturierte Objekte dieses Arbeitsbereichs werden hier angezeigt.",
   "chat.workspaceObjectsLoading": "Objekte werden geladen...",

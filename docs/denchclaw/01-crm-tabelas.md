@@ -419,9 +419,11 @@ O repo tem defesas espalhadas que valem copiar:
 
 ### 6.1 Escolha do storage
 
-DuckDB é bem escolhido aqui: single-file, sem servidor, SQL analítico rápido, `PIVOT` nativo (que é o que torna o EAV viável). Se o Craft já embarca SQLite, dá para replicar, mas **`PIVOT` não existe em SQLite** — você teria que gerar o pivot em JS (que o DenchClaw já faz de qualquer forma, em `pivotEavRows`) ou gerar SQL com `MAX(CASE WHEN ...)`.
-
-**Recomendação:** DuckDB via `@duckdb/node-api`, um arquivo por workspace. Ganha `PIVOT`, leitura de CSV/Parquet direto (útil para import), e o mesmo SQL das skills funciona sem tradução.
+DuckDB explica as escolhas upstream: single-file, SQL analítico e `PIVOT`
+nativo. No Craft, porém, a decisão é **SQLite pelo adapter cross-runtime já
+empacotado**. `objects/objects.sqlite` é a única autoridade; rows normalizadas
+alimentam uma projeção de leitura revisionada, reconstruída pela aplicação
+quando ausente ou stale. Não se adiciona `@duckdb/node-api` nesta roadmap.
 
 ### 6.2 Ajustes que eu faria
 
@@ -438,11 +440,11 @@ DuckDB é bem escolhido aqui: single-file, sem servidor, SQL analítico rápido,
 ```
 craft/
   lib/crm/
-    schema.sql            # as 7 tabelas acima
-    duckdb.ts             # pool, query, exec, retry, descoberta hierárquica
-    objects.ts            # CRUD de objects/fields/entries
-    pivot.ts              # gera + regenera v_{name}
-    object-yaml.ts        # ler/escrever .object.yaml + validar triple alignment
+    schema.ts             # migrations SQLite idempotentes
+    storage.ts            # adapter compartilhado + CRUD transacional
+    projection.ts         # payload tabular revisionado e reconstruível
+    service.ts            # mutations genéricas + evento pós-commit
+    manifest.ts           # projeção YAML validada e reparável
     filters.ts            # PORTAR object-filters.ts quase 1:1 (é bom código)
   components/crm/
     object-view.tsx       # header + switcher + view ativa
@@ -451,15 +453,18 @@ craft/
     ...
 ```
 
-**Ordem:** `schema.sql` → `duckdb.ts` → `objects.ts` + endpoint `GET /objects/[name]` com o payload completo → `object-table.tsx` read-only → edição inline → `filters.ts` → views salvas.
+**Ordem:** `schema.ts` → `storage.ts`/`projection.ts` → `service.ts` + data plane
+genérico → preview tabular read-only → edição inline → filtros → views salvas.
 
 ### 6.4 A skill que ensina isso ao agente
 
 Copie a estrutura de `skills/crm/`: uma skill-pai com fundamentos + filhas especializadas. O que **precisa** estar lá:
 
-1. Schema completo em SQL (o agente copia e cola).
+1. Contrato versionado da tool genérica; o agente nunca recebe SQL cru.
 2. Tabela de tipos de campo com storage e cast.
-3. O workflow de 3 passos, repetido de forma agressiva: **(1) transação SQL → (2) projeção no filesystem (.object.yaml + diretório) → (3) verificar**. A skill do DenchClaw diz "THREE STEPS, EVERY TIME" e "NEVER SKIP FILESYSTEM PROJECTION" em maiúsculas porque o agente pula quando não repete.
+3. O workflow de 3 passos: **(1) mutation validada e transação SQLite → (2)
+   projeção no filesystem (`object.yaml`) → (3) evento/verificação**. O service,
+   não o prompt do agente, garante essa sequência.
 4. As regras de auto-linking de relações.
 5. Os pitfalls de SQL: aspas duplas em nomes com espaço, `BEGIN TRANSACTION` (não `BEGIN`), aspas simples escapadas, `IN (...)` obrigatório no PIVOT.
 

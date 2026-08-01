@@ -1,4 +1,4 @@
-export const WORKSPACE_OBJECT_SCHEMA_VERSION = 1;
+export const WORKSPACE_OBJECT_SCHEMA_VERSION = 2;
 
 export const WORKSPACE_OBJECT_SCHEMA_V1 = `
 CREATE TABLE IF NOT EXISTS workspace_object_schema_version (
@@ -73,4 +73,14 @@ CREATE INDEX IF NOT EXISTS idx_workspace_object_entries_object ON workspace_obje
 CREATE INDEX IF NOT EXISTS idx_workspace_object_values_field ON workspace_object_values(field_id);
 CREATE INDEX IF NOT EXISTS idx_workspace_object_relations_target ON workspace_object_relations(target_entry_id);
 INSERT OR IGNORE INTO workspace_object_schema_version(version) VALUES (1);
+`;
+
+export const WORKSPACE_OBJECT_SCHEMA_V2 = `
+BEGIN IMMEDIATE;
+ALTER TABLE workspace_object_fields ADD COLUMN caller_id TEXT;
+UPDATE workspace_object_fields SET caller_id = id WHERE caller_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_object_fields_caller_id
+  ON workspace_object_fields(object_id, caller_id);
+INSERT OR IGNORE INTO workspace_object_schema_version(version) VALUES (2);
+COMMIT;
 `;
