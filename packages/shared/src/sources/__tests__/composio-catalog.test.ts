@@ -5,10 +5,12 @@ import { join } from 'path'
 
 import {
   collectComposioCatalog,
+  createComposioSourceMaterializer,
   materializeComposioSource,
   toPortableComposioSourceInput,
 } from '../composio-catalog'
-import type { LoadedSource } from '../types'
+import { FolderSourceConfigSchema } from '../../config/validators'
+import type { FolderSourceConfig, LoadedSource } from '../types'
 import { getSourcePath, isSourceUsable, loadWorkspaceSources } from '../storage'
 
 const temporaryWorkspaces: string[] = []
@@ -47,6 +49,16 @@ describe('collectComposioCatalog', () => {
     expect(result.map((item) => item.providerId)).toEqual(['gmail', 'outlook'])
     expect(result[0]?.name).toBe('Gmail')
   })
+
+  test.each([0, 101, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    'rejects non-finite, fractional, or out-of-range maxPages: %p',
+    async (maxPages) => {
+      await expect(collectComposioCatalog({
+        maxPages,
+        fetchPage: async () => ({ items: [] }),
+      })).rejects.toThrow('maxPages')
+    },
+  )
 
   test('materializes only portable connection metadata and cannot carry provider secrets', () => {
     const sourceInput = toPortableComposioSourceInput({
@@ -123,7 +135,48 @@ describe('collectComposioCatalog', () => {
     })).toThrow()
   })
 
+  test.each([
+    'https://mcp.example.test/connect?key=query-secret',
+    'https://mcp.example.test/connect?api-key=query-secret',
+    'https://mcp.example.test/connect?token=query-secret',
+    'https://mcp.example.test/connect?credential=query-secret',
+    'https://mcp.example.test/connect?X-Amz-Signature=query-secret',
+    'https://mcp.example.test/connect?X-Amz-Credential=query-secret',
+    'https://mcp.example.test/connect?X-Amz-Security-Token=query-secret',
+    'https://mcp.example.test/connect#token=fragment-secret',
+    'https://mcp.example.test/connect#safe=value&credential=nested-fragment-secret',
+    'https://mcp.example.test/token/path-secret',
+    'https://mcp.example.test/api-key/path-secret',
+    'https://mcp.example.test/credential/path-secret',
+  ])('rejects explicit credential material in catalog URLs: %s', (url) => {
+    expect(() => toPortableComposioSourceInput({
+      providerId: 'linear',
+      name: 'Linear',
+      mcp: { url, authType: 'oauth' },
+      expectedTools: [{ name: 'issues_list', apiVersion: 'v1' }],
+    })).toThrow('credential')
+  })
+
+  test('preserves an ordinary Composio MCP UUID path', () => {
+    const url = 'https://mcp.composio.dev/550e8400-e29b-41d4-a716-446655440000/mcp'
+    expect(toPortableComposioSourceInput({
+      providerId: 'linear',
+      name: 'Linear',
+      mcp: { url, authType: 'oauth' },
+      expectedTools: [{ name: 'issues_list', apiVersion: 'v1' }],
+    }).mcp?.url).toBe(url)
+  })
+
   test('never returns credentials embedded in public catalog metadata', async () => {
+    await expect(collectComposioCatalog({
+      fetchPage: async () => ({
+        items: [{
+          providerId: 'https://catalog.example.test/provider?token=provider-secret',
+          name: 'Unsafe provider identity',
+        }],
+      }),
+    })).rejects.toThrow('provider')
+
     await expect(collectComposioCatalog({
       fetchPage: async () => ({
         items: [{
@@ -143,8 +196,8 @@ describe('collectComposioCatalog', () => {
       fetchPage: async () => ({
         items: [{
           providerId: 'gmail',
-          name: 'Authorization: Bearer name-token',
-          description: 'refresh_token=description-token',
+          name: 'Docs https://catalog.example.test/name?token=name-token',
+          description: 'See https://catalog.example.test/description#access_token=description-token',
           icon: '📬',
         }],
       }),
@@ -182,6 +235,36 @@ describe('collectComposioCatalog', () => {
     expect(persisted.toLowerCase()).not.toContain('authorization')
   })
 
+  test('serializes concurrent materialization and rechecks identity inside the lock', async () => {
+    const stored: FolderSourceConfig[] = []
+    let creates = 0
+    const materialize = createComposioSourceMaterializer({
+      loadSources: () => stored.map((config) => ({ config })),
+      createSource: async (_workspaceRootPath, sourceInput) => {
+        creates += 1
+        await Promise.resolve()
+        const config = {
+          ...sourceInput,
+          id: `source-${creates}`,
+          slug: 'linear',
+        } as FolderSourceConfig
+        stored.push(config)
+        return config
+      },
+    })
+    const toolkit = {
+      providerId: 'linear',
+      name: 'Linear',
+      mcp: { url: 'https://mcp.composio.dev/550e8400-e29b-41d4-a716-446655440000/mcp' },
+      expectedTools: [{ name: 'issues_list', apiVersion: 'v1' }],
+    }
+
+    const results = await Promise.all(Array.from({ length: 8 }, () => materialize('/workspace', toolkit)))
+
+    expect(new Set(results.map((source) => source.id))).toEqual(new Set(['source-1']))
+    expect(creates).toBe(1)
+  })
+
   test('never exposes expected-tool sources before readiness is healthy', () => {
     const loaded: LoadedSource = {
       config: {
@@ -204,6 +287,28 @@ describe('collectComposioCatalog', () => {
 
     expect(isSourceUsable(loaded)).toBe(false)
     loaded.config.readiness = { status: 'ready', checkedAt: 2 }
+    expect(isSourceUsable(loaded)).toBe(true)
+  })
+
+  test('treats expectedTools empty as the explicit legacy no-readiness contract', () => {
+    const parsed = FolderSourceConfigSchema.parse({
+      id: 'legacy-id',
+      name: 'Legacy',
+      slug: 'legacy',
+      enabled: true,
+      provider: 'legacy',
+      type: 'mcp',
+      mcp: { transport: 'http', url: 'https://legacy.example.test/mcp', authType: 'none' },
+      expectedTools: [],
+    })
+    const loaded: LoadedSource = {
+      config: parsed as FolderSourceConfig,
+      guide: null,
+      folderPath: '/workspace/sources/legacy',
+      workspaceRootPath: '/workspace',
+      workspaceId: 'workspace',
+    }
+
     expect(isSourceUsable(loaded)).toBe(true)
   })
 })

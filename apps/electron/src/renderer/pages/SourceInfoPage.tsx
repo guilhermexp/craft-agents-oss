@@ -179,6 +179,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
   const [mcpToolsLoading, setMcpToolsLoading] = useState(false)
   const [mcpToolsError, setMcpToolsError] = useState<string | null>(null)
   const [localMcpEnabled, setLocalMcpEnabled] = useState(true)
+  const [oauthConnecting, setOauthConnecting] = useState(false)
 
 
   // Load source data
@@ -334,6 +335,27 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
     }
   }, [source])
 
+  const handleOAuthConnect = useCallback(async () => {
+    setOauthConnecting(true)
+    try {
+      const result = await window.electronAPI.performOAuth({ sourceSlug })
+      if (!result.success) {
+        toast.error(t('sourceInfo.oauthFailed'), { description: result.error })
+        return
+      }
+      const sources = await window.electronAPI.getSources(workspaceId)
+      const updated = sources.find((candidate) => candidate.config.slug === sourceSlug)
+      if (updated) setSource(updated)
+      toast.success(t('sourceInfo.oauthConnected'))
+    } catch (error) {
+      toast.error(t('sourceInfo.oauthFailed'), {
+        description: error instanceof Error ? error.message : undefined,
+      })
+    } finally {
+      setOauthConnecting(false)
+    }
+  }, [sourceSlug, t, workspaceId])
+
   // Handle deleting source (navigates to source list, preserving current filter)
   const handleDelete = useCallback(async () => {
     if (!source) return
@@ -396,6 +418,37 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
               </Info_Alert.Description>
             </Info_Alert>
           )}
+
+          {(source.config.expectedTools?.length ?? 0) > 0 && source.config.readiness?.status !== 'ready' ? (
+            <Info_Alert variant="warning" icon={<AlertCircle className="size-4" />}>
+              <Info_Alert.Title>{t('sourceInfo.readinessFailed')}</Info_Alert.Title>
+              <Info_Alert.Description>
+                {t('sourceInfo.readinessFailedDesc')}
+                {source.config.connectionError ? ` ${source.config.connectionError}` : ''}
+              </Info_Alert.Description>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {source.config.mcp?.authType === 'oauth' ? (
+                  <button
+                    type="button"
+                    disabled={oauthConnecting}
+                    onClick={() => void handleOAuthConnect()}
+                    className="h-8 rounded-lg bg-foreground px-3 text-xs font-medium text-background disabled:opacity-50"
+                  >
+                    {oauthConnecting ? t('sourceInfo.connectingAccount') : t('sourceInfo.connectAccount')}
+                  </button>
+                ) : null}
+                <EditPopover
+                  trigger={
+                    <button type="button" className="h-8 rounded-lg border border-border/60 px-3 text-xs font-medium hover:bg-foreground/[0.04]">
+                      {t('sourceInfo.testWithAgent')}
+                    </button>
+                  }
+                  defaultValue={t('sourceInfo.sourceTestPrompt', { slug: source.config.slug })}
+                  {...getEditConfig('source-config', source.folderPath)}
+                />
+              </div>
+            </Info_Alert>
+          ) : null}
 
           {/* Connection */}
           <Info_Section

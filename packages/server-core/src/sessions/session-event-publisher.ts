@@ -2,7 +2,7 @@ import type { AgentEvent } from '@craft-agent/shared/agent'
 import type { EventSink } from '@craft-agent/server-core/transport'
 import type { LoadedSkill } from '@craft-agent/shared/skills'
 import type { ThemeOverrides } from '@craft-agent/shared/config'
-import type { LoadedSource } from '@craft-agent/shared/sources'
+import type { PublicSourceDto } from '@craft-agent/shared/sources'
 import type { Message } from '@craft-agent/core/types'
 import { RPC_NAMESPACES, type SessionEvent, type UnreadSummary } from '@craft-agent/shared/protocol'
 
@@ -376,7 +376,7 @@ export class SessionEventPublisher {
     this.publishAll(RPC_NAMESPACES.sessions.UNREAD_SUMMARY_CHANGED, summary)
   }
 
-  workspaceSourcesChanged(workspaceId: string, sources: LoadedSource[]): void {
+  workspaceSourcesChanged(workspaceId: string, sources: PublicSourceDto[]): void {
     this.publishWorkspaceChanged(RPC_NAMESPACES.sources.CHANGED, workspaceId, workspaceId, sources)
   }
 

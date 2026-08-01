@@ -31,23 +31,31 @@ export type {
   PublicApiSourceConfig,
   PublicFolderSourceConfig,
   PublicMcpSourceConfig,
+  PublicLocalSourceConfig,
   PublicSourceGuide,
+  PublicSourceBrand,
+  PublicSourceExpectedTool,
+  PublicSourceReadinessEvidence,
   PublicSourceDto,
 } from './public-source-dto.ts';
 
 export {
   sanitizeSourceConnectionError,
+  sanitizePublicSourceError,
   toPublicSourceDto,
+  toPublicSourceDtos,
 } from './public-source-dto.ts';
 
 export type {
   CollectComposioCatalogOptions,
+  ComposioSourceMaterializerDependencies,
   ComposioCatalogItem,
   ComposioCatalogPageRequest,
 } from './composio-catalog.ts';
 
 export {
   collectComposioCatalog,
+  createComposioSourceMaterializer,
   materializeComposioSource,
   normalizeComposioProviderIdentity,
   toPortableComposioSourceInput,
@@ -55,6 +63,7 @@ export {
 
 // Constants and helpers
 export {
+  SOURCE_CONNECTION_STATUSES,
   API_OAUTH_PROVIDERS,
   isApiOAuthProvider,
   isGenericOAuthSource,

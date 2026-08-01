@@ -406,21 +406,20 @@ export interface LocalSourceConfig {
   format?: string; // Optional hint: 'filesystem' | 'obsidian' | 'git' | 'sqlite' | etc.
 }
 
-/**
- * Source connection status
- * - 'connected': Source is connected and working
- * - 'needs_auth': Source requires authentication
- * - 'failed': Connection failed with error
- * - 'untested': Connection has not been tested
- * - 'local_disabled': Stdio source is disabled (local MCP servers off)
- */
-export type SourceConnectionStatus =
-  | 'connected'
-  | 'needs_auth'
-  | 'failed'
-  | 'untested'
-  | 'local_disabled'
-  | 'unhealthy';
+/** Canonical persisted and renderer-visible source connection statuses. */
+export const SOURCE_CONNECTION_STATUSES = [
+  'connected',
+  'needs_auth',
+  'failed',
+  'untested',
+  'local_disabled',
+  'unhealthy',
+  'disconnected',
+  'error',
+  'unknown',
+] as const;
+
+export type SourceConnectionStatus = typeof SOURCE_CONNECTION_STATUSES[number];
 
 /** Stable, versioned identity used by backend-visible source readiness probes. */
 export interface SourceExpectedTool {
@@ -501,7 +500,8 @@ export interface FolderSourceConfig {
   connectionError?: string; // Error message if status is 'failed'
   lastTestedAt?: number;
 
-  // Composio/U7 readiness metadata. Legacy sources omit these fields.
+  // Composio/U7 readiness metadata. Missing or empty expectedTools is the
+  // explicit legacy/no-readiness contract.
   expectedTools?: SourceExpectedTool[];
   readiness?: SourceReadinessEvidence;
 

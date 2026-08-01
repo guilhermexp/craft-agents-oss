@@ -1,12 +1,18 @@
 import { z } from 'zod'
+import { resolve } from 'node:path'
 
-import { sanitizeSourceConnectionError } from './public-source-dto.ts'
+import { sanitizePublicSourceError } from './public-source-dto.ts'
+import { hasExplicitCredentialMaterial } from './public-url.ts'
 import { createSource, loadWorkspaceSources } from './storage.ts'
-import type { CreateSourceInput, FolderSourceConfig } from './types.ts'
+import type { CreateSourceInput, FolderSourceConfig, LoadedSource } from './types.ts'
 
 const sourceToolIdentityPartSchema = z.string().regex(
   /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/,
   'Tool identity must use portable name/version characters',
+)
+const providerIdentitySchema = z.string().trim().regex(
+  /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/,
+  'Composio provider identity must use portable characters',
 )
 
 const composioMcpSchema = z.object({
@@ -16,7 +22,7 @@ const composioMcpSchema = z.object({
 })
 
 const composioCatalogItemSchema = z.object({
-  providerId: z.string().trim().min(1),
+  providerId: providerIdentitySchema,
   name: z.string().trim().min(1),
   description: z.string().trim().min(1).optional(),
   icon: z.string().trim().min(1).optional(),
@@ -39,8 +45,6 @@ const composioCatalogPageSchema = z.object({
   items: z.array(composioCatalogItemSchema),
   nextCursor: z.string().trim().min(1).optional(),
 })
-
-const SENSITIVE_URL_PARAMETER = /(?:^|[_-])(?:access|refresh|auth)?token(?:$|[_-])|secret|credential|password|api[_-]?key|authorization/i
 
 export interface ComposioCatalogItem {
   providerId: string
@@ -75,10 +79,8 @@ function assertPortableUrl(value: string): string {
   if (url.username || url.password) {
     throw new Error('Composio source URL must not contain embedded credentials')
   }
-  for (const parameterName of url.searchParams.keys()) {
-    if (SENSITIVE_URL_PARAMETER.test(parameterName)) {
-      throw new Error('Composio source URL must not contain credential parameters')
-    }
+  if (hasExplicitCredentialMaterial(url)) {
+    throw new Error('Composio source URL must not contain credential parameters or path material')
   }
   return value
 }
@@ -91,10 +93,10 @@ function assertPortableIcon(value: string): string {
 function toPublicCatalogItem(item: ComposioCatalogItem): ComposioCatalogItem {
   return {
     providerId: normalizeComposioProviderIdentity(item.providerId),
-    name: sanitizeSourceConnectionError(item.name),
+    name: sanitizePublicSourceError(item.name),
     ...(item.description === undefined
       ? {}
-      : { description: sanitizeSourceConnectionError(item.description) }),
+      : { description: sanitizePublicSourceError(item.description) }),
     ...(item.icon === undefined ? {} : { icon: assertPortableIcon(item.icon) }),
     ...(item.mcp === undefined
       ? {}
@@ -115,7 +117,10 @@ export async function collectComposioCatalog(
   options: CollectComposioCatalogOptions,
 ): Promise<ComposioCatalogItem[]> {
   const query = options.query?.trim() ?? ''
-  const maxPages = Math.min(Math.max(options.maxPages ?? 50, 1), 100)
+  const maxPages = options.maxPages ?? 50
+  if (!Number.isFinite(maxPages) || !Number.isInteger(maxPages) || maxPages < 1 || maxPages > 100) {
+    throw new Error('maxPages must be a finite integer from 1 to 100')
+  }
   const itemsByProvider = new Map<string, ComposioCatalogItem>()
   const seenCursors = new Set<string>()
   let cursor: string | undefined
@@ -162,14 +167,44 @@ export function toPortableComposioSourceInput(input: unknown): CreateSourceInput
   }
 }
 
-export async function materializeComposioSource(
-  workspaceRootPath: string,
-  input: unknown,
-): Promise<FolderSourceConfig> {
-  const sourceInput = toPortableComposioSourceInput(input)
-  const existing = loadWorkspaceSources(workspaceRootPath).find(
-    (source) => normalizeComposioProviderIdentity(source.config.provider) === sourceInput.provider,
-  )
-  if (existing) return existing.config
-  return createSource(workspaceRootPath, sourceInput)
+export interface ComposioSourceMaterializerDependencies {
+  loadSources(workspaceRootPath: string): Array<Pick<LoadedSource, 'config'>>
+  createSource(
+    workspaceRootPath: string,
+    input: CreateSourceInput,
+  ): FolderSourceConfig | Promise<FolderSourceConfig>
 }
+
+export function createComposioSourceMaterializer(
+  dependencies: ComposioSourceMaterializerDependencies,
+): (workspaceRootPath: string, input: unknown) => Promise<FolderSourceConfig> {
+  const locks = new Map<string, Promise<void>>()
+
+  return async (workspaceRootPath, input) => {
+    const sourceInput = toPortableComposioSourceInput(input)
+    const lockKey = `${resolve(workspaceRootPath)}\0${sourceInput.provider}`
+    const previousLock = locks.get(lockKey)
+    let releaseLock: () => void = () => {}
+    const currentLock = new Promise<void>((resolveLock) => {
+      releaseLock = resolveLock
+    })
+    locks.set(lockKey, currentLock)
+
+    if (previousLock) await previousLock
+    try {
+      const existing = dependencies.loadSources(workspaceRootPath).find(
+        (source) => normalizeComposioProviderIdentity(source.config.provider) === sourceInput.provider,
+      )
+      if (existing) return existing.config
+      return await dependencies.createSource(workspaceRootPath, sourceInput)
+    } finally {
+      releaseLock()
+      if (locks.get(lockKey) === currentLock) locks.delete(lockKey)
+    }
+  }
+}
+
+export const materializeComposioSource = createComposioSourceMaterializer({
+  loadSources: loadWorkspaceSources,
+  createSource,
+})

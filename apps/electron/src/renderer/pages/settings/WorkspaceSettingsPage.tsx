@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils'
 import { routes } from '@/lib/navigate'
 import { Spinner } from '@craft-agent/ui'
 import { RenameDialog } from '@/components/ui/rename-dialog'
-import type { PermissionMode, WorkspaceSettings, LoadedSource } from '../../../shared/types'
+import type { PermissionMode, WorkspaceSettings, PublicSourceDto } from '../../../shared/types'
 import { useDirectoryPicker } from '@/hooks/useDirectoryPicker'
 import { ServerDirectoryBrowser } from '@/components/ServerDirectoryBrowser'
 import { PERMISSION_MODE_CONFIG } from '@craft-agent/shared/agent/mode-types'
@@ -68,7 +68,7 @@ export default function WorkspaceSettingsPage() {
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(true)
 
   // Default sources state
-  const [availableSources, setAvailableSources] = useState<LoadedSource[]>([])
+  const [availableSources, setAvailableSources] = useState<PublicSourceDto[]>([])
   const [enabledSourceSlugs, setEnabledSourceSlugs] = useState<string[]>([])
 
   // Mode cycling state
@@ -154,7 +154,7 @@ export default function WorkspaceSettingsPage() {
   // Subscribe to live source changes (additions/removals)
   useEffect(() => {
     if (!window.electronAPI) return
-    const cleanup = window.electronAPI.onSourcesChanged((workspaceId: string, sources: LoadedSource[]) => {
+    const cleanup = window.electronAPI.onSourcesChanged((workspaceId: string, sources: PublicSourceDto[]) => {
       if (workspaceId !== activeWorkspaceId) return
       setAvailableSources(sources)
       // Auto-heal: remove slugs for sources that no longer exist

@@ -41,6 +41,7 @@ import {
 } from '@craft-agent/shared/config'
 import type { ActiveSessionInfo, SessionProcessingStatus } from '@craft-agent/core/types'
 import { loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
+import { toPublicSourceDtos } from '@craft-agent/shared/sources/public-source-dto'
 import {
   // Session persistence functions
   listSessions as listStoredSessions,
@@ -1940,7 +1941,7 @@ export class SessionManager implements ISessionManager {
   }
 
   private broadcastSourcesChanged(workspaceId: string, sources: LoadedSource[]): void {
-    this.events.workspaceSourcesChanged(workspaceId, sources)
+    this.events.workspaceSourcesChanged(workspaceId, toPublicSourceDtos(sources))
   }
 
   private broadcastStatusesChanged(workspaceId: string): void {

@@ -70,7 +70,9 @@ export type { CredentialHealthStatus, CredentialHealthIssue, CredentialHealthIss
 // Source types for session source selection
 import type { LoadedSource, FolderSourceConfig, SourceConnectionStatus } from '@craft-agent/shared/sources/types';
 import type { PublicSourceDto } from '@craft-agent/shared/sources/public-source-dto';
+import type { ComposioCatalogItem } from '@craft-agent/shared/sources/composio-catalog';
 export type { LoadedSource, FolderSourceConfig, PublicSourceDto, SourceConnectionStatus };
+export type { ComposioCatalogItem };
 
 // Skill types
 import type { LoadedSkill, SkillMetadata } from '@craft-agent/shared/skills/types';
@@ -493,10 +495,13 @@ export const RPC_CONTRACT = {
   getWorkspacePermissionsConfig: invoke<((workspaceId: string) => Promise<PermissionsConfigFile | null>)>(RPC_NAMESPACES.workspace.GET_PERMISSIONS),
   getDefaultPermissionsConfig: invoke<(() => Promise<{ config: PermissionsConfigFile | null; path: string }>)>(RPC_NAMESPACES.permissions.GET_DEFAULTS),
   getMcpTools: invoke<((workspaceId: string, sourceSlug: string) => Promise<McpToolsResult>)>(RPC_NAMESPACES.sources.GET_MCP_TOOLS),
+  getComposioCatalogCapability: invoke<(() => Promise<{ available: boolean }>)>(RPC_NAMESPACES.sources.CATALOG_CAPABILITY),
+  discoverComposioCatalog: invoke<((workspaceId: string, query: string) => Promise<ComposioCatalogItem[]>)>(RPC_NAMESPACES.sources.DISCOVER_CATALOG),
+  materializeComposioCatalogSource: invoke<((workspaceId: string, item: ComposioCatalogItem) => Promise<PublicSourceDto>)>(RPC_NAMESPACES.sources.MATERIALIZE_CATALOG),
   performOAuth: local<((args: { sourceSlug: string; sessionId?: string; authRequestId?: string }) => Promise<{ success: boolean; error?: string; email?: string }>)>(),
   oauthRevoke: invoke<((sourceSlug: string) => Promise<{ success: boolean }>)>(RPC_NAMESPACES.oauth.REVOKE),
   searchSessionContent: invoke<((workspaceId: string, query: string, searchId?: string) => Promise<SessionSearchResult[]>)>(RPC_NAMESPACES.sessions.SEARCH_CONTENT),
-  onSourcesChanged: event<((callback: (workspaceId: string, sources: LoadedSource[]) => void) => () => void)>(RPC_NAMESPACES.sources.CHANGED),
+  onSourcesChanged: event<((callback: (workspaceId: string, sources: PublicSourceDto[]) => void) => () => void)>(RPC_NAMESPACES.sources.CHANGED),
   onDefaultPermissionsChanged: event<((callback: () => void) => () => void)>(RPC_NAMESPACES.permissions.DEFAULTS_CHANGED),
   getSkills: invoke<((workspaceId: string, workingDirectory?: string) => Promise<LoadedSkill[]>)>(RPC_NAMESPACES.skills.GET),
   getSkillFiles: invoke<((workspaceId: string, skillSlug: string) => Promise<SkillFile[]>)>(RPC_NAMESPACES.skills.GET_FILES),

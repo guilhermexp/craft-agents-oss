@@ -48,6 +48,7 @@ import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@cra
 import { initModelRefreshService, setFetcherPlatform } from '@craft-agent/server-core/model-fetchers'
 import { setSearchPlatform, setImageProcessor, transferManager } from '@craft-agent/server-core/services'
 import type { HandlerDeps } from '@craft-agent/server-core/handlers'
+import { createComposioCatalogFetcher } from '@craft-agent/server-core/handlers/rpc/sources'
 import { getValidClaudeOAuthToken } from '@craft-agent/shared/auth'
 import { ensureDefaultClaudeConfigValid } from '@craft-agent/shared/agent'
 
@@ -224,6 +225,7 @@ const instance = await (async () => {
       },
       bindRpcServer: (sm, server) => sm.setRpcServer(server),
       createHandlerDeps: ({ sessionManager, platform, oauthFlowStore }) => {
+        const composioCatalogEndpoint = process.env.CRAFT_COMPOSIO_CATALOG_URL
         messagingHandle = createMessagingBootstrap({
           sessionManager,
           credentialManager: getCredentialManager(),
@@ -241,6 +243,9 @@ const instance = await (async () => {
           platform,
           oauthFlowStore,
           messagingRegistry: messagingHandle.registry,
+          composioCatalog: composioCatalogEndpoint
+            ? { fetchPage: createComposioCatalogFetcher(composioCatalogEndpoint) }
+            : undefined,
         }
       },
       registerAllRpcHandlers: registerCoreRpcHandlers,
@@ -303,7 +308,7 @@ if (webuiHandler) {
 
   // Wire up OAuth callback deps so /api/oauth/callback works
   const [
-    { getSourceCredentialManager, loadWorkspaceSources },
+    { getSourceCredentialManager, loadWorkspaceSources, toPublicSourceDtos },
     { getWorkspaceByNameOrId },
     { pushTyped },
     { RPC_NAMESPACES },
@@ -321,7 +326,7 @@ if (webuiHandler) {
     pushSourcesChanged: (workspaceId: string) => {
       const ws = getWorkspaceByNameOrId(workspaceId)
       const sources = ws ? loadWorkspaceSources(ws.rootPath) : []
-      pushTyped(instance.wsServer, RPC_NAMESPACES.sources.CHANGED, { to: 'workspace', workspaceId }, workspaceId, sources)
+      pushTyped(instance.wsServer, RPC_NAMESPACES.sources.CHANGED, { to: 'workspace', workspaceId }, workspaceId, toPublicSourceDtos(sources))
     },
   })
 }

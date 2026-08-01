@@ -101,7 +101,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter } from "../../../shared/types"
+import type { Session, Workspace, FileAttachment, PermissionRequest, PublicSourceDto, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter } from "../../../shared/types"
 import { sessionAtomFamily, sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
@@ -920,7 +920,7 @@ function AppShellContent({
     })
   }, [])
   // Sources state (workspace-scoped)
-  const [sources, setSources] = React.useState<LoadedSource[]>([])
+  const [sources, setSources] = React.useState<PublicSourceDto[]>([])
   // Sync sources to atom for NavigationContext auto-selection
   const setSourcesAtom = useSetAtom(sourcesAtom)
   React.useEffect(() => {
@@ -1175,7 +1175,7 @@ function AppShellContent({
   const ensureMessagesLoaded = useSetAtom(ensureSessionMessagesLoadedAtom)
 
   // Handle selecting a source from the list (preserves current filter type)
-  const handleSourceSelect = React.useCallback((source: LoadedSource) => {
+  const handleSourceSelect = React.useCallback((source: PublicSourceDto) => {
     if (!activeWorkspaceId) return
     navigateToSource(source.config.slug)
   }, [activeWorkspaceId, navigateToSource])
@@ -3552,6 +3552,7 @@ function AppShellContent({
               /* Sources List - filtered by type if sourceFilter is active */
               <SourcesListPanel
                 sources={sources}
+                workspaceId={activeWorkspaceId ?? undefined}
                 sourceFilter={sourceFilter}
                 workspaceRootPath={activeWorkspace?.rootPath}
                 onDeleteSource={handleDeleteSource}

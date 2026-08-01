@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { loadSource, loadWorkspaceSources, getSourceCredentialManager } from '@craft-agent/shared/sources'
+import { toPublicSourceDtos } from '@craft-agent/shared/sources/public-source-dto'
 import { createPendingFlow } from '@craft-agent/shared/auth'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
@@ -143,7 +144,7 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
       pushSourcesChanged: (workspaceId) => {
         const ws = getWorkspaceByNameOrId(workspaceId)
         const sources = ws ? loadWorkspaceSources(ws.rootPath) : []
-        pushTyped(server, RPC_NAMESPACES.sources.CHANGED, { to: 'workspace', workspaceId }, workspaceId, sources)
+        pushTyped(server, RPC_NAMESPACES.sources.CHANGED, { to: 'workspace', workspaceId }, workspaceId, toPublicSourceDtos(sources))
       },
       logger: log,
       clientId: ctx.clientId,
@@ -189,7 +190,7 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
 
     // Push source status update
     const revokeSources = loadWorkspaceSources(workspace.rootPath)
-    pushTyped(server, RPC_NAMESPACES.sources.CHANGED, { to: 'workspace', workspaceId: ctx.workspaceId }, ctx.workspaceId, revokeSources)
+    pushTyped(server, RPC_NAMESPACES.sources.CHANGED, { to: 'workspace', workspaceId: ctx.workspaceId }, ctx.workspaceId, toPublicSourceDtos(revokeSources))
 
     log.info(`[OAuth] Revoked credentials for ${sourceSlug}`)
     return { success: true }

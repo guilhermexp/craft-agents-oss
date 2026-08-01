@@ -22,6 +22,7 @@ import { THINKING_LEVEL_IDS } from '../agent/thinking-levels.ts';
 import { isValidProviderAuthCombination } from './llm-connections.ts';
 import { SUPPORTED_LANGUAGE_CODES } from '../i18n/languages.ts';
 import type { LanguageCode } from '../i18n/languages.ts';
+import { SOURCE_CONNECTION_STATUSES } from '../sources/types.ts';
 
 import {
   SkillMetadataSchema,
@@ -467,19 +468,11 @@ export const FolderSourceConfigSchema = z.object({
   api: ApiSourceConfigSchema.optional(),
   local: LocalSourceConfigSchema.optional(),
   brand: SourceBrandSchema.optional(),
-  connectionStatus: z.enum([
-    'connected',
-    'needs_auth',
-    'failed',
-    'untested',
-    'local_disabled',
-    'unhealthy',
-    'disconnected',
-    'error',
-    'unknown',
-  ]).optional(),
+  connectionStatus: z.enum(SOURCE_CONNECTION_STATUSES).optional(),
   connectionError: z.string().optional(),
-  expectedTools: z.array(SourceExpectedToolSchema).min(1).optional(),
+  // An empty array is the explicit legacy/no-readiness contract. Catalog
+  // materialization still requires at least one expected tool.
+  expectedTools: z.array(SourceExpectedToolSchema).optional(),
   readiness: SourceReadinessEvidenceSchema.optional(),
   isAuthenticated: z.boolean().optional(),
   lastTestedAt: z.number().int().min(0).optional(),

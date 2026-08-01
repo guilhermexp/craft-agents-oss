@@ -4,7 +4,7 @@
  */
 
 import type { ThemeOverrides } from '../config/index'
-import type { LoadedSource } from '../sources/types'
+import type { PublicSourceDto } from '../sources/public-source-dto'
 import type { LoadedSkill } from '../skills/types'
 import type { LoadedProject } from '../projects/types'
 import { RPC_NAMESPACES } from './channels'
@@ -25,7 +25,7 @@ export interface BroadcastEventMap {
   [RPC_NAMESPACES.sessions.FILES_CHANGED]: [sessionId: string]
 
   // Domain change broadcasts (global via broadcastToAll)
-  [RPC_NAMESPACES.sources.CHANGED]: [workspaceId: string, sources: LoadedSource[]]
+  [RPC_NAMESPACES.sources.CHANGED]: [workspaceId: string, sources: PublicSourceDto[]]
   [RPC_NAMESPACES.labels.CHANGED]: [workspaceId: string]
   [RPC_NAMESPACES.channels.CHANGED]: [workspaceId: string]
   [RPC_NAMESPACES.channels.MESSAGES_CHANGED]: [workspaceId: string, channelId: string]

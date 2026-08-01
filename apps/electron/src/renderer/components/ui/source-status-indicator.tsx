@@ -18,6 +18,10 @@ import {
   TooltipTrigger,
 } from '@craft-agent/ui'
 import type { SourceConnectionStatus } from '../../../shared/types'
+import {
+  SOURCE_STATUS_CONFIG,
+  getSourceStatusTooltipDescription,
+} from './source-status'
 
 export interface SourceStatusIndicatorProps {
   /** Connection status */
@@ -28,51 +32,6 @@ export interface SourceStatusIndicatorProps {
   size?: 'xs' | 'sm' | 'md'
   /** Additional className */
   className?: string
-}
-
-// Status configurations
-const STATUS_CONFIG: Record<SourceConnectionStatus, {
-  color: string
-  pulseColor: string
-  label: string
-  description: string
-}> = {
-  connected: {
-    color: 'bg-success',
-    pulseColor: 'bg-success/80',
-    label: 'Connected',
-    description: 'Source is connected and working',
-  },
-  needs_auth: {
-    color: 'bg-info',
-    pulseColor: 'bg-info/80',
-    label: 'Needs Authentication',
-    description: 'Source requires authentication to connect',
-  },
-  failed: {
-    color: 'bg-destructive',
-    pulseColor: 'bg-destructive/80',
-    label: 'Connection Failed',
-    description: 'Failed to connect to source',
-  },
-  unhealthy: {
-    color: 'bg-destructive',
-    pulseColor: 'bg-destructive/80',
-    label: 'Connection Failed',
-    description: 'Failed to connect to source',
-  },
-  untested: {
-    color: 'bg-foreground/40',
-    pulseColor: 'bg-foreground/30',
-    label: 'Not Tested',
-    description: 'Connection has not been tested',
-  },
-  local_disabled: {
-    color: 'bg-foreground/30',
-    pulseColor: 'bg-foreground/20',
-    label: 'Disabled',
-    description: 'Local MCP servers are disabled in Settings',
-  },
 }
 
 // Size configurations
@@ -88,13 +47,11 @@ export function SourceStatusIndicator({
   size = 'sm',
   className,
 }: SourceStatusIndicatorProps) {
-  const config = STATUS_CONFIG[status]
+  const config = SOURCE_STATUS_CONFIG[status]
   const sizeClass = SIZE_CONFIG[size]
 
   // Build tooltip description
-  const tooltipDescription = (status === 'failed' || status === 'unhealthy') && errorMessage
-    ? `${config.description}: ${errorMessage}`
-    : config.description
+  const tooltipDescription = getSourceStatusTooltipDescription(status, errorMessage)
 
   return (
     <Tooltip>

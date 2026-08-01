@@ -300,6 +300,9 @@ export const RPC_NAMESPACES = {
     CHANGED: 'sources:changed',
     GET_PERMISSIONS: 'sources:getPermissions',
     GET_MCP_TOOLS: 'sources:getMcpTools',
+    CATALOG_CAPABILITY: 'sources:catalogCapability',
+    DISCOVER_CATALOG: 'sources:discoverCatalog',
+    MATERIALIZE_CATALOG: 'sources:materializeCatalog',
   },
   oauth: {
     START: 'oauth:start',

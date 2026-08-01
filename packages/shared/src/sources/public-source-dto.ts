@@ -1,18 +1,41 @@
 import type {
   ApiOAuthConfig,
   ApiSourceConfig,
-  FolderSourceConfig,
   LoadedSource,
   LocalSourceConfig,
   McpSourceConfig,
+  SourceBrand,
+  SourceConnectionStatus,
   SourceGuide,
   SourceExpectedTool,
+  SourceReadinessEvidence,
+  SourceReadinessReason,
+  SourceType,
 } from './types.ts'
+import { sanitizePublicUrl } from './public-url.ts'
 
 export type PublicMcpSourceConfig = Pick<
   McpSourceConfig,
   'transport' | 'url' | 'authType' | 'clientId'
 >
+
+export type PublicLocalSourceConfig = Pick<LocalSourceConfig, 'path' | 'format'>
+
+export interface PublicSourceBrand {
+  color?: SourceBrand['color']
+}
+
+export interface PublicSourceExpectedTool {
+  name: string
+  apiVersion: string
+}
+
+export interface PublicSourceReadinessEvidence {
+  status: SourceReadinessEvidence['status']
+  reason?: SourceReadinessReason
+  observedTools?: PublicSourceExpectedTool[]
+  checkedAt: number
+}
 
 export type PublicApiOAuthConfig = Pick<
   ApiOAuthConfig,
@@ -36,14 +59,27 @@ export type PublicApiSourceConfig = Pick<
   | 'microsoftScopes'
 > & { oauth?: PublicApiOAuthConfig }
 
-export interface PublicFolderSourceConfig extends Omit<
-  FolderSourceConfig,
-  'mcp' | 'api' | 'local' | 'connectionError'
-> {
+export interface PublicFolderSourceConfig {
+  id: string
+  name: string
+  slug: string
+  enabled: boolean
+  provider: string
+  type: SourceType
   mcp?: PublicMcpSourceConfig
   api?: PublicApiSourceConfig
-  local?: LocalSourceConfig
+  local?: PublicLocalSourceConfig
+  icon?: string
+  tagline?: string
+  brand?: PublicSourceBrand
+  isAuthenticated?: boolean
+  connectionStatus?: SourceConnectionStatus
   connectionError?: string
+  lastTestedAt?: number
+  expectedTools?: PublicSourceExpectedTool[]
+  readiness?: PublicSourceReadinessEvidence
+  createdAt?: number
+  updatedAt?: number
 }
 
 export type PublicSourceGuide = Omit<SourceGuide, 'cache'>
@@ -53,50 +89,41 @@ export interface PublicSourceDto extends Omit<LoadedSource, 'config' | 'guide'> 
   guide: PublicSourceGuide | null
 }
 
-const SENSITIVE_PARAMETER_NAME = /(?:^|[_-])(?:access|refresh|auth)?token(?:$|[_-])|secret|credential|password|api[_-]?key|authorization/i
 const SAFE_TOOL_IDENTITY_PART = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/
 
-function toPublicToolIdentities(tools: SourceExpectedTool[] | undefined): SourceExpectedTool[] | undefined {
+function toPublicToolIdentities(tools: SourceExpectedTool[] | undefined): PublicSourceExpectedTool[] | undefined {
   if (tools === undefined) return undefined
-  const publicTools: SourceExpectedTool[] = []
+  const publicTools: PublicSourceExpectedTool[] = []
   for (const tool of tools) {
     if (
       SAFE_TOOL_IDENTITY_PART.test(tool.name)
       && SAFE_TOOL_IDENTITY_PART.test(tool.apiVersion)
     ) {
-      publicTools.push({ ...tool })
+      publicTools.push({ name: tool.name, apiVersion: tool.apiVersion })
     }
   }
   return publicTools
 }
 
-function sanitizePublicUrl(value: string | undefined): string | undefined {
-  if (value === undefined) return undefined
-  try {
-    const url = new URL(value)
-    url.username = ''
-    url.password = ''
-    for (const parameterName of [...url.searchParams.keys()]) {
-      if (SENSITIVE_PARAMETER_NAME.test(parameterName)) {
-        url.searchParams.set(parameterName, '[REDACTED]')
-      }
-    }
-    return url.toString()
-  } catch {
-    return undefined
-  }
-}
+export const sanitizePublicSourceUrl = sanitizePublicUrl
 
 export function sanitizeSourceConnectionError(value: string): string {
   return value
     .replace(
-      /(\bauthorization\s*:\s*(?:bearer|basic)\s+)[^\s,;]+/gi,
+      /(\bauthorization"?\s*:\s*"?(?:bearer|basic)\s+)[^"\s,;}]+/gi,
       '$1[REDACTED]',
     )
     .replace(
-      /(\b(?:access[_-]?token|refresh[_-]?token|token|api[_-]?key|provider[_-]?secret|secret|credentials?|password)\s*[:=]\s*)[^\s,;]+/gi,
+      /(\b(?:access[_-]?token|refresh[_-]?token|token|api[_-]?key|provider[_-]?secret|secret|credentials?|password)"?\s*[:=]\s*"?)[^"\s,;}]+/gi,
       '$1[REDACTED]',
     )
+}
+
+export function sanitizePublicSourceError(value: string): string {
+  const sanitizedUrls = value.replace(/https?:\/\/[^\s,;]+/gi, (url) => (
+    sanitizePublicUrl(url) ?? '[REDACTED]'
+  ))
+  return sanitizeSourceConnectionError(sanitizedUrls)
 }
 
 function sanitizePublicIcon(value: string | undefined): string | undefined {
@@ -107,11 +134,11 @@ function sanitizePublicIcon(value: string | undefined): string | undefined {
 function toPublicGuide(guide: SourceGuide | null): PublicSourceGuide | null {
   if (guide === null) return null
   return {
-    raw: sanitizeSourceConnectionError(guide.raw),
-    ...(guide.scope === undefined ? {} : { scope: sanitizeSourceConnectionError(guide.scope) }),
-    ...(guide.guidelines === undefined ? {} : { guidelines: sanitizeSourceConnectionError(guide.guidelines) }),
-    ...(guide.context === undefined ? {} : { context: sanitizeSourceConnectionError(guide.context) }),
-    ...(guide.apiNotes === undefined ? {} : { apiNotes: sanitizeSourceConnectionError(guide.apiNotes) }),
+    raw: sanitizePublicSourceError(guide.raw),
+    ...(guide.scope === undefined ? {} : { scope: sanitizePublicSourceError(guide.scope) }),
+    ...(guide.guidelines === undefined ? {} : { guidelines: sanitizePublicSourceError(guide.guidelines) }),
+    ...(guide.context === undefined ? {} : { context: sanitizePublicSourceError(guide.context) }),
+    ...(guide.apiNotes === undefined ? {} : { apiNotes: sanitizePublicSourceError(guide.apiNotes) }),
   }
 }
 
@@ -173,22 +200,35 @@ export function toPublicSourceDto(source: LoadedSource): PublicSourceDto {
   return {
     config: {
       id: config.id,
-      name: config.name,
+      name: sanitizePublicSourceError(config.name),
       slug: config.slug,
       enabled: config.enabled,
-      provider: config.provider,
+      provider: sanitizePublicSourceError(config.provider),
       type: config.type,
       ...(mcp === undefined ? {} : { mcp }),
       ...(api === undefined ? {} : { api }),
-      ...(config.local === undefined ? {} : { local: { ...config.local } }),
+      ...(config.local === undefined
+        ? {}
+        : {
+            local: {
+              path: config.local.path,
+              ...(config.local.format === undefined ? {} : { format: config.local.format }),
+            },
+          }),
       ...(icon === undefined ? {} : { icon }),
-      ...(config.tagline === undefined ? {} : { tagline: sanitizeSourceConnectionError(config.tagline) }),
-      ...(config.brand === undefined ? {} : { brand: config.brand }),
+      ...(config.tagline === undefined ? {} : { tagline: sanitizePublicSourceError(config.tagline) }),
+      ...(config.brand === undefined
+        ? {}
+        : {
+            brand: {
+              ...(config.brand.color === undefined ? {} : { color: config.brand.color }),
+            },
+          }),
       ...(config.isAuthenticated === undefined ? {} : { isAuthenticated: config.isAuthenticated }),
       ...(config.connectionStatus === undefined ? {} : { connectionStatus: config.connectionStatus }),
       ...(config.connectionError === undefined
         ? {}
-        : { connectionError: sanitizeSourceConnectionError(config.connectionError) }),
+        : { connectionError: sanitizePublicSourceError(config.connectionError) }),
       ...(config.lastTestedAt === undefined ? {} : { lastTestedAt: config.lastTestedAt }),
       ...(expectedTools === undefined
         ? {}
@@ -215,4 +255,8 @@ export function toPublicSourceDto(source: LoadedSource): PublicSourceDto {
     ...(source.isBuiltin === undefined ? {} : { isBuiltin: source.isBuiltin }),
     ...(source.iconPath === undefined ? {} : { iconPath: source.iconPath }),
   }
+}
+
+export function toPublicSourceDtos(sources: readonly LoadedSource[]): PublicSourceDto[] {
+  return sources.map(toPublicSourceDto)
 }

@@ -27,6 +27,7 @@ import { transferManager } from '@craft-agent/server-core/services'
 import type { PlatformServices } from '../runtime/platform'
 import { createElectronPlatform } from './platform'
 import type { HandlerDeps } from './handlers/handler-deps'
+import { createComposioCatalogFetcher } from '@craft-agent/server-core/handlers/rpc/sources'
 import { bootstrapServer, releaseServerLock } from '@craft-agent/server-core/bootstrap'
 import { createMessagingBootstrap, type MessagingBootstrapHandle } from '@craft-agent/messaging-gateway'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
@@ -632,6 +633,7 @@ app.whenReady().then(async () => {
         },
         bindRpcServer: (sm, server) => sm.setRpcServer(server),
         createHandlerDeps: ({ sessionManager: sm, platform: p, oauthFlowStore: ofs }) => {
+          const composioCatalogEndpoint = process.env.CRAFT_COMPOSIO_CATALOG_URL
           // The messaging handle is built here because it needs sessionManager.
           // The WS publisher is attached after bootstrapServer resolves (via
           // handle.setPublisher) because wsServer isn't available yet.
@@ -667,6 +669,9 @@ app.whenReady().then(async () => {
             hermesDashboardHost: hermesDashboardHost ?? undefined,
             oauthFlowStore: ofs,
             messagingRegistry: messagingHandle.registry,
+            composioCatalog: composioCatalogEndpoint
+              ? { fetchPage: createComposioCatalogFetcher(composioCatalogEndpoint) }
+              : undefined,
           }
         },
         // Headless: register only core handlers (no GUI handlers for browser, settings, etc.)
