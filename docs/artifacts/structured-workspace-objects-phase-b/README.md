@@ -1,7 +1,8 @@
 # Phase B real Electron smoke
 
-Date: 2026-08-01  
-Build: `fd2ac1a5`  
+Date: 2026-08-01
+
+Build: `fd2ac1a5`
 Profile: isolated under `/tmp/craft-phase-b-smoke.yoifn5`; no user workspace was
 modified.
 
