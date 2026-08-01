@@ -2,7 +2,9 @@
 
 Date: 2026-08-01
 
-Build: `fd2ac1a5`
+Final evidence HEAD: `724677a6`
+
+Runtime build HEAD: `9a904c04` (the following `724677a6` commit is test-only)
 Profile: isolated under `/tmp/craft-phase-b-smoke.yoifn5`; no user workspace was
 modified.
 
@@ -25,6 +27,12 @@ the edited values, and the saved view config. The final window close emitted
 both `Window closed` and `Client disconnected`; the Electron processes exited
 and CDP port 9332 was no longer listening.
 
+The final Phase B runtime was rebuilt and reopened after all production fixes.
+It restored the same revision 12 state and the saved Kanban view. The final UI
+also rejected an empty `Name` filter with the localized validation message,
+without adding a match-all filter. The last commit after that build only adds
+test assertions for retargeted tabs and does not change production output.
+
 ## Captures
 
 - `01-workspace-restored.png`: initial isolated-profile onboarding surface.
@@ -39,6 +47,8 @@ and CDP port 9332 was no longer listening.
 - `14-configured-kanban-unsaved.png`: locally configured Kanban before save.
 - `15-saved-view-committed.png`: saved view committed at revision 12.
 - `16-restart-restored.png`: state restored after full Electron restart.
+- `17-final-head-restored.png`: final runtime build restored at revision 12 and
+  localized empty-filter validation displayed.
 
 Machine-readable assertions are in `smoke-evidence.json`; lifecycle excerpts
 are in `electron-teardown.log`.

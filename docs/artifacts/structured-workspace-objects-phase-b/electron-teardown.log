@@ -7,3 +7,9 @@
 2026-08-01T11:21:18.639Z INFO  [ws-rpc-server] Client disconnected
 2026-08-01T11:21:38Z CHECK Electron parent and child processes exited
 2026-08-01T11:21:38Z CHECK CDP port 9332 closed
+2026-08-01T14:14:56.974Z INFO  [main] Final Phase B runtime initialized successfully
+2026-08-01T14:14:57.291Z INFO  [ws-rpc-server] Final smoke client connected
+2026-08-01T14:16:10.540Z INFO  [window] Final smoke window closed for workspace 2ddce2e4-c280-6c4d-0a08-99b707766ca1
+2026-08-01T14:16:10.567Z INFO  [ws-rpc-server] Final smoke client disconnected
+2026-08-01T14:16:12Z CHECK Final Electron parent and child processes exited
+2026-08-01T14:16:12Z CHECK Final CDP port 9332 closed

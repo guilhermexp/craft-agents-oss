@@ -1,7 +1,8 @@
 {
   "phase": "B",
   "date": "2026-08-01",
-  "head": "fd2ac1a5",
+  "head": "724677a6c79288c229e5929d97ae020c997fb7d3",
+  "runtimeBuildHead": "9a904c04cbdff0f106ddfa6ad02c7895277c7f93",
   "workspaceId": "2ddce2e4-c280-6c4d-0a08-99b707766ca1",
   "workspaceRoot": "/tmp/craft-phase-b-smoke.yoifn5/home/.craft-agent/workspaces/phase-a",
   "userDataDir": "/tmp/craft-phase-b-smoke.yoifn5/electron-user-data",
@@ -53,6 +54,19 @@
       "revision": 12,
       "entryName": "Alpha Edited",
       "entryStatus": "Doing"
+    },
+    "finalHeadRestartRestored": {
+      "savedViewId": "view_needs_config",
+      "adapter": "kanban",
+      "revision": 12,
+      "entryName": "Alpha Edited",
+      "entryStatus": "Doing",
+      "todoCount": 0,
+      "doingCount": 2
+    },
+    "emptyFilterRejected": {
+      "field": "Name",
+      "message": "Informe um valor para “Name” antes de adicionar o filtro."
     },
     "storageVerified": true,
     "windowClosed": true,
