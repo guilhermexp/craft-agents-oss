@@ -86,6 +86,11 @@ com status `ready`; a janela Electron recebeu o evento sem reload e exibiu uma
 única entrada `Ana / Active`. Os processos de teste encerraram com teardown dos
 watchers e recursos do workspace.
 
+Artefato rastreável de 6.4: `docs/artifacts/structured-workspace-objects-phase-a/`
+preserva o roteiro, o payload observado e as capturas do Electron real para a
+revisão 2 → 3, troca sem vazamento para o workspace de controle, restauração da
+tab escopada e desconexão do cliente RPC no fechamento da janela.
+
 ## 7. Phase B — U5/U6: views editáveis
 
 - [ ] 7.1 Escrever testes de saved views, filtros, ordering, column visibility e
