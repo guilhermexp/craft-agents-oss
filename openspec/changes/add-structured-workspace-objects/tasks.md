@@ -241,9 +241,10 @@ desmarcados.
 Evidência U6 7.3/7.4 (2026-08-01): o RED da nova suíte executou antes da
 produção e retornou `0 pass / 1 fail`, com `Cannot find module
 '../ObjectViewHost'`. O GREEN registra table, Kanban, calendar, timeline,
-gallery e list num host único dentro do preview existente. Todos recebem o
-mesmo `WorkspaceObjectPayload` e `WorkspaceObjectQueryResult` do evaluator U5;
-adapter/settings continuam no saved view v1, sem storage ou projeção paralela.
+gallery e list num host único dentro do preview existente. O `ObjectViewHost`
+recebe o mesmo `WorkspaceObjectPayload` e `WorkspaceObjectQueryResult` do
+evaluator U5; cada adapter consome somente o query result. Adapter/settings
+continuam no saved view v1, sem storage ou projeção paralela.
 
 Config ausente ou incompatível produz estado vazio com seleção de field e ação
 de configuração. O Kanban usa entries/stable IDs genéricos e as primitives DnD
