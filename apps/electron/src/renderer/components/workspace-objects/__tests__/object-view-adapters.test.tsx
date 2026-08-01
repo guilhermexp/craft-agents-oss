@@ -189,7 +189,7 @@ describe('object view adapter registry', () => {
     expect(withObjectViewAdapter(viewConfig, 'table').presentation.adapter).toBe('table')
   })
 
-  test('moves a draggable-only card between droppable columns with ArrowRight and ArrowLeft', () => {
+  test('moves a padded draggable card to the adjacent enabled column without selecting its source', () => {
     expect(OBJECT_KANBAN_KEYBOARD_SENSOR).toBe(KeyboardSensor)
 
     const rect = (left: number) => ({
@@ -198,12 +198,13 @@ describe('object view adapter registry', () => {
     const droppables = [
       { id: 'object-kanban-column:option:0', disabled: false, node: { current: null }, rect: { current: rect(0) } },
       { id: 'object-kanban-column:option:1', disabled: false, node: { current: null }, rect: { current: rect(200) } },
-      { id: 'object-kanban-column:no-group', disabled: false, node: { current: null }, rect: { current: rect(400) } },
+      { id: 'object-kanban-column:option:2', disabled: false, node: { current: null }, rect: { current: rect(400) } },
+      { id: 'object-kanban-column:no-group', disabled: true, node: { current: null }, rect: { current: rect(600) } },
     ]
     const context = {
       active: {
         id: 'object-kanban-entry:entry_a',
-        data: { current: { objectKanbanColumnId: 'object-kanban-column:option:0' } },
+        data: { current: { objectKanbanColumnId: 'object-kanban-column:option:1' } },
       },
       collisionRect: rect(0),
       droppableContainers: {
@@ -212,7 +213,7 @@ describe('object view adapter registry', () => {
         toArray: () => droppables,
       },
       droppableRects: new Map(droppables.map(candidate => [candidate.id, candidate.rect.current])),
-      over: { id: 'object-kanban-column:option:0' },
+      over: { id: 'object-kanban-column:option:1' },
       scrollableAncestors: [],
     } as unknown as Parameters<typeof OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER>[1]['context']
     let prevented = 0
@@ -221,28 +222,18 @@ describe('object view adapter registry', () => {
       preventDefault: () => { prevented += 1 },
     }) as KeyboardEvent
 
-    expect(OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER(event('ArrowRight'), {
-      active: 'object-kanban-entry:entry_a', currentCoordinates: { x: 0, y: 0 }, context,
-    })).toEqual({ x: 200, y: 0 })
-    context.over = {
-      id: 'object-kanban-column:option:1',
-      rect: rect(200),
-      disabled: false,
-      data: { current: undefined },
+    const moveFrom = (sourceColumnId: string, code: 'ArrowLeft' | 'ArrowRight', x: number) => {
+      context.active!.data.current = { objectKanbanColumnId: sourceColumnId }
+      return OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER(event(code), {
+        active: 'object-kanban-entry:entry_a', currentCoordinates: { x, y: 12 }, context,
+      })
     }
-    expect(OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER(event('ArrowLeft'), {
-      active: 'object-kanban-entry:entry_a', currentCoordinates: { x: 200, y: 0 }, context,
-    })).toEqual({ x: 0, y: 0 })
-    droppables[2]!.disabled = true
-    context.over = {
-      id: 'object-kanban-column:no-group',
-      rect: rect(400),
-      disabled: true,
-      data: { current: undefined },
-    }
-    expect(OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER(event('ArrowLeft'), {
-      active: 'object-kanban-entry:entry_inconsistent', currentCoordinates: { x: 400, y: 0 }, context,
-    })).toEqual({ x: 200, y: 0 })
+
+    expect(moveFrom('object-kanban-column:option:1', 'ArrowLeft', 224)).toEqual({ x: 0, y: 0 })
+    expect(moveFrom('object-kanban-column:option:1', 'ArrowRight', 224)).toEqual({ x: 400, y: 0 })
+    expect(moveFrom('object-kanban-column:option:0', 'ArrowLeft', 24)).toBeUndefined()
+    expect(moveFrom('object-kanban-column:option:2', 'ArrowRight', 424)).toBeUndefined()
+    expect(moveFrom('object-kanban-column:no-group', 'ArrowLeft', 624)).toEqual({ x: 400, y: 0 })
     expect(prevented).toBe(3)
 
     const viewConfig = config('kanban')

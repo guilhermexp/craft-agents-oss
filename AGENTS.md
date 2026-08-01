@@ -153,8 +153,9 @@ The Phase A local-first object contract is tracked by
   required fields the same recovery column stays visible but is disabled and
   non-droppable. Droppable IDs are structural rather than option values. Pointer
   navigation remains active and keyboard navigation resolves the nearest enabled
-  structural column geometrically, without requiring the draggable card to be a
-  sortable droppable. A pending entry is disabled and guarded by operation ID so
+  structural column geometrically after excluding the card's source column,
+  without requiring the draggable card to be a sortable droppable. A pending
+  entry is disabled and guarded by operation ID so
   stale responses cannot cross moves; entries remain independent. A drag keeps
   its optimistic value through a `ready` commit envelope and reconciles against
   the latest payload immediately, including when revalidation arrived before the

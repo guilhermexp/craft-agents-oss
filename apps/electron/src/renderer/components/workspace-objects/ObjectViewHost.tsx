@@ -403,9 +403,11 @@ export const OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER: KeyboardCoordinateGetter 
   { context, currentCoordinates },
 ) => {
   if (event.code !== KeyboardCode.Left && event.code !== KeyboardCode.Right) return undefined
+  const sourceColumnId = context.active?.data.current?.objectKanbanColumnId
   const columns: Array<{ rect: NonNullable<ReturnType<typeof context.droppableRects.get>> }> = []
   for (const container of context.droppableContainers.getEnabled()) {
     if (!isObjectKanbanColumnId(container.id)) continue
+    if (container.id === sourceColumnId) continue
     const rect = context.droppableRects.get(container.id)
     if (!rect) continue
     const isAhead = event.code === KeyboardCode.Right

@@ -297,6 +297,13 @@ React Doctor v0.9.3 line-scoped 100/100, impeccable, OpenSpec strict e
 `git diff --check` passaram. 7.3/7.4 permanecem marcados; 7.5, Electron real e
 auditoria Phase B continuam não executados e desmarcados.
 
+Residual de teclado U6 7.3/7.4 (2026-08-01): o RED focado retornou 0/1 quando
+ArrowLeft partia de um card com offset interno e selecionava novamente a coluna
+fonte. O GREEN exclui o `objectKanbanColumnId` ativo antes da busca geométrica;
+ArrowLeft/ArrowRight alcançam o vizinho na primeira tecla, boundaries retornam
+sem destino e a coluna sem grupo required desabilitada continua ignorada. A
+suíte focada passou 17/17 (97 expects); 7.5 permanece desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.
