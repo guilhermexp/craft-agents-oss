@@ -436,6 +436,45 @@ describe('WorkspaceObjectRepository', () => {
     expect(observedRevision).toBe(2);
   });
 
+  test('treats Bun and node:sqlite busy or locked errors as best-effort repair misses', () => {
+    const lockErrors = [
+      { code: 'SQLITE_BUSY' },
+      { code: 'SQLITE_LOCKED_SHAREDCACHE' },
+      { code: 'ERR_SQLITE_ERROR', errcode: 5 },
+      { code: 'ERR_SQLITE_ERROR', errcode: 261 },
+      { code: 'ERR_SQLITE_ERROR', errcode: 6 },
+      { code: 'ERR_SQLITE_ERROR', errcode: 262 },
+    ];
+    for (const [index, shape] of lockErrors.entries()) {
+      const repository = WorkspaceObjectRepository.open(makeRoot());
+      const objectId = `object_busy_${index}`;
+      repository.defineObject({ id: objectId, slug: `busy-${index}`, name: 'Busy', fields: [] });
+      repository.markProjectionStaleForTest(objectId);
+      const lockError = Object.assign(new Error('database is locked'), shape);
+      Reflect.set(repository, 'transaction', () => { throw lockError; });
+
+      expect(repository.ensureFreshProjection(objectId), JSON.stringify(shape)).toBe(false);
+      repository.close();
+    }
+  });
+
+  test('does not swallow non-lock node:sqlite errors during projection repair', () => {
+    const repository = WorkspaceObjectRepository.open(makeRoot());
+    repository.defineObject({ id: 'object_non_busy', slug: 'non-busy', name: 'Non busy', fields: [] });
+    repository.markProjectionStaleForTest('object_non_busy');
+    const sqliteError = Object.assign(new Error('SQL logic error'), { code: 'ERR_SQLITE_ERROR', errcode: 1 });
+    Reflect.set(repository, 'transaction', () => { throw sqliteError; });
+
+    let observed: unknown;
+    try {
+      repository.ensureFreshProjection('object_non_busy');
+    } catch (error) {
+      observed = error;
+    }
+    expect(observed).toBe(sqliteError);
+    repository.close();
+  });
+
   test('supports nested projection transactions with savepoints', () => {
     const repository = WorkspaceObjectRepository.open(makeRoot());
     expect(() => repository.withProjectionLock(() => {

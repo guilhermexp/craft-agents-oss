@@ -150,7 +150,10 @@ a 200 rows e inclui `totalEntries`/`truncated`, evitando falso vazio por corte
 antecipado. O envelope serializa somente relation labels referenciados nessas
 rows retornadas. Projeção stale tenta ser reparada antes de abrir o snapshot;
 se o writer lock estiver ocupado ou surgir nova divergência concorrente, o
-fallback reconstrói das rows sem escrever dentro da transação de leitura.
+fallback reconstrói das rows sem escrever dentro da transação de leitura. A
+classificação de contenção cobre códigos string `SQLITE_BUSY`/`SQLITE_LOCKED`
+do Bun e o `errcode` numérico de `node:sqlite` cujo primary code é 5 ou 6;
+outros erros SQLite continuam sendo propagados.
 
 A table não confirma de forma otimista. O RPC `upsert-entries` precisa retornar
 a revisão commitada e o editor permanece em `awaiting-revalidation` até o SWR

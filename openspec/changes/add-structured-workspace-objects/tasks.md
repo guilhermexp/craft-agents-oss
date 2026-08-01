@@ -357,6 +357,14 @@ Kanban aguardando revalidation com warning de repair separado até payload
 `typecheck:all`, tool contracts, OpenSpec strict e `git diff --check` verdes.
 7.5 permanece desmarcado.
 
+Re-review corretivo 1.2 de Phase B (2026-08-01): o RED mostrou que o classifier
+de lock aceitava apenas `code: SQLITE_BUSY`, deixando `SQLITE_LOCKED` do Bun e
+`node:sqlite` (`code: ERR_SQLITE_ERROR`, `errcode` numérico) escaparem do repair
+best-effort. O GREEN reconhece primary codes 5/6 inclusive em extended codes e
+mantém rethrow para erros SQLite não relacionados. A matriz de objetos passou
+96/96 em nove arquivos (326 expects), com typecheck shared, OpenSpec strict e
+`git diff --check` verdes. 7.5 permanece desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

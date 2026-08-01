@@ -145,7 +145,9 @@ The Phase A local-first object contract is tracked by
   `totalEntries` plus `truncated`; serialized relation labels are limited to
   IDs referenced by those returned entries. Projection repair is best-effort
   before the read snapshot, whose fallback rebuild remains read-only when the
-  writer lock is busy.
+  writer lock is busy or locked. Classify both Bun `SQLITE_BUSY`/`SQLITE_LOCKED`
+  codes and `node:sqlite` `ERR_SQLITE_ERROR` numeric `errcode` primary values
+  5/6 as contention; every other SQLite error must still propagate.
 - Table edits submit the full current entry through the existing
   `upsert-entries` action. Invalid drafts never call the mutation. A returned
   revision means the canonical commit exists, but the editor closes only after

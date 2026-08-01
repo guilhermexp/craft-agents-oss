@@ -150,6 +150,8 @@ resposta a 200 entries e SHALL retornar `totalEntries` e `truncated`. O repair
 de projeção stale SHALL ser tentado antes do snapshot de leitura; se o writer
 lock estiver ocupado, a query MUST continuar com fallback read-only. O retorno
 MUST limitar relation labels aos IDs referenciados pelas entries devolvidas.
+Contenção MUST reconhecer códigos Bun `SQLITE_BUSY`/`SQLITE_LOCKED` e primary
+`errcode` 5/6 de `node:sqlite`; erros SQLite não relacionados MUST propagar.
 
 #### Scenario: Saved view é restaurada
 
@@ -196,6 +198,13 @@ MUST limitar relation labels aos IDs referenciados pelas entries devolvidas.
 - **WHEN** o repair best-effort não adquire o lock
 - **THEN** `query-object` continua pelo snapshot read-only e retorna as rows canônicas
 - **Test:** `integration`
+
+#### Scenario: Runtime SQLite reporta contenção em formatos distintos
+
+- **GIVEN** Bun reportando `SQLITE_BUSY`/`SQLITE_LOCKED` ou `node:sqlite` reportando primary `errcode` 5/6
+- **WHEN** o repair best-effort tenta adquirir o writer lock
+- **THEN** a query usa fallback read-only, enquanto qualquer erro SQLite não relacionado é propagado
+- **Test:** `unit`
 
 #### Scenario: Relation labels respeitam o limite da página
 

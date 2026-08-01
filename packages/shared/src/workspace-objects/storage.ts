@@ -189,7 +189,7 @@ export class WorkspaceObjectRepository {
       });
       return true;
     } catch (error) {
-      if (isSQLiteBusyError(error)) return false;
+      if (isSQLiteLockContentionError(error)) return false;
       throw error;
     }
   }
@@ -451,8 +451,13 @@ function isValidIsoDateTime(value: string): boolean {
     && !Number.isNaN(Date.parse(value));
 }
 
-function isSQLiteBusyError(error: unknown): boolean {
+function isSQLiteLockContentionError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const code = Reflect.get(error, 'code');
-  return typeof code === 'string' && code.startsWith('SQLITE_BUSY');
+  if (typeof code === 'string' && (code.startsWith('SQLITE_BUSY') || code.startsWith('SQLITE_LOCKED'))) return true;
+  if (code !== 'ERR_SQLITE_ERROR') return false;
+  const errcode = Reflect.get(error, 'errcode');
+  if (typeof errcode !== 'number' || !Number.isInteger(errcode)) return false;
+  const primaryCode = errcode & 0xff;
+  return primaryCode === 5 || primaryCode === 6;
 }
