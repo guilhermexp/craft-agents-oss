@@ -119,6 +119,74 @@ function createReadinessHarness(options: {
 }
 
 describe('source_test readiness activation lifecycle', () => {
+  test('serializes the full workspace source lifecycle so a delayed failure cannot overwrite ready', async () => {
+    const slowHarness = createReadinessHarness()
+    let markSlowObservationStarted: (() => void) | undefined
+    let releaseSlowObservation: (() => void) | undefined
+    const slowObservationStarted = new Promise<void>((resolve) => {
+      markSlowObservationStarted = resolve
+    })
+    const slowObservationGate = new Promise<void>((resolve) => {
+      releaseSlowObservation = resolve
+    })
+
+    slowHarness.ctx.observeSourceToolsForProbe = async () => {
+      markSlowObservationStarted?.()
+      await slowObservationGate
+      return expectedTools
+    }
+    slowHarness.ctx.prepareSourceReadinessActivation = async (sourceSlug: string) => {
+      slowHarness.events.push(`slow-prepare:${sourceSlug}`)
+      throw new Error('delayed activation failure provider-token-sentinel')
+    }
+
+    const fastEvents: string[] = []
+    const fastCtx = {
+      ...slowHarness.ctx,
+      sessionId: 'session-2',
+      observeSourceToolsForProbe: async () => expectedTools,
+      prepareSourceReadinessActivation: async (sourceSlug: string) => {
+        fastEvents.push(`prepare:${sourceSlug}`)
+        return { activationId: 'fast-activation' }
+      },
+      commitSourceReadinessActivation: (activationId: string) => {
+        fastEvents.push(`commit:${activationId}`)
+      },
+      rollbackSourceReadinessActivation: async (activationId: string) => {
+        fastEvents.push(`rollback:${activationId}`)
+      },
+      finalizeSourceReadinessActivation: (activationId: string) => {
+        fastEvents.push(`finalize:${activationId}`)
+      },
+    } as SessionToolContext
+
+    const slowRun = handleSourceTest(slowHarness.ctx, { sourceSlug: 'composio-linear' })
+    await slowObservationStarted
+
+    let fastSettled = false
+    const fastRun = handleSourceTest(fastCtx, { sourceSlug: 'composio-linear' }).finally(() => {
+      fastSettled = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const overlappedSlowLifecycle = fastSettled
+
+    releaseSlowObservation?.()
+    const [slowResult, fastResult] = await Promise.all([slowRun, fastRun])
+    const persisted = JSON.parse(readFileSync(slowHarness.configPath, 'utf8')) as SourceConfig
+
+    expect(overlappedSlowLifecycle).toBe(false)
+    expect(slowResult.isError).toBe(true)
+    expect(fastResult.isError).toBe(false)
+    expect(fastEvents).toEqual([
+      'prepare:composio-linear',
+      'commit:fast-activation',
+      'finalize:fast-activation',
+    ])
+    expect(persisted.enabled).toBe(true)
+    expect(persisted.connectionStatus).toBe('connected')
+    expect(persisted.readiness?.status).toBe('ready')
+  })
+
   test('keeps the staged config unhealthy when final activation fails without relying on a rollback save', async () => {
     const harness = createReadinessHarness({ failPreparation: true, failSaveAt: 2 })
 

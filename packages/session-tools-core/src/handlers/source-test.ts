@@ -6,7 +6,8 @@
  * connection tests, and auth verification.
  */
 
-import { basename, join } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { basename, join, resolve } from 'node:path';
 import type { SessionToolContext } from '../context.ts';
 import type {
   ToolResult,
@@ -213,6 +214,41 @@ interface ConnectionTestResult {
   error?: string;
 }
 
+const sourceTestLifecycleTails = new Map<string, Promise<void>>();
+
+function canonicalWorkspacePath(workspacePath: string): string {
+  const absolutePath = resolve(workspacePath);
+  try {
+    return realpathSync.native(absolutePath);
+  } catch {
+    return absolutePath;
+  }
+}
+
+async function withSourceTestLifecycleLock<T>(
+  workspacePath: string,
+  sourceSlug: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const lockKey = `${canonicalWorkspacePath(workspacePath)}\0${sourceSlug}`;
+  const previousTail = sourceTestLifecycleTails.get(lockKey);
+  let releaseCurrent: () => void = () => {};
+  const currentTail = new Promise<void>((resolveTail) => {
+    releaseCurrent = resolveTail;
+  });
+  sourceTestLifecycleTails.set(lockKey, currentTail);
+
+  if (previousTail) await previousTail;
+  try {
+    return await run();
+  } finally {
+    releaseCurrent();
+    if (sourceTestLifecycleTails.get(lockKey) === currentTail) {
+      sourceTestLifecycleTails.delete(lockKey);
+    }
+  }
+}
+
 /**
  * Handle the source_test tool call.
  *
@@ -225,6 +261,17 @@ interface ConnectionTestResult {
  * 6. Metadata update - updates lastTestedAt, connectionStatus
  */
 export async function handleSourceTest(
+  ctx: SessionToolContext,
+  args: SourceTestArgs
+): Promise<ToolResult> {
+  return withSourceTestLifecycleLock(
+    ctx.workspacePath,
+    args.sourceSlug,
+    () => handleSourceTestUnlocked(ctx, args),
+  );
+}
+
+async function handleSourceTestUnlocked(
   ctx: SessionToolContext,
   args: SourceTestArgs
 ): Promise<ToolResult> {
