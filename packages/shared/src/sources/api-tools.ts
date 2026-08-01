@@ -261,7 +261,7 @@ export function createApiTool(
         const url = buildUrl(config.baseUrl, path, method, params, config.auth, resolvedCredential);
         const headers = buildHeaders(config.auth, resolvedCredential, config.defaultHeaders);
 
-        debug(`[api-tools] ${config.name}: ${method} ${url}`);
+        debug(`[api-tools] ${config.name}: ${method} request`);
 
         const fetchOptions: RequestInit = {
           method,
@@ -275,13 +275,12 @@ export function createApiTool(
             fetchOptions.body = params._rawBody;
             (fetchOptions.headers as Record<string, string>)['Content-Type'] =
               typeof params._contentType === 'string' ? params._contentType : 'text/plain';
-            debug(`[api-tools] ${config.name}: raw body (${(fetchOptions.headers as Record<string, string>)['Content-Type']}): ${params._rawBody.substring(0, 200)}`);
           } else {
             fetchOptions.body = JSON.stringify(params);
           }
         }
 
-        debug(`[api-tools] ${config.name}: headers=${JSON.stringify(fetchOptions.headers)}, bodyLength=${fetchOptions.body ? String(fetchOptions.body).length : 0}`);
+        debug(`[api-tools] ${config.name}: bodyLength=${fetchOptions.body ? String(fetchOptions.body).length : 0}`);
 
         // react-doctor-disable-next-line no-fetch-response-used-without-status-check -- response.ok is checked with a distinct error branch before success use
         const response = await fetch(url, fetchOptions);
@@ -306,12 +305,11 @@ export function createApiTool(
 
         // Check for error responses first (errors are always text)
         if (!response.ok) {
-          const text = buffer.toString('utf-8');
-          debug(`[api-tools] ${config.name} error ${response.status}: ${text.substring(0, 200)}`);
+          debug(`[api-tools] ${config.name} request failed with status ${response.status}`);
           return {
             content: [{
               type: 'text' as const,
-              text: `API Error ${response.status}: ${text}`,
+              text: `API request failed (status ${response.status})`,
             }],
             isError: true,
           };
@@ -332,11 +330,10 @@ export function createApiTool(
         }
 
         return { content: [{ type: 'text' as const, text: buffer.toString('utf-8') }] };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        debug(`[api-tools] ${config.name} request failed: ${message}`);
+      } catch {
+        debug(`[api-tools] ${config.name} request failed`);
         return {
-          content: [{ type: 'text' as const, text: `Request failed: ${message}` }],
+          content: [{ type: 'text' as const, text: 'API request failed' }],
           isError: true,
         };
       }

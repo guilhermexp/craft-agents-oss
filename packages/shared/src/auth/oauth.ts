@@ -54,13 +54,10 @@ export class CraftOAuth {
 
   // Get OAuth server metadata using progressive discovery
   private async getServerMetadata(): Promise<OAuthMetadata> {
-    const metadata = await discoverOAuthMetadata(
-      this.config.mcpUrl,
-      (msg) => this.callbacks.onStatus(msg)
-    );
+    const metadata = await discoverOAuthMetadata(this.config.mcpUrl);
 
     if (!metadata) {
-      throw new Error(`No OAuth metadata found for ${this.config.mcpUrl}`);
+      throw new Error('oauth-metadata-unavailable');
     }
 
     return metadata;
@@ -87,8 +84,8 @@ export class CraftOAuth {
     }, OAUTH_ENDPOINT_TIMEOUT_MS);
 
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Failed to register OAuth client: ${error}`);
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error('oauth-client-registration-failed');
     }
 
     return response.json() as Promise<{
@@ -123,8 +120,8 @@ export class CraftOAuth {
     }, OAUTH_ENDPOINT_TIMEOUT_MS);
 
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Failed to exchange code for tokens: ${error}`);
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error('oauth-token-exchange-failed');
     }
 
     const data = await response.json() as {
@@ -220,11 +217,10 @@ export class CraftOAuth {
     let metadata;
     try {
       metadata = await this.getServerMetadata();
-      this.callbacks.onStatus(`Found OAuth endpoints at ${this.config.mcpUrl}`);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Unknown error';
-      this.callbacks.onStatus(`Failed to get OAuth metadata: ${msg}`);
-      throw error;
+      this.callbacks.onStatus('OAuth server configuration found');
+    } catch {
+      this.callbacks.onStatus('OAuth server configuration unavailable');
+      throw new Error('oauth-metadata-unavailable');
     }
 
     // 2. Generate PKCE and state — no dependencies
@@ -244,31 +240,29 @@ export class CraftOAuth {
       port = server.port;
       codePromise = server.codePromise;
       this.callbacks.onStatus(`Callback server listening on port ${port}`);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Unknown error';
-      this.callbacks.onStatus(`Failed to start callback server: ${msg}`);
-      throw error;
+    } catch {
+      this.callbacks.onStatus('OAuth callback server failed to start');
+      throw new Error('oauth-callback-server-failed');
     }
 
     // 4. Register client if endpoint available — now has the bound port
     let clientId: string;
     if (metadata.registration_endpoint) {
-      this.callbacks.onStatus(`Registering client at ${metadata.registration_endpoint}...`);
+      this.callbacks.onStatus('Registering OAuth client...');
       try {
         const client = await this.registerClient(metadata.registration_endpoint, port);
         clientId = client.client_id;
-        this.callbacks.onStatus(`Registered as client: ${clientId}`);
-      } catch (error) {
+        this.callbacks.onStatus('OAuth client registered');
+      } catch {
         // Clean up the callback server if registration fails
         this.stopServer();
-        const msg = error instanceof Error ? error.message : 'Unknown error';
-        this.callbacks.onStatus(`Client registration failed: ${msg}`);
-        throw error;
+        this.callbacks.onStatus('OAuth client registration failed');
+        throw new Error('oauth-client-registration-failed');
       }
     } else {
       // Use a default client ID for public clients
       clientId = 'craft-agent';
-      this.callbacks.onStatus(`Using default client ID: ${clientId}`);
+      this.callbacks.onStatus('Using default OAuth client');
     }
 
     // 5. Build authorization URL
@@ -483,14 +477,13 @@ async function registerMcpOAuthClient(
         token_endpoint_auth_method: 'none',
       }),
     }, OAUTH_ENDPOINT_TIMEOUT_MS);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    throw new McpClientRegistrationError(`Failed to register OAuth client: ${message}`);
+  } catch {
+    throw new McpClientRegistrationError('oauth-client-registration-failed');
   }
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new McpClientRegistrationError(`Failed to register OAuth client: ${error}`, response.status);
+    await response.body?.cancel().catch(() => undefined);
+    throw new McpClientRegistrationError('oauth-client-registration-failed', response.status);
   }
 
   return response.json() as Promise<{ client_id: string; client_secret?: string }>;
@@ -522,8 +515,8 @@ async function exchangeMcpCodeForTokens(
   }, OAUTH_ENDPOINT_TIMEOUT_MS);
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to exchange code for tokens: ${error}`);
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error('oauth-token-exchange-failed');
   }
 
   const data = await response.json() as {
@@ -556,7 +549,7 @@ export async function prepareMcpOAuth(
 ): Promise<PreparedOAuthFlow> {
   const metadata = await discoverOAuthMetadata(mcpUrl);
   if (!metadata) {
-    throw new Error(`No OAuth metadata found for ${mcpUrl}`);
+    throw new Error('oauth-metadata-unavailable');
   }
 
   const pkce = generatePKCE();
@@ -625,10 +618,11 @@ export async function exchangeMcpOAuth(params: OAuthExchangeParams): Promise<OAu
       expiresAt: tokens.expiresAt,
       oauthClientId: params.clientId,
     };
-  } catch (error) {
+  } catch {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'MCP OAuth exchange failed',
+      error: 'OAuth token exchange failed',
+      errorCode: 'oauth-token-exchange-failed',
     };
   }
 }
@@ -661,7 +655,7 @@ async function tryFetchAuthServerMetadata(
   onLog?: (message: string) => void
 ): Promise<OAuthMetadata | null> {
   try {
-    onLog?.(`  Trying: ${url}`);
+    onLog?.('  Trying OAuth metadata endpoint');
     const response = await fetchWithTimeout(url);
     if (response.ok) {
       const data = await response.json() as OAuthMetadata;
@@ -675,20 +669,19 @@ async function tryFetchAuthServerMetadata(
           if (!endpoint) continue;
           const endpointCheck = isUrlSafeToFetch(endpoint);
           if (!endpointCheck.safe) {
-            onLog?.(`  ✗ Unsafe ${label} in metadata rejected: ${endpointCheck.reason}`);
+            onLog?.(`  ✗ Unsafe ${label} in metadata rejected`);
             return null;
           }
         }
-        onLog?.(`  ✓ Found OAuth metadata at ${url}`);
+        onLog?.('  ✓ Found OAuth metadata');
         return data;
       }
-      onLog?.(`  ✗ Invalid metadata at ${url} (missing required fields)`);
+      onLog?.('  ✗ Invalid OAuth metadata (missing required fields)');
     } else {
-      onLog?.(`  ✗ ${response.status} at ${url}`);
+      onLog?.(`  ✗ OAuth metadata endpoint returned ${response.status}`);
     }
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    onLog?.(`  ✗ Error fetching ${url}: ${msg}`);
+  } catch {
+    onLog?.('  ✗ OAuth metadata request failed');
   }
   return null;
 }
@@ -950,8 +943,7 @@ async function fetchProtectedResourceMetadata(
     if (error instanceof Error && error.name === 'AbortError') {
       onLog?.(`  ✗ Request timeout fetching protected resource metadata`);
     } else {
-      const msg = error instanceof Error ? error.message : String(error);
-      onLog?.(`  ✗ Error fetching protected resource metadata: ${msg}`);
+      onLog?.('  ✗ Protected resource metadata request failed');
     }
     return null;
   }
@@ -1034,9 +1026,8 @@ async function discoverViaProtectedResource(
     const normalizedAuthServer = normalizeUrl(authServerUrl);
     const authServerMetadataUrl = `${normalizedAuthServer}/.well-known/oauth-authorization-server`;
     return await tryFetchAuthServerMetadata(authServerMetadataUrl, onLog);
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    onLog?.(`  ✗ RFC 9728 discovery failed: ${msg}`);
+  } catch {
+    onLog?.('  ✗ RFC 9728 discovery failed');
     return null;
   }
 }
@@ -1058,7 +1049,7 @@ export async function discoverOAuthMetadata(
   try {
     url = new URL(mcpUrl);
   } catch {
-    onLog?.(`Invalid MCP URL: ${mcpUrl}`);
+    onLog?.('Invalid MCP URL');
     return null;
   }
 
@@ -1067,11 +1058,11 @@ export async function discoverOAuthMetadata(
   // derived from its origin.
   const mcpUrlCheck = isUrlSafeToFetch(mcpUrl);
   if (!mcpUrlCheck.safe) {
-    onLog?.(`Unsafe MCP URL rejected for OAuth discovery: ${mcpUrlCheck.reason}`);
+    onLog?.('Unsafe MCP URL rejected for OAuth discovery');
     return null;
   }
 
-  onLog?.(`Discovering OAuth metadata for ${mcpUrl}`);
+  onLog?.('Discovering OAuth metadata');
 
   // 1. Try RFC 9728 protected resource discovery first (handles Craft MCP and other compliant servers)
   const rfc9728Metadata = await discoverViaProtectedResource(mcpUrl, onLog);
@@ -1090,7 +1081,7 @@ export async function discoverOAuthMetadata(
   for (const candidate of candidates) {
     const candidateCheck = isUrlSafeToFetch(candidate);
     if (!candidateCheck.safe) {
-      onLog?.(`  ✗ Unsafe discovery URL rejected: ${candidateCheck.reason}`);
+      onLog?.('  ✗ Unsafe discovery URL rejected');
       continue;
     }
     const metadata = await tryFetchAuthServerMetadata(candidate, onLog);
@@ -1099,6 +1090,6 @@ export async function discoverOAuthMetadata(
     }
   }
 
-  onLog?.(`No OAuth metadata found for ${mcpUrl}`);
+  onLog?.('No OAuth metadata found');
   return null;
 }

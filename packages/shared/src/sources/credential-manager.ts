@@ -286,9 +286,9 @@ export class SourceCredentialManager {
         if (hasAllHeaders) {
           return parsed as MultiHeaderCredential;
         }
-      } catch (e) {
+      } catch {
         // Not JSON, fall through to other auth types
-        debug(`[SourceCredentialManager] JSON parse failed: ${e}`);
+        debug('[SourceCredentialManager] Multi-header credential JSON parse failed');
       }
     }
 
@@ -388,8 +388,8 @@ export class SourceCredentialManager {
         saveSourceConfig(source.workspaceRootPath, config);
         debug(`[SourceCredentialManager] Marked ${source.config.slug} as needing re-auth: ${errorMessage}`);
       }
-    } catch (error) {
-      debug(`[SourceCredentialManager] Failed to mark ${source.config.slug} as needing re-auth:`, error);
+    } catch {
+      debug(`[SourceCredentialManager] Failed to mark ${source.config.slug} as needing re-auth`);
     }
   }
 
@@ -1041,8 +1041,8 @@ export class SourceCredentialManager {
       const response = await fetch(url, fetchOptions);
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        throw new Error(`Renew endpoint returned ${response.status}: ${errorText.slice(0, 200)}`);
+        await response.body?.cancel().catch(() => undefined);
+        throw new Error('token-renew-failed');
       }
 
       const json = await response.json() as Record<string, unknown>;

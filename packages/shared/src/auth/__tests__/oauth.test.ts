@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from 'bun:test';
-import { getMcpBaseUrl, discoverOAuthMetadata, prepareMcpOAuth, exchangeMcpOAuth, isUrlSafeToFetch } from '../oauth';
+import { CraftOAuth, getMcpBaseUrl, discoverOAuthMetadata, prepareMcpOAuth, exchangeMcpOAuth, isUrlSafeToFetch } from '../oauth';
 
 // ============================================================
 // Unit tests for internal helpers exported only for testing
@@ -545,13 +545,45 @@ describe('discoverOAuthMetadata', () => {
     });
 
     it('handles network errors gracefully', async () => {
+      const logs: string[] = [];
       mockFetch.mockImplementation(() => {
-        return Promise.reject(new Error('Network error'));
+        return Promise.reject(new Error('Network error token=network-secret client_secret=client-secret'));
       });
 
-      const result = await discoverOAuthMetadata('https://example.com/mcp');
+      const result = await discoverOAuthMetadata(
+        'https://user:password@example.com/mcp?session_token=url-secret',
+        (message) => logs.push(message),
+      );
       expect(result).toBeNull();
+      const evidence = logs.join('\n');
+      for (const secret of ['network-secret', 'client-secret', 'user:password', 'url-secret']) {
+        expect(evidence).not.toContain(secret);
+      }
     });
+  });
+
+  it('keeps CraftOAuth status callbacks and thrown failures free of provider details', async () => {
+    const statuses: string[] = [];
+    mockFetch.mockRejectedValue(new Error(
+      'token=provider-secret client_secret=client-secret Authorization: Bearer auth-secret',
+    ));
+    const oauth = new CraftOAuth(
+      { mcpUrl: 'https://user:password@example.com/mcp?session_token=url-secret' },
+      { onStatus: (message) => statuses.push(message), onError: (message) => statuses.push(message) },
+    );
+
+    let thrown = '';
+    try {
+      await oauth.authenticate();
+    } catch (error) {
+      thrown = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(thrown).toBe('oauth-metadata-unavailable');
+    const evidence = `${statuses.join('\n')}\n${thrown}`;
+    for (const secret of ['provider-secret', 'client-secret', 'auth-secret', 'user:password', 'url-secret']) {
+      expect(evidence).not.toContain(secret);
+    }
   });
 
   it('calls onLog callback with discovery progress', async () => {
@@ -1250,7 +1282,7 @@ describe('prepareMcpOAuth', () => {
       return Promise.resolve(new Response('Not Found', { status: 404 }));
     });
 
-    await expect(prepareMcpOAuth('https://example.com/mcp', { callbackPort: 8914 })).rejects.toThrow('Failed to register OAuth client: Server error');
+    await expect(prepareMcpOAuth('https://example.com/mcp', { callbackPort: 8914 })).rejects.toThrow('oauth-client-registration-failed');
   });
 });
 
@@ -1318,7 +1350,10 @@ describe('OAuth endpoint/redirect SSRF (R3)', () => {
     } as Parameters<typeof exchangeMcpOAuth>[0]);
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('Unsafe token endpoint');
+    expect(result).toMatchObject({
+      error: 'OAuth token exchange failed',
+      errorCode: 'oauth-token-exchange-failed',
+    });
     expect(mockFetch).not.toHaveBeenCalled();
   });
 

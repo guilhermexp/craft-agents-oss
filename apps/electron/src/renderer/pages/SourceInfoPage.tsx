@@ -340,17 +340,15 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
     try {
       const result = await window.electronAPI.performOAuth({ sourceSlug })
       if (!result.success) {
-        toast.error(t('sourceInfo.oauthFailed'), { description: result.error })
+        toast.error(t('sourceInfo.oauthFailed'))
         return
       }
       const sources = await window.electronAPI.getSources(workspaceId)
       const updated = sources.find((candidate) => candidate.config.slug === sourceSlug)
       if (updated) setSource(updated)
       toast.success(t('sourceInfo.oauthConnected'))
-    } catch (error) {
-      toast.error(t('sourceInfo.oauthFailed'), {
-        description: error instanceof Error ? error.message : undefined,
-      })
+    } catch {
+      toast.error(t('sourceInfo.oauthFailed'))
     } finally {
       setOauthConnecting(false)
     }

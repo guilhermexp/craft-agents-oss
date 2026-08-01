@@ -86,19 +86,18 @@ export async function createCallbackServer(options?: CreateCallbackServerOptions
         query[key] = value;
       });
 
-      const payload: CallbackPayload = {
-        query,
-      };
-
       // Check if this looks like a successful auth callback
       const hasCode = !!query.code;
       const hasError = !!query.error;
+      const payload: CallbackPayload = {
+        query: hasError ? { error: 'oauth-provider-error' } : query,
+      };
 
       // Send a styled success/error page
       const html = generateCallbackPage({
         title: hasError ? 'Authorization Failed' : 'Authorization Complete',
         isSuccess: hasCode && !hasError,
-        errorDetail: query.error_description || query.error,
+        errorDetail: hasError ? 'OAuth provider rejected the authorization request' : undefined,
         appType,
         deeplinkUrl: (hasCode && !hasError) ? deeplinkUrl : undefined,
       });
@@ -114,11 +113,11 @@ export async function createCallbackServer(options?: CreateCallbackServerOptions
       if (resolveCallback) {
         resolveCallback(payload);
       }
-    } catch (error) {
+    } catch {
       const html = generateCallbackPage({
         title: 'Error',
         isSuccess: false,
-        errorDetail: error instanceof Error ? error.message : 'Internal Server Error',
+        errorDetail: 'OAuth callback failed',
         appType,
       });
 
@@ -126,7 +125,7 @@ export async function createCallbackServer(options?: CreateCallbackServerOptions
       res.end(html);
 
       if (rejectCallback) {
-        rejectCallback(error instanceof Error ? error : new Error(String(error)));
+        rejectCallback(new Error('oauth-callback-failed'));
       }
     } finally {
       if (server) {
@@ -151,8 +150,8 @@ export async function createCallbackServer(options?: CreateCallbackServerOptions
       // and propagate them to the callback promise.
       server = candidate;
       boundPort = port;
-      server.on('error', (err) => {
-        rejectCallback?.(err instanceof Error ? err : new Error(String(err)));
+      server.on('error', () => {
+        rejectCallback?.(new Error('oauth-callback-server-failed'));
       });
       break;
     } catch (err: unknown) {
