@@ -297,6 +297,14 @@ intact; object payloads initially route to existing preview primitives.
 
 **Verification:** Table edits survive app restart and workspace reopening, and all success UI states correspond to committed revisions.
 
+**U5 implementation evidence (2026-08-01):** Tasks 7.1/7.2 implement the
+versioned saved-view/query contract and commit-gated table inside the existing
+Phase A preview seam. Focused automated coverage is 99/99 across U5 plus the
+affected U1-U4/frontier/Electron tests; all package typechecks, tool/i18n
+contracts, React Doctor, Impeccable, OpenSpec strict and diff checks pass. The
+real Electron/restart assertion remains deliberately assigned to 7.5 and is
+not claimed by this unit.
+
 #### U6. View adapter registry and six object views
 
 **Goal:** Render one collection through table, Kanban, calendar, timeline, gallery, and list adapters with safe mutations.

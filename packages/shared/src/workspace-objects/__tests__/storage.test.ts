@@ -216,6 +216,27 @@ describe('WorkspaceObjectRepository', () => {
     reopened.close();
   });
 
+  test('normalizes saved views persisted by the Phase A loose config contract when rebuilding projection', () => {
+    const root = makeRoot();
+    const repository = WorkspaceObjectRepository.open(root);
+    repository.defineObject({ id: 'object_tasks', slug: 'tasks', name: 'Tasks', fields: [] });
+    repository.upsertSavedView('object_tasks', { id: 'view_legacy', name: 'Legacy', config: { search: 'open' } });
+    repository.close();
+
+    const db = openSQLite(join(root, 'objects', 'objects.sqlite'));
+    db.prepare('UPDATE workspace_object_saved_views SET config_json = ? WHERE id = ?')
+      .run(JSON.stringify({ search: 'phase-a', columns: ['field_name'] }), 'view_legacy');
+    db.prepare('DELETE FROM workspace_object_payloads WHERE object_id = ?').run('object_tasks');
+    db.close();
+
+    const reopened = WorkspaceObjectRepository.open(root);
+    expect(reopened.getObject('object_tasks')?.savedViews[0]).toMatchObject({
+      id: 'view_legacy',
+      config: { schemaVersion: 1, search: 'phase-a', columnVisibility: { field_name: true } },
+    });
+    reopened.close();
+  });
+
   test('supports nested projection transactions with savepoints', () => {
     const repository = WorkspaceObjectRepository.open(makeRoot());
     expect(() => repository.withProjectionLock(() => {

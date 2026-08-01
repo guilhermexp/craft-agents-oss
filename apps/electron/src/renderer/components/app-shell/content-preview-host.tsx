@@ -16,7 +16,7 @@ const CONTENT_RENDERERS: Record<ContentTarget['kind'], ContentRenderer> = {
     <InlineFilePreviewPanel filePath={target.path} onBack={onClose} onOpenDialog={onOpenFileDialog} />
   ) : null,
   object: ({ target }) => target.kind === 'object' ? (
-    <WorkspaceObjectPreviewPanel workspaceId={target.workspaceId} objectId={target.objectId} />
+    <WorkspaceObjectPreviewPanel workspaceId={target.workspaceId} objectId={target.objectId} viewId={target.viewId} />
   ) : null,
 }
 

@@ -16,7 +16,9 @@ nesse SHA, não um contrato normativo do Craft.
 - **Decisões Craft:** SQLite é a única autoridade; manifests são projeções
   reparáveis; a tool de agente é genérica e validada; eventos só saem após o
   commit como `ready` ou `projection-error`; cache, cancellation/generation e
-  watcher têm lifecycle explícito. U5-U9 permanecem fora da Phase A.
+  watcher têm lifecycle explícito. A Phase A encerrou em GO no commit
+  `8442836f`; U5 acrescenta saved views e table editável sobre esses mesmos
+  seams. U6-U9 permanecem fora do escopo desta entrega.
 
 As recomendações originais que sugerem SQL cru, DuckDB, escrita direta de YAML
 ou assumptions sobre capacidades do Craft são contexto histórico e ficam

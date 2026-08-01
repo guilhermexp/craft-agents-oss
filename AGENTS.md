@@ -129,7 +129,18 @@ The Phase A local-first object contract is tracked by
   eviction must remove payloads rather than only LRU metadata.
 - The existing right sidebar remains the product owner. Structured objects
   extend `SessionInfoPopover`/`AppShell` and reuse current file viewers; do not
-  create a parallel panel or implement Phase B view editors in this surface.
+  create a parallel panel. U5 extends the same `WorkspaceObjectPreviewPanel`
+  with the typed table; U6 adapters remain outside this surface until their own
+  test-first unit lands.
+- `packages/shared/src/workspace-objects/view-schema.ts` owns the strict saved
+  view v1 contract. `query.ts` is the only evaluator for nested filters, search,
+  stable multi-sort, visibility and current relation labels. Both
+  `query-object` and the Desktop table call it; do not fork query semantics in
+  the renderer or an adapter.
+- Table edits submit the full current entry through the existing
+  `upsert-entries` action. Invalid drafts never call the mutation. A returned
+  revision means the canonical commit exists, but the editor closes only after
+  the SWR payload reaches that revision and confirms the canonical value.
 
 ### Structured-object child index
 
@@ -141,6 +152,7 @@ The Phase A local-first object contract is tracked by
 | `packages/server-core/src/handlers/rpc/workspace-objects.ts` | Workspace-scoped Desktop bridge |
 | `apps/electron/src/renderer/components/app-shell/content-*.ts` | Tabs, target identity, bounded resolver and SWR |
 | `apps/electron/src/renderer/components/right-sidebar/workspace-object*.tsx` | Object list and Phase A read preview inside the existing sidebar |
+| `apps/electron/src/renderer/components/workspace-objects/` | U5 saved table state and commit-gated typed field editors |
 | `docs/denchclaw/` | Pinned upstream evidence, known defects and Craft decisions |
 
 After changing this contract, run the focused Phase A tests, `typecheck:all`,

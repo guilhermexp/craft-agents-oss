@@ -113,15 +113,44 @@ GO sem blocker concreto, liberando a Phase B.
 
 ## 7. Phase B — U5/U6: views editáveis
 
-- [ ] 7.1 Escrever testes de saved views, filtros, ordering, column visibility e
+- [x] 7.1 Escrever testes de saved views, filtros, ordering, column visibility e
       field editors antes da implementação de U5.
-- [ ] 7.2 Implementar query compartilhada, saved views e table editável com
+- [x] 7.2 Implementar query compartilhada, saved views e table editável com
       confirmação somente após commit.
 - [ ] 7.3 Escrever testes do registry de adapters, configurações vazias e rollback
       Kanban para rejeição e transporte antes da implementação de U6.
 - [ ] 7.4 Implementar table, Kanban, calendar, timeline, gallery e list sobre um
       único payload.
 - [ ] 7.5 Validar testes, Electron real e auditor GO antes de Phase C.
+
+Evidência U5 7.1/7.2 (2026-08-01): o primeiro RED executou as duas suítes U5
+antes dos arquivos de produção e retornou `0 pass / 2 fail`, com
+`Cannot find module '../query.ts'` e
+`Cannot find module '../ObjectFieldEditor'`. REDs incrementais também
+reproduziram `query-object` ausente, restore ignorando `ContentTarget.viewId`,
+presentation settings sem aplicação e query relacional comparando o stable ID
+em vez do label atual. A revisão final acrescentou um RED de compatibilidade
+para views loose já persistidas pela Phase A: a reconstrução devolvia a view
+como ausente até o leitor normalizá-la para v1.
+
+O GREEN final passou 99/99 em 16 arquivos: as suítes U5 cobrem schema v1
+estrito, filtros booleanos aninhados, search, multi-sort estável, columns
+ocultas, settings/restauração da table, os nove field types, inputs inválidos
+sem mutation, relation rename preservando ID, resposta rejeitada, exceção de
+transporte, compatibilidade de views Phase A e confirmação somente após
+revalidation da revisão commitada. A matriz inclui as regressões U1-U4 de
+storage/projection/manifest/service,
+frontier/MCP, tabs/resolver/eventos/reconnect, sidebar e watcher. O action
+`query-object` provou paridade entre saved view do agente e config inline da UI,
+inclusive relações resolvidas pelo mesmo helper shared.
+
+Gates U5: `typecheck:all` passou; `lint:tool-contracts` confirmou 30 tools
+native + 2 MCP-only; `lint:i18n:parity` confirmou 7 locales com 1.780 keys;
+React Doctor retornou 100/100; `impeccable detect` saiu 0; OpenSpec strict e
+`git diff --check` passaram. A table está ligada ao
+`WorkspaceObjectPreviewPanel`/`ContentPreviewHost`, usa as actions U2
+`upsert-entries`/`upsert-view` e preserva o resolver SWR existente. U6, smoke
+Electron/auditoria de Phase B e 7.5 não foram iniciados nem marcados.
 
 ## 8. Phase C — U7: discovery e health
 

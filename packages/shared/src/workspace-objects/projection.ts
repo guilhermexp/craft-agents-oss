@@ -6,7 +6,7 @@ import {
   type WorkspaceObjectProjectionStatus,
   type WorkspaceObjectValue,
   type WorkspaceObjectSavedView,
-  WorkspaceObjectSavedViewSchema,
+  WorkspaceObjectSavedViewInputSchema,
 } from './types.ts';
 
 interface ObjectRow { id: string; slug: string; name: string; revision: number }
@@ -54,7 +54,7 @@ export function buildWorkspaceObjectPayload(db: SQLiteDatabase, objectId: string
   const viewRows = db.prepare('SELECT id, name, config_json FROM workspace_object_saved_views WHERE object_id = ? ORDER BY name, id').all(objectId) as ViewRow[];
   const savedViews: WorkspaceObjectSavedView[] = viewRows.flatMap(view => {
     try {
-      const result = WorkspaceObjectSavedViewSchema.safeParse({ id: view.id, name: view.name, config: JSON.parse(view.config_json) });
+      const result = WorkspaceObjectSavedViewInputSchema.safeParse({ id: view.id, name: view.name, config: JSON.parse(view.config_json) });
       return result.success ? [result.data] : [];
     } catch {
       return [];

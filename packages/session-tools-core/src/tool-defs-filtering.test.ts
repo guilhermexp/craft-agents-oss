@@ -113,6 +113,7 @@ describe('session tool filtering helpers', () => {
       'get-object',
       'list-objects',
       'repair-projection',
+      'query-object',
     ]);
 
     const canonicalDef = SESSION_TOOL_DEFS.find(def => def.name === 'workspace_objects');

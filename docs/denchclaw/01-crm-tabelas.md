@@ -311,6 +311,30 @@ Se um divergir, o objeto some da sidebar ou renderiza vazio. **Não há validaç
 
 ## 4. Filtros e views salvas
 
+### Implementação Craft U5
+
+O Craft não compila o filtro para SQL nem mantém uma segunda implementação no
+renderer. `view-schema.ts` valida um contrato estrito `schemaVersion: 1` com
+grupos booleanos aninhados, search, multi-sort, visibilidade e settings do
+adapter. `query.ts` avalia esse contrato deterministicamente para os dois
+caminhos: `workspace_objects.query-object` usado pelo agente e
+`ObjectTableView` usado pelo Desktop. A ordem original é o desempate estável.
+
+Views antigas aceitas pelo placeholder da Phase A continuam entrando pelo
+frontier v1 e também são normalizadas ao reconstruir projeções gravadas antes
+do U5. O payload e todas as novas views saem somente no formato versionado.
+
+Relações continuam armazenando `entryId`. O Desktop carrega o payload atual do
+objeto relacionado em paralelo com o objeto aberto, deriva o label atual no
+render e revalida quando o alvo muda. Um rename altera o label sem regravar o
+stable ID da célula.
+
+Edição de célula não é otimista: o draft tipado permanece aberto durante a
+mutation. Input inválido não chama `upsert-entries`; rejeição e erro de
+transporte mantêm o draft com mensagem acionável. Mesmo uma resposta de sucesso
+só fecha o editor quando o resolver SWR entrega um payload cuja revisão alcança
+o commit e cujo valor canônico coincide.
+
 `apps/web/lib/object-filters.ts` é a peça mais reaproveitável do repo. Define:
 
 ```ts

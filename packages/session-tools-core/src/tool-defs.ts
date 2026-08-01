@@ -102,11 +102,62 @@ const WorkspaceObjectEntrySchema = z.strictObject({
   ])),
 });
 
-const WorkspaceObjectSavedViewSchema = z.strictObject({
+type WorkspaceObjectFilterClause =
+  | { type: 'rule'; fieldId: string; operator: string; value?: string | number | boolean | null | Array<string | number | boolean | null> }
+  | { type: 'group'; conjunction: 'and' | 'or'; clauses: WorkspaceObjectFilterClause[] };
+
+const WorkspaceObjectFilterValueSchema = z.union([
+  z.string().max(64_000), z.number().finite(), z.boolean(), z.null(),
+  z.array(z.union([z.string().max(64_000), z.number().finite(), z.boolean(), z.null()])).max(200),
+]);
+const WorkspaceObjectFilterRuleSchema = z.strictObject({
+  type: z.literal('rule'),
+  fieldId: z.string().min(1).max(120),
+  operator: z.enum(['equals', 'not-equals', 'contains', 'not-contains', 'gt', 'gte', 'lt', 'lte', 'in', 'not-in', 'is-empty', 'is-not-empty', 'before', 'after']),
+  value: WorkspaceObjectFilterValueSchema.optional(),
+});
+function buildWorkspaceObjectFilterClauseSchema(depth: number): z.ZodType<WorkspaceObjectFilterClause> {
+  if (depth === 1) return WorkspaceObjectFilterRuleSchema;
+  const child = buildWorkspaceObjectFilterClauseSchema(depth - 1);
+  return z.union([
+    WorkspaceObjectFilterRuleSchema,
+    z.strictObject({
+      type: z.literal('group'),
+      conjunction: z.enum(['and', 'or']),
+      clauses: z.array(child).min(1).max(50),
+    }),
+  ]);
+}
+const WorkspaceObjectFilterClauseSchema = buildWorkspaceObjectFilterClauseSchema(8);
+const WorkspaceObjectAdapterSettingScalarSchema = z.union([
+  z.string().max(64_000), z.number().finite(), z.boolean(), z.null(),
+]);
+const WorkspaceObjectAdapterSettingSchema = z.union([
+  WorkspaceObjectAdapterSettingScalarSchema,
+  z.array(WorkspaceObjectAdapterSettingScalarSchema).max(200),
+]);
+const WorkspaceObjectViewConfigSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  search: z.string().max(500),
+  filter: WorkspaceObjectFilterClauseSchema.nullable(),
+  sort: z.array(z.strictObject({ fieldId: z.string().min(1).max(120), direction: z.enum(['asc', 'desc']) })).max(10),
+  columnVisibility: z.record(z.string().min(1).max(120), z.boolean()),
+  presentation: z.strictObject({
+    adapter: z.enum(['table', 'kanban', 'calendar', 'timeline', 'gallery', 'list']),
+    settings: z.record(z.string().max(120), WorkspaceObjectAdapterSettingSchema),
+  }),
+});
+const WorkspaceObjectSavedViewSchema = z.union([z.strictObject({
   id: z.string().min(1).max(120),
   name: z.string().min(1).max(160),
-  config: z.record(z.string(), z.unknown()),
-});
+  config: WorkspaceObjectViewConfigSchema,
+}), z.strictObject({
+  id: z.string().min(1).max(120),
+  name: z.string().min(1).max(160),
+  config: z.record(z.string(), z.unknown()).refine(config => !('schemaVersion' in config), {
+    message: 'Legacy saved views cannot declare schemaVersion',
+  }),
+})]);
 
 const WorkspaceObjectDefinitionSchema = z.strictObject({
   id: z.string().min(1).max(120),
@@ -133,19 +184,30 @@ export const WorkspaceObjectsSchema = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('get-object'), objectId: WorkspaceObjectIdSchema }),
   z.strictObject({ action: z.literal('list-objects'), limit: z.number().int().min(1).max(200).optional() }),
   z.strictObject({ action: z.literal('repair-projection'), objectId: WorkspaceObjectIdSchema }),
+  z.strictObject({
+    action: z.literal('query-object'), objectId: WorkspaceObjectIdSchema,
+    query: z.union([
+      z.strictObject({ viewId: WorkspaceObjectIdSchema }),
+      z.strictObject({ config: WorkspaceObjectViewConfigSchema }),
+    ]),
+  }),
 ]);
 
 // Claude SDK's tool() API still requires a Zod object shape. Canonical validation
 // remains WorkspaceObjectsSchema; this envelope only describes the union frontier
 // to the native adapter before executeSessionTool() performs action-specific parse.
 const WorkspaceObjectsNativeSchema = z.strictObject({
-  action: z.enum(['define-object', 'upsert-entries', 'delete-entries', 'upsert-view', 'get-object', 'list-objects', 'repair-projection']),
+  action: z.enum(['define-object', 'upsert-entries', 'delete-entries', 'upsert-view', 'get-object', 'list-objects', 'repair-projection', 'query-object']),
   object: WorkspaceObjectDefinitionSchema.optional(),
   objectId: WorkspaceObjectIdSchema.optional(),
   entries: z.array(WorkspaceObjectEntrySchema).min(1).max(200).optional(),
   entryIds: z.array(z.string().min(1).max(120)).min(1).max(200).optional(),
   view: WorkspaceObjectSavedViewSchema.optional(),
   limit: z.number().int().min(1).max(200).optional(),
+  query: z.union([
+    z.strictObject({ viewId: WorkspaceObjectIdSchema }),
+    z.strictObject({ config: WorkspaceObjectViewConfigSchema }),
+  ]).optional(),
 });
 
 export const CredentialPromptSchema = z.object({

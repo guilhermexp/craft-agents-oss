@@ -132,6 +132,19 @@ Saved views armazenam filtros aninhados, search, multi-sort, column visibility e
 settings do adapter. A query é avaliada no shared domain para agente e UI
 receberem o mesmo resultado.
 
+No U5, o contrato persistido é `schemaVersion: 1` e estrito. O action adicional
+`query-object` aceita exatamente uma saved view por ID ou uma config inline e
+chama o mesmo evaluator usado pela table. Inputs legacy do placeholder Phase A
+permanecem compatíveis no frontier v1, mas são normalizados para v1 antes da
+gravação. Sort usa a ordem canônica da entry como desempate; relation values
+continuam IDs e recebem labels dos payloads relacionados somente na leitura.
+
+A table não confirma de forma otimista. O RPC `upsert-entries` precisa retornar
+a revisão commitada e o editor permanece em `awaiting-revalidation` até o SWR
+observar revisão igual ou superior com o valor esperado. Validação local,
+resposta sem envelope de commit e exceção de transporte preservam o draft e não
+produzem estado visual de sucesso.
+
 Os seis adapters consomem um payload comum. Kanban conserva a mutação original
 durante optimistic update e reverte tanto em resposta rejeitada quanto em
 exceção de transporte. Calendar é primeiro um adapter genérico de date/datetime;

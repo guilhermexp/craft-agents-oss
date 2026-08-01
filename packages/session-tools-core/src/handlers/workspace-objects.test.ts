@@ -24,5 +24,22 @@ describe('workspace_objects frontier contract', () => {
     expect(WorkspaceObjectsSchema.safeParse({ action: 'upsert-entries', objectId: 'object_people' }).success).toBe(false);
     expect(WorkspaceObjectsSchema.safeParse({ action: 'delete-entries', objectId: 'object_people' }).success).toBe(false);
     expect(WorkspaceObjectsSchema.safeParse({ action: 'upsert-view', objectId: 'object_people' }).success).toBe(false);
+    expect(WorkspaceObjectsSchema.safeParse({
+      action: 'query-object', objectId: 'object_people', query: { viewId: 'view_active' },
+    }).success).toBe(true);
+    expect(WorkspaceObjectsSchema.safeParse({
+      action: 'query-object', objectId: 'object_people', query: { viewId: 'view_active', config: {
+        schemaVersion: 1, search: '', filter: null, sort: [], columnVisibility: {},
+        presentation: { adapter: 'table', settings: {} },
+      } },
+    }).success).toBe(false);
+    expect(WorkspaceObjectsSchema.safeParse({
+      action: 'upsert-view', objectId: 'object_people', view: {
+        id: 'view_future', name: 'Future', config: {
+          schemaVersion: 2, search: '', filter: null, sort: [], columnVisibility: {},
+          presentation: { adapter: 'table', settings: {} },
+        },
+      },
+    }).success).toBe(false);
   });
 });

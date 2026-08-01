@@ -1,4 +1,12 @@
 import { z } from 'zod';
+import { WorkspaceObjectSavedViewSchema, type WorkspaceObjectSavedView } from './view-schema.ts';
+
+export {
+  WorkspaceObjectSavedViewInputSchema,
+  WorkspaceObjectSavedViewSchema,
+  type WorkspaceObjectSavedView,
+  type WorkspaceObjectSavedViewInput,
+} from './view-schema.ts';
 
 export const WorkspaceObjectFieldTypeSchema = z.enum([
   'text', 'number', 'boolean', 'date', 'datetime', 'select', 'status', 'relation', 'file',
@@ -49,13 +57,6 @@ export interface WorkspaceObjectEntry {
   id: string;
   values: Record<string, WorkspaceObjectValue>;
 }
-
-export const WorkspaceObjectSavedViewSchema = z.strictObject({
-  id: z.string().min(1).max(120),
-  name: z.string().min(1).max(160),
-  config: z.record(z.string(), z.unknown()),
-});
-export type WorkspaceObjectSavedView = z.infer<typeof WorkspaceObjectSavedViewSchema>;
 
 export const WorkspaceObjectProjectionStatusSchema = z.enum(['ready', 'projection-error']);
 export type WorkspaceObjectProjectionStatus = z.infer<typeof WorkspaceObjectProjectionStatusSchema>;

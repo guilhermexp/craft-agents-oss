@@ -14,9 +14,9 @@ import {
   type WorkspaceObjectPayload,
   WorkspaceObjectPayloadSchema,
   type WorkspaceObjectValue,
-  WorkspaceObjectSavedViewSchema,
   type WorkspaceObjectSavedView,
 } from './types.ts';
+import { WorkspaceObjectSavedViewInputSchema, type WorkspaceObjectSavedViewInput } from './view-schema.ts';
 
 interface VersionRow { version: number }
 interface ObjectRevisionRow { revision: number }
@@ -127,9 +127,9 @@ export class WorkspaceObjectRepository {
     return this.requireObject(objectId);
   }
 
-  upsertSavedView(objectId: string, input: WorkspaceObjectSavedView): WorkspaceObjectPayload {
+  upsertSavedView(objectId: string, input: WorkspaceObjectSavedViewInput): WorkspaceObjectPayload {
     if (!this.objectExists(objectId)) throw new Error(`Unknown object: ${objectId}`);
-    const view = WorkspaceObjectSavedViewSchema.parse(input);
+    const view = WorkspaceObjectSavedViewInputSchema.parse(input);
     this.assertOwnedByObject('workspace_object_saved_views', view.id, objectId);
     const configJson = JSON.stringify(view.config);
     if (Buffer.byteLength(configJson, 'utf8') > 64_000) throw new Error('Saved view config exceeds 64KB');
