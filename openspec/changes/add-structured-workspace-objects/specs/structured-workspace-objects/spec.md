@@ -220,6 +220,9 @@ incompatível e MUST restaurar a mutação original quando a persistência falha
 por resposta ou transporte. Um envelope com object ID e revisão canônicos mais
 `projection-error` MUST manter a mutação aguardando revalidation, MUST mostrar
 warning de repair separado e MUST NOT alegar rollback do commit.
+Retry e envelopes de commit MUST preservar warning anterior até revalidation
+`ready` suficiente; `projection-error` posterior MAY substituí-lo por revisão
+mais nova.
 
 #### Scenario: Group field está ausente
 
@@ -238,6 +241,13 @@ warning de repair separado e MUST NOT alegar rollback do commit.
 - **WHEN** o move retorna object ID e revisão canônicos com `projection-error`
 - **THEN** o card aguarda confirmação canônica, mostra warning separado e limpa o warning somente após payload `ready` na revisão commitada
 - **Test:** `integration`
+
+#### Scenario: Retry falha enquanto repair anterior segue pendente
+
+- **GIVEN** um warning `projection-error` confirmado na revisão 5
+- **WHEN** a mesma entry inicia retry e recebe rollback ou envelope de commit sem revalidation
+- **THEN** o warning da revisão 5 permanece até payload `ready` de revisão 5 ou superior
+- **Test:** `unit`
 
 ### Requirement: Gmail sync is resumable and idempotent
 

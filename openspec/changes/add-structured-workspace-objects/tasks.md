@@ -249,9 +249,11 @@ continuam no saved view v1, sem storage ou projeção paralela.
 Config ausente ou incompatível produz estado vazio com seleção de field e ação
 de configuração. O Kanban usa entries/stable IDs genéricos e as primitives DnD
 existentes, persiste a entry completa pelo commit envelope e mantém o override
-otimista até revalidation. Envelope rejeitado, `projection-error`, canonical
-mismatch ou throw de transporte removem o override e restauram a coluna
-original com erro visível. A matriz U5+U6 passou 75/75 em oito arquivos (224
+otimista até revalidation. Envelope rejeitado, canonical mismatch ou throw de
+transporte removem o override e restauram a coluna original com erro visível.
+Um envelope canônico `projection-error` preserva o commit e mostra warning de
+repair até payload `ready`, inclusive através de retries posteriores. A matriz
+U5+U6 passou 75/75 em oito arquivos (224
 expects); typechecks Electron/shared e i18n parity passaram, com 7 locales e
 1.792 keys. React Doctor latest 0.9.3 terminou com 0 issues e `impeccable@3
 detect` saiu 0. O DOX e a documentação DenchClaw foram atualizados. 7.5,
@@ -352,8 +354,9 @@ concorrente, filtros relation só comparavam o label renderizado e um envelope
 canônico `projection-error` causava rollback falso no Kanban. O GREEN move
 leitura/normalização/marker da migration para a mesma transação `BEGIN
 IMMEDIATE`, combina stable ID e label com OR positivo/AND negado e mantém o move
-Kanban aguardando revalidation com warning de repair separado até payload
-`ready`. A matriz de objetos passou 94/94 em nove arquivos (319 expects), com
+Kanban aguardando revalidation com warning de repair separado. O fix 2.1 abaixo
+completa esse contrato preservando o warning através de retry/novo envelope até
+payload `ready`. A matriz de objetos passou 94/94 em nove arquivos (319 expects), com
 `typecheck:all`, tool contracts, OpenSpec strict e `git diff --check` verdes.
 7.5 permanece desmarcado.
 
@@ -363,6 +366,15 @@ de lock aceitava apenas `code: SQLITE_BUSY`, deixando `SQLITE_LOCKED` do Bun e
 best-effort. O GREEN reconhece primary codes 5/6 inclusive em extended codes e
 mantém rethrow para erros SQLite não relacionados. A matriz de objetos passou
 96/96 em nove arquivos (326 expects), com typecheck shared, OpenSpec strict e
+`git diff --check` verdes. 7.5 permanece desmarcado.
+
+Re-review corretivo 2.1 de Phase B (2026-08-01): o RED confirmou que iniciar
+retry na mesma entry apagava o warning `projection-error` anterior antes de
+qualquer payload `ready`; um envelope `ready` do retry também o removia cedo.
+O GREEN separa warning do lifecycle da tentativa: begin, rollback e commit
+envelope preservam a revisão avisada, reconcile `ready` suficiente a limpa e
+novo `projection-error` a substitui. A matriz de objetos passou 97/97 em nove
+arquivos (332 expects), com `typecheck:all`, OpenSpec strict e
 `git diff --check` verdes. 7.5 permanece desmarcado.
 
 ## 8. Phase C — U7: discovery e health

@@ -166,7 +166,9 @@ durante optimistic update e reverte tanto em resposta rejeitada quanto em
 exceção de transporte. Um envelope com revisão canônica e `projection-error`
 permanece aguardando revalidation, mostra warning de repair separado e só limpa
 o warning quando um payload `ready` alcança a revisão commitada; não existe
-rollback falso. Calendar é primeiro um adapter genérico de date/datetime; sync
+rollback falso. Retry, rollback ou envelope `ready` posterior não apagam o
+warning anterior por conta própria; outro `projection-error` pode substituí-lo
+por revisão mais nova. Calendar é primeiro um adapter genérico de date/datetime; sync
 de Google Calendar apenas materializa dados nesse contrato.
 
 ## Integrações

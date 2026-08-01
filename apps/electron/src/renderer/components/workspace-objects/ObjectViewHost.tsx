@@ -124,16 +124,14 @@ export function beginObjectKanbanMove(
 ): ObjectKanbanMoveState {
   if (state.pending[entry.id]) return state
   const errors = { ...state.errors }
-  const warnings = { ...state.warnings }
   delete errors[entry.id]
-  delete warnings[entry.id]
   return {
     pending: {
       ...state.pending,
       [entry.id]: { operationId, fieldId, originalValue: entry.values[fieldId], nextValue },
     },
     errors,
-    warnings,
+    warnings: state.warnings,
   }
 }
 
@@ -207,9 +205,9 @@ export function applyObjectKanbanCommit(
     return { pending, errors: { ...state.errors, [result.entryId]: result.error }, warnings: state.warnings }
   }
   pending[result.entryId] = { ...move, commitRevision: result.revision }
-  const warnings = { ...state.warnings }
-  if (result.warning) warnings[result.entryId] = result.warning
-  else delete warnings[result.entryId]
+  const warnings = result.warning
+    ? { ...state.warnings, [result.entryId]: result.warning }
+    : state.warnings
   const awaiting = { pending, errors: state.errors, warnings }
   return latestPayload ? reconcileObjectKanbanMoves(awaiting, latestPayload) : awaiting
 }

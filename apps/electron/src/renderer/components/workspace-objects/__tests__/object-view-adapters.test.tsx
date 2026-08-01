@@ -381,6 +381,55 @@ describe('object Kanban commit lifecycle', () => {
     expect(warningMarkup).toContain('committed but its projection requires repair')
   })
 
+  test('preserves an earlier repair warning across retry envelopes until a ready payload repairs it', () => {
+    const optimistic = beginObjectKanbanMove(EMPTY_OBJECT_KANBAN_MOVE_STATE, entry, 'field_status', 'Doing', 'operation-1')
+    const awaitingRepair = applyObjectKanbanCommit(optimistic, {
+      status: 'awaiting-revalidation',
+      entryId: entry.id,
+      operationId: 'operation-1',
+      revision: 5,
+      warning: { code: 'projection-error', revision: 5 },
+    })
+    const canonicalProjectionError: WorkspaceObjectPayload = {
+      ...payload,
+      revision: 5,
+      projectionStatus: 'projection-error',
+      entries: payload.entries.map(candidate => candidate.id === entry.id
+        ? { ...candidate, values: { ...candidate.values, field_status: 'Doing' } }
+        : candidate),
+    }
+    const warned = reconcileObjectKanbanMoves(awaitingRepair, canonicalProjectionError)
+
+    const retry = beginObjectKanbanMove(warned, canonicalProjectionError.entries[0]!, 'field_status', 'Todo', 'operation-2')
+    expect(retry.warnings).toEqual({ [entry.id]: { code: 'projection-error', revision: 5 } })
+    const failedRetry = applyObjectKanbanCommit(retry, {
+      status: 'rollback',
+      entryId: entry.id,
+      operationId: 'operation-2',
+      error: { code: 'transport', detail: 'offline' },
+    })
+    expect(failedRetry.warnings).toEqual({ [entry.id]: { code: 'projection-error', revision: 5 } })
+
+    const readyRetry = beginObjectKanbanMove(failedRetry, canonicalProjectionError.entries[0]!, 'field_status', 'Todo', 'operation-3')
+    const readyEnvelope = applyObjectKanbanCommit(readyRetry, {
+      status: 'awaiting-revalidation', entryId: entry.id, operationId: 'operation-3', revision: 6,
+    })
+    expect(readyEnvelope.warnings).toEqual({ [entry.id]: { code: 'projection-error', revision: 5 } })
+    expect(reconcileObjectKanbanMoves(readyEnvelope, { ...payload, revision: 4 }).warnings)
+      .toEqual({ [entry.id]: { code: 'projection-error', revision: 5 } })
+    expect(reconcileObjectKanbanMoves(readyEnvelope, { ...payload, revision: 5 }).warnings).toEqual({})
+
+    const replacementRetry = beginObjectKanbanMove(failedRetry, canonicalProjectionError.entries[0]!, 'field_status', 'Todo', 'operation-4')
+    const replacedWarning = applyObjectKanbanCommit(replacementRetry, {
+      status: 'awaiting-revalidation',
+      entryId: entry.id,
+      operationId: 'operation-4',
+      revision: 7,
+      warning: { code: 'projection-error', revision: 7 },
+    })
+    expect(replacedWarning.warnings).toEqual({ [entry.id]: { code: 'projection-error', revision: 7 } })
+  })
+
   test('rolls back when the mutation transport throws', async () => {
     const optimistic = beginObjectKanbanMove(EMPTY_OBJECT_KANBAN_MOVE_STATE, entry, 'field_status', 'Doing', 'operation-1')
     const result = await commitObjectKanbanMove({

@@ -180,6 +180,9 @@ The Phase A local-first object contract is tracked by
   isolated by entry. A canonical commit envelope with `projection-error` stays
   awaiting revalidation and exposes a separate repair warning until a `ready`
   payload at the committed revision is observed; it never reports rollback.
+  Retrying the entry and receiving either a rollback or `ready` commit envelope
+  does not clear an earlier warning before revalidation. A later
+  `projection-error` replaces it with the newer revision.
 
 ### Structured-object child index
 
