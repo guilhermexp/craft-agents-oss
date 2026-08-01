@@ -179,12 +179,19 @@ na ordem canônica, ou o primeiro field como fallback. A leitura SQL reutiliza
 esse helper sobre no máximo 200 fields e materializa em batch somente os
 candidate IDs bounded do snapshot, sem N+1 ou scan global de entries.
 
-A table não confirma de forma otimista. O RPC `upsert-entries` precisa retornar
-a revisão commitada e o editor permanece em `awaiting-revalidation` até o SWR
-observar revisão igual ou superior com o valor esperado. Validação local,
-resposta sem envelope de commit e exceção de transporte preservam o draft e não
-produzem estado visual de sucesso. O estado busy do field editor usa uma key
-própria em todos os locales, distinta de salvar view.
+A edição de field e o Kanban fazem read-modify-upsert no renderer: partem da
+entry atual do payload, sobrepõem somente o field alvo e enviam o snapshot
+completo de `values` pelo action `upsert-entries`. O action continua patch-like
+sobre os valores fornecidos; isso não transforma o repository em uma API
+replace-style nem autoriza o renderer a chamá-lo diretamente. Reenviar os
+sibling values atuais sem alteração os preserva explicitamente na fronteira do
+transporte. Não há precondition de revision na mutação. A confirmação continua
+canônica: o envelope precisa retornar a revisão commitada e field editor/Kanban
+permanecem em `awaiting-revalidation` até o SWR observar revisão igual ou
+superior com o valor alvo esperado. Validação local, resposta sem envelope de
+commit e exceção de transporte preservam o draft/estado recuperável e não
+produzem sucesso visual. O estado busy do field editor usa uma key própria em
+todos os locales, distinta de salvar view.
 Os prompts de ação U5/U6 em alemão e húngaro seguem o registro formal já usado
 pelos field editors, sem alternar para imperativos informais dentro do bloco.
 

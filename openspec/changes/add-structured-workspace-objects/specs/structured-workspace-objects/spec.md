@@ -141,6 +141,9 @@ canônico. Trocar adapter MUST NOT migrar dados nem alterar object/entry IDs.
 Saved views SHALL preservar filtros aninhados, search, multi-sort, column
 visibility e settings do adapter. Table edits SHALL validar pelo field type,
 resolver relation labels por stable ID e somente confirmar sucesso após commit.
+O evaluator MUST aplicar as keys de multi-sort na ordem configurada e MUST usar
+a ordem canônica das entries no snapshot como desempate estável e determinístico
+quando todas as keys compararem iguais.
 Migration v3 SHALL adquirir o writer lock antes de ler e normalizar legacy
 saved views, reavaliando updates concorrentes sob a mesma transação. O config
 normalizado MUST ocupar no máximo 64.000 bytes UTF-8 após JSON escaping e
@@ -156,7 +159,9 @@ positivos e AND para operadores negados. Operadores de range SHALL excluir
 valores `null`, ausentes ou string vazia; a ordenação null-last permanece um
 contrato separado de sort e não pode ser reutilizada como match de filtro.
 `query-object` SHALL avaliar o snapshot canônico completo antes de limitar a
-resposta a 200 entries e SHALL retornar `totalEntries` e `truncated`. O repair
+resposta a 200 entries. `totalEntries` MUST contar os resultados após
+search/filter e antes desse cap; `truncated` MUST ser verdadeiro se e somente se
+o cap omitir ao menos uma entry correspondente. O repair
 de projeção stale SHALL ser tentado antes do snapshot de leitura; se o writer
 lock estiver ocupado, a query MUST continuar com fallback read-only. O retorno
 MUST limitar relation labels aos IDs referenciados pelas entries devolvidas.
@@ -203,6 +208,13 @@ dentro do bloco workspaceObject.
 - **WHEN** uma view com filtros aninhados e columns ocultas é reaberta
 - **THEN** query e apresentação correspondem ao estado salvo
 - **Test:** `integration`
+
+#### Scenario: Empate de multi-sort preserva ordem canônica
+
+- **GIVEN** múltiplas entries empatadas em todas as keys configuradas de sort
+- **WHEN** o evaluator aplica o multi-sort
+- **THEN** as entries empatadas permanecem na ordem canônica do snapshot de forma determinística
+- **Test:** `unit`
 
 #### Scenario: Update concorrente vence migration v3
 
@@ -312,7 +324,7 @@ dentro do bloco workspaceObject.
 
 - **GIVEN** um objeto com mais de 200 entries e o único match após a entry 200
 - **WHEN** `query-object` aplica search ou filtro
-- **THEN** o evaluator considera o conjunto inteiro, retorna o match e informa o total/truncamento da página
+- **THEN** o evaluator considera o conjunto inteiro, retorna o match, conta `totalEntries` após o filtro e antes do cap e deriva `truncated` somente desse cap
 - **Test:** `integration`
 
 #### Scenario: Projeção stale durante query não promove snapshot de leitura

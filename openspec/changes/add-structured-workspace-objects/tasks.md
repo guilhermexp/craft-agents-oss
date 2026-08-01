@@ -560,6 +560,19 @@ novos permanecem disponíveis e `validate:ci` usa o nome documentado
 contracts, OpenSpec strict e `git diff --check` ficaram verdes. 7.5 permanece
 desmarcado.
 
+Fechamento contratual 8 de Phase B (2026-08-01): mudança exclusivamente
+documental. O design esclarece que field edit e Kanban sobrepõem o field alvo no
+snapshot completo da entry atual e o enviam pelo action patch-like
+`upsert-entries`, sem acesso renderer→repository, sem semântica replace-style e
+sem inventar precondition de revision; a confirmação continua pela revisão
+commitada e revalidation canônica. A spec eleva a ordem configurada do
+multi-sort e o desempate pela ordem canônica do snapshot a MUST, e define
+`totalEntries` após search/filter e antes do cap, com `truncated` derivado
+somente desse cap. Nenhum teste foi alterado porque a cobertura real já existia
+em `object-table-state`, `object-view-adapters`, `query` e `service`; os focos
+passaram 5/5 (16 expects). OpenSpec strict, DOX pass e `git diff --check` ficaram
+verdes. 7.5 permanece desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.
