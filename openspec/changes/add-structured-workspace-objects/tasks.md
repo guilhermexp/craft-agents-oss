@@ -56,7 +56,7 @@
 - [x] 6.3 `vibe-security` e Coderabbit não reportam blocker no delta da fase.
 - [x] 6.4 Smoke real no Electron comprova agente → create/update object → evento →
       sidebar, tabs, SWR, workspace switch e watcher teardown.
-- [ ] 6.5 `openspec-phase-auditor` retorna GO antes de Phase B.
+- [x] 6.5 `openspec-phase-auditor` retorna GO antes de Phase B.
 
 Closeout de regressão de 6.1/6.2 (2026-08-01): a suíte focada U1-U4 passou
 56/56 em 13 arquivos; os typechecks afetados de shared, server-core e Electron
@@ -106,6 +106,10 @@ preserva o roteiro, os payloads MCP de create/update/get, as capturas do
 Electron real para as revisões 1 → 2 e 2 → 3, troca sem vazamento para o
 workspace de controle, restauração da tab escopada e o log de desconexão do
 cliente RPC no fechamento da janela.
+
+Closeout de 6.5 (2026-08-01): o `openspec-phase-auditor` reavaliou em modo
+read-only `c375a1fb..4c0e4d46`, confirmou as evidências de 6.1–6.4 e retornou
+GO sem blocker concreto, liberando a Phase B.
 
 ## 7. Phase B — U5/U6: views editáveis
 
