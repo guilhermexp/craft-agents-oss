@@ -3,20 +3,29 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createInstance } from 'i18next'
 import { I18nextProvider } from 'react-i18next'
+import { KeyboardSensor } from '@dnd-kit/core'
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { evaluateWorkspaceObjectQuery } from '@craft-agent/shared/workspace-objects/query'
+import type { WorkspaceObjectServiceResult } from '@craft-agent/shared/workspace-objects/service'
 import type { WorkspaceObjectPayload } from '@craft-agent/shared/workspace-objects/types'
 import type { WorkspaceObjectViewConfig } from '@craft-agent/shared/workspace-objects/view-schema'
 import {
   EMPTY_OBJECT_KANBAN_MOVE_STATE,
+  OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER,
+  OBJECT_KANBAN_KEYBOARD_SENSOR,
   OBJECT_VIEW_ADAPTERS,
+  ObjectKanbanErrorAlert,
   ObjectViewHost,
   applyObjectKanbanCommit,
   beginObjectKanbanMove,
   commitObjectKanbanMove,
   getObjectViewAdapter,
   reconcileObjectKanbanMoves,
+  resolveObjectKanbanDropValue,
   resolveObjectKanbanEntryValue,
   resolveObjectViewConfiguration,
+  withObjectViewAdapter,
+  type ObjectKanbanErrorCode,
 } from '../ObjectViewHost'
 
 const payload: WorkspaceObjectPayload = {
@@ -67,9 +76,13 @@ await i18n.init({
         'chat.workspaceObjectConfigureView': 'Configure view',
         'chat.workspaceObjectAdapterMissingField': 'Choose a compatible field for this view.',
         'chat.workspaceObjectAdapterNoCompatibleField': 'Add a compatible field before using this view.',
+        'chat.workspaceObjectAdapterUseTable': 'Use table',
+        'chat.workspaceObjectConfigureField': 'Field used by this view',
+        'chat.workspaceObjectKanbanNoGroup': 'No group',
         'chat.workspaceObjectKanbanCommitMissing': 'The Kanban move did not return a canonical commit.',
         'chat.workspaceObjectKanbanProjectionError': 'The Kanban move committed but its projection requires repair.',
         'chat.workspaceObjectKanbanNotConfirmed': 'The Kanban move could not be confirmed after refresh.',
+        'chat.workspaceObjectKanbanTransportError': 'The Kanban move could not be saved.',
       },
     },
   },
@@ -120,6 +133,7 @@ describe('object view adapter registry', () => {
               </div>
             )}
             onConfigureSetting={() => {}}
+            onChangeAdapter={() => {}}
           />
         </I18nextProvider>,
       )
@@ -140,6 +154,7 @@ describe('object view adapter registry', () => {
           mutate={async () => ({ objectId: payload.id, revision: 5, projectionStatus: 'ready' })}
           tableContent={<div>table must not render</div>}
           onConfigureSetting={() => {}}
+          onChangeAdapter={() => {}}
         />
       </I18nextProvider>,
     )
@@ -147,13 +162,61 @@ describe('object view adapter registry', () => {
     expect(markup).toContain('Configure view')
     expect(markup).not.toContain('table must not render')
   })
+
+  test('offers a localized table action when the adapter has no compatible field', () => {
+    const noFilePayload = {
+      ...payload,
+      fields: payload.fields.filter(field => field.type !== 'file'),
+    }
+    const viewConfig = config('gallery')
+    const markup = renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <ObjectViewHost
+          payload={noFilePayload}
+          config={viewConfig}
+          query={evaluateWorkspaceObjectQuery(noFilePayload, viewConfig)}
+          mutate={async () => ({ objectId: payload.id, revision: 5, projectionStatus: 'ready' })}
+          tableContent={<div>table must not render before the action</div>}
+          onConfigureSetting={() => {}}
+          onChangeAdapter={() => {}}
+        />
+      </I18nextProvider>,
+    )
+    expect(markup).toContain('Use table')
+    expect(markup).not.toContain('table must not render before the action')
+
+    expect(withObjectViewAdapter).toBeFunction()
+    expect(withObjectViewAdapter(viewConfig, 'table').presentation.adapter).toBe('table')
+  })
+
+  test('wires the keyboard sensor with sortable coordinates', () => {
+    expect(OBJECT_KANBAN_KEYBOARD_SENSOR).toBe(KeyboardSensor)
+    expect(OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER).toBe(sortableKeyboardCoordinates)
+
+    const viewConfig = config('kanban')
+    const markup = renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <ObjectViewHost
+          payload={payload}
+          config={viewConfig}
+          query={evaluateWorkspaceObjectQuery(payload, viewConfig)}
+          mutate={async () => ({ objectId: payload.id, revision: 5, projectionStatus: 'ready' })}
+          tableContent={null}
+          onConfigureSetting={() => {}}
+          onChangeAdapter={() => {}}
+        />
+      </I18nextProvider>,
+    )
+    expect(markup).toContain('role="button"')
+    expect(markup).toContain('tabindex="0"')
+  })
 })
 
 describe('object Kanban commit lifecycle', () => {
   const entry = payload.entries[0]!
 
   test('keeps the optimistic move through commit and clears it only after canonical revalidation', async () => {
-    const optimistic = beginObjectKanbanMove(EMPTY_OBJECT_KANBAN_MOVE_STATE, entry, 'field_status', 'Doing')
+    const optimistic = beginObjectKanbanMove(EMPTY_OBJECT_KANBAN_MOVE_STATE, entry, 'field_status', 'Doing', 'operation-1')
     expect(resolveObjectKanbanEntryValue(optimistic, entry, 'field_status')).toBe('Doing')
 
     const submittedValues: Array<Record<string, unknown>> = []
@@ -162,6 +225,7 @@ describe('object Kanban commit lifecycle', () => {
       entry,
       fieldId: 'field_status',
       nextValue: 'Doing',
+      operationId: 'operation-1',
       mutate: async action => {
         if (action.action !== 'upsert-entries') throw new Error('Unexpected action')
         if (action.entries[0]) submittedValues.push(action.entries[0].values)
@@ -169,7 +233,7 @@ describe('object Kanban commit lifecycle', () => {
       },
     })
     expect(submittedValues[0]).toEqual({ ...entry.values, field_status: 'Doing' })
-    expect(result).toEqual({ status: 'awaiting-revalidation', entryId: entry.id, revision: 5 })
+    expect(result).toEqual({ status: 'awaiting-revalidation', entryId: entry.id, operationId: 'operation-1', revision: 5 })
 
     const awaiting = applyObjectKanbanCommit(optimistic, result)
     expect(resolveObjectKanbanEntryValue(awaiting, entry, 'field_status')).toBe('Doing')
@@ -188,36 +252,158 @@ describe('object Kanban commit lifecycle', () => {
   })
 
   test('rolls back rejected envelopes and projection-error responses', async () => {
-    for (const response of [
-      { payload: null },
-      { objectId: payload.id, revision: 5, projectionStatus: 'projection-error' as const },
-    ]) {
-      const optimistic = beginObjectKanbanMove(EMPTY_OBJECT_KANBAN_MOVE_STATE, entry, 'field_status', 'Doing')
+    const cases: Array<{ response: WorkspaceObjectServiceResult; errorCode: ObjectKanbanErrorCode }> = [
+      { response: { payload: null }, errorCode: 'commit-missing' },
+      {
+        response: { objectId: payload.id, revision: 5, projectionStatus: 'projection-error' },
+        errorCode: 'projection-error',
+      },
+    ]
+    for (const { response, errorCode } of cases) {
+      const optimistic = beginObjectKanbanMove(EMPTY_OBJECT_KANBAN_MOVE_STATE, entry, 'field_status', 'Doing', 'operation-1')
       const result = await commitObjectKanbanMove({
         objectId: payload.id,
         entry,
         fieldId: 'field_status',
         nextValue: 'Doing',
+        operationId: 'operation-1',
         mutate: async () => response,
       })
       const rolledBack = applyObjectKanbanCommit(optimistic, result)
       expect(result.status).toBe('rollback')
+      if (result.status === 'rollback') expect(result.error.code).toBe(errorCode)
       expect(resolveObjectKanbanEntryValue(rolledBack, entry, 'field_status')).toBe('Todo')
       expect(rolledBack.error).not.toBeNull()
     }
   })
 
   test('rolls back when the mutation transport throws', async () => {
-    const optimistic = beginObjectKanbanMove(EMPTY_OBJECT_KANBAN_MOVE_STATE, entry, 'field_status', 'Doing')
+    const optimistic = beginObjectKanbanMove(EMPTY_OBJECT_KANBAN_MOVE_STATE, entry, 'field_status', 'Doing', 'operation-1')
     const result = await commitObjectKanbanMove({
       objectId: payload.id,
       entry,
       fieldId: 'field_status',
       nextValue: 'Doing',
+      operationId: 'operation-1',
       mutate: async () => { throw new Error('transport offline') },
     })
     const rolledBack = applyObjectKanbanCommit(optimistic, result)
-    expect(result).toEqual({ status: 'rollback', entryId: entry.id, error: 'transport offline' })
+    expect(result).toEqual({
+      status: 'rollback',
+      entryId: entry.id,
+      operationId: 'operation-1',
+      error: { code: 'transport', detail: 'transport offline' },
+    })
     expect(resolveObjectKanbanEntryValue(rolledBack, entry, 'field_status')).toBe('Todo')
+  })
+
+  test('preserves null and absent values in a translated no-group column with collision-safe ids', async () => {
+    const ungroupedPayload: WorkspaceObjectPayload = {
+      ...payload,
+      entries: [
+        ...payload.entries,
+        { id: 'Todo', values: { field_name: 'Null', field_status: null } },
+        { id: 'object-kanban-column:option:0', values: { field_name: 'Absent' } },
+      ],
+    }
+    const viewConfig = config('kanban')
+    const query = evaluateWorkspaceObjectQuery(ungroupedPayload, viewConfig)
+    const markup = renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <ObjectViewHost
+          payload={ungroupedPayload}
+          config={viewConfig}
+          query={query}
+          mutate={async () => ({ objectId: payload.id, revision: 5, projectionStatus: 'ready' })}
+          tableContent={null}
+          onConfigureSetting={() => {}}
+          onChangeAdapter={() => {}}
+        />
+      </I18nextProvider>,
+    )
+    for (const candidate of query.entries) expect(markup).toContain(`data-entry-id="${candidate.id}"`)
+    expect(markup).toContain('No group')
+    expect(markup).toContain('data-object-kanban-column-id="object-kanban-column:no-group"')
+    expect(markup).toContain('data-object-kanban-column-id="object-kanban-column:option:0"')
+
+    expect(resolveObjectKanbanDropValue).toBeFunction()
+    expect(resolveObjectKanbanDropValue(payload.fields[1]!, 'object-kanban-column:no-group')).toBeNull()
+    expect(resolveObjectKanbanDropValue(payload.fields[1]!, 'object-kanban-column:option:0')).toBe('Todo')
+    expect(resolveObjectKanbanDropValue(payload.fields[1]!, 'Todo')).toBeUndefined()
+
+    const nullCommit = await commitObjectKanbanMove({
+      objectId: payload.id,
+      entry,
+      fieldId: 'field_status',
+      nextValue: null,
+      operationId: 'operation-null',
+      mutate: async action => {
+        expect(action.action).toBe('upsert-entries')
+        if (action.action === 'upsert-entries') expect(action.entries[0]?.values.field_status).toBeNull()
+        return { objectId: payload.id, revision: 5, projectionStatus: 'ready' }
+      },
+    })
+    expect(nullCommit.status).toBe('awaiting-revalidation')
+  })
+
+  test('ignores a second move for one pending entry and stale out-of-order responses', () => {
+    const first = beginObjectKanbanMove(EMPTY_OBJECT_KANBAN_MOVE_STATE, entry, 'field_status', 'Doing', 'operation-1')
+    const ignoredSecond = beginObjectKanbanMove(first, entry, 'field_status', 'Todo', 'operation-2')
+    expect(ignoredSecond).toBe(first)
+
+    const laterState = {
+      ...first,
+      pending: {
+        [entry.id]: {
+          ...first.pending[entry.id]!,
+          operationId: 'operation-2',
+          nextValue: 'Todo',
+        },
+      },
+    }
+    const afterStale = applyObjectKanbanCommit(laterState, {
+      status: 'rollback',
+      entryId: entry.id,
+      operationId: 'operation-1',
+      error: { code: 'transport', detail: 'late response' },
+    })
+    expect(afterStale).toBe(laterState)
+    expect(resolveObjectKanbanEntryValue(afterStale, entry, 'field_status')).toBe('Todo')
+  })
+
+  test('keeps moves for different entries independent', () => {
+    const first = beginObjectKanbanMove(EMPTY_OBJECT_KANBAN_MOVE_STATE, entry, 'field_status', 'Doing', 'operation-a')
+    const secondEntry = payload.entries[1]!
+    const both = beginObjectKanbanMove(first, secondEntry, 'field_status', 'Todo', 'operation-b')
+    expect(Object.keys(both.pending)).toEqual([entry.id, secondEntry.id])
+    const afterFirst = applyObjectKanbanCommit(both, {
+      status: 'rollback',
+      entryId: entry.id,
+      operationId: 'operation-a',
+      error: { code: 'commit-missing' },
+    })
+    expect(afterFirst.pending[secondEntry.id]?.operationId).toBe('operation-b')
+    expect(resolveObjectKanbanEntryValue(afterFirst, secondEntry, 'field_status')).toBe('Todo')
+  })
+
+  test('uses localized error codes and keeps transport detail separate', () => {
+    expect(ObjectKanbanErrorAlert).toBeFunction()
+    const markup = renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <ObjectKanbanErrorAlert error={{ code: 'transport', detail: 'ECONNRESET' }} />
+      </I18nextProvider>,
+    )
+    expect(markup).toContain('The Kanban move could not be saved.')
+    expect(markup).toContain('ECONNRESET')
+  })
+
+  test('uses a localized canonical-mismatch code after revalidation', () => {
+    const optimistic = beginObjectKanbanMove(EMPTY_OBJECT_KANBAN_MOVE_STATE, entry, 'field_status', 'Doing', 'operation-1')
+    const awaiting = applyObjectKanbanCommit(optimistic, {
+      status: 'awaiting-revalidation', entryId: entry.id, operationId: 'operation-1', revision: 5,
+    })
+    const mismatch = reconcileObjectKanbanMoves(awaiting, { ...payload, revision: 5 })
+    expect(mismatch.error).toEqual({ code: 'canonical-mismatch' })
+    expect(mismatch.pending).toEqual({})
   })
 })

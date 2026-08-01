@@ -144,12 +144,18 @@ The Phase A local-first object contract is tracked by
 - U6 adapters consume only the `WorkspaceObjectQueryResult` produced by the U5
   evaluator and retain stable entry IDs/current relation labels. The adapter
   registry owns no storage and incomplete settings render a configurable empty
-  state instead of silently falling back to table.
+  state instead of silently falling back to table. If no compatible field
+  exists, the explicit table action changes only the local saved-view config so
+  the user can persist that adapter through the existing save flow.
 - Object Kanban groups only by a configured canonical select/status field. A
-  drag keeps its optimistic value through a `ready` commit envelope, then waits
-  for payload revalidation; rejected envelopes, `projection-error`, transport
-  throws or canonical mismatch remove the optimistic override and expose the
-  rollback error.
+  translated no-group column retains entries with null, absent or unknown
+  values and persists `null` when targeted. Droppable IDs are structural rather
+  than option values. Pointer and keyboard sensors remain active, while a
+  pending entry is disabled and guarded by operation ID so stale responses
+  cannot cross moves; entries remain independent. A drag keeps its optimistic
+  value through a `ready` commit envelope, then waits for payload revalidation;
+  rejected envelopes, `projection-error`, transport throws or canonical
+  mismatch remove the optimistic override and expose a localized rollback code.
 
 ### Structured-object child index
 

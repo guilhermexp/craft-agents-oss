@@ -2,6 +2,7 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   DndContext,
+  KeyboardSensor,
   closestCorners,
   useDraggable,
   useDroppable,
@@ -9,6 +10,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core'
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import type { WorkspaceObjectQueryResult } from '@craft-agent/shared/workspace-objects/query'
 import type { WorkspaceObjectAction, WorkspaceObjectServiceResult } from '@craft-agent/shared/workspace-objects/service'
 import type {
@@ -43,6 +45,16 @@ export function getObjectViewAdapter(adapterId: string): ObjectViewAdapterDefini
   return OBJECT_VIEW_ADAPTERS.find(adapter => adapter.id === adapterId) ?? null
 }
 
+export function withObjectViewAdapter(
+  config: WorkspaceObjectViewConfig,
+  adapter: ObjectViewAdapterId,
+): WorkspaceObjectViewConfig {
+  return {
+    ...config,
+    presentation: { ...config.presentation, adapter },
+  }
+}
+
 export type ObjectViewConfiguration =
   | { status: 'ready'; adapterId: ObjectViewAdapterId; field: WorkspaceObjectField | null }
   | {
@@ -75,6 +87,7 @@ export function resolveObjectViewConfiguration(
 }
 
 interface PendingObjectKanbanMove {
+  operationId: string
   fieldId: string
   originalValue: WorkspaceObjectValue | undefined
   nextValue: WorkspaceObjectValue
@@ -83,7 +96,14 @@ interface PendingObjectKanbanMove {
 
 export interface ObjectKanbanMoveState {
   pending: Record<string, PendingObjectKanbanMove>
-  error: string | null
+  error: ObjectKanbanError | null
+}
+
+export type ObjectKanbanErrorCode = 'commit-missing' | 'projection-error' | 'canonical-mismatch' | 'transport'
+
+export interface ObjectKanbanError {
+  code: ObjectKanbanErrorCode
+  detail?: string
 }
 
 export const EMPTY_OBJECT_KANBAN_MOVE_STATE: ObjectKanbanMoveState = { pending: {}, error: null }
@@ -93,11 +113,13 @@ export function beginObjectKanbanMove(
   entry: WorkspaceObjectEntry,
   fieldId: string,
   nextValue: WorkspaceObjectValue,
+  operationId: string,
 ): ObjectKanbanMoveState {
+  if (state.pending[entry.id]) return state
   return {
     pending: {
       ...state.pending,
-      [entry.id]: { fieldId, originalValue: entry.values[fieldId], nextValue },
+      [entry.id]: { operationId, fieldId, originalValue: entry.values[fieldId], nextValue },
     },
     error: null,
   }
@@ -113,14 +135,15 @@ export function resolveObjectKanbanEntryValue(
 }
 
 export type ObjectKanbanCommitResult =
-  | { status: 'awaiting-revalidation'; entryId: string; revision: number }
-  | { status: 'rollback'; entryId: string; error: string }
+  | { status: 'awaiting-revalidation'; entryId: string; operationId: string; revision: number }
+  | { status: 'rollback'; entryId: string; operationId: string; error: ObjectKanbanError }
 
 export async function commitObjectKanbanMove(options: {
   objectId: string
   entry: WorkspaceObjectEntry
   fieldId: string
   nextValue: WorkspaceObjectValue
+  operationId: string
   mutate: MutateWorkspaceObject
 }): Promise<ObjectKanbanCommitResult> {
   try {
@@ -133,17 +156,33 @@ export async function commitObjectKanbanMove(options: {
       }],
     })
     if (!('objectId' in result) || !('revision' in result) || result.objectId !== options.objectId) {
-      return { status: 'rollback', entryId: options.entry.id, error: 'The Kanban move did not return a canonical commit.' }
+      return {
+        status: 'rollback',
+        entryId: options.entry.id,
+        operationId: options.operationId,
+        error: { code: 'commit-missing' },
+      }
     }
     if (result.projectionStatus !== 'ready') {
-      return { status: 'rollback', entryId: options.entry.id, error: 'The Kanban move committed but its projection requires repair.' }
+      return {
+        status: 'rollback',
+        entryId: options.entry.id,
+        operationId: options.operationId,
+        error: { code: 'projection-error' },
+      }
     }
-    return { status: 'awaiting-revalidation', entryId: options.entry.id, revision: result.revision }
+    return {
+      status: 'awaiting-revalidation',
+      entryId: options.entry.id,
+      operationId: options.operationId,
+      revision: result.revision,
+    }
   } catch (error) {
     return {
       status: 'rollback',
       entryId: options.entry.id,
-      error: error instanceof Error ? error.message : String(error),
+      operationId: options.operationId,
+      error: { code: 'transport', detail: error instanceof Error ? error.message : String(error) },
     }
   }
 }
@@ -154,11 +193,11 @@ export function applyObjectKanbanCommit(
 ): ObjectKanbanMoveState {
   const pending = { ...state.pending }
   const move = pending[result.entryId]
+  if (!move || move.operationId !== result.operationId) return state
   if (result.status === 'rollback') {
     delete pending[result.entryId]
     return { pending, error: result.error }
   }
-  if (!move) return state
   pending[result.entryId] = { ...move, commitRevision: result.revision }
   return { pending, error: null }
 }
@@ -176,10 +215,27 @@ export function reconcileObjectKanbanMoves(
     delete pending[entryId]
     changed = true
     if (canonical?.values[move.fieldId] !== move.nextValue) {
-      error = 'The Kanban move could not be confirmed after refresh.'
+      error = { code: 'canonical-mismatch' }
     }
   }
   return changed ? { pending, error } : state
+}
+
+const OBJECT_KANBAN_ERROR_KEYS: Record<ObjectKanbanErrorCode, string> = {
+  'commit-missing': 'chat.workspaceObjectKanbanCommitMissing',
+  'projection-error': 'chat.workspaceObjectKanbanProjectionError',
+  'canonical-mismatch': 'chat.workspaceObjectKanbanNotConfirmed',
+  transport: 'chat.workspaceObjectKanbanTransportError',
+}
+
+export function ObjectKanbanErrorAlert({ error }: { error: ObjectKanbanError }) {
+  const { t } = useTranslation()
+  return (
+    <div className="mb-3 rounded border border-destructive/40 p-2 text-xs text-destructive" role="alert">
+      <div>{t(OBJECT_KANBAN_ERROR_KEYS[error.code])}</div>
+      {error.detail ? <div className="mt-1 break-words text-[11px] opacity-80">{error.detail}</div> : null}
+    </div>
+  )
 }
 
 function displayText(value: WorkspaceObjectValue | undefined): string {
@@ -218,9 +274,11 @@ function ObjectEntrySummary({
 function ObjectViewEmptyState({
   configuration,
   onConfigureSetting,
+  onChangeAdapter,
 }: {
   configuration: Extract<ObjectViewConfiguration, { status: 'empty' }>
   onConfigureSetting: (settingKey: string, fieldId: string) => void
+  onChangeAdapter: (adapter: ObjectViewAdapterId) => void
 }) {
   const { t } = useTranslation()
   const [fieldId, setFieldId] = React.useState(configuration.compatibleFields[0]?.id ?? '')
@@ -247,7 +305,11 @@ function ObjectViewEmptyState({
             {t('chat.workspaceObjectConfigureView')}
           </Button>
         </div>
-      ) : null}
+      ) : (
+        <Button type="button" size="sm" className="mt-3" onClick={() => onChangeAdapter('table')}>
+          {t('chat.workspaceObjectAdapterUseTable')}
+        </Button>
+      )}
     </div>
   )
 }
@@ -298,13 +360,81 @@ function ObjectGalleryView({ query, field }: { query: WorkspaceObjectQueryResult
   )
 }
 
-function ObjectKanbanCard({ entry, query }: { entry: WorkspaceObjectEntry; query: WorkspaceObjectQueryResult }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: entry.id })
+const OBJECT_KANBAN_ENTRY_PREFIX = 'object-kanban-entry:'
+const OBJECT_KANBAN_COLUMN_PREFIX = 'object-kanban-column:option:'
+const OBJECT_KANBAN_NO_GROUP_ID = 'object-kanban-column:no-group'
+
+function objectKanbanEntryId(entryId: string): string {
+  return `${OBJECT_KANBAN_ENTRY_PREFIX}${entryId}`
+}
+
+export const OBJECT_KANBAN_KEYBOARD_SENSOR = KeyboardSensor
+export const OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER = sortableKeyboardCoordinates
+
+export function resolveObjectKanbanDropValue(
+  field: WorkspaceObjectField,
+  dropId: string,
+): string | null | undefined {
+  if (dropId === OBJECT_KANBAN_NO_GROUP_ID) return null
+  if (!dropId.startsWith(OBJECT_KANBAN_COLUMN_PREFIX)) return undefined
+  const indexText = dropId.slice(OBJECT_KANBAN_COLUMN_PREFIX.length)
+  if (!/^(0|[1-9]\d*)$/.test(indexText)) return undefined
+  return field.options?.[Number(indexText)]
+}
+
+interface ObjectKanbanColumnModel {
+  id: string
+  value: string | null
+  label: string
+  entries: WorkspaceObjectEntry[]
+}
+
+function buildObjectKanbanColumns(
+  field: WorkspaceObjectField,
+  query: WorkspaceObjectQueryResult,
+  moveState: ObjectKanbanMoveState,
+  noGroupLabel: string,
+): ObjectKanbanColumnModel[] {
+  const optionColumns: ObjectKanbanColumnModel[] = (field.options ?? []).map((value, index) => ({
+    id: `${OBJECT_KANBAN_COLUMN_PREFIX}${index}`,
+    value,
+    label: value,
+    entries: [],
+  }))
+  const noGroupColumn: ObjectKanbanColumnModel = {
+    id: OBJECT_KANBAN_NO_GROUP_ID,
+    value: null,
+    label: noGroupLabel,
+    entries: [],
+  }
+  const columnByValue = new Map(optionColumns.map(column => [column.value, column]))
+  for (const entry of query.entries) {
+    const value = resolveObjectKanbanEntryValue(moveState, entry, field.id)
+    const column = typeof value === 'string' ? columnByValue.get(value) : undefined
+    const targetColumn = column ?? noGroupColumn
+    targetColumn.entries.push(entry)
+  }
+  return [...optionColumns, noGroupColumn]
+}
+
+function ObjectKanbanCard({
+  entry,
+  query,
+  pending,
+}: {
+  entry: WorkspaceObjectEntry
+  query: WorkspaceObjectQueryResult
+  pending: boolean
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: objectKanbanEntryId(entry.id),
+    disabled: pending,
+  })
   return (
     <div
       ref={setNodeRef}
       data-entry-id={entry.id}
-      className={`cursor-grab rounded border border-foreground/10 bg-background p-3 text-sm font-medium shadow-sm ${isDragging ? 'opacity-50' : ''}`}
+      className={`rounded border border-foreground/10 bg-background p-3 text-sm font-medium shadow-sm ${pending ? 'cursor-wait opacity-60' : 'cursor-grab'} ${isDragging ? 'opacity-50' : ''}`}
       {...attributes}
       {...listeners}
     >
@@ -314,22 +444,30 @@ function ObjectKanbanCard({ entry, query }: { entry: WorkspaceObjectEntry; query
 }
 
 function ObjectKanbanColumn({
-  value,
-  entries,
+  column,
   query,
+  pendingEntryIds,
 }: {
-  value: string
-  entries: WorkspaceObjectEntry[]
+  column: ObjectKanbanColumnModel
   query: WorkspaceObjectQueryResult
+  pendingEntryIds: Set<string>
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: value })
+  const { setNodeRef, isOver } = useDroppable({ id: column.id })
   return (
-    <section ref={setNodeRef} className={`min-w-56 flex-1 rounded border p-2 ${isOver ? 'border-primary bg-primary/5' : 'border-foreground/10'}`}>
+    <section
+      ref={setNodeRef}
+      data-object-kanban-column-id={column.id}
+      className={`min-w-56 flex-1 rounded border p-2 ${isOver ? 'border-primary bg-primary/5' : 'border-foreground/10'}`}
+    >
       <header className="mb-2 flex items-center justify-between text-xs font-semibold">
-        <span>{value}</span>
-        <span className="text-muted-foreground">{entries.length}</span>
+        <span>{column.label}</span>
+        <span className="text-muted-foreground">{column.entries.length}</span>
       </header>
-      <div className="space-y-2">{entries.map(entry => <ObjectKanbanCard key={entry.id} entry={entry} query={query} />)}</div>
+      <div className="space-y-2">
+        {column.entries.map(entry => (
+          <ObjectKanbanCard key={entry.id} entry={entry} query={query} pending={pendingEntryIds.has(entry.id)} />
+        ))}
+      </div>
     </section>
   )
 }
@@ -345,9 +483,21 @@ function ObjectKanbanView({
   field: WorkspaceObjectField
   mutate: MutateWorkspaceObject
 }) {
+  const { t } = useTranslation()
   const [moveState, setMoveState] = React.useState<ObjectKanbanMoveState>(EMPTY_OBJECT_KANBAN_MOVE_STATE)
-  const sensors = useSensors(useSensor(SmartPointerSensor, { activationConstraint: { distance: 5 } }))
-  const values = field.options ?? []
+  const pendingOperationsRef = React.useRef(new Map<string, string>())
+  const sensors = useSensors(
+    useSensor(SmartPointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(OBJECT_KANBAN_KEYBOARD_SENSOR, { coordinateGetter: OBJECT_KANBAN_KEYBOARD_COORDINATE_GETTER }),
+  )
+  const columns = buildObjectKanbanColumns(field, query, moveState, t('chat.workspaceObjectKanbanNoGroup'))
+  const pendingEntryIds = new Set(Object.keys(moveState.pending))
+
+  React.useEffect(() => {
+    pendingOperationsRef.current = new Map(
+      Object.entries(moveState.pending).map(([entryId, move]) => [entryId, move.operationId]),
+    )
+  }, [moveState.pending])
 
   React.useEffect(() => {
     setMoveState(current => reconcileObjectKanbanMoves(current, payload))
@@ -355,26 +505,31 @@ function ObjectKanbanView({
 
   const handleDragEnd = React.useCallback((event: DragEndEvent) => {
     if (!event.over) return
-    const entry = query.entries.find(candidate => candidate.id === String(event.active.id))
-    const nextValue = String(event.over.id)
-    if (!entry || resolveObjectKanbanEntryValue(moveState, entry, field.id) === nextValue) return
-    setMoveState(current => beginObjectKanbanMove(current, entry, field.id, nextValue))
-    void commitObjectKanbanMove({ objectId: payload.id, entry, fieldId: field.id, nextValue, mutate })
+    const activeId = String(event.active.id)
+    const entry = query.entries.find(candidate => objectKanbanEntryId(candidate.id) === activeId)
+    const nextValue = resolveObjectKanbanDropValue(field, String(event.over.id))
+    if (!entry || nextValue === undefined || pendingOperationsRef.current.has(entry.id)) return
+    if (resolveObjectKanbanEntryValue(moveState, entry, field.id) === nextValue) return
+    const operationId = crypto.randomUUID()
+    pendingOperationsRef.current.set(entry.id, operationId)
+    setMoveState(current => beginObjectKanbanMove(current, entry, field.id, nextValue, operationId))
+    void commitObjectKanbanMove({ objectId: payload.id, entry, fieldId: field.id, nextValue, operationId, mutate })
       .then(result => setMoveState(current => applyObjectKanbanCommit(current, result)))
-  }, [field.id, moveState, mutate, payload.id, query.entries])
-
-  const entriesByValue = new Map(values.map(value => [value, [] as WorkspaceObjectEntry[]]))
-  for (const entry of query.entries) {
-    const value = resolveObjectKanbanEntryValue(moveState, entry, field.id)
-    if (typeof value === 'string') entriesByValue.get(value)?.push(entry)
-  }
+  }, [field, moveState, mutate, payload.id, query.entries])
 
   return (
     <div>
-      {moveState.error ? <div className="mb-3 rounded border border-destructive/40 p-2 text-xs text-destructive" role="alert">{moveState.error}</div> : null}
+      {moveState.error ? <ObjectKanbanErrorAlert error={moveState.error} /> : null}
       <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
         <div className="flex gap-3 overflow-x-auto pb-2">
-          {values.map(value => <ObjectKanbanColumn key={value} value={value} entries={entriesByValue.get(value) ?? []} query={query} />)}
+          {columns.map(column => (
+            <ObjectKanbanColumn
+              key={column.id}
+              column={column}
+              query={query}
+              pendingEntryIds={pendingEntryIds}
+            />
+          ))}
         </div>
       </DndContext>
     </div>
@@ -388,6 +543,7 @@ export function ObjectViewHost({
   mutate,
   tableContent,
   onConfigureSetting,
+  onChangeAdapter,
 }: {
   payload: WorkspaceObjectPayload
   config: WorkspaceObjectViewConfig
@@ -395,6 +551,7 @@ export function ObjectViewHost({
   mutate: MutateWorkspaceObject
   tableContent: React.ReactNode
   onConfigureSetting: (settingKey: string, fieldId: string) => void
+  onChangeAdapter: (adapter: ObjectViewAdapterId) => void
 }) {
   const configuration = resolveObjectViewConfiguration(payload, config)
   if (configuration.status === 'empty') {
@@ -403,6 +560,7 @@ export function ObjectViewHost({
         key={`${configuration.adapterId}:${configuration.settingKey}`}
         configuration={configuration}
         onConfigureSetting={onConfigureSetting}
+        onChangeAdapter={onChangeAdapter}
       />
     )
   }

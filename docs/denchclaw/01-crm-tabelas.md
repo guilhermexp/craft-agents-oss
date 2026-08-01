@@ -398,16 +398,34 @@ Os demais adapters leem `presentation.adapter/settings` da saved view. Kanban
 exige `groupFieldId` select/status, calendar e timeline exigem `dateFieldId`,
 gallery exige `mediaFieldId` file e list exige `primaryFieldId`. Setting ausente,
 field incompatível ou falta de field compatível produz estado vazio explícito
-com ação de configuração, nunca fallback silencioso para table. Salvar a view
-persiste adapter e settings no contrato v1 já validado.
+com ação de configuração, nunca fallback silencioso para table. Quando não há
+field compatível, a ação traduzida `Usar tabela` altera somente o adapter do
+config local; o fluxo existente de salvar view persiste essa escolha no contrato
+v1, sem alterar schema ou storage.
 
 O Kanban reutiliza `DndContext` e o sensor visual existente, mas seus cards são
-entries genéricas, sem modelos de task/session. O drop aplica somente um
-override otimista local e envia a entry completa por `upsert-entries`. Envelope
-rejeitado, `projection-error` ou exceção de transporte removem o override e
-restauram a coluna original com erro visível; resposta `ready` mantém a posição
-até o payload SWR alcançar a revisão do commit, evitando flicker, e também faz
-rollback se o valor canônico não confirmar o move.
+entries genéricas, sem modelos de task/session. Pointer e teclado usam os
+sensors do dnd-kit; IDs de drop são estruturais e não colidem com option values.
+Toda entry da query aparece: valores `null`, ausentes ou desconhecidos ficam na
+coluna traduzida `Sem grupo`, cujo drop persiste `null`.
+
+O drop aplica somente um override otimista local e envia a entry completa por
+`upsert-entries`. Apenas uma operação por entry pode ficar pendente; o card é
+desabilitado e o token da operação faz respostas antigas serem ignoradas,
+enquanto entries diferentes seguem independentes. Envelope rejeitado,
+`projection-error` ou exceção de transporte removem o override e restauram a
+coluna original; resposta `ready` mantém a posição até o payload SWR alcançar a
+revisão do commit, evitando flicker, e também faz rollback se o valor canônico
+não confirmar o move. Os quatro erros usam keys i18n, com detalhe dinâmico de
+transporte exibido separadamente.
+
+O lote corretivo U6 foi coberto antes da correção por RED com 5 testes passando
+e 9 falhando nos cinco achados, seguido de um RED unitário adicional para o
+mapeamento estrutural do drop sem grupo. O GREEN final da matriz Phase A/U5/U6
+passou 82/82 testes em oito arquivos, com 259 expects; typechecks Electron e
+shared, paridade i18n, React Doctor line-scoped, impeccable, OpenSpec strict e
+`git diff --check` também passaram. Esse lote não executa Electron real nem
+auditoria Phase B, que continuam reservados para 7.5.
 
 `apps/web/lib/object-filters.ts` é a peça mais reaproveitável do repo. Define:
 

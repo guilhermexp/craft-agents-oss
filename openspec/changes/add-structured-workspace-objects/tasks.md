@@ -256,6 +256,29 @@ expects); typechecks Electron/shared e i18n parity passaram, com 7 locales e
 detect` saiu 0. O DOX e a documentação DenchClaw foram atualizados. 7.5,
 Electron real e auditoria Phase B não foram executados nem marcados.
 
+Correção U6 7.3/7.4 (2026-08-01): o RED focado partindo de `0a8c60c1`
+registrou 5 pass / 9 fail para os cinco achados: perda de entries sem grupo,
+colisão semântica dos droppable IDs, concorrência sem operação identificável,
+ausência de teclado, erros hardcoded e empty state sem saída. Um RED incremental
+adicional falhou 0/1 antes do resolver estrutural de drop existir.
+
+O GREEN mantém todas as `query.entries` e stable IDs, inclui a coluna i18n sem
+grupo com drop `null`, separa IDs estruturais de option values, limita uma
+operação pendente por entry e ignora resposta fora de ordem por `operationId`.
+Entries diferentes continuam independentes; cards pendentes ficam desabilitados
+e o board usa pointer + KeyboardSensor com coordenadas sortable. Commit inválido,
+projection repair, canonical mismatch e transporte agora expõem codes por keys
+i18n nos oito arquivos de locale, com detalhe dinâmico separado. Sem field
+compatível, `Usar tabela` altera o config local que o save existente persiste,
+sem mudança de schema/storage.
+
+A matriz Phase A/U5/U6 passou 82/82 em oito arquivos (259 expects); typechecks
+Electron/shared e paridade i18n passaram com 7 locales configurados mais `en` e
+1.798 keys cada. React Doctor v0.9.3 line-scoped retornou 100/100, impeccable
+saiu 0, OpenSpec strict e `git diff --check` passaram. 7.3/7.4 permanecem
+marcados; 7.5, Electron real e auditoria Phase B continuam não executados e
+desmarcados.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

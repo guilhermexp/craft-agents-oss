@@ -25,7 +25,12 @@ import { Button } from '@/components/ui/button'
 import { DataTable } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
 import { ObjectFieldEditor, type ObjectRelationOption } from './ObjectFieldEditor'
-import { OBJECT_VIEW_ADAPTERS, ObjectViewHost, type ObjectViewAdapterId } from './ObjectViewHost'
+import {
+  OBJECT_VIEW_ADAPTERS,
+  ObjectViewHost,
+  withObjectViewAdapter,
+  type ObjectViewAdapterId,
+} from './ObjectViewHost'
 import { collectReferencedRelationEntryIds, loadReferencedRelationOptions } from './relation-options'
 
 type MutateWorkspaceObject = (action: WorkspaceObjectAction) => Promise<WorkspaceObjectServiceResult>
@@ -444,13 +449,7 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
           className="h-8 min-w-32 rounded border border-foreground/15 bg-background px-2 text-xs"
           value={config.presentation.adapter}
           aria-label={t('chat.workspaceObjectViewAdapter')}
-          onChange={event => setConfig(current => ({
-            ...current,
-            presentation: {
-              ...current.presentation,
-              adapter: event.target.value as ObjectViewAdapterId,
-            },
-          }))}
+          onChange={event => setConfig(current => withObjectViewAdapter(current, event.target.value as ObjectViewAdapterId))}
         >
           {OBJECT_VIEW_ADAPTERS.map(adapter => (
             <option key={adapter.id} value={adapter.id}>{t(OBJECT_VIEW_ADAPTER_LABEL_KEYS[adapter.id])}</option>
@@ -544,6 +543,7 @@ export function ObjectTableView({ payload, relationPayloads, mutate, initialView
         query={query}
         mutate={mutate}
         onConfigureSetting={configureAdapterSetting}
+        onChangeAdapter={adapter => setConfig(current => withObjectViewAdapter(current, adapter))}
         tableContent={(
           <DataTable
             key={`${tablePresentation.density}:${tablePresentation.pageSize}`}
