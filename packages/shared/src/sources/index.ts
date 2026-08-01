@@ -23,6 +23,33 @@ export type {
   ApiRenewEndpoint,
 } from './types.ts';
 
+export type {
+  PublicApiOAuthConfig,
+  PublicApiSourceConfig,
+  PublicFolderSourceConfig,
+  PublicMcpSourceConfig,
+  PublicSourceGuide,
+  PublicSourceDto,
+} from './public-source-dto.ts';
+
+export {
+  sanitizeSourceConnectionError,
+  toPublicSourceDto,
+} from './public-source-dto.ts';
+
+export type {
+  CollectComposioCatalogOptions,
+  ComposioCatalogItem,
+  ComposioCatalogPageRequest,
+} from './composio-catalog.ts';
+
+export {
+  collectComposioCatalog,
+  materializeComposioSource,
+  normalizeComposioProviderIdentity,
+  toPortableComposioSourceInput,
+} from './composio-catalog.ts';
+
 // Constants and helpers
 export {
   API_OAUTH_PROVIDERS,

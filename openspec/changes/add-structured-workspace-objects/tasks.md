@@ -611,12 +611,32 @@ iniciada.
 
 ## 8. Phase C — U7: discovery e health
 
-- [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.
+- [x] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.
 - [ ] 8.2 Escrever testes de catálogo, OAuth metadata, redaction e session probe.
 - [ ] 8.3 Implementar catálogo Composio subordinado a sources/OAuth e credential
       storage existentes.
 - [ ] 8.4 Validar toolkit real, logs/payloads redacted e auditor GO antes de
       Phase D.
+
+Evidência parcial C1 de U7 (2026-08-01): a reconciliação de 8.1 confirmou que
+`harden-credential-storage` concluiu os guards SSRF/loopback/bearer opt-in e o
+seam não destrutivo de key protector, mantendo explicitamente futuros o
+protector real de `electron.safeStorage`, a distribuição ao subprocesso e
+qualquer troca de default. Esta fatia não altera esse default.
+
+O RED C1 executou antes da produção: catálogo ausente retornou `0 pass / 1
+fail`, e o teste RPC observou `mcp.env`/`mcp.headers` crus em `SOURCES_GET`.
+REDs incrementais depois provaram que URL de ícone com `access_token`, guide,
+tagline, provider secret e credentials ainda escapavam da primeira allowlist.
+O GREEN implementa paginação/search delegado, deduplicação por provider ID
+normalizado, materialização portátil/idempotente e DTO público allowlistado com
+`connectionError` sanitizado. A suíte focada passou 6/6 (32 asserts) e a
+regressão completa de sources + RPC passou 173/173 (343 asserts), com
+typechecks shared, server-core e Electron verdes.
+
+Esta evidência cobre somente C1. OAuth/probe de sessão, toolkit real, logs de
+runtime e auditor GO não foram executados; por isso 8.2 permanece aberta e 8.3/
+8.4 não são marcadas.
 
 ## 9. Phase D — U8/U9: inbox, calendário e relacionamentos
 

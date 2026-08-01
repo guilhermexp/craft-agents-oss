@@ -1,6 +1,7 @@
 import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { loadWorkspaceSources } from '@craft-agent/shared/sources'
+import { toPublicSourceDto } from '@craft-agent/shared/sources/public-source-dto'
 import { safeJsonParse } from '@craft-agent/shared/utils/files'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import type { RpcServer } from '@craft-agent/server-core/transport'
@@ -16,7 +17,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
       log.error(`SOURCES_GET: Workspace not found: ${workspaceId}`)
       return []
     }
-    return loadWorkspaceSources(workspace.rootPath)
+    return loadWorkspaceSources(workspace.rootPath).map(toPublicSourceDto)
   })
 
   // Create a new source

@@ -69,7 +69,8 @@ export type { CredentialHealthStatus, CredentialHealthIssue, CredentialHealthIss
 
 // Source types for session source selection
 import type { LoadedSource, FolderSourceConfig, SourceConnectionStatus } from '@craft-agent/shared/sources/types';
-export type { LoadedSource, FolderSourceConfig, SourceConnectionStatus };
+import type { PublicSourceDto } from '@craft-agent/shared/sources/public-source-dto';
+export type { LoadedSource, FolderSourceConfig, PublicSourceDto, SourceConnectionStatus };
 
 // Skill types
 import type { LoadedSkill, SkillMetadata } from '@craft-agent/shared/skills/types';
@@ -483,7 +484,7 @@ export const RPC_CONTRACT = {
   watchSessionFiles: invoke<((sessionId: string) => Promise<void>)>(RPC_NAMESPACES.sessions.WATCH_FILES),
   unwatchSessionFiles: invoke<(() => Promise<void>)>(RPC_NAMESPACES.sessions.UNWATCH_FILES),
   onSessionFilesChanged: event<((callback: (sessionId: string) => void) => () => void)>(RPC_NAMESPACES.sessions.FILES_CHANGED),
-  getSources: invoke<((workspaceId: string) => Promise<LoadedSource[]>)>(RPC_NAMESPACES.sources.GET),
+  getSources: invoke<((workspaceId: string) => Promise<PublicSourceDto[]>)>(RPC_NAMESPACES.sources.GET),
   createSource: invoke<((workspaceId: string, config: Partial<FolderSourceConfig>) => Promise<FolderSourceConfig>)>(RPC_NAMESPACES.sources.CREATE),
   deleteSource: invoke<((workspaceId: string, sourceSlug: string) => Promise<void>)>(RPC_NAMESPACES.sources.DELETE),
   startSourceOAuth: invoke<((workspaceId: string, sourceSlug: string) => Promise<{ success: boolean; error?: string }>)>(RPC_NAMESPACES.sources.START_OAUTH),

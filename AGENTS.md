@@ -187,6 +187,15 @@ The Phase A local-first object contract is tracked by
   boundaries. Keep `query`, `service`, `types` and `view-schema` explicitly
   exported by `packages/shared/package.json`; the consumer-side package export
   test must pass in addition to TypeScript checks before a renderer build.
+- Phase C Composio discovery remains metadata-only. Catalog pages normalize and
+  deduplicate the stable provider identity in
+  `packages/shared/src/sources/composio-catalog.ts`; materialization allowlists
+  portable MCP metadata and reuses an existing local source for that identity.
+  Tokens, credentials, provider secrets, authorization headers and
+  credential-bearing URLs must never enter the source input or persisted
+  config. Desktop `SOURCES_GET` must return the explicit allowlisted DTO from
+  `public-source-dto.ts`, including a sanitized `connectionError`, rather than a
+  raw `LoadedSource`.
 - Object Kanban groups only by a configured canonical select/status field. A
   translated no-group column retains entries with null, absent or unknown
   values. Optional fields persist `null` when that column is targeted; for
