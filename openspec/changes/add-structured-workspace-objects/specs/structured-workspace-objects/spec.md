@@ -152,12 +152,17 @@ filter, sort, column visibility, adapter e settings e MUST reduzir somente o
 `legacyConfig` string necessário. Se o restante não couber, a migration MUST
 falhar atomicamente em vez de converter para o fallback legacy/table. Filtros de
 relation SHALL comparar stable ID e label corrente, usando OR para operadores
-positivos e AND para operadores negados.
+positivos e AND para operadores negados. Operadores de range SHALL excluir
+valores `null`, ausentes ou string vazia; a ordenação null-last permanece um
+contrato separado de sort e não pode ser reutilizada como match de filtro.
 `query-object` SHALL avaliar o snapshot canônico completo antes de limitar a
 resposta a 200 entries e SHALL retornar `totalEntries` e `truncated`. O repair
 de projeção stale SHALL ser tentado antes do snapshot de leitura; se o writer
 lock estiver ocupado, a query MUST continuar com fallback read-only. O retorno
 MUST limitar relation labels aos IDs referenciados pelas entries devolvidas.
+`get-object` SHALL reutilizar o mesmo repair best-effort quando estiver fora de
+uma transaction; dentro de snapshot read, ou diante de contenção, MUST
+reconstruir das rows sem escrever a projection.
 Contenção MUST reconhecer códigos Bun `SQLITE_BUSY`/`SQLITE_LOCKED` e primary
 `errcode` 5/6 de `node:sqlite`; erros SQLite não relacionados MUST propagar.
 A escolha do label relation MUST ter `query.ts` como autoridade única (primeiro
@@ -169,6 +174,9 @@ código como texto principal e MAY exibir detalhe técnico de transporte apenas
 como texto secundário. As variantes não-transport MUST excluir `detail` do tipo
 e o renderer MUST condicionar detalhe a `code === 'transport'`. Field editor busy MUST usar key dedicada em todos os
 locales, distinta da key de salvar view.
+O tracker de revisions do preview MUST manter revision e projection status do
+payload primário como autoridade quando uma relation aponta para o próprio
+objeto; uma relation-option page self-referente não pode sobrescrevê-los.
 Prompts de ação U5/U6 em alemão e húngaro MUST usar registro formal consistente
 dentro do bloco workspaceObject.
 
@@ -251,6 +259,12 @@ dentro do bloco workspaceObject.
 - **THEN** positivos aceitam match no ID ou label e negados excluem match em qualquer representação
 - **Test:** `unit`
 
+#### Scenario: Range ignora valores vazios
+
+- **WHEN** `gt`, `gte`, `lt`, `lte`, `before` ou `after` avaliam text, number, date ou datetime
+- **THEN** entries com valor null, ausente ou string vazia não casam, enquanto sort mantém null-last
+- **Test:** `unit`
+
 #### Scenario: Field edit inválido é rejeitado
 
 - **WHEN** um editor envia valor incompatível com o field type
@@ -270,6 +284,20 @@ dentro do bloco workspaceObject.
 - **WHEN** `query-object` precisa reconstruir o payload canônico
 - **THEN** a leitura usa rows do próprio snapshot sem tentar escrever nem produzir `SQLITE_BUSY_SNAPSHOT`
 - **Test:** `integration`
+
+#### Scenario: get-object stale permanece disponível sob contenção
+
+- **GIVEN** uma projection stale e um writer concorrente, ou um snapshot read já aberto
+- **WHEN** `get-object` tenta reparar a projection
+- **THEN** contenção Bun/node:sqlite vira miss best-effort e o retorno reconstrói rows sem escrever no snapshot
+- **Test:** `integration`
+
+#### Scenario: Self-relation preserva a revisão primária
+
+- **GIVEN** um payload cujo relation field aponta para o próprio objeto
+- **WHEN** o preview incorpora a relation-option page self-referente
+- **THEN** revision e projection status do payload primário permanecem autoritativos
+- **Test:** `unit`
 
 #### Scenario: Writer lock ocupado não bloqueia query canônica
 

@@ -112,6 +112,21 @@ describe('workspace object preview target identity', () => {
     expect(observedProjectionError.get('object_companies')).toEqual({ revision: 7, projectionStatus: 'projection-error' });
   });
 
+  test('keeps the primary revision and projection status authoritative for self-relations', () => {
+    const payload: WorkspaceObjectPayload = {
+      ...object('object_people', 3),
+      projectionStatus: 'projection-error',
+      fields: [{ id: 'field_manager', name: 'Manager', type: 'relation', relationObjectId: 'object_people' }],
+    };
+    const revisions = buildWorkspaceObjectPreviewRevisions(payload, {
+      object_people: { options: [], nextCursor: null, revision: 99 },
+    });
+
+    expect(revisions).toEqual(new Map([
+      ['object_people', { revision: 3, projectionStatus: 'projection-error' }],
+    ]));
+  });
+
   test('includes currently referenced relation ids in bounded option lookups', () => {
     const payload: WorkspaceObjectPayload = {
       ...object('object_people', 1),

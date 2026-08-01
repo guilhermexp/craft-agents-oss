@@ -105,6 +105,66 @@ describe('workspace object relation labels', () => {
 });
 
 describe('evaluateWorkspaceObjectQuery', () => {
+  test('excludes empty range values without changing null-last sort ordering', () => {
+    const rangePayload: WorkspaceObjectPayload = {
+      ...payload,
+      fields: [
+        { id: 'field_text', name: 'Text', type: 'text' },
+        { id: 'field_number', name: 'Number', type: 'number' },
+        { id: 'field_date', name: 'Date', type: 'date' },
+        { id: 'field_datetime', name: 'Datetime', type: 'datetime' },
+      ],
+      entries: [
+        { id: 'entry_low', values: {
+          field_text: 'alpha', field_number: 1,
+          field_date: '2026-01-01', field_datetime: '2026-01-01T00:00:00Z',
+        } },
+        { id: 'entry_high', values: {
+          field_text: 'zulu', field_number: 10,
+          field_date: '2026-12-01', field_datetime: '2026-12-01T00:00:00Z',
+        } },
+        { id: 'entry_empty', values: { field_text: '', field_date: '', field_datetime: '' } },
+        { id: 'entry_null', values: {
+          field_text: null, field_number: null, field_date: null, field_datetime: null,
+        } },
+        { id: 'entry_missing', values: {} },
+      ],
+    };
+    const cases: Array<{
+      fieldId: string;
+      operator: WorkspaceObjectFilterRule['operator'];
+      value: string | number;
+      expected: string[];
+    }> = [
+      { fieldId: 'field_text', operator: 'gt', value: 'mike', expected: ['entry_high'] },
+      { fieldId: 'field_text', operator: 'gte', value: 'zulu', expected: ['entry_high'] },
+      { fieldId: 'field_text', operator: 'lt', value: 'mike', expected: ['entry_low'] },
+      { fieldId: 'field_text', operator: 'lte', value: 'alpha', expected: ['entry_low'] },
+      { fieldId: 'field_number', operator: 'gt', value: 5, expected: ['entry_high'] },
+      { fieldId: 'field_number', operator: 'gte', value: 10, expected: ['entry_high'] },
+      { fieldId: 'field_number', operator: 'lt', value: 5, expected: ['entry_low'] },
+      { fieldId: 'field_number', operator: 'lte', value: 1, expected: ['entry_low'] },
+      { fieldId: 'field_date', operator: 'after', value: '2026-06-01', expected: ['entry_high'] },
+      { fieldId: 'field_date', operator: 'before', value: '2026-06-01', expected: ['entry_low'] },
+      { fieldId: 'field_datetime', operator: 'after', value: '2026-06-01T00:00:00Z', expected: ['entry_high'] },
+      { fieldId: 'field_datetime', operator: 'before', value: '2026-06-01T00:00:00Z', expected: ['entry_low'] },
+    ];
+
+    for (const { fieldId, operator, value, expected } of cases) {
+      const result = evaluateWorkspaceObjectQuery(rangePayload, view({
+        filter: { type: 'rule', fieldId, operator, value },
+      }));
+      expect(result.entries.map(entry => entry.id), `${fieldId}:${operator}`).toEqual(expected);
+    }
+
+    const sorted = evaluateWorkspaceObjectQuery(rangePayload, view({
+      sort: [{ fieldId: 'field_number', direction: 'asc' }],
+    }));
+    expect(sorted.entries.map(entry => entry.id)).toEqual([
+      'entry_low', 'entry_high', 'entry_empty', 'entry_null', 'entry_missing',
+    ]);
+  });
+
   test('sorts and filters temporal fields by instant instead of offset text', () => {
     const temporalPayload: WorkspaceObjectPayload = {
       ...payload,

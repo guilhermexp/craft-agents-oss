@@ -31,6 +31,7 @@ export function buildWorkspaceObjectPreviewRevisions(
     [payload.id, { revision: payload.revision, projectionStatus: payload.projectionStatus }],
   ])
   for (const [relationObjectId, page] of Object.entries(relationOptionPages)) {
+    if (relationObjectId === payload.id) continue
     const observed = previous.get(relationObjectId)
     revisions.set(relationObjectId, observed?.revision === page.revision ? observed : { revision: page.revision })
   }

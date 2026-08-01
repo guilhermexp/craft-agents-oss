@@ -111,6 +111,7 @@ function matchesRule(field: WorkspaceObjectField, value: WorkspaceObjectValue, r
     const matches = normalizeString(value).includes(normalizeString(expected));
     return rule.operator === 'contains' ? matches : !matches;
   }
+  if (empty) return false;
   const comparison = compareFieldValues(field, value, expected);
   if (rule.operator === 'gt' || rule.operator === 'after') return comparison > 0;
   if (rule.operator === 'gte') return comparison >= 0;

@@ -499,6 +499,21 @@ passou 1/1 (34 expects); a suíte locale focada passou 24/24 (73 expects), e
 `typecheck:all`, paridade i18n, OpenSpec strict e `git diff --check` ficaram
 verdes. 7.5 permanece desmarcado.
 
+Re-review corretivo 6 de Phase B (2026-08-01): os REDs reproduziram três
+findings do gate. Range text `gt` incluía valores null/ausentes; os casos
+complementares cobrem `gt`/`gte`/`lt`/`lte` e `before`/`after` sobre text,
+number, date e datetime, mantendo sort null-last como contrato separado.
+`getObject` tornava uma projection stale fresh dentro de snapshot read, lançava
+`SQLITE_BUSY` sob `BEGIN IMMEDIATE` concorrente e ignorava a forma busy de
+`node:sqlite`. Uma relation-option page self-referente substituía revision 3
+por 99 e removia `projectionStatus`. O GREEN exclui empty somente antes da
+comparação de range, reutiliza `ensureFreshProjection` fora de transactions com
+fallback das rows/read-only, e mantém o payload primário como autoridade no
+tracker de revisions. Os focos passaram 5/5 (21 expects); a regressão do domínio
+e sidebar passou 71/71 (215 expects), e `typecheck:all`, tool contracts,
+paridade i18n, OpenSpec strict e `git diff --check` ficaram verdes. O falso
+positivo de reconcile pages não foi alterado. 7.5 permanece desmarcado.
+
 ## 8. Phase C — U7: discovery e health
 
 - [ ] 8.1 Reconciliar esta fase com a conclusão de `harden-credential-storage`.

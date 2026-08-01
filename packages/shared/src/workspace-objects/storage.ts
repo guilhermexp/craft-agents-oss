@@ -175,8 +175,9 @@ export class WorkspaceObjectRepository {
     if (!revision) return null;
     const projected = this.readFreshProjection(objectId, revision.revision);
     if (projected) return { ...projected, entries: projected.entries.slice(0, boundedEntryLimit) };
-    const rebuilt = buildWorkspaceObjectPayload(this.db, objectId);
-    if (rebuilt) storeWorkspaceObjectPayload(this.db, rebuilt);
+    if (this.transactionDepth === 0) this.ensureFreshProjection(objectId);
+    const rebuilt = this.readFreshProjection(objectId, revision.revision)
+      ?? buildWorkspaceObjectPayload(this.db, objectId);
     return rebuilt ? { ...rebuilt, entries: rebuilt.entries.slice(0, boundedEntryLimit) } : null;
   }
 

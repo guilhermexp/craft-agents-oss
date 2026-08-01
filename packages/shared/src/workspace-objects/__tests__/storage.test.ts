@@ -627,6 +627,62 @@ describe('WorkspaceObjectRepository', () => {
     expect(observedRevision).toBe(2);
   });
 
+  test('keeps getObject read-only inside an existing read snapshot', () => {
+    const repository = WorkspaceObjectRepository.open(makeRoot());
+    repository.defineObject({ id: 'object_read_only', slug: 'read-only', name: 'Read only', fields: [] });
+    repository.upsertEntries('object_read_only', [{ id: 'entry_one', values: {} }]);
+    repository.markProjectionStaleForTest('object_read_only');
+
+    const payload = repository.withReadSnapshot(() => repository.getObject('object_read_only'));
+
+    expect(payload).toMatchObject({ id: 'object_read_only', revision: 2, entries: [{ id: 'entry_one' }] });
+    expect(repository.hasFreshProjectionForTest('object_read_only')).toBe(false);
+    repository.close();
+  });
+
+  test('falls back to canonical rows when a concurrent writer blocks getObject projection repair', () => {
+    const root = makeRoot();
+    const repository = WorkspaceObjectRepository.open(root);
+    repository.defineObject({ id: 'object_busy_read', slug: 'busy-read', name: 'Busy read', fields: [] });
+    repository.upsertEntries('object_busy_read', [{ id: 'entry_one', values: {} }]);
+    repository.markProjectionStaleForTest('object_busy_read');
+    (Reflect.get(repository, 'db') as ReturnType<typeof openSQLite>).pragma('busy_timeout = 1');
+    const writer = openSQLite(join(root, 'objects', 'objects.sqlite'));
+    writer.pragma('journal_mode = WAL');
+    writer.runSql('BEGIN IMMEDIATE');
+
+    let payload: ReturnType<WorkspaceObjectRepository['getObject']> = null;
+    let observedError: unknown = null;
+    try {
+      payload = repository.getObject('object_busy_read');
+    } catch (error) {
+      observedError = error;
+    } finally {
+      writer.runSql('ROLLBACK');
+      writer.close();
+    }
+
+    expect(observedError).toBeNull();
+    expect(payload).toMatchObject({ id: 'object_busy_read', revision: 2, entries: [{ id: 'entry_one' }] });
+    expect(repository.hasFreshProjectionForTest('object_busy_read')).toBe(false);
+    repository.close();
+  });
+
+  test('treats node:sqlite busy during getObject repair as a read-only fallback', () => {
+    const repository = WorkspaceObjectRepository.open(makeRoot());
+    repository.defineObject({ id: 'object_node_busy', slug: 'node-busy', name: 'Node busy', fields: [] });
+    repository.upsertEntries('object_node_busy', [{ id: 'entry_one', values: {} }]);
+    repository.markProjectionStaleForTest('object_node_busy');
+    const nodeBusy = Object.assign(new Error('database is locked'), { code: 'ERR_SQLITE_ERROR', errcode: 261 });
+    Reflect.set(repository, 'transaction', () => { throw nodeBusy; });
+
+    expect(repository.getObject('object_node_busy')).toMatchObject({
+      id: 'object_node_busy', revision: 2, entries: [{ id: 'entry_one' }],
+    });
+    expect(repository.hasFreshProjectionForTest('object_node_busy')).toBe(false);
+    repository.close();
+  });
+
   test('treats Bun and node:sqlite busy or locked errors as best-effort repair misses', () => {
     const lockErrors = [
       { code: 'SQLITE_BUSY' },
