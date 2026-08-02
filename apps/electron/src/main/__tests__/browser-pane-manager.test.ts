@@ -522,6 +522,35 @@ describe('BrowserPaneManager', () => {
     )
   })
 
+  it('gives the browser its window back when it stops being a card', () => {
+    manager.createInstance('undock-1')
+    const instance = (manager as any).instances.get('undock-1')
+    instance.window.show()
+    const host = createMockWindow()
+
+    manager.setDisplayMode('undock-1', 'integrated', host as any)
+    expect(instance.window.isVisible()).toBe(false)
+
+    manager.setDisplayMode('undock-1', 'floating')
+
+    // The views go back to this window. Left hidden, the browser just vanishes:
+    // still alive, still in the tab strip, painting into nothing.
+    expect(instance.window.isVisible()).toBe(true)
+  })
+
+  it('leaves a browser that was already hidden hidden after undocking', () => {
+    manager.createInstance('undock-2')
+    const instance = (manager as any).instances.get('undock-2')
+    instance.window.hide()
+    const host = createMockWindow()
+
+    manager.setDisplayMode('undock-2', 'integrated', host as any)
+    manager.setDisplayMode('undock-2', 'floating')
+
+    // Undocking undoes what docking did — it is not a "show the browser" button.
+    expect(instance.window.isVisible()).toBe(false)
+  })
+
   it('paints the toolbar and overlay views transparent', () => {
     manager.createInstance('bg-1')
     const instance = (manager as any).instances.get('bg-1')

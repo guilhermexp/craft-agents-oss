@@ -205,6 +205,7 @@ export const LOCAL_ONLY_NAMESPACES = new Set<string>([
   RPC_NAMESPACES.browserPane.SET_PROFILE_SETTINGS,
   RPC_NAMESPACES.browserPane.PROFILES_CHANGED,
   RPC_NAMESPACES.browserPane.PICKER_REQUESTED,
+  RPC_NAMESPACES.browserPane.DISPLAY_MODE_REQUESTED,
 
   // gitbash — Windows-specific local
   RPC_NAMESPACES.gitbash.CHECK,

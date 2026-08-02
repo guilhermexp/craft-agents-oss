@@ -132,6 +132,12 @@ export interface BrowserInstance {
   /** Panel width in DIPs, or null when closed. */
   sessionPanelWidth: number | null
   displayMode: BrowserDisplayMode
+  /**
+   * True when docking hid the instance's own window. Undocking hands the views
+   * back to that window, so without this the browser would simply vanish —
+   * alive, listed in the tab strip, painting into something invisible.
+   */
+  hiddenByIntegration: boolean
   /** Window the views are currently parented to while integrated. */
   hostWindow: BrowserWindow | null
   /** Card rect in host content coordinates (DIPs). Null until the renderer reports it. */
@@ -352,6 +358,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private captureReleaseHook: ((browserInstanceId: string) => void) | null = null
   private profilesChangeCallback: ((settings: BrowserProfileSettings) => void) | null = null
   private profileManagementRequestCallback: ((instanceId: string) => void) | null = null
+  private displayModeRequestCallback: ((instanceId: string, mode: BrowserDisplayMode) => void) | null = null
   // SECURITY (auditoria 2026-07-14): dedup POR partition, não por instância.
   // O guard booleano antigo só registrava o handler na 1ª partition; profiles
   // secundários caíam no default permissivo do Electron. `session.fromPartition`
@@ -404,6 +411,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     switchProfile: (instanceId, targetProfileId) => this.switchProfile(instanceId, targetProfileId),
     requestProfileManagement: (instanceId) => this.profileManagementRequestCallback?.(instanceId),
     toggleSessionPanel: (instanceId) => this.toggleSessionPanel(instanceId),
+    requestDisplayMode: (instanceId, mode) => this.displayModeRequestCallback?.(instanceId, mode),
     emitStateChange: (instance) => this.emitStateChange(instance),
     sleep: (ms) => this.sleep(ms),
   })
@@ -574,6 +582,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       sessionView: null,
       sessionPanelWidth: null,
       displayMode: 'floating',
+      hiddenByIntegration: false,
       hostWindow: null,
       embeddedBounds: null,
       embeddedRadius: 0,
@@ -792,6 +801,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
   onProfileManagementRequested(callback: (instanceId: string) => void): void {
     this.profileManagementRequestCallback = callback
+  }
+
+  /**
+   * Dock/undock asked for from inside a browser window. Only the app renderer
+   * can complete it — it owns the card that gives the integrated views their
+   * rect — so the manager just relays the intent.
+   */
+  onDisplayModeRequested(callback: (instanceId: string, mode: BrowserDisplayMode) => void): void {
+    this.displayModeRequestCallback = callback
   }
 
   listProfiles(): BrowserProfile[] {
@@ -2197,8 +2215,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       // take the WebContents with it.
       if (!instance.window.isDestroyed() && instance.window.isVisible()) {
         instance.window.hide()
+        instance.hiddenByIntegration = true
       }
       this.layoutAllViews(instance)
+      this.toolbarHost.pushState(instance)
       mainLog.info(`[browser-pane] display mode=integrated id=${instanceId}`)
       return true
     }
@@ -2217,6 +2237,13 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     instance.pageView.setBorderRadius(0)
     instance.toolbarView.setBorderRadius(0)
     this.layoutAllViews(instance)
+    // Undo exactly what docking did. A browser that was already hidden before
+    // it was docked (agent-driven, never shown) stays hidden.
+    if (instance.hiddenByIntegration) {
+      instance.hiddenByIntegration = false
+      instance.window.show()
+    }
+    this.toolbarHost.pushState(instance)
     mainLog.info(`[browser-pane] display mode=floating id=${instanceId}`)
     return true
   }

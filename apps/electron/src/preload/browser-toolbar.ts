@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('browserToolbar', {
   requestProfileManagement: () => ipcRenderer.invoke(CHANNELS.REQUEST_PROFILE_MANAGEMENT, instanceId),
   switchProfile: (profileId: string) => ipcRenderer.invoke(CHANNELS.SWITCH_PROFILE, instanceId, profileId),
   toggleSessionPanel: () => ipcRenderer.invoke(CHANNELS.TOGGLE_SESSION_PANEL, instanceId),
+  requestDisplayMode: (mode: 'floating' | 'integrated') => ipcRenderer.invoke(CHANNELS.REQUEST_DISPLAY_MODE, instanceId, mode),
   inviteHermesToMeet: async (payload: { urlOrCode: string; profileId?: string; workspaceId?: string }) => {
     const resolvedWorkspaceId = (payload.workspaceId || workspaceId).trim()
       || await ipcRenderer.invoke(CHANNELS.MEETINGS_RESOLVE_WORKSPACE, instanceId)

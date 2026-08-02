@@ -61,6 +61,7 @@ export interface BroadcastEventMap {
   [RPC_NAMESPACES.browserPane.INTERACTED]: [id: string]
   [RPC_NAMESPACES.browserPane.PROFILES_CHANGED]: [settings: BrowserProfileSettings]
   [RPC_NAMESPACES.browserPane.PICKER_REQUESTED]: [data: { instanceId: string }]
+  [RPC_NAMESPACES.browserPane.DISPLAY_MODE_REQUESTED]: [data: { instanceId: string; mode: 'floating' | 'integrated' }]
 
   // Navigation events (per-window)
   [RPC_NAMESPACES.notification.NAVIGATE]: [data: { workspaceId: string; sessionId: string }]

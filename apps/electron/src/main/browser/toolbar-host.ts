@@ -16,7 +16,7 @@ import { ipcMain } from 'electron'
 import { mainLog } from '../logger'
 import { TOOLBAR_CHANNELS } from '../../shared/browser-toolbar-channels'
 import type { BrowserProfile } from '@craft-agent/shared/config/types'
-import type { BrowserInstance } from '../browser-pane-manager'
+import type { BrowserDisplayMode, BrowserInstance } from '../browser-pane-manager'
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const TOOLBAR_LOAD_MAX_RETRIES = 4
@@ -52,6 +52,13 @@ export interface ToolbarHostDeps {
   requestProfileManagement(instanceId: string): void
   /** Toggle the session panel embedded on the right of the page. */
   toggleSessionPanel(instanceId: string): boolean
+  /**
+   * Relay a dock/undock request from inside the browser window. The manager
+   * cannot honour it alone: integrated mode needs the app renderer to mount the
+   * card and report its rect, so this goes out as an event and comes back as
+   * `setDisplayMode`.
+   */
+  requestDisplayMode(instanceId: string, mode: BrowserDisplayMode): void
   /** Notify listeners that an instance's state changed. */
   emitStateChange(instance: BrowserInstance): void
   /** Bounded sleep (used between toolbar load retries). */
@@ -149,6 +156,8 @@ export class BrowserToolbarHost {
       // Drives the "open session beside" affordance: without a bound session
       // there is nothing to tile, so the toolbar hides the button.
       hasBoundSession: !!(instance.boundSessionId ?? instance.ownerSessionId),
+      // Lets the toolbar render dock or undock without asking the main process.
+      displayMode: instance.displayMode,
       profile: profile ? {
         id: profile.id,
         name: profile.name,
@@ -266,6 +275,14 @@ export class BrowserToolbarHost {
       mainLog.info(`[browser-pane] toolbar ipc toggleSessionPanel instanceId=${instanceId} resolved=${inst?.id ?? 'none'}`)
       if (!inst) return false
       return this.deps.toggleSessionPanel(inst.id)
+    })
+
+    ipcMain.handle(TOOLBAR_CHANNELS.REQUEST_DISPLAY_MODE, async (_event, instanceId: string, mode: BrowserDisplayMode) => {
+      const inst = this.deps.getInstance(instanceId)
+      if (!inst) return false
+      if (mode !== 'floating' && mode !== 'integrated') return false
+      this.deps.requestDisplayMode(inst.id, mode)
+      return true
     })
 
     ipcMain.handle(TOOLBAR_CHANNELS.SWITCH_PROFILE, async (_event, instanceId: string, profileId: string) => {

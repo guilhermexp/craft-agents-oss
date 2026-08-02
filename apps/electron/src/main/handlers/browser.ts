@@ -305,4 +305,24 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     }
     pushTyped(server, RPC_NAMESPACES.browserPane.PICKER_REQUESTED, { to: 'all' }, { instanceId })
   })
+
+  // Forward dock/undock requests from inside a browser window. The app renderer
+  // owns the card that gives integrated views their rect, so only it can finish
+  // the switch. Docking also needs the app window in front — otherwise the card
+  // mounts behind whatever the user is looking at and the browser looks gone.
+  browserPaneManager.onDisplayModeRequested((instanceId, mode) => {
+    if (mode === 'integrated') {
+      try {
+        const main = (windowManager?.getAllWindows() ?? [])[0]?.window
+        if (main && !main.isDestroyed()) {
+          if (main.isMinimized()) main.restore()
+          main.show()
+          main.focus()
+        }
+      } catch (err) {
+        platform.logger.warn('[browser-pane] failed to focus main window for dock:', err)
+      }
+    }
+    pushTyped(server, RPC_NAMESPACES.browserPane.DISPLAY_MODE_REQUESTED, { to: 'all' }, { instanceId, mode })
+  })
 }

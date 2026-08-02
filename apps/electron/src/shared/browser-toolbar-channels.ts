@@ -21,4 +21,6 @@ export const TOOLBAR_CHANNELS = {
   SWITCH_PROFILE: 'browser-toolbar:switch-profile',
   /** Toggle the session panel embedded on the right of this browser's page. */
   TOGGLE_SESSION_PANEL: 'browser-toolbar:toggle-session-panel',
+  /** Ask the app to dock this browser as a card, or send it back to its own window. */
+  REQUEST_DISPLAY_MODE: 'browser-toolbar:request-display-mode',
 } as const

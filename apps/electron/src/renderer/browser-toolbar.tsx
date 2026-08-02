@@ -10,7 +10,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import ReactDOM from 'react-dom/client'
 import { initReactI18next, useTranslation } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
-import { EyeOff, PanelRight, Sparkles, Square, Video, X, XCircle } from 'lucide-react'
+import { EyeOff, Monitor, PanelRight, PanelsTopLeft, Sparkles, Square, Video, X, XCircle } from 'lucide-react'
 import { BrowserControls } from '@craft-agent/ui'
 import { setupI18n } from '@craft-agent/shared/i18n'
 import { HeaderIconButton } from '@/components/ui/HeaderIconButton'
@@ -51,6 +51,8 @@ interface ToolbarState {
   availableProfiles?: ToolbarProfile[]
   /** True when a session is bound to this browser and can be tiled beside it. */
   hasBoundSession?: boolean
+  /** Where the browser is presented right now: own window, or docked as a card. */
+  displayMode?: 'floating' | 'integrated'
 }
 
 declare global {
@@ -68,6 +70,7 @@ declare global {
       requestProfileManagement: () => Promise<void>
       switchProfile: (profileId: string) => Promise<string | null>
       toggleSessionPanel: () => Promise<boolean>
+      requestDisplayMode: (mode: 'floating' | 'integrated') => Promise<boolean>
       inviteHermesToMeet: (payload: { urlOrCode: string; profileId?: string }) => Promise<{ status?: string; error?: string }>
       prepareRecording: (payload: { urlOrCode: string; workspaceId?: string; mimeType: string }) => Promise<{ recordingId: string; meetingId?: string; outputPath: string }>
       appendRecordingChunk: (recordingId: string, chunk: ArrayBuffer) => Promise<void>
@@ -137,6 +140,9 @@ function BrowserToolbarApp() {
   const detectedMeetUrl = extractGoogleMeetMeetingUrl(state.url) ?? extractGoogleMeetMeetingUrl(state.title)
   const recordingMeetUrl = detectedMeetUrl ?? activeRecordingMeetUrl
   const recordingActive = recordingState === 'preparing' || recordingState === 'recording' || recordingState === 'stopping'
+  const dockLabel = state.displayMode === 'integrated'
+    ? t('browser.showAsSeparateWindow', { defaultValue: 'Show as Separate Window' })
+    : t('browser.showInsideApp', { defaultValue: 'Show Inside App' })
 
   // Um único intervalo, vivo somente enquanto grava: o timer é indicador, a
   // duração autoritativa sai de `RecordingService.finalize`.
@@ -573,6 +579,22 @@ function BrowserToolbarApp() {
               aria-label={t('browser.toggleSessionPanel', { defaultValue: 'Toggle session panel' })}
               title={t('browser.toggleSessionPanel', { defaultValue: 'Toggle session panel' })}
               onClick={() => { void api?.toggleSessionPanel() }}
+              className={themeColor ? '' : 'bg-background shadow-minimal hover:bg-foreground/5'}
+            />
+            {/* Dock/undock lives here rather than in the app's browser menu:
+                the user is looking at this window when they decide it should
+                move into the app, and reaching for a menu behind it to say so
+                is backwards. The switch itself is completed by the app
+                renderer, which owns the card. */}
+            <HeaderIconButton
+              icon={state.displayMode === 'integrated'
+                ? <Monitor className="size-3.5" />
+                : <PanelsTopLeft className="size-3.5" />}
+              aria-label={dockLabel}
+              title={dockLabel}
+              onClick={() => {
+                void api?.requestDisplayMode(state.displayMode === 'integrated' ? 'floating' : 'integrated')
+              }}
               className={themeColor ? '' : 'bg-background shadow-minimal hover:bg-foreground/5'}
             />
             {state.profile && (

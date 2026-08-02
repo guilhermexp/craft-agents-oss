@@ -48,6 +48,7 @@ const EXPECTED_CHANNELS: string[] = [
   "browser-pane:create-profile",
   "browser-pane:delete-profile",
   "browser-pane:destroy",
+  "browser-pane:display-mode-requested",
   "browser-pane:evaluate",
   "browser-pane:fill",
   "browser-pane:focus",

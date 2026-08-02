@@ -2200,6 +2200,15 @@ function AppShellContent({
     return () => unsub()
   }, [])
 
+  // Dock/undock asked for from inside a browser window's own toolbar. The card
+  // lives here, so the browser cannot switch itself.
+  useEffect(() => {
+    const unsub = window.electronAPI.browserPane.onDisplayModeRequested((data) => {
+      setIntegratedBrowserInstanceId(data.mode === 'integrated' ? data.instanceId : null)
+    })
+    return () => unsub()
+  }, [setIntegratedBrowserInstanceId])
+
   const openBrowserWindowForProfile = useCallback(async (profileId: string) => {
     try {
       const instanceId = await window.electronAPI.browserPane.create({

@@ -714,6 +714,7 @@ export const RPC_CONTRACT = {
   'browserPane.setEmbeddedBounds': invoke<((id: string, rect: { x: number; y: number; width: number; height: number }, radius?: number) => Promise<boolean>)>(RPC_NAMESPACES.browserPane.SET_EMBEDDED_BOUNDS),
   'browserPane.onProfilesChanged': event<((callback: (settings: BrowserProfileSettings) => void) => () => void)>(RPC_NAMESPACES.browserPane.PROFILES_CHANGED),
   'browserPane.onPickerRequested': event<((callback: (data: { instanceId: string }) => void) => () => void)>(RPC_NAMESPACES.browserPane.PICKER_REQUESTED),
+  'browserPane.onDisplayModeRequested': event<((callback: (data: { instanceId: string; mode: 'floating' | 'integrated' }) => void) => () => void)>(RPC_NAMESPACES.browserPane.DISPLAY_MODE_REQUESTED),
 } satisfies Record<string, RpcLeaf<RpcLeafKind, unknown>>
 
 // ── ElectronAPI — derived from RPC_CONTRACT ─────────────────────────────────
