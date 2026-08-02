@@ -66,6 +66,8 @@ const EXPECTED_CHANNELS: string[] = [
   "browser-pane:screenshot",
   "browser-pane:scroll",
   "browser-pane:select",
+  "browser-pane:set-display-mode",
+  "browser-pane:set-embedded-bounds",
   "browser-pane:set-profile-settings",
   "browser-pane:snapshot",
   "browser-pane:state-changed",
@@ -401,6 +403,8 @@ const EXPECTED_CHANNELS: string[] = [
   "workspaces:checkSlug",
   "workspaces:create",
   "workspaces:get",
+  "workspaces:getDefault",
+  "workspaces:setDefault",
   "workspaces:updateRemote",
 ]
 

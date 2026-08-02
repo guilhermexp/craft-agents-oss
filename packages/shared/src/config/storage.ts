@@ -42,6 +42,9 @@ export interface StoredConfig {
 
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
+  // Workspace to open on app launch, overriding saved window state and the
+  // "first workspace" fallback. Null/undefined keeps the previous behaviour.
+  defaultWorkspaceId?: string | null;
   activeSessionId: string | null;  // Currently active session (primary scope)
   // Notifications
   notificationsEnabled?: boolean;  // Desktop notifications for task completion (default: true)
@@ -328,6 +331,8 @@ export {
   getWorkspaceByNameOrId,
   updateWorkspaceRemoteServer,
   setActiveWorkspace,
+  getDefaultWorkspaceId,
+  setDefaultWorkspace,
   switchWorkspaceAtomic,
   addWorkspace,
   syncWorkspaces,

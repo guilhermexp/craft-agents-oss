@@ -74,6 +74,7 @@ import { handleErrorMessageAction } from "./error-message-actions"
 import {
   attachUpwardWheelIntentListener,
   isNearScrollBottom,
+  scrollDistanceFromBottom,
   shouldPinStreamingContentToBottom,
 } from "./ChatDisplay.auto-scroll"
 
@@ -514,6 +515,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const [visibleTurnCount, setVisibleTurnCount] = React.useState(TURNS_PER_PAGE)
   // Sticky-bottom: When true, auto-scroll on content changes. Toggled by user scroll behavior.
   const isStickToBottomRef = React.useRef(true)
+  // Show a floating "jump to latest" button once the user scrolls well above the
+  // newest message. Distinct from the tight stick-to-bottom threshold above.
+  const [showJumpToLatest, setShowJumpToLatest] = React.useState(false)
   // Mirror isFocusedPanel into a ref so long-lived closures read the latest value.
   // Sync after commit so render stays pure under React's replayable render model.
   const isFocusedPanelRef = React.useRef(isFocusedPanel)
@@ -1129,6 +1133,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     const { scrollTop } = viewport
     // 20px threshold for "at bottom" detection
     isStickToBottomRef.current = isNearScrollBottom(viewport)
+    // Surface the jump-to-latest button once well clear of the bottom.
+    setShowJumpToLatest(scrollDistanceFromBottom(viewport) > 160)
 
     // Load more turns when scrolling near top (within 100px)
     if (scrollTop < 100) {
@@ -1197,6 +1203,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     // On session switch: reset UI state (scroll handled by ScrollOnMount)
     if (isSessionSwitch) {
       isStickToBottomRef.current = true
+      setShowJumpToLatest(false)
       setVisibleTurnCount(TURNS_PER_PAGE)
     }
 
@@ -1264,6 +1271,12 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     })
   }, [session?.id, messageCount, lastMessageId, lastMessageRole])
 
+  const scrollToLatestMessage = React.useCallback((behavior: ScrollBehavior = 'smooth') => {
+    isStickToBottomRef.current = true
+    setShowJumpToLatest(false)
+    messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' })
+  }, [])
+
   // Handle message submission from InputContainer
   // Backend handles interruption and queueing if currently processing
   const handleSubmit = (message: string, attachments?: FileAttachment[], skillSlugs?: string[]) => {
@@ -1313,7 +1326,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     // Immediately scroll to bottom after sending - use requestAnimationFrame
     // to ensure the DOM has updated with the new message
     requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      scrollToLatestMessage('smooth')
     })
   }
 
@@ -1954,6 +1967,18 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
               </div>
               </ScrollArea>
             </div>
+            {showJumpToLatest && (
+              <button
+                type="button"
+                onClick={() => scrollToLatestMessage()}
+                data-touch-reveal="true"
+                aria-label={t('chat.jumpToLatest')}
+                title={t('chat.jumpToLatest')}
+                className="absolute bottom-4 left-1/2 z-20 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border/50 bg-background shadow-minimal transition-colors hover:bg-foreground/5"
+              >
+                <ChevronDown className="size-4 text-muted-foreground" />
+              </button>
+            )}
           </div>
 
           {/* === INPUT CONTAINER: FreeForm or Structured Input === */}

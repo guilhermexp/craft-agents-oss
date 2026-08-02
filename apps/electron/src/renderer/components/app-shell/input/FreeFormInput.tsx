@@ -1172,6 +1172,10 @@ export function FreeFormInput({
     )
     setInput('')
     setAttachments([])
+    // Clear the parent draft synchronously too. Relying only on the attachments
+    // state effect can leave the parent with a stale attachment ref long enough
+    // for a processing/status re-render to seed the just-sent file back into the input.
+    onAttachmentsChangeRef.current?.([])
     // Clear draft immediately (cancel any pending debounced sync)
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current)
     onInputChange?.('')

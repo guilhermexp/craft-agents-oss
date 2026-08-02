@@ -3,6 +3,7 @@ import {
   attachUpwardWheelIntentListener,
   canNestedScrollerConsumeUpwardWheel,
   isNearScrollBottom,
+  scrollDistanceFromBottom,
   shouldPinStreamingContentToBottom,
 } from '../ChatDisplay.auto-scroll'
 
@@ -261,5 +262,19 @@ describe('ChatDisplay streaming auto-scroll wheel guard', () => {
     detach()
     target.dispatchEvent(wheelEvent(-1))
     expect(onUpwardWheel).not.toHaveBeenCalled()
+  })
+})
+
+describe('scrollDistanceFromBottom', () => {
+  it('measures the gap between the scroll position and the bottom', () => {
+    expect(scrollDistanceFromBottom({ scrollTop: 600, scrollHeight: 1000, clientHeight: 400 })).toBe(0)
+    expect(scrollDistanceFromBottom({ scrollTop: 200, scrollHeight: 1000, clientHeight: 400 })).toBe(400)
+  })
+
+  it('is the basis for isNearScrollBottom at the shared threshold', () => {
+    const metrics = { scrollTop: 585, scrollHeight: 1000, clientHeight: 400 }
+    expect(scrollDistanceFromBottom(metrics)).toBe(15)
+    expect(isNearScrollBottom(metrics)).toBe(true)
+    expect(isNearScrollBottom(metrics, 10)).toBe(false)
   })
 })

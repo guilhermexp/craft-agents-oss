@@ -66,6 +66,7 @@ export default function WorkspaceSettingsPage() {
   const [workingDirectory, setWorkingDirectory] = useState('')
   const [localMcpEnabled, setLocalMcpEnabled] = useState(true)
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(true)
+  const [isDefaultOnLaunch, setIsDefaultOnLaunch] = useState(false)
 
   // Default sources state
   const [availableSources, setAvailableSources] = useState<PublicSourceDto[]>([])
@@ -138,6 +139,15 @@ export default function WorkspaceSettingsPage() {
         }
         if (cancelled) return
         setWsIconUrl(resolvedIcon)
+
+        // Load default-on-launch pin (global config, not per-workspace).
+        try {
+          const pinnedId = await window.electronAPI.getDefaultWorkspaceId()
+          if (cancelled) return
+          setIsDefaultOnLaunch(pinnedId === activeWorkspaceId)
+        } catch (err) {
+          console.error('Failed to load default workspace pin:', err)
+        }
       } catch (error) {
         console.error('Failed to load workspace settings:', error)
       } finally {
@@ -283,6 +293,23 @@ export default function WorkspaceSettingsPage() {
       await updateWorkspaceSetting('localMcpEnabled', enabled)
     },
     [updateWorkspaceSetting]
+  )
+
+  const handleDefaultOnLaunchToggle = useCallback(
+    async (enabled: boolean) => {
+      if (!window.electronAPI || !activeWorkspaceId) return
+      setIsDefaultOnLaunch(enabled)
+      try {
+        await window.electronAPI.setDefaultWorkspace(enabled ? activeWorkspaceId : null)
+      } catch (err) {
+        setIsDefaultOnLaunch(!enabled)
+        const message = err instanceof Error ? err.message : 'Unknown error'
+        toast.error(t("settings.workspace.failedToSave", { setting: 'defaultWorkspace' }), {
+          description: message,
+        })
+      }
+    },
+    [activeWorkspaceId, t]
   )
 
   const handleSourceToggle = useCallback(
@@ -549,6 +576,12 @@ export default function WorkspaceSettingsPage() {
                   description={t("settings.workspace.localMcpServersDesc")}
                   checked={localMcpEnabled}
                   onCheckedChange={handleLocalMcpEnabledChange}
+                />
+                <SettingsToggle
+                  label={t("settings.workspace.defaultOnLaunch")}
+                  description={t("settings.workspace.defaultOnLaunchDesc")}
+                  checked={isDefaultOnLaunch}
+                  onCheckedChange={handleDefaultOnLaunchToggle}
                 />
               </SettingsCard>
             </SettingsSection>
