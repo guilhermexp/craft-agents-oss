@@ -32,12 +32,32 @@ const SENSITIVE_CREDENTIAL_NAMES = new Set([
   'xAmzSignature',
 ].map((name) => name.toLowerCase()))
 
-export function normalizeCredentialName(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, '')
-}
-
+/**
+ * A name is sensitive when any TRAILING run of its words spells one of the
+ * names above. Words split on separators and camelCase boundaries, so
+ * `x-api-key`, `X_API_KEY` and `xApiKey` all reduce to `['x','api','key']`.
+ *
+ * Vendor-prefixed headers are the reason this is not an exact-match lookup:
+ * `x-api-key`, `X-Auth-Token`, `Private-Token` and `x-goog-api-key` are all
+ * credentials, and matching the whole normalized name let every one of them
+ * through into public DTOs.
+ *
+ * Suffix-anchored on purpose. That restores the boundary semantics of the
+ * regex this allowlist replaced — it only matched a sensitive word sitting
+ * immediately before the `:`/`=`, i.e. at the end of the key. Plain
+ * containment would additionally redact `monkey`, `keyword` and `tokenCount`.
+ */
 export function isSensitiveCredentialName(value: string): boolean {
-  return SENSITIVE_CREDENTIAL_NAMES.has(normalizeCredentialName(value))
+  const words = value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((word) => word.toLowerCase())
+
+  for (let start = 0; start < words.length; start += 1) {
+    if (SENSITIVE_CREDENTIAL_NAMES.has(words.slice(start).join(''))) return true
+  }
+  return false
 }
 
 function hashContainsCredentialParameter(hash: string): boolean {

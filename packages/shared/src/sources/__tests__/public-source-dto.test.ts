@@ -205,6 +205,38 @@ describe('public source DTO boundary', () => {
     }
   })
 
+  test('redacts vendor-prefixed credential headers', () => {
+    // Regression: an exact-match name allowlist let every prefixed header
+    // through into the public DTO, which SOURCES_GET serves to the renderer
+    // and to remote webui clients.
+    const text = [
+      'x-api-key=alpha leak',
+      'X-Api-Key: bravo leak',
+      '{"headers":{"X-Auth-Token":"charlie leak"}}',
+      'Private-Token: delta leak',
+      '{"X-Access-Token":"echo leak"}',
+      'x-goog-api-key=foxtrot leak',
+    ].join('; ')
+
+    const sanitized = sanitizePublicSourceError(text)
+
+    for (const sentinel of ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot']) {
+      expect(sanitized).not.toContain(sentinel)
+    }
+  })
+
+  test('leaves non-credential names that merely embed a secret word intact', () => {
+    // Suffix-anchored word matching, not containment: `monkey` ends in "key"
+    // and `tokenCount` starts with "token", but neither is a credential.
+    const sanitized = sanitizePublicSourceError(
+      'monkey=visible; keyword=visible; tokenCount=42; sessionId=visible; keyboardLayout=us',
+    )
+
+    expect(sanitized).toBe(
+      'monkey=visible; keyword=visible; tokenCount=42; sessionId=visible; keyboardLayout=us',
+    )
+  })
+
   test('redacts quoted JSON credentials and credential-bearing URLs from every public text field', () => {
     const source = sourceWithUrl('https://mcp.example.test/source')
     source.config.name = 'Name https://example.test/name?token=name-secret'
