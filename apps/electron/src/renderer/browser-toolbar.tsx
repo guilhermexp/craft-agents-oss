@@ -573,14 +573,19 @@ function BrowserToolbarApp() {
             {/* Bring the agent chat alongside the page, as a panel inside this
                 window. With a bound session it shows that one, otherwise the
                 session list, so the user can start one without leaving the
-                browser. */}
-            <HeaderIconButton
-              icon={<PanelRight className="size-3.5" />}
-              aria-label={t('browser.toggleSessionPanel', { defaultValue: 'Toggle session panel' })}
-              title={t('browser.toggleSessionPanel', { defaultValue: 'Toggle session panel' })}
-              onClick={() => { void api?.toggleSessionPanel() }}
-              className={themeColor ? '' : 'bg-background shadow-minimal hover:bg-foreground/5'}
-            />
+                browser.
+
+                Hidden while docked: the app's own chat is already beside the
+                browser there, so the panel would be the same session twice. */}
+            {state.displayMode !== 'integrated' && (
+              <HeaderIconButton
+                icon={<PanelRight className="size-3.5" />}
+                aria-label={t('browser.toggleSessionPanel', { defaultValue: 'Toggle session panel' })}
+                title={t('browser.toggleSessionPanel', { defaultValue: 'Toggle session panel' })}
+                onClick={() => { void api?.toggleSessionPanel() }}
+                className={themeColor ? '' : 'bg-background shadow-minimal hover:bg-foreground/5'}
+              />
+            )}
             {/* Dock/undock lives here rather than in the app's browser menu:
                 the user is looking at this window when they decide it should
                 move into the app, and reaching for a menu behind it to say so

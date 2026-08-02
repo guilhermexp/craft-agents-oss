@@ -490,7 +490,7 @@ describe('BrowserPaneManager', () => {
     )
   })
 
-  it('carries the open panel across a display-mode switch', () => {
+  it('drops the session panel when the browser docks into the app', () => {
     manager.createInstance('panel-4')
     const instance = (manager as any).instances.get('panel-4')
     manager.setWindowManager(windowManagerStub() as any)
@@ -501,30 +501,42 @@ describe('BrowserPaneManager', () => {
 
     manager.setDisplayMode('panel-4', 'integrated', host as any)
 
-    // Left behind, the panel would be stranded on the now-hidden window while
-    // the page stayed shrunk for a panel nobody can see.
+    // Docked, the app's own chat is beside the browser: the panel would show
+    // the same session twice. It also must not be left on the old window.
+    expect(instance.sessionView).toBeNull()
+    expect(instance.sessionPanelWidth).toBeNull()
+    expect(view.webContents.close).toHaveBeenCalled()
     expect(instance.window.contentView.children).not.toContain(view)
-    expect(host.contentView.children).toContain(view)
+    expect(host.contentView.children).not.toContain(view)
     expect(host.contentView.children[host.contentView.children.length - 1]).toBe(instance.toolbarView)
+  })
+
+  it('refuses to open the session panel while docked', () => {
+    manager.createInstance('panel-6')
+    const instance = (manager as any).instances.get('panel-6')
+    manager.setWindowManager(windowManagerStub() as any)
+    manager.setDisplayMode('panel-6', 'integrated', createMockWindow() as any)
+
+    expect(manager.toggleSessionPanel('panel-6')).toBe(false)
+    expect(instance.sessionView).toBeNull()
   })
 
   it('splits a frame too narrow for both floors instead of overflowing it', () => {
     manager.createInstance('panel-5')
     const instance = (manager as any).instances.get('panel-5')
     manager.setWindowManager(windowManagerStub() as any)
-    const host = createMockWindow()
-    manager.setDisplayMode('panel-5', 'integrated', host as any)
-    // A card, not a window: 500 DIPs cannot hold a 400 page next to a 320 panel.
-    manager.setEmbeddedBounds('panel-5', { x: 0, y: 0, width: 500, height: 400 })
+    // The window floors at 700; 700 DIPs cannot hold a 400 page next to a 320
+    // panel, so neither floor can be honoured.
+    instance.window.setContentSize(500, 400)
 
     manager.toggleSessionPanel('panel-5')
 
-    expect(instance.sessionPanelWidth).toBe(250)
+    expect(instance.sessionPanelWidth).toBe(350)
     expect(instance.pageView.setBounds).toHaveBeenLastCalledWith(
-      expect.objectContaining({ x: 0, width: 250 }),
+      expect.objectContaining({ x: 0, width: 350 }),
     )
     expect(instance.sessionView.setBounds).toHaveBeenLastCalledWith(
-      expect.objectContaining({ x: 250, width: 250 }),
+      expect.objectContaining({ x: 350, width: 350 }),
     )
   })
 
@@ -557,26 +569,24 @@ describe('BrowserPaneManager', () => {
     expect(instance.window.isVisible()).toBe(false)
   })
 
-  it('keeps every native view on the same corner radius', () => {
+  it('keeps the sibling views on the same corner radius', () => {
     manager.createInstance('radius-1')
     const instance = (manager as any).instances.get('radius-1')
     manager.setWindowManager(windowManagerStub() as any)
     const host = createMockWindow()
     manager.setDisplayMode('radius-1', 'integrated', host as any)
+
     manager.setEmbeddedBounds('radius-1', { x: 0, y: 0, width: 1000, height: 800 }, 32)
 
-    manager.toggleSessionPanel('radius-1')
-
-    // A rounded page beside a square panel reads as two unrelated surfaces.
-    expect(instance.sessionView.setBorderRadius).toHaveBeenLastCalledWith(32)
+    // A rounded page beside a square toolbar reads as two unrelated surfaces.
     expect(instance.pageView.setBorderRadius).toHaveBeenLastCalledWith(32)
     expect(instance.toolbarView.setBorderRadius).toHaveBeenLastCalledWith(32)
 
-    const panel = instance.sessionView
     manager.setDisplayMode('radius-1', 'floating')
 
-    // Undocking has to drop it everywhere, not just on the two originals.
-    expect(panel.setBorderRadius).toHaveBeenLastCalledWith(0)
+    // A full window is not a card: undocking has to drop it everywhere.
+    expect(instance.pageView.setBorderRadius).toHaveBeenLastCalledWith(0)
+    expect(instance.toolbarView.setBorderRadius).toHaveBeenLastCalledWith(0)
   })
 
   it('paints the toolbar and overlay views transparent', () => {

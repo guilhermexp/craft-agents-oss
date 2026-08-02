@@ -153,6 +153,7 @@ import SettingsNavigator from "@/pages/settings/SettingsNavigator"
 import {
   PANEL_GAP,
   PANEL_EDGE_INSET,
+  INTEGRATED_BROWSER_DEFAULT_WIDTH,
   PANEL_MIN_WIDTH,
   PANEL_SASH_HALF_HIT_WIDTH,
   PANEL_SASH_HIT_WIDTH,
@@ -586,6 +587,12 @@ function AppShellContent({
   const [rightSidebarPreviewPreferredWidth, setRightSidebarPreviewPreferredWidth] = React.useState(() => {
     return storage.get(storage.KEYS.rightSidebarPreviewWidth, RIGHT_SIDEBAR_SPLIT_DEFAULT_WIDTH)
   })
+  // Docked browser panel width, resizable and persisted like every other panel.
+  // Clamped on read so a stored width from a wider window cannot squeeze the
+  // panels beside it below PANEL_MIN_WIDTH.
+  const [integratedBrowserPreferredWidth, setIntegratedBrowserPreferredWidth] = React.useState(() => {
+    return storage.get(storage.KEYS.integratedBrowserWidth, INTEGRATED_BROWSER_DEFAULT_WIDTH)
+  })
 
   // Hides both sidebar and navigator (CMD+. toggle)
   // Seed from either focused window param or persisted preference, then keep it toggleable.
@@ -600,6 +607,13 @@ function AppShellContent({
   const shellWidth = useContainerWidth(shellRef)
   const MOBILE_THRESHOLD = 768
   const isAutoCompact = shellWidth > 0 && shellWidth < MOBILE_THRESHOLD
+  const integratedBrowserWidth = React.useMemo(() => {
+    const available = shellWidth > 0
+      ? shellWidth
+      : (typeof window === 'undefined' ? 1440 : window.innerWidth)
+    const max = Math.max(PANEL_MIN_WIDTH, available - PANEL_MIN_WIDTH)
+    return Math.min(Math.max(integratedBrowserPreferredWidth, PANEL_MIN_WIDTH), max)
+  }, [integratedBrowserPreferredWidth, shellWidth])
 
   const effectiveSidebarAndNavigatorHidden = isSidebarAndNavigatorHidden || isAutoCompact
 
@@ -617,13 +631,15 @@ function AppShellContent({
     })
   }, [])
 
-  const [isResizing, setIsResizing] = React.useState<'sidebar' | 'session-list' | 'right-sidebar' | null>(null)
+  const [isResizing, setIsResizing] = React.useState<'sidebar' | 'session-list' | 'right-sidebar' | 'integrated-browser' | null>(null)
   const [sidebarHandleY, setSidebarHandleY] = React.useState<number | null>(null)
   const [sessionListHandleY, setSessionListHandleY] = React.useState<number | null>(null)
   const [rightSidebarHandleY, setRightSidebarHandleY] = React.useState<number | null>(null)
+  const [integratedBrowserHandleY, setIntegratedBrowserHandleY] = React.useState<number | null>(null)
   const resizeHandleRef = React.useRef<HTMLDivElement>(null)
   const sessionListHandleRef = React.useRef<HTMLDivElement>(null)
   const rightSidebarHandleRef = React.useRef<HTMLDivElement>(null)
+  const integratedBrowserHandleRef = React.useRef<HTMLDivElement>(null)
   const { state: session, reset: resetSessionSelection } = useSessionSelection()
   const { resolvedMode, isDark, setMode } = useTheme()
   const { canGoBack, canGoForward, goBack, goForward, navigateToSource, navigateToSession, updateRightSidebar } = useNavigation()
@@ -1399,6 +1415,19 @@ function AppShellContent({
           const rect = rightSidebarHandleRef.current.getBoundingClientRect()
           setRightSidebarHandleY(e.clientY - rect.top)
         }
+      } else if (isResizing === 'integrated-browser') {
+        // The browser's right edge is wherever the right sidebar (or the window
+        // inset) leaves off, so the drag measures back from there.
+        const trailing = PANEL_EDGE_INSET + (isRightSidebarVisible ? rightSidebarWidth + PANEL_GAP : 0)
+        const available = window.innerWidth - trailing
+        const max = Math.max(PANEL_MIN_WIDTH, available - PANEL_MIN_WIDTH)
+        setIntegratedBrowserPreferredWidth(
+          Math.min(Math.max(window.innerWidth - trailing - e.clientX, PANEL_MIN_WIDTH), max),
+        )
+        if (integratedBrowserHandleRef.current) {
+          const rect = integratedBrowserHandleRef.current.getBoundingClientRect()
+          setIntegratedBrowserHandleY(e.clientY - rect.top)
+        }
       }
     }
 
@@ -1415,6 +1444,9 @@ function AppShellContent({
           rightSidebarWidth,
         )
         setRightSidebarHandleY(null)
+      } else if (isResizing === 'integrated-browser') {
+        storage.set(storage.KEYS.integratedBrowserWidth, integratedBrowserWidth)
+        setIntegratedBrowserHandleY(null)
       }
       setIsResizing(null)
     }
@@ -1433,6 +1465,8 @@ function AppShellContent({
     rightSidebarWidth,
     rightSidebarPreviewPath,
     isSidebarVisible,
+    integratedBrowserWidth,
+    isRightSidebarVisible,
   ])
 
   // Use session metadata from Jotai atom (lightweight, no messages)
@@ -2188,15 +2222,6 @@ function AppShellContent({
   // the user has multiple profiles or has the "always ask" preference set.
   const [browserPickerOpen, setBrowserPickerOpen] = useState(false)
   const [integratedBrowserInstanceId, setIntegratedBrowserInstanceId] = useAtom(integratedBrowserInstanceIdAtom)
-  // Docked browser panel width. Splits the shell down the middle, clamped so
-  // neither the browser nor the panels beside it drop below a usable width.
-  // No drag handle yet: the seam between panels is not resizable for this one.
-  const integratedBrowserWidth = React.useMemo(() => {
-    const available = shellWidth > 0
-      ? shellWidth
-      : (typeof window === 'undefined' ? 1440 : window.innerWidth)
-    return Math.max(PANEL_MIN_WIDTH, Math.min(Math.round(available / 2), available - PANEL_MIN_WIDTH))
-  }, [shellWidth])
   // When the picker was opened from inside an existing browser window, this
   // holds the source instance id so we can switch its profile in place.
   const [browserPickerSwitchInstanceId, setBrowserPickerSwitchInstanceId] = useState<string | null>(null)
@@ -3698,6 +3723,7 @@ function AppShellContent({
         <IntegratedBrowserPanel
           instanceId={integratedBrowserInstanceId}
           width={integratedBrowserWidth}
+          isLastPanel={!isRightSidebarVisible}
           open={integratedBrowserInstanceId !== null}
           onClose={() => setIntegratedBrowserInstanceId(null)}
         />
@@ -3826,6 +3852,44 @@ function AppShellContent({
               className="h-full"
               style={{
                 ...getResizeGradientStyle(rightSidebarHandleY, rightSidebarHandleRef.current?.clientHeight ?? null),
+                width: PANEL_SASH_LINE_WIDTH,
+              }}
+            />
+          </div>
+        )}
+
+        {/* Browser Panel Resize Handle — sits on the seam between the chat and
+            the docked browser, measured back from whatever trails it. */}
+        {integratedBrowserInstanceId !== null && (
+          <div
+            ref={integratedBrowserHandleRef}
+            role="separator"
+            aria-label="Browser panel resize handle"
+            aria-orientation="vertical"
+            tabIndex={0}
+            onMouseDown={(e) => { e.preventDefault(); setIsResizing('integrated-browser') }}
+            onMouseMove={(e) => {
+              if (integratedBrowserHandleRef.current) {
+                const rect = integratedBrowserHandleRef.current.getBoundingClientRect()
+                setIntegratedBrowserHandleY(e.clientY - rect.top)
+              }
+            }}
+            onMouseLeave={() => { if (isResizing !== 'integrated-browser') setIntegratedBrowserHandleY(null) }}
+            className="absolute cursor-col-resize z-panel flex justify-center"
+            style={{
+              width: PANEL_SASH_HIT_WIDTH,
+              top: PANEL_STACK_VERTICAL_OVERFLOW,
+              bottom: PANEL_STACK_VERTICAL_OVERFLOW,
+              right: PANEL_EDGE_INSET
+                + (isRightSidebarVisible ? rightSidebarWidth + PANEL_GAP : 0)
+                + integratedBrowserWidth + (PANEL_GAP / 2) - PANEL_SASH_HALF_HIT_WIDTH,
+              transition: isResizing === 'integrated-browser' ? undefined : 'right 0.15s ease-out',
+            }}
+          >
+            <div
+              className="h-full"
+              style={{
+                ...getResizeGradientStyle(integratedBrowserHandleY, integratedBrowserHandleRef.current?.clientHeight ?? null),
                 width: PANEL_SASH_LINE_WIDTH,
               }}
             />

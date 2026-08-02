@@ -2226,6 +2226,13 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         return false
       }
 
+      // Docked, the app's own chat sits right beside the browser — the panel
+      // would be the same session twice. Close it before the reparent, while
+      // `getContainerWindow` still resolves to the window it is attached to.
+      if (instance.sessionPanelWidth !== null || instance.sessionView) {
+        this.closeSessionPanel(instance)
+      }
+
       const previous = this.getContainerWindow(instance)
       instance.displayMode = 'integrated'
       instance.hostWindow = hostWindow
@@ -2328,6 +2335,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
    * The panel is a sibling WebContentsView running Craft's own renderer inside
    * the browser window — not a second OS window. One window that drags and
    * resizes as a unit, which is the whole point.
+   *
+   * Floating only. Docked into the app the session is already on screen next
+   * to the browser, and a panel would render it a second time.
    */
   toggleSessionPanel(instanceId: string): boolean {
     const instance = this.instances.get(instanceId)
@@ -2336,6 +2346,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     if (instance.sessionPanelWidth !== null) {
       this.closeSessionPanel(instance)
       return true
+    }
+    if (instance.displayMode === 'integrated') {
+      mainLog.info(`[browser-pane] session panel skipped while docked id=${instanceId}`)
+      return false
     }
     return this.openSessionPanel(instance)
   }

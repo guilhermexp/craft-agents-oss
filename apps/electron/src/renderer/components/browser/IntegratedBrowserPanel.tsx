@@ -22,7 +22,7 @@ import { useCallback, useEffect, useEffectEvent, useRef } from 'react'
 import { useAtomValue } from 'jotai'
 import { browserInstancesAtom } from '../../atoms/browser-pane'
 import { useTheme } from '@/context/ThemeContext'
-import { RADIUS_INNER } from '../app-shell/panel-constants'
+import { RADIUS_EDGE, RADIUS_INNER } from '../app-shell/panel-constants'
 import { BROWSER_CHROME_BG } from '../../../shared/browser-chrome'
 
 interface IntegratedBrowserPanelProps {
@@ -30,11 +30,17 @@ interface IntegratedBrowserPanelProps {
   instanceId?: string | null
   /** Panel width in CSS px, owned by the shell like any other panel width. */
   width: number
+  /**
+   * True when nothing sits between this panel and the window's right edge, so
+   * its bottom-right corner has to follow the window's rounding like the right
+   * sidebar's does.
+   */
+  isLastPanel: boolean
   open: boolean
   onClose: () => void
 }
 
-export function IntegratedBrowserPanel({ instanceId, width, open, onClose }: IntegratedBrowserPanelProps) {
+export function IntegratedBrowserPanel({ instanceId, width, isLastPanel, open, onClose }: IntegratedBrowserPanelProps) {
   // No fallback to the active instance: an implicit target meant the panel
   // could stay up pointing at a browser the user never chose to embed.
   const id = instanceId ?? null
@@ -118,7 +124,15 @@ export function IntegratedBrowserPanel({ instanceId, width, open, onClose }: Int
     <aside
       data-panel-role="integrated-browser"
       className="h-full shrink-0 overflow-hidden shadow-middle relative z-panel"
-      style={{ width, borderRadius: RADIUS_INNER }}
+      style={{
+        width,
+        // Same treatment as the right sidebar: interior radius everywhere, and
+        // the window's larger radius only on the corner that touches it.
+        borderTopLeftRadius: RADIUS_INNER,
+        borderBottomLeftRadius: RADIUS_INNER,
+        borderTopRightRadius: RADIUS_INNER,
+        borderBottomRightRadius: isLastPanel ? RADIUS_EDGE : RADIUS_INNER,
+      }}
     >
       {/* The hole. Nothing may render inside: the native views paint over it.
           Painted rather than transparent because the toolbar and the page are
