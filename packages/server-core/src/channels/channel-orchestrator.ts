@@ -17,11 +17,18 @@ export interface ChannelAgentSessionCreateInput {
 export interface ChannelAgentRuntime {
   createSession(input: ChannelAgentSessionCreateInput): Promise<{ id: string }>;
   sendMessage(input: { sessionId: string; message: string }): Promise<{ assistantText?: string }>;
+  sessionExists(sessionId: string): Promise<boolean>;
+}
+
+export interface ChannelSessionBindingStore {
+  get(channelId: string, participantId: string): string | undefined;
+  set(channelId: string, participantId: string, sessionId: string): void;
 }
 
 export interface ChannelOrchestratorDeps {
   runtime: ChannelAgentRuntime;
   dispatchStore?: ChannelDispatchStore;
+  sessionBindingStore?: ChannelSessionBindingStore;
 }
 
 export interface ChannelDispatchStore {
@@ -316,8 +323,14 @@ export function createChannelOrchestrator(deps: ChannelOrchestratorDeps): Channe
     participant: WarRoomParticipant,
   ): Promise<string> {
     const key = sessionKey(channel.id, participant.id);
-    const existing = participantSessions.get(key);
-    if (existing) return existing;
+    const cached = participantSessions.get(key);
+    if (cached) return cached;
+
+    const persisted = deps.sessionBindingStore?.get(channel.id, participant.id);
+    if (persisted && await deps.runtime.sessionExists(persisted)) {
+      participantSessions.set(key, persisted);
+      return persisted;
+    }
 
     const session = await deps.runtime.createSession({
       name: `${channel.name} / ${participant.displayName}`,
@@ -330,6 +343,7 @@ export function createChannelOrchestrator(deps: ChannelOrchestratorDeps): Channe
       workingDirectory: participant.workingDirectory ?? channel.workingDirectory,
     });
     participantSessions.set(key, session.id);
+    deps.sessionBindingStore?.set(channel.id, participant.id, session.id);
     return session.id;
   }
 
