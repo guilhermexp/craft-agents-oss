@@ -3,7 +3,7 @@
  *
  * Three surfaces have to agree on it or the seams show:
  *  - the BrowserWindow itself, behind the views while floating;
- *  - the hole `IntegratedBrowserCard` leaves for those views, which is what
+ *  - the hole `IntegratedBrowserPanel` leaves for those views, which is what
  *    shows through wherever two rounded sibling views curve away from each
  *    other;
  *  - the new-tab page, which is browser chrome rather than app canvas.

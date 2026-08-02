@@ -153,6 +153,7 @@ import SettingsNavigator from "@/pages/settings/SettingsNavigator"
 import {
   PANEL_GAP,
   PANEL_EDGE_INSET,
+  PANEL_MIN_WIDTH,
   PANEL_SASH_HALF_HIT_WIDTH,
   PANEL_SASH_HIT_WIDTH,
   PANEL_SASH_LINE_WIDTH,
@@ -162,7 +163,7 @@ import {
 } from "./panel-constants"
 import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { BrowserProfilePicker } from "@/components/browser/BrowserProfilePicker"
-import { IntegratedBrowserCard } from "@/components/browser/IntegratedBrowserCard"
+import { IntegratedBrowserPanel } from "@/components/browser/IntegratedBrowserPanel"
 import { integratedBrowserInstanceIdAtom } from "@/atoms/browser-pane"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
@@ -2187,6 +2188,15 @@ function AppShellContent({
   // the user has multiple profiles or has the "always ask" preference set.
   const [browserPickerOpen, setBrowserPickerOpen] = useState(false)
   const [integratedBrowserInstanceId, setIntegratedBrowserInstanceId] = useAtom(integratedBrowserInstanceIdAtom)
+  // Docked browser panel width. Splits the shell down the middle, clamped so
+  // neither the browser nor the panels beside it drop below a usable width.
+  // No drag handle yet: the seam between panels is not resizable for this one.
+  const integratedBrowserWidth = React.useMemo(() => {
+    const available = shellWidth > 0
+      ? shellWidth
+      : (typeof window === 'undefined' ? 1440 : window.innerWidth)
+    return Math.max(PANEL_MIN_WIDTH, Math.min(Math.round(available / 2), available - PANEL_MIN_WIDTH))
+  }, [shellWidth])
   // When the picker was opened from inside an existing browser window, this
   // holds the source instance id so we can switch its profile in place.
   const [browserPickerSwitchInstanceId, setBrowserPickerSwitchInstanceId] = useState<string | null>(null)
@@ -3681,6 +3691,17 @@ function AppShellContent({
           isResizing={!!isResizing}
         />
 
+        {/* Browser docked as a panel rather than an overlay: the native views
+            are reparented into this window and positioned into the panel's
+            hole, so the chat beside it keeps working. Undocking sends them
+            back to their own window. */}
+        <IntegratedBrowserPanel
+          instanceId={integratedBrowserInstanceId}
+          width={integratedBrowserWidth}
+          open={integratedBrowserInstanceId !== null}
+          onClose={() => setIntegratedBrowserInstanceId(null)}
+        />
+
         {isRightSidebarVisible && rightSidebarSessionId && (
           <LazyMotion features={domAnimation}>
             <m.aside
@@ -4177,15 +4198,6 @@ function AppShellContent({
       {/* Messaging dialogs (pairing-code + WA connect) — driven by messagingDialogAtom.
           Mounted here so they survive context-menu / dropdown close. */}
       <MessagingDialogHost />
-
-      {/* Browser shown as a card inside the app. The native views are reparented
-          into this window and positioned into the card's hole; closing it sends
-          them back to their own window. */}
-      <IntegratedBrowserCard
-        instanceId={integratedBrowserInstanceId}
-        open={integratedBrowserInstanceId !== null}
-        onClose={() => setIntegratedBrowserInstanceId(null)}
-      />
 
       {/* Browser profile picker — opens before creating a new browser window
           when the user has multiple profiles or "always ask" is enabled. */}
