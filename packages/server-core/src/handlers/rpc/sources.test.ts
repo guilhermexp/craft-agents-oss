@@ -9,15 +9,17 @@ import type { HandlerDeps } from '../handler-deps'
 
 let workspaceRootPath = ''
 let mcpListToolsError: Error | null = null
+let mcpListToolsResult: Array<{ name: string; description?: string }> = []
+let mcpCloseCalls = 0
 
 mock.module('@craft-agent/shared/mcp', () => ({
   CraftMcpClient: class {
     async listTools() {
       if (mcpListToolsError) throw mcpListToolsError
-      return []
+      return mcpListToolsResult
     }
 
-    async close() {}
+    async close() { mcpCloseCalls += 1 }
   },
 }))
 
@@ -83,6 +85,8 @@ function createHarness(options?: {
 
 beforeEach(() => {
   mcpListToolsError = null
+  mcpListToolsResult = []
+  mcpCloseCalls = 0
   workspaceRootPath = mkdtempSync(join(tmpdir(), 'craft-sources-rpc-'))
   const sourcePath = join(workspaceRootPath, 'sources', 'mail')
   mkdirSync(sourcePath, { recursive: true })
@@ -169,6 +173,36 @@ describe('SOURCES_GET public DTO', () => {
   })
 })
 
+describe('SOURCES_CREATE public DTO', () => {
+  test('returns the same allowlisted DTO boundary as reads', async () => {
+    const { handlers, ctx } = createHarness()
+    const createSource = handlers.get(RPC_NAMESPACES.sources.CREATE)
+
+    const source = await createSource!(ctx, 'ws-1', {
+      name: 'Created',
+      slug: 'created',
+      provider: 'custom',
+      type: 'mcp',
+      mcp: {
+        transport: 'http',
+        url: 'https://mcp.example.test/source',
+        authType: 'none',
+        headers: { Authorization: 'Bearer create-secret' },
+      },
+    })
+    const payload = JSON.stringify(source)
+
+    expect(source.config.name).toBe('Created')
+    expect(source.config.mcp).toEqual({
+      transport: 'http',
+      url: 'https://mcp.example.test/source',
+      authType: 'none',
+    })
+    expect(payload).not.toContain('create-secret')
+    expect(payload).not.toContain('headers')
+  })
+})
+
 describe('SOURCES_GET_MCP_TOOLS public errors', () => {
   test('redacts persisted connection errors before returning them', async () => {
     const { handlers, ctx } = createHarness()
@@ -217,6 +251,49 @@ describe('SOURCES_GET_MCP_TOOLS public errors', () => {
     expect(publicEvidence).not.toContain('url-secret')
     expect(publicEvidence).not.toContain('thrown-secret')
     expect(publicEvidence).not.toContain('error-url-secret')
+    expect(mcpCloseCalls).toBe(1)
+  })
+
+  test('sanitizes untrusted MCP tool metadata before returning it', async () => {
+    const sourcePath = join(workspaceRootPath, 'sources', 'mail')
+    writeFileSync(join(sourcePath, 'config.json'), JSON.stringify({
+      id: 'mail_1234',
+      name: 'Mail',
+      slug: 'mail',
+      enabled: true,
+      provider: 'gmail',
+      type: 'mcp',
+      mcp: { transport: 'http', url: 'https://mcp.example.test/connect', authType: 'none' },
+      connectionStatus: 'connected',
+    }))
+    mcpListToolsResult = [
+      {
+        name: 'messages_list',
+        description: 'List messages token=tool-secret client_secret=client-secret Authorization: Bearer auth-secret https://user:pass@example.test/private?credential=url-secret',
+      },
+      {
+        name: 'Authorization Bearer name-secret token=name-token https://user:pass@example.test/private?credential=name-url-secret',
+        description: 'Untrusted tool name must not cross the public boundary',
+      },
+    ]
+    const { handlers, ctx } = createHarness()
+    const getMcpTools = handlers.get(RPC_NAMESPACES.sources.GET_MCP_TOOLS)
+
+    const result = await getMcpTools!(ctx, 'ws-1', 'mail')
+    const payload = JSON.stringify(result)
+
+    expect(result).toEqual({
+      success: true,
+      tools: [{
+        name: 'messages_list',
+        description: 'List messages token=[REDACTED] https://example.test/private?credential=[REDACTED]',
+        allowed: true,
+      }],
+    })
+    for (const secret of ['tool-secret', 'client-secret', 'auth-secret', 'user:pass', 'url-secret', 'name-secret', 'name-token', 'name-url-secret']) {
+      expect(payload).not.toContain(secret)
+    }
+    expect(mcpCloseCalls).toBe(1)
   })
 })
 

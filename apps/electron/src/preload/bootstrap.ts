@@ -36,6 +36,7 @@ import type { ConfirmDialogSpec, FileDialogSpec, BrowserCapabilityRequest } from
 import type { RpcClient } from '@craft-agent/server-core/transport'
 import type { RemoteServerConfig } from '@craft-agent/core/types'
 import type { ElectronAPI } from '../shared/types'
+import { getPublicOAuthFlowError, getPublicOAuthProviderError } from './oauth-public-errors'
 
 // ---------------------------------------------------------------------------
 // Client interface — common surface for both RoutedClient and WsRpcClient
@@ -302,9 +303,11 @@ client.onConnectionStateChanged((state) => {
 
     // 5. Check for errors from the provider
     if (callback.query.error) {
-      const error = callback.query.error_description || callback.query.error
       await client.invoke('oauth:cancel', { flowId, state })
-      return { success: false, error }
+      return {
+        success: false,
+        error: getPublicOAuthProviderError(callback.query.error, callback.query.error_description),
+      }
     }
 
     const code = callback.query.code
@@ -323,7 +326,7 @@ client.onConnectionStateChanged((state) => {
     }
     return {
       success: false,
-      error: err instanceof Error ? err.message : 'OAuth flow failed',
+      error: getPublicOAuthFlowError(err),
     }
   } finally {
     callbackServer?.close()

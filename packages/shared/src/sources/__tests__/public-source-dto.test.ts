@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  sanitizePublicSourceError,
   sanitizePublicSourceUrl,
   toPublicSourceDto,
   toPublicSourceDtos,
@@ -107,6 +108,31 @@ describe('public source DTO boundary', () => {
     'https://mcp.example.test/source#credential=fragment-secret',
     'https://mcp.example.test/source#safe=value&token=nested-fragment-secret',
     'https://mcp.example.test/token/path-secret',
+    'https://mcp.example.test/clientSecret/path-secret',
+    'https://mcp.example.test/source?client_secret=query-secret',
+    'https://mcp.example.test/source?privateKey=query-secret',
+    'https://mcp.example.test/source?consumer-secret=query-secret',
+    'https://mcp.example.test/source?signature=query-secret',
+    'https://mcp.example.test/source#securityToken=fragment-secret',
+    'https://mcp.example.test/source?signed-url=query-secret',
+    'https://mcp.example.test/source?id_token=query-secret',
+    'https://mcp.example.test/source?idToken=query-secret',
+    'https://mcp.example.test/source?id-token=query-secret',
+    'https://mcp.example.test/source?session_token=query-secret',
+    'https://mcp.example.test/source?sessionToken=query-secret',
+    'https://mcp.example.test/source?session-token=query-secret',
+    'https://mcp.example.test/source?oauth_token_secret=query-secret',
+    'https://mcp.example.test/source?oauthTokenSecret=query-secret',
+    'https://mcp.example.test/source?oauth-token-secret=query-secret',
+    'https://mcp.example.test/source?aws_secret_access_key=query-secret',
+    'https://mcp.example.test/source?awsSecretAccessKey=query-secret',
+    'https://mcp.example.test/source?aws-secret-access-key=query-secret',
+    'https://mcp.example.test/source?oauth_token=query-secret',
+    'https://mcp.example.test/source?access_key_id=query-secret',
+    'https://mcp.example.test/source?secret_access_key=query-secret',
+    'https://mcp.example.test/source?aws_access_key_id=query-secret',
+    'https://mcp.example.test/source?aws_session_token=query-secret',
+    'https://mcp.example.test/source?oauth_consumer_secret=query-secret',
   ])('removes explicit credentials from public URLs: %s', (url) => {
     const sanitized = sanitizePublicSourceUrl(url)
     expect(sanitized).toBeDefined()
@@ -114,6 +140,69 @@ describe('public source DTO boundary', () => {
     expect(sanitized).not.toContain('query-secret')
     expect(sanitized).not.toContain('fragment-secret')
     expect(sanitized).not.toContain('path-secret')
+  })
+
+  test.each([
+    ['{"password":"alpha beta"}', '{"password":"[REDACTED]"}'],
+    ['{"access_token" : "json secret with spaces"}', '{"access_token" : "[REDACTED]"}'],
+    ['{password: alpha beta, safe: visible}', '{password: [REDACTED], safe: visible}'],
+    ['\\{"access_token":\\"escaped-secret\\"}', '\\{"access_token":\\"[REDACTED]\\"}'],
+    ['\\{\\"access_token\\":\\"fully-escaped-secret\\"}', '\\{\\"access_token\\":\\"[REDACTED]\\"}'],
+    [String.raw`\{\"password\":\"alpha\\\"beta-secret\"}`, String.raw`\{\"password\":\"[REDACTED]\"}`],
+    ['Authorization: Bearer auth value with spaces', 'Authorization: Bearer [REDACTED]'],
+  ])('redacts the complete public-text credential value in %s', (input, expected) => {
+    expect(sanitizePublicSourceError(input)).toBe(expected)
+  })
+
+  test('sanitizes credential-bearing JSON-escaped URLs embedded in public text', () => {
+    expect(sanitizePublicSourceError(
+      String.raw`Guide https:\/\/user:password@example.test/privateKey/path-secret`,
+    )).toBe('Guide https://example.test/privateKey/[REDACTED]')
+  })
+
+  test('uses the same normalized secret-name classifier in text and URLs', () => {
+    const text = [
+      'client_secret=client secret value',
+      'clientSecret=camel secret value',
+      'private-key=private key value',
+      'consumerSecret=consumer secret value',
+      'signature=signature value',
+      'security_token=security token value',
+      'signedUrl=signed url value',
+      'id_token=id token value',
+      'sessionToken=session token value',
+      'oauth-token-secret=oauth token secret value',
+      'aws_secret_access_key=aws secret access key value',
+      'oauth_token=oauth token value',
+      'access-key-id=access key id value',
+      'secretAccessKey=secret access key value',
+      'aws_access_key_id=aws access key id value',
+      'aws-session-token=aws session token value',
+      'oauthConsumerSecret=oauth consumer secret value',
+    ].join('; ')
+
+    const sanitized = sanitizePublicSourceError(text)
+    for (const sentinel of [
+      'client secret value',
+      'camel secret value',
+      'private key value',
+      'consumer secret value',
+      'signature value',
+      'security token value',
+      'signed url value',
+      'id token value',
+      'session token value',
+      'oauth token secret value',
+      'aws secret access key value',
+      'oauth token value',
+      'access key id value',
+      'secret access key value',
+      'aws access key id value',
+      'aws session token value',
+      'oauth consumer secret value',
+    ]) {
+      expect(sanitized).not.toContain(sentinel)
+    }
   })
 
   test('redacts quoted JSON credentials and credential-bearing URLs from every public text field', () => {

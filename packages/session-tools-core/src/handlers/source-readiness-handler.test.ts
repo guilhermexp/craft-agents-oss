@@ -105,6 +105,7 @@ function createHarness(observedTools: typeof expectedTools): {
     return { activationId: 'activation-1' }
   }
   ctx.commitSourceReadinessActivation = () => {}
+  ctx.finalizeSourceReadinessActivation = () => {}
   ctx.rollbackSourceReadinessActivation = async (activationId: string) => {
     events.push(`rollback:${activationId}`)
   }

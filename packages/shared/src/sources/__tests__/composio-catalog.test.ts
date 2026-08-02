@@ -148,6 +148,31 @@ describe('collectComposioCatalog', () => {
     'https://mcp.example.test/token/path-secret',
     'https://mcp.example.test/api-key/path-secret',
     'https://mcp.example.test/credential/path-secret',
+    'https://mcp.example.test/clientSecret/path-secret',
+    'https://mcp.example.test/connect?client_secret=query-secret',
+    'https://mcp.example.test/connect?privateKey=query-secret',
+    'https://mcp.example.test/connect?consumer-secret=query-secret',
+    'https://mcp.example.test/connect?signature=query-secret',
+    'https://mcp.example.test/connect#securityToken=fragment-secret',
+    'https://mcp.example.test/connect?signed-url=query-secret',
+    'https://mcp.example.test/connect?id_token=query-secret',
+    'https://mcp.example.test/connect?idToken=query-secret',
+    'https://mcp.example.test/connect?id-token=query-secret',
+    'https://mcp.example.test/connect?session_token=query-secret',
+    'https://mcp.example.test/connect?sessionToken=query-secret',
+    'https://mcp.example.test/connect?session-token=query-secret',
+    'https://mcp.example.test/connect?oauth_token_secret=query-secret',
+    'https://mcp.example.test/connect?oauthTokenSecret=query-secret',
+    'https://mcp.example.test/connect?oauth-token-secret=query-secret',
+    'https://mcp.example.test/connect?aws_secret_access_key=query-secret',
+    'https://mcp.example.test/connect?awsSecretAccessKey=query-secret',
+    'https://mcp.example.test/connect?aws-secret-access-key=query-secret',
+    'https://mcp.example.test/connect?oauth_token=query-secret',
+    'https://mcp.example.test/connect?access_key_id=query-secret',
+    'https://mcp.example.test/connect?secret_access_key=query-secret',
+    'https://mcp.example.test/connect?aws_access_key_id=query-secret',
+    'https://mcp.example.test/connect?aws_session_token=query-secret',
+    'https://mcp.example.test/connect?oauth_consumer_secret=query-secret',
   ])('rejects explicit credential material in catalog URLs: %s', (url) => {
     expect(() => toPortableComposioSourceInput({
       providerId: 'linear',
@@ -288,6 +313,15 @@ describe('collectComposioCatalog', () => {
     expect(isSourceUsable(loaded)).toBe(false)
     loaded.config.readiness = { status: 'ready', checkedAt: 2 }
     expect(isSourceUsable(loaded)).toBe(true)
+  })
+
+  test('rejects U7 expected tools without a real explicit API version', () => {
+    expect(() => toPortableComposioSourceInput({
+      providerId: 'linear',
+      name: 'Linear',
+      mcp: { url: 'https://linear.example.test/mcp' },
+      expectedTools: [{ name: 'issues_list', apiVersion: 'unversioned' }],
+    })).toThrow()
   })
 
   test('treats expectedTools empty as the explicit legacy no-readiness contract', () => {

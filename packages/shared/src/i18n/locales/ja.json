@@ -1532,6 +1532,7 @@
   "sourcesList.statusDisconnected": "切断済み",
   "sourcesList.statusNotTested": "未テスト",
   "sourcesList.statusReadinessFailed": "準備確認に失敗",
+  "sourcesList.statusReadinessFailedDescription": "ソースには接続されていますが、必要なツールの準備ができていません",
   "sourcesList.statusUnknown": "不明",
   "sourcesList.typeApi": "API",
   "sourcesList.typeLocal": "ローカル",

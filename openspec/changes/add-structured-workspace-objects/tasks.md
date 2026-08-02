@@ -653,8 +653,25 @@ A matriz final de sources + RPC + handler + probe + bindings passou 209/209
 Também passaram `typecheck:all`, contratos de session tools (30 native + 2
 mcp-only), paridade i18n (7 locales, 1804 chaves), `impeccable detect`,
 React Doctor no delta (0 issues), `git diff --check` e OpenSpec strict. Assim,
-C1+C2 fecham 8.2 e 8.3. Toolkit real, logs/payloads de runtime real e auditor
-GO continuam não provados; 8.4 permanece aberta e Phase D não foi iniciada.
+C1+C2 fecham 8.2 e 8.3. Naquele checkpoint, toolkit real, logs/payloads de
+runtime real e auditor GO ainda não estavam provados; 8.4 permanecia aberta e
+Phase D não havia sido iniciada.
+
+Hardening final de Phase C (2026-08-01): o delta integrado até `fbbfe8ff`
+serializa o lifecycle de readiness por workspace/source e fecha as fronteiras de
+erro de catálogo, OAuth, callback, WebUI e API tools sem expor URL, headers,
+payloads, respostas ou mensagens controladas pelo provider. O callback público
+preserva somente `state` para os wrappers nativos e um erro canônico. A regressão
+consolidada passou 342/342 em 28 arquivos (915 expects); os typechecks de
+`shared`, `server-core` e `session-tools-core`, os contratos de session tools (30
+native + 2 MCP-only), paridade e ordem i18n (7 locales, 1.820 chaves), OpenSpec
+strict, `git diff --check` e Gitleaks sobre 12 commits ficaram verdes. O auditor
+retornou GO de código no `fbbfe8ff`, sem blocker P1/P2 residual. O
+`typecheck:all` global continua bloqueado por oito erros em componentes Electron
+inalterados por esta fase (`calendar`, `gradient-resize-handle` e `resizable`).
+Ainda não existe configuração local do catálogo/credencial real nem source
+conectada para produzir a evidência externa exigida por 8.4; por isso a tarefa
+permanece desmarcada e Phase D continua bloqueada pelo seu gate explícito.
 
 ## 9. Phase D — U8/U9: inbox, calendário e relacionamentos
 

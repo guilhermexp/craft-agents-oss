@@ -3,8 +3,10 @@ import type { SourceConnectionStatus } from '../../../shared/types'
 export interface SourceStatusPresentation {
   color: string
   pulseColor: string
-  label: string
-  description: string
+  label?: string
+  description?: string
+  labelKey?: string
+  descriptionKey?: string
 }
 
 export const SOURCE_STATUS_CONFIG: Record<SourceConnectionStatus, SourceStatusPresentation> = {
@@ -29,8 +31,8 @@ export const SOURCE_STATUS_CONFIG: Record<SourceConnectionStatus, SourceStatusPr
   unhealthy: {
     color: 'bg-destructive',
     pulseColor: 'bg-destructive/80',
-    label: 'Readiness Failed',
-    description: 'Source connected, but its expected tools are not ready',
+    labelKey: 'sourcesList.statusReadinessFailed',
+    descriptionKey: 'sourcesList.statusReadinessFailedDescription',
   },
   disconnected: {
     color: 'bg-warning',
@@ -67,9 +69,21 @@ export const SOURCE_STATUS_CONFIG: Record<SourceConnectionStatus, SourceStatusPr
 export function getSourceStatusTooltipDescription(
   status: SourceConnectionStatus,
   errorMessage?: string,
+  translate: (key: string) => string = (key) => key,
 ): string {
-  const description = SOURCE_STATUS_CONFIG[status].description
+  const config = SOURCE_STATUS_CONFIG[status]
+  const description = config.descriptionKey
+    ? translate(config.descriptionKey)
+    : config.description ?? ''
   return errorMessage && ['failed', 'unhealthy', 'disconnected', 'error'].includes(status)
     ? `${description}: ${errorMessage}`
     : description
+}
+
+export function getSourceStatusLabel(
+  status: SourceConnectionStatus,
+  translate: (key: string) => string,
+): string {
+  const config = SOURCE_STATUS_CONFIG[status]
+  return config.labelKey ? translate(config.labelKey) : config.label ?? ''
 }

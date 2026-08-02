@@ -10,6 +10,10 @@ const sourceToolIdentityPartSchema = z.string().regex(
   /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/,
   'Tool identity must use portable name/version characters',
 )
+const sourceToolApiVersionSchema = sourceToolIdentityPartSchema.refine(
+  (value) => !['invalid', 'unknown', 'unversioned'].includes(value.toLowerCase()),
+  'Expected tool API version must be explicit metadata',
+)
 const providerIdentitySchema = z.string().trim().regex(
   /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/,
   'Composio provider identity must use portable characters',
@@ -29,7 +33,7 @@ const composioCatalogItemSchema = z.object({
   mcp: composioMcpSchema.optional(),
   expectedTools: z.array(z.object({
     name: sourceToolIdentityPartSchema,
-    apiVersion: sourceToolIdentityPartSchema,
+    apiVersion: sourceToolApiVersionSchema,
   })).min(1).optional(),
 })
 
@@ -37,7 +41,7 @@ const materializableComposioItemSchema = composioCatalogItemSchema.extend({
   mcp: composioMcpSchema,
   expectedTools: z.array(z.object({
     name: sourceToolIdentityPartSchema,
-    apiVersion: sourceToolIdentityPartSchema,
+    apiVersion: sourceToolApiVersionSchema,
   })).min(1),
 })
 

@@ -160,6 +160,14 @@ export function attachSessionSelfManagementBindings(
     enumerable: true,
   });
 
+  Object.defineProperty(context, 'finalizeSourceReadinessActivation', {
+    get() {
+      return getSessionScopedToolCallbacks(sessionId)?.finalizeSourceReadinessActivationFn;
+    },
+    configurable: true,
+    enumerable: true,
+  });
+
   Object.defineProperty(context, 'rollbackSourceReadinessActivation', {
     get() {
       return getSessionScopedToolCallbacks(sessionId)?.rollbackSourceReadinessActivationFn;

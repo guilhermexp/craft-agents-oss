@@ -6,6 +6,7 @@ import {
 } from '@craft-agent/shared/sources/composio-catalog'
 import { loadWorkspaceSources } from '@craft-agent/shared/sources'
 import {
+  isPortablePublicToolName,
   sanitizePublicSourceError,
   toPublicSourceDto,
   toPublicSourceDtos,
@@ -93,7 +94,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
     const { createSource } = await import('@craft-agent/shared/sources')
-    return createSource(workspace.rootPath, {
+    const createdConfig = await createSource(workspace.rootPath, {
       name: config.name || 'New Source',
       provider: config.provider || 'custom',
       type: config.type || 'mcp',
@@ -102,6 +103,11 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
       api: config.api,
       local: config.local,
     })
+    const createdSource = loadWorkspaceSources(workspace.rootPath).find((source) => (
+      source.config.id === createdConfig.id
+    ))
+    if (!createdSource) throw new Error('Created source could not be loaded')
+    return toPublicSourceDto(createdSource)
   })
 
   // Delete a source
@@ -275,8 +281,12 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
         })
       }
 
-      const tools = await client.listTools()
-      await client.close()
+      let tools: Awaited<ReturnType<InstanceType<typeof CraftMcpClient>['listTools']>>
+      try {
+        tools = await client.listTools()
+      } finally {
+        await client.close()
+      }
 
       const { loadSourcePermissionsConfig, permissionsConfigCache } = await import('@craft-agent/shared/agent')
       const permissionsConfig = loadSourcePermissionsConfig(workspace.rootPath, sourceSlug)
@@ -286,13 +296,14 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
         activeSourceSlugs: [sourceSlug],
       })
 
-      const toolsWithPermission = tools.map(tool => {
+      const toolsWithPermission = tools.flatMap(tool => {
         const allowed = mergedConfig.readOnlyMcpPatterns.some((pattern: RegExp) => pattern.test(tool.name))
-        return {
+        if (!isPortablePublicToolName(tool.name)) return []
+        return [{
           name: tool.name,
-          description: tool.description,
+          description: tool.description ? sanitizePublicSourceError(tool.description) : undefined,
           allowed,
-        }
+        }]
       })
 
       return { success: true, tools: toolsWithPermission }

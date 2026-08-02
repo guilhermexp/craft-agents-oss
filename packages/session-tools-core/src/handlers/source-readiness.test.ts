@@ -56,6 +56,18 @@ function createDependencies(
 }
 
 describe('source readiness', () => {
+  test('rejects an expected tool version that is not real explicit metadata', async () => {
+    const result = await runSourceReadinessCheck(
+      {
+        ...request,
+        expectedTools: [{ name: 'issues_list', apiVersion: 'unversioned' }],
+      },
+      createDependencies(),
+    )
+
+    expect(result).toEqual({ ready: false, reason: 'source-test-failed' })
+  })
+
   test('exposes a Composio source only after source test and session observation both pass', async () => {
     const dependencies = createDependencies()
 
