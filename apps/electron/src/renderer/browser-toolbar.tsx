@@ -67,7 +67,7 @@ declare global {
       closeWindowEntirely: () => Promise<void>
       requestProfileManagement: () => Promise<void>
       switchProfile: (profileId: string) => Promise<string | null>
-      openSessionBeside: () => Promise<boolean>
+      toggleSessionPanel: () => Promise<boolean>
       inviteHermesToMeet: (payload: { urlOrCode: string; profileId?: string }) => Promise<{ status?: string; error?: string }>
       prepareRecording: (payload: { urlOrCode: string; workspaceId?: string; mimeType: string }) => Promise<{ recordingId: string; meetingId?: string; outputPath: string }>
       appendRecordingChunk: (recordingId: string, chunk: ArrayBuffer) => Promise<void>
@@ -564,18 +564,17 @@ function BrowserToolbarApp() {
         leadingContent={meetActionsContent}
         trailingContent={(
           <div className="ml-2 flex items-center gap-1.5 titlebar-no-drag">
-            {/* Bring the agent chat alongside the page. Always available: with a
-                bound session it opens that one, otherwise the session list, so
-                the user can start one without leaving the browser. */}
-            {(
-              <HeaderIconButton
-                icon={<PanelRight className="size-3.5" />}
-                aria-label={t('browser.openSessionBeside', { defaultValue: 'Open session beside browser' })}
-                title={t('browser.openSessionBeside', { defaultValue: 'Open session beside browser' })}
-                onClick={() => { void api?.openSessionBeside() }}
-                className={themeColor ? '' : 'bg-background shadow-minimal hover:bg-foreground/5'}
-              />
-            )}
+            {/* Bring the agent chat alongside the page, as a panel inside this
+                window. With a bound session it shows that one, otherwise the
+                session list, so the user can start one without leaving the
+                browser. */}
+            <HeaderIconButton
+              icon={<PanelRight className="size-3.5" />}
+              aria-label={t('browser.toggleSessionPanel', { defaultValue: 'Toggle session panel' })}
+              title={t('browser.toggleSessionPanel', { defaultValue: 'Toggle session panel' })}
+              onClick={() => { void api?.toggleSessionPanel() }}
+              className={themeColor ? '' : 'bg-background shadow-minimal hover:bg-foreground/5'}
+            />
             {state.profile && (
               <ProfileMenu
                 current={state.profile}

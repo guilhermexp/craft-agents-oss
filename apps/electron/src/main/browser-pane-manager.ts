@@ -9,7 +9,7 @@
 import { join, parse as parsePath } from 'path'
 import { existsSync, mkdirSync } from 'fs'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
-import { BrowserWindow, WebContentsView, app, ipcMain, nativeTheme, screen, session, shell, webContents, type Session as ElectronSession, type Streams } from 'electron'
+import { BrowserWindow, WebContentsView, app, ipcMain, nativeTheme, session, shell, webContents, type Session as ElectronSession, type Streams } from 'electron'
 import { mainLog } from './logger'
 import type { WindowManager } from './window-manager'
 import { BrowserCDP, type AccessibilitySnapshot, type ElementGeometry } from './browser-cdp'
@@ -32,6 +32,10 @@ export type { BrowserInstanceInfo }
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const TOOLBAR_HEIGHT = 48
+/** Embedded session panel: default and the floors that keep both sides usable. */
+const DEFAULT_SESSION_PANEL_WIDTH = 420
+const MIN_SESSION_PANEL_WIDTH = 320
+const MIN_PAGE_WIDTH = 400
 const MAX_CONSOLE_LOG_ENTRIES = 500
 const MAX_NETWORK_LOG_ENTRIES = 500
 const MAX_DOWNLOAD_LOG_ENTRIES = 200
@@ -119,6 +123,14 @@ export interface BrowserInstance {
    * the renderer measures. The WebContents survive the move, so the page keeps
    * its session, scroll position and navigation history.
    */
+  /**
+   * Craft's own renderer, embedded as a sibling view on the right of the page.
+   * Created lazily — a second full renderer is not free, so browsers that never
+   * open the panel never pay for it.
+   */
+  sessionView: WebContentsView | null
+  /** Panel width in DIPs, or null when closed. */
+  sessionPanelWidth: number | null
   displayMode: BrowserDisplayMode
   /** Window the views are currently parented to while integrated. */
   hostWindow: BrowserWindow | null
@@ -391,7 +403,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     layoutAllViews: (instance) => this.layoutAllViews(instance),
     switchProfile: (instanceId, targetProfileId) => this.switchProfile(instanceId, targetProfileId),
     requestProfileManagement: (instanceId) => this.profileManagementRequestCallback?.(instanceId),
-    openSessionBeside: (instanceId) => this.openSessionBeside(instanceId),
+    toggleSessionPanel: (instanceId) => this.toggleSessionPanel(instanceId),
     emitStateChange: (instance) => this.emitStateChange(instance),
     sleep: (ms) => this.sleep(ms),
   })
@@ -559,6 +571,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       toolbarView,
       pageView,
       nativeOverlayView,
+      sessionView: null,
+      sessionPanelWidth: null,
       displayMode: 'floating',
       hostWindow: null,
       embeddedBounds: null,
@@ -2073,6 +2087,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     // with it. WebContentsView does not work that way: the view is a child of
     // contentView and its webContents outlives the window unless closed here,
     // leaving an orphan composited on screen and three renderers leaked.
+    safe('closeSessionPanel', () => {
+      if (instance.sessionPanelWidth !== null || instance.sessionView) {
+        this.closeSessionPanel(instance)
+      }
+    })
     safe('closeViewWebContents', () => {
       for (const view of this.orderedViews(instance)) {
         if (!view.webContents.isDestroyed()) {
@@ -2089,10 +2108,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const frame = this.getLayoutFrame(instance)
     if (!frame) return
 
+    // The session panel eats into the page, not into the window.
+    const panelWidth = instance.sessionPanelWidth === null
+      ? 0
+      : this.clampSessionPanelWidth(instance, instance.sessionPanelWidth)
+
     instance.pageView.setBounds({
       x: frame.x,
       y: frame.y + TOOLBAR_HEIGHT,
-      width: frame.width,
+      width: Math.max(0, frame.width - panelWidth),
       height: Math.max(100, frame.height - TOOLBAR_HEIGHT),
     })
     this.updateNativeOverlayState(instance)
@@ -2101,19 +2125,30 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private layoutAllViews(instance: BrowserInstance): void {
     this.layoutToolbarView(instance)
     this.layoutPageView(instance)
+    this.layoutSessionView(instance)
     this.raiseToolbar(instance)
   }
 
-  /** Ordered back-to-front; the toolbar must end up on top. */
+  /**
+   * Ordered back-to-front; the toolbar must end up on top.
+   *
+   * The session panel belongs in here: it is a sibling view like the others, so
+   * every caller that detaches, reparents or closes an instance's views has to
+   * take it along. Leaving it out stranded the panel on the previous window
+   * across a display-mode switch while the page stayed shrunk for it.
+   */
   private orderedViews(instance: BrowserInstance): WebContentsView[] {
-    return [instance.pageView, instance.nativeOverlayView, instance.toolbarView]
+    const views: WebContentsView[] = [instance.pageView, instance.nativeOverlayView]
+    if (instance.sessionView) views.push(instance.sessionView)
+    views.push(instance.toolbarView)
+    return views
   }
 
   /**
-   * Move the three views from one window to another. A WebContentsView can only
-   * be presented in one window at a time, so the removal must happen first.
-   * The underlying WebContents is untouched — the page keeps its session,
-   * history and scroll position across the move.
+   * Move an instance's views from one window to another. A WebContentsView can
+   * only be presented in one window at a time, so the removal must happen
+   * first. The underlying WebContents is untouched — the page keeps its
+   * session, history and scroll position across the move.
    */
   private reparentViews(instance: BrowserInstance, from: BrowserWindow | null, to: BrowserWindow): void {
     const views = this.orderedViews(instance)
@@ -2221,52 +2256,122 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   /**
-   * Put the browser and its bound session side by side on the browser's current
-   * display: browser left, session right.
+   * Toggle the session panel embedded on the right of the page.
    *
-   * Deliberately splits the *browser's* screen rather than the whole work area,
-   * so a browser the user parked on a second monitor stays there.
+   * The panel is a sibling WebContentsView running Craft's own renderer inside
+   * the browser window — not a second OS window. One window that drags and
+   * resizes as a unit, which is the whole point.
    */
-  openSessionBeside(instanceId: string): boolean {
+  toggleSessionPanel(instanceId: string): boolean {
     const instance = this.instances.get(instanceId)
     if (!instance || instance.window.isDestroyed()) return false
 
-    // No bound session is not a failure: open the session list so the user can
-    // pick or start one without leaving the browser.
-    const sessionId = instance.boundSessionId ?? instance.ownerSessionId
-    const deepLink = sessionId
-      ? `craftagents://allSessions/session/${sessionId}`
-      : 'craftagents://allSessions'
+    if (instance.sessionPanelWidth !== null) {
+      this.closeSessionPanel(instance)
+      return true
+    }
+    return this.openSessionPanel(instance)
+  }
 
+  private closeSessionPanel(instance: BrowserInstance): void {
+    instance.sessionPanelWidth = null
+
+    // Unload rather than hide: a parked Craft renderer keeps a websocket and a
+    // full React tree alive for a panel nobody is looking at.
+    const view = instance.sessionView
+    if (view) {
+      const wcId = view.webContents.isDestroyed() ? null : view.webContents.id
+      const container = this.getContainerWindow(instance)
+      if (container) container.contentView.removeChildView(view)
+      if (wcId !== null) {
+        this.windowManager?.unregisterViewClient(wcId)
+        view.webContents.close()
+      }
+      instance.sessionView = null
+    }
+
+    this.layoutAllViews(instance)
+    mainLog.info(`[browser-pane] session panel closed id=${instance.id}`)
+  }
+
+  private openSessionPanel(instance: BrowserInstance): boolean {
+    const container = this.getContainerWindow(instance)
+    if (!container) return false
     if (!this.windowManager) {
-      mainLog.warn('[browser-pane] openSessionBeside: no window manager')
+      mainLog.warn('[browser-pane] session panel needs a window manager')
       return false
     }
 
-    // Focused mode is already the shape we want: smaller window, no sidebars,
-    // a single session. The deep link lands it directly on that session.
-    const sessionWindow = this.windowManager.createWindow({
-      workspaceId: instance.workspaceId ?? '',
-      focused: true,
-      initialDeepLink: deepLink,
+    const workspaceId = instance.workspaceId ?? ''
+    const sessionId = instance.boundSessionId ?? instance.ownerSessionId
+
+    const view = new WebContentsView({
+      webPreferences: {
+        preload: join(__dirname, 'bootstrap-preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+      },
     })
-    if (!sessionWindow || sessionWindow.isDestroyed()) return false
+    view.setBackgroundColor('#00000000')
 
-    const display = screen.getDisplayMatching(instance.window.getBounds())
-    const area = display.workArea
-    // The session panel is the narrower half: the page needs the room.
-    const sessionWidth = Math.max(420, Math.round(area.width * 0.34))
-    const browserWidth = area.width - sessionWidth
+    // Register BEFORE loading: the bootstrap preload asks for the workspace
+    // synchronously while it evaluates, so a late registration reads as "no
+    // workspace" and the renderer comes up empty.
+    this.windowManager.registerViewClient(view.webContents.id, workspaceId)
 
-    instance.window.setBounds({ x: area.x, y: area.y, width: browserWidth, height: area.height })
-    sessionWindow.setBounds({ x: area.x + browserWidth, y: area.y, width: sessionWidth, height: area.height })
+    // Param names must match App.tsx:174 — `sessionId`, not `session`. With the
+    // wrong key focused mode has nothing to focus on and falls back to the full
+    // shell (sidebar + session list), which is not a panel.
+    const query: Record<string, string> = { workspaceId, focused: 'true' }
+    if (sessionId) query.sessionId = sessionId
+    const params = new URLSearchParams(query).toString()
 
-    if (!instance.window.isVisible()) instance.window.show()
-    sessionWindow.show()
-    sessionWindow.focus()
+    if (VITE_DEV_SERVER_URL) {
+      void view.webContents.loadURL(`${VITE_DEV_SERVER_URL}?${params}`)
+    } else {
+      void view.webContents.loadFile(join(__dirname, 'renderer/index.html'), { query })
+    }
 
-    mainLog.info(`[browser-pane] tiled session=${sessionId ?? "list"} beside browser=${instanceId}`)
+    instance.sessionView = view
+    instance.sessionPanelWidth = this.clampSessionPanelWidth(instance, DEFAULT_SESSION_PANEL_WIDTH)
+    container.contentView.addChildView(view)
+
+    this.layoutAllViews(instance)
+    mainLog.info(`[browser-pane] session panel opened id=${instance.id} session=${sessionId ?? 'list'}`)
     return true
+  }
+
+  /**
+   * Panel width for the current frame.
+   *
+   * Both floors together need MIN_PAGE_WIDTH + MIN_SESSION_PANEL_WIDTH. Below
+   * that they contradict each other, and honouring both would push the page
+   * out past the frame — reachable in integrated mode, where the frame is the
+   * card rect rather than the window. Split the frame evenly instead: cramped
+   * beats overflowing.
+   */
+  private clampSessionPanelWidth(instance: BrowserInstance, width: number): number {
+    const frame = this.getLayoutFrame(instance)
+    if (!frame) return width
+    const room = frame.width - MIN_PAGE_WIDTH
+    if (room < MIN_SESSION_PANEL_WIDTH) return Math.max(0, Math.floor(frame.width / 2))
+    return Math.min(Math.max(width, MIN_SESSION_PANEL_WIDTH), room)
+  }
+
+  private layoutSessionView(instance: BrowserInstance): void {
+    const view = instance.sessionView
+    const frame = this.getLayoutFrame(instance)
+    if (!view || !frame || instance.sessionPanelWidth === null) return
+
+    const width = this.clampSessionPanelWidth(instance, instance.sessionPanelWidth)
+    instance.sessionPanelWidth = width
+    view.setBounds({
+      x: frame.x + frame.width - width,
+      y: frame.y + TOOLBAR_HEIGHT,
+      width,
+      height: Math.max(100, frame.height - TOOLBAR_HEIGHT),
+    })
   }
 
   private forceCloseToolbarMenu(instance: BrowserInstance, reason: string): void {

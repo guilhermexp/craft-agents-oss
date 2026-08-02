@@ -19,6 +19,6 @@ export const TOOLBAR_CHANNELS = {
   THEME_COLOR: 'browser-toolbar:theme-color',
   REQUEST_PROFILE_MANAGEMENT: 'browser-toolbar:request-profile-management',
   SWITCH_PROFILE: 'browser-toolbar:switch-profile',
-  /** Open the session bound to this browser in a focused window tiled beside it. */
-  OPEN_SESSION_BESIDE: 'browser-toolbar:open-session-beside',
+  /** Toggle the session panel embedded on the right of this browser's page. */
+  TOGGLE_SESSION_PANEL: 'browser-toolbar:toggle-session-panel',
 } as const

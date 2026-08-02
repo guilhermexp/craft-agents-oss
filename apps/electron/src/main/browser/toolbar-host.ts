@@ -50,8 +50,8 @@ export interface ToolbarHostDeps {
   switchProfile(instanceId: string, targetProfileId: string): string | null
   /** Notify the app that profile management was requested for an instance. */
   requestProfileManagement(instanceId: string): void
-  /** Opens the bound session in a focused window tiled beside the browser. */
-  openSessionBeside(instanceId: string): boolean
+  /** Toggle the session panel embedded on the right of the page. */
+  toggleSessionPanel(instanceId: string): boolean
   /** Notify listeners that an instance's state changed. */
   emitStateChange(instance: BrowserInstance): void
   /** Bounded sleep (used between toolbar load retries). */
@@ -261,11 +261,11 @@ export class BrowserToolbarHost {
       this.deps.requestProfileManagement(inst?.id ?? instanceId)
     })
 
-    ipcMain.handle(TOOLBAR_CHANNELS.OPEN_SESSION_BESIDE, async (_event, instanceId: string) => {
+    ipcMain.handle(TOOLBAR_CHANNELS.TOGGLE_SESSION_PANEL, async (_event, instanceId: string) => {
       const inst = this.deps.getInstance(instanceId)
-      mainLog.info(`[browser-pane] toolbar ipc openSessionBeside instanceId=${instanceId} resolved=${inst?.id ?? 'none'}`)
+      mainLog.info(`[browser-pane] toolbar ipc toggleSessionPanel instanceId=${instanceId} resolved=${inst?.id ?? 'none'}`)
       if (!inst) return false
-      return this.deps.openSessionBeside(inst.id)
+      return this.deps.toggleSessionPanel(inst.id)
     })
 
     ipcMain.handle(TOOLBAR_CHANNELS.SWITCH_PROFILE, async (_event, instanceId: string, profileId: string) => {

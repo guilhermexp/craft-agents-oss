@@ -52,6 +52,16 @@ export interface CreateWindowOptions {
 
 export class WindowManager {
   private windows: Map<number, ManagedWindow> = new Map()  // webContents.id → ManagedWindow
+  /**
+   * Renderers that run as a child WebContentsView inside another window rather
+   * than owning one — currently the session panel embedded in a browser window.
+   *
+   * Deliberately a separate map from `windows`. They need workspace and client
+   * resolution like any renderer, but they are NOT windows: putting them in
+   * `windows` would make them show up in `getAllWindows`, `getWindowStates`
+   * (window-state persistence) and `getWindowByWorkspace` as phantom windows.
+   */
+  private viewClients: Map<number, string> = new Map()  // webContents.id → workspaceId
   private focusedModeWindows: Set<number> = new Set()  // webContents.id of windows in focused mode
   private pendingCloseTimeouts: Map<number, NodeJS.Timeout> = new Map()  // Fallback timeouts for window close
   private eventSink: ((channel: string, target: import('@craft-agent/shared/protocol').PushTarget, ...args: any[]) => void) | null = null
@@ -449,10 +459,32 @@ export class WindowManager {
 
   /**
    * Get workspace ID for a window (by webContents.id)
+   *
+   * Also resolves embedded view renderers, which have no window of their own —
+   * without this their preload would come up with no workspace.
    */
   getWorkspaceForWindow(webContentsId: number): string | null {
     const managed = this.windows.get(webContentsId)
-    return managed?.workspaceId ?? null
+    if (managed) return managed.workspaceId
+    return this.viewClients.get(webContentsId) ?? null
+  }
+
+  /**
+   * Register a renderer that lives inside another window as a WebContentsView.
+   *
+   * Must be called BEFORE the view loads its URL: the bootstrap preload asks
+   * for the workspace synchronously while evaluating, exactly like the window
+   * mapping in `createWindow`.
+   */
+  registerViewClient(webContentsId: number, workspaceId: string): void {
+    this.viewClients.set(webContentsId, workspaceId)
+    windowLog.info(`Registered embedded view client ${webContentsId} for workspace ${workspaceId}`)
+  }
+
+  unregisterViewClient(webContentsId: number): void {
+    if (this.viewClients.delete(webContentsId)) {
+      windowLog.info(`Unregistered embedded view client ${webContentsId}`)
+    }
   }
 
   /**

@@ -419,40 +419,107 @@ describe('BrowserPaneManager', () => {
     expect(instance.window.contentView.children).toHaveLength(3)
   })
 
-  it('tiles the browser and the bound session across the browser display', () => {
-    manager.createInstance('tile-1')
-    const instance = (manager as any).instances.get('tile-1')
-    instance.boundSessionId = 'session-abc'
+  function windowManagerStub() {
+    return {
+      createWindow: mock((_options: unknown) => createMockWindow()),
+      registerViewClient: mock((_id: number, _ws: string) => {}),
+      unregisterViewClient: mock((_id: number) => {}),
+    }
+  }
 
-    const sessionWindow = createMockWindow()
-    const createWindow = mock((_options: unknown) => sessionWindow)
-    manager.setWindowManager({ createWindow } as any)
+  it('embeds the session panel as a sibling view, not a second window', () => {
+    manager.createInstance('panel-1')
+    const instance = (manager as any).instances.get('panel-1')
+    const wm = windowManagerStub()
+    manager.setWindowManager(wm as any)
 
-    expect(manager.openSessionBeside('tile-1')).toBe(true)
+    expect(manager.toggleSessionPanel('panel-1')).toBe(true)
 
-    // Focused mode + deep link straight to the session.
-    expect(createWindow.mock.calls[0][0]).toMatchObject({
-      focused: true,
-      initialDeepLink: 'craftagents://allSessions/session/session-abc',
-    })
-
-    // workArea is 1440x875 at y=25 → session is 34% (round(489.6) = 490),
-    // browser takes the remainder. Both must honour workArea.y, not 0.
-    expect(instance.window.setBounds).toHaveBeenCalledWith({ x: 0, y: 25, width: 950, height: 875 })
-    expect(sessionWindow.setBounds).toHaveBeenCalledWith({ x: 950, y: 25, width: 490, height: 875 })
+    // The whole point of option A: one window.
+    expect(wm.createWindow).not.toHaveBeenCalled()
+    expect(instance.sessionView).not.toBeNull()
+    expect(instance.window.contentView.children).toContain(instance.sessionView)
+    // Registered before load, or the preload reads "no workspace".
+    expect(wm.registerViewClient).toHaveBeenCalled()
+    // Toolbar stays on top of the new sibling.
+    const children = instance.window.contentView.children
+    expect(children[children.length - 1]).toBe(instance.toolbarView)
   })
 
-  it('falls back to the session list when no session is bound', () => {
-    manager.createInstance('tile-2')
-    const sessionWindow = createMockWindow()
-    const createWindow = mock((_options: unknown) => sessionWindow)
-    manager.setWindowManager({ createWindow } as any)
+  it('gives the panel its width out of the page, not the window', () => {
+    manager.createInstance('panel-2')
+    const instance = (manager as any).instances.get('panel-2')
+    manager.setWindowManager(windowManagerStub() as any)
 
-    expect(manager.openSessionBeside('tile-2')).toBe(true)
-    expect(createWindow.mock.calls[0][0]).toMatchObject({
-      focused: true,
-      initialDeepLink: 'craftagents://allSessions',
-    })
+    manager.toggleSessionPanel('panel-2')
+
+    // Mock window content is 1200x900; panel defaults to 420.
+    expect(instance.sessionPanelWidth).toBe(420)
+    expect(instance.pageView.setBounds).toHaveBeenLastCalledWith(
+      expect.objectContaining({ x: 0, width: 780 }),
+    )
+    expect(instance.sessionView.setBounds).toHaveBeenCalledWith(
+      expect.objectContaining({ x: 780, width: 420 }),
+    )
+  })
+
+  it('unloads the panel renderer when toggled off instead of parking it', () => {
+    manager.createInstance('panel-3')
+    const instance = (manager as any).instances.get('panel-3')
+    const wm = windowManagerStub()
+    manager.setWindowManager(wm as any)
+
+    manager.toggleSessionPanel('panel-3')
+    const view = instance.sessionView
+
+    manager.toggleSessionPanel('panel-3')
+
+    expect(instance.sessionPanelWidth).toBeNull()
+    expect(instance.sessionView).toBeNull()
+    expect(view.webContents.close).toHaveBeenCalled()
+    expect(wm.unregisterViewClient).toHaveBeenCalled()
+    // Page takes the room back.
+    expect(instance.pageView.setBounds).toHaveBeenLastCalledWith(
+      expect.objectContaining({ width: 1200 }),
+    )
+  })
+
+  it('carries the open panel across a display-mode switch', () => {
+    manager.createInstance('panel-4')
+    const instance = (manager as any).instances.get('panel-4')
+    manager.setWindowManager(windowManagerStub() as any)
+
+    manager.toggleSessionPanel('panel-4')
+    const view = instance.sessionView
+    const host = createMockWindow()
+
+    manager.setDisplayMode('panel-4', 'integrated', host as any)
+
+    // Left behind, the panel would be stranded on the now-hidden window while
+    // the page stayed shrunk for a panel nobody can see.
+    expect(instance.window.contentView.children).not.toContain(view)
+    expect(host.contentView.children).toContain(view)
+    expect(host.contentView.children[host.contentView.children.length - 1]).toBe(instance.toolbarView)
+  })
+
+  it('splits a frame too narrow for both floors instead of overflowing it', () => {
+    manager.createInstance('panel-5')
+    const instance = (manager as any).instances.get('panel-5')
+    manager.setWindowManager(windowManagerStub() as any)
+    const host = createMockWindow()
+    manager.setDisplayMode('panel-5', 'integrated', host as any)
+    // A card, not a window: 500 DIPs cannot hold a 400 page next to a 320 panel.
+    manager.setEmbeddedBounds('panel-5', { x: 0, y: 0, width: 500, height: 400 })
+
+    manager.toggleSessionPanel('panel-5')
+
+    expect(instance.sessionPanelWidth).toBe(250)
+    expect(instance.pageView.setBounds).toHaveBeenLastCalledWith(
+      expect.objectContaining({ x: 0, width: 250 }),
+    )
+    expect(instance.sessionView.setBounds).toHaveBeenLastCalledWith(
+      expect.objectContaining({ x: 250, width: 250 }),
+    )
   })
 
   it('paints the toolbar and overlay views transparent', () => {
