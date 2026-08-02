@@ -788,6 +788,10 @@ export class HermesAgent extends BaseAgent {
 
       yield completionUsage ?? { type: 'complete' }
     } catch (error) {
+      const aborted = this.abortController?.signal.aborted === true
+      for (const event of adapter.drainPendingTools(aborted ? 'turn aborted' : 'turn failed')) {
+        yield event
+      }
       const message = error instanceof Error ? error.message : String(error)
       // Dead-pipe fallback for when the exit observer hasn't fired yet: an I/O
       // failure on the subprocess pipe means the provider is unusable, so mark
