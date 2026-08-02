@@ -22,7 +22,7 @@ export class ChannelManager {
   private orchestrators = new Map<string, ChannelOrchestrator>()
   private watchedKanbanTasks = new Map<string, WatchedKanbanTasks>()
   private kanbanWatchTimer: ReturnType<typeof setInterval> | null = null
-  private bootedWorkspaces = new Set<string>()
+  private bootedWorkspaces = new Map<string, Promise<void>>()
 
   constructor(
     private readonly server: RpcServer,
@@ -190,10 +190,21 @@ export class ChannelManager {
    * fails dispatches left `queued`/`running` by a previous process, and re-arms Kanban
    * watchers from their persisted watch lists.
    */
-  private async ensureWorkspaceBooted(workspaceId: string, workspaceRootPath: string): Promise<void> {
-    if (this.bootedWorkspaces.has(workspaceId)) return
-    this.bootedWorkspaces.add(workspaceId)
+  private ensureWorkspaceBooted(workspaceId: string, workspaceRootPath: string): Promise<void> {
+    const existing = this.bootedWorkspaces.get(workspaceId)
+    if (existing) return existing
 
+    const booting = this.bootWorkspace(workspaceId, workspaceRootPath)
+    this.bootedWorkspaces.set(workspaceId, booting)
+    // Clear the flag on failure so the next call retries instead of leaving the
+    // workspace permanently unreconciled for the rest of the process lifetime.
+    booting.catch(() => {
+      this.bootedWorkspaces.delete(workspaceId)
+    })
+    return booting
+  }
+
+  private async bootWorkspace(workspaceId: string, workspaceRootPath: string): Promise<void> {
     const { listChannels } = await import('@craft-agent/shared/channels/storage')
     const channels = listChannels(workspaceRootPath)
 
@@ -206,7 +217,13 @@ export class ChannelManager {
       }
     }
 
-    await this.pollWatchedKanbanTasks()
+    // Reconciliation of watched Kanban tasks runs a full agent turn per terminal
+    // task, so it must not sit in the RPC critical path (channels.list and friends
+    // await ensureWorkspaceBooted). Kick it off in the background and log failures
+    // instead of swallowing them.
+    void this.pollWatchedKanbanTasks().catch(error => {
+      this.deps.platform.logger.error('[channels] boot Kanban reconciliation failed:', error)
+    })
   }
 
   private reconcileOrphanedDispatches(workspaceRootPath: string, channelId: string): void {
@@ -420,8 +437,14 @@ export class ChannelManager {
       const terminalTasks = tasks.filter(task => isTerminalKanbanStatus(task.status))
       if (terminalTasks.length === 0) continue
 
+      // Persist the remaining task ids before mutating memory. If the write throws
+      // (EACCES/ENOSPC), in-memory state is left untouched so the ids stay armed and
+      // the next poll retries — rather than dropping them from memory while disk
+      // still holds them, which would re-arm and re-post duplicates on the next boot.
+      const terminalTaskIds = new Set(terminalTasks.map(task => task.id))
+      const remainingTaskIds = [...watched.taskIds].filter(id => !terminalTaskIds.has(id))
+      saveChannelKanbanWatch(watched.workspaceRootPath, watched.channel.id, remainingTaskIds)
       for (const task of terminalTasks) watched.taskIds.delete(task.id)
-      saveChannelKanbanWatch(watched.workspaceRootPath, watched.channel.id, [...watched.taskIds])
       if (watched.taskIds.size === 0) this.watchedKanbanTasks.delete(key)
 
       const { appendChannelMessage, listChannelMessages } = await import('@craft-agent/shared/channels/messages')

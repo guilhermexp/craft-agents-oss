@@ -428,4 +428,32 @@ describe('ChannelOrchestrator', () => {
     expect(runtime.sent.map(item => item.sessionId)).toEqual(['session-1']);
     expect(sessionBindingStore.bindings.get(`${channel.id}:hermes-lead`)).toBe('session-1');
   });
+
+  it('does not cache a participant session when persisting its binding throws', async () => {
+    const runtime = createRuntime();
+    const sessionBindingStore = createSessionBindingStore();
+    let failNextWrite = true;
+    sessionBindingStore.set = (channelId, participantId, sessionId) => {
+      if (failNextWrite) {
+        failNextWrite = false;
+        throw new Error('EACCES: binding write failed');
+      }
+      sessionBindingStore.bindings.set(`${channelId}:${participantId}`, sessionId);
+    };
+    const orchestrator = createChannelOrchestrator({ runtime, sessionBindingStore });
+
+    // First turn: session is created but the binding write fails, so the failure
+    // must surface and nothing may be cached in memory.
+    const firstTurn = await orchestrator.sendMessage({ channel, text: '@hermes-lead cria um plano', authorId: 'human' });
+    expect(firstTurn.failures).toEqual([{ participantId: 'hermes-lead', message: 'EACCES: binding write failed' }]);
+    expect(runtime.created).toHaveLength(1);
+    expect(sessionBindingStore.bindings.has(`${channel.id}:hermes-lead`)).toBe(false);
+
+    // Second turn: because the first turn never cached the unpersisted session,
+    // it retries end to end — creating a fresh session and persisting it.
+    await orchestrator.sendMessage({ channel, text: '@hermes-lead tenta de novo', authorId: 'human' });
+    expect(runtime.created).toHaveLength(2);
+    expect(sessionBindingStore.bindings.get(`${channel.id}:hermes-lead`)).toBe('session-2');
+    expect(runtime.sent.map(item => item.sessionId)).toEqual(['session-2']);
+  });
 });

@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
-import { mkdtempSync, rmSync } from 'fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
 import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { createChannel } from '@craft-agent/shared/channels/crud'
+import { warRoomChannelId, type WarRoomChannel } from '@craft-agent/shared/channels'
 import { createChannelDispatch, listChannelDispatches } from '@craft-agent/shared/channels/dispatches'
 import { listChannelMessages } from '@craft-agent/shared/channels/messages'
 import { getChannelParticipantSession } from '@craft-agent/shared/channels/session-bindings'
@@ -50,6 +51,18 @@ mock.module('../../channels/hermes-kanban', () => ({
 }))
 
 const { registerChannelsHandlers } = await import('./channels')
+const { ChannelManager } = await import('../../channels/channel-manager')
+
+/** Private ChannelManager state a durability test drives directly. */
+interface ManagerWatchInternals {
+  watchedKanbanTasks: Map<string, {
+    workspaceId: string
+    workspaceRootPath: string
+    channel: WarRoomChannel
+    taskIds: Set<string>
+  }>
+  pollWatchedKanbanTasks: () => Promise<void>
+}
 
 /**
  * Backs `HandlerDeps['sessionManager']` for a harness. Kept separate from
@@ -97,6 +110,7 @@ function createSessionStore() {
 function createHarness(shared: ReturnType<typeof createSessionStore> = createSessionStore()) {
   const handlers = new Map<string, HandlerFn>()
   const pushed: Array<{ channel: string; args: unknown[] }> = []
+  const pushListeners: Array<(channel: string) => void> = []
   const { createdSessions, sentMessages } = shared
 
   const server: RpcServer = {
@@ -105,6 +119,7 @@ function createHarness(shared: ReturnType<typeof createSessionStore> = createSes
     },
     push(channel, _target, ...args) {
       pushed.push({ channel, args })
+      for (const listener of pushListeners) listener(channel)
     },
     async invokeClient() {
       return undefined
@@ -118,7 +133,7 @@ function createHarness(shared: ReturnType<typeof createSessionStore> = createSes
   }
 
   const deps: HandlerDeps = {
-    platform: {} as HandlerDeps['platform'],
+    platform: { logger: { error() {}, warn() {}, info() {}, debug() {} } } as HandlerDeps['platform'],
     oauthFlowStore: {} as HandlerDeps['oauthFlowStore'],
     sessionManager: shared.sessionManager,
   }
@@ -131,7 +146,20 @@ function createHarness(shared: ReturnType<typeof createSessionStore> = createSes
     webContentsId: 1,
   }
 
-  return { handlers, ctx, pushed, createdSessions, sentMessages }
+  /**
+   * Resolves the next time the server pushes `channel`. Boot reconciliation runs
+   * off the RPC critical path (fire-and-forget), so a test awaits this event to
+   * observe the background work instead of racing a fixed delay.
+   */
+  function waitForPush(channel: string): Promise<void> {
+    const { promise, resolve } = Promise.withResolvers<void>()
+    pushListeners.push(pushedChannel => {
+      if (pushedChannel === channel) resolve()
+    })
+    return promise
+  }
+
+  return { handlers, ctx, pushed, createdSessions, sentMessages, waitForPush }
 }
 
 beforeEach(() => {
@@ -428,10 +456,73 @@ describe('ChannelManager durability across a simulated restart (Fase 1)', () => 
     task.completedAt = futureCreatedAt + 5
 
     const second = createHarness(shared)
+    // Boot reconciliation is now fire-and-forget, so LIST_MESSAGES returns before
+    // the terminal task flows back. Await the resulting MESSAGES_CHANGED push.
+    const reconciled = second.waitForPush(RPC_NAMESPACES.channels.MESSAGES_CHANGED)
     await second.handlers.get(RPC_NAMESPACES.channels.LIST_MESSAGES)!(second.ctx, 'ws-1', 'architecture')
+    await reconciled
 
     expect(loadChannelKanbanWatch(workspaceRoot, 'architecture')).toEqual([])
     const messages = listChannelMessages(workspaceRoot, 'architecture')
     expect(messages.some(message => message.authorId === 'hermes-kanban' && message.text.includes('task-1'))).toBe(true)
+  })
+
+  it('keeps watched Kanban task ids in memory when persisting the pruned watch throws', async () => {
+    // Force the real saveChannelKanbanWatch to throw: its watch dir cannot be created
+    // because the workspace root's parent is a regular file (ENOTDIR).
+    const blockerFile = join(workspaceRoot, 'blocker')
+    writeFileSync(blockerFile, 'x')
+    const unwritableRoot = join(blockerFile, 'nested-workspace')
+
+    mockKanbanTasks = [
+      { id: 'task-done', title: 'A', assignee: 'lead', status: 'done', result: null, createdAt: 1, completedAt: 2 },
+      { id: 'task-open', title: 'B', assignee: 'lead', status: 'in_progress', result: null, createdAt: 1, completedAt: null },
+    ]
+
+    const server: RpcServer = {
+      handle() {},
+      push() {},
+      async invokeClient() {
+        return undefined
+      },
+      hasClientCapability() {
+        return false
+      },
+      findClientsWithCapability() {
+        return []
+      },
+    }
+    const deps = {
+      platform: { logger: { error() {}, warn() {}, info() {}, debug() {} } },
+      oauthFlowStore: {},
+      sessionManager: createSessionStore().sessionManager,
+    } as unknown as HandlerDeps
+    const manager = new ChannelManager(server, deps)
+    // Test seam: drive one poll against seeded private state; storage/Kanban are the
+    // real modules (Kanban via the file-wide mock), so only the write is forced to fail.
+    const internals = manager as unknown as ManagerWatchInternals
+
+    const channel: WarRoomChannel = {
+      id: warRoomChannelId('architecture'),
+      name: 'Architecture',
+      labelId: 'channel-architecture',
+      participants: [{ id: 'hermes-lead', displayName: 'Hermes Lead', llmConnection: 'hermes', hermesProfile: 'lead' }],
+    }
+    const key = `ws-1:${channel.id}`
+    const taskIds = new Set(['task-done', 'task-open'])
+    internals.watchedKanbanTasks.set(key, {
+      workspaceId: 'ws-1',
+      workspaceRootPath: unwritableRoot,
+      channel,
+      taskIds,
+    })
+
+    await expect(internals.pollWatchedKanbanTasks()).rejects.toThrow()
+
+    // The write threw, so memory is untouched: both ids stay armed and the watch entry
+    // survives. Without persist-before-memory the terminal id would be dropped from
+    // memory while disk kept it, re-arming a duplicate on the next boot.
+    expect([...taskIds].sort()).toEqual(['task-done', 'task-open'])
+    expect(internals.watchedKanbanTasks.has(key)).toBe(true)
   })
 })

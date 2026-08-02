@@ -342,8 +342,11 @@ export function createChannelOrchestrator(deps: ChannelOrchestratorDeps): Channe
       permissionMode: participant.permissionMode ?? channel.defaultPermissionMode,
       workingDirectory: participant.workingDirectory ?? channel.workingDirectory,
     });
-    participantSessions.set(key, session.id);
+    // Persist the binding before caching in memory. If the write throws, the
+    // cache stays empty so a later call retries instead of reusing a session
+    // that was never persisted (which would orphan on the next restart).
     deps.sessionBindingStore?.set(channel.id, participant.id, session.id);
+    participantSessions.set(key, session.id);
     return session.id;
   }
 
