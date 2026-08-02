@@ -95,13 +95,18 @@ async function main(): Promise<void> {
       // Mark only Electron + Baileys' runtime-optional peers external.
       // Baileys itself and all its required transitive deps get bundled.
       //
-      // The three optional deps below are unused by Craft Agent (no link
+      // The four optional peers below are unused by Craft Agent (no link
       // previews, no terminal QR, no inline image transforms). Baileys
       // guards them with try/catch so they fail silently at runtime.
+      // `sharp` in particular MUST stay external: it is a native module, so
+      // bundling it means esbuild hitting a `.node` binary with no loader.
+      // It only became reachable once the repo settled on the hoisted linker
+      // that bunfig.toml declares — Electron pulls sharp in at the root.
       "--external:electron",
       "--external:link-preview-js",
       "--external:qrcode-terminal",
       "--external:jimp",
+      "--external:sharp",
     ],
     cwd: ROOT_DIR,
     stdout: "inherit",

@@ -255,40 +255,23 @@ async function buildPiAgentServer(): Promise<void> {
   console.log("✅ Pi agent server built successfully");
 }
 
-// Build the WhatsApp worker (Baileys-backed subprocess spawned by WhatsAppAdapter)
+// Build the WhatsApp worker (Baileys-backed subprocess spawned by WhatsAppAdapter).
+//
+// Shells out to the canonical `scripts/build-wa-worker.ts`, like electron-dev
+// does. This used to be a second copy of the same esbuild invocation, and the
+// two lists of externals drifted: the copy here never learned that `sharp` —
+// Baileys' fourth optional peer, and a native module — has to stay external,
+// so `electron:build:main` died on a `.node` binary as soon as sharp became
+// resolvable at the root. It also never injected the build-provenance defines
+// the worker logs on startup.
 async function buildWhatsAppWorker(): Promise<void> {
   if (!existsSync(WA_WORKER_SOURCE)) {
     console.log("⏭️  WhatsApp worker skipped (package not found)");
     return;
   }
 
-  console.log("📨 Building WhatsApp worker...");
-
-  const workerDistDir = join(WA_WORKER_DIR, "dist");
-  if (!existsSync(workerDistDir)) {
-    mkdirSync(workerDistDir, { recursive: true });
-  }
-
-  // Baileys is bundled INTO worker.cjs (not external) so the packaged app is
-  // self-contained. Dynamic `import('@whiskeysockets/baileys')` is resolved
-  // at bundle time because the specifier is a literal.
   const proc = spawn({
-    cmd: [
-      "bun", "run", "esbuild",
-      WA_WORKER_SOURCE,
-      "--bundle",
-      "--platform=node",
-      "--format=cjs",
-      "--target=node20",
-      `--outfile=${WA_WORKER_OUTPUT}`,
-      "--external:electron",
-      // Baileys' runtime-optional features — wrapped in try/catch at the
-      // call site and not used by Craft Agent (we send text + documents, no
-      // link previews, no inline image processing, no terminal QR).
-      "--external:link-preview-js",
-      "--external:qrcode-terminal",
-      "--external:jimp",
-    ],
+    cmd: ["bun", "run", "scripts/build-wa-worker.ts"],
     cwd: ROOT_DIR,
     stdout: "inherit",
     stderr: "inherit",
@@ -304,8 +287,6 @@ async function buildWhatsAppWorker(): Promise<void> {
     console.error("❌ WhatsApp worker output not found at", WA_WORKER_OUTPUT);
     process.exit(1);
   }
-
-  console.log("✅ WhatsApp worker built successfully");
 }
 
 async function main(): Promise<void> {
