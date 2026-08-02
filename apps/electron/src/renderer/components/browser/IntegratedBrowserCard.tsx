@@ -21,6 +21,8 @@ import { useCallback, useEffect, useEffectEvent, useRef } from 'react'
 import { useAtomValue } from 'jotai'
 import { X } from 'lucide-react'
 import { browserInstancesAtom } from '../../atoms/browser-pane'
+import { useTheme } from '@/context/ThemeContext'
+import { BROWSER_CHROME_BG } from '../../../shared/browser-chrome'
 
 /** Matches --vision-radius-card / the DESIGN.md §5.5 card radius. */
 const CARD_RADIUS = 32
@@ -39,6 +41,7 @@ export function IntegratedBrowserCard({ instanceId, open, onClose }: IntegratedB
   // No fallback to the active instance: an implicit target meant the overlay
   // could stay up pointing at a browser the user never chose to embed.
   const id = instanceId ?? null
+  const { isDark } = useTheme()
   const instances = useAtomValue(browserInstancesAtom)
   const instanceExists = !!id && instances.some(i => i.id === id)
   const holeRef = useRef<HTMLDivElement>(null)
@@ -154,11 +157,17 @@ export function IntegratedBrowserCard({ instanceId, open, onClose }: IntegratedB
         <X className="size-4" />
       </button>
 
-      {/* The hole. Nothing may render inside: the native view paints over it. */}
+      {/* The hole. Nothing may render inside: the native view paints over it.
+
+          It is painted rather than transparent because the native views do not
+          tile it perfectly — the toolbar, page and session panel are separate
+          rounded siblings, so every seam between them exposes a sliver of
+          whatever is behind. Chrome-coloured, those slivers read as dividers;
+          transparent, they read as holes onto the app. */}
       <div
         ref={holeRef}
         className="relative flex-1 overflow-hidden border border-white/20 shadow-[0_24px_60px_rgb(0_0_0/0.35)]"
-        style={{ borderRadius: CARD_RADIUS }}
+        style={{ borderRadius: CARD_RADIUS, background: BROWSER_CHROME_BG[isDark ? 'dark' : 'light'] }}
       />
     </div>
   )

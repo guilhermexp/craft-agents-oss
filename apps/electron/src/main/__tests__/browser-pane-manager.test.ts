@@ -446,7 +446,7 @@ describe('BrowserPaneManager', () => {
     expect(children[children.length - 1]).toBe(instance.toolbarView)
   })
 
-  it('gives the panel its width out of the page, not the window', () => {
+  it('lays the panel out as a peer column, not a drawer under the chrome', () => {
     manager.createInstance('panel-2')
     const instance = (manager as any).instances.get('panel-2')
     manager.setWindowManager(windowManagerStub() as any)
@@ -458,8 +458,14 @@ describe('BrowserPaneManager', () => {
     expect(instance.pageView.setBounds).toHaveBeenLastCalledWith(
       expect.objectContaining({ x: 0, width: 780 }),
     )
-    expect(instance.sessionView.setBounds).toHaveBeenCalledWith(
-      expect.objectContaining({ x: 780, width: 420 }),
+    // The toolbar stops at the page's edge, or the URL bar centres itself over
+    // the session instead of over the page it addresses.
+    expect(instance.toolbarView.setBounds).toHaveBeenLastCalledWith(
+      expect.objectContaining({ x: 0, width: 780 }),
+    )
+    // Full height: the panel brings its own header and sits beside the browser.
+    expect(instance.sessionView.setBounds).toHaveBeenLastCalledWith(
+      expect.objectContaining({ x: 780, y: 0, width: 420, height: 900 }),
     )
   })
 
@@ -549,6 +555,28 @@ describe('BrowserPaneManager', () => {
 
     // Undocking undoes what docking did — it is not a "show the browser" button.
     expect(instance.window.isVisible()).toBe(false)
+  })
+
+  it('keeps every native view on the same corner radius', () => {
+    manager.createInstance('radius-1')
+    const instance = (manager as any).instances.get('radius-1')
+    manager.setWindowManager(windowManagerStub() as any)
+    const host = createMockWindow()
+    manager.setDisplayMode('radius-1', 'integrated', host as any)
+    manager.setEmbeddedBounds('radius-1', { x: 0, y: 0, width: 1000, height: 800 }, 32)
+
+    manager.toggleSessionPanel('radius-1')
+
+    // A rounded page beside a square panel reads as two unrelated surfaces.
+    expect(instance.sessionView.setBorderRadius).toHaveBeenLastCalledWith(32)
+    expect(instance.pageView.setBorderRadius).toHaveBeenLastCalledWith(32)
+    expect(instance.toolbarView.setBorderRadius).toHaveBeenLastCalledWith(32)
+
+    const panel = instance.sessionView
+    manager.setDisplayMode('radius-1', 'floating')
+
+    // Undocking has to drop it everywhere, not just on the two originals.
+    expect(panel.setBorderRadius).toHaveBeenLastCalledWith(0)
   })
 
   it('paints the toolbar and overlay views transparent', () => {

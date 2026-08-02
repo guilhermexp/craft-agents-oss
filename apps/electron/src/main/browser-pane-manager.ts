@@ -44,6 +44,7 @@ const DEFAULT_WAIT_POLL_MS = 100
 const BROWSER_EMPTY_STATE_PAGE = 'browser-empty-state.html'
 
 import { TOOLBAR_CHANNELS } from '../shared/browser-toolbar-channels'
+import { BROWSER_CHROME_BG } from '../shared/browser-chrome'
 import { isAllowedTopLevelUrl, CRAFT_DEEPLINK_SCHEME_PREFIX, decideWillNavigate, decideWindowOpen } from './browser/navigation-policy'
 import { hardenSessionPermissions } from './browser/partition-hardening'
 import {
@@ -144,6 +145,8 @@ export interface BrowserInstance {
   embeddedBounds: EmbeddedBounds | null
   /** Corner radius of the React card, in host CSS px. */
   embeddedRadius: number
+  /** Radius currently applied to every native view, in DIPs. */
+  viewRadius: number
   cdp: BrowserCDP
   currentUrl: string
   title: string
@@ -494,7 +497,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     // Native window chrome follows the OS theme. Embedded pages are left to honor
     // their own prefers-color-scheme (like a normal browser) — we do not override
     // the page color scheme.
-    const chromeBgColor = nativeTheme.shouldUseDarkColors ? '#2b292e' : '#fafafb'
+    const chromeBgColor = BROWSER_CHROME_BG[nativeTheme.shouldUseDarkColors ? 'dark' : 'light']
     const pageBgColor = '#ffffff'
 
     const window = new BrowserWindow({
@@ -586,6 +589,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       hostWindow: null,
       embeddedBounds: null,
       embeddedRadius: 0,
+      viewRadius: 0,
       cdp,
       currentUrl: 'about:blank',
       title: 'New Tab',
@@ -1972,14 +1976,34 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     container.contentView.addChildView(instance.toolbarView)
   }
 
+  /**
+   * Width the session panel takes out of the frame, 0 when closed.
+   *
+   * Every other view is laid out against the remainder, so this has to be one
+   * number: toolbar, page and overlay disagreeing by a pixel is a visible tear.
+   */
+  private sessionPanelWidthFor(instance: BrowserInstance): number {
+    return instance.sessionPanelWidth === null
+      ? 0
+      : this.clampSessionPanelWidth(instance, instance.sessionPanelWidth)
+  }
+
   private layoutToolbarView(instance: BrowserInstance): void {
     const frame = this.getLayoutFrame(instance)
     if (!frame) return
     const toolbarHeight = this.getToolbarEffectiveHeight(instance)
 
+    // The panel is a sibling column with its own header, not something parked
+    // under the browser's chrome — so the URL bar stays centred on the page it
+    // belongs to instead of drifting over the session.
     // No setAutoResize on WebContentsView: bounds are recomputed by the window
     // 'resize' listener, which already calls layoutAllViews.
-    instance.toolbarView.setBounds({ x: frame.x, y: frame.y, width: frame.width, height: toolbarHeight })
+    instance.toolbarView.setBounds({
+      x: frame.x,
+      y: frame.y,
+      width: Math.max(0, frame.width - this.sessionPanelWidthFor(instance)),
+      height: toolbarHeight,
+    })
   }
 
   private updateNativeOverlayState(instance: BrowserInstance): void {
@@ -1995,8 +2019,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       return
     }
 
+    // The overlay shields the page, not the session panel: an agent driving the
+    // browser must not lock the chat the user is watching it from.
     const overlayHeight = Math.max(100, frame.height - TOOLBAR_HEIGHT)
-    instance.nativeOverlayView.setBounds({ x: frame.x, y: frame.y + TOOLBAR_HEIGHT, width: frame.width, height: overlayHeight })
+    instance.nativeOverlayView.setBounds({
+      x: frame.x,
+      y: frame.y + TOOLBAR_HEIGHT,
+      width: Math.max(0, frame.width - this.sessionPanelWidthFor(instance)),
+      height: overlayHeight,
+    })
     this.raiseToolbar(instance)
 
     if (agentActive) {
@@ -2127,14 +2158,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     if (!frame) return
 
     // The session panel eats into the page, not into the window.
-    const panelWidth = instance.sessionPanelWidth === null
-      ? 0
-      : this.clampSessionPanelWidth(instance, instance.sessionPanelWidth)
-
     instance.pageView.setBounds({
       x: frame.x,
       y: frame.y + TOOLBAR_HEIGHT,
-      width: Math.max(0, frame.width - panelWidth),
+      width: Math.max(0, frame.width - this.sessionPanelWidthFor(instance)),
       height: Math.max(100, frame.height - TOOLBAR_HEIGHT),
     })
     this.updateNativeOverlayState(instance)
@@ -2234,8 +2261,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     instance.embeddedBounds = null
     this.reparentViews(instance, previous, instance.window)
     // Corner rounding is a card affordance; a full window must not keep it.
-    instance.pageView.setBorderRadius(0)
-    instance.toolbarView.setBorderRadius(0)
+    this.applyViewRadius(instance, 0)
     this.layoutAllViews(instance)
     // Undo exactly what docking did. A browser that was already hidden before
     // it was docked (agent-driven, never shown) stays hidden.
@@ -2270,12 +2296,26 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
     instance.embeddedRadius = radius
 
-    const scaledRadius = Math.round(radius * zoom)
-    instance.pageView.setBorderRadius(scaledRadius)
-    instance.toolbarView.setBorderRadius(scaledRadius)
+    this.applyViewRadius(instance, Math.round(radius * zoom))
 
     this.layoutAllViews(instance)
     return true
+  }
+
+  /**
+   * Corner radius for the native views.
+   *
+   * They are siblings composing one card, so they must agree: a rounded page
+   * next to a square session panel reads as two unrelated surfaces. Where two
+   * rounded neighbours curve away from each other the card's own background
+   * shows through, which is why that hole is painted chrome-coloured rather
+   * than left transparent.
+   */
+  private applyViewRadius(instance: BrowserInstance, radius: number): void {
+    instance.viewRadius = radius
+    instance.pageView.setBorderRadius(radius)
+    instance.toolbarView.setBorderRadius(radius)
+    instance.sessionView?.setBorderRadius(radius)
   }
 
   getDisplayMode(instanceId: string): BrowserDisplayMode | null {
@@ -2341,6 +2381,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       },
     })
     view.setBackgroundColor('#00000000')
+    // Born into whatever the siblings already carry, or a panel opened while
+    // the browser is docked comes up square against two rounded neighbours.
+    view.setBorderRadius(instance.viewRadius)
 
     // Register BEFORE loading: the bootstrap preload asks for the workspace
     // synchronously while it evaluates, so a late registration reads as "no
@@ -2393,11 +2436,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
     const width = this.clampSessionPanelWidth(instance, instance.sessionPanelWidth)
     instance.sessionPanelWidth = width
+    // Full height, not offset by the toolbar: the panel is the browser's peer,
+    // and it brings its own header. Sitting under the URL bar made it look
+    // like a drawer of the page instead of a column beside it.
     view.setBounds({
       x: frame.x + frame.width - width,
-      y: frame.y + TOOLBAR_HEIGHT,
+      y: frame.y,
       width,
-      height: Math.max(100, frame.height - TOOLBAR_HEIGHT),
+      height: frame.height,
     })
   }
 
