@@ -697,14 +697,14 @@ function AppShellContent({
     maxWidthCap: rightSidebarContentTarget ? undefined : RIGHT_SIDEBAR_TREE_ONLY_MAX_WIDTH,
   })
 
-  const handleRightSidebarPreviewFile = React.useCallback((filePath: string) => {
+  const handleRightSidebarPreviewFile = React.useCallback((filePath: string, mode: 'preview' | 'permanent') => {
     if (!rightSidebarSessionId || !activeWorkspaceId) return
-    dispatchRightSidebarContentTabs({ type: 'open', mode: 'preview', target: { kind: 'file', workspaceId: activeWorkspaceId, sessionId: rightSidebarSessionId, path: filePath } })
+    dispatchRightSidebarContentTabs({ type: 'open', mode, target: { kind: 'file', workspaceId: activeWorkspaceId, sessionId: rightSidebarSessionId, path: filePath } })
   }, [rightSidebarSessionId, activeWorkspaceId])
 
-  const handleRightSidebarPreviewObject = React.useCallback((objectId: string) => {
+  const handleRightSidebarPreviewObject = React.useCallback((objectId: string, mode: 'preview' | 'permanent') => {
     if (!activeWorkspaceId) return
-    dispatchRightSidebarContentTabs({ type: 'open', mode: 'preview', target: { kind: 'object', workspaceId: activeWorkspaceId, objectId } })
+    dispatchRightSidebarContentTabs({ type: 'open', mode, target: { kind: 'object', workspaceId: activeWorkspaceId, objectId } })
   }, [activeWorkspaceId])
 
   React.useEffect(() => {
@@ -3781,6 +3781,9 @@ function AppShellContent({
                                 className={cn(
                                   "group flex max-w-44 items-center gap-1 rounded-md px-2 py-1 text-xs",
                                   tab.id === rightSidebarContentTabs.activeId ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5",
+                                  // A preview tab is on loan: the next single click takes it. Italic
+                                  // is the same borrowed-slot language every editor uses.
+                                  tab.mode === 'preview' && "italic",
                                 )}
                               >
                                 <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => dispatchRightSidebarContentTabs({ type: 'select', id: tab.id })} onDoubleClick={() => dispatchRightSidebarContentTabs({ type: 'promote', id: tab.id })}>

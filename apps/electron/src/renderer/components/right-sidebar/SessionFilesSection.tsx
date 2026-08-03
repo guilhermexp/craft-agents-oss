@@ -40,8 +40,12 @@ export interface SessionFilesSectionProps {
   sessionFolderPath?: string
   /** Hide section header when embedded inside compact containers (e.g. popovers) */
   hideHeader?: boolean
-  /** Optional inline preview target used when embedded in the persistent right sidebar. */
-  onPreviewFileInline?: (path: string) => void
+  /**
+   * Optional inline preview target used when embedded in the persistent right
+   * sidebar. A `preview` open is disposable - the next one replaces it - while
+   * `permanent` earns the file a tab of its own.
+   */
+  onPreviewFileInline?: (path: string, mode: 'preview' | 'permanent') => void
 }
 
 type SessionFileOpenMode = 'directory' | 'inline-preview' | 'app-open-file'
@@ -587,7 +591,7 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
       // eslint-disable-next-line craft-links/no-direct-file-open -- directories can't be previewed in-app
       window.electronAPI.openFile(file.path)
     } else if (mode === 'inline-preview') {
-      onPreviewFileInline?.(file.path)
+      onPreviewFileInline?.(file.path, 'preview')
     } else {
       onOpenFile(file.path)
     }
@@ -598,13 +602,23 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
   }, [openFile])
 
   const handleFileDoubleClick = useCallback((file: SessionFile) => {
-    if (file.type === 'directory') {
+    const mode = getSessionFileOpenMode({
+      type: file.type,
+      filePath: file.path,
+      canPreviewInline: Boolean(onPreviewFileInline),
+    })
+
+    // Double-click is the "I am staying here" gesture. Anything the panel can
+    // show gets a tab of its own; only what it cannot show leaves the panel.
+    if (mode === 'inline-preview') {
+      onPreviewFileInline?.(file.path, 'permanent')
+    } else if (mode === 'directory') {
       // eslint-disable-next-line craft-links/no-direct-file-open -- directories can't be previewed in-app
       window.electronAPI.openFile(file.path)
     } else {
       onOpenFile(file.path)
     }
-  }, [onOpenFile])
+  }, [onOpenFile, onPreviewFileInline])
 
   // Toggle folder expanded state
   const handleToggleExpand = useCallback((path: string) => {
@@ -691,7 +705,7 @@ function updateTreeNode(entries: SessionFile[], path: string, children: SessionF
   })
 }
 
-export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInline }: { sessionId?: string; className?: string; onPreviewFileInline?: (path: string) => void }) {
+export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInline }: { sessionId?: string; className?: string; onPreviewFileInline?: (path: string, mode: 'preview' | 'permanent') => void }) {
   const { t } = useTranslation()
   const session = useSession(sessionId || '')
   const { workspaces, activeWorkspaceId, onOpenFile } = useAppShellContext()
@@ -785,7 +799,7 @@ export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInlin
       if (file.hasChildren) handleDirectoryExpand(file)
       handleToggleExpand(file.path)
     } else if (mode === 'inline-preview') {
-      onPreviewFileInline?.(file.path)
+      onPreviewFileInline?.(file.path, 'preview')
     } else {
       onOpenFile(file.path)
     }
@@ -796,8 +810,18 @@ export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInlin
   }, [openFile])
 
   const handleFileDoubleClick = useCallback((file: SessionFile) => {
-    onOpenFile(file.path)
-  }, [onOpenFile])
+    const mode = getSessionFileOpenMode({
+      type: file.type,
+      filePath: file.path,
+      canPreviewInline: Boolean(onPreviewFileInline),
+    })
+
+    if (mode === 'inline-preview') {
+      onPreviewFileInline?.(file.path, 'permanent')
+    } else if (mode !== 'directory') {
+      onOpenFile(file.path)
+    }
+  }, [onOpenFile, onPreviewFileInline])
 
   if (!sessionId) return null
 

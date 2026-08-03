@@ -31,6 +31,20 @@ describe('content tabs state', () => {
     expect(permanent.activeId).toBe(contentTabId(object('object_people')));
   });
 
+  test('accumulates a tab per file opened permanently, and the click before the double-click costs nothing', () => {
+    // The gesture the tree sends: a single click lands first, then the second
+    // click of the double promotes the same file. That must not leave a spare
+    // tab behind, and the file before it must survive.
+    let state = contentTabsReducer(empty, { type: 'open', target: file('one.md'), mode: 'preview' });
+    state = contentTabsReducer(state, { type: 'open', target: file('one.md'), mode: 'permanent' });
+    state = contentTabsReducer(state, { type: 'open', target: file('two.md'), mode: 'preview' });
+    state = contentTabsReducer(state, { type: 'open', target: file('two.md'), mode: 'permanent' });
+
+    expect(state.tabs.map(tab => tab.target.kind === 'file' ? tab.target.path : '')).toEqual(['one.md', 'two.md']);
+    expect(state.tabs.every(tab => tab.mode === 'permanent')).toBe(true);
+    expect(state.activeId).toBe(contentTabId(file('two.md')));
+  });
+
   test('repairs active selection and restores only the active workspace/session scope', () => {
     const serialized: ContentTabsState = {
       tabs: [

@@ -7,7 +7,7 @@ import { acceptWorkspaceObjectEvent } from '../app-shell/workspace-object-events
 import { onWorkspaceObjectsReload } from '../app-shell/workspace-object-reconnect'
 
 export interface WorkspaceObjectsSectionProps {
-  onPreviewObject: (objectId: string) => void
+  onPreviewObject: (objectId: string, mode: 'preview' | 'permanent') => void
 }
 
 export interface WorkspaceObjectListLoadCallbacks {
@@ -122,7 +122,8 @@ export function WorkspaceObjectsSection({ onPreviewObject }: WorkspaceObjectsSec
             <button
               key={object.id}
               type="button"
-              onClick={() => onPreviewObject(object.id)}
+              onClick={() => onPreviewObject(object.id, 'preview')}
+              onDoubleClick={() => onPreviewObject(object.id, 'permanent')}
               className="flex min-w-0 items-center gap-2 rounded-[6px] px-2 py-[5px] text-left text-[13px] outline-none transition-colors hover:bg-sidebar-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
             >
               <Boxes className="size-3.5 shrink-0 text-muted-foreground" />
