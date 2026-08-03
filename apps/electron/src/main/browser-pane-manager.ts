@@ -2251,6 +2251,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       // The panel it fills is rounded, so the views must be too — before any
       // bounds message, which may be deduped or arrive late.
       this.applyViewRadius(instance, PANEL_INTERIOR_RADIUS)
+      this.setViewsVisible(instanceId, true)
       this.layoutAllViews(instance)
       this.toolbarHost.pushState(instance)
       mainLog.info(`[browser-pane] display mode=integrated id=${instanceId}`)
@@ -2267,6 +2268,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     instance.hostWindow = null
     instance.embeddedBounds = null
     this.reparentViews(instance, previous, instance.window)
+    // Concealment is a transient override the renderer applies while something
+    // covers the views - an app overlay, or another preview tab holding the
+    // pane. It must not survive the trip back to a window of its own, or the
+    // browser reappears blank.
+    this.setViewsVisible(instanceId, true)
     // Corner rounding is a card affordance; a full window must not keep it.
     this.applyViewRadius(instance, 0)
     this.layoutAllViews(instance)

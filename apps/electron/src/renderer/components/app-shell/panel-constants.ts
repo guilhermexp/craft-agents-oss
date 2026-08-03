@@ -16,8 +16,6 @@ export const RADIUS_INNER = PANEL_INTERIOR_RADIUS
 /** Minimum width for any content panel */
 export const PANEL_MIN_WIDTH = 440
 
-/** Starting width for the docked browser panel, before the user resizes it. */
-export const INTEGRATED_BROWSER_DEFAULT_WIDTH = 720
 
 /** Extra vertical space reserved in panel stack for box-shadows. */
 export const PANEL_STACK_VERTICAL_OVERFLOW = 8

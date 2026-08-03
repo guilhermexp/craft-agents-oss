@@ -2,6 +2,7 @@ import type { ContentTarget } from './content-tabs-state'
 import type { ReactNode } from 'react'
 import { InlineFilePreviewPanel } from './SessionInfoPopover'
 import { WorkspaceObjectPreviewPanel } from '../right-sidebar/workspace-object-preview-panel'
+import { BrowserTabContent } from '../browser/BrowserTabContent'
 
 interface ContentPreviewHostProps {
   target: ContentTarget
@@ -18,6 +19,9 @@ const CONTENT_RENDERERS: Record<ContentTarget['kind'], ContentRenderer> = {
   ) : null,
   object: ({ target, onObjectViewChange }) => target.kind === 'object' ? (
     <WorkspaceObjectPreviewPanel workspaceId={target.workspaceId} objectId={target.objectId} viewId={target.viewId} onViewIdChange={onObjectViewChange} />
+  ) : null,
+  browser: ({ target }) => target.kind === 'browser' ? (
+    <BrowserTabContent instanceId={target.instanceId} />
   ) : null,
 }
 

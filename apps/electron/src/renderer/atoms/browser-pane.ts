@@ -27,13 +27,6 @@ const browserInstanceCountAtom = atom<number>(
 /** Currently active browser instance ID (selected/focused by user interactions) */
 export const activeBrowserInstanceIdAtom = atom<string | null>(null)
 
-/**
- * Instance currently shown as a card inside the app, or null when every
- * browser is a separate window. Only one can be integrated at a time: the card
- * is a full-window overlay, and two native views would fight over the same hole.
- */
-export const integratedBrowserInstanceIdAtom = atom<string | null>(null)
-
 /** Tombstones for instances removed from renderer state (guards against late out-of-order updates) */
 const removedBrowserInstanceIdsAtom = atom<Set<string>>(new Set<string>())
 
@@ -70,13 +63,6 @@ export const removeBrowserInstanceAtom = atom(
     const removedIds = new Set(get(removedBrowserInstanceIdsAtom))
     removedIds.add(id)
     set(removedBrowserInstanceIdsAtom, removedIds)
-
-    // The integrated card is a full-window overlay. If it outlives the instance
-    // it points at, the user is left staring at a scrim with nothing behind it
-    // and no way back — so the card's lifetime is tied to the instance here.
-    if (get(integratedBrowserInstanceIdAtom) === id) {
-      set(integratedBrowserInstanceIdAtom, null)
-    }
   }
 )
 

@@ -3,7 +3,6 @@ import { createStore } from 'jotai'
 import type { BrowserInstanceInfo } from '../../../shared/types'
 import {
   browserInstancesAtom,
-  integratedBrowserInstanceIdAtom,
   removeBrowserInstanceAtom,
   setBrowserInstancesAtom,
   updateBrowserInstanceAtom,
@@ -54,26 +53,5 @@ describe('browser pane atoms', () => {
     store.set(setBrowserInstancesAtom, [makeInstance('browser-2')])
 
     expect(store.get(browserInstancesAtom).map((i) => i.id)).toEqual(['browser-2'])
-  })
-
-  it('clears the integrated card when its instance is removed', () => {
-    const store = createStore()
-    store.set(setBrowserInstancesAtom, [makeInstance('browser-1')])
-    store.set(integratedBrowserInstanceIdAtom, 'browser-1')
-
-    store.set(removeBrowserInstanceAtom, 'browser-1')
-
-    // Otherwise the full-window overlay outlives the browser it framed.
-    expect(store.get(integratedBrowserInstanceIdAtom)).toBeNull()
-  })
-
-  it('leaves the integrated card alone when a different instance is removed', () => {
-    const store = createStore()
-    store.set(setBrowserInstancesAtom, [makeInstance('browser-1'), makeInstance('browser-2')])
-    store.set(integratedBrowserInstanceIdAtom, 'browser-1')
-
-    store.set(removeBrowserInstanceAtom, 'browser-2')
-
-    expect(store.get(integratedBrowserInstanceIdAtom)).toBe('browser-1')
   })
 })

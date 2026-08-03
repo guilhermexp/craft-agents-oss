@@ -615,6 +615,24 @@ describe('BrowserPaneManager', () => {
     expect(instance.pageView.setVisible).toHaveBeenLastCalledWith(true)
   })
 
+  it('restores view visibility on every display-mode change', () => {
+    manager.createInstance('conceal-2')
+    const instance = (manager as any).instances.get('conceal-2')
+    const host = createMockWindow()
+
+    // A preview tab handed the pane to a file, so the views were concealed.
+    manager.setViewsVisible('conceal-2', false)
+    manager.setDisplayMode('conceal-2', 'integrated', host as any)
+
+    expect(instance.pageView.setVisible).toHaveBeenLastCalledWith(true)
+
+    manager.setViewsVisible('conceal-2', false)
+    manager.setDisplayMode('conceal-2', 'floating')
+
+    // Otherwise the browser returns to a window of its own and paints nothing.
+    expect(instance.pageView.setVisible).toHaveBeenLastCalledWith(true)
+  })
+
   it('paints the toolbar and overlay views transparent', () => {
     manager.createInstance('bg-1')
     const instance = (manager as any).instances.get('bg-1')

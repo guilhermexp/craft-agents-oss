@@ -1,6 +1,8 @@
 export type ContentTarget =
   | { kind: 'file'; workspaceId: string; sessionId: string; path: string }
-  | { kind: 'object'; workspaceId: string; objectId: string; viewId?: string };
+  | { kind: 'object'; workspaceId: string; objectId: string; viewId?: string }
+  /** A docked browser window. Live handle, never persisted. */
+  | { kind: 'browser'; workspaceId: string; instanceId: string };
 
 export interface ContentTab {
   id: string;
@@ -10,6 +12,29 @@ export interface ContentTab {
 }
 
 export interface ContentTabsState { tabs: ContentTab[]; activeId: string | null }
+
+/**
+ * Strip label for a tab.
+ *
+ * A browser shows the page it is on, which changes as the user navigates, so
+ * the title is read from live instance state rather than frozen into the
+ * target - the target only identifies which browser.
+ */
+export function contentTabLabel(
+  target: ContentTarget,
+  browserInstances: ReadonlyArray<{ id: string; title?: string }>,
+): string {
+  switch (target.kind) {
+    case 'file':
+      return target.path.split(/[\\/]/).pop() ?? target.path;
+    case 'object':
+      return target.objectId;
+    case 'browser': {
+      const title = browserInstances.find(instance => instance.id === target.instanceId)?.title;
+      return title?.trim() || 'Browser';
+    }
+  }
+}
 
 export type ContentTabsAction =
   | { type: 'open'; target: ContentTarget; mode: 'preview' | 'permanent' }
@@ -21,7 +46,8 @@ export type ContentTabsAction =
   | { type: 'restore'; state: ContentTabsState };
 
 function normalizeTarget(target: ContentTarget): ContentTarget {
-  if (target.kind === 'object') return target;
+  // Only files carry a path to normalize.
+  if (target.kind !== 'file') return target;
   const path = target.path.replaceAll('\\', '/');
   const absolute = path.startsWith('/');
   const parts: string[] = [];
@@ -41,15 +67,27 @@ function normalizeTarget(target: ContentTarget): ContentTarget {
 
 export function contentTabId(rawTarget: ContentTarget): string {
   const target = normalizeTarget(rawTarget);
-  return target.kind === 'file'
-    ? `file:${encodeURIComponent(target.workspaceId)}:${encodeURIComponent(target.sessionId)}:${encodeURIComponent(target.path)}`
-    : `object:${encodeURIComponent(target.workspaceId)}:${encodeURIComponent(target.objectId)}:${target.viewId === undefined ? 'absent' : `present:${encodeURIComponent(target.viewId)}`}`;
+  // Switch rather than a ternary chain: a new kind must fail to compile here
+  // instead of silently reading another kind's fields.
+  switch (target.kind) {
+    case 'file':
+      return `file:${encodeURIComponent(target.workspaceId)}:${encodeURIComponent(target.sessionId)}:${encodeURIComponent(target.path)}`;
+    case 'object':
+      return `object:${encodeURIComponent(target.workspaceId)}:${encodeURIComponent(target.objectId)}:${target.viewId === undefined ? 'absent' : `present:${encodeURIComponent(target.viewId)}`}`;
+    case 'browser':
+      return `browser:${encodeURIComponent(target.workspaceId)}:${encodeURIComponent(target.instanceId)}`;
+  }
 }
 
 function previewScope(target: ContentTarget): string {
-  return target.kind === 'file'
-    ? `file:${encodeURIComponent(target.workspaceId)}:${encodeURIComponent(target.sessionId)}`
-    : `object:${encodeURIComponent(target.workspaceId)}`;
+  switch (target.kind) {
+    case 'file':
+      return `file:${encodeURIComponent(target.workspaceId)}:${encodeURIComponent(target.sessionId)}`;
+    case 'object':
+      return `object:${encodeURIComponent(target.workspaceId)}`;
+    case 'browser':
+      return `browser:${encodeURIComponent(target.workspaceId)}`;
+  }
 }
 
 function repairActive(tabs: ContentTab[], activeId: string | null): ContentTabsState {
@@ -57,7 +95,15 @@ function repairActive(tabs: ContentTab[], activeId: string | null): ContentTabsS
 }
 
 export function contentTabsReducer(state: ContentTabsState, action: ContentTabsAction): ContentTabsState {
-  if (action.type === 'restore') return repairActive(action.state.tabs, action.state.activeId);
+  if (action.type === 'restore') {
+    // A restore rebuilds the persisted kinds when the workspace or session
+    // changes. Browser tabs are live handles to a docked window and are never
+    // persisted, so dropping them here would undock the browser because the
+    // user clicked another session.
+    const live = state.tabs.filter(tab => tab.target.kind === 'browser');
+    const restored = action.state.tabs.filter(tab => tab.target.kind !== 'browser');
+    return repairActive([...restored, ...live], action.state.activeId);
+  }
   if (action.type === 'open') {
     const target = normalizeTarget(action.target);
     const id = contentTabId(target);

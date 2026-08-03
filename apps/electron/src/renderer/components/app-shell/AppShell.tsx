@@ -86,7 +86,7 @@ import {
   RIGHT_SIDEBAR_TREE_ONLY_MAX_WIDTH,
   RIGHT_SIDEBAR_SPLIT_DEFAULT_WIDTH,
 } from "./right-sidebar-sizing"
-import { contentTabsReducer, restoreContentTabs, type ContentTabsState } from "./content-tabs-state"
+import { contentTabId, contentTabLabel, contentTabsReducer, restoreContentTabs, type ContentTabsState } from "./content-tabs-state"
 import { bindWorkspaceObjectSubscription } from './workspace-object-reconnect'
 import { useChatMatchWiring } from "@/hooks/useChatMatchWiring"
 import { LeftSidebar } from "./LeftSidebar"
@@ -154,7 +154,6 @@ import SettingsNavigator from "@/pages/settings/SettingsNavigator"
 import {
   PANEL_GAP,
   PANEL_EDGE_INSET,
-  INTEGRATED_BROWSER_DEFAULT_WIDTH,
   PANEL_MIN_WIDTH,
   PANEL_SASH_HALF_HIT_WIDTH,
   PANEL_SASH_HIT_WIDTH,
@@ -165,8 +164,7 @@ import {
 } from "./panel-constants"
 import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { BrowserProfilePicker } from "@/components/browser/BrowserProfilePicker"
-import { IntegratedBrowserPanel } from "@/components/browser/IntegratedBrowserPanel"
-import { integratedBrowserInstanceIdAtom } from "@/atoms/browser-pane"
+import { browserInstancesAtom } from "@/atoms/browser-pane"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
 
@@ -594,13 +592,6 @@ function AppShellContent({
   const [rightSidebarPreviewPreferredWidth, setRightSidebarPreviewPreferredWidth] = React.useState(() => {
     return storage.get(storage.KEYS.rightSidebarPreviewWidth, RIGHT_SIDEBAR_SPLIT_DEFAULT_WIDTH)
   })
-  // Docked browser panel width, resizable and persisted like every other panel.
-  // Clamped on read so a stored width from a wider window cannot squeeze the
-  // panels beside it below PANEL_MIN_WIDTH.
-  const [integratedBrowserPreferredWidth, setIntegratedBrowserPreferredWidth] = React.useState(() => {
-    return storage.get(storage.KEYS.integratedBrowserWidth, INTEGRATED_BROWSER_DEFAULT_WIDTH)
-  })
-
   // Hides both sidebar and navigator (CMD+. toggle)
   // Seed from either focused window param or persisted preference, then keep it toggleable.
   const [isSidebarAndNavigatorHidden, setIsSidebarAndNavigatorHidden] = React.useState(() => {
@@ -614,14 +605,6 @@ function AppShellContent({
   const shellWidth = useContainerWidth(shellRef)
   const MOBILE_THRESHOLD = 768
   const isAutoCompact = shellWidth > 0 && shellWidth < MOBILE_THRESHOLD
-  const integratedBrowserWidth = React.useMemo(() => {
-    const available = shellWidth > 0
-      ? shellWidth
-      : (typeof window === 'undefined' ? 1440 : window.innerWidth)
-    const max = Math.max(PANEL_MIN_WIDTH, available - PANEL_MIN_WIDTH)
-    return Math.min(Math.max(integratedBrowserPreferredWidth, PANEL_MIN_WIDTH), max)
-  }, [integratedBrowserPreferredWidth, shellWidth])
-
   const effectiveSidebarAndNavigatorHidden = isSidebarAndNavigatorHidden || isAutoCompact
 
   // What's New overlay
@@ -1448,19 +1431,6 @@ function AppShellContent({
           const rect = rightSidebarHandleRef.current.getBoundingClientRect()
           setRightSidebarHandleY(e.clientY - rect.top)
         }
-      } else if (isResizing === 'integrated-browser') {
-        // The browser's right edge is wherever the right sidebar (or the window
-        // inset) leaves off, so the drag measures back from there.
-        const trailing = PANEL_EDGE_INSET + (isRightSidebarVisible ? rightSidebarWidth + PANEL_GAP : 0)
-        const available = window.innerWidth - trailing
-        const max = Math.max(PANEL_MIN_WIDTH, available - PANEL_MIN_WIDTH)
-        setIntegratedBrowserPreferredWidth(
-          Math.min(Math.max(window.innerWidth - trailing - e.clientX, PANEL_MIN_WIDTH), max),
-        )
-        if (integratedBrowserHandleRef.current) {
-          const rect = integratedBrowserHandleRef.current.getBoundingClientRect()
-          setIntegratedBrowserHandleY(e.clientY - rect.top)
-        }
       }
     }
 
@@ -1477,9 +1447,6 @@ function AppShellContent({
           rightSidebarWidth,
         )
         setRightSidebarHandleY(null)
-      } else if (isResizing === 'integrated-browser') {
-        storage.set(storage.KEYS.integratedBrowserWidth, integratedBrowserWidth)
-        setIntegratedBrowserHandleY(null)
       }
       setIsResizing(null)
     }
@@ -1498,7 +1465,6 @@ function AppShellContent({
     rightSidebarWidth,
     rightSidebarPreviewPath,
     isSidebarVisible,
-    integratedBrowserWidth,
     isRightSidebarVisible,
   ])
 
@@ -2258,7 +2224,11 @@ function AppShellContent({
   // Browser profile picker state — opens before creating a new window when
   // the user has multiple profiles or has the "always ask" preference set.
   const [browserPickerOpen, setBrowserPickerOpen] = useState(false)
-  const [integratedBrowserInstanceId, setIntegratedBrowserInstanceId] = useAtom(integratedBrowserInstanceIdAtom)
+  // Docking follows the tab's existence, not which tab is selected: switching
+  // to a file tab must not fling the browser back into its own window. Only
+  // leaving the tab list undocks.
+  const dockedBrowserIdsRef = React.useRef<string[]>([])
+  const browserInstances = useAtomValue(browserInstancesAtom)
   // When the picker was opened from inside an existing browser window, this
   // holds the source instance id so we can switch its profile in place.
   const [browserPickerSwitchInstanceId, setBrowserPickerSwitchInstanceId] = useState<string | null>(null)
@@ -2272,14 +2242,48 @@ function AppShellContent({
     return () => unsub()
   }, [])
 
-  // Dock/undock asked for from inside a browser window's own toolbar. The card
-  // lives here, so the browser cannot switch itself.
+  // The browser's own toolbar asks to dock or undock. Docking opens a tab in
+  // the preview panel; undocking closes it. The panel is session-scoped, so
+  // with nothing selected there is nowhere to put it and the browser stays a
+  // window - refusing beats docking into a pane that will not render.
   useEffect(() => {
     const unsub = window.electronAPI.browserPane.onDisplayModeRequested((data) => {
-      setIntegratedBrowserInstanceId(data.mode === 'integrated' ? data.instanceId : null)
+      if (!activeWorkspaceId) return
+      const target = { kind: 'browser' as const, workspaceId: activeWorkspaceId, instanceId: data.instanceId }
+      if (data.mode !== 'integrated') {
+        dispatchRightSidebarContentTabs({ type: 'close', id: contentTabId(target) })
+        return
+      }
+      if (!rightSidebarSessionId) return
+      updateRightSidebar({ type: 'session-info' })
+      dispatchRightSidebarContentTabs({ type: 'open', mode: 'permanent', target })
     })
     return () => unsub()
-  }, [setIntegratedBrowserInstanceId])
+  }, [activeWorkspaceId, rightSidebarSessionId, updateRightSidebar])
+
+  // Undock whatever left the tab list, by any route - close, workspace switch,
+  // a restore that replaced everything. A browser left integrated with no tab
+  // to draw it is a window the user cannot reach.
+  useEffect(() => {
+    const current = rightSidebarContentTabs.tabs.flatMap(tab =>
+      tab.target.kind === 'browser' ? [tab.target.instanceId] : []
+    )
+    for (const id of dockedBrowserIdsRef.current) {
+      if (!current.includes(id)) void window.electronAPI.browserPane.setDisplayMode(id, 'floating')
+    }
+    dockedBrowserIdsRef.current = current
+  }, [rightSidebarContentTabs])
+
+  // The instance can die from the browser's own toolbar ("Close Window
+  // Entirely") or a crash, which the tab would never hear about otherwise.
+  useEffect(() => {
+    for (const tab of rightSidebarContentTabs.tabs) {
+      const target = tab.target
+      if (target.kind !== 'browser') continue
+      if (browserInstances.some(instance => instance.id === target.instanceId)) continue
+      dispatchRightSidebarContentTabs({ type: 'close', id: tab.id })
+    }
+  }, [browserInstances, rightSidebarContentTabs])
 
   const openBrowserWindowForProfile = useCallback(async (profileId: string) => {
     try {
@@ -3765,18 +3769,6 @@ function AppShellContent({
           isResizing={!!isResizing}
         />
 
-        {/* Browser docked as a panel rather than an overlay: the native views
-            are reparented into this window and positioned into the panel's
-            hole, so the chat beside it keeps working. Undocking sends them
-            back to their own window. */}
-        <IntegratedBrowserPanel
-          instanceId={integratedBrowserInstanceId}
-          width={integratedBrowserWidth}
-          isLastPanel={!isRightSidebarVisible}
-          open={integratedBrowserInstanceId !== null}
-          onClose={() => setIntegratedBrowserInstanceId(null)}
-        />
-
         {isRightSidebarVisible && rightSidebarSessionId && (
           <LazyMotion features={domAnimation}>
             <m.aside
@@ -3834,7 +3826,7 @@ function AppShellContent({
                                 )}
                               >
                                 <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => dispatchRightSidebarContentTabs({ type: 'select', id: tab.id })}>
-                                  {tab.target.kind === 'file' ? tab.target.path.split(/[\\/]/).pop() : tab.target.objectId}
+                                  {contentTabLabel(tab.target, browserInstances)}
                                 </button>
                                 <button
                                   type="button"
@@ -3902,44 +3894,6 @@ function AppShellContent({
               className="h-full"
               style={{
                 ...getResizeGradientStyle(rightSidebarHandleY, rightSidebarHandleRef.current?.clientHeight ?? null),
-                width: PANEL_SASH_LINE_WIDTH,
-              }}
-            />
-          </div>
-        )}
-
-        {/* Browser Panel Resize Handle — sits on the seam between the chat and
-            the docked browser, measured back from whatever trails it. */}
-        {integratedBrowserInstanceId !== null && (
-          <div
-            ref={integratedBrowserHandleRef}
-            role="separator"
-            aria-label="Browser panel resize handle"
-            aria-orientation="vertical"
-            tabIndex={0}
-            onMouseDown={(e) => { e.preventDefault(); setIsResizing('integrated-browser') }}
-            onMouseMove={(e) => {
-              if (integratedBrowserHandleRef.current) {
-                const rect = integratedBrowserHandleRef.current.getBoundingClientRect()
-                setIntegratedBrowserHandleY(e.clientY - rect.top)
-              }
-            }}
-            onMouseLeave={() => { if (isResizing !== 'integrated-browser') setIntegratedBrowserHandleY(null) }}
-            className="absolute cursor-col-resize z-panel flex justify-center"
-            style={{
-              width: PANEL_SASH_HIT_WIDTH,
-              top: PANEL_STACK_VERTICAL_OVERFLOW,
-              bottom: PANEL_STACK_VERTICAL_OVERFLOW,
-              right: PANEL_EDGE_INSET
-                + (isRightSidebarVisible ? rightSidebarWidth + PANEL_GAP : 0)
-                + integratedBrowserWidth + (PANEL_GAP / 2) - PANEL_SASH_HALF_HIT_WIDTH,
-              transition: isResizing === 'integrated-browser' ? undefined : 'right 0.15s ease-out',
-            }}
-          >
-            <div
-              className="h-full"
-              style={{
-                ...getResizeGradientStyle(integratedBrowserHandleY, integratedBrowserHandleRef.current?.clientHeight ?? null),
                 width: PANEL_SASH_LINE_WIDTH,
               }}
             />

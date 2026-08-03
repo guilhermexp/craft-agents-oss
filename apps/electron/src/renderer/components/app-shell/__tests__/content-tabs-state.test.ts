@@ -9,6 +9,7 @@ const object = (objectId: string, viewId?: string) => ({
   objectId,
   ...(viewId !== undefined ? { viewId } : {}),
 });
+const browser = (instanceId: string) => ({ kind: 'browser' as const, workspaceId: 'w1', instanceId });
 
 describe('content tabs state', () => {
   test('replaces only the scoped preview while permanent and pinned tabs survive', () => {
@@ -44,6 +45,42 @@ describe('content tabs state', () => {
 
     expect(state.tabs).toHaveLength(3);
     expect(state.activeId).toBe(contentTabId(file('one.md')));
+  });
+
+  test('keeps a browser tab beside files without colliding with them', () => {
+    let state = contentTabsReducer(empty, { type: 'open', target: file('one.md'), mode: 'permanent' });
+    state = contentTabsReducer(state, { type: 'open', target: browser('b1'), mode: 'permanent' });
+    state = contentTabsReducer(state, { type: 'open', target: file('two.md'), mode: 'permanent' });
+
+    expect(state.tabs.map(tab => tab.target.kind)).toEqual(['file', 'browser', 'file']);
+    expect(contentTabId(browser('b1'))).not.toBe(contentTabId(browser('b2')));
+
+    // Re-docking the same browser selects its tab rather than opening a second.
+    state = contentTabsReducer(state, { type: 'open', target: browser('b1'), mode: 'permanent' });
+    expect(state.tabs).toHaveLength(3);
+    expect(state.activeId).toBe(contentTabId(browser('b1')));
+  });
+
+  test('carries the docked browser through a restore, and never restores one from storage', () => {
+    let state = contentTabsReducer(empty, { type: 'open', target: browser('b1'), mode: 'permanent' });
+    state = contentTabsReducer(state, { type: 'open', target: file('one.md'), mode: 'permanent' });
+
+    // Switching session rebuilds the persisted kinds. Dropping the browser here
+    // would undock it because the user clicked another session.
+    state = contentTabsReducer(state, {
+      type: 'restore',
+      state: { tabs: [{ id: contentTabId(file('two.md', 's2')), target: file('two.md', 's2'), mode: 'permanent', pinned: false }], activeId: null },
+    });
+
+    expect(state.tabs.map(tab => tab.target.kind)).toEqual(['file', 'browser']);
+    expect(state.tabs.map(tab => tab.target.kind === 'file' ? tab.target.path : 'b1')).toEqual(['two.md', 'b1']);
+
+    // A hand-edited storage entry must not resurrect a tab whose instance is gone.
+    const persisted = restoreContentTabs({
+      tabs: [{ id: 'x', target: browser('b1'), mode: 'permanent', pinned: false }],
+      activeId: 'x',
+    }, 'w1', 's1');
+    expect(persisted).toEqual(empty);
   });
 
   test('repairs active selection and restores only the active workspace/session scope', () => {
