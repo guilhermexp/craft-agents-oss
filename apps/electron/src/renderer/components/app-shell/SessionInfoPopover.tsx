@@ -4,7 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ArrowLeft, Copy, ExternalLink, FolderOpen, Maximize2 } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Maximize2 } from 'lucide-react'
 import { classifyFile } from '@craft-agent/ui/file-classification'
 import { Markdown } from '@craft-agent/ui/markdown'
 import { ShikiCodeViewer } from '@/components/shiki/ShikiCodeViewer'
@@ -35,6 +35,20 @@ const DEFAULT_DRAWER_CONTENT_CLASS = [
   'data-[vaul-drawer-direction=bottom]:max-h-[min(82vh,42rem)]',
   'overflow-hidden rounded-[14px] border border-border/60 bg-background shadow-modal-small',
 ].join(' ')
+
+const SESSION_INFO_TABS = ['session', 'workspace', 'objects'] as const
+type SessionInfoTab = (typeof SESSION_INFO_TABS)[number]
+
+const SESSION_INFO_TAB_LABEL_KEYS: Record<SessionInfoTab, string> = {
+  session: 'chat.sessionFilesTab',
+  workspace: 'chat.workspaceFilesTab',
+  objects: 'chat.workspaceObjectsTab',
+}
+
+function stepSessionInfoTab(current: SessionInfoTab, delta: number): SessionInfoTab {
+  const next = (SESSION_INFO_TABS.indexOf(current) + delta + SESSION_INFO_TABS.length) % SESSION_INFO_TABS.length
+  return SESSION_INFO_TABS[next] as SessionInfoTab
+}
 
 export function SessionInfoPopover({
   sessionId,
@@ -106,11 +120,12 @@ export function SessionInfoPopover({
   )
 }
 
-export function SessionInfoPopoverContent({ sessionId, sessionFolderPath, onPreviewFileInline, onPreviewObjectInline }: { sessionId: string; sessionFolderPath?: string; onPreviewFileInline?: (path: string) => void; onPreviewObjectInline?: (objectId: string) => void }) {
+export function SessionInfoPopoverContent({ sessionId, sessionFolderPath, compactTabs = false, onPreviewFileInline, onPreviewObjectInline }: { sessionId: string; sessionFolderPath?: string; compactTabs?: boolean; onPreviewFileInline?: (path: string) => void; onPreviewObjectInline?: (objectId: string) => void }) {
   const { t } = useTranslation()
   const session = useSession(sessionId)
   const { onRenameSession } = useAppShellContext()
   const [name, setName] = React.useState('')
+  const [tab, setTab] = React.useState<SessionInfoTab>('workspace')
   const renameTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   React.useEffect(() => {
@@ -162,26 +177,47 @@ export function SessionInfoPopoverContent({ sessionId, sessionFolderPath, onPrev
           />
         </div>
       </div>
-      <Tabs defaultValue="workspace" className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <Tabs value={tab} onValueChange={value => setTab(value as SessionInfoTab)} className="flex-1 min-h-0 flex flex-col overflow-hidden">
         <div className="shrink-0 border-b border-border/50 px-3 py-2">
-          {/*
-            Grid items default to min-width:auto, so the triggers' nowrap labels
-            push their cells past 1fr and print over each other once the pane
-            narrows. min-w-0 lets the cell shrink. The ellipsis needs the inner
-            span: text-overflow does not apply to the trigger's own inline-flex
-            box, only to a block-level child of it.
-          */}
-          <TabsList className="grid h-8 w-full grid-cols-3 rounded-[8px]">
-            <TabsTrigger value="session" title={t('chat.sessionFilesTab')} className="h-6 min-w-0 px-1.5 text-xs">
-              <span className="truncate">{t('chat.sessionFilesTab')}</span>
-            </TabsTrigger>
-            <TabsTrigger value="workspace" title={t('chat.workspaceFilesTab')} className="h-6 min-w-0 px-1.5 text-xs">
-              <span className="truncate">{t('chat.workspaceFilesTab')}</span>
-            </TabsTrigger>
-            <TabsTrigger value="objects" title={t('chat.workspaceObjectsTab')} className="h-6 min-w-0 px-1.5 text-xs">
-              <span className="truncate">{t('chat.workspaceObjectsTab')}</span>
-            </TabsTrigger>
-          </TabsList>
+          {compactTabs ? (
+            // Three labels cannot share ~55px: side by side they become three
+            // ellipses, which name nothing. One readable label at a time, with
+            // the neighbours a click away. The arrows announce where they go,
+            // so the destination is spoken instead of a bare direction.
+            <div className="flex h-8 w-full items-center gap-0.5 rounded-[8px] bg-muted p-1 text-muted-foreground">
+              <button
+                type="button"
+                aria-label={t(SESSION_INFO_TAB_LABEL_KEYS[stepSessionInfoTab(tab, -1)])}
+                onClick={() => setTab(current => stepSessionInfoTab(current, -1))}
+                className="flex size-6 shrink-0 items-center justify-center rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <ChevronLeft className="size-3.5" />
+              </button>
+              <span className="min-w-0 flex-1 truncate rounded-md bg-background px-1 py-0.5 text-center text-xs font-medium text-foreground shadow">
+                {t(SESSION_INFO_TAB_LABEL_KEYS[tab])}
+              </span>
+              <button
+                type="button"
+                aria-label={t(SESSION_INFO_TAB_LABEL_KEYS[stepSessionInfoTab(tab, 1)])}
+                onClick={() => setTab(current => stepSessionInfoTab(current, 1))}
+                className="flex size-6 shrink-0 items-center justify-center rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <ChevronRight className="size-3.5" />
+              </button>
+            </div>
+          ) : (
+            <TabsList className="grid h-8 w-full grid-cols-3 rounded-[8px]">
+              <TabsTrigger value="session" className="h-6 min-w-0 px-1.5 text-xs">
+                <span className="truncate">{t('chat.sessionFilesTab')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="workspace" className="h-6 min-w-0 px-1.5 text-xs">
+                <span className="truncate">{t('chat.workspaceFilesTab')}</span>
+              </TabsTrigger>
+              <TabsTrigger value="objects" className="h-6 min-w-0 px-1.5 text-xs">
+                <span className="truncate">{t('chat.workspaceObjectsTab')}</span>
+              </TabsTrigger>
+            </TabsList>
+          )}
         </div>
         <TabsContent value="session" className="m-0 flex-1 min-h-0 overflow-hidden">
           <SessionFilesSection

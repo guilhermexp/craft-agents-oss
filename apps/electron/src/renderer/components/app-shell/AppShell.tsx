@@ -3768,6 +3768,7 @@ function AppShellContent({
                       <SessionInfoPopoverContent
                         sessionId={rightSidebarSessionId}
                         sessionFolderPath={rbSessionFolderPath}
+                        compactTabs={rightSidebarFilePaneLayout.mode === 'split'}
                         onPreviewFileInline={handleRightSidebarPreviewFile}
                         onPreviewObjectInline={handleRightSidebarPreviewObject}
                       />
