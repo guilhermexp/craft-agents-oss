@@ -33,6 +33,7 @@ import { Document, Page, pdfjs } from 'react-pdf'
 import { cn } from '../../lib/utils'
 import { CodeBlock } from './CodeBlock'
 import { PDFPreviewOverlay } from '../overlay/PDFPreviewOverlay'
+import { OpenInSidePanelButton } from './OpenInSidePanelButton'
 import { ItemNavigator } from '../overlay/ItemNavigator'
 import { usePlatform } from '../../context/PlatformContext'
 import { useTranslation } from 'react-i18next'
@@ -183,6 +184,7 @@ export function MarkdownPdfBlock({ code, className, onCreateRegionAnnotation: _o
           </span>
           <div className="flex items-center gap-1">
             <ItemNavigator items={items} activeIndex={activeIndex} onSelect={setActiveIndex} />
+            <OpenInSidePanelButton src={activeItem?.src} alwaysVisible={hasMultiple} />
             <button
               type="button"
               onClick={() => setIsFullscreen(true)}

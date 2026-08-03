@@ -14,8 +14,8 @@ describe('getSessionFileOpenMode', () => {
     expect(getSessionFileOpenMode({ type: 'directory', filePath: '/repo/src', canPreviewInline: true })).toBe('directory')
   })
 
-  it('keeps PDF and audio files on their specialized dialog viewers', () => {
-    expect(getSessionFileOpenMode({ type: 'file', filePath: '/repo/report.pdf', canPreviewInline: true })).toBe('app-open-file')
+  it('previews PDFs inline now that the panel renders them, and keeps audio on its dialog viewer', () => {
+    expect(getSessionFileOpenMode({ type: 'file', filePath: '/repo/report.pdf', canPreviewInline: true })).toBe('inline-preview')
     expect(getSessionFileOpenMode({ type: 'file', filePath: '/repo/recording.mp3', canPreviewInline: true })).toBe('app-open-file')
   })
 

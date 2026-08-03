@@ -917,6 +917,7 @@
   "preview.loadingImage": "Loading image...",
   "preview.loadingPdf": "Loading PDF...",
   "preview.markdownPreview": "Markdown Preview",
+  "preview.openInSidePanel": "Open in side panel",
   "preview.parseError": "Parse Error",
   "preview.pdfPreview": "PDF Preview",
   "projectInfo.assetUploaded": "Uploaded {{name}}",

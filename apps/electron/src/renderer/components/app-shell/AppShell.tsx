@@ -45,7 +45,7 @@ import { isMac } from "@/lib/platform"
 import { Button } from "@/components/ui/button"
 import { HeaderIconButton } from "@/components/ui/HeaderIconButton"
 import { Separator } from "@/components/ui/separator"
-import { Tooltip, TooltipTrigger, TooltipContent, DocumentFormattedMarkdownOverlay } from "@craft-agent/ui"
+import { Tooltip, TooltipTrigger, TooltipContent, DocumentFormattedMarkdownOverlay, PlatformProvider, usePlatform } from "@craft-agent/ui"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -715,6 +715,19 @@ function AppShellContent({
     if (!activeWorkspaceId) return
     dispatchRightSidebarContentTabs({ type: 'open', mode: 'permanent', target: { kind: 'object', workspaceId: activeWorkspaceId, objectId } })
   }, [activeWorkspaceId])
+
+  // "Open beside the chat" from file cards in the transcript. Opening the
+  // sidebar and the tab in one gesture: a tab in a closed panel helps no one.
+  const parentPlatformActions = usePlatform()
+  const handleOpenFileInSidePanel = React.useCallback((filePath: string) => {
+    if (!rightSidebarSessionId || !activeWorkspaceId) return
+    updateRightSidebar({ type: 'session-info' })
+    dispatchRightSidebarContentTabs({ type: 'open', mode: 'permanent', target: { kind: 'file', workspaceId: activeWorkspaceId, sessionId: rightSidebarSessionId, path: filePath } })
+  }, [rightSidebarSessionId, activeWorkspaceId, updateRightSidebar])
+  const platformWithSidePanel = React.useMemo(() => (
+    // No side panel in compact mode - leaving the action out hides the button.
+    isAutoCompact ? parentPlatformActions : { ...parentPlatformActions, onOpenFileInSidePanel: handleOpenFileInSidePanel }
+  ), [parentPlatformActions, handleOpenFileInSidePanel, isAutoCompact])
 
   React.useEffect(() => {
     restoringRightSidebarTabsRef.current = true
@@ -2623,6 +2636,7 @@ function AppShellContent({
         />
 
       {/* === OUTER LAYOUT: Unified Panel Stack | Right Sidebar === */}
+      <PlatformProvider actions={platformWithSidePanel}>
       <div
         ref={shellRef}
         className="flex items-stretch relative"
@@ -4009,6 +4023,7 @@ function AppShellContent({
         )}
 
       </div>
+      </PlatformProvider>
 
       {/* ============================================================================
        * CONTEXT MENU TRIGGERED EDIT POPOVERS

@@ -917,6 +917,7 @@
   "preview.loadingImage": "画像を読み込み中...",
   "preview.loadingPdf": "PDFを読み込み中...",
   "preview.markdownPreview": "Markdownプレビュー",
+  "preview.openInSidePanel": "サイドパネルで開く",
   "preview.parseError": "解析エラー",
   "preview.pdfPreview": "PDFプレビュー",
   "projectInfo.assetUploaded": "{{name}} をアップロードしました",

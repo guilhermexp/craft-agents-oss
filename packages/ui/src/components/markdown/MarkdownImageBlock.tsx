@@ -23,6 +23,7 @@
 
 import * as React from 'react'
 import { Maximize2 } from 'lucide-react'
+import { OpenInSidePanelButton } from './OpenInSidePanelButton'
 import { cn } from '../../lib/utils'
 import { CodeBlock } from './CodeBlock'
 import { ImagePreviewOverlay } from '../overlay/ImagePreviewOverlay'
@@ -219,20 +220,23 @@ export function MarkdownImageBlock({ code, className, onCreateRegionAnnotation: 
     <ImageBlockErrorBoundary fallback={fallback}>
       <div className={cn('relative group rounded-[8px] overflow-visible', className)}>
         <div className="relative h-[320px] overflow-visible flex items-center justify-center p-3">
-          <button
-            type="button"
-            onClick={() => setIsFullscreen(true)}
-            className={cn(
-              'absolute right-2 top-2 z-10 p-1 rounded-[6px] transition-all select-none',
-              'bg-background/90 shadow-minimal',
-              'text-muted-foreground/60 hover:text-foreground',
-              'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:opacity-100',
-              hasMultiple ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-            )}
-            title={t('common.viewFullscreen')}
-          >
-            <Maximize2 className="size-3.5" />
-          </button>
+          <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
+            <OpenInSidePanelButton src={safeActiveItem.src} alwaysVisible={hasMultiple} />
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(true)}
+              className={cn(
+                'p-1 rounded-[6px] transition-all select-none',
+                'bg-background/90 shadow-minimal',
+                'text-muted-foreground/60 hover:text-foreground',
+                'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:opacity-100',
+                hasMultiple ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+              )}
+              title={t('common.viewFullscreen')}
+            >
+              <Maximize2 className="size-3.5" />
+            </button>
+          </div>
           {hasMultiple && stackItems.length > 0 && (
             <ImageCardStack
               items={stackItems}

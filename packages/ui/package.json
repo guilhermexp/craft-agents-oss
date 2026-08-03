@@ -45,7 +45,7 @@
     "linkify-it": "^6.0.0",
     "lz-string": "^1.5.0",
     "nice-ticks": "^1.0.2",
-    "pdfjs-dist": "^6.1.200",
+    "pdfjs-dist": "5.4.296",
     "remark-parse": "^11.0.0",
     "tiptap-extension-code-block-shiki": "^1.2.0",
     "tiptap-markdown": "^0.9.0",

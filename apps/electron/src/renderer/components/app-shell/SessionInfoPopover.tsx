@@ -15,6 +15,17 @@ import { getFileManagerName } from '@/lib/platform'
 import { SessionFilesSection, WorkspaceFilesSection } from '../right-sidebar/SessionFilesSection'
 import { WorkspaceObjectsSection } from '../right-sidebar/workspace-objects-section'
 import { getInlinePreviewLoadState } from './right-sidebar-preview-state'
+import { Document, Page, pdfjs } from 'react-pdf'
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import 'react-pdf/dist/Page/AnnotationLayer.css'
+import 'react-pdf/dist/Page/TextLayer.css'
+
+// Same worker MarkdownPdfBlock configures; assigning again is idempotent and
+// keeps this panel working even if chat never mounted a pdf block first.
+pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker
+
+// No eval in pdf.js - the renderer CSP omits 'unsafe-eval' on purpose.
+const PDF_VIEWER_OPTIONS = { isEvalSupported: false } as const
 
 interface SessionInfoPopoverProps {
   sessionId: string
@@ -265,6 +276,7 @@ export function InlineFilePreviewPanel({
   const previewLoadState = React.useMemo(() => getInlinePreviewLoadState(filePath), [filePath])
   const [content, setContent] = React.useState('')
   const [dataUrl, setDataUrl] = React.useState<string | null>(null)
+  const [pdfData, setPdfData] = React.useState<Uint8Array | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(false)
 
@@ -272,6 +284,7 @@ export function InlineFilePreviewPanel({
     let cancelled = false
     setContent('')
     setDataUrl(null)
+    setPdfData(null)
     setError(null)
     setLoading(previewLoadState.loading)
 
@@ -281,6 +294,20 @@ export function InlineFilePreviewPanel({
       window.electronAPI.readFileDataUrl(filePath)
         .then((url) => {
           if (!cancelled) setDataUrl(url)
+        })
+        .catch((err) => {
+          if (!cancelled) setError(err instanceof Error ? err.message : String(err))
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
+      return () => { cancelled = true }
+    }
+
+    if (previewLoadState.kind === 'pdf') {
+      window.electronAPI.readFileBinary(filePath)
+        .then((data) => {
+          if (!cancelled) setPdfData(new Uint8Array(data))
         })
         .catch((err) => {
           if (!cancelled) setError(err instanceof Error ? err.message : String(err))
@@ -375,12 +402,65 @@ export function InlineFilePreviewPanel({
             language={previewType === 'code' ? getLanguageFromPath(filePath) : previewType === 'json' ? 'json' : 'text'}
             className="min-w-full"
           />
+        ) : previewLoadState.kind === 'pdf' && pdfData ? (
+          <InlinePdfViewer data={pdfData} />
         ) : (
           <div className="p-4 text-xs text-muted-foreground">
             {t('chat.inlinePreviewUsesDialog')}
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * PDF pages stacked vertically, fit to the panel's width.
+ *
+ * The pages track the panel: the sidebar is resizable and a fixed page width
+ * would either clip or letterbox after every drag.
+ */
+function InlinePdfViewer({ data }: { data: Uint8Array }) {
+  const { t } = useTranslation()
+  const containerRef = React.useRef<HTMLDivElement>(null)
+  const [width, setWidth] = React.useState(0)
+  const [pageCount, setPageCount] = React.useState(0)
+
+  React.useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const observer = new ResizeObserver(([entry]) => {
+      setWidth(Math.floor(entry.contentRect.width))
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  // react-pdf transfers the ArrayBuffer to its worker, detaching what it is
+  // handed - give it a copy and keep the master.
+  const fileObj = React.useMemo(() => ({ data: new Uint8Array(data) }), [data])
+
+  return (
+    <div ref={containerRef} className="min-h-full bg-white">
+      {width > 0 && (
+        <Document
+          file={fileObj}
+          options={PDF_VIEWER_OPTIONS}
+          onLoadSuccess={(doc) => setPageCount(doc.numPages)}
+          loading={<div className="p-4 text-xs text-muted-foreground">{t('common.rendering')}</div>}
+          error={<div className="p-4 text-xs text-destructive">{t('preview.failedToRenderPdf')}</div>}
+        >
+          {Array.from({ length: pageCount }, (_, index) => (
+            <Page
+              key={index}
+              pageNumber={index + 1}
+              width={width}
+              renderTextLayer={false}
+              renderAnnotationLayer={false}
+            />
+          ))}
+        </Document>
+      )}
     </div>
   )
 }

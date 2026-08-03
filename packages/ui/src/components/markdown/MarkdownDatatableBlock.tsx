@@ -29,6 +29,7 @@
 import * as React from 'react'
 import niceTicks from 'nice-ticks'
 import { ArrowUpDown, Check, ChevronRight, Group, ListFilter, Maximize2 } from 'lucide-react'
+import { OpenInSidePanelButton } from './OpenInSidePanelButton'
 import { cn } from '../../lib/utils'
 import { CodeBlock } from './CodeBlock'
 import { DataTableOverlay } from '../overlay/DataTableOverlay'
@@ -689,26 +690,25 @@ export function MarkdownDatatableBlock({ code, className }: MarkdownDatatableBlo
   return (
     <DatatableErrorBoundary fallback={fallback}>
       <div className={cn('relative group rounded-[8px] overflow-hidden border bg-muted/10', className)}>
-        {/* Control button */}
-        <div className="absolute top-[7px] right-10 z-10">
+        {/* Controls + side panel + expand, one group so nothing overlaps */}
+        <div className="absolute top-[7px] right-2 z-10 flex items-center gap-1">
           {renderControlsDropdown()}
+          <OpenInSidePanelButton src={spec?.src} alwaysVisible={hasActiveControls} />
+          <button
+            type="button"
+            onClick={() => setIsFullscreen(true)}
+            className={cn(
+              "p-1 rounded-[6px] transition-all select-none",
+              "bg-background shadow-minimal",
+              hasActiveControls ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+              "text-muted-foreground/50 hover:text-foreground",
+              "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:opacity-100"
+            )}
+            title={t('common.viewFullscreen')}
+          >
+            <Maximize2 className="size-3.5" />
+          </button>
         </div>
-
-        {/* Expand button */}
-        <button
-          type="button"
-          onClick={() => setIsFullscreen(true)}
-          className={cn(
-            "absolute top-[7px] right-2 p-1 rounded-[6px] transition-all z-10 select-none",
-            "bg-background shadow-minimal",
-            hasActiveControls ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-            "text-muted-foreground/50 hover:text-foreground",
-            "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:opacity-100"
-          )}
-          title={t('common.viewFullscreen')}
-        >
-          <Maximize2 className="size-3.5" />
-        </button>
 
         {/* Header */}
         <div className="px-3 py-2 bg-muted/50 border-b">

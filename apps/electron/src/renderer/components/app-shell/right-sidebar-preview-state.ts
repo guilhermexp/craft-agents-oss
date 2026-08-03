@@ -5,7 +5,7 @@ export interface RightSidebarPreviewSelection {
   filePath: string
 }
 
-export type InlinePreviewLoadKind = 'image' | 'text' | 'unsupported'
+export type InlinePreviewLoadKind = 'image' | 'text' | 'pdf' | 'unsupported'
 
 const INLINE_TEXT_PREVIEW_TYPES: ReadonlySet<FilePreviewType> = new Set([
   'code',
@@ -16,7 +16,8 @@ const INLINE_TEXT_PREVIEW_TYPES: ReadonlySet<FilePreviewType> = new Set([
 ])
 
 export function isInlineFilePreviewType(type: FilePreviewType | null): boolean {
-  return type === 'image' || (type !== null && INLINE_TEXT_PREVIEW_TYPES.has(type))
+  if (type === null) return false
+  return type === 'image' || type === 'pdf' || INLINE_TEXT_PREVIEW_TYPES.has(type)
 }
 
 export function canPreviewFileInline(filePath: string): boolean {
@@ -32,6 +33,7 @@ export function getInlinePreviewLoadState(filePath: string): {
   if (!classification.canPreview || !isInlineFilePreviewType(classification.type)) {
     return { kind: 'unsupported', loading: false }
   }
+  if (classification.type === 'pdf') return { kind: 'pdf', loading: true }
   return classification.type === 'image'
     ? { kind: 'image', loading: true }
     : { kind: 'text', loading: true }

@@ -917,6 +917,7 @@
   "preview.loadingImage": "Kép betöltése...",
   "preview.loadingPdf": "PDF betöltése...",
   "preview.markdownPreview": "Markdown előnézet",
+  "preview.openInSidePanel": "Megnyitás az oldalsó panelen",
   "preview.parseError": "Elemzési hiba",
   "preview.pdfPreview": "PDF előnézet",
   "projectInfo.assetUploaded": "{{name}} feltöltve",

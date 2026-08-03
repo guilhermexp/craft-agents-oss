@@ -24,6 +24,7 @@
 
 import * as React from 'react'
 import { Maximize2 } from 'lucide-react'
+import { OpenInSidePanelButton } from './OpenInSidePanelButton'
 import { cn } from '../../lib/utils'
 import { CodeBlock } from './CodeBlock'
 import { DataTableOverlay } from '../overlay/DataTableOverlay'
@@ -316,21 +317,24 @@ export function MarkdownSpreadsheetBlock({ code, className }: MarkdownSpreadshee
   return (
     <SpreadsheetErrorBoundary fallback={fallback}>
       <div className={cn('relative group rounded-[8px] overflow-hidden border bg-muted/10', className)}>
-        {/* Expand button */}
-        <button
-          type="button"
-          onClick={() => setIsFullscreen(true)}
-          className={cn(
-            "absolute top-[7px] right-2 p-1 rounded-[6px] transition-all z-10 select-none",
-            "opacity-0 group-hover:opacity-100",
-            "bg-background shadow-minimal",
-            "text-muted-foreground/50 hover:text-foreground",
-            "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:opacity-100"
-          )}
-          title={t('common.viewFullscreen')}
-        >
-          <Maximize2 className="size-3.5" />
-        </button>
+        {/* Expand + side panel buttons */}
+        <div className="absolute top-[7px] right-2 z-10 flex items-center gap-1">
+          <OpenInSidePanelButton src={spec?.src} />
+          <button
+            type="button"
+            onClick={() => setIsFullscreen(true)}
+            className={cn(
+              "p-1 rounded-[6px] transition-all select-none",
+              "opacity-0 group-hover:opacity-100",
+              "bg-background shadow-minimal",
+              "text-muted-foreground/50 hover:text-foreground",
+              "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:opacity-100"
+            )}
+            title={t('common.viewFullscreen')}
+          >
+            <Maximize2 className="size-3.5" />
+          </button>
+        </div>
 
         {/* Header */}
         <div className="px-3 py-2 bg-muted/50 border-b">
