@@ -158,6 +158,8 @@ interface TopBarProps {
   canGoForward: boolean
   onToggleSidebar: () => void
   onToggleSessionList: () => void
+  /** Drives the way back: the control only exists while the panel that owns it does not. */
+  isSessionListVisible: boolean
   onToggleFocusMode: () => void
   onAddSessionPanel: () => void
   onAddBrowserPanel: () => void
@@ -185,6 +187,7 @@ export function TopBar({
   canGoForward,
   onToggleSidebar,
   onToggleSessionList,
+  isSessionListVisible,
   onToggleFocusMode,
   onAddSessionPanel,
   onAddBrowserPanel,
@@ -266,11 +269,11 @@ export function TopBar({
         </Tooltip>
         )}
 
-        {!isCompact && (
+        {!isCompact && !isSessionListVisible && (
         <Tooltip>
           <TooltipTrigger asChild>
             <TopBarButton onClick={onToggleSessionList} aria-label={t("menu.toggleSessionList")}>
-              <Icons.Columns2 className="size-[18px] text-foreground/70" />
+              <Icons.PanelLeftOpen className="size-[18px] text-foreground/70" />
             </TopBarButton>
           </TooltipTrigger>
           <TooltipContent side="bottom">{t("menu.toggleSessionList")}</TooltipContent>

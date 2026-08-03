@@ -33,6 +33,7 @@ import {
   Bot,
   Hash,
   Info,
+  PanelLeftClose,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
@@ -2614,6 +2615,7 @@ function AppShellContent({
           canGoForward={canGoForward}
           onToggleSidebar={handleToggleSidebar}
           onToggleSessionList={handleToggleSessionList}
+          isSessionListVisible={isSessionListVisible && !effectiveSidebarAndNavigatorHidden}
           onToggleFocusMode={() => setIsSidebarAndNavigatorHidden(prev => !prev)}
           onAddSessionPanel={() => handleNewChat(true)}
           onAddBrowserPanel={() => { void handleNewBrowserWindow() }}
@@ -3613,6 +3615,15 @@ function AppShellContent({
                         />
                       }
                       {...getEditConfig('automation-config', activeWorkspace.rootPath)}
+                    />
+                  )}
+                  {/* Collapse lives in the panel it collapses. Once it is gone the
+                      control goes with it, so the title bar grows the way back. */}
+                  {!isAutoCompact && (
+                    <HeaderIconButton
+                      icon={<PanelLeftClose className="size-4" />}
+                      tooltip={t("menu.toggleSessionList")}
+                      onClick={handleToggleSessionList}
                     />
                   )}
                 </>
