@@ -10,7 +10,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Document, Page, pdfjs } from 'react-pdf'
+import { Document, Page } from 'react-pdf'
 import { FileText } from 'lucide-react'
 import { PreviewOverlay } from './PreviewOverlay'
 import { CopyButton } from './CopyButton'
@@ -18,13 +18,7 @@ import { ItemNavigator } from './ItemNavigator'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 
-// Configure pdf.js worker using Vite's ?url import for cross-platform dev/prod compatibility
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker
-
-// Disable eval/new Function in pdf.js so it complies with the renderer CSP
-// (which intentionally omits 'unsafe-eval'). Stable ref avoids re-loading the doc.
-const PDF_OPTIONS = { isEvalSupported: false } as const
+import { PDF_DOCUMENT_OPTIONS } from '../../lib/pdf-worker'
 
 interface PreviewItem {
   src: string
@@ -154,7 +148,7 @@ export function PDFPreviewOverlay({
         {fileObj && (
           <Document
             file={fileObj}
-            options={PDF_OPTIONS}
+            options={PDF_DOCUMENT_OPTIONS}
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={onDocumentLoadError}
             loading={documentLoading}

@@ -15,17 +15,10 @@ import { getFileManagerName } from '@/lib/platform'
 import { SessionFilesSection, WorkspaceFilesSection } from '../right-sidebar/SessionFilesSection'
 import { WorkspaceObjectsSection } from '../right-sidebar/workspace-objects-section'
 import { getInlinePreviewLoadState } from './right-sidebar-preview-state'
-import { Document, Page, pdfjs } from 'react-pdf'
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { Document, Page } from 'react-pdf'
+import { PDF_DOCUMENT_OPTIONS } from '@craft-agent/ui/pdf-worker'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
-
-// Same worker MarkdownPdfBlock configures; assigning again is idempotent and
-// keeps this panel working even if chat never mounted a pdf block first.
-pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker
-
-// No eval in pdf.js - the renderer CSP omits 'unsafe-eval' on purpose.
-const PDF_VIEWER_OPTIONS = { isEvalSupported: false } as const
 
 interface SessionInfoPopoverProps {
   sessionId: string
@@ -445,7 +438,7 @@ function InlinePdfViewer({ data }: { data: Uint8Array }) {
       {width > 0 && (
         <Document
           file={fileObj}
-          options={PDF_VIEWER_OPTIONS}
+          options={PDF_DOCUMENT_OPTIONS}
           onLoadSuccess={(doc) => setPageCount(doc.numPages)}
           loading={<div className="p-4 text-xs text-muted-foreground">{t('common.rendering')}</div>}
           error={<div className="p-4 text-xs text-destructive">{t('preview.failedToRenderPdf')}</div>}

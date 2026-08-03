@@ -29,7 +29,7 @@
 
 import * as React from 'react'
 import { FileText, Maximize2 } from 'lucide-react'
-import { Document, Page, pdfjs } from 'react-pdf'
+import { Document, Page } from 'react-pdf'
 import { cn } from '../../lib/utils'
 import { CodeBlock } from './CodeBlock'
 import { PDFPreviewOverlay } from '../overlay/PDFPreviewOverlay'
@@ -39,14 +39,7 @@ import { usePlatform } from '../../context/PlatformContext'
 import { useTranslation } from 'react-i18next'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
-
-// Configure pdf.js worker using Vite's ?url import for cross-platform dev/prod compatibility
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker
-
-// Disable eval/new Function in pdf.js so it complies with the renderer CSP
-// (which intentionally omits 'unsafe-eval'). Stable ref avoids re-loading the doc.
-const PDF_OPTIONS = { isEvalSupported: false } as const
+import { PDF_DOCUMENT_OPTIONS } from '../../lib/pdf-worker'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -209,7 +202,7 @@ export function MarkdownPdfBlock({ code, className, onCreateRegionAnnotation: _o
             <div className="flex items-start justify-center bg-white p-4">
               <Document
                 file={activeFileObj}
-                options={PDF_OPTIONS}
+                options={PDF_DOCUMENT_OPTIONS}
                 loading={<div className="py-8 text-center text-muted-foreground text-[13px]">{t('common.rendering')}</div>}
                 error={<div className="py-6 text-center text-destructive/70 text-[13px]">{t('preview.failedToRenderPdf')}</div>}
               >
