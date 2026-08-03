@@ -42,10 +42,10 @@ export interface SessionFilesSectionProps {
   hideHeader?: boolean
   /**
    * Optional inline preview target used when embedded in the persistent right
-   * sidebar. A `preview` open is disposable - the next one replaces it - while
-   * `permanent` earns the file a tab of its own.
+   * sidebar. Every open earns a tab of its own - opening a file the panel is
+   * already showing just selects it back.
    */
-  onPreviewFileInline?: (path: string, mode: 'preview' | 'permanent') => void
+  onPreviewFileInline?: (path: string) => void
 }
 
 type SessionFileOpenMode = 'directory' | 'inline-preview' | 'app-open-file'
@@ -591,7 +591,7 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
       // eslint-disable-next-line craft-links/no-direct-file-open -- directories can't be previewed in-app
       window.electronAPI.openFile(file.path)
     } else if (mode === 'inline-preview') {
-      onPreviewFileInline?.(file.path, 'preview')
+      onPreviewFileInline?.(file.path)
     } else {
       onOpenFile(file.path)
     }
@@ -602,23 +602,10 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
   }, [openFile])
 
   const handleFileDoubleClick = useCallback((file: SessionFile) => {
-    const mode = getSessionFileOpenMode({
-      type: file.type,
-      filePath: file.path,
-      canPreviewInline: Boolean(onPreviewFileInline),
-    })
-
-    // Double-click is the "I am staying here" gesture. Anything the panel can
-    // show gets a tab of its own; only what it cannot show leaves the panel.
-    if (mode === 'inline-preview') {
-      onPreviewFileInline?.(file.path, 'permanent')
-    } else if (mode === 'directory') {
-      // eslint-disable-next-line craft-links/no-direct-file-open -- directories can't be previewed in-app
-      window.electronAPI.openFile(file.path)
-    } else {
-      onOpenFile(file.path)
-    }
-  }, [onOpenFile, onPreviewFileInline])
+    // A double-click is two clicks: the first already opened the file. Repeating
+    // it is deliberately idempotent so the gesture cannot spawn a second tab.
+    openFile(file)
+  }, [openFile])
 
   // Toggle folder expanded state
   const handleToggleExpand = useCallback((path: string) => {
@@ -705,7 +692,7 @@ function updateTreeNode(entries: SessionFile[], path: string, children: SessionF
   })
 }
 
-export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInline }: { sessionId?: string; className?: string; onPreviewFileInline?: (path: string, mode: 'preview' | 'permanent') => void }) {
+export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInline }: { sessionId?: string; className?: string; onPreviewFileInline?: (path: string) => void }) {
   const { t } = useTranslation()
   const session = useSession(sessionId || '')
   const { workspaces, activeWorkspaceId, onOpenFile } = useAppShellContext()
@@ -799,7 +786,7 @@ export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInlin
       if (file.hasChildren) handleDirectoryExpand(file)
       handleToggleExpand(file.path)
     } else if (mode === 'inline-preview') {
-      onPreviewFileInline?.(file.path, 'preview')
+      onPreviewFileInline?.(file.path)
     } else {
       onOpenFile(file.path)
     }
@@ -810,18 +797,8 @@ export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInlin
   }, [openFile])
 
   const handleFileDoubleClick = useCallback((file: SessionFile) => {
-    const mode = getSessionFileOpenMode({
-      type: file.type,
-      filePath: file.path,
-      canPreviewInline: Boolean(onPreviewFileInline),
-    })
-
-    if (mode === 'inline-preview') {
-      onPreviewFileInline?.(file.path, 'permanent')
-    } else if (mode !== 'directory') {
-      onOpenFile(file.path)
-    }
-  }, [onOpenFile, onPreviewFileInline])
+    openFile(file)
+  }, [openFile])
 
   if (!sessionId) return null
 

@@ -106,7 +106,7 @@ export function SessionInfoPopover({
   )
 }
 
-export function SessionInfoPopoverContent({ sessionId, sessionFolderPath, onPreviewFileInline, onPreviewObjectInline }: { sessionId: string; sessionFolderPath?: string; onPreviewFileInline?: (path: string, mode: 'preview' | 'permanent') => void; onPreviewObjectInline?: (objectId: string, mode: 'preview' | 'permanent') => void }) {
+export function SessionInfoPopoverContent({ sessionId, sessionFolderPath, onPreviewFileInline, onPreviewObjectInline }: { sessionId: string; sessionFolderPath?: string; onPreviewFileInline?: (path: string) => void; onPreviewObjectInline?: (objectId: string) => void }) {
   const { t } = useTranslation()
   const session = useSession(sessionId)
   const { onRenameSession } = useAppShellContext()
