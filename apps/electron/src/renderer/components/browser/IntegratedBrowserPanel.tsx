@@ -71,12 +71,16 @@ export function IntegratedBrowserPanel({ instanceId, width, isLastPanel, open, o
     lastRectRef.current = key
 
     // Only the rect travels: the main process resolves this window's zoom
-    // factor itself and converts CSS px → DIPs.
+    // factor itself and converts CSS px → DIPs, and owns the corner radius.
     void window.electronAPI.browserPane.setEmbeddedBounds(
       id,
       { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      RADIUS_INNER,
-    )
+    ).then(applied => {
+      // Rejected because the browser had not finished docking yet. Forget the
+      // rect or the retry with the same one is skipped and the views never get
+      // bounds at all.
+      if (!applied && lastRectRef.current === key) lastRectRef.current = ''
+    })
   }, [id])
 
   // Enter/leave integrated mode with the panel's lifetime.

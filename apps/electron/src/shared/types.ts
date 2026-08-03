@@ -711,7 +711,7 @@ export const RPC_CONTRACT = {
   /** Desktop only: move the native views between the instance window and a card inside the app. */
   'browserPane.setDisplayMode': invoke<((id: string, mode: 'floating' | 'integrated') => Promise<boolean>)>(RPC_NAMESPACES.browserPane.SET_DISPLAY_MODE),
   /** Card geometry in host CSS px; the main process resolves the zoom factor and converts to DIPs. */
-  'browserPane.setEmbeddedBounds': invoke<((id: string, rect: { x: number; y: number; width: number; height: number }, radius?: number) => Promise<boolean>)>(RPC_NAMESPACES.browserPane.SET_EMBEDDED_BOUNDS),
+  'browserPane.setEmbeddedBounds': invoke<((id: string, rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>)>(RPC_NAMESPACES.browserPane.SET_EMBEDDED_BOUNDS),
   'browserPane.onProfilesChanged': event<((callback: (settings: BrowserProfileSettings) => void) => () => void)>(RPC_NAMESPACES.browserPane.PROFILES_CHANGED),
   'browserPane.onPickerRequested': event<((callback: (data: { instanceId: string }) => void) => () => void)>(RPC_NAMESPACES.browserPane.PICKER_REQUESTED),
   'browserPane.onDisplayModeRequested': event<((callback: (data: { instanceId: string; mode: 'floating' | 'integrated' }) => void) => () => void)>(RPC_NAMESPACES.browserPane.DISPLAY_MODE_REQUESTED),

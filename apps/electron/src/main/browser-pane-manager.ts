@@ -44,7 +44,7 @@ const DEFAULT_WAIT_POLL_MS = 100
 const BROWSER_EMPTY_STATE_PAGE = 'browser-empty-state.html'
 
 import { TOOLBAR_CHANNELS } from '../shared/browser-toolbar-channels'
-import { BROWSER_CHROME_BG } from '../shared/browser-chrome'
+import { BROWSER_CHROME_BG, PANEL_INTERIOR_RADIUS } from '../shared/browser-chrome'
 import { isAllowedTopLevelUrl, CRAFT_DEEPLINK_SCHEME_PREFIX, decideWillNavigate, decideWindowOpen } from './browser/navigation-policy'
 import { hardenSessionPermissions } from './browser/partition-hardening'
 import {
@@ -143,8 +143,6 @@ export interface BrowserInstance {
   hostWindow: BrowserWindow | null
   /** Card rect in host content coordinates (DIPs). Null until the renderer reports it. */
   embeddedBounds: EmbeddedBounds | null
-  /** Corner radius of the React card, in host CSS px. */
-  embeddedRadius: number
   /** Radius currently applied to every native view, in DIPs. */
   viewRadius: number
   cdp: BrowserCDP
@@ -588,7 +586,6 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       hiddenByIntegration: false,
       hostWindow: null,
       embeddedBounds: null,
-      embeddedRadius: 0,
       viewRadius: 0,
       cdp,
       currentUrl: 'about:blank',
@@ -2251,6 +2248,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         instance.window.hide()
         instance.hiddenByIntegration = true
       }
+      // The panel it fills is rounded, so the views must be too — before any
+      // bounds message, which may be deduped or arrive late.
+      this.applyViewRadius(instance, PANEL_INTERIOR_RADIUS)
       this.layoutAllViews(instance)
       this.toolbarHost.pushState(instance)
       mainLog.info(`[browser-pane] display mode=integrated id=${instanceId}`)
@@ -2284,13 +2284,18 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   /**
    * Card geometry reported by the renderer.
    *
-   * `rect` and `radius` are in the host renderer's CSS pixels; view bounds are
-   * in window DIPs. On displays with fractional scaling Electron applies a
-   * zoom factor to the renderer, so the two spaces diverge and the views would
-   * bleed outside the card. Multiply by the zoom to convert, and floor every
-   * axis so the view edge can never exceed the card's.
+   * `rect` is in the host renderer's CSS pixels; view bounds are in window
+   * DIPs. On displays with fractional scaling Electron applies a zoom factor to
+   * the renderer, so the two spaces diverge and the views would bleed outside
+   * the card. Multiply by the zoom to convert, and floor every axis so the view
+   * edge can never exceed the card's.
+   *
+   * Radius is re-applied here only to track the zoom. Docking already set it —
+   * it is a consequence of being docked, not of a particular bounds message,
+   * and a message that never lands must not leave the views square inside a
+   * rounded panel.
    */
-  setEmbeddedBounds(instanceId: string, rect: EmbeddedBounds, radius = 0, zoomFactor = 1): boolean {
+  setEmbeddedBounds(instanceId: string, rect: EmbeddedBounds, zoomFactor = 1): boolean {
     const instance = this.instances.get(instanceId)
     if (!instance || instance.displayMode !== 'integrated') return false
 
@@ -2301,9 +2306,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       width: Math.max(1, Math.floor(rect.width * zoom)),
       height: Math.max(1, Math.floor(rect.height * zoom)),
     }
-    instance.embeddedRadius = radius
 
-    this.applyViewRadius(instance, Math.round(radius * zoom))
+    this.applyViewRadius(instance, Math.round(PANEL_INTERIOR_RADIUS * zoom))
 
     this.layoutAllViews(instance)
     return true

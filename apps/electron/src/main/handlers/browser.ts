@@ -59,7 +59,6 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
       ctx,
       id: string,
       rect: { x: number; y: number; width: number; height: number },
-      radius?: number,
     ) => {
       // The renderer measures in its own CSS px. Resolve the zoom factor here
       // from the requesting window rather than trusting the renderer to report
@@ -73,12 +72,11 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
         setEmbeddedBounds(
           id: string,
           rect: { x: number; y: number; width: number; height: number },
-          radius?: number,
           zoomFactor?: number,
         ): boolean
       }>
       if (typeof manager.setEmbeddedBounds !== 'function') return false
-      return manager.setEmbeddedBounds(id, rect, radius, zoomFactor)
+      return manager.setEmbeddedBounds(id, rect, zoomFactor)
     },
   )
 

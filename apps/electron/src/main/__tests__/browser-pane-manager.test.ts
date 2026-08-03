@@ -7,6 +7,7 @@
 
 import { describe, it, expect, beforeEach, mock } from 'bun:test'
 import * as sharedConfig from '@craft-agent/shared/config'
+import { PANEL_INTERIOR_RADIUS } from '../../shared/browser-chrome'
 
 const createdWindows: any[] = []
 let toolbarLoadFailuresRemaining = 0
@@ -393,10 +394,12 @@ describe('BrowserPaneManager', () => {
     manager.setDisplayMode('bounds-1', 'integrated', host as any)
 
     // zoom 1.5 with fractional results: every axis must round down.
-    manager.setEmbeddedBounds('bounds-1', { x: 10.4, y: 20.7, width: 800.9, height: 600.9 }, 32, 1.5)
+    manager.setEmbeddedBounds('bounds-1', { x: 10.4, y: 20.7, width: 800.9, height: 600.9 }, 1.5)
 
     expect(instance.embeddedBounds).toEqual({ x: 15, y: 31, width: 1201, height: 901 })
-    expect(instance.pageView.setBorderRadius).toHaveBeenCalledWith(48)
+    // The radius scales with the zoom too, or the views round tighter than the
+    // panel they fill.
+    expect(instance.pageView.setBorderRadius).toHaveBeenLastCalledWith(15)
   })
 
   it('ignores bounds reported while floating', () => {
@@ -576,11 +579,15 @@ describe('BrowserPaneManager', () => {
     const host = createMockWindow()
     manager.setDisplayMode('radius-1', 'integrated', host as any)
 
-    manager.setEmbeddedBounds('radius-1', { x: 0, y: 0, width: 1000, height: 800 }, 32)
+    // Docking alone rounds them. The panel they fill is already rounded, and a
+    // bounds message can be deduped or arrive late — the corner cannot wait.
+    expect(instance.pageView.setBorderRadius).toHaveBeenLastCalledWith(PANEL_INTERIOR_RADIUS)
+    expect(instance.toolbarView.setBorderRadius).toHaveBeenLastCalledWith(PANEL_INTERIOR_RADIUS)
 
-    // A rounded page beside a square toolbar reads as two unrelated surfaces.
-    expect(instance.pageView.setBorderRadius).toHaveBeenLastCalledWith(32)
-    expect(instance.toolbarView.setBorderRadius).toHaveBeenLastCalledWith(32)
+    manager.setEmbeddedBounds('radius-1', { x: 0, y: 0, width: 1000, height: 800 })
+
+    expect(instance.pageView.setBorderRadius).toHaveBeenLastCalledWith(PANEL_INTERIOR_RADIUS)
+    expect(instance.toolbarView.setBorderRadius).toHaveBeenLastCalledWith(PANEL_INTERIOR_RADIUS)
 
     manager.setDisplayMode('radius-1', 'floating')
 

@@ -18,3 +18,13 @@ export const BROWSER_CHROME_BG = {
   light: '#fafafb',
   dark: '#2b292e',
 } as const
+
+/**
+ * Interior panel corner radius, in CSS px.
+ *
+ * Lives here because both sides need it and the main process cannot import
+ * renderer modules: `panel-constants.RADIUS_INNER` re-exports it, and the
+ * docked browser's native views must round to exactly the panel they fill.
+ * A view left square paints its corner over the panel's rounded one.
+ */
+export const PANEL_INTERIOR_RADIUS = 10

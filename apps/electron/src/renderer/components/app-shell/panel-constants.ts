@@ -1,4 +1,5 @@
 import { isMac } from '@/lib/platform'
+import { PANEL_INTERIOR_RADIUS } from '../../../shared/browser-chrome'
 
 /** Gap between any adjacent panels (sidebar ↔ navigator ↔ content ↔ right sidebar) */
 export const PANEL_GAP = 6
@@ -10,7 +11,7 @@ export const PANEL_EDGE_INSET = 6
 export const RADIUS_EDGE = isMac ? 14 : 8
 
 /** Corner radius for interior corners between panels */
-export const RADIUS_INNER = 10
+export const RADIUS_INNER = PANEL_INTERIOR_RADIUS
 
 /** Minimum width for any content panel */
 export const PANEL_MIN_WIDTH = 440
