@@ -18,16 +18,8 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { AnimatePresence, LazyMotion, m, domAnimation } from 'motion/react'
-import { ChevronRight, ExternalLink } from 'lucide-react'
-import {
-  AudioGlyph,
-  CodeGlyph,
-  DocumentGlyph,
-  FolderGlyph,
-  FolderOpenGlyph,
-  ImageGlyph,
-  VideoGlyph,
-} from '@/components/icons/FileTreeIcons'
+import { ChevronRight, ExternalLink, FolderOpen } from 'lucide-react'
+import { MaterialFileIcon, MaterialFolderIcon } from '@/components/icons/MaterialFileIcon'
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -127,39 +119,17 @@ function filterSessionFilesForPanel(entries: SessionFile[], parentName?: string)
 }
 
 /**
- * Get icon for file based on name/type (14x14px matching sidebar)
+ * Icon for a tree row, from the Material Icon Theme mapping.
  *
- * Filled glyphs, not outlines: at 14px a 2px stroke is most of the icon and
- * the middle is empty, so a tree of them reads as grey scaffolding.
+ * The colour carries the file type, so a long tree is scannable without
+ * reading extensions - `config.json` and `notes.md` no longer share a glyph.
  */
 function getFileIcon(file: SessionFile, isExpanded?: boolean) {
-  const iconClass = "size-3.5 text-foreground/65"
+  const iconClass = "size-3.5"
 
-  if (file.type === 'directory') {
-    return isExpanded
-      ? <FolderOpenGlyph className={iconClass} />
-      : <FolderGlyph className={iconClass} />
-  }
-
-  const ext = file.name.split('.').pop()?.toLowerCase()
-
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico'].includes(ext || '')) {
-    return <ImageGlyph className={iconClass} />
-  }
-
-  if (['mp3', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'flac'].includes(ext || '')) {
-    return <AudioGlyph className={iconClass} />
-  }
-
-  if (['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(ext || '')) {
-    return <VideoGlyph className={iconClass} />
-  }
-
-  if (['ts', 'tsx', 'js', 'jsx', 'json', 'yaml', 'yml', 'py', 'rb', 'go', 'rs'].includes(ext || '')) {
-    return <CodeGlyph className={iconClass} />
-  }
-
-  return <DocumentGlyph className={iconClass} />
+  return file.type === 'directory'
+    ? <MaterialFolderIcon folderName={file.name} isOpen={isExpanded ?? false} className={iconClass} />
+    : <MaterialFileIcon fileName={file.name} className={iconClass} />
 }
 
 /**
@@ -416,7 +386,7 @@ function FileTreeItem({
           <StyledContextMenuItem
             onSelect={() => onRevealInFileManager(file.path)}
           >
-            <FolderOpenGlyph className="size-3.5" />
+            <FolderOpen className="size-3.5" />
             {t("chat.showInFileManager", { fileManager: fileManagerName })}
           </StyledContextMenuItem>
         </StyledContextMenuContent>
