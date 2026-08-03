@@ -80,6 +80,17 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
     },
   )
 
+  server.handle(
+    RPC_NAMESPACES.browserPane.SET_VIEWS_VISIBLE,
+    (_ctx, id: string, visible: boolean) => {
+      const manager = browserPaneManager as Partial<{
+        setViewsVisible(id: string, visible: boolean): boolean
+      }>
+      if (typeof manager.setViewsVisible !== 'function') return false
+      return manager.setViewsVisible(id, visible)
+    },
+  )
+
   server.handle(RPC_NAMESPACES.browserPane.LIST, () => {
     return browserPaneManager.listInstances()
   })

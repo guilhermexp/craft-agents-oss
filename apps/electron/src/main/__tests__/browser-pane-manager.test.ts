@@ -596,6 +596,25 @@ describe('BrowserPaneManager', () => {
     expect(instance.toolbarView.setBorderRadius).toHaveBeenLastCalledWith(0)
   })
 
+  it('takes every native view off screen while an app overlay covers the browser', () => {
+    manager.createInstance('conceal-1')
+    const instance = (manager as any).instances.get('conceal-1')
+
+    expect(manager.setViewsVisible('conceal-1', false)).toBe(true)
+
+    // All of them: a toolbar left painting over a hidden page is worse than
+    // either state on its own.
+    expect(instance.pageView.setVisible).toHaveBeenCalledWith(false)
+    expect(instance.toolbarView.setVisible).toHaveBeenCalledWith(false)
+    expect(instance.nativeOverlayView.setVisible).toHaveBeenCalledWith(false)
+
+    manager.setViewsVisible('conceal-1', true)
+
+    // Hidden, not unloaded — the page must not reload when the menu closes.
+    expect(instance.pageView.webContents.close).not.toHaveBeenCalled()
+    expect(instance.pageView.setVisible).toHaveBeenLastCalledWith(true)
+  })
+
   it('paints the toolbar and overlay views transparent', () => {
     manager.createInstance('bg-1')
     const instance = (manager as any).instances.get('bg-1')

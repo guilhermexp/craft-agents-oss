@@ -23,6 +23,7 @@ import { useAtomValue } from 'jotai'
 import { browserInstancesAtom } from '../../atoms/browser-pane'
 import { useTheme } from '@/context/ThemeContext'
 import { RADIUS_EDGE, RADIUS_INNER } from '../app-shell/panel-constants'
+import { OVERLAY_SELECTORS } from '@/lib/overlay-detection'
 import { BROWSER_CHROME_BG } from '../../../shared/browser-chrome'
 
 interface IntegratedBrowserPanelProps {
@@ -121,6 +122,43 @@ export function IntegratedBrowserPanel({ instanceId, width, isLastPanel, open, o
       window.removeEventListener('resize', reportBounds)
     }
   }, [open, id, reportBounds])
+
+  // A WebContentsView paints above the renderer, so an app dropdown that
+  // reaches over the browser is drawn behind it. Nothing in CSS reaches the
+  // native views — take them off screen for as long as such an overlay is up.
+  //
+  // Only overlaps count: a menu in the far sidebar must not blank the browser.
+  // Radix and our Island primitive portal to the body, so watching the body's
+  // own children catches every mount and unmount without a subtree observer
+  // firing on each streamed token.
+  useEffect(() => {
+    if (!open || !id) return
+
+    let concealed = false
+    const sync = () => {
+      const el = holeRef.current
+      if (!el) return
+      const hole = el.getBoundingClientRect()
+      const overlapped = Array.from(document.querySelectorAll(OVERLAY_SELECTORS.join(', '))).some(node => {
+        const rect = node.getBoundingClientRect()
+        return rect.width > 0 && rect.height > 0
+          && rect.left < hole.right && rect.right > hole.left
+          && rect.top < hole.bottom && rect.bottom > hole.top
+      })
+      if (overlapped === concealed) return
+      concealed = overlapped
+      void window.electronAPI.browserPane.setViewsVisible(id, !overlapped)
+    }
+
+    const observer = new MutationObserver(sync)
+    observer.observe(document.body, { childList: true })
+    sync()
+
+    return () => {
+      observer.disconnect()
+      if (concealed) void window.electronAPI.browserPane.setViewsVisible(id, true)
+    }
+  }, [open, id])
 
   if (!open || !id || !instanceExists) return null
 

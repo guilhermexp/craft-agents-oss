@@ -70,6 +70,7 @@ const EXPECTED_CHANNELS: string[] = [
   "browser-pane:set-display-mode",
   "browser-pane:set-embedded-bounds",
   "browser-pane:set-profile-settings",
+  "browser-pane:set-views-visible",
   "browser-pane:snapshot",
   "browser-pane:state-changed",
   "browser-pane:stop",

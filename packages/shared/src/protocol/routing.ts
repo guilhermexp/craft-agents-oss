@@ -193,6 +193,7 @@ export const LOCAL_ONLY_NAMESPACES = new Set<string>([
   // instance window and a host window, which has no meaning for remote panes.
   RPC_NAMESPACES.browserPane.SET_DISPLAY_MODE,
   RPC_NAMESPACES.browserPane.SET_EMBEDDED_BOUNDS,
+  RPC_NAMESPACES.browserPane.SET_VIEWS_VISIBLE,
   RPC_NAMESPACES.browserPane.STATE_CHANGED,
   RPC_NAMESPACES.browserPane.REMOVED,
   RPC_NAMESPACES.browserPane.INTERACTED,

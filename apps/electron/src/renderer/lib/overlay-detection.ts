@@ -11,8 +11,11 @@ import { getDismissibleLayerBridge } from './dismissible-layer-bridge'
  * CSS selectors for overlay content elements.
  * These are the actual visible content elements, not the portals or roots.
  * Uses data-slot attributes from our UI components (shadcn/radix pattern).
+ *
+ * Exported because the docked browser needs the same list: its native views
+ * paint above the renderer, so any of these reaching over them is invisible.
  */
-const OVERLAY_SELECTORS = [
+export const OVERLAY_SELECTORS = [
   // Dialogs (modals)
   '[data-slot="dialog-content"]',
   '[role="dialog"]',

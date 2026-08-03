@@ -453,6 +453,7 @@ export const RPC_NAMESPACES = {
     PICKER_REQUESTED: 'browser-pane:picker-requested',
     DISPLAY_MODE_REQUESTED: 'browser-pane:display-mode-requested',
     SET_DISPLAY_MODE: 'browser-pane:set-display-mode',
+    SET_VIEWS_VISIBLE: 'browser-pane:set-views-visible',
     SET_EMBEDDED_BOUNDS: 'browser-pane:set-embedded-bounds',
   },
   automations: {

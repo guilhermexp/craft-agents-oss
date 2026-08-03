@@ -2314,6 +2314,24 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   /**
+   * Take the native views off screen without unloading them.
+   *
+   * A WebContentsView always paints above the renderer, so an app dropdown
+   * reaching over the docked browser is drawn behind it. There is no CSS answer
+   * — the views are not part of the document. Hiding them for the life of the
+   * overlay is the only lever, and it keeps the page's WebContents alive so
+   * nothing reloads when it comes back.
+   */
+  setViewsVisible(instanceId: string, visible: boolean): boolean {
+    const instance = this.instances.get(instanceId)
+    if (!instance) return false
+    for (const view of this.orderedViews(instance)) {
+      view.setVisible(visible)
+    }
+    return true
+  }
+
+  /**
    * Corner radius for the native views.
    *
    * They are siblings composing one card, so they must agree: a rounded page
