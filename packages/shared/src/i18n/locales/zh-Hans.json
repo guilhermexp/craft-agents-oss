@@ -756,6 +756,7 @@
   "menu.settings": "设置...",
   "menu.toggleDevTools": "切换开发者工具",
   "menu.toggleFocusMode": "切换专注模式",
+  "menu.toggleSessionList": "切换会话列表",
   "menu.toggleSidebar": "切换侧栏",
   "menu.undo": "撤销",
   "menu.view": "视图",

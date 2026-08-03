@@ -14,6 +14,7 @@ export const KEYS = {
   sidebarVisible: 'sidebar-visible',
   sidebarWidth: 'sidebar-width',
   sessionListWidth: 'session-list-width',
+  sessionListVisible: 'session-list-visible',
   rightSidebarWidth: 'right-sidebar-width',
   rightSidebarPreviewWidth: 'right-sidebar-preview-width',
   integratedBrowserWidth: 'integrated-browser-width',

@@ -758,6 +758,7 @@
   "menu.settings": "Ustawienia...",
   "menu.toggleDevTools": "Przełącz DevTools",
   "menu.toggleFocusMode": "Przełącz tryb skupienia",
+  "menu.toggleSessionList": "Przełącz listę sesji",
   "menu.toggleSidebar": "Przełącz panel boczny",
   "menu.undo": "Cofnij",
   "menu.view": "Widok",

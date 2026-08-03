@@ -756,6 +756,7 @@
   "menu.settings": "Configuración...",
   "menu.toggleDevTools": "Alternar DevTools",
   "menu.toggleFocusMode": "Alternar modo enfoque",
+  "menu.toggleSessionList": "Alternar lista de sesiones",
   "menu.toggleSidebar": "Alternar barra lateral",
   "menu.undo": "Deshacer",
   "menu.view": "Ver",

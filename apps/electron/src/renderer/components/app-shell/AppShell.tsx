@@ -574,6 +574,12 @@ function AppShellContent({
   const [isSidebarVisible, setIsSidebarVisible] = React.useState(() => {
     return storage.get(storage.KEYS.sidebarVisible, !defaultCollapsed)
   })
+  // The navigator collapses on its own, independent of the sidebar and of focus
+  // mode: someone who lives in one session wants the room without giving up the
+  // sidebar's navigation.
+  const [isSessionListVisible, setIsSessionListVisible] = React.useState(() => {
+    return storage.get(storage.KEYS.sessionListVisible, true)
+  })
   const [sidebarWidth, setSidebarWidth] = React.useState(() => {
     return storage.get(storage.KEYS.sidebarWidth, 220)
   })
@@ -1268,6 +1274,17 @@ function AppShellContent({
   // Sidebar toggle (CMD+B)
   useAction('view.toggleSidebar', handleToggleSidebar)
 
+  // Focus mode hid the navigator wholesale; bring it back rather than toggling
+  // a collapse the user cannot see the result of.
+  const handleToggleSessionList = useCallback(() => {
+    if (isSidebarAndNavigatorHidden) {
+      setIsSidebarAndNavigatorHidden(false)
+      setIsSessionListVisible(true)
+      return
+    }
+    setIsSessionListVisible(v => !v)
+  }, [isSidebarAndNavigatorHidden])
+
   // Focus mode toggle (CMD+.) - hides both sidebars
   useAction('view.toggleFocusMode', () => setIsSidebarAndNavigatorHidden(v => !v))
 
@@ -1847,6 +1864,10 @@ function AppShellContent({
   React.useEffect(() => {
     storage.set(storage.KEYS.sidebarVisible, isSidebarVisible)
   }, [isSidebarVisible])
+
+  React.useEffect(() => {
+    storage.set(storage.KEYS.sessionListVisible, isSessionListVisible)
+  }, [isSessionListVisible])
 
   // Persist focus mode state to localStorage
   React.useEffect(() => {
@@ -2592,6 +2613,7 @@ function AppShellContent({
           canGoBack={canGoBack}
           canGoForward={canGoForward}
           onToggleSidebar={handleToggleSidebar}
+          onToggleSessionList={handleToggleSessionList}
           onToggleFocusMode={() => setIsSidebarAndNavigatorHidden(prev => !prev)}
           onAddSessionPanel={() => handleNewChat(true)}
           onAddBrowserPanel={() => { void handleNewBrowserWindow() }}
@@ -3711,7 +3733,7 @@ function AppShellContent({
             )}
             </div>
           }
-          navigatorWidth={isAutoCompact ? sessionListWidth : (effectiveSidebarAndNavigatorHidden ? 0 : sessionListWidth)}
+          navigatorWidth={isAutoCompact ? sessionListWidth : (effectiveSidebarAndNavigatorHidden || !isSessionListVisible ? 0 : sessionListWidth)}
           isSidebarAndNavigatorHidden={effectiveSidebarAndNavigatorHidden}
           isRightSidebarVisible={isRightSidebarVisible}
           isCompact={isAutoCompact}
@@ -3937,7 +3959,7 @@ function AppShellContent({
         )}
 
         {/* Session List Resize Handle (absolute, hidden in focused mode) */}
-        {!effectiveSidebarAndNavigatorHidden && (
+        {!effectiveSidebarAndNavigatorHidden && isSessionListVisible && (
         <div
           ref={sessionListHandleRef}
           role="separator"

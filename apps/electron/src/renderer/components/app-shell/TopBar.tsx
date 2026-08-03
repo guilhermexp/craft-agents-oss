@@ -157,6 +157,7 @@ interface TopBarProps {
   canGoBack: boolean
   canGoForward: boolean
   onToggleSidebar: () => void
+  onToggleSessionList: () => void
   onToggleFocusMode: () => void
   onAddSessionPanel: () => void
   onAddBrowserPanel: () => void
@@ -183,6 +184,7 @@ export function TopBar({
   canGoBack,
   canGoForward,
   onToggleSidebar,
+  onToggleSessionList,
   onToggleFocusMode,
   onAddSessionPanel,
   onAddBrowserPanel,
@@ -261,6 +263,17 @@ export function TopBar({
             </TopBarButton>
           </TooltipTrigger>
           <TooltipContent side="bottom">{t("menu.toggleSidebar")}</TooltipContent>
+        </Tooltip>
+        )}
+
+        {!isCompact && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <TopBarButton onClick={onToggleSessionList} aria-label={t("menu.toggleSessionList")}>
+              <Icons.Columns2 className="size-[18px] text-foreground/70" />
+            </TopBarButton>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t("menu.toggleSessionList")}</TooltipContent>
         </Tooltip>
         )}
 

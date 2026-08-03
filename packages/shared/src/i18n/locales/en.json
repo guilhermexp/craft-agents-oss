@@ -756,6 +756,7 @@
   "menu.settings": "Settings...",
   "menu.toggleDevTools": "Toggle DevTools",
   "menu.toggleFocusMode": "Toggle Focus Mode",
+  "menu.toggleSessionList": "Toggle Session List",
   "menu.toggleSidebar": "Toggle Sidebar",
   "menu.undo": "Undo",
   "menu.view": "View",

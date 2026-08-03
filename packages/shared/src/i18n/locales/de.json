@@ -756,6 +756,7 @@
   "menu.settings": "Einstellungen...",
   "menu.toggleDevTools": "Entwicklertools umschalten",
   "menu.toggleFocusMode": "Fokusmodus umschalten",
+  "menu.toggleSessionList": "Sitzungsliste ein-/ausblenden",
   "menu.toggleSidebar": "Seitenleiste umschalten",
   "menu.undo": "Rückgängig",
   "menu.view": "Ansicht",

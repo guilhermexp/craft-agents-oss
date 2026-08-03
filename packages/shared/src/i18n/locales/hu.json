@@ -756,6 +756,7 @@
   "menu.settings": "Beállítások...",
   "menu.toggleDevTools": "DevTools be-/kikapcsolása",
   "menu.toggleFocusMode": "Fókusz mód be-/kikapcsolása",
+  "menu.toggleSessionList": "Munkamenetlista be- és kikapcsolása",
   "menu.toggleSidebar": "Oldalsáv be-/kikapcsolása",
   "menu.undo": "Visszavonás",
   "menu.view": "Nézet",
