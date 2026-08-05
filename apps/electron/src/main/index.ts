@@ -13,7 +13,13 @@ import { homedir } from 'os'
 import { setupI18n } from '@craft-agent/shared/i18n'
 import { applyUiLanguageChange, hydrateMainI18nFromPreferences } from './i18n-bootstrap'
 setupI18n()
-void hydrateMainI18nFromPreferences()
+// A rejection here must never take the app down over a menu language: Node
+// throws on unhandled rejections. The logger is imported lazily because this
+// runs before the module-level logger import below.
+void hydrateMainI18nFromPreferences().catch(async (error) => {
+  const { mainLog } = await import('./logger')
+  mainLog.warn('[i18n] failed to hydrate main-process language from preferences', error)
+})
 
 import { join, delimiter } from 'path'
 import { existsSync, readFileSync, writeFileSync, chmodSync } from 'fs'
