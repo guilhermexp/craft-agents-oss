@@ -58,6 +58,7 @@ pipeline é visível; a prévia do vídeo existe antes do fim do processamento.
   - verify: `bun test ./apps/electron/src/renderer/pages/__tests__/meetings-recording-preview.test.ts`
 - [ ] **2.5 Gates da fase e validação em reunião real**
   - files: nenhum
+  - note: gates automatizados rodados pelo orquestrador em 05/08/2026, todos verdes — `typecheck:all` limpo, 94 pass em `apps/electron/src/main/meetings/` + `meetings-recording-preview` + `meeting-status-label`, `lint:i18n:parity` OK (7 locales), `openspec validate --strict` válido. Premissa da URL versionada conferida: `thumbnail-protocol.ts:293` resolve pelo `pathname`, a query `?v=` é ignorada. Falta só a gravação real.
   - verify: `bun run typecheck:all`
   - verify: `bun run lint`
   - verify: `openspec validate fix-meetings-locale-and-live-surface --strict --no-interactive`
@@ -88,6 +89,7 @@ hospedada.
   - verify: `bun test apps/electron/src/renderer/pages/__tests__/meetings-browser-host.test.ts`
 - [ ] **3.5 Gates da fase e validação em reunião real**
   - files: nenhum
+  - note: gates automatizados rodados pelo orquestrador em 05/08/2026 — `typecheck:all` limpo, 25 pass em `meetings-browser-host` + `components/browser/__tests__/` (refactor 3.2 sem mudança de comportamento), `lint:i18n:parity` OK (1830 chaves), `openspec validate --strict` válido. `bun test apps/electron/src/renderer/` sai 696 pass / 1 fail: a falha é `components/ui/__tests__/mention-menu.test.ts` (`SyntaxError: Missing 'default' export` no `packages/ui/node_modules/pdfjs-dist` aninhado, de 03/08), alheia e pré-existente — falha isolada e o commit da F3 não toca `packages/ui`, pdfjs nem mention-menu. Falta só a reunião real.
   - verify: `bun run typecheck:all`
   - verify: `bun run validate:ci`
   - verify: `openspec validate fix-meetings-locale-and-live-surface --strict --no-interactive`
