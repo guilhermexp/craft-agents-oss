@@ -198,6 +198,12 @@ function buildPrompt(input: MeetingVideoAnalysisInput, summary: VideoEvidenceSum
   const followUpInstruction = record.followUpOnEnd
     ? '\n- Include follow-up tasks, owners, and due dates when the evidence supports them.'
     : ''
+  // Sem idioma escolhido nas Settings, o documento segue o idioma da
+  // transcrição — forçar inglês foi o bug observado numa reunião em português.
+  const outputLanguage = getOutputLanguageName()
+  const languageInstruction = outputLanguage
+    ? `Write the entire document in ${outputLanguage} — headings included. Quoted speech MAY keep the original language.`
+    : 'Write the entire document in the same language as the transcript — headings included. Do not translate it into another language.'
 
   return [
     '<video-analysis-skill>',
@@ -226,7 +232,7 @@ function buildPrompt(input: MeetingVideoAnalysisInput, summary: VideoEvidenceSum
     followUpInstruction,
     '- Evidence notes that mention which timestamp/frame/contact-sheet observation supports important claims',
     '',
-    `Write the entire document in ${getOutputLanguageName()} — headings included. Quoted speech MAY keep the original language.`,
+    languageInstruction,
   ].filter(Boolean).join('\n')
 }
 

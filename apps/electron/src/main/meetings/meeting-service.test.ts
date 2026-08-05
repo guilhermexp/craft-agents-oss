@@ -88,6 +88,9 @@ mock.module('@craft-agent/shared/config', () => ({
   getDefaultLlmConnection: () => 'claude-default',
   getLlmConnection: (slug: string) => ({ slug, providerType: 'anthropic' }),
   getLlmConnections: () => [{ slug: 'claude-default', providerType: 'anthropic' }],
+  // output-language.ts reads the persisted UI language; no preference here
+  // means Deepgram gets automatic detection instead of a forced `en`.
+  getPersistedUiLanguage: () => undefined,
 }))
 
 mock.module('@craft-agent/shared/skills', () => ({

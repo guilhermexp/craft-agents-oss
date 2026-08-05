@@ -11,6 +11,8 @@ mock.module('@craft-agent/shared/config', () => ({
   getDefaultLlmConnection: () => 'claude-default',
   getLlmConnection: (slug: string) => ({ slug, providerType: 'anthropic' }),
   getLlmConnections: () => [{ slug: 'claude-default', providerType: 'anthropic' }],
+  // output-language.ts resolves the prompt language from this preference.
+  getPersistedUiLanguage: () => undefined,
 }))
 
 mock.module('@craft-agent/shared/skills', () => ({

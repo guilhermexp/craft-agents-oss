@@ -379,6 +379,16 @@ lifecycle. Preserve these invariants:
   aguarda o mesmo shutdown bounded antes de relançar. Qualquer novo caminho de
   exit que não emita `before-quit` MUST fazer o mesmo.
 - `endReason` é interno ao main process nesta fase; expor no DTO/UI é F2.
+- O idioma de STT e de toda saída de LLM da reunião vem da preferência
+  persistida (`getPersistedUiLanguage`), via
+  `apps/electron/src/main/meetings/output-language.ts` —
+  `getTranscriptionLanguage()` para o Deepgram e `getOutputLanguageName()` para
+  resumo/análise visual. Não volte a ler `i18n.resolvedLanguage`: o i18n do main
+  hidrata tarde (#885) e transcreveu áudio PT como fonética inglesa. Sem
+  preferência, ambos devolvem `null` — Deepgram detecta o idioma e os prompts
+  pedem o idioma da transcrição; forçar `en` (ou `pt-BR`) é o bug.
+  `apps/electron/src/main/i18n-bootstrap.ts` mantém o i18n do main coerente com
+  o disco (menu nativo, dialogs), mas não é a fonte para meetings.
 
 `packages/shared/src/workspaces/storage.ts` resolve o config root em cada
 chamada (`CRAFT_CONFIG_DIR`, com fallback em `homedir()`). Não reintroduza uma
@@ -404,7 +414,10 @@ For meetings capture/lifecycle or workspace-storage path changes, run:
 ```bash
 bun test apps/electron/src/main/meetings/meeting-service.test.ts \
   apps/electron/src/main/meetings/recording-service.test.ts \
+  apps/electron/src/main/meetings/meeting-summary-service.test.ts \
+  apps/electron/src/main/__tests__/i18n-bootstrap.test.ts \
   packages/shared/src/workspaces/__tests__/storage-meetings.test.ts
+bun test ./apps/electron/src/main/meetings/output-language.isolated.ts
 ```
 
 For Hermes overlay changes, first prove all overlays apply from a clean cache

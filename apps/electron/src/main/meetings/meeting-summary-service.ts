@@ -90,8 +90,12 @@ export async function generateMeetingSummaryMarkdown(input: MeetingSummaryInput)
   const baseSystemPrompt = skill?.content?.trim() || DEFAULT_SUMMARY_INSTRUCTIONS
   // A língua de saída é a do app, não a da transcrição: o resumo é para quem
   // usa o Craft, e uma transcrição errada (ex.: EN fonético de áudio PT) não
-  // pode arrastar o resumo para o idioma errado junto.
-  const languageInstruction = `Write the entire document in ${getOutputLanguageName()}. Quoted speech MAY keep the original language.`
+  // pode arrastar o resumo para o idioma errado junto. Sem idioma escolhido não
+  // se força nenhum: a transcrição manda.
+  const outputLanguage = getOutputLanguageName()
+  const languageInstruction = outputLanguage
+    ? `Write the entire document in ${outputLanguage}. Quoted speech MAY keep the original language.`
+    : 'Write the entire document in the same language as the transcript. Do not translate it into another language.'
   const systemPrompt = record.followUpOnEnd
     ? `${baseSystemPrompt}\n\n${FOLLOW_UP_INSTRUCTIONS}\n\n${languageInstruction}`
     : `${baseSystemPrompt}\n\n${languageInstruction}`

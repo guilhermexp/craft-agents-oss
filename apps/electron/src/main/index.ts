@@ -7,9 +7,13 @@ import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, Notifica
 import { randomUUID } from 'crypto'
 import { homedir } from 'os'
 
-// Initialize i18n for main process (menus, dialogs, etc.)
-import { setupI18n, i18n } from '@craft-agent/shared/i18n'
+// Initialize i18n for main process (menus, dialogs, etc.), then hydrate the
+// language from disk: there is no LanguageDetector here, so without this the
+// main process stays on the `en` fallback after every restart.
+import { setupI18n } from '@craft-agent/shared/i18n'
+import { applyUiLanguageChange, hydrateMainI18nFromPreferences } from './i18n-bootstrap'
 setupI18n()
+void hydrateMainI18nFromPreferences()
 
 import { join, delimiter } from 'path'
 import { existsSync, readFileSync, writeFileSync, chmodSync } from 'fs'
@@ -899,9 +903,10 @@ app.whenReady().then(async () => {
         })
       })
 
-      // Language change: sync from renderer to main process and rebuild native menu
+      // Language change: persist the choice, sync it to the main process i18n
+      // and rebuild the native menu.
       ipcMain.handle('i18n:changeLanguage', async (_event, lang: string) => {
-        i18n.changeLanguage(lang)
+        await applyUiLanguageChange(lang)
         const { rebuildMenu } = await import('./menu')
         await rebuildMenu()
       })

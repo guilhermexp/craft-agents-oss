@@ -20,6 +20,10 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
+// The production wiring under test: `apps/electron/src/main/i18n-bootstrap.ts`.
+// Referenced by absolute path because the scenarios run in `--eval` subprocesses.
+const BOOTSTRAP_MODULE = JSON.stringify(join(import.meta.dir, '..', 'i18n-bootstrap.ts'))
+
 interface RunResult {
   exitCode: number
   stdout: string
@@ -104,6 +108,106 @@ describe('main-process i18n bootstrap', () => {
       )
       expect(r.exitCode).toBe(0)
       expect(JSON.parse(r.stdout)).toEqual({ value: null })
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  it('persists the language chosen in Appearance (i18n:changeLanguage path)', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'i18n-bootstrap-'))
+    try {
+      const r = runScript(
+        configDir,
+        `
+          import { setupI18n, i18n } from '@craft-agent/shared/i18n';
+          import { getPersistedUiLanguage } from '@craft-agent/shared/config';
+          const { applyUiLanguageChange } = await import(${BOOTSTRAP_MODULE});
+          setupI18n();
+          const applied = await applyUiLanguageChange('pt-BR');
+          console.log(JSON.stringify({
+            applied,
+            persisted: getPersistedUiLanguage() ?? null,
+            resolved: i18n.resolvedLanguage,
+          }));
+        `,
+      )
+      expect(r.stderr).toBe('')
+      expect(r.exitCode).toBe(0)
+      expect(JSON.parse(r.stdout)).toEqual({ applied: true, persisted: 'pt-BR', resolved: 'pt-BR' })
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects an unsupported code without persisting or switching', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'i18n-bootstrap-'))
+    try {
+      const r = runScript(
+        configDir,
+        `
+          import { setupI18n, i18n } from '@craft-agent/shared/i18n';
+          import { getPersistedUiLanguage } from '@craft-agent/shared/config';
+          const { applyUiLanguageChange } = await import(${BOOTSTRAP_MODULE});
+          setupI18n();
+          const applied = await applyUiLanguageChange('xx');
+          console.log(JSON.stringify({
+            applied,
+            persisted: getPersistedUiLanguage() ?? null,
+            resolved: i18n.resolvedLanguage,
+          }));
+        `,
+      )
+      expect(r.exitCode).toBe(0)
+      expect(JSON.parse(r.stdout)).toEqual({ applied: false, persisted: null, resolved: 'en' })
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  it('hydrates the main i18n from disk at boot, with no user interaction', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'i18n-bootstrap-'))
+    try {
+      writeFileSync(
+        join(configDir, 'preferences.json'),
+        JSON.stringify({ uiLanguage: 'pt-BR' }),
+        'utf-8',
+      )
+      const r = runScript(
+        configDir,
+        `
+          import { setupI18n, i18n } from '@craft-agent/shared/i18n';
+          const { hydrateMainI18nFromPreferences } = await import(${BOOTSTRAP_MODULE});
+          setupI18n();
+          const applied = await hydrateMainI18nFromPreferences();
+          console.log(JSON.stringify({ applied: applied ?? null, resolved: i18n.resolvedLanguage }));
+        `,
+      )
+      expect(r.stderr).toBe('')
+      expect(r.exitCode).toBe(0)
+      expect(JSON.parse(r.stdout)).toEqual({ applied: 'pt-BR', resolved: 'pt-BR' })
+    } finally {
+      rmSync(configDir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not call changeLanguage when nothing is persisted', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'i18n-bootstrap-'))
+    try {
+      const r = runScript(
+        configDir,
+        `
+          import { setupI18n, i18n } from '@craft-agent/shared/i18n';
+          const { hydrateMainI18nFromPreferences } = await import(${BOOTSTRAP_MODULE});
+          setupI18n();
+          let calls = 0;
+          const original = i18n.changeLanguage.bind(i18n);
+          i18n.changeLanguage = (...args) => { calls += 1; return original(...args); };
+          const applied = await hydrateMainI18nFromPreferences();
+          console.log(JSON.stringify({ applied: applied ?? null, calls, resolved: i18n.resolvedLanguage }));
+        `,
+      )
+      expect(r.exitCode).toBe(0)
+      expect(JSON.parse(r.stdout)).toEqual({ applied: null, calls: 0, resolved: 'en' })
     } finally {
       rmSync(configDir, { recursive: true, force: true })
     }

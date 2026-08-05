@@ -1,26 +1,22 @@
-import { i18n } from '@craft-agent/shared/i18n'
+import { LOCALE_REGISTRY } from '@craft-agent/shared/i18n'
+import { getPersistedUiLanguage } from '@craft-agent/shared/config'
 
 /**
- * Nome do idioma ativo do app, no próprio idioma, para instruir LLMs sobre a
- * língua de saída. O fallback é inglês — o mesmo do i18n quando não inicializado.
+ * Idioma da saída de reunião — resumo, análise visual e STT — derivado da
+ * preferência persistida em `preferences.json`, não de `i18n.resolvedLanguage`.
+ * O i18n do main hidrata tarde (#885) e já entregou análise em inglês sobre
+ * reunião em português, com o Deepgram transcrevendo áudio PT como fonética
+ * inglesa. `resolveTitleLanguageName()` segue a mesma regra.
  */
-const LANGUAGE_NAMES: Record<string, string> = {
-  'pt-BR': 'Português (Brasil)',
-  pt: 'Português',
-  en: 'English',
-  de: 'Deutsch',
-  es: 'Español',
-  hu: 'Magyar',
-  ja: '日本語',
-  pl: 'Polski',
-  'zh-Hans': '简体中文',
-  zh: '简体中文',
-}
 
-/** Idioma em que resumos e análises gerados por LLM devem ser escritos. */
-export function getOutputLanguageName(): string {
-  const lang = i18n.resolvedLanguage ?? 'en'
-  return LANGUAGE_NAMES[lang] ?? LANGUAGE_NAMES[lang.split('-')[0]!] ?? 'English'
+/**
+ * Nome nativo do idioma pedido a LLMs, ou `null` quando o usuário nunca escolheu
+ * um idioma — nesse caso o chamador pede o idioma da própria transcrição em vez
+ * de impor inglês.
+ */
+export function getOutputLanguageName(): string | null {
+  const code = getPersistedUiLanguage()
+  return code ? LOCALE_REGISTRY[code].nativeName : null
 }
 
 /**
@@ -45,4 +41,12 @@ const DEEPGRAM_LANGUAGE_CODES: Record<string, string> = {
 export function toDeepgramLanguage(locale: string | undefined): string | null {
   if (!locale) return null
   return DEEPGRAM_LANGUAGE_CODES[locale] ?? DEEPGRAM_LANGUAGE_CODES[locale.split('-')[0]!] ?? null
+}
+
+/**
+ * Idioma a pedir ao Deepgram, derivado da mesma preferência persistida.
+ * `null` deixa o provedor detectar o idioma do áudio.
+ */
+export function getTranscriptionLanguage(): string | null {
+  return toDeepgramLanguage(getPersistedUiLanguage())
 }

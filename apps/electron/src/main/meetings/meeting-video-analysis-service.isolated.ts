@@ -19,6 +19,8 @@ mock.module('@craft-agent/shared/config', () => ({
   getDefaultLlmConnection: () => defaultConnection,
   getLlmConnection: (slug: string) => llmConnections.find((c) => c.slug === slug) ?? null,
   getLlmConnections: () => llmConnections,
+  // output-language.ts resolves the prompt language from this preference.
+  getPersistedUiLanguage: () => undefined,
 }))
 
 mock.module('@craft-agent/shared/agent/backend', () => ({

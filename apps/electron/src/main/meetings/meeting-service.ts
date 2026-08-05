@@ -16,7 +16,7 @@ import type {
 import { generateMeetingSummaryMarkdown } from './meeting-summary-service'
 import { generateMeetingVideoAnalysisMarkdown } from './meeting-video-analysis-service'
 import { remuxWebmForSeek } from './recording-remux'
-import { getOutputLanguageName, toDeepgramLanguage } from './output-language'
+import { getTranscriptionLanguage } from './output-language'
 import type { BrowserPaneManager } from '../browser-pane-manager'
 import { getHermesRuntimePaths } from '../handlers/hermes-runtime'
 import { mainLog } from '../logger'
@@ -879,7 +879,7 @@ export class MeetingService {
         model: record.transcriptionModel,
         apiKey: credential.value,
         mimeType: record.recording.mimeType,
-        language: toDeepgramLanguage(i18n.resolvedLanguage),
+        language: getTranscriptionLanguage(),
       })
       const currentRecord = state.records.get(meetingId) ?? record
       const message = result.segments.length > 0
