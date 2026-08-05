@@ -164,7 +164,8 @@ import {
 } from "./panel-constants"
 import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { BrowserProfilePicker } from "@/components/browser/BrowserProfilePicker"
-import { browserInstancesAtom } from "@/atoms/browser-pane"
+import { browserInstancesAtom, meetingsHostedBrowserIdAtom } from "@/atoms/browser-pane"
+import { resolveBrowserDockRoute } from "./browser-dock-routing"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
 
@@ -2242,24 +2243,37 @@ function AppShellContent({
     return () => unsub()
   }, [])
 
-  // The browser's own toolbar asks to dock or undock. Docking opens a tab in
-  // the preview panel; undocking closes it. The panel is session-scoped, so
-  // with nothing selected there is nowhere to put it and the browser stays a
-  // window - refusing beats docking into a pane that will not render.
+  // The browser's own toolbar asks to dock or undock. Where a dock lands is
+  // `resolveBrowserDockRoute`'s call: the Meetings page hosts it while that page
+  // is open, otherwise the session-scoped preview panel does. Undocking clears
+  // both, whichever was holding it.
+  const setMeetingsHostedBrowserId = useSetAtom(meetingsHostedBrowserIdAtom)
+  const isMeetingsActive = isMeetingsNavigation(navState)
   useEffect(() => {
     const unsub = window.electronAPI.browserPane.onDisplayModeRequested((data) => {
-      if (!activeWorkspaceId) return
+      const route = resolveBrowserDockRoute(data, {
+        workspaceId: activeWorkspaceId ?? null,
+        previewSessionId: rightSidebarSessionId ?? null,
+        meetingsActive: isMeetingsActive,
+      })
+      // The router already refuses a workspace-less dock; this narrows the type.
+      if (route.kind === 'ignore' || !activeWorkspaceId) return
+      if (route.kind === 'meetings-host') {
+        setMeetingsHostedBrowserId(data.instanceId)
+        return
+      }
+
       const target = { kind: 'browser' as const, workspaceId: activeWorkspaceId, instanceId: data.instanceId }
-      if (data.mode !== 'integrated') {
+      if (route.kind === 'release') {
+        setMeetingsHostedBrowserId(current => current === data.instanceId ? null : current)
         dispatchRightSidebarContentTabs({ type: 'close', id: contentTabId(target) })
         return
       }
-      if (!rightSidebarSessionId) return
       updateRightSidebar({ type: 'session-info' })
       dispatchRightSidebarContentTabs({ type: 'open', mode: 'permanent', target })
     })
     return () => unsub()
-  }, [activeWorkspaceId, rightSidebarSessionId, updateRightSidebar])
+  }, [activeWorkspaceId, isMeetingsActive, rightSidebarSessionId, setMeetingsHostedBrowserId, updateRightSidebar])
 
   // Undock whatever left the tab list, by any route - close, workspace switch,
   // a restore that replaced everything. A browser left integrated with no tab

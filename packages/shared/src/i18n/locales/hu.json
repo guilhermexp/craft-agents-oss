@@ -649,6 +649,7 @@
   "meetings.followUpDescription": "Felelősök, feladatok és következő lépések azonosítása.",
   "meetings.hermesBotBusy": "A Hermes bot már egy másik értekezleten van ({{url}}). Állítsd le, mielőtt újat indítanál.",
   "meetings.hermesTranscriptEmptyMessage": "A Hermes bot nem rögzített egyetlen átiratsort sem ehhez a meetinghez.",
+  "meetings.hostedCall": "Beágyazott hívás",
   "meetings.inputHint": "Illeszd be a teljes linket vagy csak a meeting kódját.",
   "meetings.inputLabel": "Google Meet-link vagy -kód",
   "meetings.inputPlaceholder": "meet.google.com/abc-defg-hij",

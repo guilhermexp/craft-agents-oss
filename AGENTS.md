@@ -416,6 +416,27 @@ lifecycle. Preserve these invariants:
   mesmo quando o tamanho não muda. Uma URL derivada só do path mantém `key` e
   `src` iguais nos três estados e deixa o `<video>` preso à mídia sem Duration
   nem Cues que carregou durante a gravação — duração infinita e nenhum seek.
+- A call do Meet encaixada na página de Reuniões é um *frame com buraco*: o
+  React desenha a moldura e as `WebContentsView` nativas pintam por cima do
+  retângulo medido. A mecânica (medição, dedupe de rects, dock, ocultação sob
+  overlays) mora em `apps/electron/src/renderer/hooks/embedded-browser-view.ts`
+  + `useEmbeddedBrowserView.ts` e é COMPARTILHADA com o preview do chat
+  (`BrowserTabContent`) — não reimplemente. Os dois hosts diferem só no release:
+  a aba de preview usa `'conceal'`, porque dock segue a existência da aba e não
+  qual aba está ativa; a página usa `'floating'`, porque ela é dona do dock e
+  sair da página MUST devolver a janela — instância integrada sem host é janela
+  órfã. O buraco não pode ficar dentro do scroller da página: ele é irmão dele
+  no flex do `Panel`, senão a superfície rola e as views nativas ficam para trás.
+- Para onde um pedido de dock vai é decisão de `resolveBrowserDockRoute`
+  (`apps/electron/src/renderer/components/app-shell/browser-dock-routing.ts`),
+  consultado pelo relay em `AppShell`: a página de Reuniões vence enquanto está
+  aberta, o preview session-scoped atende fora dela, e sem nenhum dos dois o
+  browser continua janela. O preview do chat NÃO virou global (D-06); o id da
+  instância hospedada viaja por `meetingsHostedBrowserIdAtom`. Perguntar ao
+  agente sobre a call hospedada reusa o `MeetingAskButton` — não crie uma
+  segunda superfície. Com a reunião ao vivo ele MUST rebuscar a transcrição a
+  cada abertura (ela cresce) e marcar `live` no contexto
+  (`meeting-ask-context.ts`), senão o agente lê silêncio como "não foi dito".
 
 `packages/shared/src/workspaces/storage.ts` resolve o config root em cada
 chamada (`CRAFT_CONFIG_DIR`, com fallback em `homedir()`). Não reintroduza uma
@@ -446,7 +467,16 @@ bun test apps/electron/src/main/meetings/meeting-service.test.ts \
   apps/electron/src/renderer/lib/__tests__/meeting-status-label.test.ts \
   packages/shared/src/workspaces/__tests__/storage-meetings.test.ts
 bun test ./apps/electron/src/main/meetings/output-language.isolated.ts \
-  ./apps/electron/src/renderer/pages/__tests__/meetings-recording-preview.test.ts
+  ./apps/electron/src/renderer/pages/__tests__/meetings-recording-preview.test.ts \
+  ./apps/electron/src/renderer/pages/__tests__/meetings-browser-host.test.ts
+```
+
+Para mudanças no host da call embutida ou na mecânica compartilhada de embed,
+rode também as suítes do browser docado — elas são a prova de que o preview do
+chat não regrediu:
+
+```bash
+bun test apps/electron/src/renderer/components/browser/__tests__/
 ```
 
 For Hermes overlay changes, first prove all overlays apply from a clean cache

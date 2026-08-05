@@ -649,6 +649,7 @@
   "meetings.followUpDescription": "担当者、タスク、次のステップを特定します。",
   "meetings.hermesBotBusy": "Hermes ボットはすでに別の会議（{{url}}）に参加しています。新しい会議を開始する前に停止してください。",
   "meetings.hermesTranscriptEmptyMessage": "Hermes ボットはこの会議の文字起こし行を一切取得しませんでした。",
+  "meetings.hostedCall": "埋め込まれた通話",
   "meetings.inputHint": "リンク全体または会議コードのみを貼り付けてください。",
   "meetings.inputLabel": "Google Meet のリンクまたはコード",
   "meetings.inputPlaceholder": "meet.google.com/abc-defg-hij",

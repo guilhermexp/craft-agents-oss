@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { useMemo, useState } from 'react'
+import { useAtom } from 'jotai'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowRight,
@@ -25,11 +26,16 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Markdown } from '@/components/markdown'
 import { MEETINGS_CHANGED_EVENT } from '@/components/app-shell/MeetingsListPanel'
+import { MeetingAskButton } from '@/components/app-shell/MeetingAskButton'
+import { meetingsHostedBrowserIdAtom } from '@/atoms/browser-pane'
+import { useEmbeddedBrowserView } from '@/hooks/useEmbeddedBrowserView'
+import { useTheme } from '@/context/ThemeContext'
 import { isMissingMeetingError, normalizeGoogleMeetInput, resolveEffectiveMeetingId } from '@/lib/meetings-selection'
 import { isMeetingPostProcessingRunning, meetingStatusLabelKey } from '@/lib/meeting-status-label'
 import { getRecordingMediaUrl } from '@/lib/meeting-recording-preview'
 import { cn } from '@/lib/utils'
 import { getFileManagerName } from '@/lib/platform'
+import { BROWSER_CHROME_BG } from '../../shared/browser-chrome'
 import type { BrowserInstanceInfo, MeetingRecord, MeetingStartInput, MeetingTranscriptResult } from '../../shared/types'
 
 const GOOGLE_MEET_PREFIX = 'https://meet.google.com/'
@@ -125,6 +131,64 @@ function ProcessStep({ icon, title, description }: { icon: React.ReactNode; titl
         <div className="text-xs leading-5 text-muted-foreground">{description}</div>
       </div>
     </div>
+  )
+}
+
+/**
+ * The hosted call.
+ *
+ * A *frame with a hole*: the page draws the frame, the browser's native views
+ * paint into the hole, and `useEmbeddedBrowserView` keeps the two aligned. The
+ * same mechanics serve the chat preview tab; only the release differs — this
+ * host owns the dock, so unmounting hands the window back instead of merely
+ * concealing it. Navigating away therefore cannot leave an orphan window.
+ *
+ * There is no undock button here: the browser's own toolbar, which sits inside
+ * the hole, already has one.
+ */
+function MeetingsCallHost({
+  instanceId,
+  title,
+  ask,
+  onInstanceGone,
+}: {
+  instanceId: string
+  title: string
+  ask: React.ReactNode
+  onInstanceGone: () => void
+}) {
+  const { t } = useTranslation()
+  const { isDark } = useTheme()
+  const holeRef = useEmbeddedBrowserView({ instanceId, release: 'floating' })
+
+  // "Close Window Entirely" or a crash kills the instance, and the host would
+  // otherwise keep a hole open over a browser that no longer exists.
+  React.useEffect(() => {
+    const unsubscribe = window.electronAPI.browserPane?.onRemoved?.((id) => {
+      if (id === instanceId) onInstanceGone()
+    })
+    return () => unsubscribe?.()
+  }, [instanceId, onInstanceGone])
+
+  return (
+    <section
+      aria-label={t('meetings.hostedCall')}
+      className="flex h-[clamp(240px,52vh,720px)] shrink-0 flex-col gap-2 border-b border-border/55 bg-background px-4 pb-3 pt-3 sm:px-5"
+    >
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <Video className="size-3.5 shrink-0" />
+          <span className="min-w-0 truncate font-medium text-foreground">{title}</span>
+        </div>
+        {ask}
+      </div>
+      {/* The hole. Nothing may render inside: the native views paint over it. */}
+      <div
+        ref={holeRef}
+        className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border/60"
+        style={{ background: BROWSER_CHROME_BG[isDark ? 'dark' : 'light'] }}
+      />
+    </section>
   )
 }
 
@@ -230,6 +294,13 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
   const [selectedRecord, setSelectedRecord] = useState<MeetingRecord | null>(null)
   const [selectedTranscript, setSelectedTranscript] = useState<MeetingTranscriptResult | null>(null)
   const [missingMeetingId, setMissingMeetingId] = useState<string | null>(null)
+  // Browser instance docked into this page, set by the dock relay in AppShell.
+  const [hostedBrowserId, setHostedBrowserId] = useAtom(meetingsHostedBrowserIdAtom)
+  const dropHostedBrowser = React.useCallback(() => setHostedBrowserId(null), [setHostedBrowserId])
+  // Leaving the page hands the window back (the host's own cleanup does that),
+  // so the id must not outlive the page: coming back must not silently re-dock a
+  // browser the user has been using as a window since.
+  React.useEffect(() => dropHostedBrowser, [dropHostedBrowser])
   // Store the tab keyed to the meeting it was selected for, so it auto-resets
   // to 'summary' when the parent selects a different meeting — no effect needed.
   const [detailTabEntry, setDetailTabEntry] = useState<{ forMeetingId: string | null; tab: MeetingDetailTab }>({ forMeetingId: null, tab: 'summary' })
@@ -554,8 +625,25 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
   const recordingMediaUrl = getRecordingMediaUrl(selectedRecord)
 
   return (
+    // The hosted call and the page content are siblings inside the panel's own
+    // flex column: nesting them under one more div would reindent the whole page
+    // for nothing, and the host must not scroll with the content — the native
+    // views follow a measured rectangle, and a scrolling hole drifts away from it.
+    <>
+      {hostedBrowserId && (
+        <MeetingsCallHost
+          instanceId={hostedBrowserId}
+          title={selectedRecord?.title || selectedRecord?.code || selectedRecord?.url || t('meetings.hostedCall')}
+          // The meeting the page is showing. Its title is on the button itself,
+          // so a live call and an older selected recording are never confused.
+          ask={workspaceId && selectedRecord
+            ? <MeetingAskButton workspaceId={workspaceId} record={selectedRecord} />
+            : null}
+          onInstanceGone={dropHostedBrowser}
+        />
+      )}
     <div className={cn(
-      'h-full overflow-auto overflow-x-hidden bg-background px-4 py-5 sm:px-5',
+      'min-h-0 flex-1 overflow-auto overflow-x-hidden bg-background px-4 py-5 sm:px-5',
       isShowingResult && 'py-4'
     )}>
       <div className={cn(
@@ -946,6 +1034,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
         )}
       </div>
     </div>
+    </>
   )
 }
 

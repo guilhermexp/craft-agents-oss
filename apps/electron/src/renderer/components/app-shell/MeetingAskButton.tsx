@@ -3,8 +3,10 @@
  *
  * "Ask about this meeting" trigger that opens the inline mini-agent popover
  * (same EditPopover/ChatDisplay surface used for skill/config edits) scoped to a
- * single meeting. The transcript is fetched lazily when the popover opens and
- * injected as hidden context so the user can ask follow-up questions.
+ * single meeting. The transcript is fetched when the popover opens — every open,
+ * because a live call's transcript grows — and injected as hidden context
+ * (`meeting-ask-context.ts`) so the user can ask follow-up questions. The same
+ * button serves the meeting list and the call hosted by the Meetings page.
  *
  * Runtime rule: model 'fast' resolves to the configured connection's mini model
  * (Claude -> haiku, Pi -> gpt-mini), matching the post-meeting summary path.
@@ -15,7 +17,8 @@ import { useTranslation } from 'react-i18next'
 import { MessageCircle } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { EditPopover, type EditContext } from '@/components/ui/EditPopover'
+import { EditPopover } from '@/components/ui/EditPopover'
+import { buildMeetingAskContext } from './meeting-ask-context'
 import type { MeetingRecord, MeetingTranscriptResult } from '../../../shared/types'
 
 function buildTranscriptText(segments: MeetingTranscriptResult['transcript']): string {
@@ -36,9 +39,12 @@ export function MeetingAskButton({ workspaceId, record }: MeetingAskButtonProps)
   const [transcriptText, setTranscriptText] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(false)
 
-  // Lazily load the transcript the first time the popover opens.
+  // Load the transcript every time the popover opens. A live meeting's
+  // transcript grows while the call runs, so a value cached from an earlier open
+  // would answer about a stale call. The previous text stays in place until the
+  // new one lands, so reopening never falls back to "(loading…)".
   React.useEffect(() => {
-    if (!open || transcriptText !== null) return
+    if (!open) return
     let cancelled = false
     setLoading(true)
     void window.electronAPI.meetings
@@ -47,7 +53,8 @@ export function MeetingAskButton({ workspaceId, record }: MeetingAskButtonProps)
         if (!cancelled) setTranscriptText(buildTranscriptText(res.transcript ?? []))
       })
       .catch(() => {
-        if (!cancelled) setTranscriptText('')
+        // A failed refetch must not erase a transcript an earlier open did get.
+        if (!cancelled) setTranscriptText((current) => current ?? '')
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -55,40 +62,20 @@ export function MeetingAskButton({ workspaceId, record }: MeetingAskButtonProps)
     return () => {
       cancelled = true
     }
-  }, [open, transcriptText, workspaceId, record.id])
+  }, [open, workspaceId, record.id])
 
   const title = record.title || record.code || 'Google Meet'
   const displayLabel = t('meetings.askAbout', { title })
   const placeholder = t('meetings.askPlaceholder')
 
-  const context: EditContext = React.useMemo(() => {
-    const transcriptBlock =
-      transcriptText && transcriptText.length > 0
-        ? transcriptText
-        : loading
-          ? '(loading transcript…)'
-          : '(transcript unavailable)'
-
-    const body = [
-      'You are a meeting assistant. Do NOT edit, create, or validate any files or configuration. ' +
-        'Answer the user\'s questions about the meeting below using ONLY the summary and transcript provided. ' +
-        'Be concise, reference speakers when relevant, and reply in the language of the transcript. ' +
-        'If the transcript does not contain the answer, say so plainly instead of guessing.',
-      '',
-      `Meeting: ${title}`,
-      record.url ? `URL: ${record.url}` : '',
-      record.summaryMarkdown ? `\nSummary:\n${record.summaryMarkdown}` : '',
-      `\nTranscript:\n${transcriptBlock}`,
-    ]
-      .filter(Boolean)
-      .join('\n')
-
-    return {
-      label: 'Meeting Q&A',
-      filePath: '',
-      context: body,
-    }
-  }, [title, record.url, record.summaryMarkdown, transcriptText, loading])
+  const context = React.useMemo(() => buildMeetingAskContext({
+    title,
+    url: record.url,
+    summaryMarkdown: record.summaryMarkdown,
+    transcriptText,
+    loading,
+    live: record.status === 'starting' || record.status === 'running',
+  }), [title, record.url, record.summaryMarkdown, record.status, transcriptText, loading])
 
   // The popover content renders through a Radix portal, but React events bubble
   // through the React tree — not the DOM — so keystrokes inside the popover reach

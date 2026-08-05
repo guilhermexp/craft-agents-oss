@@ -649,6 +649,7 @@
   "meetings.followUpDescription": "Identify owners, tasks, and next steps.",
   "meetings.hermesBotBusy": "The Hermes bot is already in another meeting ({{url}}). Stop it before starting a new one.",
   "meetings.hermesTranscriptEmptyMessage": "The Hermes bot did not capture any transcript lines for this meeting.",
+  "meetings.hostedCall": "Hosted call",
   "meetings.inputHint": "Paste the full link or only the meeting code.",
   "meetings.inputLabel": "Google Meet link or code",
   "meetings.inputPlaceholder": "meet.google.com/abc-defg-hij",

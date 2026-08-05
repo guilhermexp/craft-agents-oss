@@ -649,6 +649,7 @@
   "meetings.followUpDescription": "Verantwortliche, Aufgaben und nächste Schritte identifizieren.",
   "meetings.hermesBotBusy": "Der Hermes-Bot ist bereits in einem anderen Meeting ({{url}}). Beende es, bevor du ein neues startest.",
   "meetings.hermesTranscriptEmptyMessage": "Der Hermes-Bot hat für dieses Meeting keine Transkriptzeilen erfasst.",
+  "meetings.hostedCall": "Eingebettetes Meeting",
   "meetings.inputHint": "Füge den vollständigen Link oder nur den Meeting-Code ein.",
   "meetings.inputLabel": "Google Meet-Link oder -Code",
   "meetings.inputPlaceholder": "meet.google.com/abc-defg-hij",

@@ -649,6 +649,7 @@
   "meetings.followUpDescription": "识别负责人、任务和后续步骤。",
   "meetings.hermesBotBusy": "Hermes 机器人已在另一个会议中（{{url}}）。请先停止它，然后再开始新的会议。",
   "meetings.hermesTranscriptEmptyMessage": "Hermes 机器人未捕获此会议的任何转录内容。",
+  "meetings.hostedCall": "嵌入的通话",
   "meetings.inputHint": "粘贴完整链接或仅输入会议代码。",
   "meetings.inputLabel": "Google Meet 链接或代码",
   "meetings.inputPlaceholder": "meet.google.com/abc-defg-hij",

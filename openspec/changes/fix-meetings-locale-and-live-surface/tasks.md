@@ -70,21 +70,21 @@ sair da página devolve a janela; a mecânica de bounds é compartilhada com
 `BrowserTabContent`, não duplicada; dá para perguntar ao agente sobre a reunião
 hospedada.
 
-- [ ] **3.1 Congelar o gap com testes RED**
+- [x] **3.1 Congelar o gap com testes RED**
   - files: `apps/electron/src/renderer/pages/__tests__/meetings-browser-host.test.ts`
-  - note: cobrir dock sem sessão selecionada, undock ao desmontar, e a sessão de agente recebendo o contexto da reunião hospedada.
+  - note: 19 testes. RED provado por mutação para o comportamento pré-F3 (roteamento sem o ramo de Reuniões, release sem `floating`, contexto sem marcador de call ao vivo): 5 fail / 14 pass — exatamente os cenários da spec. Sem DOM no runner, então a mecânica é exercitada pelos módulos puros (`embedded-browser-view.ts`, `browser-dock-routing.ts`, `meeting-ask-context.ts`) que o hook e os componentes consomem, no mesmo padrão de `ChatDisplay.auto-scroll.ts`.
   - verify: os testes falham pelas capacidades ausentes
-- [ ] **3.2 Extrair a mecânica de embed do `BrowserTabContent`**
-  - files: `apps/electron/src/renderer/components/browser/BrowserTabContent.tsx`, novo hook em `apps/electron/src/renderer/hooks/`
-  - note: medição do retângulo, dedupe de rects, dock/undock e ocultação sob overlays viram um hook reutilizável. `BrowserTabContent` passa a consumi-lo sem mudança de comportamento — é refactor puro, verificado pelos testes existentes.
+- [x] **3.2 Extrair a mecânica de embed do `BrowserTabContent`**
+  - files: `apps/electron/src/renderer/components/browser/BrowserTabContent.tsx`, `apps/electron/src/renderer/hooks/useEmbeddedBrowserView.ts`, `apps/electron/src/renderer/hooks/embedded-browser-view.ts`
+  - note: refactor puro. `BrowserTabContent` caiu de 143 para 39 linhas e só passa `release: 'conceal'` — a divisão de lifetime documentada no cabeçalho continua intacta. A única diferença entre os dois hosts é o release: `'conceal'` (aba perde a pane, segue encaixado) vs `'floating'` (host da página devolve a janela). O guard `isCancelled` preserva o comportamento original de não revelar as views quando o host desmontou durante o encaixe.
   - verify: `bun test apps/electron/src/renderer/components/browser/__tests__/`
-- [ ] **3.3 Hospedar a call na página de Reuniões**
-  - files: `apps/electron/src/renderer/pages/MeetingsPage.tsx`, `apps/electron/src/renderer/components/app-shell/AppShell.tsx`
-  - note: o pedido de dock vindo da toolbar precisa chegar à página de Reuniões quando ela está ativa; hoje `AppShell.tsx:2257` descarta sem sessão. Não tornar o preview do chat global (D-06).
+- [x] **3.3 Hospedar a call na página de Reuniões**
+  - files: `apps/electron/src/renderer/pages/MeetingsPage.tsx`, `apps/electron/src/renderer/components/app-shell/AppShell.tsx`, `apps/electron/src/renderer/components/app-shell/browser-dock-routing.ts`, `apps/electron/src/renderer/atoms/browser-pane.ts`, `packages/shared/src/i18n/locales/*.json`
+  - note: o relay do `AppShell` passou a consultar `resolveBrowserDockRoute` — a página de Reuniões vence enquanto está aberta, o preview session-scoped continua sendo o destino fora dela (D-06 preservado), e sem os dois o browser segue janela. O id viaja por `meetingsHostedBrowserIdAtom` em vez de ser threaded pelo `MainContentPanel`. O host é irmão do scroller dentro do flex do `Panel`: aninhar reindentaria a página inteira e um buraco que rola sai de baixo das views nativas. `onRemoved` derruba o host quando a instância morre, e sair da página limpa o atom além de devolver a janela.
   - verify: `bun test apps/electron/src/renderer/pages/__tests__/meetings-browser-host.test.ts`
-- [ ] **3.4 Abrir sessão de agente sobre a reunião hospedada**
-  - files: `apps/electron/src/renderer/pages/MeetingsPage.tsx`, `apps/electron/src/renderer/components/app-shell/MeetingAskButton.tsx`
-  - note: reaproveitar o `MeetingAskButton` existente em vez de criar outra superfície; ele já injeta a transcrição como contexto. Precisa funcionar com a reunião ainda ao vivo, não só depois de encerrada.
+- [x] **3.4 Abrir sessão de agente sobre a reunião hospedada**
+  - files: `apps/electron/src/renderer/pages/MeetingsPage.tsx`, `apps/electron/src/renderer/components/app-shell/MeetingAskButton.tsx`, `apps/electron/src/renderer/components/app-shell/meeting-ask-context.ts`
+  - note: o `MeetingAskButton` existente foi reaproveitado no cabeçalho do host, com o record que a página mostra (o título vai no próprio botão). Para funcionar ao vivo faltavam duas coisas: a transcrição era cacheada no primeiro open (respondia sobre uma call velha) e o contexto não dizia que a call estava em curso, então o agente tratava silêncio como "não foi dito na reunião". Agora busca a cada open, preserva o texto anterior enquanto a nova busca corre, e marca `live`.
   - verify: `bun test apps/electron/src/renderer/pages/__tests__/meetings-browser-host.test.ts`
 - [ ] **3.5 Gates da fase e validação em reunião real**
   - files: nenhum
@@ -101,5 +101,8 @@ hospedada.
 - `apps/electron/src/renderer/lib/meeting-status-label.ts` — rótulo da fase e critério de poll (F2)
 - `apps/electron/src/renderer/lib/meeting-recording-preview.ts` — URL versionada da prévia (F2)
 - `apps/electron/src/renderer/pages/MeetingsPage.tsx` — fase, prévia e host (F2, F3)
-- `apps/electron/src/renderer/components/browser/BrowserTabContent.tsx` — mecânica de embed compartilhada (F3)
+- `apps/electron/src/renderer/hooks/embedded-browser-view.ts` + `useEmbeddedBrowserView.ts` — mecânica de embed compartilhada (F3)
+- `apps/electron/src/renderer/components/browser/BrowserTabContent.tsx` — consumidor da mecânica, prova do refactor puro (F3)
+- `apps/electron/src/renderer/components/app-shell/browser-dock-routing.ts` — destino do pedido de dock (F3)
+- `apps/electron/src/renderer/components/app-shell/meeting-ask-context.ts` — contexto da sessão de agente, com marcador de call ao vivo (F3)
 - Fora de escopo: `packages/shared/src/hermes/**`, pipeline Hermes, `content-tabs-state.ts`

@@ -649,6 +649,7 @@
   "meetings.followUpDescription": "Identificar responsáveis, tarefas e próximos passos.",
   "meetings.hermesBotBusy": "O bot Hermes já está em outra reunião ({{url}}). Encerre-a antes de iniciar uma nova.",
   "meetings.hermesTranscriptEmptyMessage": "O bot Hermes não capturou nenhuma linha de transcrição nesta reunião.",
+  "meetings.hostedCall": "Chamada encaixada",
   "meetings.inputHint": "Cole o link completo ou apenas o código da reunião.",
   "meetings.inputLabel": "Link ou código do Google Meet",
   "meetings.inputPlaceholder": "meet.google.com/abc-defg-hij",
