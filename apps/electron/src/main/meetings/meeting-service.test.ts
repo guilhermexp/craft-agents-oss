@@ -817,6 +817,198 @@ describe('MeetingService storage', () => {
     expect(transcript.message).toBe('Transcription API key not configured.')
   })
 
+  /**
+   * Fases escritas pelo pipeline, na ordem, com espera dirigida pela própria
+   * escrita. Espiar `updateRecord` é o que torna a etapa transitória
+   * (`preparing`) observável: o pipeline é fire-and-forget por contrato, então
+   * um `status()` amostrado depois já perdeu as etapas curtas — e esperar a
+   * escrita, em vez de um sleep, não amarra o teste ao relógio.
+   */
+  function watchPhaseWrites(service: InstanceType<typeof MeetingService>): {
+    phases: string[]
+    waitFor(phase: string): Promise<void>
+  } {
+    const phases: string[] = []
+    const gates = new Map<string, PromiseWithResolvers<void>>()
+    const privateService = service as unknown as {
+      updateRecord(state: unknown, id: string, updates: { postProcessingPhase?: string }): void
+    }
+    const original = privateService.updateRecord.bind(privateService)
+    privateService.updateRecord = (state, id, updates) => {
+      original(state, id, updates)
+      const phase = updates.postProcessingPhase
+      if (!phase) return
+      phases.push(phase)
+      gates.get(phase)?.resolve()
+    }
+    return {
+      phases,
+      waitFor(phase) {
+        if (phases.includes(phase)) return Promise.resolve()
+        const gate = gates.get(phase) ?? Promise.withResolvers<void>()
+        gates.set(phase, gate)
+        return gate.promise
+      },
+    }
+  }
+
+  it('keeps the stopped record in a running post-processing phase until the pipeline resolves', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-phase-'))
+    tempDirs.push(workspaceRoot)
+
+    const analysisStarted = Promise.withResolvers<void>()
+    const analysisResult = Promise.withResolvers<string>()
+    const service = new MeetingService(createBrowserPaneManager(), undefined, async (input) => {
+      videoAnalysisRequests.push(input)
+      analysisStarted.resolve()
+      return analysisResult.promise
+    })
+    const { phases, waitFor } = watchPhaseWrites(service)
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+    })
+
+    const recordingPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings', `${record.id}.webm`)
+    mkdirSync(dirname(recordingPath), { recursive: true })
+    writeFileSync(recordingPath, 'video')
+
+    await service.completeRecording('ws-test', workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      bytesWritten: 5,
+      durationMs: 1000,
+      mimeType: 'video/webm',
+    })
+    await analysisStarted.promise
+
+    const working = service.status(workspaceRoot, record.id)
+    // D-04: o status terminal continua `stopped`; a fase é campo separado.
+    expect(working?.status).toBe('stopped')
+    expect(working?.postProcessingPhase).toBe('analyzing')
+
+    analysisResult.resolve('## Visual analysis')
+    await waitFor('completed')
+    expect(service.status(workspaceRoot, record.id)?.postProcessingPhase).toBe('completed')
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('stopped')
+    // Preparação do arquivo antes da análise, sem nenhuma etapa saltada.
+    expect(phases).toEqual(['preparing', 'analyzing', 'completed'])
+  })
+
+  it('walks the phase through transcription and analysis when transcription is enabled', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-phase-transcribe-'))
+    tempDirs.push(workspaceRoot)
+
+    credentials.set(JSON.stringify({
+      type: 'meeting_transcription_api_key',
+      workspaceId: 'ws-test',
+      name: 'deepgram',
+    }), { value: 'dg-test-key' })
+
+    const analysisStarted = Promise.withResolvers<void>()
+    const analysisResult = Promise.withResolvers<string>()
+    const service = new MeetingService(createBrowserPaneManager(), undefined, async (input) => {
+      videoAnalysisRequests.push(input)
+      analysisStarted.resolve()
+      return analysisResult.promise
+    })
+    const { phases, waitFor } = watchPhaseWrites(service)
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: true,
+    })
+
+    const recordingPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings', `${record.id}.webm`)
+    mkdirSync(dirname(recordingPath), { recursive: true })
+    writeFileSync(recordingPath, 'audio')
+
+    await service.completeRecording('ws-test', workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      bytesWritten: 5,
+      durationMs: 1000,
+      mimeType: 'audio/webm',
+    })
+    await analysisStarted.promise
+
+    expect(service.status(workspaceRoot, record.id)?.postProcessingPhase).toBe('analyzing')
+    analysisResult.resolve('## Visual analysis')
+    await waitFor('completed')
+    expect(service.status(workspaceRoot, record.id)?.postProcessingPhase).toBe('completed')
+    expect(phases).toEqual(['preparing', 'transcribing', 'analyzing', 'completed'])
+  })
+
+  it('resolves the phase to failed when a pipeline step throws', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-phase-failed-'))
+    tempDirs.push(workspaceRoot)
+
+    const service = new MeetingService(createBrowserPaneManager(), undefined, async () => {
+      throw new Error('ffmpeg exploded')
+    })
+    const { waitFor } = watchPhaseWrites(service)
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+    })
+
+    const recordingPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings', `${record.id}.webm`)
+    mkdirSync(dirname(recordingPath), { recursive: true })
+    writeFileSync(recordingPath, 'video')
+
+    await service.completeRecording('ws-test', workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      bytesWritten: 5,
+      durationMs: 1000,
+      mimeType: 'video/webm',
+    })
+
+    await waitFor('failed')
+    expect(service.status(workspaceRoot, record.id)?.postProcessingPhase).toBe('failed')
+    // Falha do pipeline não reabre a reunião: o status terminal segue `stopped`.
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('stopped')
+  })
+
+  it('resolves a phase orphaned by a crash to failed on the next boot', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-phase-orphan-'))
+    tempDirs.push(workspaceRoot)
+
+    const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
+    const meetingId = '55555555-5555-5555-5555-555555555555'
+    mkdirSync(meetingsDir, { recursive: true })
+    writeFileSync(join(meetingsDir, 'meetings.json'), JSON.stringify({
+      version: 1,
+      meetings: [{
+        id: meetingId,
+        provider: 'google-meet',
+        captureMode: 'craft',
+        status: 'stopped',
+        url: 'https://meet.google.com/abc-defg-hij',
+        browserInstanceId: 'browser-1',
+        startedAt: Date.now() - 10_000,
+        updatedAt: Date.now() - 5_000,
+        endedAt: Date.now() - 5_000,
+        postProcessingPhase: 'analyzing',
+      }],
+    }))
+
+    // O pipeline é in-process: uma fase não resolvida no disco não tem ninguém
+    // para continuá-la, senão a UI mostraria progresso para sempre.
+    const service = new MeetingService(createBrowserPaneManager())
+    expect(service.status(workspaceRoot, meetingId)?.postProcessingPhase).toBe('failed')
+  })
+
+  it('resolves the phase to failed when an interrupted transcription cannot be recovered', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-phase-demoted-'))
+    tempDirs.push(workspaceRoot)
+    const { meetingId } = writeInterruptedTranscriptionFixture(workspaceRoot, { audioOnDisk: false })
+
+    const service = new MeetingService(createBrowserPaneManager())
+    await service.recoverInterruptedTranscriptions('ws-test', workspaceRoot)
+
+    expect(service.status(workspaceRoot, meetingId)?.postProcessingPhase).toBe('failed')
+  })
+
   it('reconciles orphan video-analysis dirs on ensureLoaded and keeps owned ones', async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-va-orphans-'))
     tempDirs.push(workspaceRoot)

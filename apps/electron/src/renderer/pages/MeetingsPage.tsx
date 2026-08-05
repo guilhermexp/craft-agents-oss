@@ -26,7 +26,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Markdown } from '@/components/markdown'
 import { MEETINGS_CHANGED_EVENT } from '@/components/app-shell/MeetingsListPanel'
 import { isMissingMeetingError, normalizeGoogleMeetInput, resolveEffectiveMeetingId } from '@/lib/meetings-selection'
-import { meetingStatusLabelKey } from '@/lib/meeting-status-label'
+import { isMeetingPostProcessingRunning, meetingStatusLabelKey } from '@/lib/meeting-status-label'
+import { getRecordingMediaUrl } from '@/lib/meeting-recording-preview'
 import { cn } from '@/lib/utils'
 import { getFileManagerName } from '@/lib/platform'
 import type { BrowserInstanceInfo, MeetingRecord, MeetingStartInput, MeetingTranscriptResult } from '../../shared/types'
@@ -207,12 +208,6 @@ function buildTranscriptMarkdown(
   return lines.join('\n').trimEnd()
 }
 
-function getRecordingMediaUrl(record: MeetingRecord | null): string | null {
-  const recordingPath = record?.recording?.path
-  if (!recordingPath) return null
-  return `media://recording/${encodeURIComponent(recordingPath)}`
-}
-
 export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPageProps) {
   const { t } = useTranslation()
   const fileManagerName = getFileManagerName()
@@ -387,13 +382,15 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
       }
     }
 
-    // Poll fast (1.5s) while live; back off to 15s once the record is settled and
-    // the transcript is resolved — the only late arrival then is the video-analysis
-    // summary, which does not need sub-second polling.
+    // Poll fast (1.5s) while live or while the post-recording pipeline still
+    // works; back off to 15s only once the record, its phase and the transcript
+    // are all resolved — nothing else lands after that.
     const schedule = () => {
       if (cancelled) return
       const settled =
-        (latestRecord?.status === 'stopped' || latestRecord?.status === 'error')
+        latestRecord != null
+        && (latestRecord.status === 'stopped' || latestRecord.status === 'error')
+        && !isMeetingPostProcessingRunning(latestRecord)
         && (latestTranscript?.status === 'ready' || latestTranscript?.status === 'unavailable')
       timer = window.setTimeout(async () => {
         await loadSelectedMeeting()
@@ -445,8 +442,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
       setDetectedMeeting((current) => current?.url === meetingUrl ? null : current)
       setMissingMeetingId(null)
       // Surface the live recording immediately: select it locally, show its
-      // record, and switch to the results view so the ProcessingPipeline renders
-      // (recording → transcription feedback) without waiting for a list click.
+      // record, and switch to the results view without waiting for a list click.
       setLiveStartedId(result.id)
       setSelectedRecord(result)
       setSelectedTranscript(null)
@@ -878,7 +874,7 @@ export function MeetingsPage({ workspaceId, selectedMeetingId }: MeetingsPagePro
                   <div className="mt-0.5 truncate text-xs text-muted-foreground">
                     {selectedRecord?.recording?.durationMs
                       ? formatTranscriptTimestamp(selectedRecord.recording.durationMs)
-                      : selectedRecord?.status ?? ''}
+                      : selectedRecord ? t(meetingStatusLabelKey(selectedRecord)) : ''}
                   </div>
                 </div>
                 {selectedRecord?.recording?.path && (

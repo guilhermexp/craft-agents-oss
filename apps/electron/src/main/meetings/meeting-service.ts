@@ -7,6 +7,7 @@ import type {
   MeetingRecord,
   MeetingTranscriptionConfig,
   MeetingStartInput,
+  MeetingPostProcessingPhase,
   MeetingStatus,
   MeetingTranscriptionProvider,
   MeetingTranscriptResult,
@@ -716,6 +717,10 @@ export class MeetingService {
     this.updateRecord(state, meetingId, {
       status: 'stopped',
       endedAt,
+      // Selar não é terminar: remux, transcrição e análise visual ainda vão
+      // rodar por minutos. `status` continua `stopped` (D-04) e a fase é o que
+      // a UI mostra enquanto o pipeline trabalha.
+      postProcessingPhase: 'preparing',
       recording: {
         path: recording.outputPath,
         mimeType: recording.mimeType,
@@ -759,8 +764,9 @@ export class MeetingService {
 
   /**
    * Regrava o `.webm` selado com Duration + Cues para o player poder seekar e
-   * atualiza `bytesWritten` quando o tamanho muda. Nunca lança: remux é
-   * melhoria do artefato, não condição — sem ffmpeg a gravação continua válida.
+   * marca no record que o arquivo foi substituído (`remuxedAt`, `bytesWritten`).
+   * Nunca lança: remux é melhoria do artefato, não condição — sem ffmpeg a
+   * gravação continua válida.
    */
   private async remuxRecordingForSeek(workspaceRootPath: string, meetingId: string): Promise<void> {
     const state = this.getWorkspaceState(workspaceRootPath)
@@ -769,15 +775,40 @@ export class MeetingService {
     if (!record?.recording?.path || !existsSync(record.recording.path)) return
     try {
       const result = await remuxWebmForSeek(record.recording.path)
-      if (result.outcome !== 'remuxed' || result.size === record.recording.bytesWritten) return
+      if (result.outcome !== 'remuxed') return
       const current = state.records.get(meetingId)
       if (!current?.recording) return
+      // `remuxedAt` é gravado mesmo quando o tamanho não muda: o arquivo foi
+      // substituído, e é essa marca — não o tamanho — que faz a prévia
+      // recarregar a mídia nova.
       this.updateRecord(state, meetingId, {
-        recording: { ...current.recording, bytesWritten: result.size },
+        recording: { ...current.recording, bytesWritten: result.size, remuxedAt: Date.now() },
       })
     } catch (error) {
       mainLog.warn(`[meetings] remux step failed for ${meetingId}: ${error instanceof Error ? error.message : String(error)}`)
     }
+  }
+
+  /**
+   * Escreve a etapa corrente do pós-processamento no record.
+   *
+   * `failed` é absorvente: a análise visual roda mesmo depois de uma
+   * transcrição que falhou, e sem isso ela terminaria em `completed` apagando a
+   * única evidência do erro. `restart` é para quem recomeça o pipeline (selar
+   * uma gravação nova, retomar uma transcrição interrompida) e para registrar a
+   * própria falha.
+   */
+  private setPostProcessingPhase(
+    state: WorkspaceMeetingState,
+    meetingId: string,
+    phase: MeetingPostProcessingPhase,
+    options?: { restart?: boolean },
+  ): void {
+    const record = state.records.get(meetingId)
+    if (!record) return
+    if (record.postProcessingPhase === phase) return
+    if (record.postProcessingPhase === 'failed' && !options?.restart) return
+    this.updateRecord(state, meetingId, { postProcessingPhase: phase })
   }
 
   /**
@@ -832,6 +863,9 @@ export class MeetingService {
       state.transcripts.set(record.id, unavailable)
       this.persistTranscript(state, unavailable)
       this.updateRecord(state, record.id, { summaryMarkdown })
+      // Nada mais vai rodar por esta gravação: a fase precisa parar de anunciar
+      // progresso, senão a UI mostra transcrição em curso para sempre.
+      this.setPostProcessingPhase(state, record.id, 'failed', { restart: true })
       mainLog.warn(`[meetings] demoted interrupted transcription without recoverable audio for ${record.id}`)
     }
   }
@@ -841,6 +875,10 @@ export class MeetingService {
     this.ensureLoaded(state)
     const record = state.records.get(meetingId)
     if (!record?.recording?.path || !record.transcriptionProvider || !record.transcriptionModel) return
+
+    // A transcrição é o começo do trecho do pipeline que este método conduz —
+    // inclusive numa retomada pós-crash, que precisa limpar a falha do boot.
+    this.setPostProcessingPhase(state, meetingId, 'transcribing', { restart: true })
 
     const credentialId = getTranscriptionCredentialId(workspaceId, record.transcriptionProvider)
     const credential = await getCredentialManager().get(credentialId)
@@ -942,6 +980,9 @@ export class MeetingService {
       state.transcripts.set(meetingId, unavailable)
       this.persistTranscript(state, unavailable)
       this.updateRecord(state, meetingId, { summaryMarkdown })
+      // A análise visual ainda roda a seguir, mas a falha da transcrição é a
+      // informação que o usuário precisa ver: ela vence o `completed` da análise.
+      this.setPostProcessingPhase(state, meetingId, 'failed', { restart: true })
       void this.generateAgentVideoAnalysis(workspaceId, workspaceRootPath, meetingId, [])
       throw error
     }
@@ -1211,9 +1252,11 @@ export class MeetingService {
   }
 
   /**
-   * Run the configured Craft agent (Claude/Pi, never Hermes) on the recorded
-   * meeting video plus Deepgram transcript segments to produce visual notes.
-   * Best-effort: failures keep the existing summary and are logged.
+   * Última etapa do pipeline pós-gravação: conduz a fase e absorve o erro.
+   *
+   * Todo caminho que chega aqui veio de `completeRecording`, que já abriu a fase
+   * em `preparing` — então resolver aqui é o que garante que nenhuma gravação
+   * craft fique anunciando progresso para sempre.
    */
   private async generateAgentVideoAnalysis(
     workspaceId: string,
@@ -1221,36 +1264,57 @@ export class MeetingService {
     meetingId: string,
     segments: MeetingTranscriptSegment[],
   ): Promise<void> {
+    const state = this.getWorkspaceState(workspaceRootPath)
+    if (!state.records.has(meetingId)) return
+    this.setPostProcessingPhase(state, meetingId, 'analyzing')
     try {
-      const state = this.getWorkspaceState(workspaceRootPath)
-      const record = state.records.get(meetingId)
-      const recordingPath = record?.recording?.path
-      if (!record || !recordingPath) return
-
-      const markdown = await this.videoAnalysisGenerator({
-        workspaceId,
-        workspaceRootPath,
-        record,
-        recordingPath,
-        outputDir: this.getVideoAnalysisDir(state, meetingId),
-        segments,
-      })
-      if (!markdown) {
-        if ((record.summarizeOnEnd || record.followUpOnEnd) && segments.length > 0) {
-          await this.generateAgentSummary(workspaceId, workspaceRootPath, meetingId, segments)
-        }
-        return
-      }
-
-      const latest = this.getWorkspaceState(workspaceRootPath)
-      if (!latest.records.has(meetingId)) return
-      this.updateRecord(latest, meetingId, { summaryMarkdown: markdown })
-      mainLog.info(`[meetings] agent video analysis generated for ${meetingId}`)
+      await this.runAgentVideoAnalysis(workspaceId, workspaceRootPath, meetingId, segments)
     } catch (error) {
       mainLog.error(
         `[meetings] generateAgentVideoAnalysis failed for ${meetingId}: ${error instanceof Error ? error.message : String(error)}`,
       )
+      this.setPostProcessingPhase(state, meetingId, 'failed', { restart: true })
+      return
     }
+    this.setPostProcessingPhase(state, meetingId, 'completed')
+  }
+
+  /**
+   * Run the configured Craft agent (Claude/Pi, never Hermes) on the recorded
+   * meeting video plus Deepgram transcript segments to produce visual notes.
+   * Best-effort: failures keep the existing summary and are reported as the
+   * failed phase by the caller.
+   */
+  private async runAgentVideoAnalysis(
+    workspaceId: string,
+    workspaceRootPath: string,
+    meetingId: string,
+    segments: MeetingTranscriptSegment[],
+  ): Promise<void> {
+    const state = this.getWorkspaceState(workspaceRootPath)
+    const record = state.records.get(meetingId)
+    const recordingPath = record?.recording?.path
+    if (!record || !recordingPath) return
+
+    const markdown = await this.videoAnalysisGenerator({
+      workspaceId,
+      workspaceRootPath,
+      record,
+      recordingPath,
+      outputDir: this.getVideoAnalysisDir(state, meetingId),
+      segments,
+    })
+    if (!markdown) {
+      if ((record.summarizeOnEnd || record.followUpOnEnd) && segments.length > 0) {
+        await this.generateAgentSummary(workspaceId, workspaceRootPath, meetingId, segments)
+      }
+      return
+    }
+
+    const latest = this.getWorkspaceState(workspaceRootPath)
+    if (!latest.records.has(meetingId)) return
+    this.updateRecord(latest, meetingId, { summaryMarkdown: markdown })
+    mainLog.info(`[meetings] agent video analysis generated for ${meetingId}`)
   }
 
   /**
@@ -2077,6 +2141,29 @@ function atomicWriteTextFileSync(filePath: string, data: string, mode?: number):
   }
 }
 
+const MEETING_POST_PROCESSING_PHASES: readonly MeetingPostProcessingPhase[] = [
+  'preparing',
+  'transcribing',
+  'analyzing',
+  'completed',
+  'failed',
+]
+
+/**
+ * Fase lida do disco, com a não resolvida rebaixada para `failed`.
+ *
+ * O pipeline pós-gravação é in-process e fire-and-forget: uma fase em curso no
+ * store perdeu quem a conduzia, e anunciar progresso eterno é pior que anunciar
+ * falha. Uma transcrição recuperável reabre a fase em
+ * `recoverInterruptedTranscriptions`.
+ */
+function sanitizePostProcessingPhase(
+  phase: MeetingPostProcessingPhase | undefined,
+): MeetingPostProcessingPhase | undefined {
+  if (phase === undefined || !MEETING_POST_PROCESSING_PHASES.includes(phase)) return undefined
+  return phase === 'completed' || phase === 'failed' ? phase : 'failed'
+}
+
 function sanitizeRecord(record: MeetingRecordWithEndReason): MeetingRecordWithEndReason | null {
   if (!record || typeof record.id !== 'string' || typeof record.url !== 'string' || typeof record.browserInstanceId !== 'string') {
     return null
@@ -2094,6 +2181,7 @@ function sanitizeRecord(record: MeetingRecordWithEndReason): MeetingRecordWithEn
   }
   return {
     ...record,
+    postProcessingPhase: sanitizePostProcessingPhase(record.postProcessingPhase),
     // Um encerramento já registrado sobrevive ao reload; boot que rebaixa
     // running/starting para stopped não tem causa conhecida e fica sem reason.
     endReason: record.endReason && MEETING_END_REASONS.includes(record.endReason) ? record.endReason : undefined,

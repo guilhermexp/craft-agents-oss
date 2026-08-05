@@ -378,7 +378,9 @@ lifecycle. Preserve these invariants:
   `before-quit`, então o handler passa por `relaunchAfterSealingCaptures()` e
   aguarda o mesmo shutdown bounded antes de relançar. Qualquer novo caminho de
   exit que não emita `before-quit` MUST fazer o mesmo.
-- `endReason` é interno ao main process nesta fase; expor no DTO/UI é F2.
+- `endReason` é interno ao main process: nada no DTO/UI depende dele. O estado
+  de falha que a UI mostra é a fase de pós-processamento abaixo, não o
+  `endReason`.
 - O idioma de STT e de toda saída de LLM da reunião vem da preferência
   persistida (`getPersistedUiLanguage`), via
   `apps/electron/src/main/meetings/output-language.ts` —
@@ -389,6 +391,31 @@ lifecycle. Preserve these invariants:
   pedem o idioma da transcrição; forçar `en` (ou `pt-BR`) é o bug.
   `apps/electron/src/main/i18n-bootstrap.ts` mantém o i18n do main coerente com
   o disco (menu nativo, dialogs), mas não é a fonte para meetings.
+- A gravação craft tem uma fase de pós-processamento própria
+  (`MeetingRecord.postProcessingPhase`), separada do `status` — que continua
+  `stopped` ao selar. `completeRecording` abre em `preparing`,
+  `transcribeRecording` escreve `transcribing` e `generateAgentVideoAnalysis` é
+  a última etapa: ela escreve `analyzing` e resolve em `completed` ou `failed`.
+  Toda gravação craft resolve: `failed` é absorvente (a análise roda mesmo
+  depois de uma transcrição que falhou e não pode apagar o erro com um
+  `completed`), só quem recomeça o pipeline usa `{ restart: true }`, e
+  `sanitizeRecord` rebaixa para `failed` qualquer fase em curso lida do disco —
+  o pipeline é in-process, então uma fase em voo no store perdeu quem a
+  conduzia. Sem isso a UI mostra "Finalizada" durante os minutos de remux,
+  Deepgram e análise visual, e progresso eterno depois de um crash.
+  `meetingStatusLabelKey` e `isMeetingPostProcessingRunning`
+  (`apps/electron/src/renderer/lib/meeting-status-label.ts`) são a única fonte
+  do rótulo e do critério de poll da lista e da página; captura Hermes não tem
+  fase.
+- A prévia da gravação existe desde o primeiro byte, porque
+  `attachRecordingTarget` já referencia o `.webm` no record. O que faltava era
+  recarregar: selar e remuxar reescrevem o arquivo no MESMO path
+  (`renameSync`), então `getRecordingMediaUrl`
+  (`apps/electron/src/renderer/lib/meeting-recording-preview.ts`) versiona a URL
+  por `partial`/`bytesWritten`/`remuxedAt` e o remux MUST gravar `remuxedAt`
+  mesmo quando o tamanho não muda. Uma URL derivada só do path mantém `key` e
+  `src` iguais nos três estados e deixa o `<video>` preso à mídia sem Duration
+  nem Cues que carregou durante a gravação — duração infinita e nenhum seek.
 
 `packages/shared/src/workspaces/storage.ts` resolve o config root em cada
 chamada (`CRAFT_CONFIG_DIR`, com fallback em `homedir()`). Não reintroduza uma
@@ -416,8 +443,10 @@ bun test apps/electron/src/main/meetings/meeting-service.test.ts \
   apps/electron/src/main/meetings/recording-service.test.ts \
   apps/electron/src/main/meetings/meeting-summary-service.test.ts \
   apps/electron/src/main/__tests__/i18n-bootstrap.test.ts \
+  apps/electron/src/renderer/lib/__tests__/meeting-status-label.test.ts \
   packages/shared/src/workspaces/__tests__/storage-meetings.test.ts
-bun test ./apps/electron/src/main/meetings/output-language.isolated.ts
+bun test ./apps/electron/src/main/meetings/output-language.isolated.ts \
+  ./apps/electron/src/renderer/pages/__tests__/meetings-recording-preview.test.ts
 ```
 
 For Hermes overlay changes, first prove all overlays apply from a clean cache

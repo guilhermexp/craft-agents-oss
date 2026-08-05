@@ -34,6 +34,19 @@ export { generateMessageId } from '@craft-agent/core/types'
 export type MeetingStatus = 'starting' | 'running' | 'stopped' | 'error'
 export type MeetingTranscriptionProvider = 'deepgram'
 
+/**
+ * Etapa corrente do pós-processamento de uma gravação craft, campo separado do
+ * `status` — que permanece `stopped` ao selar (D-04). Sem ela, os minutos de
+ * remux, transcrição e análise visual ficam indistinguíveis de "Finalizada".
+ * `completed` e `failed` são terminais; o resto significa trabalho em curso.
+ */
+export type MeetingPostProcessingPhase =
+  | 'preparing'
+  | 'transcribing'
+  | 'analyzing'
+  | 'completed'
+  | 'failed'
+
 export interface MeetingTranscriptionConfig {
   provider: MeetingTranscriptionProvider
   model: string
@@ -82,6 +95,13 @@ export interface MeetingRecordingMetadata {
    * a marca ao selar.
    */
   partial?: boolean
+  /**
+   * Quando o remux reescreveu o arquivo. O remux substitui o `.webm` no MESMO
+   * path (`renameSync`), então sem esta marca a prévia não tem como saber que a
+   * mídia mudou e continua presa à que carregou durante a gravação — sem
+   * Duration, sem Cues, sem seek.
+   */
+  remuxedAt?: number
 }
 
 export interface MeetingRecord {
@@ -106,6 +126,7 @@ export interface MeetingRecord {
   isArchived?: boolean
   archivedAt?: number
   recording?: MeetingRecordingMetadata
+  postProcessingPhase?: MeetingPostProcessingPhase
 }
 
 export interface MeetingTranscriptSegment {

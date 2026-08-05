@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { MeetingRecord } from '../../../shared/types'
-import { meetingStatusLabelKey } from '../meeting-status-label'
+import { isMeetingPostProcessingRunning, meetingStatusLabelKey } from '../meeting-status-label'
 
 function makeRecord(overrides: Partial<MeetingRecord>): MeetingRecord {
   return {
@@ -45,5 +45,44 @@ describe('meetingStatusLabelKey', () => {
       status: 'error',
       recording: { path: '/tmp/a.webm', partial: true },
     }))).toBe('meetings.statusError')
+  })
+})
+
+describe('post-processing phase in the status label', () => {
+  it('shows the running phase instead of presenting the meeting as finished', () => {
+    expect(meetingStatusLabelKey(makeRecord({ postProcessingPhase: 'preparing' })))
+      .toBe('meetings.statusProcessingPreparing')
+    expect(meetingStatusLabelKey(makeRecord({ postProcessingPhase: 'transcribing' })))
+      .toBe('meetings.statusProcessingTranscribing')
+    expect(meetingStatusLabelKey(makeRecord({ postProcessingPhase: 'analyzing' })))
+      .toBe('meetings.statusProcessingAnalyzing')
+  })
+
+  it('gives the failed pipeline its own state', () => {
+    expect(meetingStatusLabelKey(makeRecord({ postProcessingPhase: 'failed' })))
+      .toBe('meetings.statusProcessingFailed')
+  })
+
+  it('falls back to the terminal status once the pipeline resolves', () => {
+    expect(meetingStatusLabelKey(makeRecord({ postProcessingPhase: 'completed' })))
+      .toBe('meetings.statusStopped')
+  })
+
+  it('keeps an unsealed capture reported as interrupted', () => {
+    // Um parcial nunca chegou ao pipeline: a captura é a informação relevante.
+    expect(meetingStatusLabelKey(makeRecord({
+      postProcessingPhase: 'failed',
+      recording: { path: '/tmp/a.webm', partial: true },
+    }))).toBe('meetings.statusInterrupted')
+  })
+
+  it('reports the pipeline as running only until it resolves', () => {
+    for (const phase of ['preparing', 'transcribing', 'analyzing'] as const) {
+      expect(isMeetingPostProcessingRunning(makeRecord({ postProcessingPhase: phase }))).toBe(true)
+    }
+    expect(isMeetingPostProcessingRunning(makeRecord({ postProcessingPhase: 'completed' }))).toBe(false)
+    expect(isMeetingPostProcessingRunning(makeRecord({ postProcessingPhase: 'failed' }))).toBe(false)
+    // Captura Hermes e reuniões antigas não têm fase nenhuma.
+    expect(isMeetingPostProcessingRunning(makeRecord({}))).toBe(false)
   })
 })
