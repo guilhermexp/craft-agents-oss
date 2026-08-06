@@ -5,8 +5,24 @@ import type { SessionMeta } from "@/atoms/sessions"
 import type { SessionOptions } from "@/hooks/useSessionOptions"
 import type { ContentSearchResult } from "@/hooks/useSessionSearch"
 
-export interface SessionListContextValue {
-  // Session action callbacks (shared across all items)
+/**
+ * Split into two contexts on purpose.
+ *
+ * The session list is not virtualized, so every value here is read by every
+ * row. When actions and view state shared one provider, a single keystroke in
+ * the search box or a change of selection produced a new context identity and
+ * re-rendered all ~1800 row subtrees — including the `Popover` that
+ * `SessionStatusIcon` mounts per row, which the profiler measured at a 100%
+ * wasted-render rate.
+ *
+ * Rows that only dispatch actions (`SessionStatusIcon`, `SessionBadges`) now
+ * subscribe to the stable half and stop re-rendering on selection and search.
+ * `SessionItem`, which genuinely renders selection and highlight state, reads
+ * both — its churn is real, not incidental.
+ */
+
+/** Callbacks and workspace config. Identity changes only when the workspace does. */
+export interface SessionListActions {
   onRenameClick: (sessionId: string, currentName: string) => void
   onSessionStatusChange: (sessionId: string, state: SessionStatusId) => void
   onFlag?: (sessionId: string) => void
@@ -26,16 +42,17 @@ export interface SessionListContextValue {
   onFocusZone: () => void
   onKeyDown: (e: React.KeyboardEvent, item: SessionMeta) => void
 
-  // Shared config
   sessionStatuses: ResolvedSessionStatus[]
   flatLabels: LabelConfig[]
   labels: LabelConfig[]
+  sessionOptions?: Map<string, SessionOptions>
+}
+
+/** Selection, search and transient per-session flags. Changes on every keystroke. */
+export interface SessionListView {
   searchQuery?: string
   selectedSessionId?: string | null
   isMultiSelectActive: boolean
-
-  // Per-session lookup maps
-  sessionOptions?: Map<string, SessionOptions>
   contentSearchResults: Map<string, ContentSearchResult>
   /** DOM-verified match info for the active session (count, highlighting state) */
   activeChatMatchInfo?: { sessionId: string | null; count: number; isHighlighting?: boolean }
@@ -45,12 +62,20 @@ export interface SessionListContextValue {
   hasPendingQuestion?: (sessionId: string) => boolean
 }
 
-const SessionListContext = createContext<SessionListContextValue | null>(null)
+const SessionListActionsContext = createContext<SessionListActions | null>(null)
+const SessionListViewContext = createContext<SessionListView | null>(null)
 
-export function useSessionListContext(): SessionListContextValue {
-  const ctx = useContext(SessionListContext)
-  if (!ctx) throw new Error("useSessionListContext must be used within SessionList")
+export function useSessionListActions(): SessionListActions {
+  const ctx = useContext(SessionListActionsContext)
+  if (!ctx) throw new Error("useSessionListActions must be used within SessionList")
   return ctx
 }
 
-export const SessionListProvider = SessionListContext.Provider
+export function useSessionListView(): SessionListView {
+  const ctx = useContext(SessionListViewContext)
+  if (!ctx) throw new Error("useSessionListView must be used within SessionList")
+  return ctx
+}
+
+export const SessionListActionsProvider = SessionListActionsContext.Provider
+export const SessionListViewProvider = SessionListViewContext.Provider

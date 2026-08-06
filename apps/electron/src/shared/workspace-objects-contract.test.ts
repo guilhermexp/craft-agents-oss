@@ -15,7 +15,10 @@ describe('workspace object Electron bridge', () => {
   test('keeps preload and server-core registration on the shared bridge', async () => {
     const preload = await Bun.file(new URL('../preload/bootstrap.ts', import.meta.url)).text()
     const handlers = await Bun.file(new URL('../../../../packages/server-core/src/handlers/rpc/index.ts', import.meta.url)).text()
-    expect(preload).toContain('buildClientApi(client, CHANNEL_MAP')
+    // The client argument may be a transparent decorator (the perf RPC probe
+    // wraps `invoke` to time it). What must not drift is that the API is
+    // materialized from the shared CHANNEL_MAP through buildClientApi.
+    expect(preload).toMatch(/buildClientApi\(\s*[\w.]+,\s*CHANNEL_MAP/)
     expect(handlers).toContain('registerWorkspaceObjectHandlers(server, deps)')
   })
 })

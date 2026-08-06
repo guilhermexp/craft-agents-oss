@@ -59,6 +59,39 @@ describe('right sidebar preview state', () => {
     expect(previewState.getInlinePreviewLoadState('/repo/recording.mp3')).toEqual({ kind: 'unsupported', loading: false })
     expect(previewState.getInlinePreviewLoadState('/repo/archive.zip')).toEqual({ kind: 'unsupported', loading: false })
   })
+
+  it('routes Office documents through the OfficeCLI render kind', async () => {
+    const previewState = await loadPreviewStateModule()
+    expect(previewState).not.toBeNull()
+    if (!previewState) return
+
+    expect(previewState.getInlinePreviewLoadState('/repo/budget.xlsx')).toEqual({ kind: 'office', loading: true })
+    expect(previewState.getInlinePreviewLoadState('/repo/report.docx')).toEqual({ kind: 'office', loading: true })
+    expect(previewState.getInlinePreviewLoadState('/repo/deck.pptx')).toEqual({ kind: 'office', loading: true })
+
+    // Formats OfficeCLI rejects must not reach the render path.
+    expect(previewState.getInlinePreviewLoadState('/repo/legacy.xls')).toEqual({ kind: 'unsupported', loading: false })
+    expect(previewState.getInlinePreviewLoadState('/repo/macro.xlsm')).toEqual({ kind: 'unsupported', loading: false })
+  })
+
+  it('renders .html as a page, not as source', async () => {
+    const previewState = await loadPreviewStateModule()
+    expect(previewState).not.toBeNull()
+    if (!previewState) return
+
+    expect(previewState.getInlinePreviewLoadState('/repo/page.html')).toEqual({ kind: 'html', loading: true })
+  })
+
+  it('does not pre-load video — the element streams it over media://', async () => {
+    const previewState = await loadPreviewStateModule()
+    expect(previewState).not.toBeNull()
+    if (!previewState) return
+
+    expect(previewState.getInlinePreviewLoadState('/repo/clip.mp4')).toEqual({ kind: 'video', loading: false })
+    expect(previewState.getInlinePreviewLoadState('/repo/clip.mov')).toEqual({ kind: 'video', loading: false })
+    // Codecs Chromium cannot decode still route to the system opener.
+    expect(previewState.getInlinePreviewLoadState('/repo/clip.mkv')).toEqual({ kind: 'unsupported', loading: false })
+  })
 })
 
 describe('inline preview source contract', () => {

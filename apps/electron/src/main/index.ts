@@ -26,6 +26,7 @@ import { existsSync, readFileSync, writeFileSync, chmodSync } from 'fs'
 import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@craft-agent/server-core/sessions'
 import { registerAllRpcHandlers } from './handlers/index'
+import { cleanupPerfClient } from './handlers/perf'
 import { publishHermesRuntimeEnv } from './handlers/hermes-runtime'
 import { HermesDashboardHost } from './hermes-dashboard-host'
 import {
@@ -33,7 +34,7 @@ import {
   shutdownHermesDashboard,
 } from '@craft-agent/server-core/handlers/rpc/hermes'
 import { registerCoreRpcHandlers } from '@craft-agent/server-core/handlers/rpc'
-import { transferManager } from '@craft-agent/server-core/services'
+import { transferManager, shutdownOfficeLiveServers } from '@craft-agent/server-core/services'
 import type { PlatformServices } from '../runtime/platform'
 import { createElectronPlatform } from './platform'
 import type { HandlerDeps } from './handlers/handler-deps'
@@ -728,6 +729,7 @@ app.whenReady().then(async () => {
           }
           instance.sessionManager.cleanupClientSessionState(clientId)
           void transferManager.cleanupClientTransfers(clientId)
+          cleanupPerfClient(clientId)
         },
       })
 
@@ -1140,6 +1142,10 @@ app.on('before-quit', async (event) => {
 
   // Ensure Cmd+Q/app quit bypasses layered window close interception (Cmd+W behavior).
   windowManager?.setAppQuitting(true)
+
+  // Kill any `officecli watch` servers backing live document previews — they
+  // are child processes holding loopback ports, and would outlive the app.
+  shutdownOfficeLiveServers()
 
   if (windowManager) {
     // Get full window states (includes bounds, type, and query)

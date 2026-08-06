@@ -105,6 +105,10 @@ export const RPC_NAMESPACES = {
     READ_USER_ATTACHMENT: 'file:readUserAttachment',
     STORE_ATTACHMENT: 'file:storeAttachment',
     GENERATE_THUMBNAIL: 'file:generateThumbnail',
+    RENDER_OFFICE: 'file:renderOffice',
+    SET_OFFICE_CELL: 'file:setOfficeCell',
+    OPEN_OFFICE_LIVE: 'file:openOfficeLive',
+    CLOSE_OFFICE_LIVE: 'file:closeOfficeLive',
   },
   fs: {
     SEARCH: 'fs:search',
@@ -136,6 +140,11 @@ export const RPC_NAMESPACES = {
     VERSIONS: 'system:versions',
     HOME_DIR: 'system:homeDir',
     IS_DEBUG_MODE: 'system:isDebugMode',
+  },
+  perf: {
+    SUBSCRIBE: 'perf:subscribe',
+    UNSUBSCRIBE: 'perf:unsubscribe',
+    SAMPLE: 'perf:sample',
   },
   update: {
     CHECK: 'update:check',

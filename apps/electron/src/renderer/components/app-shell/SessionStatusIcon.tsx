@@ -1,9 +1,9 @@
-import { useState } from "react"
+import { memo, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { SessionStatusMenu } from "@/components/ui/session-status-menu"
 import { getStateIcon, getStateIconStyle } from "@/config/session-status-config"
-import { useSessionListContext } from "@/context/SessionListContext"
+import { useSessionListActions } from "@/context/SessionListContext"
 import type { SessionMeta } from "@/atoms/sessions"
 import { getSessionStatus } from "@/utils/session"
 
@@ -11,8 +11,14 @@ interface SessionStatusIconProps {
   item: SessionMeta
 }
 
-export function SessionStatusIcon({ item }: SessionStatusIconProps) {
-  const ctx = useSessionListContext()
+/**
+ * Mounts a Radix `Popover` per session row. Reads only the stable actions
+ * context and is memoized on `item`, whose identity survives unrelated writes
+ * to the session meta map — otherwise every keystroke in the search box
+ * re-rendered one popover per row.
+ */
+export const SessionStatusIcon = memo(function SessionStatusIcon({ item }: SessionStatusIconProps) {
+  const ctx = useSessionListActions()
   const [open, setOpen] = useState(false)
   const status = getSessionStatus(item)
 
@@ -80,4 +86,4 @@ export function SessionStatusIcon({ item }: SessionStatusIconProps) {
       </PopoverContent>
     </Popover>
   )
-}
+})

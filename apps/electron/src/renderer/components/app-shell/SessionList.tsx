@@ -18,7 +18,12 @@ import { EntityList, type EntityListGroup } from "@/components/ui/entity-list"
 import { RenameDialog } from "@/components/ui/rename-dialog"
 import { SessionSearchHeader } from "./SessionSearchHeader"
 import { SessionItem } from "./SessionItem"
-import { SessionListProvider, type SessionListContextValue } from "@/context/SessionListContext"
+import {
+  SessionListActionsProvider,
+  SessionListViewProvider,
+  type SessionListActions,
+  type SessionListView,
+} from "@/context/SessionListContext"
 import { useSessionSelection, useSessionSelectionStore } from "@/hooks/useSession"
 import { useSessionSearch, type FilterMode } from "@/hooks/useSessionSearch"
 import { useSessionActionToasts } from "@/hooks/useSessionActionToasts"
@@ -625,15 +630,24 @@ export function SessionList({
     navigateToSession(row.item.id)
   }, [selectSession, navigateToSession])
 
+  /**
+   * `rowIndexMap` and `onOpenInNewWindow` change on every list update, and a
+   * `useCallback` that closes over them changes with them — which invalidates
+   * the actions context and re-renders every row's icon, badges and menu
+   * trigger. Reading them through a ref keeps these identities stable for the
+   * lifetime of the list.
+   */
+  const actionDepsRef = useRef({ rowIndexMap, selectSession, navigateToSession, onOpenInNewWindow })
+  useEffect(() => {
+    actionDepsRef.current = { rowIndexMap, selectSession, navigateToSession, onOpenInNewWindow }
+  }, [rowIndexMap, selectSession, navigateToSession, onOpenInNewWindow])
+
   const handleSelectSessionById = useCallback((sessionId: string) => {
-    const index = rowIndexMap.get(sessionId) ?? -1
-    if (index >= 0) {
-      selectSession(sessionId, index)
-    } else {
-      selectSession(sessionId, 0)
-    }
-    navigateToSession(sessionId)
-  }, [rowIndexMap, selectSession, navigateToSession])
+    const { rowIndexMap: map, selectSession: select, navigateToSession: navigateTo } = actionDepsRef.current
+    const index = map.get(sessionId) ?? -1
+    select(sessionId, index >= 0 ? index : 0)
+    navigateTo(sessionId)
+  }, [])
 
   const handleToggleSelect = useCallback((row: SessionListRow, index: number) => {
     focusZone('navigator', { intent: 'click', moveFocus: false })
@@ -694,12 +708,13 @@ export function SessionList({
     interactions.searchInputProps.onKeyDown(e)
   }, [searchInputRef, onFocusChatInput, interactions.searchInputProps, selectionStore.state.selected])
 
-  // --- Context value (shared across all SessionItems) ---
+  // --- Context values (shared across all SessionItems) ---
   const handleFocusZone = useCallback(() => focusZone('navigator', { intent: 'click', moveFocus: false }), [focusZone])
-  const handleOpenInNewWindow = useCallback((item: SessionMeta) => onOpenInNewWindow?.(item), [onOpenInNewWindow])
+  const handleOpenInNewWindow = useCallback((item: SessionMeta) => actionDepsRef.current.onOpenInNewWindow?.(item), [])
+  const handleSendToWorkspace = useCallback((ids: string[]) => setSendToWorkspace(ids), [])
   const resolvedSearchQuery = isSearchMode ? highlightQuery : searchQuery
 
-  const listContext = useMemo((): SessionListContextValue => ({
+  const listActions = useMemo((): SessionListActions => ({
     onRenameClick: handleRenameClick,
     onSessionStatusChange,
     onFlag: onFlag ? handleFlagWithToast : undefined,
@@ -713,30 +728,34 @@ export function SessionList({
     onSetProjectId,
     onSelectSessionById: handleSelectSessionById,
     onOpenInNewWindow: handleOpenInNewWindow,
-    onSendToWorkspace: (ids: string[]) => setSendToWorkspace(ids),
+    onSendToWorkspace: handleSendToWorkspace,
     onFocusZone: handleFocusZone,
     onKeyDown: handleKeyDown,
     sessionStatuses,
     flatLabels,
     labels,
-    searchQuery: resolvedSearchQuery,
-    selectedSessionId: focusedSessionId !== undefined ? focusedSessionId : selectionStore.state.selected,
-    isMultiSelectActive,
     sessionOptions,
-    contentSearchResults,
-    activeChatMatchInfo,
-    hasPendingPrompt,
-    hasPendingQuestion,
   }), [
     handleRenameClick, onSessionStatusChange,
     onFlag, handleFlagWithToast, onUnflag, handleUnflagWithToast,
     onArchive, handleArchiveWithToast, onUnarchive, handleUnarchiveWithToast,
     onMarkUnread, handleDeleteWithToast, onLabelsChange,
     projects, onSetProjectId,
-    handleSelectSessionById, handleOpenInNewWindow, setSendToWorkspace, handleFocusZone, handleKeyDown,
-    sessionStatuses, flatLabels, labels, resolvedSearchQuery,
-    focusedSessionId, selectionStore.state.selected, isMultiSelectActive,
-    sessionOptions, contentSearchResults, activeChatMatchInfo, hasPendingPrompt, hasPendingQuestion,
+    handleSelectSessionById, handleOpenInNewWindow, handleSendToWorkspace, handleFocusZone, handleKeyDown,
+    sessionStatuses, flatLabels, labels, sessionOptions,
+  ])
+
+  const listView = useMemo((): SessionListView => ({
+    searchQuery: resolvedSearchQuery,
+    selectedSessionId: focusedSessionId !== undefined ? focusedSessionId : selectionStore.state.selected,
+    isMultiSelectActive,
+    contentSearchResults,
+    activeChatMatchInfo,
+    hasPendingPrompt,
+    hasPendingQuestion,
+  }), [
+    resolvedSearchQuery, focusedSessionId, selectionStore.state.selected, isMultiSelectActive,
+    contentSearchResults, activeChatMatchInfo, hasPendingPrompt, hasPendingQuestion,
   ])
 
   // --- Empty state (non-search) — render before EntityList ---
@@ -779,7 +798,8 @@ export function SessionList({
   // --- Render ---
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <SessionListProvider value={listContext}>
+      <SessionListActionsProvider value={listActions}>
+      <SessionListViewProvider value={listView}>
       <EntityList<SessionListRow>
         groups={rowData.groups}
         getKey={(row) => row.item.id}
@@ -862,7 +882,8 @@ export function SessionList({
         onCollapseAll={collapseAllGroups}
         onExpandAll={expandAllGroups}
       />
-      </SessionListProvider>
+      </SessionListViewProvider>
+      </SessionListActionsProvider>
 
       {/* Rename Dialog */}
       <RenameDialog

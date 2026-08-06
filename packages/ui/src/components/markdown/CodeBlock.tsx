@@ -308,7 +308,7 @@ export function CodeBlock({ code, language = 'text', className, mode = 'full', f
  * InlineCode - Styled inline code span
  * Features: subtle background (3%), no border, 75% opacity text
  */
-export function InlineCode({ children, className }: { children: React.ReactNode; className?: string }) {
+export const InlineCode = React.memo(function InlineCode({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <code className={cn(
       'pl-1 pr-1 py-0 rounded bg-foreground/[0.04] font-mono text-[13px]',
@@ -317,4 +317,4 @@ export function InlineCode({ children, className }: { children: React.ReactNode;
       {children}
     </code>
   )
-}
+})

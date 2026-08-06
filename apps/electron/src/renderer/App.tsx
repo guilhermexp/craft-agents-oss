@@ -65,6 +65,9 @@ import {
   JSONPreviewOverlay,
   ExcalidrawPreviewOverlay,
   AudioPreviewOverlay,
+  VideoPreviewOverlay,
+  HTMLPreviewOverlay,
+  OfficeLiveOverlay,
 } from '@craft-agent/ui'
 import { useLinkInterceptor, type FilePreviewState } from '@/hooks/useLinkInterceptor'
 import { useTransportConnectionState } from '@/hooks/useTransportConnectionState'
@@ -1650,6 +1653,8 @@ export default function App() {
     readFile: (path: string) => window.electronAPI.readFile(path),
     readFileDataUrl: (path: string) => window.electronAPI.readFileDataUrl(path),
     readFileBinary: (path: string) => window.electronAPI.readFileBinary(path),
+    renderOfficeDocument: (path: string) => window.electronAPI.renderOfficeDocument(path),
+    openOfficeLive: (path: string) => window.electronAPI.openOfficeLive(path),
   }), [t])
 
   const linkInterceptor = useLinkInterceptor(linkInterceptorOptions)
@@ -2136,6 +2141,39 @@ function FilePreviewRenderer({
           onClose={onClose}
           filePath={state.filePath}
           loadPdfData={loadPdfData}
+          theme={theme}
+        />
+      )
+
+    case 'video':
+      return (
+        <VideoPreviewOverlay
+          isOpen
+          onClose={onClose}
+          filePath={state.filePath}
+          theme={theme}
+        />
+      )
+
+    case 'officeLive':
+      return (
+        <OfficeLiveOverlay
+          isOpen
+          onClose={onClose}
+          filePath={state.filePath}
+          url={state.url}
+          error={state.error}
+          theme={theme}
+        />
+      )
+
+    case 'htmlDoc':
+      return (
+        <HTMLPreviewOverlay
+          isOpen
+          onClose={onClose}
+          html={state.content ?? ''}
+          title={state.filePath.split('/').pop() ?? 'Document'}
           theme={theme}
         />
       )

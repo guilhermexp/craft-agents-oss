@@ -28,6 +28,7 @@ import {
 import type { MenuItem, MenuSection, SettingsMenuItem } from "../../shared/menu-schema"
 import { SETTINGS_ICONS } from "./icons/SettingsIcons"
 import { getDocUrl } from '@craft-agent/shared/docs/doc-links'
+import { isPerfEnabled, setPerfEnabled } from '../lib/perf/store'
 
 // Map of action handlers for menu items that need custom behavior
 type MenuActionHandlers = {
@@ -309,6 +310,11 @@ export function AppMenu({
                     <Icons.Bug className="size-3.5" />
                     Toggle DevTools
                     <DropdownMenuShortcut className="pl-6">{isMac ? '⌥⌘I' : 'Ctrl+Shift+I'}</DropdownMenuShortcut>
+                  </StyledDropdownMenuItem>
+                  <StyledDropdownMenuItem onClick={() => setPerfEnabled(!isPerfEnabled())}>
+                    <Icons.Gauge className="size-3.5" />
+                    {isPerfEnabled() ? 'Hide' : 'Show'} Performance Overlay
+                    <DropdownMenuShortcut className="pl-6">{isMac ? '⌥⌘P' : 'Ctrl+Alt+P'}</DropdownMenuShortcut>
                   </StyledDropdownMenuItem>
                 </StyledDropdownMenuSubContent>
               </DropdownMenuSub>

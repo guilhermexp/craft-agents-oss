@@ -51,6 +51,13 @@ interface SkillConfig {
 // Unified Cache
 // ============================================================================
 
+/** An icon resolved from disk: themed data URL plus inline-render metadata. */
+interface LoadedIcon {
+  dataUrl: string
+  colorable: boolean
+  rawSvg?: string
+}
+
 /**
  * Single unified cache for all icon types.
  * Key format: `{type}:{workspaceId}:{identifier}`
@@ -66,6 +73,31 @@ export const iconCache = new Map<string, string>()
  * and uses a different key format: `{serviceUrl}:{provider}`
  */
 export const logoUrlCache = new Map<string, string | null>()
+
+/**
+ * Probe keys known to resolve to no icon file on disk.
+ *
+ * A miss is the common case: most sessions, folders and skills ship no icon,
+ * and `discoverIconFile` probes four extensions for each one. Nothing used to
+ * record the miss, so every remount of a row in the (unvirtualized) session
+ * list and file tree reissued all four IPC reads. Measured before this cache:
+ * 872 `workspace:readImage` calls in 22 s, enough to saturate the single
+ * WebSocket transport and push unrelated channels — `system:homeDir` included —
+ * to ~270 ms each.
+ *
+ * Invalidated by the same `clear*IconCaches` calls as the positive cache, so a
+ * miss and a hit go stale on exactly the same events.
+ */
+const missingIconCache = new Set<string>()
+
+/**
+ * Loads currently in flight, keyed by probe key.
+ *
+ * Rows sharing an icon mount in the same commit, so without this each one opens
+ * its own round trip for the same file before any of them can populate the
+ * cache.
+ */
+const inFlightIcons = new Map<string, Promise<LoadedIcon | null>>()
 
 // ============================================================================
 // Legacy exports (for backward compatibility during migration)
@@ -115,6 +147,7 @@ export function clearIconCaches(): void {
   logoUrlCache.clear()
   colorableCache.clear()
   rawSvgCache.clear()
+  missingIconCache.clear()
 }
 
 /**
@@ -131,6 +164,9 @@ export function clearSourceIconCaches(): void {
   for (const key of rawSvgCache.keys()) {
     if (key.startsWith('source:')) rawSvgCache.delete(key)
   }
+  for (const key of missingIconCache) {
+    if (key.startsWith('source:')) missingIconCache.delete(key)
+  }
 }
 
 /**
@@ -144,6 +180,9 @@ export function clearSkillIconCaches(): void {
   }
   for (const key of rawSvgCache.keys()) {
     if (key.startsWith('skill:')) rawSvgCache.delete(key)
+  }
+  for (const key of missingIconCache) {
+    if (key.startsWith('skill:')) missingIconCache.delete(key)
   }
 }
 
@@ -532,6 +571,10 @@ export function useEntityIcon(opts: UseEntityIconOptions): ResolvedEntityIcon {
 
   // Stable cache key for this entity's icon
   const cacheKey = `${entityType}:${workspaceId}:${identifier}`
+  // Identifies the exact filesystem probe. Distinct from `cacheKey` because the
+  // same entity can be asked for a different path/dir, and a miss recorded for
+  // one must not suppress the other.
+  const probeKey = `${cacheKey}|${iconPath ?? ''}|${iconDir ?? ''}|${iconFileName ?? ''}`
 
   // Check if iconValue is an emoji or URL (synchronous, no loading needed)
   const immediateValue = useMemo(() => {
@@ -594,52 +637,31 @@ export function useEntityIcon(opts: UseEntityIconOptions): ResolvedEntityIcon {
       return
     }
 
-    // No cache hit - load from filesystem via IPC
-    let cancelled = false
-
-    async function loadIcon() {
-      let result: { dataUrl: string; colorable: boolean; rawSvg?: string } | null = null
-
-      if (iconPath) {
-        // Known path - extract relative portion and load directly
-        // iconPath may be absolute; extract the workspace-relative part
-        const relativeMatch = iconPath.match(ICON_PATH_PATTERN)
-        const relativePath = relativeMatch ? relativeMatch[0] : iconPath
-
-        result = await loadIconFile(workspaceId, relativePath)
-      } else if (iconDir && !iconValue) {
-        // Auto-discover icon files in directory
-        // Only do auto-discovery when iconValue is undefined (config takes precedence)
-        // iconFileName overrides the default 'icon' prefix (e.g. statuses use statusId)
-        result = await discoverIconFile(workspaceId, iconDir, iconFileName)
-      }
-
-      if (cancelled) return
-
-      if (result) {
-        // Cache the loaded icon and its colorability/rawSvg
-        iconCache.set(cacheKey, result.dataUrl)
-        if (result.colorable) {
-          colorableCache.add(cacheKey)
-        }
-        if (result.rawSvg) {
-          rawSvgCache.set(cacheKey, result.rawSvg)
-        }
-        setResolved({
-          kind: 'file',
-          value: result.dataUrl,
-          colorable: result.colorable,
-          rawSvg: result.rawSvg,
-        })
-      } else {
-        setResolved({ kind: 'fallback', colorable: false })
-      }
+    // A previously recorded miss: the four-extension probe already ran for this
+    // exact path and found nothing. Re-running it on every remount is what
+    // flooded the transport.
+    if (missingIconCache.has(probeKey)) {
+      setResolved({ kind: 'fallback', colorable: false })
+      return
     }
 
-    loadIcon()
+    let cancelled = false
+
+    void resolveEntityIconFile({ cacheKey, probeKey, workspaceId, iconPath, iconDir, iconValue, iconFileName })
+      .then((result) => {
+        // Cancellation is checked after the caches are written by the resolver:
+        // the work is done either way, and discarding it would make the next
+        // mount repeat it.
+        if (cancelled) return
+        setResolved(
+          result
+            ? { kind: 'file', value: result.dataUrl, colorable: result.colorable, rawSvg: result.rawSvg }
+            : { kind: 'fallback', colorable: false },
+        )
+      })
 
     return () => { cancelled = true }
-  }, [workspaceId, entityType, identifier, iconPath, iconDir, iconFileName, immediateValue, cacheKey, iconValue])
+  }, [workspaceId, entityType, identifier, iconPath, iconDir, iconFileName, immediateValue, cacheKey, probeKey, iconValue])
 
   return resolved
 }
@@ -660,6 +682,73 @@ const colorableCache = new Set<string>()
  */
 const rawSvgCache = new Map<string, string>()
 
+/** Inputs that fully determine which file (if any) an entity's icon comes from. */
+export interface EntityIconProbe {
+  /** Positive-cache key: `{entityType}:{workspaceId}:{identifier}`. */
+  cacheKey: string
+  /** Miss/in-flight key: `cacheKey` plus the path inputs below. */
+  probeKey: string
+  workspaceId: string
+  iconPath?: string
+  iconDir?: string
+  iconValue?: string
+  iconFileName?: string
+}
+
+/**
+ * Resolve an entity's icon file, at most once per probe key.
+ *
+ * Extracted from `useEntityIcon` so the caching contract is testable without a
+ * React renderer. Four guarantees, in order:
+ *
+ * 1. An already-loaded icon short-circuits — no IPC.
+ * 2. A recorded miss short-circuits — no IPC.
+ * 3. Concurrent callers for the same probe share one round trip.
+ * 4. Both outcomes are recorded before the promise settles, so a caller that
+ *    unmounted mid-flight still leaves the result behind for the next mount.
+ */
+export async function resolveEntityIconFile(probe: EntityIconProbe): Promise<LoadedIcon | null> {
+  const { cacheKey, probeKey, workspaceId, iconPath, iconDir, iconValue, iconFileName } = probe
+
+  const cached = iconCache.get(cacheKey)
+  if (cached !== undefined) {
+    const colorable = colorableCache.has(cacheKey)
+    return { dataUrl: cached, colorable, rawSvg: colorable ? rawSvgCache.get(cacheKey) : undefined }
+  }
+
+  if (missingIconCache.has(probeKey)) return null
+
+  let pending = inFlightIcons.get(probeKey)
+  if (!pending) {
+    pending = (async () => {
+      if (iconPath) {
+        // iconPath may be absolute; extract the workspace-relative part.
+        const relativeMatch = iconPath.match(ICON_PATH_PATTERN)
+        return loadIconFile(workspaceId, relativeMatch ? relativeMatch[0] : iconPath)
+      }
+      // Auto-discovery only when iconValue is undefined (config wins).
+      // iconFileName overrides the default 'icon' prefix (statuses use statusId).
+      if (iconDir && !iconValue) {
+        return discoverIconFile(workspaceId, iconDir, iconFileName)
+      }
+      return null
+    })().finally(() => inFlightIcons.delete(probeKey))
+    inFlightIcons.set(probeKey, pending)
+  }
+
+  const result = await pending
+
+  if (result) {
+    iconCache.set(cacheKey, result.dataUrl)
+    if (result.colorable) colorableCache.add(cacheKey)
+    if (result.rawSvg) rawSvgCache.set(cacheKey, result.rawSvg)
+  } else {
+    missingIconCache.add(probeKey)
+  }
+
+  return result
+}
+
 /**
  * Load a single icon file by relative path.
  * Handles SVG theming, colorability detection, and sanitization.
@@ -670,7 +759,7 @@ const rawSvgCache = new Map<string, string>()
 async function loadIconFile(
   workspaceId: string,
   relativePath: string
-): Promise<{ dataUrl: string; colorable: boolean; rawSvg?: string } | null> {
+): Promise<LoadedIcon | null> {
   try {
     const content = await window.electronAPI.readWorkspaceImage(workspaceId, relativePath)
     // IPC returns null for missing files (silent fallback)
@@ -727,7 +816,7 @@ async function discoverIconFile(
   workspaceId: string,
   iconDir: string,
   fileName?: string
-): Promise<{ dataUrl: string; colorable: boolean; rawSvg?: string } | null> {
+): Promise<LoadedIcon | null> {
   const name = fileName ?? 'icon'
 
   // Probe all extensions in parallel — reduces round-trips from N to 1

@@ -112,6 +112,12 @@ export function createWebApi(options: WebApiOptions): {
     getSystemWarnings: () => Promise.resolve({ vcredistMissing: false }),
     isDebugMode: () => Promise.resolve(import.meta.env.DEV),
 
+    // Runtime perf monitor — main-process metrics have no meaning over the web
+    // adapter; the renderer-side collectors still work standalone.
+    perfSubscribe: async () => {},
+    perfUnsubscribe: async () => {},
+    onPerfSample: () => () => {},
+
     // Theme
     getSystemTheme: () => Promise.resolve(getSystemTheme()),
     onSystemThemeChange: (cb: (isDark: boolean) => void) => {

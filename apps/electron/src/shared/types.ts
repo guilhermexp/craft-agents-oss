@@ -13,6 +13,7 @@ import type { ViewConfig } from '@craft-agent/shared/views'
 import type { WarRoomChannel, CreateWarRoomChannelInput, UpdateWarRoomChannelInput, DeleteChannelOptions, DeleteChannelResult, ChannelMessage, WarRoomDispatch } from '@craft-agent/shared/channels'
 import { WORKSPACE_OBJECT_RPC_CHANNELS, type WorkspaceObjectEvent, type WorkspaceObjectPayload } from '@craft-agent/shared/workspace-objects/types'
 import type { WorkspaceObjectAction, WorkspaceObjectServiceResult } from '@craft-agent/shared/workspace-objects/service'
+import type { PerfMainSample } from '@craft-agent/shared/perf'
 
 // =============================================================================
 // Package re-exports (convenience for renderer imports)
@@ -379,6 +380,14 @@ export const RPC_CONTRACT = {
   readUserAttachment: invoke<((path: string) => Promise<FileAttachment | null>)>(RPC_NAMESPACES.file.READ_USER_ATTACHMENT),
   storeAttachment: invoke<((sessionId: string, attachment: FileAttachment) => Promise<StoredAttachmentType>)>(RPC_NAMESPACES.file.STORE_ATTACHMENT),
   generateThumbnail: invoke<((base64: string, mimeType: string) => Promise<string | null>)>(RPC_NAMESPACES.file.GENERATE_THUMBNAIL),
+  /** Render a .docx/.xlsx/.pptx to self-contained HTML via the bundled OfficeCLI binary. */
+  renderOfficeDocument: invoke<((path: string) => Promise<string>)>(RPC_NAMESPACES.file.RENDER_OFFICE),
+  /** Write one spreadsheet cell and return the re-rendered HTML. cellPath is "/Sheet1/B4". */
+  setOfficeCell: invoke<((path: string, cellPath: string, value: string) => Promise<string>)>(RPC_NAMESPACES.file.SET_OFFICE_CELL),
+  /** Start/reuse an editable live server for a document; resolves to its loopback URL. */
+  openOfficeLive: invoke<((path: string) => Promise<string>)>(RPC_NAMESPACES.file.OPEN_OFFICE_LIVE),
+  /** Tear down the live server for a document. */
+  closeOfficeLive: invoke<((path: string) => Promise<void>)>(RPC_NAMESPACES.file.CLOSE_OFFICE_LIVE),
   /** Returns the absolute filesystem path for a File (only works for file-picker / OS-drag Files). */
   getFilePath: local<((file: File) => string | null)>(),
   searchFiles: invoke<((basePath: string, query: string) => Promise<FileSearchResult[]>)>(RPC_NAMESPACES.fs.SEARCH),
@@ -392,6 +401,10 @@ export const RPC_CONTRACT = {
   getRuntimeEnvironment: local<(() => 'electron' | 'web')>(),
   getHomeDir: invoke<(() => Promise<string>)>(RPC_NAMESPACES.system.HOME_DIR),
   isDebugMode: invoke<(() => Promise<boolean>)>(RPC_NAMESPACES.system.IS_DEBUG_MODE),
+  /** Start/stop the main-process 1 Hz perf sampler for this client only. */
+  perfSubscribe: invoke<(() => Promise<void>)>(RPC_NAMESPACES.perf.SUBSCRIBE),
+  perfUnsubscribe: invoke<(() => Promise<void>)>(RPC_NAMESPACES.perf.UNSUBSCRIBE),
+  onPerfSample: event<((callback: (sample: PerfMainSample) => void) => () => void)>(RPC_NAMESPACES.perf.SAMPLE),
   getTransportConnectionState: local<(() => Promise<TransportConnectionState>)>(),
   onTransportConnectionStateChanged: local<((callback: (state: TransportConnectionState) => void) => () => void)>(),
   reconnectTransport: local<(() => Promise<void>)>(),

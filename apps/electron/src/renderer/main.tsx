@@ -1,3 +1,6 @@
+// MUST stay the first import: it installs the React DevTools hook before
+// `react-dom/client` is evaluated. See lib/perf/install.ts.
+import './lib/perf/install'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { Provider as JotaiProvider, useAtomValue } from 'jotai'
@@ -9,6 +12,8 @@ import { setupI18n } from '@craft-agent/shared/i18n'
 import { initReactI18next } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import './index.css'
+import { mountPerfOverlay } from './components/perf/mount'
+import { isPerfEnabled, restorePerfEnabled, setPerfEnabled } from './lib/perf/store'
 
 // Initialize i18n before any React rendering
 setupI18n([LanguageDetector, initReactI18next])
@@ -74,3 +79,17 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </RootErrorBoundary>
   </React.StrictMode>
 )
+
+// The overlay lives in its own React root so its 1 Hz updates never schedule
+// work inside the tree it measures. It renders null until enabled.
+mountPerfOverlay()
+restorePerfEnabled()
+
+// Reachable without the menu: when the UI is janky enough to be worth
+// measuring, opening a dropdown is itself part of the problem.
+window.addEventListener('keydown', (event) => {
+  if (!event.altKey || !(event.metaKey || event.ctrlKey)) return
+  if (event.code !== 'KeyP') return
+  event.preventDefault()
+  setPerfEnabled(!isPerfEnabled())
+})

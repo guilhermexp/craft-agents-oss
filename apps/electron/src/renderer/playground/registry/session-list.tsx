@@ -6,7 +6,12 @@ import type { ContentSearchResult } from '@/hooks/useSessionSearch'
 import { Circle } from 'lucide-react'
 import { SessionSearchHeader } from '@/components/app-shell/SessionSearchHeader'
 import { SessionItem } from '@/components/app-shell/SessionItem'
-import { SessionListProvider, type SessionListContextValue } from '@/context/SessionListContext'
+import {
+  SessionListActionsProvider,
+  SessionListViewProvider,
+  type SessionListActions,
+  type SessionListView,
+} from '@/context/SessionListContext'
 import { ActionRegistryProvider } from '@/actions/registry'
 
 // ============================================================================
@@ -82,19 +87,22 @@ const sampleSessions: SessionMeta[] = [
   },
 ]
 
-function createMockContext(overrides: Partial<SessionListContextValue> = {}): SessionListContextValue {
+const mockActions: SessionListActions = {
+  onRenameClick: () => {},
+  onSessionStatusChange: () => {},
+  onMarkUnread: () => {},
+  onDelete: async () => true,
+  onSelectSessionById: () => {},
+  onOpenInNewWindow: () => {},
+  onFocusZone: () => {},
+  onKeyDown: () => {},
+  sessionStatuses: mockSessionStatuses,
+  flatLabels: [],
+  labels: [],
+}
+
+function createMockView(overrides: Partial<SessionListView> = {}): SessionListView {
   return {
-    onRenameClick: () => {},
-    onSessionStatusChange: () => {},
-    onMarkUnread: () => {},
-    onDelete: async () => true,
-    onSelectSessionById: () => {},
-    onOpenInNewWindow: () => {},
-    onFocusZone: () => {},
-    onKeyDown: () => {},
-    sessionStatuses: mockSessionStatuses,
-    flatLabels: [],
-    labels: [],
     isMultiSelectActive: false,
     contentSearchResults: new Map(),
     ...overrides,
@@ -148,17 +156,14 @@ function SessionListSearchPreview({
     contentSearchResults.set(selectedSessionId, { matchCount: chatMatchCount, snippet: '' })
   }
 
-  const ctx = createMockContext({
-    searchQuery,
-    selectedSessionId,
-    contentSearchResults,
-  })
+  const view = createMockView({ searchQuery, selectedSessionId, contentSearchResults })
 
   const displayCount = resultCount ?? filteredSessions.length
 
   return (
     <ActionRegistryProvider>
-      <SessionListProvider value={ctx}>
+      <SessionListActionsProvider value={mockActions}>
+      <SessionListViewProvider value={view}>
         <div className="w-[320px] h-[480px] flex flex-col border border-border rounded-lg overflow-hidden bg-background">
           {/* Search header - uses the SAME component as the real app */}
           {showSearchInput && (
@@ -207,7 +212,8 @@ function SessionListSearchPreview({
             )}
           </div>
         </div>
-      </SessionListProvider>
+      </SessionListViewProvider>
+      </SessionListActionsProvider>
     </ActionRegistryProvider>
   )
 }
@@ -248,7 +254,7 @@ function SessionItemPreview({
     contentSearchResults.set(resolvedItem.id, { matchCount: chatMatchCount, snippet: '' })
   }
 
-  const ctx = createMockContext({
+  const view = createMockView({
     searchQuery,
     selectedSessionId: isSelected ? resolvedItem.id : null,
     contentSearchResults,
@@ -257,7 +263,8 @@ function SessionItemPreview({
 
   return (
     <ActionRegistryProvider>
-      <SessionListProvider value={ctx}>
+      <SessionListActionsProvider value={mockActions}>
+      <SessionListViewProvider value={view}>
         <SessionItem
           item={resolvedItem}
           index={0}
@@ -267,7 +274,8 @@ function SessionItemPreview({
           isInMultiSelect={false}
           onSelect={() => {}}
         />
-      </SessionListProvider>
+      </SessionListViewProvider>
+      </SessionListActionsProvider>
     </ActionRegistryProvider>
   )
 }

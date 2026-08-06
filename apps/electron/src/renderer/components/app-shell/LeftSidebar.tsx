@@ -156,6 +156,16 @@ const itemVariants: Variants = {
   },
 }
 
+// Expandable-item reveal animation. Hoisted so each sidebar row reuses a single
+// object identity per prop instead of allocating new literals every render (the
+// render monitor flagged initial/animate/exit/transition as changing each
+// render across thousands of nav rows). Only marginBottom differs by nesting.
+const EXPAND_INITIAL = { height: 0, opacity: 0, marginTop: 0, marginBottom: 0 } as const
+const EXPAND_ANIMATE_NESTED = { height: 'auto', opacity: 1, marginTop: 2, marginBottom: 4 } as const
+const EXPAND_ANIMATE_ROOT = { height: 'auto', opacity: 1, marginTop: 2, marginBottom: 8 } as const
+const EXPAND_EXIT = { height: 0, opacity: 0, marginTop: 0, marginBottom: 0 } as const
+const EXPAND_TRANSITION = { duration: 0.2, ease: 'easeInOut' } as const
+
 /**
  * LeftSidebar - Vertical list of navigation buttons with icons
  *
@@ -283,10 +293,10 @@ export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, i
                 <AnimatePresence initial={false}>
                   {link.expanded && (
                     <m.div
-                      initial={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
-                      animate={{ height: 'auto', opacity: 1, marginTop: 2, marginBottom: isNested ? 4 : 8 }}
-                      exit={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
-                      transition={{ duration: 0.2, ease: 'easeInOut' }}
+                      initial={EXPAND_INITIAL}
+                      animate={isNested ? EXPAND_ANIMATE_NESTED : EXPAND_ANIMATE_ROOT}
+                      exit={EXPAND_EXIT}
+                      transition={EXPAND_TRANSITION}
                       className="overflow-hidden"
                     >
                       {expandedContent}

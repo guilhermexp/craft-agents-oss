@@ -39,6 +39,20 @@ import { buildPdfPreviewCodeFromPlainPath } from './pdf-path-preview'
 import { buildTabularPreviewCodeFromPlainPath } from './tabular-preview'
 import { prefixFolderContext } from './folder-context-prefix'
 
+// remark/rehype plugin lists are hoisted to module scope so ReactMarkdown gets
+// a stable reference and does not rebuild its unified processor (a full document
+// re-parse) on every render — the single largest markdown render cost.
+// MARKDOWN_MATH_OPTIONS disables single-dollar inline math so currency like
+// $2M–$4M stays plain text; math must use $$...$$ delimiters.
+const MARKDOWN_MATH_PLUGIN: [typeof remarkMath, typeof MARKDOWN_MATH_OPTIONS] = [
+  remarkMath,
+  MARKDOWN_MATH_OPTIONS,
+]
+const REMARK_PLUGINS = [remarkGfm, MARKDOWN_MATH_PLUGIN]
+const REMARK_PLUGINS_COLLAPSIBLE = [remarkGfm, MARKDOWN_MATH_PLUGIN, remarkCollapsibleSections]
+const REHYPE_PLUGINS = [rehypeKatex, rehypeRaw]
+const PLAIN_TEXT_REMARK_PLUGINS = [remarkGfm]
+
 export type DisablablePreviewBlock =
   | 'markdown-preview'
   | 'html-preview'
@@ -142,7 +156,7 @@ function getPlainText(children: React.ReactNode): string {
     .join('')
 }
 
-function InlineCodeWithFileClick({
+const InlineCodeWithFileClick = React.memo(function InlineCodeWithFileClick({
   children,
   onFileClick,
 }: {
@@ -166,7 +180,7 @@ function InlineCodeWithFileClick({
       <InlineCode className="text-accent">{children}</InlineCode>
     </button>
   )
-}
+})
 
 const EMPTY_AUDIO_ALIGNMENT: CharacterAlignmentResponseModel = {
   characters: [],
@@ -428,7 +442,7 @@ function PlainTextBlock({ code, onUrlClick, onFileClick }: {
     code: ({ children }) => <code className="bg-muted px-1 py-0.5 rounded text-sm">{children}</code>,
   }), [onUrlClick, onFileClick])
 
-  return <ReactMarkdown components={components} remarkPlugins={[remarkGfm]} urlTransform={markdownUrlTransform}>{processed}</ReactMarkdown>
+  return <ReactMarkdown components={components} remarkPlugins={PLAIN_TEXT_REMARK_PLUGINS} urlTransform={markdownUrlTransform}>{processed}</ReactMarkdown>
 }
 
 function createComponents(
@@ -947,9 +961,12 @@ function createComponents(
  * - Syntax highlighting via Shiki
  * - GFM support (tables, task lists, strikethrough)
  * - Clickable links and file paths
- * - Memoization for streaming performance
+ *
+ * Exported memoized (see the bottom of this file): re-parsing markdown is the
+ * single most expensive render in the app, and the profiler measured 501 of
+ * 1264 renders in 221 s with no prop change at all.
  */
-export function Markdown({
+function MarkdownImpl({
   children,
   mode = 'minimal',
   className,
@@ -998,21 +1015,9 @@ export function Markdown({
     [children]
   )
 
-  // Conditionally include the collapsible sections plugin.
-  // IMPORTANT: Disable single-dollar inline math so currency like $2M–$4M
-  // stays plain text. Math should use $$...$$ delimiters.
-  const remarkPlugins = React.useMemo(
-    () => {
-      const mathPlugin: [typeof remarkMath, typeof MARKDOWN_MATH_OPTIONS] = [
-        remarkMath,
-        MARKDOWN_MATH_OPTIONS
-      ]
-      return collapsible
-        ? [remarkGfm, mathPlugin, remarkCollapsibleSections]
-        : [remarkGfm, mathPlugin]
-    },
-    [collapsible]
-  )
+  // Collapsible mode adds the sections plugin; both variants are module
+  // constants (see REMARK_PLUGINS above), so no per-render allocation.
+  const remarkPlugins = collapsible ? REMARK_PLUGINS_COLLAPSIBLE : REMARK_PLUGINS
 
   return (
     <PlatformProvider actions={scopedPlatformActions}>
@@ -1020,7 +1025,7 @@ export function Markdown({
         {/* react-doctor-disable-next-line react-markdown-unsanitized-raw-html -- renders the app's own agent/tool output in local Electron; rehype-sanitize with a KaTeX-safe schema is the recommended follow-up (adding it now would risk breaking math rendering) */}
         <ReactMarkdown
           remarkPlugins={remarkPlugins}
-          rehypePlugins={[rehypeKatex, rehypeRaw]}
+          rehypePlugins={REHYPE_PLUGINS}
           components={components}
           urlTransform={markdownUrlTransform}
         >
@@ -1032,32 +1037,15 @@ export function Markdown({
 }
 
 /**
- * MemoizedMarkdown - Optimized for streaming scenarios
+ * Every prop is compared, unlike the previous hand-written comparator which
+ * looked at `id`/`children`/`mode` only and would have served stale output if a
+ * consumer changed `onFileClick`, `collapsible` or `className`.
  *
- * Splits content into blocks and memoizes each block separately,
- * so only new/changed blocks re-render during streaming.
+ * A shallow compare is enough because `children` is the markdown source string
+ * and the callbacks are stabilised at their producers.
  */
-export const MemoizedMarkdown = React.memo(
-  Markdown,
-  (prevProps, nextProps) => {
-    // If id is provided, use it for memoization
-    if (prevProps.id && nextProps.id) {
-      return (
-        prevProps.id === nextProps.id &&
-        prevProps.children === nextProps.children &&
-        prevProps.mode === nextProps.mode &&
-        prevProps.disablePreviewBlocks === nextProps.disablePreviewBlocks
-      )
-    }
-    // Otherwise compare content and mode
-    return (
-      prevProps.children === nextProps.children &&
-      prevProps.mode === nextProps.mode &&
-      prevProps.disablePreviewBlocks === nextProps.disablePreviewBlocks
-    )
-  }
-)
-MemoizedMarkdown.displayName = 'MemoizedMarkdown'
+export const Markdown = React.memo(MarkdownImpl)
+Markdown.displayName = 'Markdown'
 
 // Re-export for convenience
 export { CodeBlock, InlineCode } from './CodeBlock'

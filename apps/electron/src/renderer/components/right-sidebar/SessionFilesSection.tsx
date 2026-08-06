@@ -256,6 +256,15 @@ const FileThumbnail = memo(function FileThumbnail({ file }: { file: SessionFile 
   )
 })
 
+// Folder expand/collapse animation. Hoisted to module scope so every tree row
+// reuses one object identity per prop instead of allocating fresh literals on
+// each render (the render monitor flagged initial/animate/exit/transition as
+// changing every render across thousands of rows).
+const FILE_TREE_EXPAND_INITIAL = { height: 0, opacity: 0, marginTop: 0, marginBottom: 0 } as const
+const FILE_TREE_EXPAND_ANIMATE = { height: 'auto', opacity: 1, marginTop: 2, marginBottom: 8 } as const
+const FILE_TREE_EXPAND_EXIT = { height: 0, opacity: 0, marginTop: 0, marginBottom: 0 } as const
+const FILE_TREE_EXPAND_TRANSITION = { duration: 0.2, ease: 'easeInOut' } as const
+
 interface FileTreeItemProps {
   file: SessionFile
   depth: number
@@ -276,7 +285,7 @@ interface FileTreeItemProps {
  * - Framer-motion staggered animation for expand/collapse
  * - Chevron shown on hover, icon hidden
  */
-function FileTreeItem({
+function FileTreeItemImpl({
   file,
   depth,
   expandedPaths,
@@ -399,10 +408,10 @@ function FileTreeItem({
         <AnimatePresence initial={false}>
           {isExpanded && (
             <m.div
-              initial={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
-              animate={{ height: 'auto', opacity: 1, marginTop: 2, marginBottom: 8 }}
-              exit={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
-              transition={{ duration: 0.2, ease: 'easeInOut' }}
+              initial={FILE_TREE_EXPAND_INITIAL}
+              animate={FILE_TREE_EXPAND_ANIMATE}
+              exit={FILE_TREE_EXPAND_EXIT}
+              transition={FILE_TREE_EXPAND_TRANSITION}
               className="overflow-hidden"
             >
               {/* Wrapper div matches LeftSidebar recursive structure - min-w-0 allows shrinking */}
@@ -441,6 +450,13 @@ function FileTreeItem({
   // in a plain div by the parent. No entrance stagger — see the note above.
   return <>{innerContent}</>
 }
+
+// Memoized so a parent re-render (file-watch reload, loading toggle) or a
+// sibling folder toggle does not re-render every row: with stable callbacks and
+// a stable expandedPaths Set identity, unchanged rows now bail out. The
+// recursive child elements above reference this memoized identity, not the raw
+// impl, so nested rows are memoized too.
+const FileTreeItem = memo(FileTreeItemImpl)
 
 /**
  * Section displaying session files as a tree
@@ -778,6 +794,10 @@ export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInlin
     openFile(file)
   }, [openFile])
 
+  const handleRevealInFileManager = useCallback((path: string) => {
+    window.electronAPI.showInFolder(path)
+  }, [])
+
   if (!sessionId) return null
 
   return (
@@ -806,7 +826,7 @@ export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInlin
                   onDirectoryExpand={handleDirectoryExpand}
                   onFileClick={handleFileClick}
                   onFileDoubleClick={handleFileDoubleClick}
-                  onRevealInFileManager={(path) => window.electronAPI.showInFolder(path)}
+                  onRevealInFileManager={handleRevealInFileManager}
                 />
               ))}
             </nav>

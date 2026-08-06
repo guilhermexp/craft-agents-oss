@@ -665,9 +665,9 @@ function Row({
   )
 }
 
-function Separator() {
+const Separator = React.memo(function Separator() {
   return <div className="my-1 mx-3 h-px bg-foreground/[0.06]" />
-}
+})
 
 function CountBadge({ count }: { count: number }) {
   return (

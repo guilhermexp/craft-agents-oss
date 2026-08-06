@@ -2,7 +2,7 @@
  * Markdown component exports for @craft-agent/ui
  */
 
-export { Markdown, MemoizedMarkdown, type MarkdownProps, type RenderMode, type DisablablePreviewBlock } from './Markdown'
+export { Markdown, type MarkdownProps, type RenderMode, type DisablablePreviewBlock } from './Markdown'
 export { CodeBlock, InlineCode, type CodeBlockProps } from './CodeBlock'
 export { preprocessLinks, detectLinks, hasLinks } from './linkify'
 export { CollapsibleSection } from './CollapsibleSection'

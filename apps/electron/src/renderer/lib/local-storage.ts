@@ -65,6 +65,9 @@ export const KEYS = {
   // Workspace navigation state (workspace-scoped via suffix = workspaceSlug)
   // Stores the full URL search string so switching back restores panels/focus/sidebar
   workspaceUrl: 'workspace-url',
+
+  // Runtime perf monitor (dev overlay)
+  perfOverlayEnabled: 'perf-overlay-enabled',
 } as const
 
 export type StorageKey = typeof KEYS[keyof typeof KEYS]

@@ -13,6 +13,7 @@
     "./chat/TurnCard": "./src/components/chat/TurnCard.tsx",
     "./chat/turn-utils": "./src/components/chat/turn-utils.ts",
     "./file-classification": "./src/lib/file-classification.ts",
+    "./html-preview-sanitizer": "./src/lib/html-preview-sanitizer.ts",
     "./shiki": "./src/lib/shiki-highlighter.ts",
     "./pdf-worker": "./src/lib/pdf-worker.ts",
     "./markdown": "./src/components/markdown/index.ts",

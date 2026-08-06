@@ -75,7 +75,6 @@ export {
 // Markdown
 export {
   Markdown,
-  MemoizedMarkdown,
   CodeBlock,
   InlineCode,
   CollapsibleMarkdownProvider,
@@ -217,6 +216,8 @@ export {
   HTMLPreviewOverlay,
   ImagePreviewOverlay,
   AudioPreviewOverlay,
+  VideoPreviewOverlay,
+  OfficeLiveOverlay,
   PDFPreviewOverlay,
   ExcalidrawPreviewOverlay,
   detectLanguage,
@@ -233,6 +234,8 @@ export {
   type HTMLPreviewOverlayProps,
   type ImagePreviewOverlayProps,
   type AudioPreviewOverlayProps,
+  type VideoPreviewOverlayProps,
+  type OfficeLiveOverlayProps,
   type PDFPreviewOverlayProps,
   type ExcalidrawPreviewOverlayProps,
   ActivityCardsOverlay,

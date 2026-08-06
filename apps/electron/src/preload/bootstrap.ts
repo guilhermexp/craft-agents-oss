@@ -21,6 +21,7 @@ import { WsRpcClient, type TransportConnectionState } from '../transport/client'
 import { RoutedClient } from '../transport/routed-client'
 import { buildClientApi } from '../transport/build-api'
 import { CHANNEL_MAP } from '../transport/channel-map'
+import { createRpcProbe } from './rpc-probe'
 import { createCallbackServer } from '@craft-agent/shared/auth/callback-server'
 import { CHATGPT_OAUTH_CONFIG } from '@craft-agent/shared/auth/chatgpt-oauth-config'
 import {
@@ -192,7 +193,12 @@ client.handleCapability(CLIENT_BROWSER_INVOKE, async (req: BrowserCapabilityRequ
 // Build ElectronAPI proxy
 // ---------------------------------------------------------------------------
 
-const api = buildClientApi(client, CHANNEL_MAP, (ch) => client.isChannelAvailable(ch))
+// The probe is always installed but inert: while the perf overlay is off it is
+// a single boolean test per RPC call.
+const rpcProbe = createRpcProbe(client)
+contextBridge.exposeInMainWorld('craftPerfRpc', rpcProbe.bridge)
+
+const api = buildClientApi(rpcProbe.client, CHANNEL_MAP, (ch) => client.isChannelAvailable(ch))
 
 ;(api as any).getRuntimeEnvironment = (): 'electron' | 'web' => 'electron'
 

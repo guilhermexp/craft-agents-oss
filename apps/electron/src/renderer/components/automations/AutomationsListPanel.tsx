@@ -143,7 +143,7 @@ function AutomationItem({
       title={automation.name}
       badges={badgesNode}
       trailing={trailingNode}
-      menuContent={
+      menuContent={() => (
         <AutomationMenu
           automationId={automation.id}
           automationName={automation.name}
@@ -154,8 +154,8 @@ function AutomationItem({
           onDelete={onDelete}
           onSendToWorkspace={onSendToWorkspace}
         />
-      }
-      contextMenuContent={isMultiSelectActive && isInMultiSelect ? <BatchAutomationMenu /> : undefined}
+      )}
+      contextMenuContent={isMultiSelectActive && isInMultiSelect ? () => <BatchAutomationMenu /> : undefined}
     />
   )
 }

@@ -16,6 +16,7 @@ import type {
   DeepLinkNavigation,
   TaskGenerateResult,
 } from './dto'
+import type { PerfMainSample } from '../perf/types'
 import type { BrowserProfileSettings } from '../config/types'
 
 export interface BroadcastEventMap {
@@ -46,6 +47,9 @@ export interface BroadcastEventMap {
   // Update broadcasts (global)
   [RPC_NAMESPACES.update.AVAILABLE]: [info: UpdateInfo]
   [RPC_NAMESPACES.update.DOWNLOAD_PROGRESS]: [progress: number]
+
+  // Runtime perf monitor (per-client, only while an overlay is subscribed)
+  [RPC_NAMESPACES.perf.SAMPLE]: [sample: PerfMainSample]
 
   // Badge broadcasts (global)
   [RPC_NAMESPACES.badge.DRAW]: [data: { count: number; iconDataUrl: string }]

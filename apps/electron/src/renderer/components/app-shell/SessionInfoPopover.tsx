@@ -6,12 +6,14 @@ import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ArrowLeft, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Maximize2 } from 'lucide-react'
 import { classifyFile } from '@craft-agent/ui/file-classification'
+import { prepareHtmlPreviewSrcDoc } from '@craft-agent/ui/html-preview-sanitizer'
 import { Markdown } from '@craft-agent/ui/markdown'
 import { ShikiCodeViewer } from '@/components/shiki/ShikiCodeViewer'
 import { useAppShellContext, useSession } from '@/context/AppShellContext'
 import { getLanguageFromPath } from '@/lib/file-utils'
 import { cn } from '@/lib/utils'
 import { getFileManagerName } from '@/lib/platform'
+import { filePreviewLog } from '@/lib/logger'
 import { SessionFilesSection, WorkspaceFilesSection } from '../right-sidebar/SessionFilesSection'
 import { WorkspaceObjectsSection } from '../right-sidebar/workspace-objects-section'
 import { getInlinePreviewLoadState } from './right-sidebar-preview-state'
@@ -268,6 +270,8 @@ export function InlineFilePreviewPanel({
   const previewType = classification.type
   const previewLoadState = React.useMemo(() => getInlinePreviewLoadState(filePath), [filePath])
   const [content, setContent] = React.useState('')
+  const [html, setHtml] = React.useState<string | null>(null)
+  const [liveUrl, setLiveUrl] = React.useState<string | null>(null)
   const [dataUrl, setDataUrl] = React.useState<string | null>(null)
   const [pdfData, setPdfData] = React.useState<Uint8Array | null>(null)
   const [error, setError] = React.useState<string | null>(null)
@@ -276,10 +280,20 @@ export function InlineFilePreviewPanel({
   React.useEffect(() => {
     let cancelled = false
     setContent('')
+    setHtml(null)
+    setLiveUrl(null)
     setDataUrl(null)
     setPdfData(null)
     setError(null)
     setLoading(previewLoadState.loading)
+
+    // Which branch a file takes is invisible from the outside when a preview
+    // silently does nothing — log it so the reason is recoverable from the log.
+    filePreviewLog.info('preview', {
+      filePath,
+      type: previewType,
+      kind: previewLoadState.kind,
+    })
 
     if (previewLoadState.kind === 'unsupported') return
 
@@ -301,6 +315,43 @@ export function InlineFilePreviewPanel({
       window.electronAPI.readFileBinary(filePath)
         .then((data) => {
           if (!cancelled) setPdfData(new Uint8Array(data))
+        })
+        .catch((err) => {
+          if (!cancelled) setError(err instanceof Error ? err.message : String(err))
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
+      return () => { cancelled = true }
+    }
+
+    // Office documents open against a live `officecli watch` server rather than
+    // a rendered snapshot: the served page carries the binary's own editor and
+    // formula engine, so cells are actually editable.
+    if (previewLoadState.kind === 'office') {
+      window.electronAPI.openOfficeLive(filePath)
+        .then((url) => {
+          filePreviewLog.info('live server ready', { filePath, url })
+          if (!cancelled) setLiveUrl(url)
+        })
+        .catch((err) => {
+          filePreviewLog.error('live server failed', { filePath, error: String(err) })
+          if (!cancelled) setError(err instanceof Error ? err.message : String(err))
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
+      return () => {
+        cancelled = true
+        // Releases the port and the in-memory document when the user moves on.
+        void window.electronAPI.closeOfficeLive(filePath)
+      }
+    }
+
+    if (previewLoadState.kind === 'html') {
+      window.electronAPI.readFile(filePath)
+        .then((text) => {
+          if (!cancelled) setHtml(text)
         })
         .catch((err) => {
           if (!cancelled) setError(err instanceof Error ? err.message : String(err))
@@ -337,6 +388,7 @@ export function InlineFilePreviewPanel({
   const copyPath = React.useCallback(() => {
     void navigator.clipboard?.writeText(filePath)
   }, [filePath])
+
 
   return (
     <div className="h-full min-h-0 flex flex-col">
@@ -384,6 +436,35 @@ export function InlineFilePreviewPanel({
           <div className="flex min-h-full items-center justify-center p-4">
             <img src={dataUrl} alt={fileName} className="max-h-full max-w-full rounded-md object-contain shadow-minimal" />
           </div>
+        ) : previewType === 'video' ? (
+          <div className="flex min-h-full items-center justify-center p-4">
+            {/* Streams over media:// so large files aren't buffered into memory,
+                and seeking works via byte-range requests. */}
+            <video
+              src={`media://workspace/${encodeURIComponent(filePath)}`}
+              controls
+              className="max-h-full max-w-full rounded-md shadow-minimal"
+            />
+          </div>
+        ) : previewLoadState.kind === 'office' && liveUrl !== null ? (
+          // Points at the loopback `officecli watch` server rather than a
+          // srcdoc snapshot: double-click editing, formula recalculation and
+          // sheet tabs all live in the served page. No sandbox attribute — the
+          // frame needs its own origin for its fetch/SSE calls to work, and CSP
+          // frame-src already restricts what may be framed.
+          <iframe
+            title={fileName}
+            src={liveUrl}
+            className="h-full w-full border-0 bg-white"
+          />
+        ) : previewLoadState.kind === 'html' && html !== null ? (
+          // Arbitrary .html from the workspace stays script-free.
+          <iframe
+            title={fileName}
+            sandbox="allow-same-origin allow-top-navigation-by-user-activation"
+            srcDoc={prepareHtmlPreviewSrcDoc(html)}
+            className="h-full w-full border-0 bg-white"
+          />
         ) : previewType === 'markdown' ? (
           <div className="p-4 text-sm">
             <Markdown mode="full" onUrlClick={onOpenUrl} onFileClick={onOpenFile}>{content}</Markdown>

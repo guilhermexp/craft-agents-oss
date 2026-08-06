@@ -1,4 +1,4 @@
-import { useCallback } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
@@ -19,63 +19,78 @@ export function useSessionActionToasts({
 }: UseSessionActionToastsOptions) {
   const { t } = useTranslation()
 
+  /**
+   * These handlers are published through `SessionListActions`, which every row
+   * subscribes to. A `useCallback` closing over the raw props changes identity
+   * whenever the caller re-renders, invalidating that context for the whole
+   * list — so the props are read through a ref instead.
+   */
+  const latest = useRef({ onFlag, onUnflag, onArchive, onUnarchive, onDelete, t })
+  useEffect(() => {
+    latest.current = { onFlag, onUnflag, onArchive, onUnarchive, onDelete, t }
+  }, [onFlag, onUnflag, onArchive, onUnarchive, onDelete, t])
+
   const handleFlagWithToast = useCallback((sessionId: string) => {
-    if (!onFlag) return
-    onFlag(sessionId)
-    toast(t('toast.sessionFlagged'), {
-      description: t('toast.sessionFlaggedDesc'),
-      action: onUnflag ? {
-        label: t('toast.undo'),
-        onClick: () => onUnflag(sessionId),
+    const { onFlag: flag, onUnflag: unflag, t: translate } = latest.current
+    if (!flag) return
+    flag(sessionId)
+    toast(translate('toast.sessionFlagged'), {
+      description: translate('toast.sessionFlaggedDesc'),
+      action: unflag ? {
+        label: translate('toast.undo'),
+        onClick: () => unflag(sessionId),
       } : undefined,
     })
-  }, [onFlag, onUnflag, t])
+  }, [])
 
   const handleUnflagWithToast = useCallback((sessionId: string) => {
-    if (!onUnflag) return
-    onUnflag(sessionId)
-    toast(t('toast.sessionFlagRemoved'), {
-      description: t('toast.sessionFlagRemovedDesc'),
-      action: onFlag ? {
-        label: t('toast.undo'),
-        onClick: () => onFlag(sessionId),
+    const { onFlag: flag, onUnflag: unflag, t: translate } = latest.current
+    if (!unflag) return
+    unflag(sessionId)
+    toast(translate('toast.sessionFlagRemoved'), {
+      description: translate('toast.sessionFlagRemovedDesc'),
+      action: flag ? {
+        label: translate('toast.undo'),
+        onClick: () => flag(sessionId),
       } : undefined,
     })
-  }, [onFlag, onUnflag, t])
+  }, [])
 
   const handleArchiveWithToast = useCallback((sessionId: string) => {
-    if (!onArchive) return
-    onArchive(sessionId)
-    toast(t('toast.sessionArchived'), {
-      description: t('toast.sessionArchivedDesc'),
-      action: onUnarchive ? {
-        label: t('toast.undo'),
-        onClick: () => onUnarchive(sessionId),
+    const { onArchive: archive, onUnarchive: unarchive, t: translate } = latest.current
+    if (!archive) return
+    archive(sessionId)
+    toast(translate('toast.sessionArchived'), {
+      description: translate('toast.sessionArchivedDesc'),
+      action: unarchive ? {
+        label: translate('toast.undo'),
+        onClick: () => unarchive(sessionId),
       } : undefined,
     })
-  }, [onArchive, onUnarchive, t])
+  }, [])
 
   const handleUnarchiveWithToast = useCallback((sessionId: string) => {
-    if (!onUnarchive) return
-    onUnarchive(sessionId)
-    toast(t('toast.sessionRestored'), {
-      description: t('toast.sessionRestoredDesc'),
-      action: onArchive ? {
-        label: t('toast.undo'),
-        onClick: () => onArchive(sessionId),
+    const { onArchive: archive, onUnarchive: unarchive, t: translate } = latest.current
+    if (!unarchive) return
+    unarchive(sessionId)
+    toast(translate('toast.sessionRestored'), {
+      description: translate('toast.sessionRestoredDesc'),
+      action: archive ? {
+        label: translate('toast.undo'),
+        onClick: () => archive(sessionId),
       } : undefined,
     })
-  }, [onArchive, onUnarchive, t])
+  }, [])
 
   const handleDeleteWithToast = useCallback(async (sessionId: string): Promise<boolean> => {
     // Confirmation dialog is shown by handleDeleteSession in App.tsx
     // We await so toast only shows after successful deletion (if user confirmed)
-    const deleted = await onDelete(sessionId)
+    const deleted = await latest.current.onDelete(sessionId)
     if (deleted) {
-      toast(t('toast.sessionDeleted'))
+      toast(latest.current.t('toast.sessionDeleted'))
     }
     return deleted
-  }, [onDelete, t])
+  }, [])
 
   return {
     handleFlagWithToast,

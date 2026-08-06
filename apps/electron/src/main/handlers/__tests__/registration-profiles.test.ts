@@ -35,6 +35,7 @@ mock.module('electron', () => ({
     getFocusedWindow: () => null,
     getAllWindows: () => [],
   },
+  webContents: { getAllWebContents: () => [] },
   BrowserView: class {},
   Menu: {
     buildFromTemplate: () => ({ popup: () => {} }),
@@ -111,6 +112,7 @@ const GUI_ONLY_CHANNELS = new Set<string>([
   ...Object.values(RPC_NAMESPACES.menu),
   ...Object.values(RPC_NAMESPACES.browserPane),
   ...Object.values(RPC_NAMESPACES.meetings),
+  ...Object.values(RPC_NAMESPACES.perf),
   RPC_NAMESPACES.remote.TEST_CONNECTION,
   RPC_NAMESPACES.window.OPEN_WORKSPACE,
   RPC_NAMESPACES.window.OPEN_SESSION_IN_NEW_WINDOW,

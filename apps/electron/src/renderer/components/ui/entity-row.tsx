@@ -71,11 +71,12 @@ export interface EntityRowProps {
   showSeparator?: boolean
 
   // --- Menu ---
-  /** Menu content — rendered in BOTH dropdown and context menu via providers.
-   *  Should be a component that uses useMenuComponents() for its items. */
-  menuContent?: React.ReactNode
-  /** Context menu content when different from dropdown (e.g. batch menu in multi-select) */
-  contextMenuContent?: React.ReactNode
+  /** Menu content factory — invoked lazily, only once its dropdown/context menu is
+   *  first opened, so closed rows never mount (or rebuild) the Radix menu subtree.
+   *  Should return a component that uses useMenuComponents() for its items. */
+  menuContent?: () => React.ReactNode
+  /** Context menu content factory when different from dropdown (e.g. batch menu in multi-select) */
+  contextMenuContent?: () => React.ReactNode
   /** Whether to hide the more button (e.g. when overlay is showing) */
   hideMoreButton?: boolean
 
@@ -116,8 +117,23 @@ export function EntityRow({
 }: EntityRowProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [contextMenuOpen, setContextMenuOpen] = useState(false)
+  // Latch that arms a menu's Radix content subtree on first open and keeps it
+  // mounted afterwards (so Radix's exit animation still runs on close). Rows whose
+  // menu is never opened never mount the portal/content/Presence subtree — the
+  // dominant render-churn source in this long, unvirtualized list.
+  const [menuArmed, setMenuArmed] = useState(false)
+  const [contextMenuArmed, setContextMenuArmed] = useState(false)
 
-  // Resolve context menu content: use override if provided, else fall back to dropdown menu content
+  const handleMenuOpenChange = (open: boolean) => {
+    if (open) setMenuArmed(true)
+    setMenuOpen(open)
+  }
+  const handleContextMenuOpenChange = (open: boolean) => {
+    if (open) setContextMenuArmed(true)
+    setContextMenuOpen(open)
+  }
+
+  // Resolve context menu content factory: use override if provided, else fall back to dropdown menu content
   const resolvedContextMenu = contextMenuContent ?? menuContent
 
   // Build the inner content (shared between with-context-menu and without)
@@ -169,17 +185,19 @@ export function EntityRow({
                     )}
                     onMouseDown={(e) => e.stopPropagation()}
                   >
-                    <DropdownMenu modal={true} open={menuOpen} onOpenChange={setMenuOpen}>
+                    <DropdownMenu modal={true} open={menuOpen} onOpenChange={handleMenuOpenChange}>
                       <DropdownMenuTrigger asChild>
                         <div className="p-1 rounded-[6px] hover:bg-foreground/10 data-[state=open]:bg-foreground/10 cursor-pointer">
                           <MoreHorizontal className="size-3.5 text-muted-foreground" />
                         </div>
                       </DropdownMenuTrigger>
-                      <StyledDropdownMenuContent align="end">
-                        <DropdownMenuProvider>
-                          {menuContent}
-                        </DropdownMenuProvider>
-                      </StyledDropdownMenuContent>
+                      {menuArmed && (
+                        <StyledDropdownMenuContent align="end">
+                          <DropdownMenuProvider>
+                            {menuContent()}
+                          </DropdownMenuProvider>
+                        </StyledDropdownMenuContent>
+                      )}
                     </DropdownMenu>
                   </div>
                 )}
@@ -259,17 +277,19 @@ export function EntityRow({
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="flex items-center rounded-[8px] overflow-hidden border border-transparent hover:border-border/50">
-            <DropdownMenu modal={true} open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenu modal={true} open={menuOpen} onOpenChange={handleMenuOpenChange}>
               <DropdownMenuTrigger asChild>
                 <div className="p-1.5 hover:bg-foreground/10 data-[state=open]:bg-foreground/10 cursor-pointer">
                   <MoreHorizontal className="size-4 text-muted-foreground" />
                 </div>
               </DropdownMenuTrigger>
-              <StyledDropdownMenuContent align="end">
-                <DropdownMenuProvider>
-                  {menuContent}
-                </DropdownMenuProvider>
-              </StyledDropdownMenuContent>
+              {menuArmed && (
+                <StyledDropdownMenuContent align="end">
+                  <DropdownMenuProvider>
+                    {menuContent()}
+                  </DropdownMenuProvider>
+                </StyledDropdownMenuContent>
+              )}
             </DropdownMenu>
           </div>
         </div>
@@ -292,15 +312,17 @@ export function EntityRow({
 
       {/* Wrap with ContextMenu if menu content is provided */}
       {resolvedContextMenu ? (
-        <ContextMenu modal={true} onOpenChange={setContextMenuOpen}>
+        <ContextMenu modal={true} onOpenChange={handleContextMenuOpenChange}>
           <ContextMenuTrigger asChild>
             {innerContent}
           </ContextMenuTrigger>
-          <StyledContextMenuContent>
-            <ContextMenuProvider>
-              {resolvedContextMenu}
-            </ContextMenuProvider>
-          </StyledContextMenuContent>
+          {contextMenuArmed && (
+            <StyledContextMenuContent>
+              <ContextMenuProvider>
+                {resolvedContextMenu()}
+              </ContextMenuProvider>
+            </StyledContextMenuContent>
+          )}
         </ContextMenu>
       ) : (
         innerContent

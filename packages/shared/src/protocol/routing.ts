@@ -70,6 +70,11 @@ export const LOCAL_ONLY_NAMESPACES = new Set<string>([
   RPC_NAMESPACES.system.HOME_DIR,
   RPC_NAMESPACES.system.IS_DEBUG_MODE,
 
+  // perf — local process metrics for the runtime perf overlay
+  RPC_NAMESPACES.perf.SUBSCRIBE,
+  RPC_NAMESPACES.perf.UNSUBSCRIBE,
+  RPC_NAMESPACES.perf.SAMPLE,
+
   // theme — app/OS-level preferences, not workspace content
   RPC_NAMESPACES.theme.GET_SYSTEM_PREFERENCE,
   RPC_NAMESPACES.theme.SYSTEM_CHANGED,

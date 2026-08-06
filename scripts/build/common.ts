@@ -97,6 +97,13 @@ export const BUN_VERSION = 'bun-v1.3.9';
 export const UV_VERSION = '0.10.6';
 
 /**
+ * OfficeCLI version to bundle with the app.
+ * Powers the in-app preview of .docx/.xlsx/.pptx by rendering them to HTML.
+ * Update this when upgrading. Check latest at: https://github.com/iOfficeAI/OfficeCLI/releases
+ */
+export const OFFICECLI_VERSION = 'v1.0.143';
+
+/**
  * Get platform key for resources/bin folder naming.
  */
 export function getPlatformKey(platform: Platform, arch: Arch): string {
@@ -141,6 +148,21 @@ export function getUvDownloadName(platform: Platform, arch: Arch): string {
   if (platform === 'win32' && arch === 'x64') return 'uv-x86_64-pc-windows-msvc.zip';
 
   throw new Error(`Unsupported uv target: ${platform}-${arch}`);
+}
+
+/**
+ * Get OfficeCLI release artifact filename for a platform/arch combination.
+ * Releases ship bare binaries (no archive), one per target.
+ */
+export function getOfficeCliDownloadName(platform: Platform, arch: Arch): string {
+  if (platform === 'darwin' && arch === 'arm64') return 'officecli-mac-arm64';
+  if (platform === 'darwin' && arch === 'x64') return 'officecli-mac-x64';
+  if (platform === 'linux' && arch === 'arm64') return 'officecli-linux-arm64';
+  if (platform === 'linux' && arch === 'x64') return 'officecli-linux-x64';
+  if (platform === 'win32' && arch === 'arm64') return 'officecli-win-arm64.exe';
+  if (platform === 'win32' && arch === 'x64') return 'officecli-win-x64.exe';
+
+  throw new Error(`Unsupported OfficeCLI target: ${platform}-${arch}`);
 }
 
 /**
@@ -317,6 +339,78 @@ export async function downloadUv(config: BuildConfig): Promise<void> {
     }
 
     console.log(`  uv installed to ${targetPath} ✓`);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Download the OfficeCLI binary into resources/bin/{platform-arch}/.
+ *
+ * Backs the in-app preview of Office documents: the main process shells out to
+ * `officecli view <file> html` and the renderer displays the result. Releases
+ * publish bare binaries plus a single SHA256SUMS listing every asset.
+ */
+export async function downloadOfficeCli(config: BuildConfig): Promise<void> {
+  const { platform, arch, electronDir } = config;
+  const assetName = getOfficeCliDownloadName(platform, arch);
+  const binaryName = platform === 'win32' ? 'officecli.exe' : 'officecli';
+  const platformKey = getPlatformKey(platform, arch);
+
+  const targetDir = join(electronDir, 'resources', 'bin', platformKey);
+  const targetPath = join(targetDir, binaryName);
+
+  // Skip when already provisioned
+  if (existsSync(targetPath)) {
+    console.log(`OfficeCLI already present at ${targetPath}`);
+    return;
+  }
+
+  console.log(`Downloading OfficeCLI ${OFFICECLI_VERSION} for ${platformKey}...`);
+
+  mkdirSync(targetDir, { recursive: true });
+  const tempDir = join(electronDir, '.officecli-download-temp');
+  rmSync(tempDir, { recursive: true, force: true });
+  mkdirSync(tempDir, { recursive: true });
+
+  try {
+    const releaseBase = `https://github.com/iOfficeAI/OfficeCLI/releases/download/${OFFICECLI_VERSION}`;
+    const assetUrl = `${releaseBase}/${assetName}`;
+    const checksumUrl = `${releaseBase}/SHA256SUMS`;
+
+    const assetPath = join(tempDir, assetName);
+    const checksumPath = join(tempDir, 'SHA256SUMS');
+
+    console.log(`  Downloading ${assetUrl}...`);
+    await $`curl -fsSL --retry 3 --retry-delay 2 -o ${assetPath} ${assetUrl}`;
+
+    console.log('  Downloading checksums...');
+    await $`curl -fsSL --retry 3 --retry-delay 2 -o ${checksumPath} ${checksumUrl}`;
+
+    console.log('  Verifying checksum...');
+    // SHA256SUMS covers every asset — pick the line for this target only.
+    const checksumContent = await Bun.file(checksumPath).text();
+    const entry = checksumContent
+      .split('\n')
+      .map(line => line.trim().split(/\s+/))
+      .find(([, name]) => name === assetName);
+
+    if (!entry?.[0]) {
+      throw new Error(`Unable to find ${assetName} in SHA256SUMS`);
+    }
+
+    const isValid = await verifySha256(assetPath, entry[0]);
+    if (!isValid) {
+      throw new Error('OfficeCLI checksum verification failed');
+    }
+    console.log('  Checksum verified ✓');
+
+    copyFileSync(assetPath, targetPath);
+    if (platform !== 'win32') {
+      await $`chmod +x ${targetPath}`.quiet();
+    }
+
+    console.log(`  OfficeCLI installed to ${targetPath} ✓`);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

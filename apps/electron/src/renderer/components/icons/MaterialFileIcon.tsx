@@ -10,6 +10,7 @@
  * given tree actually shows.
  */
 
+import { memo } from 'react'
 import manifestJson from '@/generated/file-icons/manifest.json'
 import { cn } from '@/lib/utils'
 import { getMaterialIconName, materialIconUrl, type MaterialFileIconManifest } from './material-file-icons'
@@ -20,19 +21,19 @@ interface MaterialIconProps {
   className?: string
 }
 
-export function MaterialFileIcon({ fileName, className }: MaterialIconProps & { fileName: string }) {
+export const MaterialFileIcon = memo(function MaterialFileIcon({ fileName, className }: MaterialIconProps & { fileName: string }) {
   return <MaterialIconImage iconName={getMaterialIconName(fileName, false, false, manifest)} className={className} />
-}
+})
 
-export function MaterialFolderIcon({
+export const MaterialFolderIcon = memo(function MaterialFolderIcon({
   folderName,
   isOpen = false,
   className,
 }: MaterialIconProps & { folderName: string; isOpen?: boolean }) {
   return <MaterialIconImage iconName={getMaterialIconName(folderName, true, isOpen, manifest)} className={className} />
-}
+})
 
-function MaterialIconImage({ iconName, className }: MaterialIconProps & { iconName: string }) {
+const MaterialIconImage = memo(function MaterialIconImage({ iconName, className }: MaterialIconProps & { iconName: string }) {
   return (
     <img
       src={materialIconUrl(iconName)}
@@ -42,4 +43,4 @@ function MaterialIconImage({ iconName, className }: MaterialIconProps & { iconNa
       className={cn('size-4 shrink-0 select-none object-contain', className)}
     />
   )
-}
+})

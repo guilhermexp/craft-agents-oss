@@ -9,6 +9,7 @@ import { registerWorkspaceGuiHandlers } from './workspace'
 import { registerBrowserHandlers } from './browser'
 import { registerMeetingHandlers } from './meetings'
 import { registerSettingsGuiHandlers } from './settings'
+import { registerPerfHandlers } from './perf'
 
 export function registerGuiRpcHandlers(server: RpcServer, deps: HandlerDeps): void {
   registerSystemGuiHandlers(server, deps)
@@ -16,6 +17,7 @@ export function registerGuiRpcHandlers(server: RpcServer, deps: HandlerDeps): vo
   registerBrowserHandlers(server, deps)
   registerMeetingHandlers(server, deps)
   registerSettingsGuiHandlers(server, deps)
+  registerPerfHandlers(server)
 }
 
 export function registerAllRpcHandlers(server: RpcServer, deps: HandlerDeps, serverCtx?: ServerHandlerContext): void {

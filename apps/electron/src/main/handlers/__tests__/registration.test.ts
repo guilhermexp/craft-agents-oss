@@ -42,6 +42,7 @@ mock.module('electron', () => ({
     getFocusedWindow: () => null,
     getAllWindows: () => [],
   },
+  webContents: { getAllWebContents: () => [] },
   BrowserView: class {},
   Menu: {
     buildFromTemplate: () => ({ popup: () => {} }),
