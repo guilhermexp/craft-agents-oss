@@ -29,19 +29,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Parse an AskUserQuestion tool result into the answers to show read-only.
- * Tolerates both the raw `{questions, answers, response}` shape (Pi) and a
- * `{data: {...}}` wrapper (Claude SDK). Returns null when there is nothing
- * structured to show.
+ * Both backends persist the canonical `{questions, answers, response?, skipped?}`
+ * echo from `buildAskUserQuestionResult`. Returns null when there is nothing
+ * structured to show (e.g. a session answered before that contract existed).
  */
 export function parseAskUserQuestionResult(content: string | undefined): AskUserQuestionResponse | null {
   if (!content) return null
-  let parsed: unknown
+  let root: unknown
   try {
-    parsed = JSON.parse(content)
+    root = JSON.parse(content)
   } catch {
     return null
   }
-  const root = isRecord(parsed) && isRecord(parsed.data) ? parsed.data : parsed
   if (!isRecord(root) || !isRecord(root.answers)) return null
   const answers: Record<string, string> = {}
   for (const [key, value] of Object.entries(root.answers)) {

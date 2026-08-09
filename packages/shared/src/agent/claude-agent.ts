@@ -65,7 +65,13 @@ import {
   createConfigWatcher,
   type ConfigWatcherCallbacks,
 } from '../config/watcher.ts';
-import { validateAskUserQuestions, ASK_USER_QUESTION_TIMEOUT_MS } from './ask-user-question.ts';
+import {
+  validateAskUserQuestions,
+  buildAskUserQuestionResult,
+  buildAskUserQuestionHookOutput,
+  ASK_USER_QUESTION_TIMEOUT_MS,
+  ASK_USER_QUESTION_TOOL_NAME,
+} from './ask-user-question.ts';
 import { type ThinkingLevel, THINKING_TO_EFFORT, getThinkingTokens, DEFAULT_THINKING_LEVEL } from './thinking-levels.ts';
 import { generateConversationSummary } from './conversation-summary.ts';
 import type { LoadedSource } from '../sources/types.ts';
@@ -477,6 +483,11 @@ export class ClaudeAgent extends BaseAgent {
   private currentQueryAbortController: AbortController | null = null;
   private lastAbortReason: AbortReason | null = null;
   private sessionId: string | null = null;
+  // Structured AskUserQuestion payloads keyed by tool use id, staged by the
+  // PreToolUse hook and consumed by the matching tool_result event. The SDK's
+  // own tool result is prose written for the model ("Your questions have been
+  // answered: ..."), so the renderer would otherwise have nothing to parse.
+  private answeredUserQuestions = new Map<string, string>();
   // Whether the most recent user turn included image/PDF attachments. Read by
   // mapSDKErrorToTypedError to decide whether attachment-related hints belong
   // in the invalid_request error message.
@@ -1213,12 +1224,12 @@ export class ClaudeAgent extends BaseAgent {
               // The SDK's AskUserQuestion tool needs an interactive surface we
               // render in the conversation. We park the tool call here, let the
               // renderer show the questionnaire (from the streamed tool_start),
-              // and wait for the user to answer via respondToUserQuestion().
-              // Returning the answers as `updatedInput` makes the SDK run the
-              // tool's echo `call()`, so Claude receives {questions, answers,
-              // response} as the tool result. Malformed payloads are blocked with
-              // guidance instead of parking on an unanswerable questionnaire.
-              if (input.tool_name === 'AskUserQuestion') {
+              // and wait for the user to answer via respondToUserQuestion(), then
+              // hand the answers to the CLI's own tool — see
+              // buildAskUserQuestionHookOutput for why the payload looks like it
+              // does. Malformed payloads are blocked with guidance instead of
+              // parking on an unanswerable questionnaire.
+              if (input.tool_name === ASK_USER_QUESTION_TOOL_NAME) {
                 const questions = validateAskUserQuestions(input.tool_input);
                 if (!questions) {
                   return blockWithReason(
@@ -1227,19 +1238,14 @@ export class ClaudeAgent extends BaseAgent {
                 }
                 this.onDebug?.(`AskUserQuestion parked for ${input.tool_use_id} (${questions.length} question(s))`);
                 const answer = await this.awaitUserQuestion(input.tool_use_id, ASK_USER_QUESTION_TIMEOUT_MS);
-                const updatedInput: Record<string, unknown> = {
-                  questions,
-                  answers: answer.answers ?? {},
-                };
-                if (answer.response) updatedInput.response = answer.response;
-                if (answer.skipped) updatedInput.skipped = true;
-                return {
-                  continue: true,
-                  hookSpecificOutput: {
-                    hookEventName: 'PreToolUse' as const,
-                    updatedInput,
-                  },
-                };
+                // The model's tool result is prose; the renderer needs the same
+                // structured echo the Pi backend produces (consumed where the
+                // tool_result event is adapted below).
+                this.answeredUserQuestions.set(
+                  input.tool_use_id,
+                  JSON.stringify(buildAskUserQuestionResult(questions, answer)),
+                );
+                return buildAskUserQuestionHookOutput(questions, answer);
               }
 
               // Track Read tool calls for prerequisite checking
@@ -1638,6 +1644,19 @@ This is a branched conversation. All prior messages in this conversation are par
             // Reset prerequisite state on compaction (LLM loses guide content)
             if (event.type === 'info' && event.message === 'Compacted Conversation') {
               this.resetPrerequisiteState();
+            }
+
+            // AskUserQuestion: the SDK writes the tool result as prose for the
+            // model, which the questionnaire card cannot parse. Replace it with
+            // the canonical {questions, answers, response?, skipped?} echo the Pi
+            // backend emits, so a reopened session still renders the choices.
+            if (event.type === 'tool_result' && event.toolName === ASK_USER_QUESTION_TOOL_NAME) {
+              const answered = this.answeredUserQuestions.get(event.toolUseId);
+              if (answered !== undefined) {
+                this.answeredUserQuestions.delete(event.toolUseId);
+                yield { ...event, result: answered, isError: false };
+                continue;
+              }
             }
 
             // Intercept large/binary/media-rich tool results — save assets to disk,
@@ -2652,6 +2671,9 @@ This is a branched conversation. All prior messages in this conversation are par
     // dangling. Mirrors PiAgent.forceAbort; abort()/close() route through here.
     this.toolPermissionDispatcher?.clearPendingPermissions();
     this.clearPendingUserQuestions('the turn was aborted');
+    // An aborted turn never delivers the matching tool_result, so drop the
+    // staged renderer payloads instead of leaking them into the next turn.
+    this.answeredUserQuestions.clear();
   }
 
   getModel(): string {
@@ -2768,6 +2790,7 @@ This is a branched conversation. All prior messages in this conversation are par
     this.teardownPersistentQuery('destroy');
     this.toolPermissionDispatcher?.clearPendingPermissions();
     this.clearPendingUserQuestions('the session ended');
+    this.answeredUserQuestions.clear();
 
     // Clear pinned system prompt state
     this.pinnedPreferencesPrompt = null;

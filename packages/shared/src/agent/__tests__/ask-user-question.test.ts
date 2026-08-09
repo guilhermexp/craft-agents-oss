@@ -8,6 +8,7 @@ import { describe, it, expect } from 'bun:test';
 import {
   validateAskUserQuestions,
   buildAskUserQuestionResult,
+  buildAskUserQuestionHookOutput,
   normalizeAskUserQuestionResponse,
   ASK_USER_QUESTION_TIMEOUT_MS,
 } from '../ask-user-question.ts';
@@ -81,6 +82,47 @@ describe('buildAskUserQuestionResult', () => {
       answers: {},
       skipped: true,
     });
+  });
+});
+
+describe('buildAskUserQuestionHookOutput', () => {
+  const questions = validateAskUserQuestions({
+    questions: [{ question: 'q?', header: 'h', options: [{ label: 'A' }, { label: 'B' }] }],
+  })!;
+
+  // Without the explicit allow the CLI discards updatedInput and runs its own
+  // AskUserQuestion on the model's original input, so the model reads
+  // "The user did not answer the questions." however the user answered.
+  it('claims the permission decision so the CLI honors updatedInput', () => {
+    const output = buildAskUserQuestionHookOutput(questions, { answers: { 'q?': 'A' } });
+    expect(output.hookSpecificOutput.permissionDecision).toBe('allow');
+    expect(output.hookSpecificOutput.hookEventName).toBe('PreToolUse');
+    expect(output.continue).toBe(true);
+  });
+
+  it('sends only schema fields, echoing the questions with the answers', () => {
+    const { updatedInput } = buildAskUserQuestionHookOutput(questions, {
+      answers: { 'q?': 'A, B' },
+    }).hookSpecificOutput;
+    expect(updatedInput).toEqual({ questions, answers: { 'q?': 'A, B' } });
+  });
+
+  it('forwards the freeform response, which the CLI renders over the answers', () => {
+    const { updatedInput } = buildAskUserQuestionHookOutput(questions, {
+      answers: {},
+      response: 'timed out',
+    }).hookSpecificOutput;
+    expect(updatedInput.response).toBe('timed out');
+  });
+
+  // `skipped` is Craft-internal; an empty answers map is what tells the model
+  // nobody answered, and an unknown key would risk the CLI's schema validation.
+  it('drops the Craft-internal skipped flag', () => {
+    const { updatedInput } = buildAskUserQuestionHookOutput(questions, {
+      answers: {},
+      skipped: true,
+    }).hookSpecificOutput;
+    expect(updatedInput).toEqual({ questions, answers: {} });
   });
 });
 

@@ -91,6 +91,39 @@ export function buildAskUserQuestionResult(
   };
 }
 
+/**
+ * Build the PreToolUse hook payload that hands a user's answers to the Claude
+ * Code CLI's own `AskUserQuestion` tool.
+ *
+ * `permissionDecision: 'allow'` is load-bearing. The CLI only honors a hook's
+ * `updatedInput` when the hook also owns the permission decision; with just
+ * `updatedInput` it discards the answers, runs the tool on the model's original
+ * input and the model reads "The user did not answer the questions."
+ *
+ * The CLI's input schema only knows `questions`, `answers` and `response`, and
+ * it renders them in that precedence: `response` wins, then a populated
+ * `answers` map, then "did not answer" for an empty one. So a skip needs no
+ * flag — Craft's internal `skipped` stays out of the payload and an empty
+ * `answers` map already reads as "no answer" to the model.
+ */
+export function buildAskUserQuestionHookOutput(
+  questions: AskUserQuestionItem[],
+  response: AskUserQuestionResponse,
+) {
+  return {
+    continue: true,
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse' as const,
+      permissionDecision: 'allow' as const,
+      updatedInput: {
+        questions,
+        answers: response.answers ?? {},
+        ...(response.response ? { response: response.response } : {}),
+      },
+    },
+  };
+}
+
 export function normalizeAskUserQuestionResponse(raw: unknown): AskUserQuestionResponse {
   if (!raw || typeof raw !== 'object') return { answers: {}, skipped: true };
   const response = raw as Record<string, unknown>;
