@@ -118,6 +118,9 @@ describe('ToolPermissionDispatcher — source activation divergences', () => {
       // [ALTO] The successful-activation STOP is a CONTROL-FLOW block, not an
       // error: it must NOT be marked isError, so the Claude encoder omits [ERROR].
       expect(result.isError).toBe(false);
+      // The activation SUCCEEDED and asks the user to resend — the model must
+      // stay alive to relay that, so this block never ends the turn.
+      expect(result.endTurn).toBeUndefined();
     }
     expect(emitted).toEqual(['mysource']);
   });
@@ -133,7 +136,10 @@ describe('ToolPermissionDispatcher — source activation divergences', () => {
     const result = await dispatcher.dispatch('mcp__mysource__do', {}, 'req-1');
 
     expect(result.type).toBe('block');
-    if (result.type === 'block') expect(result.reason).toContain('not enabled for this session');
+    if (result.type === 'block') {
+      expect(result.reason).toContain('not enabled for this session');
+      expect(result.endTurn).toBeUndefined();
+    }
     expect(emitted).toEqual([]);
   });
 
@@ -148,7 +154,10 @@ describe('ToolPermissionDispatcher — source activation divergences', () => {
     const result = await dispatcher.dispatch('mcp__mysource__do', {}, 'req-1');
 
     expect(result.type).toBe('block');
-    if (result.type === 'block') expect(result.reason).toContain('Activate it by @mentioning');
+    if (result.type === 'block') {
+      expect(result.reason).toContain('Activate it by @mentioning');
+      expect(result.endTurn).toBeUndefined();
+    }
     expect(emitted).toEqual([]);
   });
 
@@ -161,7 +170,11 @@ describe('ToolPermissionDispatcher — source activation divergences', () => {
     const result = await dispatcher.dispatch('Write', { file_path: '/tmp/x', content: 'y' }, 'req-1');
 
     expect(result.type).toBe('block');
-    if (result.type === 'block') expect(result.isError).toBe(true);
+    if (result.type === 'block') {
+      expect(result.isError).toBe(true);
+      // A mode denial is recoverable: the model must keep the turn and adapt.
+      expect(result.endTurn).toBeUndefined();
+    }
   });
 });
 
@@ -175,7 +188,10 @@ describe('ToolPermissionDispatcher — permission prompt', () => {
     const result = await dispatcher.dispatch('Bash', { command: 'rm -rf /tmp/craft-disp-none' }, 'req-1');
 
     expect(result.type).toBe('block');
-    if (result.type === 'block') expect(result.reason).toContain('No permission handler');
+    if (result.type === 'block') {
+      expect(result.reason).toContain('No permission handler');
+      expect(result.endTurn).toBeUndefined();
+    }
   });
 
   it('with a permission handler: resolves allow on approval and block on denial', async () => {
@@ -199,7 +215,11 @@ describe('ToolPermissionDispatcher — permission prompt', () => {
     expect(dispatcher.respondToPermission('req-deny', false)).toBe(true);
     const denied = await denyPromise;
     expect(denied.type).toBe('block');
-    if (denied.type === 'block') expect(denied.reason).toContain('denied');
+    if (denied.type === 'block') {
+      expect(denied.reason).toContain('denied');
+      // The one block that ends the turn: a human said no.
+      expect(denied.endTurn).toBe(true);
+    }
   });
 
   it('respondToPermission returns false for an unknown request id', () => {
@@ -220,7 +240,11 @@ describe('ToolPermissionDispatcher — permission prompt', () => {
 
     const result = await pending;
     expect(result.type).toBe('block');
-    if (result.type === 'block') expect(result.reason).toContain('denied');
+    if (result.type === 'block') {
+      expect(result.reason).toContain('denied');
+      // Cleanup resolves the parked prompt as a denial — same human-denial arm.
+      expect(result.endTurn).toBe(true);
+    }
   });
 
   it('respondToPermission returns false on a second response (no double-resolve)', async () => {

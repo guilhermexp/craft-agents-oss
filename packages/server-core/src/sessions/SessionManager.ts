@@ -6399,6 +6399,37 @@ export class SessionManager implements ISessionManager {
                 canRetry: false,
                 details: errorMessage.errorDetails,
               })
+            } else {
+              // No captured API error: the turn still ended with nothing to show.
+              // A blocked tool used to land here and leave the user with a red tool
+              // card and no explanation, so never stop at the warning above — always
+              // put something retryable on screen.
+              const genericTitle = 'No Response'
+              const genericMessage = 'The turn ended without a response. This usually means a tool call was refused or the model stopped early.'
+              const genericDetails = [
+                'The agent produced no assistant message for your last request.',
+                'Check the tool cards above for a refused or failed tool call.',
+                'You can retry the message.',
+              ]
+              const errorMessage: Message = {
+                id: generateMessageId(),
+                role: 'error',
+                content: `${genericTitle}: ${genericMessage}`,
+                timestamp: this.monotonic(),
+                errorCode: 'unknown_error',
+                errorTitle: genericTitle,
+                errorDetails: genericDetails,
+                errorCanRetry: true,
+              }
+              managed.messages.push(errorMessage)
+              this.events.typedError(managed, {
+                code: 'unknown_error' as const,
+                title: genericTitle,
+                message: genericMessage,
+                actions: [],
+                canRetry: true,
+                details: genericDetails,
+              })
             }
           }
 

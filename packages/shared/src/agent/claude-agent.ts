@@ -177,17 +177,41 @@ export function resolveClaudeThinkingOptions(args: {
 
 /**
  * Encode a dispatcher `block` result into the Claude SDK PreToolUse hook shape.
+ *
+ * A denied tool does NOT end the turn. `continue: false` stops the agent loop
+ * immediately after the hook, so the model never reads why it was blocked and the
+ * user is left with a dead turn — that is exactly how a strict prerequisite block
+ * on `mcp__session__browser_tool` silently killed a whole session. The default is
+ * therefore `permissionDecision: 'deny'` with `continue: true`: the tool is refused,
+ * the reason goes back to the model, and the model corrects course in the same turn.
+ * Only `endTurn` — set solely for an explicit user denial at a permission prompt —
+ * stops the loop, and it carries `stopReason` so the UI can explain the dead turn.
+ *
  * Real errors (`isError`) get the `[ERROR]` marker via {@link blockWithReason} so
  * the model reads them as failures. Control-flow blocks — notably the successful
- * mid-turn source activation that asks the user to resend — return the literal
+ * mid-turn source activation that asks the user to resend — carry the literal
  * reason with no marker, because the model must relay a success message, not
  * report a failure. See the `[ERROR]` contract in tool-matching.ts
  * (isToolResultError).
  */
-export function encodeClaudeToolBlock(result: { reason: string; isError?: boolean }) {
-  return result.isError
+export function encodeClaudeToolBlock(result: { reason: string; isError?: boolean; endTurn?: boolean }) {
+  // blockWithReason owns the `[ERROR] ` marker; both shapes read the marked text
+  // off it so the marker keeps exactly one owner.
+  const deny = result.isError
     ? blockWithReason(result.reason)
-    : { continue: false, decision: 'block' as const, reason: result.reason };
+    : {
+        continue: true,
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse' as const,
+          permissionDecision: 'deny' as const,
+          permissionDecisionReason: result.reason,
+        },
+      };
+
+  if (!result.endTurn) return deny;
+
+  const reason = deny.hookSpecificOutput.permissionDecisionReason;
+  return { continue: false, decision: 'block' as const, reason, stopReason: reason };
 }
 
 export interface ClaudeAgentConfig {
