@@ -11,8 +11,11 @@
  */
 
 import * as React from 'react'
-import { Table2 } from 'lucide-react'
+import { PanelRight, Table2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { PreviewOverlay } from './PreviewOverlay'
+import { usePlatform } from '../../context/PlatformContext'
+import { cn } from '../../lib/utils'
 
 export interface OfficeLiveOverlayProps {
   isOpen: boolean
@@ -32,6 +35,32 @@ export function OfficeLiveOverlay({
   error,
   theme = 'light',
 }: OfficeLiveOverlayProps) {
+  const { t } = useTranslation()
+  const { onOpenFileInSidePanel } = usePlatform()
+
+  // Same document, narrower surface. Closing the overlay first avoids leaving
+  // the file open in two places at once — one live server, one view.
+  const openBeside = React.useCallback(() => {
+    onOpenFileInSidePanel?.(filePath)
+    onClose()
+  }, [onOpenFileInSidePanel, filePath, onClose])
+
+  const headerActions = onOpenFileInSidePanel ? (
+    <button
+      type="button"
+      onClick={openBeside}
+      className={cn(
+        'flex items-center gap-1.5 rounded-[6px] px-2 py-1 text-xs transition-colors',
+        'text-muted-foreground hover:text-foreground hover:bg-foreground/5',
+        'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+      )}
+      title={t('preview.openInSidePanel')}
+    >
+      <PanelRight className="size-3.5" />
+      {t('preview.openInSidePanel')}
+    </button>
+  ) : undefined
+
   return (
     <PreviewOverlay
       isOpen={isOpen}
@@ -44,6 +73,7 @@ export function OfficeLiveOverlay({
       }}
       filePath={filePath}
       error={error ? { label: 'Open Failed', message: error } : undefined}
+      headerActions={headerActions}
     >
       {url ? (
         <iframe
