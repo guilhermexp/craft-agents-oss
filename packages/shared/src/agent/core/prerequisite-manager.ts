@@ -137,6 +137,17 @@ export class PrerequisiteManager {
 
   private readFiles: Set<string> = new Set();
   private rejectionCounts: Map<string, number> = new Map();
+  /**
+   * Prerequisites the deadlock escape already conceded, for the life of the
+   * session (only `resetReadState()` drops them, same as `readFiles`).
+   *
+   * The budget is re-armed per turn, so without this set the model would pay
+   * `MAX_REJECTIONS` blocked tool calls at the start of *every* turn for a
+   * condition that cannot resolve itself (guide unreadable, file gone after the
+   * `existsSync` check, Read disabled) — a permanent token/latency toll instead
+   * of an escape. A conceded path is charged once and stays conceded.
+   */
+  private releasedPaths: Set<string> = new Set();
   private pendingSkillPaths: Set<string> = new Set();
   private workspaceRootPath: string;
   private onDebug?: (message: string) => void;
@@ -149,9 +160,11 @@ export class PrerequisiteManager {
   /**
    * Re-arm the rejection budget at the start of a turn.
    *
-   * Read state and pending skill paths are session-lived (only compaction drops
-   * them, via `resetReadState`); only the deadlock escape is per turn, so an
-   * exhausted budget can never make the next turn's first call a free pass.
+   * Read state, pending skill paths and already-released prerequisites are
+   * session-lived (only compaction drops them, via `resetReadState`); only the
+   * unspent budget is per turn, so an exhausted budget can never make the next
+   * turn's first call a free pass, and a path the escape already conceded is
+   * never re-charged.
    */
   beginTurn(): void {
     if (this.rejectionCounts.size === 0) return;
@@ -176,7 +189,8 @@ export class PrerequisiteManager {
    * Check if a tool call's prerequisites are met.
    * Iterates rules, checks if required files have been read.
    * After MAX_REJECTIONS blocks for the same path within one turn, allows
-   * through as a deadlock escape (see MAX_REJECTIONS / beginTurn).
+   * through as a deadlock escape and records the concession in `releasedPaths`
+   * so later turns skip the budget entirely (see MAX_REJECTIONS / beginTurn).
    */
   checkPrerequisites(toolName: string): PrerequisiteCheckResult {
     // Check dynamic skill prerequisites first
@@ -190,6 +204,12 @@ export class PrerequisiteManager {
       if (!requiredPath) continue; // No guide.md exists, skip
 
       if (!this.readFiles.has(requiredPath)) {
+        // Already conceded earlier in this session: charging the re-armed
+        // budget again would re-block the same unreachable prerequisite at the
+        // start of every turn. `strict` rules never reach the escape, so they
+        // can never be in this set.
+        if (this.releasedPaths.has(requiredPath)) continue;
+
         const count = (this.rejectionCounts.get(requiredPath) ?? 0) + 1;
         this.rejectionCounts.set(requiredPath, count);
 
@@ -204,8 +224,9 @@ export class PrerequisiteManager {
           this.onDebug?.(`Prerequisite blocked (${count}/${PrerequisiteManager.MAX_REJECTIONS}): ${toolName} requires ${requiredPath}`);
           return { allowed: false, blockReason };
         }
-        // Exceeded max rejections — allow through gracefully
-        this.onDebug?.(`Prerequisite: allowing ${toolName} after ${count} rejections (max reached)`);
+        // Exceeded max rejections — concede for the rest of the session.
+        this.releasedPaths.add(requiredPath);
+        this.onDebug?.(`Prerequisite: released ${requiredPath} for ${toolName} after ${count} rejections (max reached)`);
       }
     }
 
@@ -292,13 +313,17 @@ export class PrerequisiteManager {
   /**
    * Reset read state. Called on context compaction since the LLM
    * loses the guide content and needs to re-read.
-   * Also clears pending skill paths (model lost the directive).
+   * Also clears pending skill paths (model lost the directive) and the
+   * concessions the deadlock escape made — after compaction the model may well
+   * be able to read what it could not before, so every prerequisite is armed
+   * again from scratch.
    */
   resetReadState(): void {
     const count = this.readFiles.size;
     const skillCount = this.pendingSkillPaths.size;
     this.readFiles.clear();
     this.rejectionCounts.clear();
+    this.releasedPaths.clear();
     this.pendingSkillPaths.clear();
     this.onDebug?.(`Prerequisite: reset read state (cleared ${count} reads, ${skillCount} skill prerequisites)`);
   }

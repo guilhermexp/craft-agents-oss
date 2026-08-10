@@ -234,11 +234,45 @@ export function encodeClaudeToolBlock(
  * including a deny — the model reads the denial reason and the user's new message
  * in the same tool result. The turn-ending denial cannot: the agent loop stops
  * right after the hook, so consuming the steer there would drop the user's
- * message silently. Leaving it pending is what makes `chatImpl` emit
- * `steer_undelivered` so the session layer re-queues it for the next turn.
+ * message silently. Leaving it pending is what makes the turn emit
+ * `steer_undelivered` (see {@link withUndeliveredSteer}) so the session layer
+ * re-queues it for the next turn.
  */
 export function canDeliverSteer(result: ToolPermissionResult): boolean {
   return result.type !== 'block' || !result.endTurn;
+}
+
+/**
+ * Hand back a steer message the turn never delivered, **before** the turn's
+ * `complete` event.
+ *
+ * Ordering is the whole point. The session layer's event loop returns on the
+ * first `complete` (`SessionManager.sendMessage`), which abandons this
+ * generator via `iterator.return()`. A `yield` reached that way — from a
+ * `finally` block, for instance — is discarded by the abandoned loop, so
+ * anything emitted after `complete` is invisible to the consumer and the user's
+ * mid-turn message is lost. Emitting first is what makes the re-queue real.
+ *
+ * `takePendingSteer` consumes the pending message, so at most one
+ * `steer_undelivered` is emitted per turn.
+ */
+export async function* withUndeliveredSteer(
+  turn: AsyncGenerator<AgentEvent>,
+  takePendingSteer: () => string | null,
+): AsyncGenerator<AgentEvent> {
+  for await (const event of turn) {
+    if (event.type === 'complete') {
+      const undelivered = takePendingSteer();
+      if (undelivered) yield { type: 'steer_undelivered' as const, message: undelivered };
+    }
+    yield event;
+  }
+
+  // Turn paths that end without a `complete` — the source-activation restart
+  // returns early — still owe the message back. The consumer is still reading
+  // here, because the generator ended on its own.
+  const trailing = takePendingSteer();
+  if (trailing) yield { type: 'steer_undelivered' as const, message: trailing };
 }
 
 export interface ClaudeAgentConfig {
@@ -989,6 +1023,23 @@ export class ClaudeAgent extends BaseAgent {
     attachments?: FileAttachment[],
     options?: ChatOptions
   ): AsyncGenerator<AgentEvent> {
+    yield* withUndeliveredSteer(
+      this.runChatTurn(userMessage, attachments, options),
+      () => {
+        const pending = this.pendingSteerMessage;
+        if (!pending) return null;
+        this.pendingSteerMessage = null;
+        this.debug(`Steer message was not delivered (no tool call fired) — emitting steer_undelivered`);
+        return pending;
+      },
+    );
+  }
+
+  private async *runChatTurn(
+    userMessage: string,
+    attachments?: FileAttachment[],
+    options?: ChatOptions
+  ): AsyncGenerator<AgentEvent> {
     // Extract options (ChatOptions interface from AgentBackend)
     const _isRetry = options?.isRetry ?? false;
 
@@ -1360,8 +1411,9 @@ export class ClaudeAgent extends BaseAgent {
               // Consume any pending steer message — injected as additionalContext
               // on every outcome that keeps the turn alive, deny included. The
               // turn-ending denial leaves it pending on purpose: the agent loop
-              // stops right after this hook, so the finally block in chatImpl
-              // emits steer_undelivered and the session layer re-queues it.
+              // stops right after this hook, so `withUndeliveredSteer` emits
+              // steer_undelivered ahead of the turn's `complete` and the session
+              // layer re-queues it.
               const steerMsg = canDeliverSteer(result) ? this.pendingSteerMessage : null;
               if (steerMsg) {
                 this.pendingSteerMessage = null;
@@ -2317,15 +2369,6 @@ This is a branched conversation. All prior messages in this conversation are par
       } else {
         debug(`[bg-lifecycle] chat() finally — currentQuery nulled, subprocess torn down`, { sessionId: this.config.session?.id, sdkSessionId: this.sessionId, keepAlive: this.keepBackgroundTasksAlive });
         this.currentQuery = null;
-      }
-
-      // If a steer message was never delivered (no PreToolUse fired), notify the session
-      // layer so it can re-queue the message for the next turn.
-      const undeliveredSteer = this.pendingSteerMessage;
-      if (undeliveredSteer) {
-        this.pendingSteerMessage = null;
-        this.debug(`Steer message was not delivered (no tool call fired) — emitting steer_undelivered`);
-        yield { type: 'steer_undelivered' as const, message: undeliveredSteer };
       }
     }
   }

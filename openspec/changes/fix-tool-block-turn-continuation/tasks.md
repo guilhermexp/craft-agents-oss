@@ -63,3 +63,25 @@
       no prompt vinda de usuário, cleanup (`clearPendingPermissions`) ou fail-closed do broker.
 - [x] 7.10 DOX: atualizar `packages/shared/CLAUDE.md` com o contrato do prerequisite por turno e a
       entrega do steer no deny.
+
+## 8. Correções da revisão (terceira rodada)
+
+- [x] 8.1 `shouldReportMissingAssistantResponse` passa a receber a `ManagedSession` e a suprimir
+      só em interrupção real (`stopRequested` ou `wasInterrupted`), com a detecção factual
+      "este turno respondeu?" via `turnStartFinalMessageId` no lugar da cláusula de fila.
+- [x] 8.2 O push mid-stream só marca `wasInterrupted` quando `behavior === 'steer'` (todo
+      `redirect()` falso já chamou `forceAbort`); `case 'steer_undelivered'` deixa de marcar.
+- [x] 8.3 `withUndeliveredSteer()` emite `steer_undelivered` antes do `complete`; `chatImpl` vira
+      o wrapper sobre `runChatTurn` e o `yield` no `finally` sai.
+- [x] 8.4 `PrerequisiteManager.releasedPaths` com vida de sessão, consultado antes de cobrar o
+      orçamento e limpo só por `resetReadState()`.
+- [x] 8.5 `no-response-guard.test.ts` → `no-response-guard.isolated.ts` no nível do call site,
+      com estado montado pelos caminhos de produção. RED antes / GREEN depois.
+- [x] 8.6 Cobertura RED→GREEN de 8.3 em `claude-tool-block-encoding.test.ts` (ordem antes do
+      `complete`, turno sem `complete`, e o controle que prova que um `yield` em `finally` é
+      descartado pelo mesmo consumidor).
+- [x] 8.7 Cobertura RED→GREEN de 8.4 em `prerequisite-manager.isolated.ts`: concessão não é
+      recobrada no turno seguinte, orçamento não concedido continua re-armando, `strict` nunca é
+      concedida, compactação re-arma a concessão.
+- [x] 8.8 DOX: `packages/shared/CLAUDE.md` (itens de steer, prerequisite e turno sem resposta) e
+      spec deltas de `agent-backends` / `session-management` atualizados para o contrato real.

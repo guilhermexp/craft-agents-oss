@@ -116,6 +116,89 @@ programáticas resolvem o mesmo prompt como negado: `clearPendingPermissions()` 
 onde o turno já está morrendo) e a rejeição fail-closed do broker em `respondToPermission`. Nenhuma
 é regressão — comportamento idêntico ao da `main`. O comentário passa a dizer isso.
 
+## Correções da revisão (terceira rodada)
+
+Uma segunda revisão independente sobre `217d7b1c..20691bf4` deu NO-GO com quatro achados. Todos
+são consequência da primeira rodada de correções, não do desenho original.
+
+### 5. A guarda de `No Response` escondia exatamente o bug que a change existe para expor
+
+`shouldReportMissingAssistantResponse()` suprimia a mensagem com
+`stopRequested || wasInterrupted || queuedMessageCount > 0`. Isso consertou o falso positivo do
+Stop e criou um falso negativo pior: o site de push mid-stream marcava `wasInterrupted = true`
+para as **duas** formas de mensagem, inclusive `behavior === 'queue'` — que é o **padrão das
+conexões `anthropic`** e que, pelo próprio comentário do código, não chama `agent.redirect()`, não
+chama `forceAbort` e não interrompe nada. Qualquer usuário que digitasse durante um turno Claude
+deixava a sessão com `wasInterrupted` marcado e fila não vazia num turno que ninguém interrompeu;
+se esse turno morresse calado — tool recusada sem texto do assistente — o card sumia, e a mensagem
+enfileirada virando turno novo tornava a morte do turno original invisível.
+
+Rota escolhida: **(b) cirúrgica**, com o sinal factual da rota (a) no lugar da cláusula removida.
+
+- `wasInterrupted` volta a significar *o turno foi abortado*. No push mid-stream só é marcado
+  quando `behavior === 'steer'`: todo `redirect()` que devolve `false` já chamou
+  `forceAbort(AbortReason.Redirect)` (`BaseAgent`, `ClaudeAgent` e `PiAgent`), então esse ramo é o
+  único onde houve abort de verdade. Em `queue` nada é abortado.
+- O segundo consumidor de `wasInterrupted` (`:6301`, nota de contexto "a resposta anterior foi
+  interrompida") estava errado no caminho `queue` pelo mesmo motivo — o turno anterior completou
+  naturalmente. A mesma correção conserta os dois, que é o tratamento coerente pedido.
+- `case 'steer_undelivered'` também deixa de marcar `wasInterrupted`: ele não aborta nada, o turno
+  já tinha acabado (tipicamente pela negação no prompt de permissão) e o evento só devolve a
+  mensagem. Marcar ali silenciava o card justamente no turno que morreu sem dizer nada.
+- A cláusula `queuedMessageCount === 0` sai do predicado. Para não trocar um falso negativo por um
+  falso positivo novo, a detecção "este turno respondeu?" passa a ser factual: `turnStartFinalMessageId`
+  (setado no início do turno, limpo só em `onProcessingStopped`, depois desta avaliação) comparado
+  com a última mensagem final do assistente. A comparação de timestamps do call site sozinha
+  acusaria um turno que respondeu, porque a mensagem mid-stream do usuário é mais nova que o texto
+  daquele mesmo turno.
+- O seam passa a receber a `ManagedSession` em vez de flags soltas. Quais sinais o call site
+  encaminha, e se estão setados naquele instante, era exatamente o ponto cego da rodada anterior.
+
+### 6. `steer_undelivered` era código morto — a mensagem do usuário sumia
+
+O `yield` de `steer_undelivered` estava dentro do `finally` de `chatImpl`. O consumidor
+(`SessionManager.sendMessage`) sai do `for await` no primeiro `complete`, e todo caminho terminal
+emite `complete` antes; um `yield` alcançado por `iterator.return()` é **descartado** pelo laço
+abandonado. `case 'steer_undelivered'` nunca rodava e a mensagem mid-turn do usuário era perdida
+quando a negação no prompt de permissão encerrava o turno. O comentário do hook, o
+`packages/shared/CLAUDE.md` e o cenário no spec afirmavam o contrário.
+
+`withUndeliveredSteer(turn, takePendingSteer)` — exportado de `claude-agent.ts` — envolve o
+gerador do turno e emite `steer_undelivered` **antes** do `complete`, e também quando o turno
+termina sem `complete` (restart de source activation). `chatImpl` vira esse wrapper sobre
+`runChatTurn` (o corpo anterior, renomeado); o `yield` no `finally` sai. Não é mudança
+arquitetural no canal de eventos: nenhum tipo de evento muda, nenhum buffer novo atravessa
+camadas, e o consumidor é o mesmo.
+
+### 7. O teste da guarda cimentava o defeito
+
+`no-response-guard.test.ts` era a tabela-verdade literal do predicado — nenhum bug plausível o
+quebrava, e um dos casos afirmava como desejado exatamente o comportamento errado do item 5. Ele é
+substituído por `no-response-guard.isolated.ts`, no nível do call site: `ManagedSession` real,
+estado produzido pelos caminhos de produção (`sendMessage` mid-stream em `queue` e em `steer`, e o
+evento `steer_undelivered` via `dispatchAgentEvent`), e a guarda chamada com essa sessão como o
+branch de `complete` faz. Isolado porque `CONFIG_DIR` é resolvido no load do módulo de config e é
+a conexão que decide steer-vs-queue — mesmo padrão de `resolve-supports-branching.isolated.ts`.
+
+### 8. O escape hatch do prerequisite virou pedágio recorrente
+
+`beginTurn()` limpa `rejectionCounts` sem registrar que um path já foi concedido, então para a
+condição permanente que justifica o escape existir (guia ilegível, arquivo sumiu depois do
+`existsSync`, Read desabilitado) o modelo pagava `MAX_REJECTIONS` tool calls bloqueadas no início
+de **cada** turno, para sempre. Antes de `20691bf4` o escape era vitalício de sessão.
+
+`releasedPaths: Set<string>` com vida de sessão (limpo só por `resetReadState()`) é consultado
+antes de cobrar o orçamento e preenchido na concessão. As duas propriedades que já valiam ficam de
+pé: orçamento **gasto e não concedido** não atravessa turno, e regra `strict` nunca é liberada —
+ela retorna antes do fallback, então nunca entra no set.
+
+### Impacto adicional
+
+- Código afetado, além do já listado: `packages/server-core/src/sessions/no-response-guard.isolated.ts`
+  (substitui `no-response-guard.test.ts`).
+- Sem mudança de contrato RPC, de `AgentEvent` ou de tipos compartilhados. `shouldReportMissingAssistantResponse`
+  é exportada só como seam de teste e não atravessa pacote.
+
 ## Impact
 
 - Affected specs: `agent-backends`, `session-management`

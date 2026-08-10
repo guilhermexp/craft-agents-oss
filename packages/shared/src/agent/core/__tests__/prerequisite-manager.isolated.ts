@@ -299,17 +299,51 @@ describe('PrerequisiteManager', () => {
       expect(manager.checkPrerequisites('mcp__slack__sendMessage').allowed).toBe(false);
     });
 
-    it('re-arms the rejection counts on every new turn', () => {
+    it('re-arms an unspent budget on every new turn', () => {
       mockExistsPaths.add(guidePath('linear'));
+
+      // Budget spent but never conceded: the turn ended after three blocks.
+      for (let i = 0; i < 3; i++) {
+        expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(false);
+      }
+
+      manager.beginTurn();
+
+      // The next turn must not inherit a nearly-spent counter and hand out the
+      // escape on its first call.
+      for (let i = 0; i < 3; i++) {
+        expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(false);
+      }
+    });
+
+    it('never re-charges a prerequisite the escape already conceded', () => {
+      mockExistsPaths.add(guidePath('linear'));
+
+      for (let i = 0; i < 3; i++) manager.checkPrerequisites('mcp__linear__createIssue');
+      expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(true);
+
+      // The condition that forced the concession (guide unreadable, Read
+      // disabled, file gone) does not fix itself between turns. Charging the
+      // re-armed budget again would turn the escape into a permanent toll of
+      // MAX_REJECTIONS blocked calls at the start of every turn.
+      manager.beginTurn();
+      expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(true);
+
+      manager.beginTurn();
+      expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(true);
+    });
+
+    it('concedes only the insisted-on prerequisite across turns', () => {
+      mockExistsPaths.add(guidePath('linear'));
+      mockExistsPaths.add(guidePath('slack'));
 
       for (let i = 0; i < 3; i++) manager.checkPrerequisites('mcp__linear__createIssue');
       expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(true);
 
       manager.beginTurn();
 
-      // The escape hatch is per turn: the next turn blocks again instead of
-      // inheriting a spent counter.
-      expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(false);
+      expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(true);
+      expect(manager.checkPrerequisites('mcp__slack__sendMessage').allowed).toBe(false);
     });
 
     it('keeps read state and pending skills across a turn boundary', () => {
@@ -324,17 +358,17 @@ describe('PrerequisiteManager', () => {
       expect(manager.checkPrerequisites('WebSearch').allowed).toBe(false);
     });
 
-    it('resets rejection counts on resetReadState', () => {
+    it('re-arms a conceded prerequisite on resetReadState', () => {
       mockExistsPaths.add(guidePath('linear'));
 
-      // Exhaust rejections
+      // Exhaust rejections until the escape concedes the path.
       for (let i = 0; i < 3; i++) manager.checkPrerequisites('mcp__linear__createIssue');
       expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(true);
 
-      // Reset
+      // Compaction: the model lost the guide content, so the concession is
+      // dropped along with the read set and the counters.
       manager.resetReadState();
 
-      // Should block again (rejection count reset)
       expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(false);
     });
 
@@ -358,6 +392,18 @@ describe('PrerequisiteManager', () => {
 
       manager.trackReadTool({ file_path: docsPath });
       expect(manager.checkPrerequisites('browser_open').allowed).toBe(true);
+    });
+
+    it('never concedes the strict browser prerequisite, turn after turn', () => {
+      const docsPath = browserDocPath();
+      mockExistsPaths.add(docsPath);
+
+      for (let turn = 0; turn < 3; turn++) {
+        for (let i = 0; i < 5; i++) {
+          expect(manager.checkPrerequisites('browser_open').allowed).toBe(false);
+        }
+        manager.beginTurn();
+      }
     });
   });
 

@@ -19,10 +19,15 @@
  * output as `additionalContext`. It is deliverable on every outcome that keeps
  * the turn alive — including a deny — and must NOT be attached to the turn-
  * ending denial, where the agent loop stops before reading it: leaving it
- * pending is what lets chatImpl emit `steer_undelivered` and re-queue it.
+ * pending is what lets the turn emit `steer_undelivered` and re-queue it.
+ *
+ * That re-queue only exists if the event reaches the consumer, which is why
+ * `withUndeliveredSteer` emits it BEFORE the turn's `complete` — see the last
+ * describe block.
  */
 import { describe, it, expect } from 'bun:test';
-import { canDeliverSteer, encodeClaudeToolBlock } from '../claude-agent.ts';
+import type { AgentEvent } from '@craft-agent/core/types';
+import { canDeliverSteer, encodeClaudeToolBlock, withUndeliveredSteer } from '../claude-agent.ts';
 
 describe('encodeClaudeToolBlock', () => {
   it('keeps the turn alive when a prerequisite blocks a tool', () => {
@@ -155,5 +160,103 @@ describe('canDeliverSteer', () => {
     expect(
       canDeliverSteer({ type: 'block', reason: 'Permission denied by user.', endTurn: true }),
     ).toBe(false);
+  });
+});
+
+/**
+ * `SessionManager.sendMessage` returns from its `for await` on the first
+ * `complete`, which calls `iterator.return()` on the turn generator. Anything
+ * emitted after that point — a `yield` in a `finally`, say — is discarded by
+ * the abandoned loop, and the user's mid-turn message is silently lost.
+ */
+describe('withUndeliveredSteer', () => {
+  const steer = 'switch to the other file';
+
+  /** Mirrors the SessionManager consumer: stop reading at the first `complete`. */
+  async function consumeUntilComplete(turn: AsyncGenerator<AgentEvent>): Promise<string[]> {
+    const seen: string[] = [];
+    for await (const event of turn) {
+      seen.push(event.type);
+      if (event.type === 'complete') break;
+    }
+    return seen;
+  }
+
+  function takeOnce(message: string | null): () => string | null {
+    let pending = message;
+    return () => {
+      const value = pending;
+      pending = null;
+      return value;
+    };
+  }
+
+  it('emits steer_undelivered before the complete the consumer stops on', async () => {
+    async function* turn(): AsyncGenerator<AgentEvent> {
+      yield { type: 'text_complete', text: 'partial', isIntermediate: false } as AgentEvent;
+      yield { type: 'complete' };
+    }
+
+    const seen = await consumeUntilComplete(withUndeliveredSteer(turn(), takeOnce(steer)));
+    expect(seen).toEqual(['text_complete', 'steer_undelivered', 'complete']);
+  });
+
+  it('carries the pending message through', async () => {
+    async function* turn(): AsyncGenerator<AgentEvent> {
+      yield { type: 'complete' };
+    }
+
+    const events: AgentEvent[] = [];
+    for await (const event of withUndeliveredSteer(turn(), takeOnce(steer))) {
+      events.push(event);
+      if (event.type === 'complete') break;
+    }
+    expect(events[0]).toEqual({ type: 'steer_undelivered', message: steer });
+  });
+
+  it('emits nothing extra when the steer was already delivered', async () => {
+    async function* turn(): AsyncGenerator<AgentEvent> {
+      yield { type: 'complete' };
+    }
+
+    const seen = await consumeUntilComplete(withUndeliveredSteer(turn(), takeOnce(null)));
+    expect(seen).toEqual(['complete']);
+  });
+
+  it('emits at most one steer_undelivered per turn', async () => {
+    async function* turn(): AsyncGenerator<AgentEvent> {
+      yield { type: 'complete' };
+      yield { type: 'complete' };
+    }
+
+    const seen: string[] = [];
+    for await (const event of withUndeliveredSteer(turn(), takeOnce(steer))) seen.push(event.type);
+    expect(seen).toEqual(['steer_undelivered', 'complete', 'complete']);
+  });
+
+  it('still hands the message back when the turn ends without a complete', async () => {
+    // Source-activation restart: the turn returns right after `source_activated`.
+    async function* turn(): AsyncGenerator<AgentEvent> {
+      yield { type: 'source_activated', sourceSlug: 'github', originalMessage: 'x' } as AgentEvent;
+    }
+
+    const seen: string[] = [];
+    for await (const event of withUndeliveredSteer(turn(), takeOnce(steer))) seen.push(event.type);
+    expect(seen).toEqual(['source_activated', 'steer_undelivered']);
+  });
+
+  it('a yield reached only through finally is dropped by the same consumer', async () => {
+    // Control: this is the shape the fix replaced. Kept so the ordering
+    // requirement above cannot be "simplified" back into a finally block.
+    async function* finallyShaped(): AsyncGenerator<AgentEvent> {
+      try {
+        yield { type: 'complete' };
+      } finally {
+        yield { type: 'steer_undelivered', message: steer };
+      }
+    }
+
+    const seen = await consumeUntilComplete(finallyShaped());
+    expect(seen).toEqual(['complete']);
   });
 });

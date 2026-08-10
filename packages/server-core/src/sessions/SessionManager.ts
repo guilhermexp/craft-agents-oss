@@ -1178,28 +1178,61 @@ export function resolveSupportsBranching(managed: ManagedSession): boolean {
 }
 
 /**
+ * Get the last final assistant message ID from a list of messages.
+ * A "final" message is one where:
+ * - role === 'assistant' AND
+ * - isIntermediate !== true (not commentary between tool calls)
+ * Returns undefined if no final assistant message exists.
+ */
+function lastFinalAssistantMessageId(messages: Message[]): string | undefined {
+  // Iterate backwards to find the most recent final assistant message
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if (msg.role === 'assistant' && !msg.isIntermediate) {
+      return msg.id
+    }
+  }
+  return undefined
+}
+
+/**
  * Whether a turn that produced no assistant message should surface the generic
  * retryable "No Response" error.
  *
- * Only unintentional silence qualifies. `cancelProcessing` leaves `isProcessing`
- * true on purpose so the event loop drains, so the `complete` event lands on
- * this branch with the stop signals still set — the early returns above it only
- * cover auth retry and explicit handoffs. Stop already renders "Response
- * interrupted", and a queued mid-stream message is about to be replayed as the
- * next turn; a red retry card in either case is a false positive.
+ * Takes the session rather than loose flags on purpose: which signals the call
+ * site forwards, and whether they are set at that instant, is exactly what went
+ * wrong the first time this guard was written.
  *
- * `wasInterrupted` also covers the redirect path (`forceAbort(Redirect)`), which
- * queues the message and cuts the turn short deliberately.
+ * Silence is suppressed only when the turn was **actually** cut short:
  *
- * Exported as the test seam for that condition: reaching the branch itself needs
- * a live SDK turn.
+ * - `stopRequested` — the user pressed Stop. `cancelProcessing` leaves
+ *   `isProcessing` true on purpose so the event loop drains, so the `complete`
+ *   event lands here with the stop signals still set, and "Response
+ *   interrupted" already renders.
+ * - `wasInterrupted` — a real abort: Stop, or a mid-stream send in `steer` mode
+ *   whose `redirect()` failed, which force-aborts the turn before queueing.
+ *
+ * A message that was merely **queued** suppresses nothing. In `queue` mode —
+ * the default for `anthropic` connections — nothing is aborted and the current
+ * turn runs to natural completion; a turn that then dies without a word is
+ * precisely the silent failure this branch exists to expose, and the queued
+ * message replaying as a new turn would hide it.
+ *
+ * "Did this turn answer?" is read off `turnStartFinalMessageId` (set at turn
+ * start, cleared later in `onProcessingStopped`) instead of the caller's
+ * timestamp comparison: a mid-stream user message is newer than the assistant
+ * text of the turn it arrived in, so the timestamps alone would flag a turn
+ * that did answer.
+ *
+ * Exported as the test seam for that condition: reaching the branch itself
+ * needs a live SDK turn.
  */
-export function shouldReportMissingAssistantResponse(signals: {
-  stopRequested?: boolean
-  wasInterrupted?: boolean
-  queuedMessageCount: number
-}): boolean {
-  return !signals.stopRequested && !signals.wasInterrupted && signals.queuedMessageCount === 0
+export function shouldReportMissingAssistantResponse(
+  managed: Pick<ManagedSession, 'stopRequested' | 'wasInterrupted' | 'messages' | 'turnStartFinalMessageId'>,
+): boolean {
+  if (managed.stopRequested || managed.wasInterrupted) return false
+  const finalId = lastFinalAssistantMessageId(managed.messages)
+  return !finalId || finalId === managed.turnStartFinalMessageId
 }
 
 const DEFAULT_TOKEN_USAGE = {
@@ -5269,21 +5302,12 @@ export class SessionManager implements ISessionManager {
   }
 
   /**
-   * Get the last final assistant message ID from a list of messages
-   * A "final" message is one where:
-   * - role === 'assistant' AND
-   * - isIntermediate !== true (not commentary between tool calls)
-   * Returns undefined if no final assistant message exists
+   * Get the last final assistant message ID from a list of messages.
+   * Instance-side alias for the module-level helper the missing-response guard
+   * also reads, so both answer "did this turn produce a reply?" identically.
    */
   private getLastFinalAssistantMessageId(messages: Message[]): string | undefined {
-    // Iterate backwards to find the most recent final assistant message
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i]
-      if (msg.role === 'assistant' && !msg.isIntermediate) {
-        return msg.id
-      }
-    }
-    return undefined
+    return lastFinalAssistantMessageId(messages)
   }
 
   /**
@@ -6024,7 +6048,15 @@ export class SessionManager implements ISessionManager {
         // queue-after-abort (backend already aborted) — the replay path in
         // processNextQueuedMessage is identical.
         managed.messageQueue.push({ message, attachments, storedAttachments, options, messageId: userMessage.id, optimisticMessageId: options?.optimisticMessageId })
-        managed.wasInterrupted = true
+
+        // Only the 'steer' path interrupted anything: every `redirect()` that
+        // returns false has already called `forceAbort(AbortReason.Redirect)`.
+        // In 'queue' mode the turn was never touched, so claiming it was
+        // interrupted both lies to the next turn's context note and silences
+        // the missing-response guard on a turn nobody stopped.
+        if (behavior === 'steer') {
+          managed.wasInterrupted = true
+        }
       }
 
       // The renderer is told "accepted" only once the message is genuinely on
@@ -6424,11 +6456,7 @@ export class SessionManager implements ISessionManager {
                 canRetry: false,
                 details: errorMessage.errorDetails,
               })
-            } else if (shouldReportMissingAssistantResponse({
-              stopRequested: managed.stopRequested,
-              wasInterrupted: managed.wasInterrupted,
-              queuedMessageCount: managed.messageQueue.length,
-            })) {
+            } else if (shouldReportMissingAssistantResponse(managed)) {
               // No captured API error and nothing intentional about the silence:
               // the turn ended with nothing to show. A blocked tool used to land
               // here and leave the user with a red tool card and no explanation,
@@ -8565,9 +8593,13 @@ export class SessionManager implements ISessionManager {
       case 'steer_undelivered':
         // Steer message was not delivered (no PreToolUse fired before turn ended).
         // Re-queue it so it's sent as a normal message on the next turn.
+        //
+        // No `wasInterrupted` here: the turn was not aborted, it ran out on its
+        // own (typically the turn-ending permission denial) and this event only
+        // hands the undelivered message back. Marking it would suppress the
+        // missing-response card on exactly the turn that died without a word.
         sessionLog.info(`Steer message undelivered, re-queuing for session ${sessionId}`)
         managed.messageQueue.push({ message: event.message })
-        managed.wasInterrupted = true
         break
 
       // Note: working_directory_changed is user-initiated only (via updateWorkingDirectory),
