@@ -127,6 +127,7 @@ export type { LoadedSource } from '../sources/types.ts';
 // Re-exported for backwards compatibility with existing imports from claude-agent.ts
 import { AbortReason } from './core/session-lifecycle.ts';
 import type { RecoveryMessage } from './core/types.ts';
+import type { ToolPermissionResult } from './core/tool-permission-dispatcher.ts';
 export { AbortReason, type RecoveryMessage };
 
 /** File extensions that can be converted to readable text by CLI tools. */
@@ -177,17 +178,101 @@ export function resolveClaudeThinkingOptions(args: {
 
 /**
  * Encode a dispatcher `block` result into the Claude SDK PreToolUse hook shape.
+ *
+ * A denied tool does NOT end the turn. `continue: false` stops the agent loop
+ * immediately after the hook, so the model never reads why it was blocked and the
+ * user is left with a dead turn — that is exactly how a strict prerequisite block
+ * on `mcp__session__browser_tool` silently killed a whole session. The default is
+ * therefore `permissionDecision: 'deny'` with `continue: true`: the tool is refused,
+ * the reason goes back to the model, and the model corrects course in the same turn.
+ * Only `endTurn` — set solely for an explicit user denial at a permission prompt —
+ * stops the loop, and it carries `stopReason` so the UI can explain the dead turn.
+ *
  * Real errors (`isError`) get the `[ERROR]` marker via {@link blockWithReason} so
  * the model reads them as failures. Control-flow blocks — notably the successful
- * mid-turn source activation that asks the user to resend — return the literal
+ * mid-turn source activation that asks the user to resend — carry the literal
  * reason with no marker, because the model must relay a success message, not
  * report a failure. See the `[ERROR]` contract in tool-matching.ts
  * (isToolResultError).
+ *
+ * `steerContext` is a mid-turn user message riding along as `additionalContext`
+ * (the SDK allows it next to `permissionDecision`). A deny keeps the turn alive,
+ * so the model still reads it; the `endTurn` shape has no place to carry it and
+ * must be called without one — see {@link canDeliverSteer}.
  */
-export function encodeClaudeToolBlock(result: { reason: string; isError?: boolean }) {
-  return result.isError
+export function encodeClaudeToolBlock(
+  result: { reason: string; isError?: boolean; endTurn?: boolean },
+  steerContext?: string,
+) {
+  // blockWithReason owns the `[ERROR] ` marker; both shapes read the marked text
+  // off it so the marker keeps exactly one owner.
+  const deny = result.isError
     ? blockWithReason(result.reason)
-    : { continue: false, decision: 'block' as const, reason: result.reason };
+    : {
+        continue: true,
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse' as const,
+          permissionDecision: 'deny' as const,
+          permissionDecisionReason: result.reason,
+        },
+      };
+
+  if (!result.endTurn) {
+    return steerContext
+      ? { ...deny, hookSpecificOutput: { ...deny.hookSpecificOutput, additionalContext: steerContext } }
+      : deny;
+  }
+
+  const reason = deny.hookSpecificOutput.permissionDecisionReason;
+  return { continue: false, decision: 'block' as const, reason, stopReason: reason };
+}
+
+/**
+ * Whether this PreToolUse outcome can carry a pending steer message to the model.
+ *
+ * Every outcome that leaves the turn running delivers it as `additionalContext`,
+ * including a deny — the model reads the denial reason and the user's new message
+ * in the same tool result. The turn-ending denial cannot: the agent loop stops
+ * right after the hook, so consuming the steer there would drop the user's
+ * message silently. Leaving it pending is what makes the turn emit
+ * `steer_undelivered` (see {@link withUndeliveredSteer}) so the session layer
+ * re-queues it for the next turn.
+ */
+export function canDeliverSteer(result: ToolPermissionResult): boolean {
+  return result.type !== 'block' || !result.endTurn;
+}
+
+/**
+ * Hand back a steer message the turn never delivered, **before** the turn's
+ * `complete` event.
+ *
+ * Ordering is the whole point. The session layer's event loop returns on the
+ * first `complete` (`SessionManager.sendMessage`), which abandons this
+ * generator via `iterator.return()`. A `yield` reached that way — from a
+ * `finally` block, for instance — is discarded by the abandoned loop, so
+ * anything emitted after `complete` is invisible to the consumer and the user's
+ * mid-turn message is lost. Emitting first is what makes the re-queue real.
+ *
+ * `takePendingSteer` consumes the pending message, so at most one
+ * `steer_undelivered` is emitted per turn.
+ */
+export async function* withUndeliveredSteer(
+  turn: AsyncGenerator<AgentEvent>,
+  takePendingSteer: () => string | null,
+): AsyncGenerator<AgentEvent> {
+  for await (const event of turn) {
+    if (event.type === 'complete') {
+      const undelivered = takePendingSteer();
+      if (undelivered) yield { type: 'steer_undelivered' as const, message: undelivered };
+    }
+    yield event;
+  }
+
+  // Turn paths that end without a `complete` — the source-activation restart
+  // returns early — still owe the message back. The consumer is still reading
+  // here, because the generator ended on its own.
+  const trailing = takePendingSteer();
+  if (trailing) yield { type: 'steer_undelivered' as const, message: trailing };
 }
 
 export interface ClaudeAgentConfig {
@@ -938,6 +1023,23 @@ export class ClaudeAgent extends BaseAgent {
     attachments?: FileAttachment[],
     options?: ChatOptions
   ): AsyncGenerator<AgentEvent> {
+    yield* withUndeliveredSteer(
+      this.runChatTurn(userMessage, attachments, options),
+      () => {
+        const pending = this.pendingSteerMessage;
+        if (!pending) return null;
+        this.pendingSteerMessage = null;
+        this.debug(`Steer message was not delivered (no tool call fired) — emitting steer_undelivered`);
+        return pending;
+      },
+    );
+  }
+
+  private async *runChatTurn(
+    userMessage: string,
+    attachments?: FileAttachment[],
+    options?: ChatOptions
+  ): AsyncGenerator<AgentEvent> {
     // Extract options (ChatOptions interface from AgentBackend)
     const _isRetry = options?.isRetry ?? false;
 
@@ -1307,8 +1409,12 @@ export class ClaudeAgent extends BaseAgent {
               );
 
               // Consume any pending steer message — injected as additionalContext
-              // on allow/modify so the agent addresses the user's new message.
-              const steerMsg = this.pendingSteerMessage;
+              // on every outcome that keeps the turn alive, deny included. The
+              // turn-ending denial leaves it pending on purpose: the agent loop
+              // stops right after this hook, so `withUndeliveredSteer` emits
+              // steer_undelivered ahead of the turn's `complete` and the session
+              // layer re-queues it.
+              const steerMsg = canDeliverSteer(result) ? this.pendingSteerMessage : null;
               if (steerMsg) {
                 this.pendingSteerMessage = null;
                 this.debug(`Injecting steer via additionalContext on ${input.tool_name}`);
@@ -1319,6 +1425,9 @@ export class ClaudeAgent extends BaseAgent {
 
               switch (result.type) {
                 case 'allow':
+                case 'passthrough':
+                  // passthrough: Claude's session tools (call_llm / spawn_session)
+                  // run in-process via the SDK — nothing to intercept, just allow.
                   return steerContext
                     ? {
                         continue: true,
@@ -1340,12 +1449,7 @@ export class ClaudeAgent extends BaseAgent {
                   };
 
                 case 'block':
-                  return encodeClaudeToolBlock(result);
-
-                case 'passthrough':
-                  // Claude's session tools (call_llm / spawn_session) run
-                  // in-process via the SDK — nothing to intercept, just allow.
-                  return { continue: true };
+                  return encodeClaudeToolBlock(result, steerContext);
               }
             }],
           }],
@@ -2265,15 +2369,6 @@ This is a branched conversation. All prior messages in this conversation are par
       } else {
         debug(`[bg-lifecycle] chat() finally — currentQuery nulled, subprocess torn down`, { sessionId: this.config.session?.id, sdkSessionId: this.sessionId, keepAlive: this.keepBackgroundTasksAlive });
         this.currentQuery = null;
-      }
-
-      // If a steer message was never delivered (no PreToolUse fired), notify the session
-      // layer so it can re-queue the message for the next turn.
-      const undeliveredSteer = this.pendingSteerMessage;
-      if (undeliveredSteer) {
-        this.pendingSteerMessage = null;
-        this.debug(`Steer message was not delivered (no tool call fired) — emitting steer_undelivered`);
-        yield { type: 'steer_undelivered' as const, message: undeliveredSteer };
       }
     }
   }

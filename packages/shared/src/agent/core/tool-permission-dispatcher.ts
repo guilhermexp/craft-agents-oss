@@ -66,11 +66,19 @@ export interface ToolPermissionContext {
  * message the model must relay verbatim — e.g. the successful mid-turn source
  * activation that asks the user to resend; prefixing that with `[ERROR]` would
  * tell the model the activation FAILED. See isToolResultError in tool-matching.ts.
+ *
+ * `endTurn` on a block is the ONLY way a denied tool ends the agent turn. The
+ * default is to deny the tool and keep the turn alive, so the model reads the
+ * reason and corrects course. It is set only by a denial at the permission
+ * prompt: the user answering no, `clearPendingPermissions()` resolving every
+ * pending prompt as denied during forceAbort/destroy (the turn is already dying
+ * there), or the session broker's fail-closed rejection when it cannot decide.
+ * A guard firing on its own never ends the turn.
  */
 export type ToolPermissionResult =
   | { type: 'allow' }
   | { type: 'modify'; input: Record<string, unknown> }
-  | { type: 'block'; reason: string; isError?: boolean }
+  | { type: 'block'; reason: string; isError?: boolean; endTurn?: boolean }
   | { type: 'passthrough' };
 
 export interface PendingPermission {
@@ -321,7 +329,12 @@ export class ToolPermissionDispatcher {
     this.pendingPermissions.delete(requestId);
 
     if (!allowed) {
-      return { type: 'block', reason: 'Permission denied by user.' };
+      // The one block that ends the turn: the permission prompt came back
+      // denied. Usually that is the human saying no; abort cleanup
+      // (clearPendingPermissions) and the broker's fail-closed rejection
+      // resolve the same promise. Every other block denies the tool and leaves
+      // the model running to recover.
+      return { type: 'block', reason: 'Permission denied by user.', endTurn: true };
     }
 
     if (checkResult.modifiedInput) {
