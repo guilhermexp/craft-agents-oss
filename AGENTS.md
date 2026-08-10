@@ -451,25 +451,50 @@ The debugger idle-detaches after 5s because a permanently attached CDP debugger
 is a passive bot-detection tell — that timeout is deliberate, not a knob to
 widen when something races it. Preserve these invariants:
 
-- `send()` counts in-flight commands and `decideIdleDetach` gates the timer on
-  that count: the countdown re-arms while a command is awaiting a response and
-  only detaches at zero. Detaching mid-flight rejects the pending `sendCommand`
-  with `target closed while handling command`, which is how a click was lost 1ms
-  after an idle detach. Re-arming in `send`'s `finally` alone is NOT the gate —
-  it protects the next command, never the running one — so `send()` also re-arms
-  right after `ensureAttached()`.
+- Every dispatched command counts in-flight and `decideIdleDetach` gates the
+  timer on that count: the countdown re-arms while a command is awaiting a
+  response and only detaches at zero. Detaching mid-flight rejects the pending
+  `sendCommand` with `target closed while handling command`, which is how a
+  click was lost 1ms after an idle detach. Re-arming in the dispatch `finally`
+  alone is NOT the gate — it protects the next command, never the running one —
+  so the dispatch also re-arms right after `ensureAttached()`, and only while
+  still attached, so an explicit `detach()` is not followed by another window.
+  `ensureAttached`'s own `Emulation.setEmulatedMedia` reapplication goes through
+  `sendGated` for the same reason, and the external `debugger.on('detach')`
+  listener clears the timer the way `detach()` does.
+- The gate is BOUNDED by `CDP_COMMAND_TIMEOUT_MS` (30s). A renderer blocked on
+  `alert()`/`confirm()`, or a `Runtime.evaluate` over
+  `navigator.clipboard.readText()` that never settles, would otherwise hold
+  `inflight` at 1 forever and pin the debugger attached — the exact tell the
+  idle detach exists to avoid. The deadline rejects the caller too: CDP has no
+  cancel, so the abandoned command's later rejection is swallowed instead of
+  escaping as an unhandled rejection. Do not replace this with a re-arm counter:
+  that detaches but leaves the caller hanging forever.
 - A click that could not be shown to land MUST NOT resolve: `clickElement` and
   `browser-pane-manager` record `lastAction.status: 'succeeded'` for anything
   that resolves. `clickAtCoordinates` replays through CDP once after a
   detached-target error, propagates if that replay fails, and propagates instead
-  of emitting a native down/up pair once the press was delivered. The
-  `sendInputEvent` fallback keeps only its narrow slot (CDP unusable, nothing
-  pressed yet) because it never reaches OOPIFs and cannot confirm delivery.
+  of emitting a native down/up pair once the press was delivered. When that
+  detached-target error lands AFTER the press was delivered, the replay resends
+  only `mouseReleased`: the renderer already saw the press and detaching does
+  not retract it, so a full replay double-fires every `mousedown` handler and
+  still resolves as success. `clickAtCDP` is that replay path, not dead code —
+  it MUST keep `buttons: 1`/`buttons: 0` and the 20–60ms press-to-release gap,
+  because a mousedown with `buttons === 0` and a 0ms click are trivial synthetic
+  fingerprints right after a reattach. The `sendInputEvent` fallback keeps only
+  its narrow slot (CDP unusable, nothing pressed yet) because it never reaches
+  OOPIFs and cannot confirm delivery.
 - Geometry read around a fill/select/file-input assignment is bookkeeping for
   the annotation overlay (`lastAction.geometry`), not the action's result. Both
-  reads are best-effort via `tryReadGeometry`, the pre-action reading is the
-  fallback, and only a page where nothing is measurable at all surfaces the read
-  error. The pre-click geometry in `clickElement` stays strict — there it is the
+  reads are best-effort via `tryReadGeometry` and the pre-action reading is the
+  fallback; when the element has no box model at either end — the routine
+  `<input type="file" style="display:none">` or a hidden `<select>` behind a
+  styled dropdown — the action resolves with NO geometry. Hence
+  `fillElement`/`selectOption`/`setFileInputFiles` (and
+  `BrowserPaneManager.uploadFile`) return `ElementGeometry | undefined`. Never
+  re-issue the strict read at the end: the action already mutated the page, so
+  throwing there reports a completed upload as failed and the agent uploads
+  twice. The pre-click geometry in `clickElement` stays strict — there it is the
   click target.
 - Raw Blink node errors never reach the agent: `translateCdpNodeError` maps
   `Node cannot be found` / `No node with given id` onto the same stale-ref

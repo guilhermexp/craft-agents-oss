@@ -1,7 +1,8 @@
 # Tasks
 
-All production changes land in `apps/electron/src/main/browser-cdp.ts`; all tests land in the
-existing harness `apps/electron/src/main/__tests__/browser-cdp.test.ts`.
+All production changes land in `apps/electron/src/main/browser-cdp.ts` — plus the single consumer
+signature in `apps/electron/src/main/browser-pane-manager.ts` that task 6.3 widens; all tests land
+in the existing harness `apps/electron/src/main/__tests__/browser-cdp.test.ts`.
 
 ## 1. In-flight gate on the idle detach
 
@@ -41,14 +42,14 @@ existing harness `apps/electron/src/main/__tests__/browser-cdp.test.ts`.
 
 - [x] 3.1 Add a best-effort geometry helper (`tryReadGeometry`) and use it in `fillElement`,
   `selectOption` and `setFileInputFiles`: read geometry best-effort before the action, refresh it
-  best-effort after, fall back to the pre-action reading, and re-issue the strict read only when
-  nothing was measurable at either end. Return types stay `Promise<ElementGeometry>`, so no other
-  file changes. Leave the pre-click geometry read in `clickElement` strict.
+  best-effort after, and fall back to the pre-action reading. Leave the pre-click geometry read in
+  `clickElement` strict. (Superseded in part by task 6.3, which drops the strict fallback read the
+  first pass left at the end of those three methods.)
   - files: `apps/electron/src/main/browser-cdp.ts`
   - verify: `grep -q "tryReadGeometry" apps/electron/src/main/browser-cdp.ts`
 - [x] 3.2 Cover it: a fill whose post-action `DOM.getBoxModel` fails resolves with the pre-action
-  geometry; a fill on an element that can never be measured still types and then reports the read
-  error; a click whose geometry read fails still rejects.
+  geometry; a fill on an element that can never be measured still types (and, after task 6.3,
+  resolves without geometry); a click whose geometry read fails still rejects.
   - files: `apps/electron/src/main/__tests__/browser-cdp.test.ts`
   - verify: `bun test apps/electron/src/main/__tests__/browser-cdp.test.ts`
 
@@ -72,6 +73,46 @@ existing harness `apps/electron/src/main/__tests__/browser-cdp.test.ts`.
   (`@typescript-eslint/typescript-estree` 8.64 cannot load under TypeScript 7; documented as
   `//lint:check` in `apps/electron/package.json`). No dependency change is in scope here.
 - [x] 5.4 `bun test apps/electron/src/main/__tests__/browser-cdp.test.ts apps/electron/src/main/__tests__/browser-pane-manager.test.ts`
-- [x] 5.5 Full `bun test` compared against a stashed baseline: identical 42-failure set.
+- [x] 5.5 Full `bun test` compared against a stashed baseline: identical failure set (39 failures
+  on this branch's baseline commit, all pre-existing).
 - [x] 5.6 DOX pass: record the in-flight/geometry/error-translation contract in the root
   `AGENTS.md`.
+
+## 6. Review corrections
+
+- [x] 6.1 Bound the in-flight gate: give every dispatched command a deadline
+  (`CDP_COMMAND_TIMEOUT_MS`) so a command the page never answers rejects, releases the gate and
+  lets the idle detach run. Chosen over counting re-arms because it also unblocks the hung caller
+  instead of only detaching around it.
+  - files: `apps/electron/src/main/browser-cdp.ts`
+  - verify: `grep -q "CDP_COMMAND_TIMEOUT_MS" apps/electron/src/main/browser-cdp.ts`
+- [x] 6.2 In `clickAtCoordinates`, resend only `mouseReleased` when a detach-shaped failure happens
+  after `pressDelivered` — the delivered press cannot be retracted, and a full replay double-fires
+  every `mousedown` handler while still resolving as a success.
+  - files: `apps/electron/src/main/browser-cdp.ts`
+  - verify: `bun test apps/electron/src/main/__tests__/browser-cdp.test.ts`
+- [x] 6.3 Drop the strict `?? await this.getElementGeometry(ref)` fallback from `fillElement`,
+  `selectOption` and `setFileInputFiles`, widen their return to
+  `Promise<ElementGeometry | undefined>` and widen `BrowserPaneManager.uploadFile` to match.
+  - files: `apps/electron/src/main/browser-cdp.ts`,
+    `apps/electron/src/main/browser-pane-manager.ts`
+  - verify: `bun run typecheck:electron`
+- [x] 6.4 Give `clickAtCDP` the humanized path's signature: `buttons: 1` on the press, `buttons: 0`
+  on the release, and the same 20–60ms gap between them.
+  - files: `apps/electron/src/main/browser-cdp.ts`
+  - verify: `bun test apps/electron/src/main/__tests__/browser-cdp.test.ts`
+- [x] 6.5 Route the `Emulation.setEmulatedMedia` reapplication in `ensureAttached` through the
+  gated dispatch path, and clear the idle timer inside the external `debugger.on('detach')`
+  listener the way the internal `detach()` already does.
+  - files: `apps/electron/src/main/browser-cdp.ts`
+  - verify: `grep -q "sendGated" apps/electron/src/main/browser-cdp.ts`
+- [x] 6.6 Re-arm the idle timer in the dispatch `finally` only while still attached, so an explicit
+  `detach()` is not followed by another 5s window holding the `webContents` alive.
+  - files: `apps/electron/src/main/browser-cdp.ts`
+  - verify: `bun test apps/electron/src/main/__tests__/browser-cdp.test.ts`
+- [x] 6.7 Cover the corrections: a command that never answers rejects on the deadline and then lets
+  the debugger detach; a detach-shaped failure on `mouseReleased` leaves exactly one press on the
+  page; fill, select and file assignment on a never-measurable element resolve without geometry;
+  the CDP replay carries `buttons: 1`/`buttons: 0`.
+  - files: `apps/electron/src/main/__tests__/browser-cdp.test.ts`
+  - verify: `bun test apps/electron/src/main/__tests__/browser-cdp.test.ts`

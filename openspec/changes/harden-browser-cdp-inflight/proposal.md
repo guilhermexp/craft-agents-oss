@@ -50,10 +50,11 @@ committed, so the raw CDP string escaped instead.
   unusable, nothing pressed yet) and now warms up with a `mouseMove` first.
 - Make post-action geometry reads best-effort in `fillElement`, `selectOption` and
   `setFileInputFiles`: each reads geometry before acting, refreshes it after, and returns the
-  pre-action reading if the node died in between. Return types are unchanged — the pre-action read
-  stays strict, so it is always there to fall back on, and an element that cannot be measured now
-  fails before the action mutates it instead of after. `clickElement` keeps its strict read too;
-  there the geometry is the click target, a real precondition.
+  pre-action reading if the node died in between. An element that has no box model at either end
+  — `<input type="file" style="display:none">`, a `<select hidden>` behind a styled dropdown —
+  resolves with no geometry at all, so the three methods return `ElementGeometry | undefined`.
+  `clickElement` keeps its strict read; there the geometry is the click target, a real
+  precondition.
 - Translate raw Blink stale-node errors (`Node cannot be found in the current page.`, `No node with
   given id found`) surfacing from `send()` into the same actionable stale-ref message `resolveRef`
   already produces.
@@ -69,3 +70,40 @@ committed, so the raw CDP string escaped instead.
 - Do not change the debugger session model (single `webContents.debugger` consumer per pane).
 - Do not address the other findings from the same log (tool blocking ending the turn, favicon CSP,
   tool-matching `store miss`); those are separate changes.
+
+## Corrections From Review
+
+An independent review of the first implementation found three P1s (two of them regressions against
+`main`) and three lower-severity gaps. All of them land in the same change.
+
+- **A hung command pinned the debugger attached forever (P1, regression).** With the in-flight gate
+  in place, `decideIdleDetach` re-armed without a ceiling and `send()` had no timeout, so a command
+  that never answers — `Runtime.evaluate` over `navigator.clipboard.readText()`, or any input
+  dispatch to a renderer blocked on `alert()`/`confirm()` — kept `inflight` at 1 indefinitely. On
+  `main` the 5s idle detach cut that hang; the gate removed the scythe and violated this change's
+  own Non-Goal. Fixed by bounding the wait inside `send()` (`CDP_COMMAND_TIMEOUT_MS`, 30s) rather
+  than by counting re-arms: the deadline releases the gate *and* the hung caller in one move, so no
+  command is left pending forever and the failure reaches the agent as an error instead of silence.
+  Counting re-arms would detach while still leaving the caller hanging.
+- **The click replay delivered two `mousedown`s (P1).** The detach-shaped branch replayed the whole
+  click without consulting `pressDelivered`. A failure on `mouseReleased` happens *after* the press
+  was delivered and confirmed, and detaching does not retract an event the renderer already saw, so
+  the page received `mousedown, mousemove, mousedown, mouseup, click` and the call resolved as a
+  success. Now the replay resends only `mouseReleased` when the press was already delivered, and
+  replays the whole click only when it was not.
+- **The strict trailing read cancelled the best-effort contract (P1).** `return geometry ?? await
+  this.getElementGeometry(ref)` re-issued the strict read when both best-effort reads failed, so an
+  element that never has a box model made a *completed* fill/select/file assignment reject — the
+  same action-vs-status divergence this change exists to remove, inverted. The fallback read is
+  gone; the three methods return `ElementGeometry | undefined`.
+- **`clickAtCDP` was promoted to the replay path without being updated (P2).** It omitted `buttons`
+  on the press (Blink then reports `event.buttons === 0` on a mousedown, a state human input cannot
+  produce) and had no press-to-release gap. It now carries `buttons: 1`/`buttons: 0` and the same
+  20–60ms gap as the humanized path.
+- **The reattach's own command bypassed the gate (P2).** `ensureAttached` reapplied
+  `Emulation.setEmulatedMedia` through `webContents.debugger.sendCommand` directly, invisible to
+  `decideIdleDetach`. It now goes through the gated dispatch path, and the external-detach listener
+  clears the idle timer the way the internal `detach()` already did.
+- **`send`'s `finally` re-armed the timer after an explicit detach (P3).** It now re-arms only while
+  attached, so `destroyInstance` no longer keeps `BrowserCDP` and its `webContents` alive for
+  another window.

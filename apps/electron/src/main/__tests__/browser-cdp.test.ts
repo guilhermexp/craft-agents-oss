@@ -602,6 +602,23 @@ describe('BrowserCDP', () => {
       throw new Error('sendCommand was never dispatched')
     }
 
+    // Fake timers stop bun's own per-test timeout from firing, so a test that
+    // awaits a promise which never settles hangs the whole file. Observe the
+    // settlement instead of awaiting it.
+    async function flushMicrotasks(): Promise<void> {
+      for (let i = 0; i < 50; i++) await Promise.resolve()
+    }
+
+    function track<T>(promise: Promise<T>): { state: () => 'pending' | 'resolved' | 'rejected'; error: () => unknown } {
+      let state: 'pending' | 'resolved' | 'rejected' = 'pending'
+      let error: unknown
+      void promise.then(
+        () => { state = 'resolved' },
+        (err) => { state = 'rejected'; error = err },
+      )
+      return { state: () => state, error: () => error }
+    }
+
     it('re-arms instead of detaching while a command awaits its response', async () => {
       jest.useFakeTimers()
       try {
@@ -612,12 +629,43 @@ describe('BrowserCDP', () => {
         const pending = cdp.getClipboard()
         await waitForFirstCommand(() => wc.debugger.sendCommand.mock.calls.length)
 
-        // Four idle deadlines pass with the command still in flight.
+        // Four idle deadlines pass with the command still in flight — all of
+        // them inside the command's own deadline, so the gate holds.
         jest.advanceTimersByTime(20_000)
         expect(wc.debugger.detach).not.toHaveBeenCalled()
 
         resolve({ result: { value: 'copied' } })
         await expect(pending).resolves.toBe('copied')
+
+        jest.advanceTimersByTime(6_000)
+        expect(wc.debugger.detach).toHaveBeenCalledTimes(1)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    it('abandons a command that never answers so the debugger still detaches', async () => {
+      jest.useFakeTimers()
+      try {
+        // A renderer blocked on alert()/confirm() never answers: the promise
+        // returned by sendCommand simply never settles. Without a deadline the
+        // in-flight gate would re-arm forever and pin the debugger attached.
+        const { promise } = Promise.withResolvers<unknown>()
+        const wc = createMockWebContents(() => promise)
+        const cdp = new BrowserCDP(wc as unknown as WebContents)
+
+        const pending = track(cdp.getClipboard())
+        await waitForFirstCommand(() => wc.debugger.sendCommand.mock.calls.length)
+
+        jest.advanceTimersByTime(20_000)
+        await flushMicrotasks()
+        expect(pending.state()).toBe('pending')
+        expect(wc.debugger.detach).not.toHaveBeenCalled()
+
+        jest.advanceTimersByTime(11_000)
+        await flushMicrotasks()
+        expect(pending.state()).toBe('rejected')
+        expect(String((pending.error() as Error)?.message)).toContain('timed out')
 
         jest.advanceTimersByTime(6_000)
         expect(wc.debugger.detach).toHaveBeenCalledTimes(1)
@@ -671,7 +719,10 @@ describe('BrowserCDP', () => {
       expect(wc.debugger.attach).toHaveBeenCalledTimes(2)
       const replayed = dispatched.filter(e => e.type === 'mousePressed' || e.type === 'mouseReleased')
       expect(replayed.map(e => e.type)).toEqual(['mousePressed', 'mouseReleased'])
-      expect(replayed[0]).toMatchObject({ x: 30, y: 40 })
+      // The replay must carry the same button state as the humanized path it
+      // stands in for: a mousedown with `buttons: 0` is impossible for a human.
+      expect(replayed[0]).toMatchObject({ x: 30, y: 40, button: 'left', buttons: 1 })
+      expect(replayed[1]).toMatchObject({ x: 30, y: 40, button: 'left', buttons: 0 })
     })
 
     it('rejects without native input when the CDP replay also fails', async () => {
@@ -706,6 +757,38 @@ describe('BrowserCDP', () => {
 
       const cdp = new BrowserCDP(wc as unknown as WebContents)
       await expect(cdp.clickAtCoordinates(5, 6)).rejects.toThrow('Input dispatch rejected by renderer')
+      expect(wc.sendInputEvent).not.toHaveBeenCalled()
+    })
+
+    it('replays only the release when the press was already delivered', async () => {
+      const dispatched: Array<Record<string, unknown>> = []
+      let triggerDetach: (() => void) | undefined
+      let failedOnce = false
+      const wc = createMockWebContents(
+        async (method, params) => {
+          if (method === 'Input.dispatchMouseEvent') {
+            if (params?.type === 'mouseReleased' && !failedOnce) {
+              failedOnce = true
+              triggerDetach?.()
+              throw new Error('target closed while handling command')
+            }
+            dispatched.push(params ?? {})
+          }
+          return {}
+        },
+        () => {},
+      )
+      triggerDetach = wc._triggerDetach
+
+      const cdp = new BrowserCDP(wc as unknown as WebContents)
+      await cdp.clickAtCoordinates(70, 80)
+
+      // The press was delivered and confirmed before the debugger went away;
+      // detaching does not retract an event the renderer already saw. Replaying
+      // the whole click would fire every mousedown handler twice.
+      const pressed = dispatched.filter(e => e.type === 'mousePressed')
+      expect(pressed).toHaveLength(1)
+      expect(dispatched.filter(e => e.type === 'mouseReleased')).toHaveLength(1)
       expect(wc.sendInputEvent).not.toHaveBeenCalled()
     })
 
@@ -773,17 +856,40 @@ describe('BrowserCDP', () => {
       await cdp.getAccessibilitySnapshot()
 
       const geometry = await cdp.fillElement('@e1', 'user@example.com')
-      expect(geometry.box).toEqual({ x: 10, y: 10, width: 40, height: 40 })
+      expect(geometry?.box).toEqual({ x: 10, y: 10, width: 40, height: 40 })
     })
 
-    it('still fills an element it cannot measure, then reports the read error', async () => {
+    it('still fills an element it can never measure and resolves without geometry', async () => {
       const { wc, sentCommands } = createFillMock(() => { throw new Error('Could not compute box model.') })
 
       const cdp = new BrowserCDP(wc as unknown as WebContents)
       await cdp.getAccessibilitySnapshot()
 
-      await expect(cdp.fillElement('@e1', 'ab')).rejects.toThrow('Could not compute box model')
+      await expect(cdp.fillElement('@e1', 'ab')).resolves.toBeUndefined()
       expect(sentCommands.filter(c => c === 'Input.dispatchKeyEvent').length).toBe(4)
+    })
+
+    it('selects on an unmeasurable control and resolves without geometry', async () => {
+      const { wc, sentCommands } = createFillMock(() => { throw new Error('Could not compute box model.') })
+
+      const cdp = new BrowserCDP(wc as unknown as WebContents)
+      await cdp.getAccessibilitySnapshot()
+
+      await expect(cdp.selectOption('@e1', 'US')).resolves.toBeUndefined()
+      expect(sentCommands).toContain('Runtime.callFunctionOn')
+    })
+
+    it('assigns files to a permanently hidden input and resolves without geometry', async () => {
+      // <input type="file" style="display:none"> never has a box model, so both
+      // best-effort reads fail. The assignment still happened, and reporting it
+      // as a failure makes the agent upload the same file twice.
+      const { wc, sentCommands } = createFillMock(() => { throw new Error('Could not compute box model.') })
+
+      const cdp = new BrowserCDP(wc as unknown as WebContents)
+      await cdp.getAccessibilitySnapshot()
+
+      await expect(cdp.setFileInputFiles('@e1', ['/tmp/report.pdf'])).resolves.toBeUndefined()
+      expect(sentCommands).toContain('DOM.setFileInputFiles')
     })
 
     it('still rejects a click whose target geometry cannot be resolved', async () => {

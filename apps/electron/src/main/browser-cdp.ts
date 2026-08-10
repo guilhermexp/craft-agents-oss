@@ -91,6 +91,18 @@ function summarizeTopCounts(map: Map<string, number>, maxEntries = 8): string {
 const CDP_IDLE_DETACH_MS = 5_000
 
 /**
+ * Upper bound on how long a single CDP command may wait for a response. The
+ * in-flight gate stops the idle detach from cutting a live command off, which
+ * also removed the 5s scythe that used to kill a command the page never answers
+ * at all — `Runtime.evaluate` on `navigator.clipboard.readText()`, or any input
+ * dispatch to a renderer blocked on `alert()`/`confirm()`. Without this bound
+ * such a command pins the gate open forever and the debugger stays attached,
+ * which is the passive bot-detection tell the idle detach exists to avoid. Set
+ * well above any real CDP round-trip so it only ever fires on a genuine hang.
+ */
+const CDP_COMMAND_TIMEOUT_MS = 30_000
+
+/**
  * The one stale-ref wording, shared by the two sites that produce it:
  * `resolveRef`, when the ref is already gone from the map, and `send`, when the
  * node died while a command that had already passed `resolveRef` was in flight.
@@ -217,23 +229,34 @@ export class BrowserCDP {
       this.detachListenerRegistered = true
       this.webContents.debugger.on('detach', () => {
         this.attached = false
+        // An external detach (the user opening this pane's DevTools) leaves the
+        // idle timer armed, unlike our own detach(). A timer that survives into
+        // the next attach can then fire against a fresh session.
+        this.clearIdleDetachTimer()
       })
     }
 
     if (this.emulatedColorScheme) {
       try {
-        await this.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+        // Routed through the gated path on purpose: sent bare, this command is
+        // invisible to decideIdleDetach and a pending idle timer can detach the
+        // debugger out from under it.
+        await this.sendGated('Emulation.setEmulatedMedia', {
           features: [{ name: 'prefers-color-scheme', value: this.emulatedColorScheme }],
         })
       } catch { /* best-effort */ }
     }
   }
 
-  private resetIdleDetachTimer(): void {
+  private clearIdleDetachTimer(): void {
     if (this.idleDetachTimer) {
       clearTimeout(this.idleDetachTimer)
       this.idleDetachTimer = null
     }
+  }
+
+  private resetIdleDetachTimer(): void {
+    this.clearIdleDetachTimer()
     this.idleDetachTimer = setTimeout(() => {
       this.idleDetachTimer = null
       const decision = decideIdleDetach({ attached: this.attached, inflight: this.inflight })
@@ -249,10 +272,7 @@ export class BrowserCDP {
   }
 
   detach(): void {
-    if (this.idleDetachTimer) {
-      clearTimeout(this.idleDetachTimer)
-      this.idleDetachTimer = null
-    }
+    this.clearIdleDetachTimer()
     if (this.attached) {
       try {
         this.webContents.debugger.detach()
@@ -274,19 +294,57 @@ export class BrowserCDP {
 
   private async send(method: string, params?: Record<string, unknown>): Promise<any> {
     await this.ensureAttached()
+    return this.sendGated(method, params)
+  }
+
+  /**
+   * Dispatch one command with the in-flight gate held. Split out of `send`
+   * because `ensureAttached` has to reapply the emulated color scheme without
+   * recursing back into itself, and that command must still count against the
+   * gate.
+   */
+  private async sendGated(method: string, params?: Record<string, unknown>): Promise<any> {
     // Start this command's countdown now. Re-arming only in `finally` left the
     // current command running inside whatever was left of the previous window,
     // which is how idle detach landed 1ms before a click.
     this.resetIdleDetachTimer()
     this.inflight += 1
     try {
-      return await this.webContents.debugger.sendCommand(method, params)
+      return await this.withCommandDeadline(method, this.webContents.debugger.sendCommand(method, params))
     } catch (err) {
       throw translateCdpNodeError(err)
     } finally {
       this.inflight -= 1
-      this.resetIdleDetachTimer()
+      // Only while attached: detach() clears the timer deliberately, and
+      // re-arming here would keep this object and its webContents alive for one
+      // more window after an explicit teardown.
+      if (this.attached) this.resetIdleDetachTimer()
     }
+  }
+
+  /** Bound a command's wait — see CDP_COMMAND_TIMEOUT_MS. */
+  private withCommandDeadline<T>(method: string, command: Promise<T>): Promise<T> {
+    const settled = Promise.resolve(command)
+    const { promise, resolve, reject } = Promise.withResolvers<T>()
+    const timer = setTimeout(() => {
+      // CDP has no cancel, so the command is abandoned rather than stopped.
+      // Swallow its eventual rejection (the idle detach that follows produces
+      // one) so it cannot surface as an unhandled rejection.
+      void settled.catch(() => {})
+      mainLog.warn(
+        `[browser-cdp] ${method} got no response in ${CDP_COMMAND_TIMEOUT_MS}ms — `
+        + 'abandoning it so the debugger can idle-detach',
+      )
+      reject(new Error(
+        `CDP command ${method} timed out after ${CDP_COMMAND_TIMEOUT_MS}ms with no response from the page `
+        + '(a modal dialog such as alert() or confirm() blocks the renderer until it is dismissed).',
+      ))
+    }, CDP_COMMAND_TIMEOUT_MS)
+    settled.then(
+      (value) => { clearTimeout(timer); resolve(value) },
+      (err) => { clearTimeout(timer); reject(err) },
+    )
+    return promise
   }
 
   private allocateRef(backendDOMNodeId?: number): string {
@@ -758,20 +816,27 @@ export class BrowserCDP {
     this.webContents.sendInputEvent(event as any)
   }
 
-  // Explicit CDP mouse fallback methods kept for resilience.
+  // CDP mouse click, used as the replay path when the debugger is lost under a
+  // coordinate click. It mirrors the humanized path it stands in for: a
+  // mousedown carrying `buttons: 0` is a state human input cannot produce, and a
+  // 0ms press-to-release gap is just as readable — and this replay runs right
+  // after a reattach, when the page is most attentive.
   private async clickAtCDP(x: number, y: number): Promise<void> {
     await this.send('Input.dispatchMouseEvent', {
       type: 'mousePressed',
       x,
       y,
       button: 'left',
+      buttons: 1,
       clickCount: 1,
     })
+    await new Promise(resolve => setTimeout(resolve, 20 + Math.random() * 40))
     await this.send('Input.dispatchMouseEvent', {
       type: 'mouseReleased',
       x,
       y,
       button: 'left',
+      buttons: 0,
       clickCount: 1,
     })
   }
@@ -880,12 +945,27 @@ export class BrowserCDP {
       const lost = DETACHED_TARGET_ERROR_PATTERNS.some(pattern => message.toLowerCase().includes(pattern))
 
       if (lost) {
-        // The debugger went away under the click (idle detach, target swap). A
-        // half-delivered press is lost either way, so re-attach and replay the
-        // whole click through CDP — the only transport that reaches OOPIFs.
+        // The debugger went away under the click (idle detach, target swap).
         mainLog.warn(`[browser-cdp] CDP clickAt lost the debugger session, replaying through CDP: ${message}`)
         try {
           await this.ensureAttached()
+          if (pressDelivered) {
+            // The press was delivered and confirmed before the session died, and
+            // losing the debugger does not retract an event the renderer already
+            // saw. Resend only the release so the click closes with a single
+            // mousedown — a full replay double-fires every mousedown handler
+            // (menu, dropdown, toggle, drag handle) and still resolves as a
+            // success.
+            await this.send('Input.dispatchMouseEvent', {
+              type: 'mouseReleased',
+              x: tx,
+              y: ty,
+              button: 'left',
+              buttons: 0,
+              clickCount: 1,
+            })
+            return
+          }
           await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: tx, y: ty, buttons: 0 })
           await this.clickAtCDP(tx, ty)
           return
@@ -1011,7 +1091,7 @@ export class BrowserCDP {
     }
   }
 
-  async fillElement(ref: string, value: string): Promise<ElementGeometry> {
+  async fillElement(ref: string, value: string): Promise<ElementGeometry | undefined> {
     const backendNodeId = this.resolveRef(ref)
 
     try {
@@ -1053,17 +1133,17 @@ export class BrowserCDP {
         }`,
       })
 
-      const geometry = (await this.tryReadGeometry(ref)) ?? before
-      // Nothing measurable at either end: re-issue the strict read so the caller
-      // still gets the real measurement error instead of a fabricated box.
-      return geometry ?? await this.getElementGeometry(ref)
+      // Undefined when the element has no box model at either end — a natively
+      // hidden input is measurable at neither, and re-issuing the strict read
+      // here would reject a fill that already happened.
+      return (await this.tryReadGeometry(ref)) ?? before
     } catch (err) {
       mainLog.error(`[browser-cdp] Fill failed for ${ref}:`, err)
       throw new Error(`Failed to fill ${ref}: ${err}`)
     }
   }
 
-  async selectOption(ref: string, value: string): Promise<ElementGeometry> {
+  async selectOption(ref: string, value: string): Promise<ElementGeometry | undefined> {
     const backendNodeId = this.resolveRef(ref)
 
     try {
@@ -1244,17 +1324,16 @@ export class BrowserCDP {
         )
       }
 
-      const geometry = (await this.tryReadGeometry(ref)) ?? before
-      // Nothing measurable at either end: re-issue the strict read so the caller
-      // still gets the real measurement error instead of a fabricated box.
-      return geometry ?? await this.getElementGeometry(ref)
+      // Undefined when the control has no box model at either end — see
+      // fillElement; the selection already bound to form state above.
+      return (await this.tryReadGeometry(ref)) ?? before
     } catch (err) {
       mainLog.error(`[browser-cdp] Select failed for ${ref}:`, err)
       throw new Error(`Failed to select option in ${ref}: ${err}`)
     }
   }
 
-  async setFileInputFiles(ref: string, filePaths: string[]): Promise<ElementGeometry> {
+  async setFileInputFiles(ref: string, filePaths: string[]): Promise<ElementGeometry | undefined> {
     const backendNodeId = this.resolveRef(ref)
 
     try {
@@ -1267,10 +1346,10 @@ export class BrowserCDP {
         backendNodeId,
       })
 
-      const geometry = (await this.tryReadGeometry(ref)) ?? before
-      // Nothing measurable at either end: re-issue the strict read so the caller
-      // still gets the real measurement error instead of a fabricated box.
-      return geometry ?? await this.getElementGeometry(ref)
+      // Undefined for the common `<input type="file" style="display:none">`,
+      // which never has a box model. The files are already assigned and the
+      // change handlers already ran; failing here makes the caller upload twice.
+      return (await this.tryReadGeometry(ref)) ?? before
     } catch (err) {
       mainLog.error(`[browser-cdp] setFileInputFiles failed for ${ref}:`, err)
       throw new Error(`Failed to set files on ${ref}: ${err}`)

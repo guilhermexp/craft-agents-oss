@@ -1513,7 +1513,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
   // validateUploadFilePath removed — uses shared validateFilePath from @craft-agent/server-core/handlers
 
-  async uploadFile(id: string, ref: string, filePaths: string[]): Promise<ElementGeometry> {
+  // Geometry is undefined when the input has no box model — the usual
+  // `<input type="file" style="display:none">`. The assignment still happened.
+  async uploadFile(id: string, ref: string, filePaths: string[]): Promise<ElementGeometry | undefined> {
     const instance = this.requireAliveInstance(id)
 
     const safePaths: string[] = []
