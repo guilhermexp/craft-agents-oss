@@ -74,15 +74,47 @@ interface TextPreview {
   error?: string
 }
 
+interface VideoPreview {
+  type: 'video'
+  filePath: string
+}
+
+/**
+ * Rendered-page preview: .html files read from disk, and Office documents
+ * (.docx/.xlsx/.pptx) converted to HTML by the bundled OfficeCLI binary. Both
+ * end up as an HTML string shown in the same sandboxed iframe.
+ */
+interface HtmlDocPreview {
+  type: 'htmlDoc'
+  filePath: string
+  content: string | null
+  error?: string
+}
+
+/**
+ * An Office document served by a live `officecli watch` server. Carries a URL
+ * rather than HTML because the editing UI and formula engine only exist in the
+ * served page — a rendered snapshot would be read-only.
+ */
+interface OfficeLivePreview {
+  type: 'officeLive'
+  filePath: string
+  url: string | null
+  error?: string
+}
+
 export type FilePreviewState =
   | ImagePreview
   | AudioPreview
+  | VideoPreview
   | PDFPreview
   | CodePreview
   | MarkdownPreview
   | JSONPreview
   | TextPreview
   | ExcalidrawPreview
+  | HtmlDocPreview
+  | OfficeLivePreview
 
 // ── Hook options ───────────────────────────────────────────────────────────────
 // Callbacks injected by App.tsx so the hook doesn't depend on window.electronAPI directly.
@@ -100,6 +132,10 @@ interface LinkInterceptorOptions {
   readFileDataUrl: (path: string) => Promise<string>
   /** Read file as binary (Uint8Array) for PDF previews via react-pdf */
   readFileBinary: (path: string) => Promise<Uint8Array>
+  /** Render .docx/.xlsx/.pptx to HTML via the bundled OfficeCLI binary */
+  renderOfficeDocument: (path: string) => Promise<string>
+  /** Start/reuse an editable live server for a document; resolves to its URL */
+  openOfficeLive: (path: string) => Promise<string>
 }
 
 // ── Hook return type ───────────────────────────────────────────────────────────
@@ -163,8 +199,22 @@ export function useLinkInterceptor(options: LinkInterceptorOptions): LinkInterce
     const type = classification.type
 
     // For binary media: set state immediately — the overlay handles its own async loading
-    if (type === 'image' || type === 'audio' || type === 'pdf') {
+    if (type === 'image' || type === 'audio' || type === 'pdf' || type === 'video') {
       setPreviewState({ type, filePath: path })
+      return
+    }
+
+    // Office documents open against a live server so they stay editable in the
+    // overlay too. Starting it takes a moment, so show a loading state first.
+    if (type === 'spreadsheet' || type === 'richDocument' || type === 'presentation') {
+      setPreviewState({ type: 'officeLive', filePath: path, url: null })
+      try {
+        const url = await optionsRef.current.openOfficeLive(path)
+        setPreviewState({ type: 'officeLive', filePath: path, url })
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Failed to open document'
+        setPreviewState({ type: 'officeLive', filePath: path, url: null, error: errorMsg })
+      }
       return
     }
 
@@ -253,6 +303,8 @@ function buildInitialTextState(type: FilePreviewType, path: string): FilePreview
       return { type: 'json', filePath: path, content: null }
     case 'text':
       return { type: 'text', filePath: path, content: null }
+    case 'html':
+      return { type: 'htmlDoc', filePath: path, content: null }
     default:
       // Should never happen — binary previews are handled before this function is called
       return { type: 'text', filePath: path, content: null }

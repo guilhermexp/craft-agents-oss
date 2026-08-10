@@ -12,6 +12,16 @@ import type { ApiOAuthConfig } from '../sources/types.ts';
 import type { PreparedOAuthFlow, OAuthExchangeParams, OAuthExchangeResult } from './oauth-flow-types.ts';
 import { generatePKCE, generateState } from './pkce.ts';
 
+function oauthExchangeFailure(): OAuthExchangeResult {
+  return {
+    success: false,
+    error: 'OAuth token exchange failed',
+    errorCode: 'oauth-token-exchange-failed',
+  };
+}
+
+const OAUTH_REFRESH_FAILURE = 'oauth-token-refresh-failed';
+
 /**
  * Parse a token endpoint response that may be JSON or application/x-www-form-urlencoded.
  * GitHub (and some other providers) return form-encoded unless you send Accept: application/json.
@@ -115,15 +125,15 @@ export async function exchangeGenericOAuth(params: OAuthExchangeParams): Promise
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      return { success: false, error: `Token exchange failed (${response.status}): ${errorText}` };
+      await response.body?.cancel().catch(() => undefined);
+      return oauthExchangeFailure();
     }
 
     const responseBody = await response.text();
     const data = parseTokenResponse(responseBody, response.headers.get('content-type'));
 
     if (data.error) {
-      return { success: false, error: `OAuth error: ${data.error} — ${data.error_description ?? ''}` };
+      return oauthExchangeFailure();
     }
 
     const expiresIn = data.expires_in ? parseInt(data.expires_in, 10) : undefined;
@@ -136,11 +146,8 @@ export async function exchangeGenericOAuth(params: OAuthExchangeParams): Promise
       oauthClientId: params.clientId,
       oauthClientSecret: params.clientSecret,
     };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Generic OAuth exchange failed',
-    };
+  } catch {
+    return oauthExchangeFailure();
   }
 }
 
@@ -178,19 +185,19 @@ export async function refreshGenericOAuthToken(
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Token refresh failed (${response.status}): ${errorText}`);
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error(OAUTH_REFRESH_FAILURE);
   }
 
   const responseBody = await response.text();
   const data = parseTokenResponse(responseBody, response.headers.get('content-type'));
 
   if (data.error) {
-    throw new Error(`OAuth refresh error: ${data.error} — ${data.error_description ?? ''}`);
+    throw new Error(OAUTH_REFRESH_FAILURE);
   }
 
   if (!data.access_token) {
-    throw new Error('Token refresh response missing access_token');
+    throw new Error(OAUTH_REFRESH_FAILURE);
   }
 
   const expiresIn = data.expires_in ? parseInt(data.expires_in, 10) : undefined;

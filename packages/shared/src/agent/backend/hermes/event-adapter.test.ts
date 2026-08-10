@@ -183,4 +183,72 @@ describe('HermesEventAdapter', () => {
       displayName: 'Skill View',
     }))
   })
+
+  it('drains pending tool_starts as error results when the turn aborts mid-flight', () => {
+    const adapter = new HermesEventAdapter()
+    adapter.startTurn()
+
+    adapter.adaptToolCall({
+      toolCallId: 'tool-pending-1',
+      toolName: 'read_file',
+      args: { path: '/repo/src/App.tsx' },
+    })
+    adapter.adaptToolCall({
+      toolCallId: 'tool-pending-2',
+      toolName: 'terminal',
+      args: { command: 'ls' },
+    })
+
+    const drained = adapter.drainPendingTools('turn aborted')
+    expect(drained).toHaveLength(2)
+    expect(drained[0]).toEqual(expect.objectContaining({
+      type: 'tool_result',
+      toolUseId: 'tool-pending-1',
+      isError: true,
+      result: '[aborted: turn aborted]',
+    }))
+    expect(drained[1]).toEqual(expect.objectContaining({
+      type: 'tool_result',
+      toolUseId: 'tool-pending-2',
+      isError: true,
+    }))
+
+    // Second drain returns nothing — adapter clears state.
+    expect(adapter.drainPendingTools('turn aborted')).toEqual([])
+  })
+
+  it('emits every drained tool_result before the error event (chatImpl catch order)', () => {
+    const adapter = new HermesEventAdapter()
+    adapter.startTurn()
+
+    adapter.adaptToolCall({
+      toolCallId: 'tool-pending-1',
+      toolName: 'read_file',
+      args: { path: '/repo/src/App.tsx' },
+    })
+    adapter.adaptToolCall({
+      toolCallId: 'tool-pending-2',
+      toolName: 'terminal',
+      args: { command: 'ls' },
+    })
+
+    // Reproduce the exact emission order of hermes-agent chatImpl's catch path:
+    // drained tool_result events first, then the terminal error event. If the
+    // error were yielded first the renderer would clear before seeing the
+    // results and the fix would be inert.
+    const emitted = [
+      ...adapter.drainPendingTools('turn aborted'),
+      { type: 'error', message: 'boom' } as const,
+    ]
+
+    const errorIndex = emitted.findIndex(event => event.type === 'error')
+    const lastToolResultIndex = emitted.reduce(
+      (last, event, index) => (event.type === 'tool_result' ? index : last),
+      -1,
+    )
+
+    expect(errorIndex).toBe(emitted.length - 1)
+    expect(lastToolResultIndex).toBeLessThan(errorIndex)
+    expect(emitted.filter(event => event.type === 'tool_result')).toHaveLength(2)
+  })
 })

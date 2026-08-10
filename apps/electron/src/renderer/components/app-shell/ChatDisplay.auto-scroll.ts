@@ -15,8 +15,13 @@ type OverflowYReader = (element: Element) => string
 
 const WHEEL_SCROLLABLE_OVERFLOW_VALUES = new Set(['auto', 'scroll', 'overlay'])
 
+/** Pixels between the current scroll position and the very bottom of the content. */
+export function scrollDistanceFromBottom(metrics: ScrollMetrics): number {
+  return metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight
+}
+
 export function isNearScrollBottom(metrics: ScrollMetrics, threshold = 20): boolean {
-  return metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight < threshold
+  return scrollDistanceFromBottom(metrics) < threshold
 }
 
 export function shouldPinStreamingContentToBottom(state: StreamingPinState): boolean {

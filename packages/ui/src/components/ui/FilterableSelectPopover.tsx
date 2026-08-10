@@ -165,7 +165,7 @@ export function FilterableSelectPopover<T>({
 
   return ReactDOM.createPortal(
     <>
-      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- backdrop dismissal handled by keyboard via input onKeyDown Escape */}
+      {/* Click-outside backdrop; keyboard dismissal is handled by the input's onKeyDown Escape. */}
       <div
         className="fixed inset-0 z-floating-backdrop"
         onClick={() => onOpenChange(false)}

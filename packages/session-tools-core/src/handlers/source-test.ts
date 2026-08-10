@@ -6,9 +6,17 @@
  * connection tests, and auth verification.
  */
 
-import { basename, join } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { basename, join, resolve } from 'node:path';
 import type { SessionToolContext } from '../context.ts';
-import type { ToolResult, SourceConfig, ConnectionStatus } from '../types.ts';
+import type {
+  ToolResult,
+  SourceConfig,
+  ConnectionStatus,
+  SourceProbeBackend,
+  SourceReadinessReason,
+  SourceToolIdentity,
+} from '../types.ts';
 import { errorResponse } from '../response.ts';
 import {
   validateJsonFileHasFields,
@@ -20,6 +28,166 @@ import {
   getSourceGuidePath,
   getSourcePath,
 } from '../source-helpers.ts';
+import {
+  redactSourceTestFailure,
+  redactSourceTestMetadata,
+} from './source-test-sanitizer.ts';
+
+export interface SourceReadinessRequest {
+  sourceSlug: string;
+  backend: SourceProbeBackend;
+  expectedTools: SourceToolIdentity[];
+}
+
+export type SourceReadinessResult =
+  | { ready: true; observedTools: SourceToolIdentity[] }
+  | { ready: false; reason: 'unsupported-backend' | 'source-test-failed' | 'backend-injection-failed' | 'probe-failed' | 'cleanup-failed' }
+  | { ready: false; reason: 'missing-tools'; missingTools: SourceToolIdentity[]; observedTools: SourceToolIdentity[] }
+  | {
+      ready: false;
+      reason: 'version-mismatch';
+      versionMismatches: Array<{
+        name: string;
+        expectedApiVersion: string;
+        observedApiVersions: string[];
+      }>;
+      observedTools: SourceToolIdentity[];
+    };
+
+export interface SourceReadinessHealth {
+  status: 'ready' | 'unhealthy';
+  reason?: SourceReadinessReason;
+  observedTools?: SourceToolIdentity[];
+}
+
+export type { SourceProbeBackend, SourceToolIdentity } from '../types.ts';
+
+export interface SourceReadinessDependencies {
+  testSource(): Promise<{ ok: true } | { ok: false; error?: string }>;
+  injectIntoSession(request: SourceReadinessRequest): Promise<{ sessionId: string }>;
+  observeSessionTools(input: { sessionId: string; sourceSlug: string }): Promise<SourceToolIdentity[]>;
+  removeFromSession(input: { sessionId: string; sourceSlug: string }): Promise<void>;
+  writeHealth(health: SourceReadinessHealth): Promise<void>;
+  logHealth?(evidence: SourceReadinessHealth): void;
+}
+
+const SAFE_TOOL_IDENTITY_PART = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/;
+const NON_VERSION_METADATA = new Set(['invalid', 'unknown', 'unversioned']);
+
+function isExplicitSourceToolVersion(value: string): boolean {
+  return SAFE_TOOL_IDENTITY_PART.test(value) && !NON_VERSION_METADATA.has(value.toLowerCase());
+}
+
+/** Source tool API versions are compatible only when the declared versions match exactly. */
+export function isSourceToolVersionCompatible(expected: string, observed: string): boolean {
+  return expected === observed;
+}
+
+/**
+ * Runs source reachability and backend-visible readiness as separate gates.
+ * Only allowlisted tool identities enter health evidence; caught errors are never serialized.
+ */
+export async function runSourceReadinessCheck(
+  request: SourceReadinessRequest,
+  dependencies: SourceReadinessDependencies,
+): Promise<SourceReadinessResult> {
+  const persist = async (result: SourceReadinessResult): Promise<SourceReadinessResult> => {
+    const health: SourceReadinessHealth = result.ready
+      ? { status: 'ready', observedTools: result.observedTools }
+      : {
+          status: 'unhealthy',
+          reason: result.reason,
+          ...('observedTools' in result ? { observedTools: result.observedTools } : {}),
+        };
+    try {
+      await dependencies.writeHealth(health);
+    } catch {
+      throw new Error('Source readiness health persistence failed');
+    }
+    dependencies.logHealth?.(health);
+    return result;
+  };
+
+  if (request.backend === 'unsupported') {
+    return persist({ ready: false, reason: 'unsupported-backend' });
+  }
+
+  if (request.expectedTools.some(
+    (tool) => !SAFE_TOOL_IDENTITY_PART.test(tool.name) || !isExplicitSourceToolVersion(tool.apiVersion),
+  )) {
+    return persist({ ready: false, reason: 'source-test-failed' });
+  }
+
+  const sourceTest = await dependencies.testSource();
+  if (!sourceTest.ok) {
+    return persist({ ready: false, reason: 'source-test-failed' });
+  }
+
+  let injection: { sessionId: string };
+  try {
+    injection = await dependencies.injectIntoSession(request);
+  } catch {
+    return persist({ ready: false, reason: 'backend-injection-failed' });
+  }
+
+  let result: SourceReadinessResult;
+  try {
+    const rawObservedTools = await dependencies.observeSessionTools({
+      sessionId: injection.sessionId,
+      sourceSlug: request.sourceSlug,
+    });
+    const expectedNames = new Set(request.expectedTools.map((tool) => tool.name));
+    const observedTools = rawObservedTools.flatMap((tool) => {
+      if (!expectedNames.has(tool.name) || !SAFE_TOOL_IDENTITY_PART.test(tool.name)) return [];
+      return isExplicitSourceToolVersion(tool.apiVersion)
+        ? [{ name: tool.name, apiVersion: tool.apiVersion }]
+        : [];
+    });
+    const observedByName = new Map<string, string[]>();
+    for (const tool of observedTools) {
+      const versions = observedByName.get(tool.name) ?? [];
+      if (!versions.includes(tool.apiVersion)) versions.push(tool.apiVersion);
+      observedByName.set(tool.name, versions);
+    }
+
+    const missingTools = request.expectedTools.filter((tool) => !observedByName.has(tool.name));
+    const versionMismatches = request.expectedTools.flatMap((tool) => {
+      const observedApiVersions = observedByName.get(tool.name);
+      if (
+        observedApiVersions === undefined
+        || observedApiVersions.some((version) => isSourceToolVersionCompatible(tool.apiVersion, version))
+      ) {
+        return [];
+      }
+      return [{
+        name: tool.name,
+        expectedApiVersion: tool.apiVersion,
+        observedApiVersions,
+      }];
+    });
+
+    if (missingTools.length > 0) {
+      result = { ready: false, reason: 'missing-tools', missingTools, observedTools };
+    } else if (versionMismatches.length > 0) {
+      result = { ready: false, reason: 'version-mismatch', versionMismatches, observedTools };
+    } else {
+      result = { ready: true, observedTools };
+    }
+  } catch {
+    result = { ready: false, reason: 'probe-failed' };
+  }
+
+  try {
+    await dependencies.removeFromSession({
+      sessionId: injection.sessionId,
+      sourceSlug: request.sourceSlug,
+    });
+  } catch {
+    return persist({ ready: false, reason: 'cleanup-failed' });
+  }
+
+  return persist(result);
+}
 
 export interface SourceTestArgs {
   sourceSlug: string;
@@ -46,6 +214,41 @@ interface ConnectionTestResult {
   error?: string;
 }
 
+const sourceTestLifecycleTails = new Map<string, Promise<void>>();
+
+function canonicalWorkspacePath(workspacePath: string): string {
+  const absolutePath = resolve(workspacePath);
+  try {
+    return realpathSync.native(absolutePath);
+  } catch {
+    return absolutePath;
+  }
+}
+
+async function withSourceTestLifecycleLock<T>(
+  workspacePath: string,
+  sourceSlug: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const lockKey = `${canonicalWorkspacePath(workspacePath)}\0${sourceSlug}`;
+  const previousTail = sourceTestLifecycleTails.get(lockKey);
+  let releaseCurrent: () => void = () => {};
+  const currentTail = new Promise<void>((resolveTail) => {
+    releaseCurrent = resolveTail;
+  });
+  sourceTestLifecycleTails.set(lockKey, currentTail);
+
+  if (previousTail) await previousTail;
+  try {
+    return await run();
+  } finally {
+    releaseCurrent();
+    if (sourceTestLifecycleTails.get(lockKey) === currentTail) {
+      sourceTestLifecycleTails.delete(lockKey);
+    }
+  }
+}
+
 /**
  * Handle the source_test tool call.
  *
@@ -58,6 +261,17 @@ interface ConnectionTestResult {
  * 6. Metadata update - updates lastTestedAt, connectionStatus
  */
 export async function handleSourceTest(
+  ctx: SessionToolContext,
+  args: SourceTestArgs
+): Promise<ToolResult> {
+  return withSourceTestLifecycleLock(
+    ctx.workspacePath,
+    args.sourceSlug,
+    () => handleSourceTestUnlocked(ctx, args),
+  );
+}
+
+async function handleSourceTestUnlocked(
   ctx: SessionToolContext,
   args: SourceTestArgs
 ): Promise<ToolResult> {
@@ -146,54 +360,207 @@ export async function handleSourceTest(
   // broken source into the live tool list. 401/403 still pass: the probe maps
   // those to connectionStatus=connected, and checkAuthStatus refreshes tokens.
   const autoEnable = args.autoEnable !== false;
-  const shouldAutoEnable = autoEnable && !hasErrors && connectionStatus === 'connected';
-  const willFlipEnabled = shouldAutoEnable && source.enabled === false;
+  const requiresReadiness = (source.expectedTools?.length ?? 0) > 0;
+  let readinessPassed = !requiresReadiness;
+  let readiness = source.readiness;
 
-  if (ctx.saveSourceConfig) {
-    const updatedSource: SourceConfig = {
-      ...source,
-      lastTestedAt: Date.now(),
-      connectionStatus,
-      connectionError,
-      // Fold enabled flip into the same save — one write, not two.
-      ...(willFlipEnabled ? { enabled: true } : {}),
-    };
-    try {
-      ctx.saveSourceConfig(updatedSource);
-      lines.push('\n_Config updated with test results._');
-      if (willFlipEnabled) {
-        lines.push('✓ Source auto-enabled in config');
-      }
-    } catch {
-      // Silently ignore save errors
+  if (requiresReadiness) {
+    lines.push('\n## Session Tool Probe');
+    const readinessResult = await runSourceReadinessCheck(
+      {
+        sourceSlug,
+        backend: ctx.sourceProbeBackend ?? 'unsupported',
+        expectedTools: source.expectedTools!,
+      },
+      {
+        testSource: async () => (
+          !hasErrors && connectionStatus === 'connected'
+            ? { ok: true }
+            : { ok: false }
+        ),
+        injectIntoSession: async () => {
+          if (!ctx.injectSourceForProbe) throw new Error('Source probe injection is unavailable');
+          const result = await ctx.injectSourceForProbe(sourceSlug);
+          return { sessionId: result.probeId };
+        },
+        observeSessionTools: async ({ sessionId }) => {
+          if (!ctx.observeSourceToolsForProbe) throw new Error('Source probe observation is unavailable');
+          return ctx.observeSourceToolsForProbe(sessionId);
+        },
+        removeFromSession: async ({ sessionId }) => {
+          if (!ctx.removeSourceProbe) throw new Error('Source probe cleanup is unavailable');
+          await ctx.removeSourceProbe(sessionId);
+        },
+        writeHealth: async (health) => {
+          readiness = { ...health, checkedAt: Date.now() };
+        },
+      },
+    );
+
+    readinessPassed = readinessResult.ready;
+    if (readinessResult.ready) {
+      lines.push(`✓ Session observed ${readinessResult.observedTools.length} expected versioned tools`);
+    } else {
+      hasErrors = true;
+      connectionStatus = 'unhealthy';
+      connectionError = readinessResult.reason;
+      lines.push(`✗ Session tool probe failed: ${readinessResult.reason}`);
     }
   }
 
-  // Try to activate the source in the running session (backend may not support this).
-  if (shouldAutoEnable) {
-    if (ctx.activateSourceInSession) {
+  const shouldAutoEnable = autoEnable
+    && !hasErrors
+    && connectionStatus === 'connected'
+    && readinessPassed;
+  const willFlipEnabled = shouldAutoEnable && source.enabled === false;
+  const testedAt = Date.now();
+
+  if (requiresReadiness && shouldAutoEnable) {
+    const saveSourceConfig = ctx.saveSourceConfig;
+    const stagedReadiness: SourceReadinessHealth & { checkedAt: number } = {
+      status: 'unhealthy',
+      reason: 'backend-injection-failed',
+      checkedAt: testedAt,
+    };
+    const stagedSource: SourceConfig = {
+      ...source,
+      enabled: false,
+      lastTestedAt: testedAt,
+      connectionStatus: 'unhealthy',
+      connectionError: 'backend-injection-failed',
+      readiness: stagedReadiness,
+    };
+
+    let stagedPersisted = false;
+    try {
+      if (!saveSourceConfig) throw new Error('Source config persistence is unavailable');
+      saveSourceConfig(stagedSource);
+      stagedPersisted = true;
+    } catch {
+      hasErrors = true;
+      lines.push('✗ Fail-closed readiness state could not be persisted; activation was skipped');
+    }
+
+    if (stagedPersisted) {
+      const prepare = ctx.prepareSourceReadinessActivation;
+      const commit = ctx.commitSourceReadinessActivation;
+      const finalize = ctx.finalizeSourceReadinessActivation;
+      const rollback = ctx.rollbackSourceReadinessActivation;
+      if (!prepare || !commit || !finalize || !rollback) {
+        hasErrors = true;
+        lines.push('✗ Session readiness activation lifecycle is unavailable; source remains disabled');
+      } else {
+        let activationId: string | undefined;
+        try {
+          const prepared = await prepare(sourceSlug);
+          activationId = prepared.activationId;
+        } catch {
+          hasErrors = true;
+          lines.push('✗ Session exposure failed after readiness probe; source remains disabled');
+        }
+
+        if (activationId !== undefined) {
+          const readySource: SourceConfig = {
+            ...source,
+            enabled: true,
+            lastTestedAt: testedAt,
+            connectionStatus,
+            connectionError,
+            readiness,
+          };
+
+          try {
+            commit(activationId);
+          } catch {
+            hasErrors = true;
+            let rollbackConfirmed = false;
+            try {
+              await rollback(activationId);
+              rollbackConfirmed = true;
+            } catch {
+              // The durable config is still the staged disabled/unhealthy state.
+            }
+            lines.push(rollbackConfirmed
+              ? '✗ Session activation commit failed; temporary exposure was rolled back'
+              : '✗ Session activation commit failed and exposure could not be confirmed closed');
+            activationId = undefined;
+          }
+
+          if (activationId !== undefined) {
+            try {
+              saveSourceConfig!(readySource);
+            } catch {
+              hasErrors = true;
+              try {
+                await rollback(activationId);
+                lines.push('✗ Ready health could not be persisted; temporary exposure was rolled back');
+              } catch {
+                lines.push('✗ Ready health could not be persisted and session exposure could not be confirmed closed');
+              }
+              activationId = undefined;
+            }
+          }
+
+          if (activationId !== undefined) {
+            finalize(activationId);
+            activationId = undefined;
+            lines.push('\n_Config updated with test results._');
+            if (willFlipEnabled) lines.push('✓ Source auto-enabled in config');
+            lines.push('✓ Source activated — the current turn will auto-restart with tools available');
+          }
+        }
+      }
+    }
+  } else {
+    let configPersisted = ctx.saveSourceConfig === undefined;
+    if (ctx.saveSourceConfig) {
+      const updatedSource: SourceConfig = {
+        ...source,
+        lastTestedAt: testedAt,
+        connectionStatus,
+        connectionError,
+        ...(requiresReadiness ? { readiness, enabled: false } : {}),
+        ...(!requiresReadiness && willFlipEnabled ? { enabled: true } : {}),
+      };
       try {
-        const result = await ctx.activateSourceInSession(sourceSlug);
-        if (result.ok) {
-          // Activation succeeded — the backend will abort this turn after the
-          // tool result lands, and the renderer auto-resends the original user
-          // message with a "[{slug} activated]" suffix. From the model's POV,
-          // the "next step" is a new turn where the tools are live.
-          lines.push('✓ Source activated — the current turn will auto-restart with tools available');
+        ctx.saveSourceConfig(updatedSource);
+        configPersisted = true;
+        lines.push('\n_Config updated with test results._');
+        if (willFlipEnabled) lines.push('✓ Source auto-enabled in config');
+      } catch {
+        if (requiresReadiness) {
+          hasErrors = true;
+          lines.push('✗ Ready health could not be persisted; source remains disabled');
         } else {
-          lines.push(`⚠ Config updated, but session activation failed: ${result.reason ?? 'unknown error'}. Restart session to load tools.`);
+          hasWarnings = true;
+          lines.push('⚠ Config could not be updated; session activation was skipped');
+        }
+      }
+    }
+
+    if (!requiresReadiness && shouldAutoEnable && configPersisted) {
+      if (ctx.activateSourceInSession) {
+        try {
+          const result = await ctx.activateSourceInSession(sourceSlug);
+          if (result.ok) {
+            lines.push('✓ Source activated — the current turn will auto-restart with tools available');
+          } else {
+            const reason = redactSourceTestFailure(result.reason, 'source-activation-failed');
+            lines.push(`⚠ Config updated, but session activation failed: ${reason}. Restart session to load tools.`);
+            hasWarnings = true;
+          }
+        } catch (caught) {
+          const reason = redactSourceTestFailure(caught, 'source-activation-exception');
+          lines.push(`⚠ Config updated, but session activation threw: ${reason}. Restart session to load tools.`);
           hasWarnings = true;
         }
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : 'unknown error';
-        lines.push(`⚠ Config updated, but session activation threw: ${msg}. Restart session to load tools.`);
-        hasWarnings = true;
+      } else if (willFlipEnabled) {
+        lines.push('ℹ Config updated. Restart session to load tools (mid-session activation not available in this backend).');
       }
-    } else if (willFlipEnabled) {
-      // Only nag about restart if we actually flipped the flag.
-      lines.push('ℹ Config updated. Restart session to load tools (mid-session activation not available in this backend).');
     }
-  } else if (autoEnable && !hasErrors && connectionStatus !== 'connected') {
+  }
+
+  if (autoEnable && !hasErrors && connectionStatus !== 'connected') {
     // The user asked to auto-enable but the connection probe didn't pass.
     // Tell them why activation is being skipped so they can act on it.
     lines.push(`ℹ Skipping activation because connection test did not succeed (status: ${connectionStatus}). Re-run source_test once the endpoint is reachable.`);
@@ -247,19 +614,19 @@ async function handleIconCheck(
   // Check if icon is a URL that can be downloaded
   if (source.icon && ctx.isIconUrl && ctx.isIconUrl(source.icon)) {
     if (ctx.downloadSourceIcon) {
-      lines.push(`ℹ Icon URL detected: ${source.icon}`);
+      lines.push('ℹ Configured icon URL detected');
       try {
         const cachedPath = await ctx.downloadSourceIcon(sourceSlug, source.icon);
         if (cachedPath) {
           lines.push(`✓ Icon downloaded and cached`);
           return { lines, hasWarning };
         }
-      } catch (e) {
-        lines.push(`⚠ Failed to download icon: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      } catch (caught) {
+        lines.push(`⚠ Failed to download icon: ${redactSourceTestFailure(caught, 'icon-download-failed')}`);
         hasWarning = true;
       }
     } else {
-      lines.push(`ℹ Icon URL configured but download not available: ${source.icon}`);
+      lines.push('ℹ Icon URL configured but download not available');
     }
   }
 
@@ -447,11 +814,8 @@ async function testApiConnection(
         }
       } else {
         hasError = true;
-        error = result.error || 'Connection failed';
-        lines.push(`✗ ${result.error || 'Connection failed'}`);
-        if (result.hint) {
-          lines.push(`  ${result.hint}`);
-        }
+        error = redactSourceTestFailure(result.error, 'api-validation-failed');
+        lines.push(`✗ ${error}`);
       }
       return { lines, success, hasError, error };
     } catch (e) {
@@ -612,24 +976,21 @@ async function testApiConnectionWithAuth(
     } else if (response.status === 401 || response.status === 403) {
       lines.push(`✗ API returned ${response.status} (credentials invalid or expired)`);
       lines.push('  Re-authenticate the source to refresh credentials');
-      return { lines, success: false, hasError: true, error: `Auth failed: ${response.status}`, attempted: true };
+      return { lines, success: false, hasError: true, error: 'api-auth-failed', attempted: true };
     } else if (response.status === 404) {
       lines.push(`⚠ API returned 404 (endpoint not found)`);
       if (source.api!.testEndpoint) {
-        lines.push(`  Check if testEndpoint.path is correct: ${source.api!.testEndpoint.path}`);
+        lines.push('  Check whether the configured test endpoint path is correct');
       }
       return { lines, success: false, hasError: false, attempted: true };
     } else {
       lines.push(`⚠ API returned ${response.status}`);
       return { lines, success: false, hasError: false, attempted: true };
     }
-  } catch (e) {
-    const errorMsg = e instanceof Error ? e.message : 'Unknown error';
-    lines.push(`✗ Connection failed: ${errorMsg}`);
-    if (errorMsg.includes('abort')) {
-      lines.push('  Request timed out after 10 seconds');
-    }
-    return { lines, success: false, hasError: true, error: errorMsg, attempted: true };
+  } catch (caught) {
+    const errorCode = redactSourceTestFailure(caught, 'api-connection-failed');
+    lines.push(`✗ Connection failed: ${errorCode}`);
+    return { lines, success: false, hasError: true, error: errorCode, attempted: true };
   }
 }
 
@@ -684,7 +1045,7 @@ async function testApiConnectionBasic(
     if (response) {
       if (response.ok) {
         success = true;
-        lines.push(`✓ API endpoint reachable (${testUrl})`);
+        lines.push('✓ API endpoint reachable');
       } else if (response.status === 401 || response.status === 403) {
         // Auth required - endpoint is reachable but needs credentials
         success = true;
@@ -697,7 +1058,7 @@ async function testApiConnectionBasic(
       } else if (response.status === 404) {
         lines.push(`⚠ API returned 404 (endpoint not found)`);
         if (source.api?.testEndpoint) {
-          lines.push(`  Check if testEndpoint.path is correct: ${source.api.testEndpoint.path}`);
+          lines.push('  Check whether the configured test endpoint path is correct');
         } else {
           lines.push('  Consider adding testEndpoint configuration');
         }
@@ -707,16 +1068,13 @@ async function testApiConnectionBasic(
     } else {
       hasError = true;
       error = 'Connection failed';
-      lines.push(`✗ Cannot reach API endpoint (${source.api?.baseUrl})`);
+      lines.push('✗ Cannot reach configured API endpoint');
       lines.push('  Check if the URL is correct and the service is running');
     }
-  } catch (e) {
+  } catch (caught) {
     hasError = true;
-    error = e instanceof Error ? e.message : 'Unknown error';
+    error = redactSourceTestFailure(caught, 'api-connection-failed');
     lines.push(`✗ Connection failed: ${error}`);
-    if (error.includes('abort')) {
-      lines.push('  Request timed out after 10 seconds');
-    }
   }
 
   return { lines, success, hasError, error };
@@ -735,7 +1093,7 @@ async function testMcpConnection(
   if (source.mcp?.transport === 'stdio') {
     // Stdio MCP - use validateStdioMcpConnection if available
     if (ctx.validateStdioMcpConnection && source.mcp.command) {
-      lines.push(`ℹ Testing stdio MCP: ${source.mcp.command}`);
+      lines.push('ℹ Testing configured stdio MCP server');
       try {
         const result = await ctx.validateStdioMcpConnection({
           command: source.mcp.command,
@@ -748,33 +1106,36 @@ async function testMcpConnection(
           if (result.toolCount !== undefined) {
             lines.push(`  Tools available: ${result.toolCount}`);
             if (result.toolNames && result.toolNames.length > 0) {
-              const preview = result.toolNames.slice(0, 5).join(', ');
-              if (result.toolNames.length > 5) {
+              const safeToolNames = result.toolNames.flatMap((name) => {
+                const safeName = redactSourceTestMetadata(name);
+                return safeName === undefined ? [] : [safeName];
+              });
+              const preview = safeToolNames.slice(0, 5).join(', ');
+              if (safeToolNames.length > 5) {
                 lines.push(`  Examples: ${preview}, ...`);
-              } else {
+              } else if (preview.length > 0) {
                 lines.push(`  Tools: ${preview}`);
               }
             }
           }
-          if (result.serverName) {
-            lines.push(`  Server: ${result.serverName} v${result.serverVersion || 'unknown'}`);
+          const safeServerName = redactSourceTestMetadata(result.serverName);
+          const safeServerVersion = redactSourceTestMetadata(result.serverVersion);
+          if (safeServerName) {
+            lines.push(`  Server: ${safeServerName}${safeServerVersion ? ` v${safeServerVersion}` : ''}`);
           }
         } else {
           hasError = true;
-          error = result.error || 'MCP validation failed';
+          error = redactSourceTestFailure(result.error, 'mcp-validation-failed');
           lines.push(`✗ ${error}`);
         }
-      } catch (e) {
+      } catch (caught) {
         hasError = true;
-        error = e instanceof Error ? e.message : 'Unknown error';
+        error = redactSourceTestFailure(caught, 'mcp-validation-failed');
         lines.push(`✗ Failed to test MCP server: ${error}`);
       }
     } else if (source.mcp?.command) {
       // Basic check - just report config
-      lines.push(`ℹ Stdio MCP source: ${source.mcp.command}`);
-      if (source.mcp.args?.length) {
-        lines.push(`  Args: ${source.mcp.args.join(' ')}`);
-      }
+      lines.push('ℹ Configured stdio MCP source');
       lines.push('  Connection test not available in this context — call the source\'s MCP tools directly to verify');
       success = true; // Config looks ok
     } else {
@@ -785,7 +1146,7 @@ async function testMcpConnection(
   } else if (source.mcp?.url) {
     // HTTP/SSE MCP
     if (ctx.validateMcpConnection) {
-      lines.push(`ℹ Testing MCP server: ${source.mcp.url}`);
+      lines.push('ℹ Testing configured MCP server');
       try {
         // Merge static headers with credential-store headers (if headerNames configured)
         let headers = source.mcp.headers ? { ...source.mcp.headers } : undefined;
@@ -838,8 +1199,10 @@ async function testMcpConnection(
           if (result.toolCount !== undefined) {
             lines.push(`  Tools available: ${result.toolCount}`);
           }
-          if (result.serverName) {
-            lines.push(`  Server: ${result.serverName} v${result.serverVersion || 'unknown'}`);
+          const safeServerName = redactSourceTestMetadata(result.serverName);
+          const safeServerVersion = redactSourceTestMetadata(result.serverVersion);
+          if (safeServerName) {
+            lines.push(`  Server: ${safeServerName}${safeServerVersion ? ` v${safeServerVersion}` : ''}`);
           }
         } else if (result.needsAuth) {
           lines.push(`⚠ MCP server requires authentication`);
@@ -849,17 +1212,17 @@ async function testMcpConnection(
           success = true; // Server is reachable, just needs auth
         } else {
           hasError = true;
-          error = result.error || 'MCP connection failed';
+          error = redactSourceTestFailure(result.error, 'mcp-validation-failed');
           lines.push(`✗ ${error}`);
         }
-      } catch (e) {
+      } catch (caught) {
         hasError = true;
-        error = e instanceof Error ? e.message : 'Unknown error';
+        error = redactSourceTestFailure(caught, 'mcp-validation-failed');
         lines.push(`✗ Failed to connect to MCP server: ${error}`);
       }
     } else {
       // Basic URL check
-      lines.push(`ℹ MCP source URL: ${source.mcp.url}`);
+      lines.push('ℹ Configured MCP source endpoint');
       lines.push('  Connection test not available in this context — call the source\'s MCP tools directly to verify');
       success = true; // Config looks ok
     }

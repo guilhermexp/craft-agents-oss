@@ -238,7 +238,7 @@ function EntityRowPreview({
         isSelected={isSelected}
         isInMultiSelect={isInMultiSelect}
         showSeparator={showSeparator}
-        menuContent={showMenu ? <MockMenuItems /> : undefined}
+        menuContent={showMenu ? () => <MockMenuItems /> : undefined}
       />
     </div>
   )
@@ -319,7 +319,7 @@ function SessionEntityListPreview({
               isSelected={isSelected}
               isInMultiSelect={showMultiSelect && (index === 0 || index === 1)}
               showSeparator={!isFirst}
-              menuContent={<MockMenuItems />}
+              menuContent={() => <MockMenuItems />}
               dataAttributes={{ 'data-session-id': session.id }}
             />
           )
@@ -376,7 +376,7 @@ function SourceEntityListPreview({
               }
               isSelected={index === selectedIndex}
               showSeparator={!isFirst}
-              menuContent={<MockMenuItems />}
+              menuContent={() => <MockMenuItems />}
             />
           )
         }}
@@ -425,7 +425,7 @@ function SkillEntityListPreview({
             badges={<span className="truncate">{skill.description}</span>}
             isSelected={index === selectedIndex}
             showSeparator={!isFirst}
-            menuContent={<MockMenuItems />}
+            menuContent={() => <MockMenuItems />}
           />
         )}
       />
@@ -511,7 +511,7 @@ function MixedEntityListPreview({
             trailing={session.lastMessageAt ? <span className="text-[11px] text-foreground/40">{formatRelativeTime(session.lastMessageAt)}</span> : undefined}
             isSelected={currentFlatIndex === selectedIndex}
             showSeparator={!isFirst}
-            menuContent={<MockMenuItems />}
+            menuContent={() => <MockMenuItems />}
           />
         )
       }
@@ -532,7 +532,7 @@ function MixedEntityListPreview({
             }
             isSelected={currentFlatIndex === selectedIndex}
             showSeparator={!isFirst}
-            menuContent={<MockMenuItems />}
+            menuContent={() => <MockMenuItems />}
           />
         )
       }
@@ -553,7 +553,7 @@ function MixedEntityListPreview({
             badges={<span className="truncate">{skill.description}</span>}
             isSelected={currentFlatIndex === selectedIndex}
             showSeparator={!isFirst}
-            menuContent={<MockMenuItems />}
+            menuContent={() => <MockMenuItems />}
           />
         )
       }
@@ -690,7 +690,7 @@ function InteractiveEntityListPreview({
             }
             trailing={item.lastMessageAt ? <span className="text-[11px] text-foreground/40">{formatRelativeTime(item.lastMessageAt)}</span> : undefined}
             showSeparator={!isFirst}
-            menuContent={<MockMenuItems />}
+            menuContent={() => <MockMenuItems />}
           />
         )
       }
@@ -710,7 +710,7 @@ function InteractiveEntityListPreview({
               </>
             }
             showSeparator={!isFirst}
-            menuContent={<MockMenuItems />}
+            menuContent={() => <MockMenuItems />}
           />
         )
       }
@@ -730,7 +730,7 @@ function InteractiveEntityListPreview({
             title={item.name}
             badges={<span className="truncate">{item.description}</span>}
             showSeparator={!isFirst}
-            menuContent={<MockMenuItems />}
+            menuContent={() => <MockMenuItems />}
           />
         )
       }

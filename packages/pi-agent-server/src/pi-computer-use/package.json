@@ -1,55 +1,66 @@
 {
-  "name": "@injaneity/pi-computer-use",
-  "version": "0.1.6",
-  "description": "Codex-style computer-use tools for Pi on macOS.",
-  "type": "module",
-  "keywords": [
-    "pi-package",
-    "pi-extension",
-    "pi",
-    "computer-use",
-    "macos",
-    "screenshot",
-    "automation"
-  ],
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/injaneity/pi-computer-use.git"
-  },
-  "bugs": {
-    "url": "https://github.com/injaneity/pi-computer-use/issues"
-  },
-  "homepage": "https://github.com/injaneity/pi-computer-use#readme",
-  "engines": {
-    "node": ">=20.6.0"
-  },
-  "files": [
-    "extensions",
-    "skills",
-    "src",
-    "scripts/build-native.mjs",
-    "scripts/setup-helper.mjs",
-    "native/macos/bridge.swift",
-    "prebuilt/macos",
-    "README.md",
-    "LICENSE"
-  ],
-  "pi": {
-    "extensions": [
-      "./extensions"
-    ],
-    "skills": [
-      "./skills"
-    ]
-  },
-  "scripts": {
-    "postinstall": "node scripts/setup-helper.mjs --postinstall",
-    "build:native": "node scripts/build-native.mjs"
-  },
-  "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
-    "@mariozechner/pi-ai": "*",
-    "@sinclair/typebox": "*"
-  }
+	"name": "@injaneity/pi-computer-use",
+	"version": "0.5.0",
+	"description": "Pi extension that lets AI agents observe and control macOS and Windows apps.",
+	"type": "module",
+	"keywords": [
+		"pi-package",
+		"pi-extension",
+		"pi",
+		"computer-use",
+		"macos",
+		"desktop-automation",
+		"accessibility"
+	],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/injaneity/pi-computer-use.git"
+	},
+	"bugs": {
+		"url": "https://github.com/injaneity/pi-computer-use/issues"
+	},
+	"homepage": "https://github.com/injaneity/pi-computer-use#readme",
+	"engines": {
+		"node": ">=20.6.0"
+	},
+	"files": [
+		"CRAFT_OVERLAY.md",
+		"UPSTREAM_COMMIT",
+		"extensions",
+		"src",
+		"scripts/build-native.mjs",
+		"scripts/setup-helper.mjs",
+		"native/macos/bridge.swift",
+		"native/macos/agent_cursor.swift",
+		"native/macos/agent_cursor_motion.swift",
+		"native/windows/bridge-rs/Cargo.lock",
+		"native/windows/bridge-rs/Cargo.toml",
+		"native/windows/bridge-rs/src",
+		"prebuilt/macos",
+		"prebuilt/windows",
+		"assets/reference/img.jpg",
+		"skills/computer-use/SKILL.md",
+		"README.md",
+		"LICENSE"
+	],
+	"pi": {
+		"extensions": [
+			"./src/platform/macos/craft-runtime-extension.js"
+		],
+		"skills": [
+			"./skills/computer-use/SKILL.md"
+		],
+		"image": "./assets/reference/img.jpg"
+	},
+	"scripts": {
+		"postinstall": "node scripts/setup-helper.mjs --postinstall",
+		"build:native": "node scripts/build-native.mjs",
+		"build:windows": "node scripts/build-native.mjs --platform windows"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
+		"@sinclair/typebox": "*"
+	}
 }

@@ -13,7 +13,7 @@
 
 import * as React from 'react'
 import { Circle } from 'lucide-react'
-import type { SessionStatus } from '@/config/session-status-config'
+import type { ResolvedSessionStatus } from '@/config/session-status-config'
 import type {
   KanbanProject,
   KanbanSubtask,
@@ -31,7 +31,7 @@ const NOW = Date.now()
 
 const circleIcon = () => React.createElement(Circle, { className: 'h-3.5 w-3.5', strokeWidth: 1.5 })
 
-export const mockStatuses: SessionStatus[] = [
+export const mockStatuses: ResolvedSessionStatus[] = [
   { id: 'todo', label: 'Todo', resolvedColor: 'var(--muted-foreground)', icon: circleIcon(), iconColorable: true, category: 'open' },
   { id: 'in-progress', label: 'In Progress', resolvedColor: 'var(--info)', icon: circleIcon(), iconColorable: true, category: 'open' },
   { id: 'needs-review', label: 'Needs Review', resolvedColor: 'var(--warning)', icon: circleIcon(), iconColorable: true, category: 'open' },

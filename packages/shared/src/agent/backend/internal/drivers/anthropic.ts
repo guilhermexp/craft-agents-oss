@@ -1,7 +1,9 @@
 import type { ProviderDriver } from '../driver-types.ts';
 import { applyAnthropicRuntimeBootstrap } from '../runtime-resolver.ts';
 import { validateAnthropicConnection } from '../../../../config/llm-validation.ts';
+import { isKeylessConnection } from '../../../../config/llm-connections.ts';
 import { DEFAULT_MODEL, getModelById, getModelContextWindow, normalizeDeprecatedModelId } from '../../../../config/models.ts';
+import { KEYLESS_API_KEY_PLACEHOLDER } from '../../../../credentials/types.ts';
 
 export const anthropicDriver: ProviderDriver = {
   provider: 'anthropic',
@@ -121,31 +123,58 @@ export const anthropicDriver: ProviderDriver = {
       return { success: true };
     }
 
-    let apiKey: string | null = null;
-    let oauthToken: string | null = null;
+    // Value fetching is delegated to the single authType -> credential resolver.
+    // The OAuth-provider case is handled above (it needs token refresh); the
+    // remaining kinds map onto the SDK's x-api-key vs Bearer inputs here.
+    const resolved = await credentialManager.resolveLlmCredential(
+      slug,
+      connection.authType,
+      connection.providerType,
+    );
 
-    if (connection.authType === 'api_key' || connection.authType === 'api_key_with_endpoint') {
-      apiKey = await credentialManager.getLlmApiKey(slug);
-    } else if (connection.authType === 'bearer_token') {
-      oauthToken = await credentialManager.getLlmApiKey(slug);
-    } else if (connection.authType === 'environment') {
-      apiKey = process.env.ANTHROPIC_API_KEY || null;
-      if (!apiKey) {
+    let apiKey: string | undefined;
+    let oauthToken: string | undefined;
+    if (isKeylessConnection(connection, resolved)) {
+      // Keyless endpoint (e.g. local Anthropic-compatible proxy). Same predicate
+      // drives resolveAuthEnvVars, so a keyless session and this Test agree.
+      apiKey = KEYLESS_API_KEY_PLACEHOLDER;
+    } else if (!resolved) {
+      // 'environment' names a single variable we can surface in the diagnostic;
+      // every other arm only knows the credential is absent.
+      if (connection.authType === 'environment') {
         return { success: false, error: 'ANTHROPIC_API_KEY environment variable not set' };
       }
-    } else if (connection.authType === 'none') {
-      apiKey = 'ollama';
+      return { success: false, error: 'Could not retrieve credentials' };
+    } else {
+      switch (resolved.kind) {
+        case 'oauth':
+          oauthToken = resolved.accessToken || undefined;
+          break;
+        case 'api_key':
+        case 'environment':
+          // bearer_token stores its secret as an api key but sends it as a Bearer token.
+          if (connection.authType === 'bearer_token') {
+            oauthToken = resolved.value || undefined;
+          } else {
+            apiKey = resolved.value || undefined;
+          }
+          break;
+        // 'none' is handled by isKeylessConnection above; 'iam' / 'service_account'
+        // are not valid auth for the anthropic provider and fall through unset.
+      }
     }
 
-    if (!apiKey && !oauthToken && connection.authType !== 'none') {
+    // An empty ('') or absent secret carries no usable auth: never hand
+    // validateAnthropicConnection an unauthenticated request.
+    if (!apiKey && !oauthToken) {
       return { success: false, error: 'Could not retrieve credentials' };
     }
 
     const testModel = connection.defaultModel!;
     const validationResult = await validateAnthropicConnection({
       model: testModel,
-      apiKey: apiKey || undefined,
-      oauthToken: oauthToken || undefined,
+      apiKey,
+      oauthToken,
       baseUrl: connection.baseUrl || undefined,
     });
 

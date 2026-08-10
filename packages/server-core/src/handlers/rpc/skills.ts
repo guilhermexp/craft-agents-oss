@@ -5,14 +5,6 @@ import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.skills.GET,
-  RPC_NAMESPACES.skills.GET_FILES,
-  RPC_NAMESPACES.skills.DELETE,
-  RPC_NAMESPACES.skills.OPEN_EDITOR,
-  RPC_NAMESPACES.skills.OPEN_FINDER,
-] as const
-
 export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): void {
   // Get all skills for a workspace (and optionally project-level skills from workingDirectory)
   server.handle(RPC_NAMESPACES.skills.GET, async (_ctx, workspaceId: string, workingDirectory?: string) => {

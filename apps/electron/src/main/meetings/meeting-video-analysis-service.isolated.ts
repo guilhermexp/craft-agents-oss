@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { MeetingRecord } from '../../shared/types'
+import { createLoggerModuleStub } from '../__tests__/logger-module-stub'
 
 // Spy state: assert no backend (and therefore no LLM call) is created on the
 // early-return paths — most importantly the "only Hermes configured" case, which
@@ -12,14 +13,14 @@ let createBackendCalls = 0
 let llmConnections: Array<{ slug: string; providerType: string }> = []
 let defaultConnection: string | null = null
 
-mock.module('../logger', () => ({
-  mainLog: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
-}))
+mock.module('../logger', () => createLoggerModuleStub())
 
 mock.module('@craft-agent/shared/config', () => ({
   getDefaultLlmConnection: () => defaultConnection,
   getLlmConnection: (slug: string) => llmConnections.find((c) => c.slug === slug) ?? null,
   getLlmConnections: () => llmConnections,
+  // output-language.ts resolves the prompt language from this preference.
+  getPersistedUiLanguage: () => undefined,
 }))
 
 mock.module('@craft-agent/shared/agent/backend', () => ({

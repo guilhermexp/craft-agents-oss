@@ -64,10 +64,17 @@ export {
   type InlineActivityItem,
 } from './components/chat'
 
+// Turn projection: single-polarity expansion resolution (consumed by renderer hooks)
+export {
+  isIdExpanded,
+  applyExpansionToggle,
+  type ExpansionState,
+  type GroupExpansionController,
+} from './components/chat'
+
 // Markdown
 export {
   Markdown,
-  MemoizedMarkdown,
   CodeBlock,
   InlineCode,
   CollapsibleMarkdownProvider,
@@ -209,6 +216,8 @@ export {
   HTMLPreviewOverlay,
   ImagePreviewOverlay,
   AudioPreviewOverlay,
+  VideoPreviewOverlay,
+  OfficeLiveOverlay,
   PDFPreviewOverlay,
   ExcalidrawPreviewOverlay,
   detectLanguage,
@@ -225,6 +234,8 @@ export {
   type HTMLPreviewOverlayProps,
   type ImagePreviewOverlayProps,
   type AudioPreviewOverlayProps,
+  type VideoPreviewOverlayProps,
+  type OfficeLiveOverlayProps,
   type PDFPreviewOverlayProps,
   type ExcalidrawPreviewOverlayProps,
   ActivityCardsOverlay,

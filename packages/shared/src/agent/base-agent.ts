@@ -47,6 +47,14 @@ import type {
 import { AbortReason } from './backend/types.ts';
 import type { AuthRequest } from './session-scoped-tools.ts';
 import type { Workspace } from '../config/storage.ts';
+import { getRtkEnabled } from '../config/storage.ts';
+import { extractWorkspaceSlug } from '../utils/workspace.ts';
+import { getRtkPath } from './core/rtk-detector.ts';
+import type { RtkContext } from './core/rtk-rewrite.ts';
+import {
+  ToolPermissionDispatcher,
+  type ToolPermissionDispatcherOptions,
+} from './core/tool-permission-dispatcher.ts';
 
 // Core modules
 import { PermissionManager } from './core/permission-manager.ts';
@@ -65,7 +73,7 @@ import { ObservationPipeline } from '../memory/observation-pipeline.ts';
 
 // Automation system for agent events
 import type { AutomationSystem } from '../automations/automation-system.ts';
-import type { AgentEvent as AutomationAgentEvent, SdkAutomationInput } from '../automations/types.ts';
+import type { AgentHookEvent, SdkAutomationInput } from '../automations/types.ts';
 import { getSessionPlansPath, getSessionDataPath, getSessionPath } from '../sessions/storage.ts';
 import { getMiniAgentSystemPrompt } from '../prompts/system.ts';
 import { buildTitlePrompt, buildRegenerateTitlePrompt, validateTitle } from '../utils/title-generator.ts';
@@ -164,7 +172,6 @@ export const MINI_AGENT_MCP_KEYS = ['session'] as const;
  * - chat(): Provider-specific agentic loop
  * - abort(): Provider-specific abort handling
  * - capabilities(): Provider-specific capabilities
- * - respondToPermission(): Provider-specific permission resolution
  * - destroy(): Provider-specific cleanup
  * - runMiniCompletion(): Simple text completion using backend's auth
  */
@@ -207,6 +214,12 @@ export abstract class BaseAgent implements AgentBackend {
   protected memoryStore: MemoryStore | null = null;
   protected memoryContextBuilder: MemoryContextBuilder | null = null;
   protected observationPipeline: ObservationPipeline | null = null;
+
+  // PreToolUse orchestration. Owns the pending-permission map and the source-
+  // activation flow for backends on the shared pipeline (Claude, Pi); created
+  // via initToolPermissionDispatcher(). Null for backends with their own
+  // permission model (Hermes uses ACP).
+  protected toolPermissionDispatcher: ToolPermissionDispatcher | null = null;
 
   // ============================================================
   // Additional State (protected for subclass access)
@@ -336,6 +349,92 @@ export abstract class BaseAgent implements AgentBackend {
   }
 
   // ============================================================
+  // PreToolUse dispatch (shared pipeline: Claude, Pi)
+  // ============================================================
+
+  /**
+   * Build the RTK Bash-rewrite context from the current preference state. Read
+   * fresh each call so toggling the preference takes effect without a restart
+   * (getRtkPath() is process-cached; only the storage read repeats).
+   */
+  protected buildRtkContext(): RtkContext | undefined {
+    return getRtkEnabled() ? { enabled: true, path: getRtkPath(), exclude: [] } : undefined;
+  }
+
+  /**
+   * Create the shared ToolPermissionDispatcher for backends that route tool
+   * calls through runPreToolUseChecks. The context reads live agent state via
+   * getters so a single instance stays correct across turns; `options` carry the
+   * deliberate Claude/Pi divergences (post-activation strategy + emission).
+   */
+  protected initToolPermissionDispatcher(options?: ToolPermissionDispatcherOptions): void {
+    const rootPath = (): string => this.config.workspace.rootPath ?? this.workingDirectory;
+    const sessionId = (): string => this.config.session?.id ?? this._sessionId;
+    this.toolPermissionDispatcher = new ToolPermissionDispatcher(
+      {
+        getSessionId: sessionId,
+        getWorkspaceRootPath: rootPath,
+        getWorkspaceId: () => extractWorkspaceSlug(rootPath(), this.config.workspace.id),
+        getPlansFolderPath: () => getSessionPlansPath(rootPath(), sessionId()),
+        getDataFolderPath: () => getSessionDataPath(rootPath(), sessionId()),
+        getWorkingDirectory: () => this.config.session?.workingDirectory,
+        permissionManager: this.permissionManager,
+        prerequisiteManager: this.prerequisiteManager,
+        getActiveSourceSlugs: () => Array.from(this.sourceManager.getActiveSlugs()),
+        getAllSourceSlugs: () => this.sourceManager.getAllSources().map(s => s.config.slug),
+        getPermissionMode: () => this.permissionManager.getPermissionMode(),
+        getPermissionRequest: () => this.onPermissionRequest,
+        getSourceActivationRequest: () => this.onSourceActivationRequest,
+        getRtkContext: () => this.buildRtkContext(),
+        onDebug: (msg) =>
+          this.debug(
+            // The raw __PERMISSION_BLOCK__ marker is parsed by SessionManager via
+            // indexOf/slice and must stay verbatim; everything else regains the
+            // PreToolUse(sessionId=…) prefix the inline Pi handler used to add.
+            msg.startsWith('__PERMISSION_BLOCK__')
+              ? msg
+              : `PreToolUse(sessionId=${sessionId()}): ${msg}`,
+          ),
+      },
+      options,
+    );
+  }
+
+  /**
+   * Deliver a user's answer to a parked permission prompt. Concrete here (like
+   * respondToUserQuestion) because the ToolPermissionDispatcher owns the pending
+   * map for every backend on the shared pipeline.
+   *
+   * "Always allow" whitelisting lives here because it needs the PermissionManager:
+   * curl/wget whitelist the destination domain, other non-dangerous commands
+   * whitelist the base command. This is divergence 5 (see ToolPermissionDispatcher):
+   * the old Pi ignored `alwaysAllow` by construction (its pending entry carried no
+   * command/baseCommand), so the flag silently did nothing there. Routing both
+   * backends through the shared pending map — which now carries command/baseCommand
+   * — makes "always allow" effective on Pi too. Deliberate move in the PERMISSIVE
+   * direction for Pi, matching Claude.
+   *
+   * Backends with their own permission model (Hermes/ACP) override this.
+   */
+  respondToPermission(requestId: string, allowed: boolean, alwaysAllow: boolean = false): void {
+    const dispatcher = this.toolPermissionDispatcher;
+    if (!dispatcher) return;
+    const pending = dispatcher.getPendingPermission(requestId);
+    if (!pending) return;
+
+    if (alwaysAllow && allowed && pending.baseCommand) {
+      if (pending.baseCommand === 'curl' || pending.baseCommand === 'wget') {
+        const domain = this.permissionManager.extractDomainFromNetworkCommand(pending.command ?? '');
+        if (domain) this.permissionManager.whitelistDomain(domain);
+      } else if (!this.permissionManager.isDangerousCommand(pending.baseCommand)) {
+        this.permissionManager.whitelistCommand(pending.baseCommand);
+      }
+    }
+
+    dispatcher.respondToPermission(requestId, allowed);
+  }
+
+  // ============================================================
   // Constructor
   // ============================================================
 
@@ -362,8 +461,29 @@ export abstract class BaseAgent implements AgentBackend {
       onDebug: (msg) => this.debug(msg),
     });
 
-    // PromptBuilder: builds context blocks for user messages
-    // memoryContextBuilder is injected below if memory feature flag is on
+    // Memory system: persistent cross-session memory (feature-flagged). Set up
+    // before the PromptBuilder so the context builder is passed via its
+    // constructor instead of mutated in afterward.
+    if (isMemoryEnabled()) {
+      try {
+        const { mkdirSync } = require('node:fs');
+        const { MemoryStore } = require('../memory/memory-store.ts') as typeof import('../memory/memory-store.ts');
+        const dbDir = join(homedir(), '.craft-agent');
+        mkdirSync(dbDir, { recursive: true });
+        const dbPath = join(dbDir, 'memory.db');
+        this.memoryStore = new MemoryStore(dbPath);
+        this.memoryStore.initialize();
+        this.memoryContextBuilder = new MemoryContextBuilder(this.memoryStore);
+        this.observationPipeline = new ObservationPipeline(
+          this.memoryStore,
+          this.runMiniCompletion.bind(this),
+        );
+      } catch (err) {
+        this.debug?.(`[memory] Failed to initialize: ${err}`);
+      }
+    }
+
+    // PromptBuilder: builds context blocks for user messages.
     this.promptBuilder = new PromptBuilder({
       workspace: config.workspace,
       session: config.session,
@@ -371,6 +491,7 @@ export abstract class BaseAgent implements AgentBackend {
       systemPromptPreset: config.systemPromptPreset,
       isHeadless: config.isHeadless,
       contextWindow: contextWindow,
+      memoryContextBuilder: this.memoryContextBuilder ?? undefined,
     });
 
     // PathProcessor: expands ~ and normalizes paths
@@ -392,28 +513,6 @@ export abstract class BaseAgent implements AgentBackend {
     // AutomationSystem: workspace-level automations from automations.json
     this.automationSystem = config.automationSystem;
 
-    // Memory system: persistent cross-session memory (feature-flagged)
-    if (isMemoryEnabled()) {
-      try {
-        const { mkdirSync } = require('node:fs');
-        const { MemoryStore } = require('../memory/memory-store.ts') as typeof import('../memory/memory-store.ts');
-        const dbDir = join(homedir(), '.craft-agent');
-        mkdirSync(dbDir, { recursive: true });
-        const dbPath = join(dbDir, 'memory.db');
-        this.memoryStore = new MemoryStore(dbPath);
-        this.memoryStore.initialize();
-        this.memoryContextBuilder = new MemoryContextBuilder(this.memoryStore);
-        this.observationPipeline = new ObservationPipeline(
-          this.memoryStore,
-          this.runMiniCompletion.bind(this),
-        );
-
-        // Inject into existing PromptBuilder (avoid recreating)
-        (this.promptBuilder as any).config.memoryContextBuilder = this.memoryContextBuilder;
-      } catch (err) {
-        this.debug?.(`[memory] Failed to initialize: ${err}`);
-      }
-    }
   }
 
   // ============================================================
@@ -490,7 +589,7 @@ export abstract class BaseAgent implements AgentBackend {
    *
    * @param signal - Optional AbortSignal for cancelling automation execution on abort
    */
-  protected async emitAutomationEvent(event: AutomationAgentEvent, input: SdkAutomationInput, signal?: AbortSignal): Promise<void> {
+  protected async emitAutomationEvent(event: AgentHookEvent, input: SdkAutomationInput, signal?: AbortSignal): Promise<void> {
     try {
       await this.automationSystem?.executeAgentEvent(event, input, signal);
     } catch (err) {
@@ -768,31 +867,6 @@ export abstract class BaseAgent implements AgentBackend {
    */
   setTemporaryClarifications(text: string | null): void {
     this.temporaryClarifications = text;
-  }
-
-  // ============================================================
-  // Manager Accessors (for advanced queries)
-  // ============================================================
-
-  /**
-   * Get SourceManager for advanced source state queries.
-   */
-  getSourceManager(): SourceManager {
-    return this.sourceManager;
-  }
-
-  /**
-   * Get PermissionManager for advanced permission queries.
-   */
-  getPermissionManager(): PermissionManager {
-    return this.permissionManager;
-  }
-
-  /**
-   * Get PromptBuilder for context building.
-   */
-  getPromptBuilder(): PromptBuilder {
-    return this.promptBuilder;
   }
 
   // ============================================================
@@ -1114,6 +1188,11 @@ ${formattedMessages}
     attachments?: FileAttachment[],
     options?: ChatOptions
   ): AsyncGenerator<AgentEvent> {
+    // Re-arm the prerequisite deadlock escape. The budget is per turn: a denied
+    // tool keeps the turn alive now, so counts left over from a previous turn
+    // would hand the model a free bypass on its first call here.
+    this.prerequisiteManager.beginTurn();
+
     const { skillPaths, cleanMessage, missingSkills } = this.extractSkillPaths(message);
     if (missingSkills.length > 0) {
       yield { type: 'error', message: `Skill(s) not found: ${missingSkills.join(', ')}` };
@@ -1210,11 +1289,6 @@ ${formattedMessages}
    * Check if currently processing a query.
    */
   abstract isProcessing(): boolean;
-
-  /**
-   * Respond to a pending permission request.
-   */
-  abstract respondToPermission(requestId: string, allowed: boolean, alwaysAllow?: boolean): void;
 
   /**
    * Run a simple text completion using the agent's auth infrastructure.

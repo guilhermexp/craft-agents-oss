@@ -3,16 +3,6 @@ import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { ChannelManager } from '../../channels/channel-manager'
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.channels.LIST,
-  RPC_NAMESPACES.channels.CREATE,
-  RPC_NAMESPACES.channels.UPDATE,
-  RPC_NAMESPACES.channels.DELETE,
-  RPC_NAMESPACES.channels.LIST_MESSAGES,
-  RPC_NAMESPACES.channels.LIST_DISPATCHES,
-  RPC_NAMESPACES.channels.SEND_MESSAGE,
-] as const
-
 export function registerChannelsHandlers(server: RpcServer, deps: HandlerDeps): void {
   const channelManager = new ChannelManager(server, deps)
 

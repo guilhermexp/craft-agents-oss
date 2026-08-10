@@ -112,6 +112,12 @@ export function createWebApi(options: WebApiOptions): {
     getSystemWarnings: () => Promise.resolve({ vcredistMissing: false }),
     isDebugMode: () => Promise.resolve(import.meta.env.DEV),
 
+    // Runtime perf monitor — main-process metrics have no meaning over the web
+    // adapter; the renderer-side collectors still work standalone.
+    perfSubscribe: async () => {},
+    perfUnsubscribe: async () => {},
+    onPerfSample: () => () => {},
+
     // Theme
     getSystemTheme: () => Promise.resolve(getSystemTheme()),
     onSystemThemeChange: (cb: (isDark: boolean) => void) => {
@@ -286,11 +292,11 @@ export function createWebApi(options: WebApiOptions): {
         // The server completes the flow when the callback arrives and pushes
         // auth status via WebSocket — the AuthRequestCard updates automatically.
         return { success: true }
-      } catch (err) {
+      } catch {
         if (popup && !popup.closed) popup.close()
         return {
           success: false,
-          error: err instanceof Error ? err.message : 'OAuth flow failed',
+          error: 'OAuth flow failed',
         }
       }
     },

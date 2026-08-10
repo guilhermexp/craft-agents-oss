@@ -5,7 +5,14 @@ export interface RightSidebarPreviewSelection {
   filePath: string
 }
 
-export type InlinePreviewLoadKind = 'image' | 'text' | 'unsupported'
+export type InlinePreviewLoadKind =
+  | 'image'
+  | 'text'
+  | 'pdf'
+  | 'video'
+  | 'html'
+  | 'office'
+  | 'unsupported'
 
 const INLINE_TEXT_PREVIEW_TYPES: ReadonlySet<FilePreviewType> = new Set([
   'code',
@@ -15,8 +22,23 @@ const INLINE_TEXT_PREVIEW_TYPES: ReadonlySet<FilePreviewType> = new Set([
   'excalidraw',
 ])
 
-export function isInlineFilePreviewType(type: FilePreviewType | null): boolean {
-  return type === 'image' || (type !== null && INLINE_TEXT_PREVIEW_TYPES.has(type))
+/** Office documents are rendered to HTML by the bundled OfficeCLI binary. */
+const INLINE_OFFICE_PREVIEW_TYPES: ReadonlySet<FilePreviewType> = new Set([
+  'spreadsheet',
+  'richDocument',
+  'presentation',
+])
+
+export function isInlineFilePreviewType(type: FilePreviewType | null): type is FilePreviewType {
+  if (type === null) return false
+  return (
+    type === 'image' ||
+    type === 'pdf' ||
+    type === 'video' ||
+    type === 'html' ||
+    INLINE_OFFICE_PREVIEW_TYPES.has(type) ||
+    INLINE_TEXT_PREVIEW_TYPES.has(type)
+  )
 }
 
 export function canPreviewFileInline(filePath: string): boolean {
@@ -32,9 +54,16 @@ export function getInlinePreviewLoadState(filePath: string): {
   if (!classification.canPreview || !isInlineFilePreviewType(classification.type)) {
     return { kind: 'unsupported', loading: false }
   }
-  return classification.type === 'image'
-    ? { kind: 'image', loading: true }
-    : { kind: 'text', loading: true }
+  if (classification.type === 'pdf') return { kind: 'pdf', loading: true }
+  if (classification.type === 'image') return { kind: 'image', loading: true }
+  // Video streams over media:// — nothing to fetch up front, so it never shows
+  // a loading state; the <video> element handles its own buffering.
+  if (classification.type === 'video') return { kind: 'video', loading: false }
+  if (classification.type === 'html') return { kind: 'html', loading: true }
+  if (INLINE_OFFICE_PREVIEW_TYPES.has(classification.type)) {
+    return { kind: 'office', loading: true }
+  }
+  return { kind: 'text', loading: true }
 }
 
 export function getActiveRightSidebarPreviewPath({

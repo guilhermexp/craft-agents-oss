@@ -14,6 +14,7 @@ import type {
   PlatformAdapter,
   PlatformConfig,
   PlatformType,
+  CredentialCodec,
 } from './types'
 
 export type MessageAdapterFactory = () => PlatformAdapter
@@ -26,12 +27,19 @@ interface ActiveAdapter {
 export class MessageAdapterRegistry {
   private readonly factories = new Map<PlatformType, MessageAdapterFactory>()
   private readonly active = new Map<string, ActiveAdapter>()
+  private readonly credentials = new Map<PlatformType, CredentialCodec>()
+  private readonly staticCaps = new Map<PlatformType, AdapterCapabilities>()
 
-  registerFactory(platform: PlatformType, factory: MessageAdapterFactory): void {
+  registerFactory(
+    platform: PlatformType,
+    factory: MessageAdapterFactory,
+    credentials?: CredentialCodec,
+  ): void {
     if (this.factories.has(platform)) {
       throw new Error(`Adapter factory already registered for platform: ${platform}`)
     }
     this.factories.set(platform, factory)
+    if (credentials) this.credentials.set(platform, credentials)
   }
 
   hasFactory(platform: PlatformType): boolean {
@@ -40,6 +48,27 @@ export class MessageAdapterRegistry {
 
   getRegisteredPlatforms(): PlatformType[] {
     return Array.from(this.factories.keys())
+  }
+
+  /** Credential codec for a platform, when it is credential-based. */
+  getCredentialCodec(platform: PlatformType): CredentialCodec | undefined {
+    return this.credentials.get(platform)
+  }
+
+  /**
+   * Static capabilities for a platform, read from a throwaway adapter instance
+   * (adapter constructors are side-effect-free) and cached. Undefined when no
+   * factory is registered. Lets callers gate capability-dependent operations
+   * before any workspace adapter is connected.
+   */
+  getStaticCapabilities(platform: PlatformType): AdapterCapabilities | undefined {
+    const cached = this.staticCaps.get(platform)
+    if (cached) return cached
+    const factory = this.factories.get(platform)
+    if (!factory) return undefined
+    const caps = factory().capabilities
+    this.staticCaps.set(platform, caps)
+    return caps
   }
 
   async initializeAdapter(options: {

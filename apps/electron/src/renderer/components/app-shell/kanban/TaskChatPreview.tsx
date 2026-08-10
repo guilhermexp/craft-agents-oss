@@ -1,6 +1,6 @@
 import { ArrowUp, Workflow } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { SessionStatus } from '@/config/session-status-config'
+import type { ResolvedSessionStatus } from '@/config/session-status-config'
 import { StatusBadge } from './StatusBadge'
 import { ModelChip } from './ModelChip'
 import { SubtaskRow } from './SubtaskRow'
@@ -9,7 +9,7 @@ import type { KanbanProject, KanbanSubtask } from './types'
 interface TaskChatPreviewProps {
   title: string
   project?: KanbanProject
-  status?: SessionStatus
+  status?: ResolvedSessionStatus
   /** Orchestrator model id for the task. */
   model: string
   /** The user's opening request. */

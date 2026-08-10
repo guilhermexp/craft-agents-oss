@@ -1,7 +1,7 @@
-import { useMemo } from "react"
+import { memo, useMemo } from "react"
 import { parseLabelEntry } from "@craft-agent/shared/labels"
 import { EntityListLabelBadge } from "@/components/ui/entity-list-label-badge"
-import { useSessionListContext } from "@/context/SessionListContext"
+import { useSessionListActions } from "@/context/SessionListContext"
 import type { SessionMeta } from "@/atoms/sessions"
 import type { LabelConfig } from "@craft-agent/shared/labels"
 
@@ -9,8 +9,12 @@ interface SessionBadgesProps {
   item: SessionMeta
 }
 
-export function SessionBadges({ item }: SessionBadgesProps) {
-  const ctx = useSessionListContext()
+/**
+ * Reads only the stable actions context, so search and selection churn no
+ * longer re-renders one badge set per row.
+ */
+export const SessionBadges = memo(function SessionBadges({ item }: SessionBadgesProps) {
+  const ctx = useSessionListActions()
 
   const resolvedLabels = useMemo(() => {
     if (!item.labels || item.labels.length === 0 || ctx.flatLabels.length === 0) return []
@@ -39,4 +43,4 @@ export function SessionBadges({ item }: SessionBadgesProps) {
       ))}
     </>
   )
-}
+})

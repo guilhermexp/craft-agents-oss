@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import type { InlinePreviewLoadKind } from '../right-sidebar-preview-state'
 
 interface PreviewSelection {
   sessionId: string
@@ -11,8 +12,10 @@ interface PreviewStateModule {
     sessionId: string | null
     isVisible: boolean
   }) => string | null
+  // Imported, not restated: a local copy of this union silently goes stale
+  // when the panel learns a new kind.
   getInlinePreviewLoadState: (filePath: string) => {
-    kind: 'image' | 'text' | 'unsupported'
+    kind: InlinePreviewLoadKind
     loading: boolean
   }
 }
@@ -44,14 +47,50 @@ describe('right sidebar preview state', () => {
     expect(previewState.getActiveRightSidebarPreviewPath({ selection, sessionId: 'session-a', isVisible: false })).toBeNull()
   })
 
-  it('resets loading for unsupported files while supported files start loading', async () => {
+  it('starts loading for every kind the panel renders, and only bails on the ones it cannot', async () => {
     const previewState = await loadPreviewStateModule()
     expect(previewState).not.toBeNull()
     if (!previewState) return
 
     expect(previewState.getInlinePreviewLoadState('/repo/notes.md')).toEqual({ kind: 'text', loading: true })
     expect(previewState.getInlinePreviewLoadState('/repo/image.png')).toEqual({ kind: 'image', loading: true })
-    expect(previewState.getInlinePreviewLoadState('/repo/report.pdf')).toEqual({ kind: 'unsupported', loading: false })
+    // The panel renders PDFs itself now; binary loading is its own kind.
+    expect(previewState.getInlinePreviewLoadState('/repo/report.pdf')).toEqual({ kind: 'pdf', loading: true })
+    expect(previewState.getInlinePreviewLoadState('/repo/recording.mp3')).toEqual({ kind: 'unsupported', loading: false })
+    expect(previewState.getInlinePreviewLoadState('/repo/archive.zip')).toEqual({ kind: 'unsupported', loading: false })
+  })
+
+  it('routes Office documents through the OfficeCLI render kind', async () => {
+    const previewState = await loadPreviewStateModule()
+    expect(previewState).not.toBeNull()
+    if (!previewState) return
+
+    expect(previewState.getInlinePreviewLoadState('/repo/budget.xlsx')).toEqual({ kind: 'office', loading: true })
+    expect(previewState.getInlinePreviewLoadState('/repo/report.docx')).toEqual({ kind: 'office', loading: true })
+    expect(previewState.getInlinePreviewLoadState('/repo/deck.pptx')).toEqual({ kind: 'office', loading: true })
+
+    // Formats OfficeCLI rejects must not reach the render path.
+    expect(previewState.getInlinePreviewLoadState('/repo/legacy.xls')).toEqual({ kind: 'unsupported', loading: false })
+    expect(previewState.getInlinePreviewLoadState('/repo/macro.xlsm')).toEqual({ kind: 'unsupported', loading: false })
+  })
+
+  it('renders .html as a page, not as source', async () => {
+    const previewState = await loadPreviewStateModule()
+    expect(previewState).not.toBeNull()
+    if (!previewState) return
+
+    expect(previewState.getInlinePreviewLoadState('/repo/page.html')).toEqual({ kind: 'html', loading: true })
+  })
+
+  it('does not pre-load video — the element streams it over media://', async () => {
+    const previewState = await loadPreviewStateModule()
+    expect(previewState).not.toBeNull()
+    if (!previewState) return
+
+    expect(previewState.getInlinePreviewLoadState('/repo/clip.mp4')).toEqual({ kind: 'video', loading: false })
+    expect(previewState.getInlinePreviewLoadState('/repo/clip.mov')).toEqual({ kind: 'video', loading: false })
+    // Codecs Chromium cannot decode still route to the system opener.
+    expect(previewState.getInlinePreviewLoadState('/repo/clip.mkv')).toEqual({ kind: 'unsupported', loading: false })
   })
 })
 

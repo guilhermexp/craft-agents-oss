@@ -2,16 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { loadSource, loadWorkspaceSources, getSourceCredentialManager } from '@craft-agent/shared/sources'
+import { toPublicSourceDtos } from '@craft-agent/shared/sources/public-source-dto'
 import { createPendingFlow } from '@craft-agent/shared/auth'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
-
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.oauth.START,
-  RPC_NAMESPACES.oauth.COMPLETE,
-  RPC_NAMESPACES.oauth.CANCEL,
-  RPC_NAMESPACES.oauth.REVOKE,
-] as const
 
 /**
  * Complete an OAuth flow: validate state, exchange code for tokens, store credentials.
@@ -32,7 +26,7 @@ export async function completeOAuthFlow(opts: {
   logger: { info(msg: string): void; }
   clientId?: string
   workspaceId?: string | null
-}): Promise<{ success: boolean; error?: string; email?: string }> {
+}): Promise<{ success: boolean; error?: string; errorCode?: 'oauth-token-exchange-failed'; email?: string }> {
   const { code, state, flowStore, credManager, sessionManager, pushSourcesChanged, logger } = opts
 
   const flow = flowStore.getByState(state)
@@ -55,6 +49,14 @@ export async function completeOAuthFlow(opts: {
     redirectUri: flow.redirectUri,
   })
 
+  const publicResult = result.success
+    ? { success: true as const, email: result.email }
+    : {
+        success: false as const,
+        error: 'OAuth authentication failed',
+        errorCode: 'oauth-token-exchange-failed' as const,
+      }
+
   flowStore.remove(state)
 
   // If this was triggered from a session auth card, complete it
@@ -62,17 +64,17 @@ export async function completeOAuthFlow(opts: {
     await sessionManager.completeAuthRequest(flow.sessionId, {
       requestId: flow.authRequestId,
       sourceSlug: flow.sourceSlug,
-      success: result.success,
-      email: result.email,
-      error: result.error,
+      success: publicResult.success,
+      email: publicResult.email,
+      error: publicResult.error,
     })
   }
 
   // Push source status update to all clients in this workspace
   pushSourcesChanged(flow.workspaceId)
 
-  logger.info(`[OAuth] Flow complete for ${flow.sourceSlug} (success=${result.success})`)
-  return result
+  logger.info(`[OAuth] Flow complete for ${flow.sourceSlug} (success=${publicResult.success})`)
+  return publicResult
 }
 
 export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): void {
@@ -150,7 +152,7 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
       pushSourcesChanged: (workspaceId) => {
         const ws = getWorkspaceByNameOrId(workspaceId)
         const sources = ws ? loadWorkspaceSources(ws.rootPath) : []
-        pushTyped(server, RPC_NAMESPACES.sources.CHANGED, { to: 'workspace', workspaceId }, workspaceId, sources)
+        pushTyped(server, RPC_NAMESPACES.sources.CHANGED, { to: 'workspace', workspaceId }, workspaceId, toPublicSourceDtos(sources))
       },
       logger: log,
       clientId: ctx.clientId,
@@ -196,7 +198,7 @@ export function registerOAuthHandlers(server: RpcServer, deps: HandlerDeps): voi
 
     // Push source status update
     const revokeSources = loadWorkspaceSources(workspace.rootPath)
-    pushTyped(server, RPC_NAMESPACES.sources.CHANGED, { to: 'workspace', workspaceId: ctx.workspaceId }, ctx.workspaceId, revokeSources)
+    pushTyped(server, RPC_NAMESPACES.sources.CHANGED, { to: 'workspace', workspaceId: ctx.workspaceId }, ctx.workspaceId, toPublicSourceDtos(revokeSources))
 
     log.info(`[OAuth] Revoked credentials for ${sourceSlug}`)
     return { success: true }

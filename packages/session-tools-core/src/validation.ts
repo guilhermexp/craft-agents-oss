@@ -167,6 +167,16 @@ export function zodErrorToIssues(error: z.ZodError, filePath: string): Validatio
 export const SLUG_REGEX = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
 
 /**
+ * Skill slugs (SKILL.md folder names) are validated more permissively than the
+ * strict SLUG_REGEX above: leading/trailing hyphens are allowed (e.g. an
+ * existing `skills/-draft/` folder). Skill validation historically used this
+ * rule, and tightening it would make PreToolUse block Write/Edit on skill files
+ * whose folder name has an edge hyphen. Source/connection slugs keep the strict
+ * `validateSlug`/`SLUG_REGEX`; this stays scoped to skills only.
+ */
+const SKILL_SLUG_REGEX = /^[a-z0-9-]+$/;
+
+/**
  * Validate a slug format
  */
 export function validateSlug(slug: string): ValidationResult {
@@ -215,9 +225,19 @@ export function validateSkillContent(markdownContent: string, slug: string): Val
   const errors: ValidationIssue[] = [];
   const warnings: ValidationIssue[] = [];
 
-  // 1. Validate slug format
-  const slugResult = validateSlug(slug);
-  errors.push(...slugResult.errors);
+  // 1. Validate slug format (permissive skill rule — see SKILL_SLUG_REGEX)
+  if (!SKILL_SLUG_REGEX.test(slug)) {
+    const suggestedSlug = slug
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .replace(/-+/g, '-');
+    errors.push({
+      path: 'slug',
+      message: 'Slug must be lowercase alphanumeric with hyphens',
+      suggestion: `Rename folder to '${suggestedSlug || 'valid-slug-name'}'`,
+    });
+  }
 
   // 2. Parse frontmatter
   let frontmatter: unknown;

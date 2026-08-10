@@ -365,14 +365,13 @@ Return `{ imported, skipped }` counts only — never the cookie values (R8).
 
 **Files:**
 - `packages/shared/src/protocol/channels.ts` (modify — `IMPORT_COOKIES` channel)
-- `apps/electron/src/main/handlers/browser.ts` (modify — `HANDLED_CHANNELS` + `server.handle`)
-- `apps/electron/src/transport/channel-map.ts` (modify)
-- `apps/electron/src/shared/types.ts` (modify — `browserPane.importCookies` signature)
+- `apps/electron/src/main/handlers/browser.ts` (modify — `server.handle`)
+- `apps/electron/src/shared/types.ts` (modify — add `browserPane.importCookies` leaf to `RPC_CONTRACT`; derives `ElectronAPI` + `CHANNEL_MAP`)
 - `apps/electron/src/renderer/components/browser/BrowserProfilePicker.tsx` (modify — button)
 - `packages/shared/src/i18n/locales/en.json` + `pt-BR.json` (modify — strings)
 
 **Approach:**
-Follow the existing four-file RPC recipe already used by `browserPane.createProfile` /
+Follow the existing three-file RPC recipe already used by `browserPane.createProfile` /
 `deleteProfile`; the renderer calls `window.electronAPI.browserPane.importCookies(...)` exactly as
 `useBrowserProfiles.ts` does today. Put the button in `BrowserProfilePicker` next to the existing
 create/delete actions rather than adding a settings subpage — the profile picker is where profile
@@ -391,7 +390,7 @@ the "button invokes importCookies with the selected profileId" case there.
   their Chrome sites"; "the UI states plainly that the agent cannot drive that profile".
 - artifacts: `IMPORT_COOKIES` channel; button in `BrowserProfilePicker.tsx`.
 - key_links: `grep -n "IMPORT_COOKIES" packages/shared/src/protocol/channels.ts`;
-  `grep -n "importCookies" apps/electron/src/transport/channel-map.ts`
+  `grep -n "importCookies" apps/electron/src/shared/types.ts`
 
 ---
 
@@ -495,7 +494,7 @@ untouched by this plan — KTD4 keeps cookies out of `CredentialManager` deliber
   `packages/session-tools-core/src/tool-defs.ts`; partition construction in
   `apps/electron/src/main/browser-profile-resolver.ts`; agent browser wiring in
   `packages/server-core/src/sessions/SessionManager.ts`; RPC recipe in
-  `apps/electron/src/main/handlers/browser.ts` + `apps/electron/src/transport/channel-map.ts`.
+  `apps/electron/src/main/handlers/browser.ts` + `apps/electron/src/shared/types.ts` (`RPC_CONTRACT`).
 - Verified absence: no `.cookies.` usage anywhere in the repo (greenfield); no
   `userOnly`/`agentAccessible` profile concept exists today.
 - Brain: `[[patterns/agent-browser-partition-isolation]]` (auth cookies in an agent-driven partition

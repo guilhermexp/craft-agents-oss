@@ -94,6 +94,49 @@ describe('session tool filtering helpers', () => {
     expect(configValidate?.exposure).toBe('native-and-mcp');
   });
 
+  it('keeps the workspace_objects discriminated union MCP-compatible without weakening canonical validation', () => {
+    const defs = getToolDefsAsJsonSchema({
+      prefix: 'mcp__session__',
+      includeWorkspaceObjects: true,
+    });
+    const workspaceObjects = defs.find(def => def.name === 'mcp__session__workspace_objects');
+    const branches = workspaceObjects?.inputSchema.anyOf as Array<{
+      properties?: { action?: { const?: unknown } };
+    }> | undefined;
+
+    expect(workspaceObjects?.inputSchema.type).toBe('object');
+    expect(branches?.map(branch => branch.properties?.action?.const)).toEqual([
+      'define-object',
+      'upsert-entries',
+      'delete-entries',
+      'upsert-view',
+      'get-object',
+      'list-objects',
+      'repair-projection',
+      'list-relation-options',
+      'query-object',
+    ]);
+
+    const serializedInputSchema = JSON.stringify(workspaceObjects?.inputSchema);
+    expect(serializedInputSchema).toContain('"items":{"$ref":"#/');
+    expect(serializedInputSchema).toContain('"additionalProperties":{"$ref":"#/');
+    expect(serializedInputSchema).not.toContain('"items":{}');
+
+    const canonicalDef = SESSION_TOOL_DEFS.find(def => def.name === 'workspace_objects');
+    expect(canonicalDef).toBeDefined();
+    if (!canonicalDef) return;
+
+    expect(validateSessionToolInput(canonicalDef, {
+      action: 'get-object',
+      objectId: 'object_people',
+    })).toEqual({ action: 'get-object', objectId: 'object_people' });
+    expect(() => validateSessionToolInput(canonicalDef, {
+      action: 'get-object',
+      objectId: 'object_people',
+      entries: [],
+    })).toThrow();
+  });
+
   it('validates inputs and outputs through the canonical schemas', () => {
     const def = SESSION_TOOL_DEFS.find(tool => tool.name === 'config_validate');
     expect(def).toBeDefined();

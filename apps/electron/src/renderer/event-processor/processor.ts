@@ -13,6 +13,7 @@
  */
 
 import type { SessionState, AgentEvent, ProcessResult } from './types'
+import { findToolMessage } from './helpers'
 import { handleTextDelta, handleTextComplete } from './handlers/text'
 import { handleToolStart, handleToolResult, handleTaskBackgrounded, handleShellBackgrounded, handleTaskProgress, handleTaskCompleted } from './handlers/tool'
 import {
@@ -51,6 +52,13 @@ import {
 } from './handlers/session'
 
 /**
+ * Canonical tool name for the interactive questionnaire. Kept as a renderer-local
+ * constant (the tool name is referenced independently across backend/UI layers)
+ * so this pure reducer stays free of UI/agent module imports.
+ */
+const ASK_USER_QUESTION_TOOL_NAME = 'AskUserQuestion'
+
+/**
  * Process an agent event, returning new state and any side effects
  *
  * This is a PURE FUNCTION - no side effects, always returns new state.
@@ -76,13 +84,36 @@ export function processEvent(
     }
 
     case 'tool_start': {
+      // Emit question_pending only on the FIRST tool_start for an AskUserQuestion
+      // call (the SDK streams two: partial then full input) so the sidebar
+      // indicator + notification fire once per parked question.
+      const isNewQuestion =
+        event.toolName === ASK_USER_QUESTION_TOOL_NAME &&
+        findToolMessage(state.session.messages, event.toolUseId) === -1
       const newState = handleToolStart(state, event)
-      return { state: newState, effects: [] }
+      return {
+        state: newState,
+        effects: isNewQuestion
+          ? [{ type: 'question_pending', sessionId: event.sessionId, toolUseId: event.toolUseId }]
+          : [],
+      }
     }
 
     case 'tool_result': {
+      // A resolved AskUserQuestion clears its sidebar indicator. tool_result may
+      // omit toolName, so fall back to the parked tool message's name.
+      const existingIndex = findToolMessage(state.session.messages, event.toolUseId)
+      const wasQuestion =
+        event.toolName === ASK_USER_QUESTION_TOOL_NAME ||
+        (existingIndex !== -1 &&
+          state.session.messages[existingIndex]?.toolName === ASK_USER_QUESTION_TOOL_NAME)
       const newState = handleToolResult(state, event)
-      return { state: newState, effects: [] }
+      return {
+        state: newState,
+        effects: wasQuestion
+          ? [{ type: 'question_resolved', sessionId: event.sessionId, toolUseId: event.toolUseId }]
+          : [],
+      }
     }
 
     case 'task_backgrounded': {

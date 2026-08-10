@@ -16,23 +16,6 @@ import {
   requestClientOpenFileDialog,
 } from '@craft-agent/server-core/transport'
 
-export const CORE_HANDLED_CHANNELS = [
-  RPC_NAMESPACES.theme.GET_SYSTEM_PREFERENCE,
-  RPC_NAMESPACES.system.VERSIONS,
-  RPC_NAMESPACES.system.HOME_DIR,
-  RPC_NAMESPACES.system.IS_DEBUG_MODE,
-  RPC_NAMESPACES.debug.LOG,
-  RPC_NAMESPACES.shell.OPEN_URL,
-  RPC_NAMESPACES.shell.OPEN_FILE,
-  RPC_NAMESPACES.shell.SHOW_IN_FOLDER,
-  RPC_NAMESPACES.releaseNotes.GET,
-  RPC_NAMESPACES.releaseNotes.GET_LATEST_VERSION,
-  RPC_NAMESPACES.git.GET_BRANCH,
-  RPC_NAMESPACES.gitbash.CHECK,
-  RPC_NAMESPACES.gitbash.BROWSE,
-  RPC_NAMESPACES.gitbash.SET_PATH,
-] as const
-
 interface ParsedInternalDeepLink {
   navigation?: {
     view?: string

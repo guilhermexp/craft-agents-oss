@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { Check, Globe, Copy, RefreshCw, Link2Off } from 'lucide-react'
 import { toast } from 'sonner'
 import type { MenuComponents } from '@/components/ui/menu-context'
-import { getStatusIconStyle, type SessionStatusId, type SessionStatus } from '@/config/session-status-config'
+import { getStatusIconStyle, type SessionStatusId, type ResolvedSessionStatus } from '@/config/session-status-config'
 import { sortLabelsForDisplay, type LabelConfig } from '@craft-agent/shared/labels'
 import { LabelIcon } from '@/components/ui/label-icon'
 
@@ -70,7 +70,7 @@ export function ShareMenuItems({ sessionId, sharedUrl, menu }: ShareMenuItemsPro
 }
 
 export interface StatusMenuItemsProps {
-  sessionStatuses: SessionStatus[]
+  sessionStatuses: ResolvedSessionStatus[]
   activeStateId?: SessionStatusId | null
   onSelect: (stateId: SessionStatusId) => void
   menu: Pick<MenuComponents, 'MenuItem'>

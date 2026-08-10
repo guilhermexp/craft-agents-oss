@@ -18,7 +18,8 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { AnimatePresence, LazyMotion, m, domAnimation } from 'motion/react'
-import { File, Folder, FolderOpen, FileText, Image, FileCode, ChevronRight, ExternalLink, Music, Video } from 'lucide-react'
+import { ChevronRight, ExternalLink, FolderOpen } from 'lucide-react'
+import { MaterialFileIcon, MaterialFolderIcon } from '@/components/icons/MaterialFileIcon'
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -40,7 +41,11 @@ export interface SessionFilesSectionProps {
   sessionFolderPath?: string
   /** Hide section header when embedded inside compact containers (e.g. popovers) */
   hideHeader?: boolean
-  /** Optional inline preview target used when embedded in the persistent right sidebar. */
+  /**
+   * Optional inline preview target used when embedded in the persistent right
+   * sidebar. Every open earns a tab of its own - opening a file the panel is
+   * already showing just selects it back.
+   */
   onPreviewFileInline?: (path: string) => void
 }
 
@@ -114,40 +119,17 @@ function filterSessionFilesForPanel(entries: SessionFile[], parentName?: string)
 }
 
 /**
- * Get icon for file based on name/type (14x14px matching sidebar)
+ * Icon for a tree row, from the Material Icon Theme mapping.
+ *
+ * The colour carries the file type, so a long tree is scannable without
+ * reading extensions - `config.json` and `notes.md` no longer share a glyph.
  */
 function getFileIcon(file: SessionFile, isExpanded?: boolean) {
-  const iconClass = "size-3.5 text-muted-foreground"
+  const iconClass = "size-3.5"
 
-  if (file.type === 'directory') {
-    return isExpanded
-      ? <FolderOpen className={iconClass} />
-      : <Folder className={iconClass} />
-  }
-
-  const ext = file.name.split('.').pop()?.toLowerCase()
-
-  if (ext === 'md' || ext === 'markdown') {
-    return <FileText className={iconClass} />
-  }
-
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico'].includes(ext || '')) {
-    return <Image className={iconClass} />
-  }
-
-  if (['mp3', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'flac'].includes(ext || '')) {
-    return <Music className={iconClass} />
-  }
-
-  if (['mp4', 'mov', 'webm', 'avi', 'mkv'].includes(ext || '')) {
-    return <Video className={iconClass} />
-  }
-
-  if (['ts', 'tsx', 'js', 'jsx', 'json', 'yaml', 'yml', 'py', 'rb', 'go', 'rs'].includes(ext || '')) {
-    return <FileCode className={iconClass} />
-  }
-
-  return <File className={iconClass} />
+  return file.type === 'directory'
+    ? <MaterialFolderIcon folderName={file.name} isOpen={isExpanded ?? false} className={iconClass} />
+    : <MaterialFileIcon fileName={file.name} className={iconClass} />
 }
 
 /**
@@ -274,6 +256,15 @@ const FileThumbnail = memo(function FileThumbnail({ file }: { file: SessionFile 
   )
 })
 
+// Folder expand/collapse animation. Hoisted to module scope so every tree row
+// reuses one object identity per prop instead of allocating fresh literals on
+// each render (the render monitor flagged initial/animate/exit/transition as
+// changing every render across thousands of rows).
+const FILE_TREE_EXPAND_INITIAL = { height: 0, opacity: 0, marginTop: 0, marginBottom: 0 } as const
+const FILE_TREE_EXPAND_ANIMATE = { height: 'auto', opacity: 1, marginTop: 2, marginBottom: 8 } as const
+const FILE_TREE_EXPAND_EXIT = { height: 0, opacity: 0, marginTop: 0, marginBottom: 0 } as const
+const FILE_TREE_EXPAND_TRANSITION = { duration: 0.2, ease: 'easeInOut' } as const
+
 interface FileTreeItemProps {
   file: SessionFile
   depth: number
@@ -294,7 +285,7 @@ interface FileTreeItemProps {
  * - Framer-motion staggered animation for expand/collapse
  * - Chevron shown on hover, icon hidden
  */
-function FileTreeItem({
+function FileTreeItemImpl({
   file,
   depth,
   expandedPaths,
@@ -417,10 +408,10 @@ function FileTreeItem({
         <AnimatePresence initial={false}>
           {isExpanded && (
             <m.div
-              initial={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
-              animate={{ height: 'auto', opacity: 1, marginTop: 2, marginBottom: 8 }}
-              exit={{ height: 0, opacity: 0, marginTop: 0, marginBottom: 0 }}
-              transition={{ duration: 0.2, ease: 'easeInOut' }}
+              initial={FILE_TREE_EXPAND_INITIAL}
+              animate={FILE_TREE_EXPAND_ANIMATE}
+              exit={FILE_TREE_EXPAND_EXIT}
+              transition={FILE_TREE_EXPAND_TRANSITION}
               className="overflow-hidden"
             >
               {/* Wrapper div matches LeftSidebar recursive structure - min-w-0 allows shrinking */}
@@ -459,6 +450,13 @@ function FileTreeItem({
   // in a plain div by the parent. No entrance stagger — see the note above.
   return <>{innerContent}</>
 }
+
+// Memoized so a parent re-render (file-watch reload, loading toggle) or a
+// sibling folder toggle does not re-render every row: with stable callbacks and
+// a stable expandedPaths Set identity, unchanged rows now bail out. The
+// recursive child elements above reference this memoized identity, not the raw
+// impl, so nested rows are memoized too.
+const FileTreeItem = memo(FileTreeItemImpl)
 
 /**
  * Section displaying session files as a tree
@@ -598,13 +596,10 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
   }, [openFile])
 
   const handleFileDoubleClick = useCallback((file: SessionFile) => {
-    if (file.type === 'directory') {
-      // eslint-disable-next-line craft-links/no-direct-file-open -- directories can't be previewed in-app
-      window.electronAPI.openFile(file.path)
-    } else {
-      onOpenFile(file.path)
-    }
-  }, [onOpenFile])
+    // A double-click is two clicks: the first already opened the file. Repeating
+    // it is deliberately idempotent so the gesture cannot spawn a second tab.
+    openFile(file)
+  }, [openFile])
 
   // Toggle folder expanded state
   const handleToggleExpand = useCallback((path: string) => {
@@ -796,8 +791,12 @@ export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInlin
   }, [openFile])
 
   const handleFileDoubleClick = useCallback((file: SessionFile) => {
-    onOpenFile(file.path)
-  }, [onOpenFile])
+    openFile(file)
+  }, [openFile])
+
+  const handleRevealInFileManager = useCallback((path: string) => {
+    window.electronAPI.showInFolder(path)
+  }, [])
 
   if (!sessionId) return null
 
@@ -827,7 +826,7 @@ export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInlin
                   onDirectoryExpand={handleDirectoryExpand}
                   onFileClick={handleFileClick}
                   onFileDoubleClick={handleFileDoubleClick}
-                  onRevealInFileManager={(path) => window.electronAPI.showInFolder(path)}
+                  onRevealInFileManager={handleRevealInFileManager}
                 />
               ))}
             </nav>

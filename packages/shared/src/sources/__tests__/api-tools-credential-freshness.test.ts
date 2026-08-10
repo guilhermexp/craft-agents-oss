@@ -23,6 +23,11 @@ interface MinimalTool {
   handler: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
+interface MinimalToolResult {
+  content: Array<{ type: 'text'; text: string }>;
+  isError?: boolean;
+}
+
 function makeBearerConfig(): ApiConfig {
   return {
     name: 'test-bearer',
@@ -59,6 +64,37 @@ function captureFetch(): {
 }
 
 describe('createApiTool: credential freshness', () => {
+  test('fails closed without returning provider response or caught request details', async () => {
+    const originalFetch = globalThis.fetch;
+    const tool = createApiTool(makeBearerConfig(), 'request-secret') as unknown as MinimalTool;
+    const providerFailure = 'token=provider-secret client_secret=client-secret Authorization: Bearer auth-secret';
+
+    try {
+      globalThis.fetch = (async () => new Response(providerFailure, { status: 502 })) as unknown as typeof fetch;
+      const providerResult = await tool.handler({ path: '/private', method: 'GET' }) as MinimalToolResult;
+      expect(providerResult).toEqual({
+        content: [{ type: 'text', text: 'API request failed (status 502)' }],
+        isError: true,
+      });
+
+      globalThis.fetch = (async () => {
+        throw new Error('token=network-secret https://user:password@example.test?session_token=url-secret');
+      }) as unknown as typeof fetch;
+      const networkResult = await tool.handler({ path: '/private', method: 'GET' }) as MinimalToolResult;
+      expect(networkResult).toEqual({
+        content: [{ type: 'text', text: 'API request failed' }],
+        isError: true,
+      });
+
+      const evidence = JSON.stringify([providerResult, networkResult]);
+      for (const secret of ['provider-secret', 'client-secret', 'auth-secret', 'network-secret', 'user:password', 'url-secret']) {
+        expect(evidence).not.toContain(secret);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('bearer auth — getter is called on every request, latest value wins', async () => {
     let currentToken = 'token-A';
     const getter = async () => currentToken;

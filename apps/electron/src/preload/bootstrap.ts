@@ -21,6 +21,7 @@ import { WsRpcClient, type TransportConnectionState } from '../transport/client'
 import { RoutedClient } from '../transport/routed-client'
 import { buildClientApi } from '../transport/build-api'
 import { CHANNEL_MAP } from '../transport/channel-map'
+import { createRpcProbe } from './rpc-probe'
 import { createCallbackServer } from '@craft-agent/shared/auth/callback-server'
 import { CHATGPT_OAUTH_CONFIG } from '@craft-agent/shared/auth/chatgpt-oauth-config'
 import {
@@ -36,6 +37,7 @@ import type { ConfirmDialogSpec, FileDialogSpec, BrowserCapabilityRequest } from
 import type { RpcClient } from '@craft-agent/server-core/transport'
 import type { RemoteServerConfig } from '@craft-agent/core/types'
 import type { ElectronAPI } from '../shared/types'
+import { getPublicOAuthFlowError, getPublicOAuthProviderError } from './oauth-public-errors'
 
 // ---------------------------------------------------------------------------
 // Client interface — common surface for both RoutedClient and WsRpcClient
@@ -191,7 +193,12 @@ client.handleCapability(CLIENT_BROWSER_INVOKE, async (req: BrowserCapabilityRequ
 // Build ElectronAPI proxy
 // ---------------------------------------------------------------------------
 
-const api = buildClientApi(client, CHANNEL_MAP, (ch) => client.isChannelAvailable(ch))
+// The probe is always installed but inert: while the perf overlay is off it is
+// a single boolean test per RPC call.
+const rpcProbe = createRpcProbe(client)
+contextBridge.exposeInMainWorld('craftPerfRpc', rpcProbe.bridge)
+
+const api = buildClientApi(rpcProbe.client, CHANNEL_MAP, (ch) => client.isChannelAvailable(ch))
 
 ;(api as any).getRuntimeEnvironment = (): 'electron' | 'web' => 'electron'
 
@@ -302,9 +309,11 @@ client.onConnectionStateChanged((state) => {
 
     // 5. Check for errors from the provider
     if (callback.query.error) {
-      const error = callback.query.error_description || callback.query.error
       await client.invoke('oauth:cancel', { flowId, state })
-      return { success: false, error }
+      return {
+        success: false,
+        error: getPublicOAuthProviderError(callback.query.error, callback.query.error_description),
+      }
     }
 
     const code = callback.query.code
@@ -323,7 +332,7 @@ client.onConnectionStateChanged((state) => {
     }
     return {
       success: false,
-      error: err instanceof Error ? err.message : 'OAuth flow failed',
+      error: getPublicOAuthFlowError(err),
     }
   } finally {
     callbackServer?.close()

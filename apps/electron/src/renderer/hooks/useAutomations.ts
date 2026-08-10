@@ -9,7 +9,7 @@
  * - Syncing automations to Jotai atom for cross-component access
  */
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSetAtom } from 'jotai'
 import { toast } from 'sonner'
@@ -205,7 +205,7 @@ export function useAutomations(
       })
   }, [activeWorkspaceId])
 
-  return {
+  return useMemo(() => ({
     automations,
     automationTestResults,
     automationPendingDelete,
@@ -218,5 +218,18 @@ export function useAutomations(
     confirmDeleteAutomation,
     getAutomationHistory,
     handleReplayAutomation,
-  }
+  }), [
+    automations,
+    automationTestResults,
+    automationPendingDelete,
+    pendingDeleteAutomation,
+    setAutomationPendingDelete,
+    handleTestAutomation,
+    handleToggleAutomation,
+    handleDuplicateAutomation,
+    handleDeleteAutomation,
+    confirmDeleteAutomation,
+    getAutomationHistory,
+    handleReplayAutomation,
+  ])
 }

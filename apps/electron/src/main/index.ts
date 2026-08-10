@@ -7,15 +7,26 @@ import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, Notifica
 import { randomUUID } from 'crypto'
 import { homedir } from 'os'
 
-// Initialize i18n for main process (menus, dialogs, etc.)
-import { setupI18n, i18n } from '@craft-agent/shared/i18n'
+// Initialize i18n for main process (menus, dialogs, etc.), then hydrate the
+// language from disk: there is no LanguageDetector here, so without this the
+// main process stays on the `en` fallback after every restart.
+import { setupI18n } from '@craft-agent/shared/i18n'
+import { applyUiLanguageChange, hydrateMainI18nFromPreferences } from './i18n-bootstrap'
 setupI18n()
+// A rejection here must never take the app down over a menu language: Node
+// throws on unhandled rejections. The logger is imported lazily because this
+// runs before the module-level logger import below.
+void hydrateMainI18nFromPreferences().catch(async (error) => {
+  const { mainLog } = await import('./logger')
+  mainLog.warn('[i18n] failed to hydrate main-process language from preferences', error)
+})
 
 import { join, delimiter } from 'path'
 import { existsSync, readFileSync, writeFileSync, chmodSync } from 'fs'
 import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { SessionManager, setSessionPlatform, setSessionRuntimeHooks } from '@craft-agent/server-core/sessions'
 import { registerAllRpcHandlers } from './handlers/index'
+import { cleanupPerfClient } from './handlers/perf'
 import { publishHermesRuntimeEnv } from './handlers/hermes-runtime'
 import { HermesDashboardHost } from './hermes-dashboard-host'
 import {
@@ -23,10 +34,11 @@ import {
   shutdownHermesDashboard,
 } from '@craft-agent/server-core/handlers/rpc/hermes'
 import { registerCoreRpcHandlers } from '@craft-agent/server-core/handlers/rpc'
-import { transferManager } from '@craft-agent/server-core/services'
+import { transferManager, shutdownOfficeLiveServers } from '@craft-agent/server-core/services'
 import type { PlatformServices } from '../runtime/platform'
 import { createElectronPlatform } from './platform'
 import type { HandlerDeps } from './handlers/handler-deps'
+import { createComposioCatalogFetcher } from '@craft-agent/server-core/handlers/rpc/sources'
 import { bootstrapServer, releaseServerLock } from '@craft-agent/server-core/bootstrap'
 import { createMessagingBootstrap, type MessagingBootstrapHandle } from '@craft-agent/messaging-gateway'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
@@ -36,7 +48,7 @@ import { setSearchPlatform, setImageProcessor } from '@craft-agent/server-core/s
 import { createApplicationMenu } from './menu'
 import { WindowManager } from './window-manager'
 import { loadWindowState, saveWindowState } from './window-state'
-import { getLlmConnection, getWorkspaces, getWorkspaceByNameOrId, loadStoredConfig, addWorkspace, saveConfig } from '@craft-agent/shared/config'
+import { getLlmConnection, getWorkspaces, getWorkspaceByNameOrId, loadStoredConfig, addWorkspace, saveConfig, getDefaultWorkspaceId } from '@craft-agent/shared/config'
 import { getDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
 import { initializeDocs } from '@craft-agent/shared/docs'
 import { initializeReleaseNotes } from '@craft-agent/shared/release-notes'
@@ -47,6 +59,8 @@ import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
 import { initializeNativeAgentHostRuntime, setPowerShellValidatorRoot } from '@craft-agent/shared/agent'
 import { handleDeepLink } from './deep-link'
 import { BrowserPaneManager } from './browser-pane-manager'
+import { relaunchAfterSealingCaptures, shutdownMeetingCaptures } from './meetings/meeting-service'
+import { shutdownCraftRecordings } from './handlers/meetings'
 import { OAuthFlowStore } from '@craft-agent/shared/auth'
 import { registerMediaHandler, registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath, getMessagingGatewayLogFilePath, messagingGatewayLog } from './logger'
@@ -327,7 +341,16 @@ async function createInitialWindows(): Promise<void> {
     }
   }
 
-  // Default: open window for first workspace
+  // No saved window state to restore: prefer the pinned default-on-launch
+  // workspace, falling back to the first workspace. Multi-window restore above
+  // still wins whenever saved state exists, so pinning never collapses a
+  // several-window session down to one.
+  const pinnedDefaultId = getDefaultWorkspaceId()
+  if (pinnedDefaultId && validWorkspaceIds.includes(pinnedDefaultId)) {
+    windowManager.createWindow({ workspaceId: pinnedDefaultId })
+    mainLog.info(`Opened pinned default workspace: ${pinnedDefaultId}`)
+    return
+  }
   windowManager.createWindow({ workspaceId: workspaces[0].id })
   mainLog.info(`Created window for first workspace: ${workspaces[0].name}`)
 }
@@ -630,6 +653,7 @@ app.whenReady().then(async () => {
         },
         bindRpcServer: (sm, server) => sm.setRpcServer(server),
         createHandlerDeps: ({ sessionManager: sm, platform: p, oauthFlowStore: ofs }) => {
+          const composioCatalogEndpoint = process.env.CRAFT_COMPOSIO_CATALOG_URL
           // The messaging handle is built here because it needs sessionManager.
           // The WS publisher is attached after bootstrapServer resolves (via
           // handle.setPublisher) because wsServer isn't available yet.
@@ -665,6 +689,9 @@ app.whenReady().then(async () => {
             hermesDashboardHost: hermesDashboardHost ?? undefined,
             oauthFlowStore: ofs,
             messagingRegistry: messagingHandle.registry,
+            composioCatalog: composioCatalogEndpoint
+              ? { fetchPage: createComposioCatalogFetcher(composioCatalogEndpoint) }
+              : undefined,
           }
         },
         // Headless: register only core handlers (no GUI handlers for browser, settings, etc.)
@@ -702,6 +729,7 @@ app.whenReady().then(async () => {
           }
           instance.sessionManager.cleanupClientSessionState(clientId)
           void transferManager.cleanupClientTransfers(clientId)
+          cleanupPerfClient(clientId)
         },
       })
 
@@ -868,15 +896,25 @@ app.whenReady().then(async () => {
         }
       })
 
-      // App relaunch (for server config changes — NOT an update install)
-      ipcMain.handle('app:relaunch', () => {
-        app.relaunch()
-        app.exit(0)
+      // App relaunch (for server config changes — NOT an update install).
+      // `app.exit(0)` não emite `before-quit`, então o seal bounded das capturas
+      // ativas acontece aqui, antes de relançar. A gravação craft é selada
+      // primeiro: é fs local e rápida, e não depende do Hermes.
+      ipcMain.handle('app:relaunch', async () => {
+        const craftOutcome = await shutdownCraftRecordings()
+        if (craftOutcome !== 'idle') {
+          mainLog.info(`[meetings] craft recording shutdown outcome=${craftOutcome} (relaunch)`)
+        }
+        await relaunchAfterSealingCaptures({
+          relaunch: () => app.relaunch(),
+          exit: () => app.exit(0),
+        })
       })
 
-      // Language change: sync from renderer to main process and rebuild native menu
+      // Language change: persist the choice, sync it to the main process i18n
+      // and rebuild the native menu.
       ipcMain.handle('i18n:changeLanguage', async (_event, lang: string) => {
-        i18n.changeLanguage(lang)
+        await applyUiLanguageChange(lang)
         const { rebuildMenu } = await import('./menu')
         await rebuildMenu()
       })
@@ -1105,6 +1143,10 @@ app.on('before-quit', async (event) => {
   // Ensure Cmd+Q/app quit bypasses layered window close interception (Cmd+W behavior).
   windowManager?.setAppQuitting(true)
 
+  // Kill any `officecli watch` servers backing live document previews — they
+  // are child processes holding loopback ports, and would outlive the app.
+  shutdownOfficeLiveServers()
+
   if (windowManager) {
     // Get full window states (includes bounds, type, and query)
     const windows = windowManager.getWindowStates()
@@ -1134,6 +1176,28 @@ app.on('before-quit', async (event) => {
     }
     // Clean up SessionManager resources (file watchers, timers, etc.)
     sessionManager.cleanup()
+
+    // Sela as gravações craft e as capturas Hermes ativas ANTES de derrubar
+    // panes e subprocessos. Craft primeiro: é fs local, rápida e independente
+    // do Hermes; o transcript Hermes só existe no bot até ser buscado. Bounded —
+    // o quit segue no deadline e o que já foi escrito fica no disco.
+    try {
+      const craftShutdown = await shutdownCraftRecordings()
+      if (craftShutdown !== 'idle') {
+        mainLog.info(`[meetings] craft recording shutdown outcome=${craftShutdown}`)
+      }
+    } catch (error) {
+      mainLog.error('[meetings] craft recording shutdown failed:', error)
+    }
+
+    try {
+      const meetingsShutdown = await shutdownMeetingCaptures()
+      if (meetingsShutdown !== 'idle') {
+        mainLog.info(`[meetings] shutdown outcome=${meetingsShutdown}`)
+      }
+    } catch (error) {
+      mainLog.error('[meetings] shutdown failed:', error)
+    }
 
     // Clean up dashboard/browser pane instances
     if (hermesDashboardHost) {

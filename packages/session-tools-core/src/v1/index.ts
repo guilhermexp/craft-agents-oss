@@ -10,6 +10,7 @@ export {
   getSessionSafeAllowedToolNames,
   getSessionSafeBlockedToolNames,
   getToolDefsAsJsonSchema,
+  toJsonSchemaToolDef,
   validateSessionToolInput,
   validateSessionToolOutput,
   executeSessionTool,

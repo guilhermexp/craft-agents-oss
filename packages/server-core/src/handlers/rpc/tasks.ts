@@ -48,19 +48,6 @@ import { TaskRunner } from '../../tasks'
 
 const tasksLog = createLogger('tasks-generate')
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.tasks.VALIDATE,
-  RPC_NAMESPACES.tasks.CREATE,
-  RPC_NAMESPACES.tasks.GENERATE,
-  RPC_NAMESPACES.tasks.RUN,
-  RPC_NAMESPACES.tasks.PAUSE,
-  RPC_NAMESPACES.tasks.RESUME,
-  RPC_NAMESPACES.tasks.STOP,
-  RPC_NAMESPACES.tasks.GET,
-  RPC_NAMESPACES.tasks.LIST,
-  RPC_NAMESPACES.tasks.GET_RESULTS,
-] as const
-
 /** Map a shared ValidationResult (+ parsed spec) onto the wire DTO. */
 function toValidationDto(result: ReturnType<typeof parseTaskYaml>): TaskValidationResultDto {
   const issue = (i: { path: string; message: string; severity: 'error' | 'warning'; suggestion?: string }) => ({

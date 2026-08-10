@@ -153,6 +153,7 @@ export {
 // Export native runtime boundary for Claude/Pi. Hermes stays on hermes-embed.
 export {
   createNativeAgentRuntime,
+  ensureDefaultClaudeConfigValid,
   getAvailableNativeAgentProviders,
   initializeNativeAgentHostRuntime,
   isNativeAgentProvider,

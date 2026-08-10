@@ -21,5 +21,6 @@ export function getSessionToolProxyDefs(): SessionToolProxyDef[] {
     prefix: 'mcp__session__',
     includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback,
     includeMemory: FEATURE_FLAGS.memory,
+    useNativeInputSchemas: true,
   });
 }

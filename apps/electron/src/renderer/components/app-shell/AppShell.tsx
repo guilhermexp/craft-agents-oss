@@ -1,7 +1,7 @@
 import * as React from "react"
 import { useTranslation, Trans } from "react-i18next"
 import { useRef, useState, useEffect, useCallback, useMemo } from "react"
-import { useAtomValue, useStore } from "jotai"
+import { useAtom, useAtomValue, useStore } from "jotai"
 import { selectAtom } from "jotai/utils"
 import { LazyMotion, m, AnimatePresence, domAnimation } from "motion/react"
 import {
@@ -33,6 +33,7 @@ import {
   Bot,
   Hash,
   Info,
+  PanelLeftClose,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
@@ -44,7 +45,7 @@ import { isMac } from "@/lib/platform"
 import { Button } from "@/components/ui/button"
 import { HeaderIconButton } from "@/components/ui/HeaderIconButton"
 import { Separator } from "@/components/ui/separator"
-import { Tooltip, TooltipTrigger, TooltipContent, DocumentFormattedMarkdownOverlay } from "@craft-agent/ui"
+import { Tooltip, TooltipTrigger, TooltipContent, DocumentFormattedMarkdownOverlay, PlatformProvider, usePlatform } from "@craft-agent/ui"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -73,7 +74,8 @@ import {
 import { SessionList, type ChatGroupingMode } from "./SessionList"
 import { MainContentPanel } from "./MainContentPanel"
 import { PanelStackContainer } from "./PanelStackContainer"
-import { InlineFilePreviewPanel, SessionInfoPopoverContent } from "./SessionInfoPopover"
+import { SessionInfoPopoverContent } from "./SessionInfoPopover"
+import { ContentPreviewHost } from './content-preview-host'
 import { getRightSidebarFilePaneLayout } from "../right-sidebar/SessionFilesSection"
 import {
   getRightSidebarEffectiveWidth,
@@ -84,15 +86,14 @@ import {
   RIGHT_SIDEBAR_TREE_ONLY_MAX_WIDTH,
   RIGHT_SIDEBAR_SPLIT_DEFAULT_WIDTH,
 } from "./right-sidebar-sizing"
-import {
-  getActiveRightSidebarPreviewPath,
-  type RightSidebarPreviewSelection,
-} from "./right-sidebar-preview-state"
-import type { ChatDisplayHandle } from "./ChatDisplay"
+import { contentTabId, contentTabLabel, contentTabsReducer, restoreContentTabs, type ContentTabsState } from "./content-tabs-state"
+import { bindWorkspaceObjectSubscription } from './workspace-object-reconnect'
+import { useChatMatchWiring } from "@/hooks/useChatMatchWiring"
 import { LeftSidebar } from "./LeftSidebar"
-import { useSession } from "@/hooks/useSession"
+import { useSessionSelection } from "@/hooks/useSession"
 import { ensureSessionMessagesLoadedAtom } from "@/atoms/sessions"
 import { AppShellProvider, type AppShellContextType } from "@/context/AppShellContext"
+import { AutomationsProvider } from "@/context/AutomationsContext"
 import { EscapeInterruptProvider, useEscapeInterrupt } from "@/context/EscapeInterruptContext"
 import { useTheme } from "@/context/ThemeContext"
 import { getResizeGradientStyle } from "@/hooks/useResizeGradient"
@@ -101,12 +102,12 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter } from "../../../shared/types"
+import type { Session, Workspace, FileAttachment, PermissionRequest, PublicSourceDto, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter } from "../../../shared/types"
 import { sessionAtomFamily, sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { skillsAtom } from "@/atoms/skills"
 import { panelStackAtom, panelCountAtom, focusedPanelIdAtom, focusedSessionIdAtom, focusNextPanelAtom, focusPrevPanelAtom, parseSessionIdFromRoute } from "@/atoms/panel-stack"
-import { type SessionStatusId, type SessionStatus, statusConfigsToSessionStatuses } from "@/config/session-status-config"
+import { type SessionStatusId, type ResolvedSessionStatus, statusConfigsToSessionStatuses } from "@/config/session-status-config"
 import { useStatuses } from "@/hooks/useStatuses"
 import { useLabels } from "@/hooks/useLabels"
 import { useChannels } from "@/hooks/useChannels"
@@ -133,7 +134,7 @@ import {
   isAutomationsNavigation,
   isMeetingsNavigation,
   type NavigationState,
-} from "@/contexts/NavigationContext"
+} from "@/context/NavigationContext"
 import type { SettingsSubpage } from "../../../shared/types"
 import { SourcesListPanel } from "./SourcesListPanel"
 import { SkillsListPanel } from "./SkillsListPanel"
@@ -153,6 +154,7 @@ import SettingsNavigator from "@/pages/settings/SettingsNavigator"
 import {
   PANEL_GAP,
   PANEL_EDGE_INSET,
+  PANEL_MIN_WIDTH,
   PANEL_SASH_HALF_HIT_WIDTH,
   PANEL_SASH_HIT_WIDTH,
   PANEL_SASH_LINE_WIDTH,
@@ -162,6 +164,8 @@ import {
 } from "./panel-constants"
 import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { BrowserProfilePicker } from "@/components/browser/BrowserProfilePicker"
+import { browserInstancesAtom, meetingsHostedBrowserIdAtom } from "@/atoms/browser-pane"
+import { resolveBrowserDockRoute } from "./browser-dock-routing"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
 
@@ -172,9 +176,13 @@ import { dispatchFocusInputEvent } from "./input/focus-input-events"
  * Only UI-specific state is passed as separate props.
  *
  * Adding new features:
- * 1. Add to AppShellContextType in context/AppShellContext.tsx
- * 2. Update App.tsx to include in contextValue
- * 3. Use via useAppShellContext() hook in child components
+ * 1. Add the field to the matching domain interface in context/AppShellContext.tsx
+ *    (SessionActions, WorkspaceData, SessionRuntime, AppActions, PanelChrome,
+ *    SessionSearchWiring) — never grow one flat bag. Automation callbacks live on
+ *    their own AutomationsContext; single-consumer panel chrome flows via props.
+ * 2. Provide it from App.tsx (base contextValue) or here (AppShell overrides).
+ * 3. Consume it via the domain hook (useSessionActions / useWorkspaceData / …),
+ *    not the whole context.
  */
 interface AppShellProps {
   /** All data and callbacks - passed directly to AppShellProvider */
@@ -555,6 +563,7 @@ function AppShellContent({
     onSendMessage,
     openNewChat,
     pendingPermissions,
+    pendingQuestions,
   } = contextValue
 
   const { t } = useTranslation()
@@ -564,6 +573,12 @@ function AppShellContent({
 
   const [isSidebarVisible, setIsSidebarVisible] = React.useState(() => {
     return storage.get(storage.KEYS.sidebarVisible, !defaultCollapsed)
+  })
+  // The navigator collapses on its own, independent of the sidebar and of focus
+  // mode: someone who lives in one session wants the room without giving up the
+  // sidebar's navigation.
+  const [isSessionListVisible, setIsSessionListVisible] = React.useState(() => {
+    return storage.get(storage.KEYS.sessionListVisible, true)
   })
   const [sidebarWidth, setSidebarWidth] = React.useState(() => {
     return storage.get(storage.KEYS.sidebarWidth, 220)
@@ -578,7 +593,6 @@ function AppShellContent({
   const [rightSidebarPreviewPreferredWidth, setRightSidebarPreviewPreferredWidth] = React.useState(() => {
     return storage.get(storage.KEYS.rightSidebarPreviewWidth, RIGHT_SIDEBAR_SPLIT_DEFAULT_WIDTH)
   })
-
   // Hides both sidebar and navigator (CMD+. toggle)
   // Seed from either focused window param or persisted preference, then keep it toggleable.
   const [isSidebarAndNavigatorHidden, setIsSidebarAndNavigatorHidden] = React.useState(() => {
@@ -592,7 +606,6 @@ function AppShellContent({
   const shellWidth = useContainerWidth(shellRef)
   const MOBILE_THRESHOLD = 768
   const isAutoCompact = shellWidth > 0 && shellWidth < MOBILE_THRESHOLD
-
   const effectiveSidebarAndNavigatorHidden = isSidebarAndNavigatorHidden || isAutoCompact
 
   // What's New overlay
@@ -609,14 +622,16 @@ function AppShellContent({
     })
   }, [])
 
-  const [isResizing, setIsResizing] = React.useState<'sidebar' | 'session-list' | 'right-sidebar' | null>(null)
+  const [isResizing, setIsResizing] = React.useState<'sidebar' | 'session-list' | 'right-sidebar' | 'integrated-browser' | null>(null)
   const [sidebarHandleY, setSidebarHandleY] = React.useState<number | null>(null)
   const [sessionListHandleY, setSessionListHandleY] = React.useState<number | null>(null)
   const [rightSidebarHandleY, setRightSidebarHandleY] = React.useState<number | null>(null)
+  const [integratedBrowserHandleY, setIntegratedBrowserHandleY] = React.useState<number | null>(null)
   const resizeHandleRef = React.useRef<HTMLDivElement>(null)
   const sessionListHandleRef = React.useRef<HTMLDivElement>(null)
   const rightSidebarHandleRef = React.useRef<HTMLDivElement>(null)
-  const [session, setSession] = useSession()
+  const integratedBrowserHandleRef = React.useRef<HTMLDivElement>(null)
+  const { state: session, reset: resetSessionSelection } = useSessionSelection()
   const { resolvedMode, isDark, setMode } = useTheme()
   const { canGoBack, canGoForward, goBack, goForward, navigateToSource, navigateToSession, updateRightSidebar } = useNavigation()
 
@@ -647,15 +662,18 @@ function AppShellContent({
   const [rbWorkingDirectory, rbSdkCwd, rbSessionFolderPath] = useAtomValue(rightSidebarPathsAtom)
   const rightSidebarPanel = navState.rightSidebar
   const isRightSidebarVisible = !isAutoCompact && rightSidebarPanel?.type === 'session-info' && !!rightSidebarSessionId
-  const [rightSidebarPreviewSelection, setRightSidebarPreviewSelection] = React.useState<RightSidebarPreviewSelection | null>(null)
-  const rightSidebarPreviewPath = getActiveRightSidebarPreviewPath({
-    selection: rightSidebarPreviewSelection,
-    sessionId: rightSidebarSessionId ?? null,
-    isVisible: isRightSidebarVisible,
-  })
-  const rightSidebarFilePaneLayout = getRightSidebarFilePaneLayout(rightSidebarPreviewPath)
+  const [rightSidebarContentTabs, dispatchRightSidebarContentTabs] = React.useReducer(contentTabsReducer, { tabs: [], activeId: null } as ContentTabsState)
+  const restoringRightSidebarTabsRef = React.useRef(false)
+  const activeRightSidebarTab = rightSidebarContentTabs.tabs.find(tab => tab.id === rightSidebarContentTabs.activeId) ?? null
+  const rightSidebarContentTarget = isRightSidebarVisible
+    && activeRightSidebarTab?.target.workspaceId === activeWorkspaceId
+    && (activeRightSidebarTab.target.kind !== 'file' || activeRightSidebarTab.target.sessionId === rightSidebarSessionId)
+      ? activeRightSidebarTab.target
+      : null
+  const rightSidebarPreviewPath = rightSidebarContentTarget?.kind === 'file' ? rightSidebarContentTarget.path : null
+  const rightSidebarFilePaneLayout = getRightSidebarFilePaneLayout(rightSidebarContentTarget ? 'active-content' : null)
   const rightSidebarWidth = getRightSidebarEffectiveWidth({
-    width: rightSidebarPreviewPath ? rightSidebarPreviewPreferredWidth : rightSidebarPreferredWidth,
+    width: rightSidebarContentTarget ? rightSidebarPreviewPreferredWidth : rightSidebarPreferredWidth,
     windowWidth: shellWidth > 0
       ? shellWidth
       : typeof window === 'undefined'
@@ -663,17 +681,70 @@ function AppShellContent({
         : window.innerWidth,
     edgeInset: PANEL_EDGE_INSET,
     minWidth: RIGHT_SIDEBAR_MIN_WIDTH,
-    requiredMinWidth: rightSidebarPreviewPath
+    requiredMinWidth: rightSidebarContentTarget
       ? RIGHT_SIDEBAR_SPLIT_MIN_WIDTH
       : RIGHT_SIDEBAR_MIN_WIDTH,
     // File-list-only view stays compact; the preview split is the wide one.
-    maxWidthCap: rightSidebarPreviewPath ? undefined : RIGHT_SIDEBAR_TREE_ONLY_MAX_WIDTH,
+    maxWidthCap: rightSidebarContentTarget ? undefined : RIGHT_SIDEBAR_TREE_ONLY_MAX_WIDTH,
   })
 
+  // Every open earns its own tab. A disposable preview slot recycles one tab
+  // forever, which reads as a panel that cannot hold more than one file.
   const handleRightSidebarPreviewFile = React.useCallback((filePath: string) => {
-    if (!rightSidebarSessionId) return
-    setRightSidebarPreviewSelection({ sessionId: rightSidebarSessionId, filePath })
-  }, [rightSidebarSessionId])
+    if (!rightSidebarSessionId || !activeWorkspaceId) return
+    dispatchRightSidebarContentTabs({ type: 'open', mode: 'permanent', target: { kind: 'file', workspaceId: activeWorkspaceId, sessionId: rightSidebarSessionId, path: filePath } })
+  }, [rightSidebarSessionId, activeWorkspaceId])
+
+  const handleRightSidebarPreviewObject = React.useCallback((objectId: string) => {
+    if (!activeWorkspaceId) return
+    dispatchRightSidebarContentTabs({ type: 'open', mode: 'permanent', target: { kind: 'object', workspaceId: activeWorkspaceId, objectId } })
+  }, [activeWorkspaceId])
+
+  // "Open beside the chat" from file cards in the transcript. Opening the
+  // sidebar and the tab in one gesture: a tab in a closed panel helps no one.
+  const parentPlatformActions = usePlatform()
+  const handleOpenFileInSidePanel = React.useCallback((filePath: string) => {
+    if (!rightSidebarSessionId || !activeWorkspaceId) return
+    updateRightSidebar({ type: 'session-info' })
+    dispatchRightSidebarContentTabs({ type: 'open', mode: 'permanent', target: { kind: 'file', workspaceId: activeWorkspaceId, sessionId: rightSidebarSessionId, path: filePath } })
+  }, [rightSidebarSessionId, activeWorkspaceId, updateRightSidebar])
+  const platformWithSidePanel = React.useMemo(() => (
+    // No side panel in compact mode - leaving the action out hides the button.
+    isAutoCompact ? parentPlatformActions : { ...parentPlatformActions, onOpenFileInSidePanel: handleOpenFileInSidePanel }
+  ), [parentPlatformActions, handleOpenFileInSidePanel, isAutoCompact])
+
+  React.useEffect(() => {
+    restoringRightSidebarTabsRef.current = true
+    if (!activeWorkspaceId) {
+      dispatchRightSidebarContentTabs({ type: 'restore', state: { tabs: [], activeId: null } })
+      return
+    }
+    const objectState = storage.get<ContentTabsState>(storage.KEYS.workspaceObjectTabs, { tabs: [], activeId: null }, `${activeWorkspaceId}:objects`)
+    const fileState = rightSidebarSessionId
+      ? storage.get<ContentTabsState>(storage.KEYS.workspaceObjectTabs, { tabs: [], activeId: null }, `${activeWorkspaceId}:${rightSidebarSessionId}:files`)
+      : { tabs: [], activeId: null }
+    const merged = { tabs: [...objectState.tabs, ...fileState.tabs], activeId: fileState.activeId ?? objectState.activeId }
+    dispatchRightSidebarContentTabs({ type: 'restore', state: restoreContentTabs(merged, activeWorkspaceId, rightSidebarSessionId) })
+  }, [activeWorkspaceId, rightSidebarSessionId])
+
+  React.useEffect(() => {
+    if (!activeWorkspaceId) return
+    if (restoringRightSidebarTabsRef.current) {
+      restoringRightSidebarTabsRef.current = false
+      return
+    }
+    const objectTabs = rightSidebarContentTabs.tabs.filter(tab => tab.target.kind === 'object')
+    const fileTabs = rightSidebarContentTabs.tabs.filter(tab => tab.target.kind === 'file')
+    storage.set(storage.KEYS.workspaceObjectTabs, { tabs: objectTabs, activeId: objectTabs.some(tab => tab.id === rightSidebarContentTabs.activeId) ? rightSidebarContentTabs.activeId : null }, `${activeWorkspaceId}:objects`)
+    if (rightSidebarSessionId) {
+      storage.set(storage.KEYS.workspaceObjectTabs, { tabs: fileTabs, activeId: fileTabs.some(tab => tab.id === rightSidebarContentTabs.activeId) ? rightSidebarContentTabs.activeId : null }, `${activeWorkspaceId}:${rightSidebarSessionId}:files`)
+    }
+  }, [activeWorkspaceId, rightSidebarSessionId, rightSidebarContentTabs])
+
+  React.useEffect(() => {
+    if (!activeWorkspaceId) return
+    return bindWorkspaceObjectSubscription(window.electronAPI, activeWorkspaceId)
+  }, [activeWorkspaceId])
 
   // Navigate the focused panel to a session.
   // If the session is already open in another panel, focus that panel instead.
@@ -822,28 +893,9 @@ function AppShellContent({
     })
   }, [sessionFilterKey])
 
-  // Ref for ChatDisplay navigation (exposed via forwardRef)
-  const chatDisplayRef = React.useRef<ChatDisplayHandle>(null)
-  // Track match count and index from ChatDisplay (for SessionList navigation UI)
-  const [chatMatchInfo, setChatMatchInfo] = React.useState<{ sessionId: string | null; count: number; index: number; isHighlighting?: boolean }>({ sessionId: null, count: 0, index: 0 })
-
-  // Callback for immediate match info updates from ChatDisplay
-  // Memo guard prevents render feedback loops from identical updates
-  const handleChatMatchInfoChange = React.useCallback((info: { sessionId: string | null; count: number; index: number; isHighlighting: boolean }) => {
-    setChatMatchInfo(prev => {
-      if (prev.sessionId === info.sessionId && prev.count === info.count && prev.index === info.index && prev.isHighlighting === info.isHighlighting) {
-        return prev
-      }
-      return info
-    })
-  }, [])
-
-  // Reset match info when search is deactivated
-  React.useEffect(() => {
-    if (!searchActive || !searchQuery) {
-      setChatMatchInfo({ sessionId: null, count: 0, index: 0 })
-    }
-  }, [searchActive, searchQuery])
+  // ChatDisplay match-navigation wiring (ref + match info + change handler).
+  // Tracking is active only while a non-empty search is open.
+  const { chatDisplayRef, chatMatchInfo, onChatMatchInfoChange } = useChatMatchWiring(searchActive && !!searchQuery)
 
   // Filter dropdown: inline search query for filtering statuses/labels in a flat list.
   // When empty, the dropdown shows hierarchical submenus. When typing, shows a flat filtered list.
@@ -893,7 +945,7 @@ function AppShellContent({
     })
   }, [])
   // Sources state (workspace-scoped)
-  const [sources, setSources] = React.useState<LoadedSource[]>([])
+  const [sources, setSources] = React.useState<PublicSourceDto[]>([])
   // Sync sources to atom for NavigationContext auto-selection
   const setSourcesAtom = useSetAtom(sourcesAtom)
   React.useEffect(() => {
@@ -916,12 +968,12 @@ function AppShellContent({
   const handleTransferComplete = useCallback((targetWorkspaceId: string, _newSessionIds: string[]) => {
     onSelectWorkspace(targetWorkspaceId)
   }, [onSelectWorkspace])
+  const automationsApi = useAutomations(activeWorkspaceId)
   const {
-    automations, automationTestResults,
+    automations,
     automationPendingDelete, pendingDeleteAutomation, setAutomationPendingDelete,
     handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, confirmDeleteAutomation,
-    getAutomationHistory, handleReplayAutomation,
-  } = useAutomations(activeWorkspaceId)
+  } = automationsApi
 
   // Whether local MCP servers are enabled (affects stdio source status)
   const [localMcpEnabled, setLocalMcpEnabled] = React.useState(true)
@@ -1037,7 +1089,7 @@ function AppShellContent({
   // Load dynamic statuses from workspace config
   const { statuses: statusConfigs, isLoading: isLoadingStatuses } = useStatuses(activeWorkspace?.id || null)
 
-  // Convert StatusConfig to SessionStatus with resolved icons — pure derived value, no state needed.
+  // Convert StatusConfig to ResolvedSessionStatus with resolved icons — pure derived value, no state needed.
   const sessionStatuses = React.useMemo(
     () =>
       activeWorkspace?.id && statusConfigs.length > 0
@@ -1072,7 +1124,7 @@ function AppShellContent({
     if (!optimisticStatusOrder) return sessionStatuses
     // Reorder sessionStatuses array to match optimistic order
     const stateMap = new Map(sessionStatuses.map(s => [s.id, s]))
-    const reordered: SessionStatus[] = []
+    const reordered: ResolvedSessionStatus[] = []
     for (const id of optimisticStatusOrder) {
       const state = stateMap.get(id)
       if (state) reordered.push(state)
@@ -1125,7 +1177,7 @@ function AppShellContent({
   // Compute filtered results for the dropdown's search mode (memoized for use in both
   // the keyboard handler and the JSX render).
   const filterDropdownResults = useMemo(() => {
-    if (!filterDropdownQuery.trim()) return { states: [] as SessionStatus[], labels: [] as LabelMenuItem[] }
+    if (!filterDropdownQuery.trim()) return { states: [] as ResolvedSessionStatus[], labels: [] as LabelMenuItem[] }
     return {
       states: filterLabelMenuStates(effectiveSessionStatuses, filterDropdownQuery),
       labels: filterLabelMenuItems(flatLabelMenuItems, filterDropdownQuery),
@@ -1148,7 +1200,7 @@ function AppShellContent({
   const ensureMessagesLoaded = useSetAtom(ensureSessionMessagesLoadedAtom)
 
   // Handle selecting a source from the list (preserves current filter type)
-  const handleSourceSelect = React.useCallback((source: LoadedSource) => {
+  const handleSourceSelect = React.useCallback((source: PublicSourceDto) => {
     if (!activeWorkspaceId) return
     navigateToSource(source.config.slug)
   }, [activeWorkspaceId, navigateToSource])
@@ -1219,6 +1271,17 @@ function AppShellContent({
 
   // Sidebar toggle (CMD+B)
   useAction('view.toggleSidebar', handleToggleSidebar)
+
+  // Focus mode hid the navigator wholesale; bring it back rather than toggling
+  // a collapse the user cannot see the result of.
+  const handleToggleSessionList = useCallback(() => {
+    if (isSidebarAndNavigatorHidden) {
+      setIsSidebarAndNavigatorHidden(false)
+      setIsSessionListVisible(true)
+      return
+    }
+    setIsSessionListVisible(v => !v)
+  }, [isSidebarAndNavigatorHidden])
 
   // Focus mode toggle (CMD+.) - hides both sidebars
   useAction('view.toggleFocusMode', () => setIsSidebarAndNavigatorHidden(v => !v))
@@ -1403,6 +1466,7 @@ function AppShellContent({
     rightSidebarWidth,
     rightSidebarPreviewPath,
     isSidebarVisible,
+    isRightSidebarVisible,
   ])
 
   // Use session metadata from Jotai atom (lightweight, no messages)
@@ -1413,6 +1477,10 @@ function AppShellContent({
   const hasPendingPrompt = React.useCallback((sessionId: string) => {
     return (pendingPermissions.get(sessionId)?.length ?? 0) > 0
   }, [pendingPermissions])
+
+  const hasPendingQuestion = React.useCallback((sessionId: string) => {
+    return (pendingQuestions.get(sessionId)?.size ?? 0) > 0
+  }, [pendingQuestions])
 
   // Workspace-level unread indicators (needed for workspace selectors across all workspaces)
   const [workspaceUnreadMap, setWorkspaceUnreadMap] = useState<Record<string, boolean>>({})
@@ -1703,10 +1771,10 @@ function AppShellContent({
   const handleDeleteSession = useCallback(async (sessionId: string, skipConfirmation?: boolean): Promise<boolean> => {
     // Clear selection first if this is the selected session
     if (session.selected === sessionId) {
-      setSession({ selected: null })
+      resetSessionSelection()
     }
     return onDeleteSession(sessionId, skipConfirmation)
-  }, [session.selected, setSession, onDeleteSession])
+  }, [session.selected, resetSessionSelection, onDeleteSession])
 
   const handleContextOpenFile = useCallback((path: string) => {
     const targetSessionId = focusedSessionId ?? session.selected ?? null
@@ -1759,21 +1827,13 @@ function AppShellContent({
     enabledModes,
     sessionStatuses: effectiveSessionStatuses,
     onSessionSourcesChange: handleSessionSourcesChange,
-    rightSidebarButton: null,
     isCompactMode: isAutoCompact,
     // Search state for ChatDisplay highlighting
     sessionListSearchQuery: searchActive ? searchQuery : undefined,
     isSearchModeActive: searchActive,
     chatDisplayRef,
-    onChatMatchInfoChange: handleChatMatchInfoChange,
-    onTestAutomation: handleTestAutomation,
-    onToggleAutomation: handleToggleAutomation,
-    onDuplicateAutomation: handleDuplicateAutomation,
-    onDeleteAutomation: handleDeleteAutomation,
-    automationTestResults,
-    getAutomationHistory,
-    onReplayAutomation: handleReplayAutomation,
-  }), [contextValue, handleDeleteSession, handleContextOpenFile, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, channelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
+    onChatMatchInfoChange,
+  }), [contextValue, handleDeleteSession, handleContextOpenFile, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, channelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, searchActive, searchQuery, onChatMatchInfoChange])
 
   // Persist expanded folders to localStorage (workspace-scoped)
   React.useEffect(() => {
@@ -1785,6 +1845,10 @@ function AppShellContent({
   React.useEffect(() => {
     storage.set(storage.KEYS.sidebarVisible, isSidebarVisible)
   }, [isSidebarVisible])
+
+  React.useEffect(() => {
+    storage.set(storage.KEYS.sessionListVisible, isSessionListVisible)
+  }, [isSessionListVisible])
 
   // Persist focus mode state to localStorage
   React.useEffect(() => {
@@ -2161,6 +2225,11 @@ function AppShellContent({
   // Browser profile picker state — opens before creating a new window when
   // the user has multiple profiles or has the "always ask" preference set.
   const [browserPickerOpen, setBrowserPickerOpen] = useState(false)
+  // Docking follows the tab's existence, not which tab is selected: switching
+  // to a file tab must not fling the browser back into its own window. Only
+  // leaving the tab list undocks.
+  const dockedBrowserIdsRef = React.useRef<string[]>([])
+  const browserInstances = useAtomValue(browserInstancesAtom)
   // When the picker was opened from inside an existing browser window, this
   // holds the source instance id so we can switch its profile in place.
   const [browserPickerSwitchInstanceId, setBrowserPickerSwitchInstanceId] = useState<string | null>(null)
@@ -2173,6 +2242,62 @@ function AppShellContent({
     })
     return () => unsub()
   }, [])
+
+  // The browser's own toolbar asks to dock or undock. Where a dock lands is
+  // `resolveBrowserDockRoute`'s call: the Meetings page hosts it while that page
+  // is open, otherwise the session-scoped preview panel does. Undocking clears
+  // both, whichever was holding it.
+  const setMeetingsHostedBrowserId = useSetAtom(meetingsHostedBrowserIdAtom)
+  const isMeetingsActive = isMeetingsNavigation(navState)
+  useEffect(() => {
+    const unsub = window.electronAPI.browserPane.onDisplayModeRequested((data) => {
+      const route = resolveBrowserDockRoute(data, {
+        workspaceId: activeWorkspaceId ?? null,
+        previewSessionId: rightSidebarSessionId ?? null,
+        meetingsActive: isMeetingsActive,
+      })
+      // The router already refuses a workspace-less dock; this narrows the type.
+      if (route.kind === 'ignore' || !activeWorkspaceId) return
+      if (route.kind === 'meetings-host') {
+        setMeetingsHostedBrowserId(data.instanceId)
+        return
+      }
+
+      const target = { kind: 'browser' as const, workspaceId: activeWorkspaceId, instanceId: data.instanceId }
+      if (route.kind === 'release') {
+        setMeetingsHostedBrowserId(current => current === data.instanceId ? null : current)
+        dispatchRightSidebarContentTabs({ type: 'close', id: contentTabId(target) })
+        return
+      }
+      updateRightSidebar({ type: 'session-info' })
+      dispatchRightSidebarContentTabs({ type: 'open', mode: 'permanent', target })
+    })
+    return () => unsub()
+  }, [activeWorkspaceId, isMeetingsActive, rightSidebarSessionId, setMeetingsHostedBrowserId, updateRightSidebar])
+
+  // Undock whatever left the tab list, by any route - close, workspace switch,
+  // a restore that replaced everything. A browser left integrated with no tab
+  // to draw it is a window the user cannot reach.
+  useEffect(() => {
+    const current = rightSidebarContentTabs.tabs.flatMap(tab =>
+      tab.target.kind === 'browser' ? [tab.target.instanceId] : []
+    )
+    for (const id of dockedBrowserIdsRef.current) {
+      if (!current.includes(id)) void window.electronAPI.browserPane.setDisplayMode(id, 'floating')
+    }
+    dockedBrowserIdsRef.current = current
+  }, [rightSidebarContentTabs])
+
+  // The instance can die from the browser's own toolbar ("Close Window
+  // Entirely") or a crash, which the tab would never hear about otherwise.
+  useEffect(() => {
+    for (const tab of rightSidebarContentTabs.tabs) {
+      const target = tab.target
+      if (target.kind !== 'browser') continue
+      if (browserInstances.some(instance => instance.id === target.instanceId)) continue
+      dispatchRightSidebarContentTabs({ type: 'close', id: tab.id })
+    }
+  }, [browserInstances, rightSidebarContentTabs])
 
   const openBrowserWindowForProfile = useCallback(async (profileId: string) => {
     try {
@@ -2499,6 +2624,7 @@ function AppShellContent({
 
   return (
     <AppShellProvider value={appShellContextValue}>
+      <AutomationsProvider value={automationsApi}>
         {/* === TOP BAR === */}
         <TopBar
           workspaces={workspaces}
@@ -2519,6 +2645,8 @@ function AppShellContent({
           canGoBack={canGoBack}
           canGoForward={canGoForward}
           onToggleSidebar={handleToggleSidebar}
+          onToggleSessionList={handleToggleSessionList}
+          isSessionListVisible={isSessionListVisible && !effectiveSidebarAndNavigatorHidden}
           onToggleFocusMode={() => setIsSidebarAndNavigatorHidden(prev => !prev)}
           onAddSessionPanel={() => handleNewChat(true)}
           onAddBrowserPanel={() => { void handleNewBrowserWindow() }}
@@ -2526,6 +2654,7 @@ function AppShellContent({
         />
 
       {/* === OUTER LAYOUT: Unified Panel Stack | Right Sidebar === */}
+      <PlatformProvider actions={platformWithSidePanel}>
       <div
         ref={shellRef}
         className="flex items-stretch relative"
@@ -3520,6 +3649,15 @@ function AppShellContent({
                       {...getEditConfig('automation-config', activeWorkspace.rootPath)}
                     />
                   )}
+                  {/* Collapse lives in the panel it collapses. Once it is gone the
+                      control goes with it, so the title bar grows the way back. */}
+                  {!isAutoCompact && (
+                    <HeaderIconButton
+                      icon={<PanelLeftClose className="size-4" />}
+                      tooltip={t("menu.toggleSessionList")}
+                      onClick={handleToggleSessionList}
+                    />
+                  )}
                 </>
               }
             />
@@ -3528,6 +3666,7 @@ function AppShellContent({
               /* Sources List - filtered by type if sourceFilter is active */
               <SourcesListPanel
                 sources={sources}
+                workspaceId={activeWorkspaceId ?? undefined}
                 sourceFilter={sourceFilter}
                 workspaceRootPath={activeWorkspace?.rootPath}
                 onDeleteSource={handleDeleteSource}
@@ -3630,13 +3769,14 @@ function AppShellContent({
                   focusedSessionId={panelCount === 0 ? null : panelCount > 1 ? focusedSessionId : undefined}
                   onNavigateToSession={panelCount > 1 ? navigateToSessionInPanel : undefined}
                   hasPendingPrompt={hasPendingPrompt}
+                  hasPendingQuestion={hasPendingQuestion}
                   activeChatMatchInfo={chatMatchInfo}
                 />
               </>
             )}
             </div>
           }
-          navigatorWidth={isAutoCompact ? sessionListWidth : (effectiveSidebarAndNavigatorHidden ? 0 : sessionListWidth)}
+          navigatorWidth={isAutoCompact ? sessionListWidth : (effectiveSidebarAndNavigatorHidden || !isSessionListVisible ? 0 : sessionListWidth)}
           isSidebarAndNavigatorHidden={effectiveSidebarAndNavigatorHidden}
           isRightSidebarVisible={isRightSidebarVisible}
           isCompact={isAutoCompact}
@@ -3667,7 +3807,6 @@ function AppShellContent({
                       icon={<X className="size-4" />}
                       tooltip={t("common.close")}
                       onClick={() => {
-                        setRightSidebarPreviewSelection(null)
                         updateRightSidebar(undefined)
                       }}
                     />
@@ -3682,18 +3821,54 @@ function AppShellContent({
                       <SessionInfoPopoverContent
                         sessionId={rightSidebarSessionId}
                         sessionFolderPath={rbSessionFolderPath}
+                        compactTabs={rightSidebarFilePaneLayout.mode === 'split'}
                         onPreviewFileInline={handleRightSidebarPreviewFile}
+                        onPreviewObjectInline={handleRightSidebarPreviewObject}
                       />
                     </div>
-                    {rightSidebarFilePaneLayout.showPreview && rightSidebarPreviewPath ? (
+                    {rightSidebarFilePaneLayout.showPreview && rightSidebarContentTarget ? (
                       <>
                         <div className="bg-border/60" />
-                        <div className="min-h-0 min-w-0 overflow-hidden">
-                          <InlineFilePreviewPanel
-                            filePath={rightSidebarPreviewPath}
-                            onBack={() => setRightSidebarPreviewSelection(null)}
-                            onOpenDialog={handleContextOpenFile}
-                          />
+                        <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+                          <div className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-border/60 px-2">
+                            {rightSidebarContentTabs.tabs.map(tab => (
+                              <div
+                                key={tab.id}
+                                className={cn(
+                                  "group flex max-w-44 items-center gap-1 rounded-md px-2 py-1 text-xs",
+                                  tab.id === rightSidebarContentTabs.activeId ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5",
+                                )}
+                              >
+                                <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => dispatchRightSidebarContentTabs({ type: 'select', id: tab.id })}>
+                                  {contentTabLabel(tab.target, browserInstances)}
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label={t('common.close')}
+                                  onClick={() => dispatchRightSidebarContentTabs({ type: 'close', id: tab.id })}
+                                  className="rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                                >
+                                  <X className="size-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="min-h-0 flex-1 overflow-hidden">
+                            <ContentPreviewHost
+                              target={rightSidebarContentTarget}
+                              onClose={() => activeRightSidebarTab && dispatchRightSidebarContentTabs({ type: 'close', id: activeRightSidebarTab.id })}
+                              onOpenFileDialog={handleContextOpenFile}
+                              onObjectViewChange={viewId => {
+                                if (!activeRightSidebarTab || activeRightSidebarTab.target.kind !== 'object') return
+                                const { viewId: _previousViewId, ...objectTarget } = activeRightSidebarTab.target
+                                dispatchRightSidebarContentTabs({
+                                  type: 'retarget',
+                                  id: activeRightSidebarTab.id,
+                                  target: { ...objectTarget, ...(viewId === undefined ? {} : { viewId }) },
+                                })
+                              }}
+                            />
+                          </div>
                         </div>
                       </>
                     ) : null}
@@ -3777,7 +3952,7 @@ function AppShellContent({
         )}
 
         {/* Session List Resize Handle (absolute, hidden in focused mode) */}
-        {!effectiveSidebarAndNavigatorHidden && (
+        {!effectiveSidebarAndNavigatorHidden && isSessionListVisible && (
         <div
           ref={sessionListHandleRef}
           role="separator"
@@ -3816,6 +3991,7 @@ function AppShellContent({
         )}
 
       </div>
+      </PlatformProvider>
 
       {/* ============================================================================
        * CONTEXT MENU TRIGGERED EDIT POPOVERS
@@ -4131,6 +4307,7 @@ function AppShellContent({
         }}
       />
 
+      </AutomationsProvider>
     </AppShellProvider>
   )
 }

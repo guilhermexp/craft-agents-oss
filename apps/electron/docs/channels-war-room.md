@@ -93,6 +93,98 @@ Dispatch listing must stay channel-scoped. Use the `channels:listDispatches`
 RPC to retrieve persisted dispatch status for one channel. Do not read or surface
 dispatches from another channel when rendering or debugging one room.
 
+## Durability contract (Fase 1)
+
+War Room state must survive an app restart without duplicating work. Two
+workspace-local on-disk formats back this, alongside the append-only dispatch log
+above. Neither is a secrets store; keep global/session auth out of both.
+
+### Persisted session bindings
+
+`packages/shared/src/channels/session-bindings.ts` owns
+`channels/sessions/<channelId>.json`. The `<channelId>` segment is
+`encodeURIComponent`-escaped. Shape (`ChannelSessionBindings`):
+
+```json
+{
+  "channelId": "architecture",
+  "bindings": {
+    "hermes-lead": "session-abc123",
+    "pi-reviewer": "session-def456"
+  }
+}
+```
+
+`bindings` maps `participantId -> Craft sessionId` (all strings). A missing or
+corrupt file reads as "no bindings yet" (`{}`) so one bad write never breaks the
+channel. This lets `{channelId}:{participantId}` sessions from step 4 of the flow
+above be rehydrated after a restart instead of re-created.
+
+### Persisted Kanban watches
+
+`packages/shared/src/channels/kanban-watches.ts` owns
+`channels/watches/<channelId>.json` (same escaping). Shape
+(`ChannelKanbanWatch`):
+
+```json
+{
+  "channelId": "architecture",
+  "taskIds": ["task-1", "task-2"]
+}
+```
+
+`taskIds` is the set of not-yet-terminal Hermes Kanban tasks the channel is still
+watching. A missing or corrupt file reads as "nothing watched" (`[]`).
+
+### Boot reconciliation
+
+`ChannelManager.ensureWorkspaceBooted()` runs once per workspace on first use
+(the constructor cannot be async). It is awaited by `list()`, `listMessages()`,
+`listDispatches()`, `sendMessage()`, and `dispatchFromSession()`, so it must stay
+cheap:
+
+- The boot promise is cached per workspace and **cleared on rejection**, so a
+  failed boot retries on the next call instead of leaving the workspace flagged
+  and unreconciled for the rest of the process lifetime.
+- Boot fails any dispatch left `queued`/`running` by a previous process to
+  `failed` (`App restarted before this dispatch completed`) and re-arms Kanban
+  watchers from their persisted watch lists.
+- The initial Kanban reconciliation poll runs **off the RPC critical path**
+  (`void this.pollWatchedKanbanTasks()`), because each terminal task triggers a
+  full agent turn (`sendTaskUpdate` -> `runtime.sendMessage`) and can create
+  sessions. The first `channels:list` after app start must stay a storage read.
+  The rejection is **logged**, never silently swallowed; reconciliation still
+  happens, just not in the caller's await.
+
+### Session reuse is validated, never blind
+
+Before reusing a persisted binding, `channel-orchestrator.ts`
+(`ensureParticipantSession`) calls `deps.runtime.sessionExists(persisted)`. If the
+backing Craft session no longer exists, it creates a fresh session and rebinds.
+Do not reuse a persisted session id without this check — a stale id would send
+turns into a session that is gone.
+
+### Persist before memory
+
+Disk is the source of truth across restarts, so every durable mutation persists
+**before** it touches the in-memory cache (mirrors the `meeting-service.ts` store
+invariant in `AGENTS.md`: memory ahead of disk is what breaks retry). Two sites
+enforce this:
+
+- **Session bindings** (`ensureParticipantSession`): write the binding with
+  `sessionBindingStore.set(...)` *before* `participantSessions.set(...)`. If the
+  write throws, the in-memory cache stays empty so a later turn retries end to
+  end. Caching first would reuse an unpersisted session for the whole process and
+  orphan a duplicate on the next restart, because the cache early-return
+  permanently short-circuits the retry.
+- **Kanban watch pruning** (`pollWatchedKanbanTasks`): `saveChannelKanbanWatch`
+  the pruned task-id list *before* deleting the terminal ids from the in-memory
+  `Set`. If the write throws (EACCES/ENOSPC), memory is left untouched so the ids
+  stay armed and the next poll retries. Mutating memory first would drop the ids
+  from memory while disk still held them, re-arming them on the next boot and
+  re-posting a duplicate `Hermes Kanban update` message plus a duplicate
+  `sendTaskUpdate` agent turn.
+
 ## Hermes / MCP contract
 
 Hermes inside Craft must use the embedded ACP bridge and session-scoped MCP servers. The critical expectation is:
@@ -181,7 +273,7 @@ bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
   packages/shared/src/mcp/session-tools-server.test.ts \
   packages/shared/src/agent/__tests__/hermes-agent.test.ts \
   packages/server-core/src/handlers/rpc/hermes.test.ts \
-  apps/electron/src/transport/__tests__/channel-map-parity.test.ts
+  apps/electron/src/main/handlers/__tests__/registration.test.ts
 
 cd packages/server-core && bun run typecheck
 cd ../../apps/electron && bun run typecheck

@@ -37,6 +37,7 @@ const playgroundValue: AppShellContextType = {
   refreshLlmConnections: async () => {},
   pendingPermissions: new Map(),
   pendingCredentials: new Map(),
+  pendingQuestions: new Map(),
   getDraft: () => '',
   getDraftAttachmentRefs: () => [],
   hydrateDraftAttachments: async () => [],

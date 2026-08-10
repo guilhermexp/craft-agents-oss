@@ -15,11 +15,6 @@ import type {
   ExportResourcesOptions,
 } from '@craft-agent/shared/resources'
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.resources.EXPORT,
-  RPC_NAMESPACES.resources.IMPORT,
-] as const
-
 export function registerResourcesHandlers(server: RpcServer, deps: HandlerDeps): void {
   // Export workspace resources to a portable bundle
   server.handle(

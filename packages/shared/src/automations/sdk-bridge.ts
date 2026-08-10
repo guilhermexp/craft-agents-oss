@@ -6,13 +6,13 @@
 
 import { sanitizeForShell } from './security.ts';
 import { cleanEnv } from './utils.ts';
-import type { AgentEvent, SdkAutomationInput } from './types.ts';
+import type { AgentHookEvent, SdkAutomationInput } from './types.ts';
 
 /**
  * Build environment variables from SDK automation input.
  * Maps SDK input fields to CRAFT_* environment variables.
  */
-export function buildEnvFromSdkInput(event: AgentEvent, input: SdkAutomationInput): Record<string, string> {
+export function buildEnvFromSdkInput(event: AgentHookEvent, input: SdkAutomationInput): Record<string, string> {
   const env: Record<string, string> = {
     ...cleanEnv(),
     CRAFT_EVENT: event,

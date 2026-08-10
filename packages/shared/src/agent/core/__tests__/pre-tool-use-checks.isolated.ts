@@ -100,6 +100,7 @@ mock.module('../../../feature-flags.ts', () => ({
 // ============================================================
 
 import {
+  BUILT_IN_TOOLS,
   runPreToolUseChecks,
   shouldPromptInAskMode,
   type PreToolUseInput,
@@ -1239,5 +1240,22 @@ describe('shouldPromptInAskMode', () => {
 
       expect(result).toBeNull();
     });
+  });
+});
+
+describe('BUILT_IN_TOOLS', () => {
+  it('recognizes the current Claude orchestration tools', () => {
+    for (const toolName of [
+      'Agent',
+      'Workflow',
+      'SendMessage',
+      'TaskCreate',
+      'TaskGet',
+      'TaskUpdate',
+      'TaskList',
+      'TaskStop',
+    ]) {
+      expect(BUILT_IN_TOOLS[toolName]).toBe(true);
+    }
   });
 });

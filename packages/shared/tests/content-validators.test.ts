@@ -187,6 +187,19 @@ Content.
     expect(result.errors.some(e => e.message.includes('Slug'))).toBe(true);
   });
 
+  it('accepts a leading-hyphen skill slug (permissive skill rule)', () => {
+    const content = `---
+name: Draft Skill
+description: A skill living in a draft folder
+---
+
+Content.
+`;
+    const result = validateSkillContent(content, '-draft');
+    expect(result.valid).toBe(true);
+    expect(result.errors.some(e => e.message.includes('Slug'))).toBe(false);
+  });
+
   it('fails for invalid YAML frontmatter', () => {
     const content = `---
 name: [invalid yaml

@@ -498,7 +498,9 @@ export async function validateStoredBackendConnection(args: {
       connection.providerType,
     );
 
-    if (!hasCredentials && connection.authType !== 'none') {
+    // hasLlmCredentials already returns true for authType 'none' (keyless), so a
+    // separate 'none' guard here would never change the result.
+    if (!hasCredentials) {
       return { success: false, error: 'No credentials configured' };
     }
 
@@ -742,8 +744,10 @@ export async function testBackendConnection(args: {
 
   const tempSlug = `__test-${Date.now()}`;
   const cm = getCredentialManager();
+  // Make the key resolvable by slug for the duration of the test without ever
+  // persisting a throwaway credential to disk.
   if (trimmedKey) {
-    await cm.setLlmApiKey(tempSlug, trimmedKey);
+    cm.setEphemeralLlmApiKey(tempSlug, trimmedKey);
   }
 
   try {
@@ -850,7 +854,7 @@ export async function testBackendConnection(args: {
       error: error instanceof Error ? error.message : String(error),
     };
   } finally {
-    await cm.deleteLlmApiKey(tempSlug).catch(() => {});
+    cm.clearEphemeralLlmApiKey(tempSlug);
   }
 }
 

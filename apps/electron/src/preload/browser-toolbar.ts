@@ -7,21 +7,10 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron'
+import { TOOLBAR_CHANNELS } from '../shared/browser-toolbar-channels'
 
 const CHANNELS = {
-  NAVIGATE: 'browser-toolbar:navigate',
-  GO_BACK: 'browser-toolbar:go-back',
-  GO_FORWARD: 'browser-toolbar:go-forward',
-  RELOAD: 'browser-toolbar:reload',
-  STOP: 'browser-toolbar:stop',
-  MENU_GEOMETRY: 'browser-toolbar:menu-geometry',
-  FORCE_CLOSE_MENU: 'browser-toolbar:force-close-menu',
-  HIDE: 'browser-toolbar:hide',
-  DESTROY: 'browser-toolbar:destroy',
-  STATE_UPDATE: 'browser-toolbar:state-update',
-  THEME_COLOR: 'browser-toolbar:theme-color',
-  REQUEST_PROFILE_MANAGEMENT: 'browser-toolbar:request-profile-management',
-  SWITCH_PROFILE: 'browser-toolbar:switch-profile',
+  ...TOOLBAR_CHANNELS,
   MEETINGS_RESOLVE_WORKSPACE: 'meetings:resolve-workspace',
   MEETINGS_START: 'meetings:start',
   RECORDING_PREPARE: 'meetings:recording:prepare',
@@ -58,6 +47,8 @@ contextBridge.exposeInMainWorld('browserToolbar', {
   closeWindowEntirely: () => ipcRenderer.invoke(CHANNELS.DESTROY, instanceId),
   requestProfileManagement: () => ipcRenderer.invoke(CHANNELS.REQUEST_PROFILE_MANAGEMENT, instanceId),
   switchProfile: (profileId: string) => ipcRenderer.invoke(CHANNELS.SWITCH_PROFILE, instanceId, profileId),
+  toggleSessionPanel: () => ipcRenderer.invoke(CHANNELS.TOGGLE_SESSION_PANEL, instanceId),
+  requestDisplayMode: (mode: 'floating' | 'integrated') => ipcRenderer.invoke(CHANNELS.REQUEST_DISPLAY_MODE, instanceId, mode),
   inviteHermesToMeet: async (payload: { urlOrCode: string; profileId?: string; workspaceId?: string }) => {
     const resolvedWorkspaceId = (payload.workspaceId || workspaceId).trim()
       || await ipcRenderer.invoke(CHANNELS.MEETINGS_RESOLVE_WORKSPACE, instanceId)
@@ -91,14 +82,18 @@ contextBridge.exposeInMainWorld('browserToolbar', {
    * Audio recording lifecycle for the browser pane.
    * The toolbar renderer records via getDisplayMedia; the main process display
    * media handler grants the active Meet BrowserView frame.
+   *
+   * `mimeType` viaja no prepare porque o main precisa dele para selar a
+   * gravação no quit, quando este renderer já não existe.
    */
-  prepareRecording: async (payload: { urlOrCode: string; workspaceId?: string }) => {
+  prepareRecording: async (payload: { urlOrCode: string; workspaceId?: string; mimeType: string }) => {
     const resolvedWorkspaceId = (payload.workspaceId || workspaceId).trim()
       || await ipcRenderer.invoke(CHANNELS.MEETINGS_RESOLVE_WORKSPACE, instanceId)
     return ipcRenderer.invoke(CHANNELS.RECORDING_PREPARE, {
       workspaceId: resolvedWorkspaceId,
       browserInstanceId: instanceId,
       urlOrCode: payload.urlOrCode,
+      mimeType: payload.mimeType,
     }) as Promise<{ recordingId: string; meetingId?: string; outputPath: string }>
   },
   appendRecordingChunk: (recordingId: string, chunk: ArrayBuffer) =>

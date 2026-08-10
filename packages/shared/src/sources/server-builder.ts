@@ -26,6 +26,7 @@ export const SERVER_BUILD_ERRORS = {
   AUTH_REQUIRED: 'Authentication required',
   CREDENTIALS_NEEDED: 'Credentials needed',
   TOKEN_EXPIRED: 'Token expired',
+  BUILD_FAILED: 'source-server-build-failed',
 } as const;
 
 /**
@@ -357,10 +358,9 @@ export class SourceServerBuilder {
             apiServers[slug] = server;
           }
         }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        debug(`[SourceServerBuilder] Failed to build server for ${slug}: ${message}`);
-        errors.push({ sourceSlug: slug, error: message });
+      } catch {
+        debug(`[SourceServerBuilder] Failed to build server for ${slug}`);
+        errors.push({ sourceSlug: slug, error: SERVER_BUILD_ERRORS.BUILD_FAILED });
       }
     }
 

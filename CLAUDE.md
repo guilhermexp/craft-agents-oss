@@ -40,7 +40,7 @@ bun run lint                      # ipc-sends + electron + shared + ui (eslint)
 bun run lint:i18n:parity          # checks i18n key parity across locales
 bun run lint:tool-contracts       # session-tool schema/contract drift
 bun run validate:dev              # typecheck:all + test:shared:all + test:doc-tools
-bun run validate:ci               # validate:dev + lint:i18n:parity
+bun run validate:ci               # validate:dev + lint + lint:i18n:parity + lint:i18n:sorted
 ```
 
 Single-test patterns:
@@ -53,7 +53,7 @@ bun test packages/shared/src/hermes/__tests__/acp-config.test.ts \
         packages/shared/src/mcp/session-tools-server.test.ts \
         packages/shared/src/agent/__tests__/hermes-agent.test.ts \
         packages/server-core/src/handlers/rpc/hermes.test.ts \
-        apps/electron/src/transport/__tests__/channel-map-parity.test.ts
+        apps/electron/src/main/handlers/__tests__/registration.test.ts
 # Hermes/Craft integration focus set — see AGENTS.md
 ```
 
@@ -61,6 +61,7 @@ Notes:
 - `bun test` script also runs every `*.isolated.ts` file in its own `bun test` invocation. A single isolated-test failure aborts the whole script — they need their own process for state isolation.
 - Doc-tool smoke tests (`test:doc-tools`) require `python3` with the deps under `apps/electron/resources/scripts/`.
 - `husky` is wired via `prepare`; commits run staged-only typecheck (`scripts/typecheck-staged.sh`) and i18n staged lint.
+- `bun run lint` needs a TypeScript with a JS API, which `typescript@7` (the native port) does not have. The root `postinstall` runs `scripts/link-eslint-typescript.mjs`, which gives only the ESLint dependency tree a nested `typescript@5.9.3` (`typescript-for-eslint`). `tsc` stays TS 7 everywhere. Read `docs/eslint-typescript7.md` before touching the lint toolchain, the `postinstall`, or the root `typescript` pin.
 
 ## Architecture
 
@@ -111,7 +112,7 @@ User-scoped state at `~/.craft-agent/`: `config.json`, `credentials.enc` (AES-25
 
 ### IPC / RPC
 
-Renderer ↔ main and client ↔ server share a typed channel map. `bun run lint:ipc-sends` (`scripts/check-raw-sends.sh`) blocks raw `webContents.send` / `ipcRenderer.send` calls. Channel parity is asserted by `apps/electron/src/transport/__tests__/channel-map-parity.test.ts` — keep that test passing when adding channels.
+Renderer ↔ main and client ↔ server share one typed contract: `RPC_CONTRACT` in `apps/electron/src/shared/types.ts` declares each leaf's wire channel (referencing `RPC_NAMESPACES`) plus its signature, and `ElectronAPI` and `CHANNEL_MAP` are *derived* from it — so a new method is one edit in one file, and parity is a compile-time property rather than a test. `bun run lint:ipc-sends` (`scripts/check-raw-sends.sh`) blocks raw `webContents.send` / `ipcRenderer.send` calls. `apps/electron/src/main/handlers/__tests__/registration.test.ts` still asserts the runtime half: every channel is registered exactly once, only declared namespaces are registered, and the core/gui profiles stay disjoint.
 
 ### Sources, skills, automations
 

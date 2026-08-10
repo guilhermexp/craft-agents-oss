@@ -11,8 +11,10 @@ import {
   TestAgent,
   createMockBackendConfig,
   createMockSource,
+  createMockSession,
   collectEvents,
 } from './test-utils.ts';
+import { setPermissionMode, cleanupModeState } from '../mode-manager.ts';
 
 describe('BaseAgent', () => {
   let agent: TestAgent;
@@ -155,17 +157,17 @@ describe('BaseAgent', () => {
 
   describe('Manager Accessors', () => {
     it('should provide access to SourceManager', () => {
-      const manager = agent.getSourceManager();
+      const manager = agent.getSourceManagerForTest();
       expect(manager).toBeTruthy();
     });
 
     it('should provide access to PermissionManager', () => {
-      const manager = agent.getPermissionManager();
+      const manager = agent.getPermissionManagerForTest();
       expect(manager).toBeTruthy();
     });
 
     it('should provide access to PromptBuilder', () => {
-      const builder = agent.getPromptBuilder();
+      const builder = agent.getPromptBuilderForTest();
       expect(builder).toBeTruthy();
     });
   });
@@ -216,6 +218,58 @@ describe('BaseAgent', () => {
     it('should cleanup on dispose (alias)', () => {
       // Should not throw
       agent.dispose();
+    });
+  });
+
+  describe('respondToPermission whitelisting (Task 2.3 / divergence 5)', () => {
+    // Drives the real BaseAgent path: a prompt is parked in the shared dispatcher,
+    // then answered with alwaysAllow. Exercised end-to-end (not the old stub) so
+    // the curl/wget-domain vs base-command branches actually touch PermissionManager.
+    async function parkBashPrompt(sessionId: string, command: string, requestId: string) {
+      const wlAgent = new TestAgent(
+        createMockBackendConfig({ session: createMockSession({ id: sessionId }) }),
+      );
+      setPermissionMode(sessionId, 'ask');
+      wlAgent.onPermissionRequest = () => {};
+      const pending = wlAgent.getDispatcherForTest()!.dispatch('Bash', { command }, requestId);
+      await Promise.resolve();
+      return { wlAgent, pending };
+    }
+
+    it('whitelists the destination domain for an approved curl "always allow"', async () => {
+      const sessionId = 'wl-curl-session';
+      const { wlAgent, pending } = await parkBashPrompt(sessionId, 'curl https://example.com/data', 'req-curl');
+      try {
+        wlAgent.respondToPermission('req-curl', true, true);
+        expect(await pending).toEqual({ type: 'allow' });
+        expect(wlAgent.getPermissionManagerForTest().isDomainWhitelisted('example.com')).toBe(true);
+      } finally {
+        cleanupModeState(sessionId);
+      }
+    });
+
+    it('whitelists the base command for an approved non-network "always allow"', async () => {
+      const sessionId = 'wl-cmd-session';
+      const { wlAgent, pending } = await parkBashPrompt(sessionId, 'frobnicate --now', 'req-cmd');
+      try {
+        wlAgent.respondToPermission('req-cmd', true, true);
+        expect(await pending).toEqual({ type: 'allow' });
+        expect(wlAgent.getPermissionManagerForTest().isCommandWhitelisted('frobnicate')).toBe(true);
+      } finally {
+        cleanupModeState(sessionId);
+      }
+    });
+
+    it('does not whitelist when alwaysAllow is false', async () => {
+      const sessionId = 'wl-none-session';
+      const { wlAgent, pending } = await parkBashPrompt(sessionId, 'frobnicate --now', 'req-none');
+      try {
+        wlAgent.respondToPermission('req-none', true, false);
+        expect(await pending).toEqual({ type: 'allow' });
+        expect(wlAgent.getPermissionManagerForTest().isCommandWhitelisted('frobnicate')).toBe(false);
+      } finally {
+        cleanupModeState(sessionId);
+      }
     });
   });
 

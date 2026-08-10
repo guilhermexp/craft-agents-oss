@@ -2,16 +2,6 @@ import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
 
-export const GUI_HANDLED_CHANNELS = [
-  RPC_NAMESPACES.remote.TEST_CONNECTION,
-  RPC_NAMESPACES.window.OPEN_WORKSPACE,
-  RPC_NAMESPACES.window.OPEN_SESSION_IN_NEW_WINDOW,
-  RPC_NAMESPACES.window.CLOSE,
-  RPC_NAMESPACES.window.CONFIRM_CLOSE,
-  RPC_NAMESPACES.window.CANCEL_CLOSE,
-  RPC_NAMESPACES.window.SET_TRAFFIC_LIGHTS,
-] as const
-
 /**
  * Connect to a remote server and wait for handshake.
  * When workspaceId is provided, the handshake is scoped to that workspace so

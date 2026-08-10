@@ -406,15 +406,42 @@ export interface LocalSourceConfig {
   format?: string; // Optional hint: 'filesystem' | 'obsidian' | 'git' | 'sqlite' | etc.
 }
 
-/**
- * Source connection status
- * - 'connected': Source is connected and working
- * - 'needs_auth': Source requires authentication
- * - 'failed': Connection failed with error
- * - 'untested': Connection has not been tested
- * - 'local_disabled': Stdio source is disabled (local MCP servers off)
- */
-export type SourceConnectionStatus = 'connected' | 'needs_auth' | 'failed' | 'untested' | 'local_disabled';
+/** Canonical persisted and renderer-visible source connection statuses. */
+export const SOURCE_CONNECTION_STATUSES = [
+  'connected',
+  'needs_auth',
+  'failed',
+  'untested',
+  'local_disabled',
+  'unhealthy',
+  'disconnected',
+  'error',
+  'unknown',
+] as const;
+
+export type SourceConnectionStatus = typeof SOURCE_CONNECTION_STATUSES[number];
+
+/** Stable, versioned identity used by backend-visible source readiness probes. */
+export interface SourceExpectedTool {
+  name: string;
+  apiVersion: string;
+}
+
+export type SourceReadinessReason =
+  | 'unsupported-backend'
+  | 'source-test-failed'
+  | 'backend-injection-failed'
+  | 'probe-failed'
+  | 'cleanup-failed'
+  | 'missing-tools'
+  | 'version-mismatch';
+
+export interface SourceReadinessEvidence {
+  status: 'ready' | 'unhealthy';
+  reason?: SourceReadinessReason;
+  observedTools?: SourceExpectedTool[];
+  checkedAt: number;
+}
 
 // ============================================================================
 // Source Brand
@@ -472,6 +499,11 @@ export interface FolderSourceConfig {
   connectionStatus?: SourceConnectionStatus;
   connectionError?: string; // Error message if status is 'failed'
   lastTestedAt?: number;
+
+  // Composio/U7 readiness metadata. Missing or empty expectedTools is the
+  // explicit legacy/no-readiness contract.
+  expectedTools?: SourceExpectedTool[];
+  readiness?: SourceReadinessEvidence;
 
   // Metadata (optional - manually created configs may not have them)
   createdAt?: number;
@@ -539,6 +571,8 @@ export interface CreateSourceInput {
   local?: LocalSourceConfig;
   icon?: string; // Emoji or URL (auto-downloaded)
   enabled?: boolean;
+  connectionStatus?: SourceConnectionStatus;
+  expectedTools?: SourceExpectedTool[];
 }
 
 /**

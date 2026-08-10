@@ -1,0 +1,219 @@
+export type ContentTarget =
+  | { kind: 'file'; workspaceId: string; sessionId: string; path: string }
+  | { kind: 'object'; workspaceId: string; objectId: string; viewId?: string }
+  /** A docked browser window. Live handle, never persisted. */
+  | { kind: 'browser'; workspaceId: string; instanceId: string };
+
+export interface ContentTab {
+  id: string;
+  target: ContentTarget;
+  mode: 'preview' | 'permanent';
+  pinned: boolean;
+}
+
+export interface ContentTabsState { tabs: ContentTab[]; activeId: string | null }
+
+/**
+ * Strip label for a tab.
+ *
+ * A browser shows the page it is on, which changes as the user navigates, so
+ * the title is read from live instance state rather than frozen into the
+ * target - the target only identifies which browser.
+ */
+export function contentTabLabel(
+  target: ContentTarget,
+  browserInstances: ReadonlyArray<{ id: string; title?: string }>,
+): string {
+  switch (target.kind) {
+    case 'file':
+      return target.path.split(/[\\/]/).pop() ?? target.path;
+    case 'object':
+      return target.objectId;
+    case 'browser': {
+      const title = browserInstances.find(instance => instance.id === target.instanceId)?.title;
+      return title?.trim() || 'Browser';
+    }
+  }
+}
+
+export type ContentTabsAction =
+  | { type: 'open'; target: ContentTarget; mode: 'preview' | 'permanent' }
+  | { type: 'select'; id: string }
+  | { type: 'close'; id: string }
+  | { type: 'promote'; id: string }
+  | { type: 'pin'; id: string }
+  | { type: 'retarget'; id: string; target: ContentTarget }
+  | { type: 'restore'; state: ContentTabsState };
+
+function normalizeTarget(target: ContentTarget): ContentTarget {
+  // Only files carry a path to normalize.
+  if (target.kind !== 'file') return target;
+  const path = target.path.replaceAll('\\', '/');
+  const absolute = path.startsWith('/');
+  const parts: string[] = [];
+  for (const part of path.split('/')) {
+    if (!part || part === '.') continue;
+    if (part === '..') {
+      if (parts.length > 0 && parts[parts.length - 1] !== '..') parts.pop();
+      else if (!absolute) parts.push(part);
+    } else {
+      parts.push(part);
+    }
+  }
+  const prefix = absolute ? '/' : '';
+  const normalized = `${prefix}${parts.join('/')}`;
+  return { ...target, path: normalized };
+}
+
+export function contentTabId(rawTarget: ContentTarget): string {
+  const target = normalizeTarget(rawTarget);
+  // Switch rather than a ternary chain: a new kind must fail to compile here
+  // instead of silently reading another kind's fields.
+  switch (target.kind) {
+    case 'file':
+      return `file:${encodeURIComponent(target.workspaceId)}:${encodeURIComponent(target.sessionId)}:${encodeURIComponent(target.path)}`;
+    case 'object':
+      return `object:${encodeURIComponent(target.workspaceId)}:${encodeURIComponent(target.objectId)}:${target.viewId === undefined ? 'absent' : `present:${encodeURIComponent(target.viewId)}`}`;
+    case 'browser':
+      return `browser:${encodeURIComponent(target.workspaceId)}:${encodeURIComponent(target.instanceId)}`;
+  }
+}
+
+function previewScope(target: ContentTarget): string {
+  switch (target.kind) {
+    case 'file':
+      return `file:${encodeURIComponent(target.workspaceId)}:${encodeURIComponent(target.sessionId)}`;
+    case 'object':
+      return `object:${encodeURIComponent(target.workspaceId)}`;
+    case 'browser':
+      return `browser:${encodeURIComponent(target.workspaceId)}`;
+  }
+}
+
+function repairActive(tabs: ContentTab[], activeId: string | null): ContentTabsState {
+  return { tabs, activeId: activeId && tabs.some(tab => tab.id === activeId) ? activeId : (tabs[0]?.id ?? null) };
+}
+
+export function contentTabsReducer(state: ContentTabsState, action: ContentTabsAction): ContentTabsState {
+  if (action.type === 'restore') {
+    // A restore rebuilds the persisted kinds when the workspace or session
+    // changes. Browser tabs are live handles to a docked window and are never
+    // persisted, so dropping them here would undock the browser because the
+    // user clicked another session.
+    const live = state.tabs.filter(tab => tab.target.kind === 'browser');
+    const restored = action.state.tabs.filter(tab => tab.target.kind !== 'browser');
+    return repairActive([...restored, ...live], action.state.activeId);
+  }
+  if (action.type === 'open') {
+    const target = normalizeTarget(action.target);
+    const id = contentTabId(target);
+    const existing = state.tabs.find(tab => tab.id === id);
+    if (existing) {
+      const tabs = action.mode === 'permanent' && existing.mode !== 'permanent'
+        ? state.tabs.map(tab => tab.id === id ? { ...tab, mode: 'permanent' as const } : tab)
+        : state.tabs;
+      return { tabs, activeId: id };
+    }
+    const retained = action.mode === 'preview'
+      ? state.tabs.filter(tab => tab.mode !== 'preview' || tab.pinned || previewScope(tab.target) !== previewScope(target))
+      : state.tabs;
+    return { tabs: [...retained, { id, target, mode: action.mode, pinned: false }], activeId: id };
+  }
+  if (action.type === 'select') return repairActive(state.tabs, action.id);
+  if (action.type === 'close') return repairActive(state.tabs.filter(tab => tab.id !== action.id), state.activeId === action.id ? null : state.activeId);
+  if (action.type === 'retarget') {
+    const target = normalizeTarget(action.target);
+    const nextId = contentTabId(target);
+    const source = state.tabs.find(tab => tab.id === action.id);
+    const existing = state.tabs.find(tab => tab.id === nextId && tab.id !== action.id);
+    const replacesScopedPreview = source?.mode === 'preview'
+      && !source.pinned
+      && previewScope(source.target) !== previewScope(target)
+      && (!existing || (existing.mode === 'preview' && !existing.pinned));
+    const scopedTabs = replacesScopedPreview
+      ? state.tabs.filter(tab => (
+          tab.id === action.id
+          || tab.id === nextId
+          || tab.mode !== 'preview'
+          || tab.pinned
+          || previewScope(tab.target) !== previewScope(target)
+        ))
+      : state.tabs;
+    const activeWasDiscardedDestinationPreview = replacesScopedPreview
+      && state.activeId !== null
+      && state.tabs.some(tab => (
+        tab.id === state.activeId
+        && tab.mode === 'preview'
+        && !tab.pinned
+        && previewScope(tab.target) === previewScope(target)
+      ))
+      && !scopedTabs.some(tab => tab.id === state.activeId);
+    const nextActiveId = state.activeId === action.id || activeWasDiscardedDestinationPreview
+      ? nextId
+      : state.activeId;
+    if (source && existing) {
+      const tabs = scopedTabs.flatMap(tab => {
+        if (tab.id === action.id) return [];
+        return [tab.id === nextId ? {
+          ...tab,
+          pinned: tab.pinned || source.pinned,
+          mode: tab.mode === 'permanent' || source.mode === 'permanent' ? 'permanent' as const : 'preview' as const,
+        } : tab];
+      });
+      return repairActive(tabs, nextActiveId);
+    }
+    const tabs = scopedTabs.map(tab => tab.id === action.id ? { ...tab, id: nextId, target } : tab);
+    return repairActive(tabs, nextActiveId);
+  }
+  const tabs = state.tabs.map(tab => tab.id === action.id
+    ? action.type === 'pin' ? { ...tab, pinned: true, mode: 'permanent' as const } : { ...tab, mode: 'permanent' as const }
+    : tab);
+  return repairActive(tabs, state.activeId);
+}
+
+function parsePersistedTab(value: unknown): ContentTab | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.mode !== 'preview' && candidate.mode !== 'permanent') return null;
+  if (typeof candidate.pinned !== 'boolean' || !candidate.target || typeof candidate.target !== 'object') return null;
+  const target = candidate.target as Record<string, unknown>;
+  if (typeof target.workspaceId !== 'string') return null;
+  let parsedTarget: ContentTarget;
+  if (target.kind === 'file') {
+    if (typeof target.sessionId !== 'string' || typeof target.path !== 'string') return null;
+    parsedTarget = { kind: 'file', workspaceId: target.workspaceId, sessionId: target.sessionId, path: target.path };
+  } else if (target.kind === 'object') {
+    if (typeof target.objectId !== 'string' || (target.viewId !== undefined && typeof target.viewId !== 'string')) return null;
+    parsedTarget = { kind: 'object', workspaceId: target.workspaceId, objectId: target.objectId, ...(target.viewId !== undefined ? { viewId: target.viewId } : {}) };
+  } else {
+    return null;
+  }
+  return { id: contentTabId(parsedTarget), target: normalizeTarget(parsedTarget), mode: candidate.mode, pinned: candidate.pinned };
+}
+
+export function restoreContentTabs(value: unknown, workspaceId: string, sessionId: string | null): ContentTabsState {
+  if (!value || typeof value !== 'object') return { tabs: [], activeId: null };
+  const persisted = value as { tabs?: unknown; activeId?: unknown };
+  if (!Array.isArray(persisted.tabs)) return { tabs: [], activeId: null };
+  const tabs: ContentTab[] = [];
+  const canonicalIds = new Set<string>();
+  const persistedIdAliases = new Map<string, string>();
+  for (const valueTab of persisted.tabs) {
+    const tab = parsePersistedTab(valueTab);
+    if (!tab) continue;
+    if (tab.target.workspaceId !== workspaceId) continue;
+    if (tab.target.kind === 'file' && (!sessionId || tab.target.sessionId !== sessionId)) continue;
+    if (valueTab && typeof valueTab === 'object') {
+      const persistedId = (valueTab as Record<string, unknown>).id;
+      if (typeof persistedId === 'string' && !persistedIdAliases.has(persistedId)) persistedIdAliases.set(persistedId, tab.id);
+    }
+    if (canonicalIds.has(tab.id)) continue;
+    canonicalIds.add(tab.id);
+    tabs.push(tab);
+  }
+  const persistedActiveId = typeof persisted.activeId === 'string' ? persisted.activeId : null;
+  const activeId = persistedActiveId
+    ? (persistedIdAliases.get(persistedActiveId) ?? persistedActiveId)
+    : persistedActiveId;
+  return repairActive(tabs, activeId);
+}

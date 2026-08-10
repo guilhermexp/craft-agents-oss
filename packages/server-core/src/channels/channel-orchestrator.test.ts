@@ -1,24 +1,52 @@
 import { describe, expect, it } from 'bun:test';
-import { createChannelOrchestrator, type ChannelAgentRuntime, type ChannelDispatchStore } from './channel-orchestrator.ts';
+import {
+  createChannelOrchestrator,
+  type ChannelAgentRuntime,
+  type ChannelDispatchStore,
+  type ChannelSessionBindingStore,
+} from './channel-orchestrator.ts';
 import { warRoomChannelId, type WarRoomChannel } from '@craft-agent/shared/channels';
 
 function createRuntime(): ChannelAgentRuntime & {
   created: Array<Parameters<ChannelAgentRuntime['createSession']>[0]>;
   sent: Array<Parameters<ChannelAgentRuntime['sendMessage']>[0]>;
+  liveSessionIds: Set<string>;
 } {
   let next = 1;
   const created: Array<Parameters<ChannelAgentRuntime['createSession']>[0]> = [];
   const sent: Array<Parameters<ChannelAgentRuntime['sendMessage']>[0]> = [];
+  const liveSessionIds = new Set<string>();
   return {
     created,
     sent,
+    liveSessionIds,
     async createSession(input) {
       created.push(input);
-      return { id: `session-${next++}` };
+      const id = `session-${next++}`;
+      liveSessionIds.add(id);
+      return { id };
     },
     async sendMessage(input) {
       sent.push(input);
       return { assistantText: `response from ${input.sessionId}` };
+    },
+    async sessionExists(sessionId) {
+      return liveSessionIds.has(sessionId);
+    },
+  };
+}
+
+function createSessionBindingStore(): ChannelSessionBindingStore & {
+  bindings: Map<string, string>;
+} {
+  const bindings = new Map<string, string>();
+  return {
+    bindings,
+    get(channelId, participantId) {
+      return bindings.get(`${channelId}:${participantId}`);
+    },
+    set(channelId, participantId, sessionId) {
+      bindings.set(`${channelId}:${participantId}`, sessionId);
     },
   };
 }
@@ -373,5 +401,59 @@ describe('ChannelOrchestrator', () => {
 
     expect(runtime.sent[0]?.message).toContain('Channel: Architecture');
     expect(runtime.sent[0]?.message).not.toContain('Craft document context:');
+  });
+
+  it('rehydrates a persisted session binding when the backing session still exists', async () => {
+    const runtime = createRuntime();
+    const sessionBindingStore = createSessionBindingStore();
+    runtime.liveSessionIds.add('session-from-disk');
+    sessionBindingStore.set(channel.id, 'hermes-lead', 'session-from-disk');
+    const orchestrator = createChannelOrchestrator({ runtime, sessionBindingStore });
+
+    await orchestrator.sendMessage({ channel, text: '@hermes-lead retome o trabalho', authorId: 'human' });
+
+    expect(runtime.created).toEqual([]);
+    expect(runtime.sent.map(item => item.sessionId)).toEqual(['session-from-disk']);
+  });
+
+  it('creates and persists a new session when a persisted binding no longer exists', async () => {
+    const runtime = createRuntime();
+    const sessionBindingStore = createSessionBindingStore();
+    sessionBindingStore.set(channel.id, 'hermes-lead', 'session-stale');
+    const orchestrator = createChannelOrchestrator({ runtime, sessionBindingStore });
+
+    await orchestrator.sendMessage({ channel, text: '@hermes-lead retome o trabalho', authorId: 'human' });
+
+    expect(runtime.created).toHaveLength(1);
+    expect(runtime.sent.map(item => item.sessionId)).toEqual(['session-1']);
+    expect(sessionBindingStore.bindings.get(`${channel.id}:hermes-lead`)).toBe('session-1');
+  });
+
+  it('does not cache a participant session when persisting its binding throws', async () => {
+    const runtime = createRuntime();
+    const sessionBindingStore = createSessionBindingStore();
+    let failNextWrite = true;
+    sessionBindingStore.set = (channelId, participantId, sessionId) => {
+      if (failNextWrite) {
+        failNextWrite = false;
+        throw new Error('EACCES: binding write failed');
+      }
+      sessionBindingStore.bindings.set(`${channelId}:${participantId}`, sessionId);
+    };
+    const orchestrator = createChannelOrchestrator({ runtime, sessionBindingStore });
+
+    // First turn: session is created but the binding write fails, so the failure
+    // must surface and nothing may be cached in memory.
+    const firstTurn = await orchestrator.sendMessage({ channel, text: '@hermes-lead cria um plano', authorId: 'human' });
+    expect(firstTurn.failures).toEqual([{ participantId: 'hermes-lead', message: 'EACCES: binding write failed' }]);
+    expect(runtime.created).toHaveLength(1);
+    expect(sessionBindingStore.bindings.has(`${channel.id}:hermes-lead`)).toBe(false);
+
+    // Second turn: because the first turn never cached the unpersisted session,
+    // it retries end to end — creating a fresh session and persisting it.
+    await orchestrator.sendMessage({ channel, text: '@hermes-lead tenta de novo', authorId: 'human' });
+    expect(runtime.created).toHaveLength(2);
+    expect(sessionBindingStore.bindings.get(`${channel.id}:hermes-lead`)).toBe('session-2');
+    expect(runtime.sent.map(item => item.sessionId)).toEqual(['session-2']);
   });
 });

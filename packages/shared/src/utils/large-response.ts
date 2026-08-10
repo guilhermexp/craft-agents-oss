@@ -581,10 +581,10 @@ export async function guardLargeResult(
     return `[Base64-encoded binary detected but save failed: ${result.error}]`;
   }
 
-  // 3. Existing size check + summarize flow
-  // Density-aware estimate so base64-heavy text (MIME, JSON-embedded binary)
-  // can't slip past the 4-chars/token heuristic and poison conversation context.
-  if (estimateTokensDensityAware(text) <= TOKEN_LIMIT) return null;
+  // 3. Existing size check + summarize flow.
+  // The threshold lives solely in handleLargeResponse (`tokenLimitFor`) — an
+  // early-out here duplicated it against the fixed TOKEN_LIMIT and silently
+  // disabled context-window scaling for every guardLargeResult caller.
   const result = await handleLargeResponse({
     text,
     sessionPath: opts.sessionPath,

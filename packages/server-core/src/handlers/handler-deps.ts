@@ -5,6 +5,7 @@ import type { IBrowserPaneManager } from './browser-pane-manager-interface'
 import type { IWindowManager } from './window-manager-interface'
 import type { IMessagingGatewayRegistry } from './messaging-registry-interface'
 import type { HermesDashboardResult } from '@craft-agent/shared/protocol'
+import type { ComposioCatalogPageRequest } from '@craft-agent/shared/sources/composio-catalog'
 
 export interface IHermesDashboardHost {
   openDashboard(ensureDashboardRunning: () => Promise<HermesDashboardResult>): Promise<HermesDashboardResult>
@@ -35,4 +36,7 @@ export interface HandlerDeps<
   hermesDashboardHost?: IHermesDashboardHost
   oauthFlowStore: TOAuthFlowStore
   messagingRegistry?: IMessagingGatewayRegistry
+  composioCatalog?: {
+    fetchPage(request: ComposioCatalogPageRequest): Promise<unknown>
+  }
 }

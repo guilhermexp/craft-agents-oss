@@ -34,6 +34,19 @@ export { generateMessageId } from '@craft-agent/core/types'
 export type MeetingStatus = 'starting' | 'running' | 'stopped' | 'error'
 export type MeetingTranscriptionProvider = 'deepgram'
 
+/**
+ * Etapa corrente do pós-processamento de uma gravação craft, campo separado do
+ * `status` — que permanece `stopped` ao selar (D-04). Sem ela, os minutos de
+ * remux, transcrição e análise visual ficam indistinguíveis de "Finalizada".
+ * `completed` e `failed` são terminais; o resto significa trabalho em curso.
+ */
+export type MeetingPostProcessingPhase =
+  | 'preparing'
+  | 'transcribing'
+  | 'analyzing'
+  | 'completed'
+  | 'failed'
+
 export interface MeetingTranscriptionConfig {
   provider: MeetingTranscriptionProvider
   model: string
@@ -75,6 +88,20 @@ export interface MeetingRecordingMetadata {
   mimeType?: string
   bytesWritten?: number
   durationMs?: number
+  /**
+   * Verdadeiro enquanto o `.webm` tem stream aberto ou nunca foi selado
+   * (crash, quit ou destroy do pane). Referenciar o arquivo desde o primeiro
+   * byte é o que o tira da mira do sweep de órfãos; `completeRecording` limpa
+   * a marca ao selar.
+   */
+  partial?: boolean
+  /**
+   * Quando o remux reescreveu o arquivo. O remux substitui o `.webm` no MESMO
+   * path (`renameSync`), então sem esta marca a prévia não tem como saber que a
+   * mídia mudou e continua presa à que carregou durante a gravação — sem
+   * Duration, sem Cues, sem seek.
+   */
+  remuxedAt?: number
 }
 
 export interface MeetingRecord {
@@ -99,6 +126,7 @@ export interface MeetingRecord {
   isArchived?: boolean
   archivedAt?: number
   recording?: MeetingRecordingMetadata
+  postProcessingPhase?: MeetingPostProcessingPhase
 }
 
 export interface MeetingTranscriptSegment {
@@ -492,11 +520,14 @@ export type SessionEvent =
   | { type: 'project_id_changed'; sessionId: string; projectId: string | null }
   | { type: 'connection_changed'; sessionId: string; connectionSlug: string; supportsBranching?: boolean; hermesProfile?: string }
   | { type: 'hermes_profile_changed'; sessionId: string; hermesProfile: string }
-  | { type: 'task_backgrounded'; sessionId: string; toolUseId: string; taskId: string; intent?: string; turnId?: string }
+  | { type: 'task_backgrounded'; sessionId: string; toolUseId: string; taskId: string; intent?: string; agentName?: string; turnId?: string; kind?: 'workflow'; workflowId?: string }
   | { type: 'shell_backgrounded'; sessionId: string; toolUseId: string; shellId: string; intent?: string; command?: string; turnId?: string }
   | { type: 'task_progress'; sessionId: string; toolUseId: string; elapsedSeconds: number; turnId?: string }
   | { type: 'task_completed'; sessionId: string; taskId: string; status: 'completed' | 'failed' | 'stopped'; outputFile?: string; summary?: string; turnId?: string }
   | { type: 'workflow_agent_completed'; sessionId: string; workflowId: string; agentId: string; turnId?: string }
+  | { type: 'team_task_created'; sessionId: string; taskId: string; subject: string; description?: string; teammateName?: string }
+  | { type: 'team_task_completed'; sessionId: string; taskId: string; subject: string; teammateName?: string }
+  | { type: 'teammate_idle'; sessionId: string; teammateName: string }
   | { type: 'shell_killed'; sessionId: string; shellId: string }
   | { type: 'user_message'; sessionId: string; message: Message; status: 'accepted' | 'queued' | 'processing'; optimisticMessageId?: string }
   | { type: 'session_flagged'; sessionId: string }
@@ -1124,6 +1155,12 @@ export interface BrowserInstanceInfo {
   ownerType: 'session' | 'manual'
   ownerSessionId: string | null
   isVisible: boolean
+  /**
+   * Non-null enquanto a tela deste pane está sendo capturada (gravação de
+   * reunião). O renderer usa para sinalizar "gravando" fora da janela do pane, e
+   * sessões de agente não adotam um pane marcado.
+   */
+  captureLock?: { reason: 'meeting-recording'; since: number } | null
   agentControlActive: boolean
   themeColor: string | null
   /**

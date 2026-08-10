@@ -15,6 +15,9 @@ import type {
   SlackServiceScope,
   MicrosoftService,
   McpSourceConfig,
+  ValidationResult,
+  SourceProbeBackend,
+  SourceToolIdentity,
 } from './types.ts';
 
 // ============================================================
@@ -116,25 +119,55 @@ export interface CredentialManagerInterface {
 }
 
 // ============================================================
-// Validator Interface
+// Config Validation Seam
 // ============================================================
 
 /**
- * Config validation interface.
- * Claude uses full Zod validators from packages/shared.
- * Codex uses simplified validators from session-tools-core.
+ * Kinds of config artifact the validator understands. Each maps to exactly one
+ * Zod schema (plus optional filesystem extras) behind the seam.
+ */
+export type ConfigKind =
+  | 'config'
+  | 'preferences'
+  | 'source'
+  | 'skill'
+  | 'statuses'
+  | 'labels'
+  | 'automations'
+  | 'permissions'
+  | 'tool-icons';
+
+/** `'all'` fans out across every kind; concrete kinds validate a single artifact. */
+export type ConfigValidationKind = ConfigKind | 'all';
+
+/**
+ * What to validate: an in-memory `content` string (a pending write) or the
+ * artifact(s) on disk under `path` (the workspace root for workspace-scoped
+ * kinds; ignored for app-level kinds, which read their fixed locations).
+ */
+export type ConfigValidationInput =
+  | { content: string }
+  | { path: string };
+
+/** Narrows a validation to a specific artifact and controls error display. */
+export interface ConfigValidationLocator {
+  /** Source/skill/source-permissions slug. Absent → validate all of that kind. */
+  slug?: string;
+  /** Display file path used in content-validation error messages. */
+  displayFile?: string;
+}
+
+/**
+ * Config validation seam.
+ * Claude wires the full Zod validators from packages/shared; Codex leaves it
+ * undefined and the handler falls back to basic field checks.
  */
 export interface ValidatorInterface {
-  validateConfig(): import('./types.js').ValidationResult;
-  validateSource(workspaceRootPath: string, sourceSlug: string): import('./types.js').ValidationResult;
-  validateAllSources(workspaceRootPath: string): import('./types.js').ValidationResult;
-  validateStatuses(workspaceRootPath: string): import('./types.js').ValidationResult;
-  validatePreferences(): import('./types.js').ValidationResult;
-  validatePermissions(workspaceRootPath: string, sourceSlug?: string): import('./types.js').ValidationResult;
-  validateAutomations(workspaceRootPath: string): import('./types.js').ValidationResult;
-  validateToolIcons(): import('./types.js').ValidationResult;
-  validateAll(workspaceRootPath: string): import('./types.js').ValidationResult;
-  validateSkill(workspaceRootPath: string, skillSlug: string): import('./types.js').ValidationResult;
+  validate(
+    kind: ConfigValidationKind,
+    input: ConfigValidationInput,
+    locator?: ConfigValidationLocator,
+  ): ValidationResult;
 }
 
 // ============================================================
@@ -158,6 +191,11 @@ export interface SessionToolContext {
 
   /** Absolute path to workspace folder (~/.craft-agent/workspaces/{id}) */
   workspacePath: string;
+
+  /** Optional structured-object capability hosted by this backend. */
+  workspaceObjects?: {
+    execute(input: Record<string, unknown>): Promise<Record<string, unknown>> | Record<string, unknown>;
+  };
 
   /** Path to sources folder within workspace */
   get sourcesPath(): string;
@@ -391,6 +429,30 @@ export interface SessionToolContext {
     reason?: string;
     availability?: 'next-turn';
   }>;
+
+  /** Backend family used by the fail-closed U7 source readiness probe. */
+  sourceProbeBackend?: SourceProbeBackend;
+
+  /** Temporarily inject one source into this session without persisting exposure. */
+  injectSourceForProbe?(sourceSlug: string): Promise<{ probeId: string }>;
+
+  /** Observe the canonical source toolset only after temporary session injection. */
+  observeSourceToolsForProbe?(probeId: string): Promise<SourceToolIdentity[]>;
+
+  /** Restore the exact pre-probe session source set. */
+  removeSourceProbe?(probeId: string): Promise<void>;
+
+  /** Prepare final readiness exposure while retaining a rollback snapshot. */
+  prepareSourceReadinessActivation?(sourceSlug: string): Promise<{ activationId: string }>;
+
+  /** Commit activation bookkeeping while retaining rollback state. */
+  commitSourceReadinessActivation?(activationId: string): void;
+
+  /** Release rollback state after both activation and ready config are durable. */
+  finalizeSourceReadinessActivation?(activationId: string): void;
+
+  /** Restore or clear a prepared readiness exposure when commit or persistence fails. */
+  rollbackSourceReadinessActivation?(activationId: string): Promise<void>;
 
   // ============================================================
   // Messaging Gateway (for list/unbind messaging channels)

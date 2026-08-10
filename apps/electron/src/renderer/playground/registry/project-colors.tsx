@@ -2,10 +2,15 @@ import * as React from 'react'
 import { ChevronRight, Circle, FolderKanban } from 'lucide-react'
 import type { ComponentEntry } from './types'
 import type { SessionMeta } from '@/atoms/sessions'
-import type { SessionStatus } from '@/config/session-status-config'
+import type { ResolvedSessionStatus } from '@/config/session-status-config'
 import type { ContentSearchResult } from '@/hooks/useSessionSearch'
 import { SessionItem } from '@/components/app-shell/SessionItem'
-import { SessionListProvider, type SessionListContextValue } from '@/context/SessionListContext'
+import {
+  SessionListActionsProvider,
+  SessionListViewProvider,
+  type SessionListActions,
+  type SessionListView,
+} from '@/context/SessionListContext'
 import { ActionRegistryProvider } from '@/actions/registry'
 import { cn } from '@/lib/utils'
 
@@ -13,7 +18,7 @@ import { cn } from '@/lib/utils'
 // Mock session statuses (parallels the playground's session-list.tsx)
 // ============================================================================
 
-const mockSessionStatuses: SessionStatus[] = [
+const mockSessionStatuses: ResolvedSessionStatus[] = [
   {
     id: 'todo',
     label: 'Todo',
@@ -40,19 +45,22 @@ const mockSessionStatuses: SessionStatus[] = [
   },
 ]
 
-function createMockContext(overrides: Partial<SessionListContextValue> = {}): SessionListContextValue {
+const mockActions: SessionListActions = {
+  onRenameClick: () => {},
+  onSessionStatusChange: () => {},
+  onMarkUnread: () => {},
+  onDelete: async () => true,
+  onSelectSessionById: () => {},
+  onOpenInNewWindow: () => {},
+  onFocusZone: () => {},
+  onKeyDown: () => {},
+  sessionStatuses: mockSessionStatuses,
+  flatLabels: [],
+  labels: [],
+}
+
+function createMockView(overrides: Partial<SessionListView> = {}): SessionListView {
   return {
-    onRenameClick: () => {},
-    onSessionStatusChange: () => {},
-    onMarkUnread: () => {},
-    onDelete: async () => true,
-    onSelectSessionById: () => {},
-    onOpenInNewWindow: () => {},
-    onFocusZone: () => {},
-    onKeyDown: () => {},
-    sessionStatuses: mockSessionStatuses,
-    flatLabels: [],
-    labels: [],
     isMultiSelectActive: false,
     contentSearchResults: new Map(),
     ...overrides,
@@ -324,7 +332,7 @@ function ProjectColorsPreview({ variant = 'stripe' }: ProjectColorsPreviewProps)
       return next
     })
 
-  const ctx = createMockContext({
+  const view = createMockView({
     selectedSessionId,
     contentSearchResults: new Map<string, ContentSearchResult>(),
   })
@@ -334,7 +342,8 @@ function ProjectColorsPreview({ variant = 'stripe' }: ProjectColorsPreviewProps)
       <ProjectColorEditor projects={projects} onChange={setProjects} />
 
       <ActionRegistryProvider>
-        <SessionListProvider value={ctx}>
+        <SessionListActionsProvider value={mockActions}>
+        <SessionListViewProvider value={view}>
           <div className="w-full border border-border rounded-lg overflow-hidden bg-background">
             <div className="px-4 py-2.5 border-b border-border/50">
               <span className="text-sm font-medium">All Sessions</span>
@@ -375,7 +384,8 @@ function ProjectColorsPreview({ variant = 'stripe' }: ProjectColorsPreviewProps)
               })}
             </div>
           </div>
-        </SessionListProvider>
+        </SessionListViewProvider>
+        </SessionListActionsProvider>
       </ActionRegistryProvider>
     </div>
   )

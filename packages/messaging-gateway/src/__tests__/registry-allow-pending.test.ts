@@ -54,22 +54,11 @@ function makeRegistry() {
   return { registry, workspaceId: 'ws-test' }
 }
 
-// Tests reach into the registry's private workspace map. The shape is
-// stable enough that a loose `any` for the gateway is acceptable here —
-// trying to spell out the full type pulls in BindingStore / PendingStore
-// transitively via ReturnType<...>, which TS rejects as circular.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getInternalState(registry: MessagingGatewayRegistry, workspaceId: string): any {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const r = registry as any
-  return r.workspaces.get(workspaceId) ?? r.bootstrapWorkspace(workspaceId)
-}
-
 describe('MessagingGatewayRegistry.allowPendingSender — reason branching', () => {
   it("'not-owner' reject is promoted to platform owner", () => {
     const { registry, workspaceId } = makeRegistry()
-    const state = getInternalState(registry, workspaceId)!
-    state.gateway.getPendingStore().recordRejection({
+    const gateway = registry.getGateway(workspaceId)
+    gateway.getPendingStore().recordRejection({
       platform: 'telegram',
       senderId: 'stranger',
       senderName: 'Bob',
@@ -80,19 +69,19 @@ describe('MessagingGatewayRegistry.allowPendingSender — reason branching', () 
 
     expect(result.owners.some((o: { userId: string }) => o.userId === 'stranger')).toBe(true)
     // Pending row is dismissed.
-    const pending = state.gateway.getPendingStore().list('telegram')
+    const pending = gateway.getPendingStore().list('telegram')
     expect(pending.find((p: { userId: string }) => p.userId === 'stranger')).toBeUndefined()
   })
 
   it("'not-on-binding-allowlist' reject appends to binding allow-list, NOT workspace owners", () => {
     const { registry, workspaceId } = makeRegistry()
-    const state = getInternalState(registry, workspaceId)!
-    const store = state.gateway.getBindingStore()
+    const gateway = registry.getGateway(workspaceId)
+    const store = gateway.getBindingStore()
     const binding = store.bind('ws-test', 'sess-A', 'telegram', 'chat-A', undefined, {
       accessMode: 'allow-list',
       allowedSenderIds: ['alice'],
     })
-    state.gateway.getPendingStore().recordRejection({
+    gateway.getPendingStore().recordRejection({
       platform: 'telegram',
       senderId: 'bob',
       senderName: 'Bob',
@@ -119,8 +108,8 @@ describe('MessagingGatewayRegistry.allowPendingSender — reason branching', () 
 
   it("'not-on-binding-allowlist' with stale binding dismisses pending and throws", () => {
     const { registry, workspaceId } = makeRegistry()
-    const state = getInternalState(registry, workspaceId)!
-    state.gateway.getPendingStore().recordRejection({
+    const gateway = registry.getGateway(workspaceId)
+    gateway.getPendingStore().recordRejection({
       platform: 'telegram',
       senderId: 'bob',
       reason: 'not-on-binding-allowlist',
@@ -135,31 +124,31 @@ describe('MessagingGatewayRegistry.allowPendingSender — reason branching', () 
     ).toThrow(/Binding no longer exists/)
 
     // Pending entry was auto-dismissed.
-    const pending = state.gateway.getPendingStore().list('telegram')
+    const pending = gateway.getPendingStore().list('telegram')
     expect(pending).toHaveLength(0)
   })
 
   it("'not-owner' promotion clears all pending rows for the sender", () => {
     const { registry, workspaceId } = makeRegistry()
-    const state = getInternalState(registry, workspaceId)!
-    const store = state.gateway.getBindingStore()
+    const gateway = registry.getGateway(workspaceId)
+    const store = gateway.getBindingStore()
     const binding = store.bind('ws-test', 'sess-A', 'telegram', 'chat-A', undefined, {
       accessMode: 'allow-list',
       allowedSenderIds: ['alice'],
     })
     // Bob has TWO pending rows: one workspace-level, one binding-level.
-    state.gateway.getPendingStore().recordRejection({
+    gateway.getPendingStore().recordRejection({
       platform: 'telegram',
       senderId: 'bob',
       reason: 'not-owner',
     })
-    state.gateway.getPendingStore().recordRejection({
+    gateway.getPendingStore().recordRejection({
       platform: 'telegram',
       senderId: 'bob',
       reason: 'not-on-binding-allowlist',
       bindingId: binding.id,
     })
-    expect(state.gateway.getPendingStore().list('telegram')).toHaveLength(2)
+    expect(gateway.getPendingStore().list('telegram')).toHaveLength(2)
 
     registry.allowPendingSender(workspaceId, 'telegram', 'bob', { reason: 'not-owner' })
 
@@ -167,7 +156,7 @@ describe('MessagingGatewayRegistry.allowPendingSender — reason branching', () 
     // reject is moot (he inherits access for inherit-mode bindings, and
     // the allow-list-mode binding still doesn't include him, but that's
     // a separate decision the operator can make explicitly).
-    expect(state.gateway.getPendingStore().list('telegram')).toHaveLength(0)
+    expect(gateway.getPendingStore().list('telegram')).toHaveLength(0)
   })
 
   it('refuses promotion for unknown sender (not in pending)', () => {

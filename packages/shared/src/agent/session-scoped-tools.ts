@@ -227,7 +227,6 @@ export function getSessionScopedTools(
   const cacheKey = `${sessionId}::${workspaceRootPath}`;
 
   // Return cached tools if available, but always create a fresh MCP server wrapper
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let tools: any[] | undefined = sessionToolsCache.get(cacheKey);
   if (!tools) {
     // Create Claude context with full capabilities
@@ -258,14 +257,13 @@ export function getSessionScopedTools(
     // Helper to create a tool from the canonical registry.
     // The `as any` on schema bridges a Zod generic-variance issue when .shape
     // types (ZodType<string>) flow into Record<string, ZodType<unknown>>.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function registryTool(name: string, schema: any) {
       const def = SESSION_TOOL_REGISTRY.get(name)!;
       return tool(name, TOOL_DESCRIPTIONS[name] || def.description, schema, async (args: any) => {
-        if (!def.handler) {
-          throw new Error(`Session tool '${name}' is not executable in the registry adapter.`);
-        }
-        const result = await executeSessionTool(def, ctx, args);
+        const result = await executeSessionTool(name, ctx, args, {
+          includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback,
+          includeMemory: FEATURE_FLAGS.memory,
+        });
         return convertResult(result);
       }, def.readOnly ? { annotations: { readOnlyHint: true } } : undefined);
     }
@@ -275,9 +273,15 @@ export function getSessionScopedTools(
 
     // Create tools from the canonical registry — all tools with handlers.
     // Tool visibility is centrally filtered in session-tools-core to avoid backend drift.
-    tools = getSessionToolDefs({ includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback, includeMemory: FEATURE_FLAGS.memory })
-      .filter(def => def.handler !== null) // Skip backend-specific tools (call_llm)
-      .map(def => registryTool(def.name, def.inputSchema.shape));
+    tools = [];
+    for (const def of getSessionToolDefs({ includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback, includeMemory: FEATURE_FLAGS.memory, includeWorkspaceObjects: true })) {
+      if (def.executionMode !== 'registry') continue;
+      const nativeInputSchema = def.nativeInputSchema ?? def.inputSchema;
+      if (!('shape' in nativeInputSchema)) {
+        throw new Error(`Native session tool '${def.name}' requires an object input envelope`);
+      }
+      tools.push(registryTool(def.name, nativeInputSchema.shape));
+    }
 
     // Add call_llm — backend-specific (not in registry handler)
     const sessionPath = getSessionPath(workspaceRootPath, sessionId);

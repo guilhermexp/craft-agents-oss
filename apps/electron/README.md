@@ -37,7 +37,7 @@ apps/electron/
 │   │   │   ├── chat/      # Chat UI (ChatInput, ChatDisplay)
 │   │   │   ├── markdown/  # Markdown renderer with Shiki
 │   │   │   └── ui/        # shadcn/ui components (incl. source-avatar.tsx)
-│   │   ├── contexts/
+│   │   ├── context/       # React context providers (navigation, app shell, theme, focus)
 │   │   │   └── NavigationContext.tsx  # Type-safe routing and navigation
 │   │   ├── lib/
 │   │   │   └── navigate.ts  # Global navigate() function
@@ -359,10 +359,10 @@ See `CLAUDE.md` for complete route reference.
 | `main/sources-service.ts` | Source loading and authentication service |
 | `preload/index.ts` | Context bridge API |
 | `renderer/App.tsx` | React root, state management |
-| `renderer/contexts/NavigationContext.tsx` | Type-safe routing and navigation handler |
+| `renderer/context/NavigationContext.tsx` | Type-safe routing and navigation handler |
 | `renderer/lib/navigate.ts` | Global navigate() function |
 | `renderer/hooks/useAgentState.ts` | Agent activation state machine (IPC-based) |
-| `renderer/hooks/useBackgroundTasks.ts` | Background task tracking |
+| `renderer/lib/background-task-retention.ts` | Background task retention (state read inline from `backgroundTasksAtomFamily`) |
 | `renderer/hooks/useStatuses.ts` | Workspace status configuration |
 | `renderer/hooks/useTheme.ts` | Cascading theme resolution |
 | `renderer/components/chat/Chat.tsx` | Main chat layout with resizable panels |

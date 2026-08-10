@@ -504,6 +504,7 @@ describe('TokenRefreshManager', () => {
 
       await manager.ensureFreshToken(source);
 
+      // eslint-disable-next-line craft-shared/no-inline-source-auth-check -- #710 is about the in-memory field being mutated; the derived isSourceUsable() check is asserted below
       expect(source.config.isAuthenticated).toBe(false);
       expect(source.config.connectionStatus).toBe('needs_auth');
       expect(source.config.connectionError).toBe('Token refresh failed');
@@ -511,6 +512,9 @@ describe('TokenRefreshManager', () => {
     });
 
     test('failed refresh (throws) mutates in-memory source.config — #710', async () => {
+      const providerFailure = 'token=refresh-secret client_secret=client-secret Authorization: Bearer auth-secret https://user:pass@example.test/private?credential=url-secret arbitrary-provider-text';
+      const logs: string[] = [];
+      const markSourceNeedsReauth = mock(() => {});
       const credManager = createMockCredManager({
         load: mock(() => Promise.resolve({
           value: 'expired-token',
@@ -518,10 +522,11 @@ describe('TokenRefreshManager', () => {
           expiresAt: Date.now() - 60_000,
         })),
         isExpired: mock(() => true),
-        refresh: mock(() => Promise.reject(new Error('network down'))),
+        refresh: mock(() => Promise.reject(new Error(providerFailure))),
+        markSourceNeedsReauth,
       });
 
-      const manager = new TokenRefreshManager(credManager);
+      const manager = new TokenRefreshManager(credManager, { log: (message) => logs.push(message) });
       const source = createMockSource({
         slug: 'craft-mcp',
         type: 'mcp',
@@ -533,12 +538,19 @@ describe('TokenRefreshManager', () => {
 
       expect(isSourceUsable(source)).toBe(true);
 
-      await manager.ensureFreshToken(source);
+      const result = await manager.ensureFreshToken(source);
 
+      expect(result).toEqual({ success: false, reason: 'token-refresh-failed' });
+      // eslint-disable-next-line craft-shared/no-inline-source-auth-check -- #710 is about the in-memory field being mutated; the derived isSourceUsable() check is asserted below
       expect(source.config.isAuthenticated).toBe(false);
       expect(source.config.connectionStatus).toBe('needs_auth');
-      expect(source.config.connectionError).toBe('Refresh error: network down');
+      expect(source.config.connectionError).toBe('Token refresh failed');
+      expect(markSourceNeedsReauth).toHaveBeenCalledWith(source, 'Token refresh failed');
       expect(isSourceUsable(source)).toBe(false);
+      const publicEvidence = JSON.stringify({ result, source: source.config, logs, markSourceNeedsReauth: markSourceNeedsReauth.mock.calls });
+      for (const secret of ['refresh-secret', 'client-secret', 'auth-secret', 'user:pass', 'url-secret', 'arbitrary-provider-text']) {
+        expect(publicEvidence).not.toContain(secret);
+      }
     });
   });
 

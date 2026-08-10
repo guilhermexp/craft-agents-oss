@@ -24,6 +24,13 @@ export interface PlatformActions {
   onOpenFile?: (path: string) => void
 
   /**
+   * Open a file as a tab in the app's side preview panel, beside the chat.
+   * Provided only where such a panel exists (Craft desktop, non-compact);
+   * blocks hide their side-panel affordance when absent.
+   */
+  onOpenFileInSidePanel?: (path: string) => void
+
+  /**
    * Open a file directly in the system editor, bypassing the link interceptor.
    * Used by overlay header badges — when already viewing a file, "Open" should
    * launch an external editor, not re-trigger the in-app preview.

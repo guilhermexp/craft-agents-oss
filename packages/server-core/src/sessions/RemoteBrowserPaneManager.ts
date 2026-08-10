@@ -1,37 +1,38 @@
 /**
  * RemoteBrowserPaneManager
  *
- * Thin proxy that implements `IBrowserPaneManager` for a single remote session.
- * Every method packages its args into a `BrowserCapabilityRequest` and ships it
- * to the user's desktop client via `server.invokeClient(...)`. The local
- * `BrowserPaneManager` dispatcher (in `apps/electron`) executes the call and
- * returns the result through the same WS RPC channel.
+ * Generic transport adapter that satisfies `IBrowserPaneManager` for one remote
+ * session. The seam underneath is a single `invoke(method, args)` WS round-trip,
+ * so this is a thin Proxy: every interface method ships its positional args to
+ * the user's desktop client via `server.invokeClient(...)`, and the local
+ * `BrowserPaneManager` dispatcher (apps/electron) executes it. A new
+ * data-returning capability needs ZERO edits here — adding it to
+ * `IBrowserPaneManager` is enough. A new sync-`void` capability IS caught by the
+ * compiler: `FIRE_AND_FORGET` is a `Record<FireAndForgetMethod, true>` derived
+ * from the interface, so a void method missing from it fails to typecheck.
+ *
+ * Bespoke handling, kept as explicit overrides:
+ *   - screenshot / screenshotRegion — Buffer<->Uint8Array wire conversion.
+ *   - uploadFile — refused (no path to ship a local file from a remote agent).
+ *   - setSessionPathResolver — local-only, no-op over the wire.
+ *   - assertEvaluateAllowed — local-only gate; the desktop's `evaluate()` is
+ *     authoritative, so the remote pre-check is a no-op (see IBrowserPaneManager).
+ * Fire-and-forget lifecycle methods (the sync-`void` interface members) are
+ * dispatched without awaiting: cleanup paths must not block on the WS.
  *
  * One instance per (sessionId, workspaceId). Stored on `SessionManager` in a
- * `Map<sessionId, RemoteBrowserPaneManager>` and torn down on session destroy.
+ * `Map<sessionId, IBrowserPaneManager>` and torn down on session destroy.
  *
  * See docs/adr-transport-locality.md for the locality boundary definition.
  */
 
 import { CodedError } from '@craft-agent/shared/protocol'
-import type { BrowserInstanceInfo } from '@craft-agent/shared/protocol'
 import { createScopedLogger, CONSOLE_LOGGER } from '../runtime/platform'
 import type {
   IBrowserPaneManager,
   BrowserScreenshotOptions,
   BrowserScreenshotRegionTarget,
   BrowserScreenshotResult,
-  BrowserConsoleOptions,
-  BrowserConsoleEntry,
-  BrowserNetworkOptions,
-  BrowserNetworkEntry,
-  BrowserKeyArgs,
-  BrowserWaitArgs,
-  BrowserWaitResult,
-  BrowserDownloadOptions,
-  BrowserDownloadEntry,
-  BrowserInstanceSnapshot,
-  AccessibilitySnapshot,
 } from '../handlers/browser-pane-manager-interface'
 import { CLIENT_BROWSER_INVOKE, requestClientBrowserInvoke } from '../transport/capabilities'
 import type { BrowserCapabilityMethod, ScreenshotResultWire } from '../transport/browser-capability'
@@ -51,7 +52,49 @@ export interface RemoteBrowserPaneManagerDeps {
   readonly getHostClient: () => string | null
 }
 
-export class RemoteBrowserPaneManager implements IBrowserPaneManager {
+/**
+ * Wire methods whose interface return type is sync `void`. DERIVED from
+ * `IBrowserPaneManager` (not a hand-kept mirror): `Record<FireAndForgetMethod,
+ * true>` is exhaustive, so a new void capability that forgets this table fails
+ * to typecheck instead of silently becoming an un-awaited Promise.
+ *
+ * Dispatched over the wire but never awaited — a silent failure on a cleanup
+ * path leaks a remote tab, so `invokeSync` logs it.
+ */
+type FireAndForgetMethod = {
+  [K in BrowserCapabilityMethod]: IBrowserPaneManager[K] extends (...args: never[]) => infer R
+    ? ([R] extends [void] ? ([void] extends [R] ? K : never) : never)
+    : never
+}[BrowserCapabilityMethod]
+
+const FIRE_AND_FORGET: Record<FireAndForgetMethod, true> = {
+  destroyForSession: true,
+  unbindAllForSession: true,
+  setAgentControl: true,
+  bindSession: true,
+  focus: true,
+  destroyInstance: true,
+  hide: true,
+  clearAgentControl: true,
+}
+
+/**
+ * Non-wire property keys — thenable protocol + JS serialization/coercion hooks.
+ * Matched with `Object.hasOwn` (never a prototype-chain lookup) and resolved from
+ * the plain target (`Reflect.get`) instead of a dispatcher, so `await bridge`,
+ * `String(bridge)`, and `JSON.stringify(bridge)` use default Object behavior
+ * rather than firing a WS round-trip (or throwing on a missing `toString`).
+ */
+const NON_METHOD_KEYS: Record<string, boolean> = {
+  then: true, catch: true, finally: true,
+  toJSON: true, toString: true, valueOf: true, toLocaleString: true, constructor: true,
+}
+
+/**
+ * Owns the WS plumbing: client resolution, capability check, and the single
+ * `invoke(method, args)` round-trip that every interface method funnels through.
+ */
+class RemoteBrowserPaneCore {
   private readonly sessionId: string
   private readonly workspaceId: string
   private readonly rpcServer: RpcServer
@@ -64,11 +107,7 @@ export class RemoteBrowserPaneManager implements IBrowserPaneManager {
     this.getHostClient = deps.getHostClient
   }
 
-  // ---------------------------------------------------------------------------
-  // Internal: package and ship one IBrowserPaneManager call.
-  // ---------------------------------------------------------------------------
-
-  private async invoke<T>(method: BrowserCapabilityMethod, args: unknown[]): Promise<T> {
+  async invoke<T>(method: BrowserCapabilityMethod, args: unknown[]): Promise<T> {
     const clientId = this.getHostClient()
     if (!clientId) {
       throw new CodedError(
@@ -92,259 +131,28 @@ export class RemoteBrowserPaneManager implements IBrowserPaneManager {
     })
   }
 
-  /** Synchronous methods on IBPM are emulated by awaiting in callers; here we
-   * preserve a `void` return for fire-and-forget paths used by SessionManager. */
-  private invokeSync(method: BrowserCapabilityMethod, args: unknown[]): void {
+  /** Dispatch a fire-and-forget call: cleanup paths must not block on the WS. */
+  invokeSync(method: BrowserCapabilityMethod, args: unknown[]): void {
     this.invoke<unknown>(method, args).catch((err: unknown) => {
-      // Don't rethrow — callers like setAgentControl / unbindAllForSession don't
-      // await. But log it: for cleanup paths (destroyForSession, unbindAll*)
-      // a silent failure means leaked remote tabs with no trace.
       remoteBpmLog.warn(
         `invokeSync(${method}) failed for session ${this.sessionId}: ${err instanceof Error ? err.message : String(err)}`,
       )
     })
   }
 
-  // ---------------------------------------------------------------------------
-  // IBrowserPaneManager — session lifecycle
-  // ---------------------------------------------------------------------------
-
-  setSessionPathResolver(_fn: (sessionId: string) => string | null): void {
-    // No-op: path resolution belongs to the remote server, not the client BPM.
-    // Calls into this method from the server side are still useful locally for
-    // metadata, but the BPM itself doesn't need them on a remote bridge.
-  }
-
-  destroyForSession(sessionId: string): void {
-    this.invokeSync('destroyForSession', [sessionId])
-  }
-
-  async clearVisualsForSession(sessionId: string): Promise<void> {
-    await this.invoke<void>('clearVisualsForSession', [sessionId])
-  }
-
-  unbindAllForSession(sessionId: string): void {
-    this.invokeSync('unbindAllForSession', [sessionId])
-  }
-
-  /**
-   * IBPM declares `getOrCreateForSession` as synchronous. The async work is
-   * fired-and-forgot here; SessionManager's tool runtime always follows with
-   * an awaited call (navigate, screenshot, …) that surfaces real errors.
-   *
-   * Callers that need the actual instanceId should use the async-friendly
-   * `createForSession` path via the browser-tool-runtime, which awaits.
-   */
-  getOrCreateForSession(sessionId: string, _options?: { workspaceId?: string | null }): string {
-    // The remote bridge can't synchronously block on a WS round-trip. Return
-    // an opaque sentinel — async-aware callers should use `getOrCreateForSessionAsync`.
-    // workspaceId is carried on the wire via `BrowserCapabilityRequest.workspaceId`
-    // (set from `this.workspaceId`), so the dispatcher already knows it.
-    this.invokeSync('getOrCreateForSession', [sessionId])
-    return `remote-pending:${sessionId}`
-  }
-
-  async getOrCreateForSessionAsync(sessionId: string, _options?: { workspaceId?: string | null }): Promise<string> {
-    return await this.invoke('getOrCreateForSession', [sessionId])
-  }
-
-  setAgentControl(
-    sessionId: string,
-    meta: { displayName?: string; intent?: string },
-    _options?: { workspaceId?: string | null },
-  ): void {
-    this.invokeSync('setAgentControl', [sessionId, meta])
-  }
-
-  // ---------------------------------------------------------------------------
-  // IBrowserPaneManager — instance management
-  // ---------------------------------------------------------------------------
-
-  createForSession(sessionId: string, options?: { show?: boolean; workspaceId?: string | null }): string {
-    this.invokeSync('createForSession', [sessionId, options])
-    return `remote-pending:${sessionId}`
-  }
-
-  async createForSessionAsync(sessionId: string, options?: { show?: boolean; workspaceId?: string | null }): Promise<string> {
-    return await this.invoke('createForSession', [sessionId, options])
-  }
-
-  getInstance(_id: string): BrowserInstanceSnapshot | undefined {
-    // Synchronous accessor — bridge cannot make a WS round-trip here. Callers
-    // who need this info should use the async-friendly `getInstanceAsync`.
-    return undefined
-  }
-
-  async getInstanceAsync(id: string): Promise<BrowserInstanceSnapshot | undefined> {
-    return await this.invoke('getInstance', [id])
-  }
-
-  listInstances(): BrowserInstanceInfo[] {
-    // Sync surface returns []; remote-aware code uses `listInstancesAsync`.
-    return []
-  }
-
-  async listInstancesAsync(): Promise<BrowserInstanceInfo[]> {
-    return await this.invoke('listInstances', [])
-  }
-
-  focusBoundForSession(sessionId: string, _options?: { workspaceId?: string | null }): string {
-    this.invokeSync('focusBoundForSession', [sessionId])
-    return `remote-pending:${sessionId}`
-  }
-
-  async focusBoundForSessionAsync(sessionId: string, _options?: { workspaceId?: string | null }): Promise<string> {
-    return await this.invoke('focusBoundForSession', [sessionId])
-  }
-
-  bindSession(id: string, sessionId: string, _options?: { workspaceId?: string | null }): void {
-    this.invokeSync('bindSession', [id, sessionId])
-  }
-
-  focus(id: string): void {
-    this.invokeSync('focus', [id])
-  }
-
-  destroyInstance(id: string): void {
-    this.invokeSync('destroyInstance', [id])
-  }
-
-  hide(id: string): void {
-    this.invokeSync('hide', [id])
-  }
-
-  clearAgentControl(sessionId: string): void {
-    this.invokeSync('clearAgentControl', [sessionId])
-  }
-
-  clearAgentControlForInstance(
-    instanceId: string,
-    sessionId?: string,
-  ): { released: boolean; reason?: string } {
-    // Synchronous IBPM return — fire-and-forget the actual call. Callers in
-    // forced-stop flows treat a successful local cleanup as best-effort.
-    this.invokeSync('clearAgentControlForInstance', [instanceId, sessionId])
-    return { released: true }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Async methods — these are the ones that actually matter to the agent.
-  // ---------------------------------------------------------------------------
-
-  async navigate(id: string, url: string): Promise<{ url: string; title: string }> {
-    return await this.invoke('navigate', [id, url])
-  }
-  async goBack(id: string): Promise<void> {
-    await this.invoke('goBack', [id])
-  }
-  async goForward(id: string): Promise<void> {
-    await this.invoke('goForward', [id])
-  }
-
-  async getAccessibilitySnapshot(id: string): Promise<AccessibilitySnapshot> {
-    return await this.invoke('getAccessibilitySnapshot', [id])
-  }
-  async clickElement(
-    id: string, ref: string,
-    options?: { waitFor?: 'none' | 'navigation' | 'network-idle'; timeoutMs?: number },
-  ): Promise<void> {
-    await this.invoke('clickElement', [id, ref, options])
-  }
-  async clickAtCoordinates(id: string, x: number, y: number): Promise<void> {
-    await this.invoke('clickAtCoordinates', [id, x, y])
-  }
-  async drag(id: string, x1: number, y1: number, x2: number, y2: number): Promise<void> {
-    await this.invoke('drag', [id, x1, y1, x2, y2])
-  }
-  async fillElement(id: string, ref: string, value: string): Promise<void> {
-    await this.invoke('fillElement', [id, ref, value])
-  }
-  async typeText(id: string, text: string): Promise<void> {
-    await this.invoke('typeText', [id, text])
-  }
-  async selectOption(id: string, ref: string, value: string): Promise<void> {
-    await this.invoke('selectOption', [id, ref, value])
-  }
-  async setClipboard(id: string, text: string): Promise<void> {
-    await this.invoke('setClipboard', [id, text])
-  }
-  async getClipboard(id: string): Promise<string> {
-    return await this.invoke('getClipboard', [id])
-  }
-  async scroll(id: string, direction: 'up' | 'down' | 'left' | 'right', amount?: number): Promise<void> {
-    await this.invoke('scroll', [id, direction, amount])
-  }
-  async sendKey(id: string, args: BrowserKeyArgs): Promise<void> {
-    await this.invoke('sendKey', [id, args])
-  }
-  async uploadFile(_id: string, _ref: string, _filePaths: string[]): Promise<unknown> {
-    throw new CodedError(
-      'BROWSER_REMOTE_UPLOAD_NOT_SUPPORTED',
-      'File upload from a remote agent is not supported. ' +
-      'Ask the user to attach the file to the session instead.',
-    )
-  }
-  async evaluate(id: string, expression: string): Promise<unknown> {
-    return await this.invoke('evaluate', [id, expression])
-  }
-
-  async screenshot(id: string, options?: BrowserScreenshotOptions): Promise<BrowserScreenshotResult> {
-    const wire = await this.invoke<ScreenshotResultWire>('screenshot', [id, options])
-    return this.fromScreenshotWire(wire)
-  }
-  async screenshotRegion(id: string, target: BrowserScreenshotRegionTarget): Promise<BrowserScreenshotResult> {
-    const wire = await this.invoke<ScreenshotResultWire>('screenshotRegion', [id, target])
-    return this.fromScreenshotWire(wire)
-  }
-
-  getConsoleLogs(id: string, options?: BrowserConsoleOptions): BrowserConsoleEntry[] {
-    // IBPM declares sync (local-only). Remote-aware callers must use
-    // getConsoleLogsAsync; returning [] here keeps the sync surface intact.
-    void this.invoke<BrowserConsoleEntry[]>('getConsoleLogs', [id, options]).catch(() => {})
-    return []
-  }
-  async getConsoleLogsAsync(id: string, options?: BrowserConsoleOptions): Promise<BrowserConsoleEntry[]> {
-    return await this.invoke<BrowserConsoleEntry[]>('getConsoleLogs', [id, options])
-  }
-  windowResize(id: string, width: number, height: number): { width: number; height: number } {
-    void this.invoke<{ width: number; height: number }>('windowResize', [id, width, height]).catch(() => {})
-    return { width, height }
-  }
-  async windowResizeAsync(id: string, width: number, height: number): Promise<{ width: number; height: number }> {
-    return await this.invoke<{ width: number; height: number }>('windowResize', [id, width, height])
-  }
-  getNetworkLogs(id: string, options?: BrowserNetworkOptions): BrowserNetworkEntry[] {
-    void this.invoke<BrowserNetworkEntry[]>('getNetworkLogs', [id, options]).catch(() => {})
-    return []
-  }
-  async getNetworkLogsAsync(id: string, options?: BrowserNetworkOptions): Promise<BrowserNetworkEntry[]> {
-    return await this.invoke<BrowserNetworkEntry[]>('getNetworkLogs', [id, options])
-  }
-  async waitFor(id: string, args: BrowserWaitArgs): Promise<BrowserWaitResult> {
-    return await this.invoke('waitFor', [id, args])
-  }
-  async getDownloads(id: string, options?: BrowserDownloadOptions): Promise<BrowserDownloadEntry[]> {
-    return await this.invoke('getDownloads', [id, options])
-  }
-  async detectSecurityChallenge(id: string): Promise<{ detected: boolean; provider: string; signals: string[] }> {
-    return await this.invoke('detectSecurityChallenge', [id])
-  }
-
-  // ---------------------------------------------------------------------------
-  // Wire conversions
-  // ---------------------------------------------------------------------------
-
-  private fromScreenshotWire(wire: ScreenshotResultWire): BrowserScreenshotResult {
-    const bytes = wire.imageBytes
+  fromScreenshotWire(wire: ScreenshotResultWire): BrowserScreenshotResult {
+    const bytes: unknown = wire.imageBytes
     // Structured clone on the WS layer may deliver this as a Uint8Array or as
     // a serialized object with `data` field — accept both.
     let buffer: Buffer
     if (bytes instanceof Uint8Array) {
       buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-    } else if (bytes && typeof bytes === 'object' && 'data' in (bytes as object)) {
-      buffer = Buffer.from((bytes as { data: number[] }).data)
+    } else if (bytes && typeof bytes === 'object' && 'data' in bytes) {
+      const data = bytes.data as number[]
+      buffer = Buffer.from(data)
     } else {
-      buffer = Buffer.from(bytes as unknown as ArrayBufferLike)
+      const raw = bytes as ArrayBufferLike
+      buffer = Buffer.from(raw)
     }
     return {
       imageBuffer: buffer,
@@ -352,4 +160,46 @@ export class RemoteBrowserPaneManager implements IBrowserPaneManager {
       metadata: wire.metadata,
     }
   }
+}
+
+/**
+ * Build a remote `IBrowserPaneManager` for a single (sessionId, workspaceId).
+ * Every method is generated on demand from the wire seam — see the class header.
+ */
+export function createRemoteBrowserPaneManager(deps: RemoteBrowserPaneManagerDeps): IBrowserPaneManager {
+  const core = new RemoteBrowserPaneCore(deps)
+
+  const overrides: Partial<IBrowserPaneManager> = {
+    // Path resolution belongs to the server, not the client BPM.
+    setSessionPathResolver: () => {},
+    // Local-only gate: the desktop's evaluate() is authoritative for
+    // allowRemoteEvaluate, so the remote pre-check is a no-op (see interface).
+    assertEvaluateAllowed: () => {},
+    uploadFile: async () => {
+      throw new CodedError(
+        'BROWSER_REMOTE_UPLOAD_NOT_SUPPORTED',
+        'File upload from a remote agent is not supported. ' +
+        'Ask the user to attach the file to the session instead.',
+      )
+    },
+    screenshot: async (id: string, options?: BrowserScreenshotOptions) =>
+      core.fromScreenshotWire(await core.invoke<ScreenshotResultWire>('screenshot', [id, options])),
+    screenshotRegion: async (id: string, target: BrowserScreenshotRegionTarget) =>
+      core.fromScreenshotWire(await core.invoke<ScreenshotResultWire>('screenshotRegion', [id, target])),
+  }
+
+  return new Proxy({} as IBrowserPaneManager, {
+    get(target, prop): unknown {
+      // Symbols + JS-internal keys: defer to the plain target so await / String /
+      // JSON.stringify behave and never dispatch a WS call.
+      if (typeof prop !== 'string' || Object.hasOwn(NON_METHOD_KEYS, prop)) return Reflect.get(target, prop)
+      const override = overrides[prop as keyof IBrowserPaneManager]
+      if (override) return override
+      const method = prop as BrowserCapabilityMethod
+      if (Object.hasOwn(FIRE_AND_FORGET, method)) {
+        return (...args: unknown[]): void => core.invokeSync(method, args)
+      }
+      return (...args: unknown[]): Promise<unknown> => core.invoke(method, args)
+    },
+  })
 }

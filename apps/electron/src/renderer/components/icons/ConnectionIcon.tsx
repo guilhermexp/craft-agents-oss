@@ -11,6 +11,7 @@
  * - New Session (model selector group names)
  */
 
+import { memo } from 'react'
 import { Brain } from 'lucide-react'
 import { getProviderIcon, getProviderIconThemeClassName } from '@/lib/provider-icons'
 import { getModelDisplayName } from '@config/models'
@@ -28,7 +29,7 @@ interface ConnectionIconProps {
   showTooltip?: boolean
 }
 
-export function ConnectionIcon({ connection, size = 16, className = '', showTooltip = false }: ConnectionIconProps) {
+export const ConnectionIcon = memo(function ConnectionIcon({ connection, size = 16, className = '', showTooltip = false }: ConnectionIconProps) {
   const providerIcon = getProviderIcon(
     connection.providerType || connection.type || '',
     connection.baseUrl,
@@ -76,4 +77,4 @@ export function ConnectionIcon({ connection, size = 16, className = '', showTool
       </TooltipContent>
     </Tooltip>
   )
-}
+})

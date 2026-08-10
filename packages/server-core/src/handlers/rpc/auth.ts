@@ -7,13 +7,6 @@ import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { requestClientConfirmDialog } from '@craft-agent/server-core/transport'
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.auth.LOGOUT,
-  RPC_NAMESPACES.auth.SHOW_LOGOUT_CONFIRMATION,
-  RPC_NAMESPACES.auth.SHOW_DELETE_SESSION_CONFIRMATION,
-  RPC_NAMESPACES.credentials.HEALTH_CHECK,
-] as const
-
 export function registerAuthHandlers(server: RpcServer, deps: HandlerDeps): void {
   // Show logout confirmation dialog (routed to client)
   server.handle(RPC_NAMESPACES.auth.SHOW_LOGOUT_CONFIRMATION, async (ctx) => {

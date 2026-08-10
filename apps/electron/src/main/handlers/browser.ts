@@ -4,34 +4,6 @@ import type { BrowserScreenshotOptions } from '../browser-pane-manager'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.browserPane.CREATE,
-  RPC_NAMESPACES.browserPane.DESTROY,
-  RPC_NAMESPACES.browserPane.LIST,
-  RPC_NAMESPACES.browserPane.NAVIGATE,
-  RPC_NAMESPACES.browserPane.GO_BACK,
-  RPC_NAMESPACES.browserPane.GO_FORWARD,
-  RPC_NAMESPACES.browserPane.RELOAD,
-  RPC_NAMESPACES.browserPane.STOP,
-  RPC_NAMESPACES.browserPane.FOCUS,
-  RPC_NAMESPACES.browserPane.LAUNCH,
-  RPC_NAMESPACES.browserPane.SNAPSHOT,
-  RPC_NAMESPACES.browserPane.CLICK,
-  RPC_NAMESPACES.browserPane.FILL,
-  RPC_NAMESPACES.browserPane.SELECT,
-  RPC_NAMESPACES.browserPane.SCREENSHOT,
-  RPC_NAMESPACES.browserPane.EVALUATE,
-  RPC_NAMESPACES.browserPane.SCROLL,
-  RPC_NAMESPACES.browserPane.LIST_PROFILES,
-  RPC_NAMESPACES.browserPane.CREATE_PROFILE,
-  RPC_NAMESPACES.browserPane.IMPORT_COOKIES,
-  RPC_NAMESPACES.browserPane.DELETE_PROFILE,
-  RPC_NAMESPACES.browserPane.RENAME_PROFILE,
-  RPC_NAMESPACES.browserPane.SWITCH_PROFILE,
-  RPC_NAMESPACES.browserPane.GET_PROFILE_SETTINGS,
-  RPC_NAMESPACES.browserPane.SET_PROFILE_SETTINGS,
-] as const
-
 export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): void {
   const { browserPaneManager, windowManager, platform } = deps
   if (!browserPaneManager) return
@@ -65,6 +37,59 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
   server.handle(RPC_NAMESPACES.browserPane.DESTROY, (_ctx, id: string) => {
     browserPaneManager.destroyInstance(id)
   })
+
+  // Display mode moves native views between windows, so it only exists on the
+  // desktop manager. The host is whichever window asked — correct for
+  // multi-window Craft, and avoids coupling the pane manager to WindowManager.
+  server.handle(RPC_NAMESPACES.browserPane.SET_DISPLAY_MODE, (ctx, id: string, mode: 'floating' | 'integrated') => {
+    const manager = browserPaneManager as Partial<{
+      setDisplayMode(id: string, mode: 'floating' | 'integrated', host?: unknown): boolean
+    }>
+    if (typeof manager.setDisplayMode !== 'function') return false
+
+    const host = mode === 'integrated'
+      ? windowManager?.getWindowByWebContentsId(ctx.webContentsId!) ?? null
+      : null
+    return manager.setDisplayMode(id, mode, host)
+  })
+
+  server.handle(
+    RPC_NAMESPACES.browserPane.SET_EMBEDDED_BOUNDS,
+    (
+      ctx,
+      id: string,
+      rect: { x: number; y: number; width: number; height: number },
+    ) => {
+      // The renderer measures in its own CSS px. Resolve the zoom factor here
+      // from the requesting window rather than trusting the renderer to report
+      // it — the main process is the only side that knows the real value.
+      const hostWindow = windowManager?.getWindowByWebContentsId(ctx.webContentsId!)
+      const zoomFactor = hostWindow && !hostWindow.isDestroyed()
+        ? hostWindow.webContents.getZoomFactor()
+        : 1
+
+      const manager = browserPaneManager as Partial<{
+        setEmbeddedBounds(
+          id: string,
+          rect: { x: number; y: number; width: number; height: number },
+          zoomFactor?: number,
+        ): boolean
+      }>
+      if (typeof manager.setEmbeddedBounds !== 'function') return false
+      return manager.setEmbeddedBounds(id, rect, zoomFactor)
+    },
+  )
+
+  server.handle(
+    RPC_NAMESPACES.browserPane.SET_VIEWS_VISIBLE,
+    (_ctx, id: string, visible: boolean) => {
+      const manager = browserPaneManager as Partial<{
+        setViewsVisible(id: string, visible: boolean): boolean
+      }>
+      if (typeof manager.setViewsVisible !== 'function') return false
+      return manager.setViewsVisible(id, visible)
+    },
+  )
 
   server.handle(RPC_NAMESPACES.browserPane.LIST, () => {
     return browserPaneManager.listInstances()
@@ -310,5 +335,25 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
       platform.logger.warn('[browser-pane] failed to focus main window for picker:', err)
     }
     pushTyped(server, RPC_NAMESPACES.browserPane.PICKER_REQUESTED, { to: 'all' }, { instanceId })
+  })
+
+  // Forward dock/undock requests from inside a browser window. The app renderer
+  // owns the card that gives integrated views their rect, so only it can finish
+  // the switch. Docking also needs the app window in front — otherwise the card
+  // mounts behind whatever the user is looking at and the browser looks gone.
+  browserPaneManager.onDisplayModeRequested((instanceId, mode) => {
+    if (mode === 'integrated') {
+      try {
+        const main = (windowManager?.getAllWindows() ?? [])[0]?.window
+        if (main && !main.isDestroyed()) {
+          if (main.isMinimized()) main.restore()
+          main.show()
+          main.focus()
+        }
+      } catch (err) {
+        platform.logger.warn('[browser-pane] failed to focus main window for dock:', err)
+      }
+    }
+    pushTyped(server, RPC_NAMESPACES.browserPane.DISPLAY_MODE_REQUESTED, { to: 'all' }, { instanceId, mode })
   })
 }

@@ -21,16 +21,16 @@
 
 **must_haves:** upstream pinado; overlay Craft explícito; somente 11 tools v0.5; carregamento macOS Pi-only; recurso isolado do checkout.
 
-- [ ] **2.1 Sincronizar `src/pi-computer-use` com o commit fixado e registrar provenance/overlay**
+- [x] **2.1 Sincronizar `src/pi-computer-use` com o commit fixado e registrar provenance/overlay**
   - files: `packages/pi-agent-server/src/pi-computer-use/**`
   - verify: `test "$(tr -d '\n' < packages/pi-agent-server/src/pi-computer-use/UPSTREAM_COMMIT)" = "8e1772f317dedd3a77d34835c970d92cd5b887ae"`
-- [ ] **2.2 Reescrever a skill Craft para o protocolo v0.5**
+- [x] **2.2 Reescrever a skill Craft para o protocolo v0.5**
   - files: `packages/pi-agent-server/src/pi-computer-use/skills/computer-use/SKILL.md`
   - verify: `! grep -E '\b(screenshot|computer_actions|set_text|double_click)\b' packages/pi-agent-server/src/pi-computer-use/skills/computer-use/SKILL.md`
-- [ ] **2.3 Migrar allowlist e integrar no resource loader único sem regredir subagents**
+- [x] **2.3 Migrar allowlist e integrar no resource loader único sem regredir subagents**
   - files: `packages/pi-agent-server/src/computer-use-tools.ts`, `packages/pi-agent-server/src/index.ts`
   - verify: `bun test packages/pi-agent-server/src/session-tool-registration.test.ts packages/pi-agent-server/src/*computer-use*.test.ts`
-- [ ] **2.4 Tornar o carregamento runtime autossuficiente fora do checkout**
+- [x] **2.4 Tornar o carregamento runtime autossuficiente fora do checkout**
   - files: `packages/pi-agent-server/package.json`, `packages/pi-agent-server/tsconfig.typecheck.json`, build/testes relacionados
   - verify: teste isolado definido em F1 inicia/carrega a extensão sem resolver o `node_modules` raiz
 

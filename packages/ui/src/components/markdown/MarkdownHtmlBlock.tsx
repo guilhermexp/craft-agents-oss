@@ -30,6 +30,7 @@
 
 import * as React from 'react'
 import { Globe, Maximize2 } from 'lucide-react'
+import { OpenInSidePanelButton } from './OpenInSidePanelButton'
 import { cn } from '../../lib/utils'
 import { CodeBlock } from './CodeBlock'
 import { HTMLPreviewOverlay } from '../overlay/HTMLPreviewOverlay'
@@ -207,6 +208,7 @@ export function MarkdownHtmlBlock({ code, className }: MarkdownHtmlBlockProps) {
           </span>
           <div className="flex items-center gap-1">
             <ItemNavigator items={items} activeIndex={activeIndex} onSelect={setActiveIndex} />
+            <OpenInSidePanelButton src={items[activeIndex]?.src} alwaysVisible={hasMultiple} />
             <button
               type="button"
               onClick={() => setIsFullscreen(true)}

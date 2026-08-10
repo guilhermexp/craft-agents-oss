@@ -29,7 +29,7 @@ import { getCredentialManager } from '../credentials/manager.ts';
 import { CraftOAuth, getMcpBaseUrl, prepareMcpOAuth, exchangeMcpOAuth, type OAuthCallbacks, type OAuthTokens } from '../auth/oauth.ts';
 import { type OAuthSessionContext } from '../auth/types.ts';
 import { OAUTH_RELAY_CALLBACK_URL, wrapPreparedOAuthFlowForRelay } from '../auth/oauth-relay.ts';
-import type { PreparedOAuthFlow, OAuthExchangeParams, OAuthExchangeResult, OAuthProvider } from '../auth/oauth-flow-types.ts';
+import type { PreparedOAuthFlow, OAuthExchangeParams, OAuthExchangeResult, OAuthFailureReason, OAuthProvider } from '../auth/oauth-flow-types.ts';
 import {
   startGoogleOAuth,
   prepareGoogleOAuth,
@@ -73,8 +73,20 @@ import {
 export interface AuthResult {
   success: boolean;
   error?: string;
+  errorCode?: OAuthFailureReason;
   /** For Gmail OAuth, includes user's email */
   email?: string;
+}
+
+const SOURCE_OAUTH_FAILURE = {
+  success: false,
+  error: 'OAuth authentication failed',
+  errorCode: 'source-oauth-authentication-failed',
+} as const satisfies AuthResult;
+
+function sourceOAuthFailure(callbacks?: OAuthCallbacks): AuthResult {
+  callbacks?.onError(SOURCE_OAUTH_FAILURE.error);
+  return { ...SOURCE_OAUTH_FAILURE };
 }
 
 /**
@@ -274,9 +286,9 @@ export class SourceCredentialManager {
         if (hasAllHeaders) {
           return parsed as MultiHeaderCredential;
         }
-      } catch (e) {
+      } catch {
         // Not JSON, fall through to other auth types
-        debug(`[SourceCredentialManager] JSON parse failed: ${e}`);
+        debug('[SourceCredentialManager] Multi-header credential JSON parse failed');
       }
     }
 
@@ -376,8 +388,8 @@ export class SourceCredentialManager {
         saveSourceConfig(source.workspaceRootPath, config);
         debug(`[SourceCredentialManager] Marked ${source.config.slug} as needing re-auth: ${errorMessage}`);
       }
-    } catch (error) {
-      debug(`[SourceCredentialManager] Failed to mark ${source.config.slug} as needing re-auth:`, error);
+    } catch {
+      debug(`[SourceCredentialManager] Failed to mark ${source.config.slug} as needing re-auth`);
     }
   }
 
@@ -571,7 +583,11 @@ export class SourceCredentialManager {
     }
 
     if (!result.success) {
-      return { success: false, error: result.error };
+      return {
+        success: false,
+        error: 'OAuth authentication failed',
+        errorCode: result.errorCode ?? 'oauth-token-exchange-failed',
+      };
     }
 
     // Save credentials
@@ -678,10 +694,8 @@ export class SourceCredentialManager {
       markSourceAuthenticated(source.workspaceRootPath, source.config.slug);
 
       return { success: true };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      callbacks.onError(message);
-      return { success: false, error: message };
+    } catch {
+      return sourceOAuthFailure(callbacks);
     }
   }
 
@@ -737,7 +751,7 @@ export class SourceCredentialManager {
       const result: GoogleOAuthResult = await startGoogleOAuth(options);
 
       if (!result.success) {
-        return { success: false, error: result.error || 'Google OAuth failed' };
+        return sourceOAuthFailure();
       }
 
       // Save the credentials (including clientId/clientSecret for token refresh)
@@ -754,10 +768,8 @@ export class SourceCredentialManager {
 
       callbacks.onStatus(`${serviceName} authentication successful`);
       return { success: true, email: result.email };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      callbacks.onError(message);
-      return { success: false, error: message };
+    } catch {
+      return sourceOAuthFailure(callbacks);
     }
   }
 
@@ -804,7 +816,7 @@ export class SourceCredentialManager {
       const result: SlackOAuthResult = await startSlackOAuth(options);
 
       if (!result.success) {
-        return { success: false, error: result.error || 'Slack OAuth failed' };
+        return sourceOAuthFailure();
       }
 
       // Save the credentials
@@ -820,10 +832,8 @@ export class SourceCredentialManager {
       callbacks.onStatus(`${serviceName} authentication successful`);
       // Use teamName as the identifier (similar to email for Google)
       return { success: true, email: result.teamName };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      callbacks.onError(message);
-      return { success: false, error: message };
+    } catch {
+      return sourceOAuthFailure(callbacks);
     }
   }
 
@@ -876,7 +886,7 @@ export class SourceCredentialManager {
       const result: MicrosoftOAuthResult = await startMicrosoftOAuth(options);
 
       if (!result.success) {
-        return { success: false, error: result.error || 'Microsoft OAuth failed' };
+        return sourceOAuthFailure();
       }
 
       // Save the credentials
@@ -891,10 +901,8 @@ export class SourceCredentialManager {
 
       callbacks.onStatus(`${serviceName} authentication successful`);
       return { success: true, email: result.email };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      callbacks.onError(message);
-      return { success: false, error: message };
+    } catch {
+      return sourceOAuthFailure(callbacks);
     }
   }
 
@@ -1033,8 +1041,8 @@ export class SourceCredentialManager {
       const response = await fetch(url, fetchOptions);
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        throw new Error(`Renew endpoint returned ${response.status}: ${errorText.slice(0, 200)}`);
+        await response.body?.cancel().catch(() => undefined);
+        throw new Error('token-renew-failed');
       }
 
       const json = await response.json() as Record<string, unknown>;
@@ -1067,10 +1075,9 @@ export class SourceCredentialManager {
 
       debug(`[SourceCredentialManager] Refreshed token via renew endpoint for ${source.config.slug}`);
       return newToken;
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      debug(`[SourceCredentialManager] Renew endpoint refresh failed for ${source.config.slug}:`, error);
-      this.markSourceNeedsReauth(source, `Token refresh failed: ${errorMsg}`);
+    } catch {
+      debug(`[SourceCredentialManager] Renew endpoint refresh failed for ${source.config.slug}`);
+      this.markSourceNeedsReauth(source, 'Token refresh failed');
       return null;
     }
   }
@@ -1099,10 +1106,9 @@ export class SourceCredentialManager {
 
       debug(`[SourceCredentialManager] Refreshed Google token for ${source.config.slug}`);
       return result.accessToken;
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      debug(`[SourceCredentialManager] Google token refresh failed:`, error);
-      this.markSourceNeedsReauth(source, `Token refresh failed: ${errorMsg}`);
+    } catch {
+      debug(`[SourceCredentialManager] Google token refresh failed`);
+      this.markSourceNeedsReauth(source, 'Token refresh failed');
       return null;
     }
   }
@@ -1126,10 +1132,9 @@ export class SourceCredentialManager {
 
       debug(`[SourceCredentialManager] Refreshed Slack token for ${source.config.slug}`);
       return result.accessToken;
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      debug(`[SourceCredentialManager] Slack token refresh failed:`, error);
-      this.markSourceNeedsReauth(source, `Token refresh failed: ${errorMsg}`);
+    } catch {
+      debug(`[SourceCredentialManager] Slack token refresh failed`);
+      this.markSourceNeedsReauth(source, 'Token refresh failed');
       return null;
     }
   }
@@ -1154,10 +1159,9 @@ export class SourceCredentialManager {
 
       debug(`[SourceCredentialManager] Refreshed Microsoft token for ${source.config.slug}`);
       return result.accessToken;
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      debug(`[SourceCredentialManager] Microsoft token refresh failed:`, error);
-      this.markSourceNeedsReauth(source, `Token refresh failed: ${errorMsg}`);
+    } catch {
+      debug(`[SourceCredentialManager] Microsoft token refresh failed`);
+      this.markSourceNeedsReauth(source, 'Token refresh failed');
       return null;
     }
   }
@@ -1213,10 +1217,9 @@ export class SourceCredentialManager {
 
       debug(`[SourceCredentialManager] Refreshed generic OAuth token for ${source.config.slug}`);
       return result.accessToken;
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      debug(`[SourceCredentialManager] Generic OAuth token refresh failed:`, error);
-      this.markSourceNeedsReauth(source, `Token refresh failed: ${errorMsg}`);
+    } catch {
+      debug(`[SourceCredentialManager] Generic OAuth token refresh failed`);
+      this.markSourceNeedsReauth(source, 'Token refresh failed');
       return null;
     }
   }
@@ -1270,10 +1273,9 @@ export class SourceCredentialManager {
 
       debug(`[SourceCredentialManager] Refreshed MCP token for ${source.config.slug}`);
       return tokens.accessToken;
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      debug(`[SourceCredentialManager] MCP token refresh failed:`, error);
-      this.markSourceNeedsReauth(source, `Token refresh failed: ${errorMsg}`);
+    } catch {
+      debug(`[SourceCredentialManager] MCP token refresh failed`);
+      this.markSourceNeedsReauth(source, 'Token refresh failed');
       return null;
     }
   }

@@ -19,7 +19,8 @@ import { tmpdir } from 'node:os'
 import type { CredentialManager } from '@craft-agent/shared/credentials'
 import type { ISessionManager } from '@craft-agent/server-core/handlers'
 import { MessagingGatewayRegistry } from '../registry'
-import type { PlatformAdapter } from '../types'
+import { resolveOwnerSeed } from '../access-control'
+import type { MessagingConfig, PlatformAdapter, PlatformOwner, PlatformType } from '../types'
 
 let dir: string
 
@@ -77,6 +78,28 @@ function makeFakeTelegramAdapter(): PlatformAdapter {
   } as unknown as PlatformAdapter
 }
 
+/**
+ * `seedFirstOwner` is the private `/pair`-redeem bootstrap hook (wired into the
+ * gateway as `seedOwnerOnFirstPair`). A typed cast is the test seam that lets
+ * us drive it directly and assert against the public owner/access-mode readers.
+ */
+function seedFirstOwner(
+  registry: MessagingGatewayRegistry,
+  workspaceId: string,
+  platform: PlatformType,
+  candidate: PlatformOwner,
+): Promise<PlatformOwner[]> {
+  // Test seam: the private hook has no public accessor, so name the cast.
+  const internal = registry as unknown as {
+    seedFirstOwner: (
+      workspaceId: string,
+      platform: PlatformType,
+      candidate: PlatformOwner,
+    ) => Promise<PlatformOwner[]>
+  }
+  return internal.seedFirstOwner(workspaceId, platform, candidate)
+}
+
 describe('MessagingGatewayRegistry — config preservation across writes', () => {
   it('owners survive bindWorkspaceSupergroup', async () => {
     const { registry, workspaceId } = makeRegistry()
@@ -86,9 +109,7 @@ describe('MessagingGatewayRegistry — config preservation across writes', () =>
     ])
 
     // Inject an adapter and bind a supergroup.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const state = (registry as any).workspaces.get(workspaceId)
-    state.gateway.registerAdapter(makeFakeTelegramAdapter())
+    registry.getGateway(workspaceId).registerAdapter(makeFakeTelegramAdapter())
     await registry.bindWorkspaceSupergroup(workspaceId, 'telegram', '-100123', 'My SG')
 
     const owners = registry.getPlatformOwners(workspaceId, 'telegram')
@@ -104,9 +125,7 @@ describe('MessagingGatewayRegistry — config preservation across writes', () =>
     registry.setPlatformOwners(workspaceId, 'telegram', [
       { userId: 'first-owner', addedAt: Date.now() },
     ])
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const state = (registry as any).workspaces.get(workspaceId)
-    state.gateway.registerAdapter(makeFakeTelegramAdapter())
+    registry.getGateway(workspaceId).registerAdapter(makeFakeTelegramAdapter())
     await registry.bindWorkspaceSupergroup(workspaceId, 'telegram', '-100123', 'My SG')
 
     await registry.unbindWorkspaceSupergroup(workspaceId)
@@ -128,32 +147,66 @@ describe('MessagingGatewayRegistry — config preservation across writes', () =>
     expect(registry.getPlatformAccessMode(workspaceId, 'telegram')).toBe('owner-only')
   })
 
-  it('seedFirstOwner is no-op when owners already exist', async () => {
+  it('resolveOwnerSeed is a no-op when owners already exist', () => {
+    const config: MessagingConfig = {
+      enabled: true,
+      platforms: {
+        telegram: { enabled: true, owners: [{ userId: 'first', addedAt: Date.now() }] },
+      },
+    }
+    const seed = resolveOwnerSeed(config, 'telegram', { userId: 'second', addedAt: Date.now() })
+    expect(seed.changed).toBe(false)
+    expect(seed.owners).toHaveLength(1)
+    expect(seed.owners[0]!.userId).toBe('first')
+  })
+
+  it('seedFirstOwner is a no-op when owners already exist', async () => {
     const { registry, workspaceId } = makeRegistry()
     registry.setPlatformOwners(workspaceId, 'telegram', [
       { userId: 'first', addedAt: Date.now() },
     ])
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const seeded = await (registry as any).seedFirstOwner(workspaceId, 'telegram', {
+    const seeded = await seedFirstOwner(registry, workspaceId, 'telegram', {
       userId: 'second',
       addedAt: Date.now(),
     })
+    // Returns the existing owner untouched...
     expect(seeded).toHaveLength(1)
-    expect(seeded[0].userId).toBe('first')
+    expect(seeded[0]!.userId).toBe('first')
+    // ...and nothing was persisted over the existing list.
     const owners = registry.getPlatformOwners(workspaceId, 'telegram')
     expect(owners).toHaveLength(1)
     expect(owners[0]!.userId).toBe('first')
+  })
+
+  it('seedFirstOwner bootstraps the first owner and locks the workspace down', async () => {
+    const { registry, workspaceId } = makeRegistry()
+    const seeded = await seedFirstOwner(registry, workspaceId, 'telegram', {
+      userId: 'boot',
+      displayName: 'Boot',
+      addedAt: Date.now(),
+    })
+    expect(seeded).toHaveLength(1)
+    expect(seeded[0]!.userId).toBe('boot')
+    // Persisted via patchPlatform: owners + owner-only access mode both land.
+    expect(registry.getPlatformOwners(workspaceId, 'telegram')).toHaveLength(1)
+    expect(registry.getPlatformAccessMode(workspaceId, 'telegram')).toBe('owner-only')
+  })
+
+  it('seedFirstOwner is a no-op for platforms without access control', async () => {
+    const { registry, workspaceId } = makeRegistry()
+    const seeded = await seedFirstOwner(registry, workspaceId, 'whatsapp', {
+      userId: 'wa-user',
+      addedAt: Date.now(),
+    })
+    expect(seeded).toHaveLength(0)
+    expect(registry.getPlatformOwners(workspaceId, 'whatsapp')).toHaveLength(0)
   })
 })
 
 describe('MessagingGatewayRegistry — lock-down migrates open bindings', () => {
   it('setPlatformAccessMode("owner-only") flips legacy open bindings to inherit', () => {
     const { registry, workspaceId } = makeRegistry()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const state = (registry as any).workspaces.get(workspaceId) ??
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (registry as any).bootstrapWorkspace(workspaceId)
-    const store = state.gateway.getBindingStore()
+    const store = registry.getGateway(workspaceId).getBindingStore()
     // Persist a binding in legacy 'open' mode (mimics migration).
     const b = store.bind('ws-test', 'sess-A', 'telegram', 'chat-1', undefined, {
       accessMode: 'open',
@@ -171,11 +224,7 @@ describe('MessagingGatewayRegistry — lock-down migrates open bindings', () => 
 
   it('non-telegram bindings are not touched by the lock-down', () => {
     const { registry, workspaceId } = makeRegistry()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const state = (registry as any).workspaces.get(workspaceId) ??
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (registry as any).bootstrapWorkspace(workspaceId)
-    const store = state.gateway.getBindingStore()
+    const store = registry.getGateway(workspaceId).getBindingStore()
     const wa = store.bind('ws-test', 'sess-A', 'whatsapp', 'chan-A', undefined, {
       accessMode: 'open',
     })

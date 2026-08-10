@@ -18,18 +18,23 @@ import { EntityList, type EntityListGroup } from "@/components/ui/entity-list"
 import { RenameDialog } from "@/components/ui/rename-dialog"
 import { SessionSearchHeader } from "./SessionSearchHeader"
 import { SessionItem } from "./SessionItem"
-import { SessionListProvider, type SessionListContextValue } from "@/context/SessionListContext"
+import {
+  SessionListActionsProvider,
+  SessionListViewProvider,
+  type SessionListActions,
+  type SessionListView,
+} from "@/context/SessionListContext"
 import { useSessionSelection, useSessionSelectionStore } from "@/hooks/useSession"
 import { useSessionSearch, type FilterMode } from "@/hooks/useSessionSearch"
-import { useSessionActions } from "@/hooks/useSessionActions"
+import { useSessionActionToasts } from "@/hooks/useSessionActionToasts"
 import { useEntityListInteractions } from "@/hooks/useEntityListInteractions"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useEscapeInterrupt } from "@/context/EscapeInterruptContext"
-import { useNavigation, useNavigationState, routes, isSessionsNavigation } from "@/contexts/NavigationContext"
+import { useNavigation, useNavigationState, routes, isSessionsNavigation } from "@/context/NavigationContext"
 import { useFocusContext } from "@/context/FocusContext"
 import { sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import type { ViewConfig } from "@craft-agent/shared/views"
-import type { SessionStatusId, SessionStatus } from "@/config/session-status-config"
+import type { SessionStatusId, ResolvedSessionStatus } from "@/config/session-status-config"
 import { buildCollapsedGroupsScopeSuffix } from "@/utils/session-list-collapse"
 
 export interface SessionListRow {
@@ -40,7 +45,7 @@ export interface SessionListRow {
 export type ChatGroupingMode = 'date' | 'status' | 'unread' | 'project'
 
 // Stable empty-array defaults to avoid re-creating new references on every render
-const EMPTY_SESSION_STATUSES: SessionStatus[] = []
+const EMPTY_SESSION_STATUSES: ResolvedSessionStatus[] = []
 const EMPTY_LABELS: LabelConfig[] = []
 
 interface SessionListProps {
@@ -72,7 +77,7 @@ interface SessionListProps {
   /** Called when search is closed */
   onSearchClose?: () => void
   /** Dynamic todo states from workspace config */
-  sessionStatuses?: SessionStatus[]
+  sessionStatuses?: ResolvedSessionStatus[]
   /** View evaluator — evaluates a session and returns matching view configs */
   evaluateViews?: (meta: SessionMeta) => ViewConfig[]
   /** Label configs for resolving session label IDs to display info */
@@ -97,6 +102,8 @@ interface SessionListProps {
   onNavigateToSession?: (sessionId: string) => void
   /** Session-level pending prompt marker (permission/admin approval) */
   hasPendingPrompt?: (sessionId: string) => boolean
+  /** Session-level parked AskUserQuestion marker (awaiting the user's answer) */
+  hasPendingQuestion?: (sessionId: string) => boolean
   /** DOM-verified match info for the active session (from ChatDisplay) */
   activeChatMatchInfo?: { sessionId: string | null; count: number; isHighlighting?: boolean }
 }
@@ -150,6 +157,7 @@ export function SessionList({
   focusedSessionId,
   onNavigateToSession,
   hasPendingPrompt,
+  hasPendingQuestion,
   activeChatMatchInfo,
 }: SessionListProps) {
   const { t, i18n } = useTranslation()
@@ -550,7 +558,7 @@ export function SessionList({
     handleArchiveWithToast,
     handleUnarchiveWithToast,
     handleDeleteWithToast,
-  } = useSessionActions({ onFlag, onUnflag, onArchive, onUnarchive, onDelete })
+  } = useSessionActionToasts({ onFlag, onUnflag, onArchive, onUnarchive, onDelete })
 
   // --- Focus zone ---
   const { focusZone } = useFocusContext()
@@ -622,15 +630,24 @@ export function SessionList({
     navigateToSession(row.item.id)
   }, [selectSession, navigateToSession])
 
+  /**
+   * `rowIndexMap` and `onOpenInNewWindow` change on every list update, and a
+   * `useCallback` that closes over them changes with them — which invalidates
+   * the actions context and re-renders every row's icon, badges and menu
+   * trigger. Reading them through a ref keeps these identities stable for the
+   * lifetime of the list.
+   */
+  const actionDepsRef = useRef({ rowIndexMap, selectSession, navigateToSession, onOpenInNewWindow })
+  useEffect(() => {
+    actionDepsRef.current = { rowIndexMap, selectSession, navigateToSession, onOpenInNewWindow }
+  }, [rowIndexMap, selectSession, navigateToSession, onOpenInNewWindow])
+
   const handleSelectSessionById = useCallback((sessionId: string) => {
-    const index = rowIndexMap.get(sessionId) ?? -1
-    if (index >= 0) {
-      selectSession(sessionId, index)
-    } else {
-      selectSession(sessionId, 0)
-    }
-    navigateToSession(sessionId)
-  }, [rowIndexMap, selectSession, navigateToSession])
+    const { rowIndexMap: map, selectSession: select, navigateToSession: navigateTo } = actionDepsRef.current
+    const index = map.get(sessionId) ?? -1
+    select(sessionId, index >= 0 ? index : 0)
+    navigateTo(sessionId)
+  }, [])
 
   const handleToggleSelect = useCallback((row: SessionListRow, index: number) => {
     focusZone('navigator', { intent: 'click', moveFocus: false })
@@ -691,12 +708,13 @@ export function SessionList({
     interactions.searchInputProps.onKeyDown(e)
   }, [searchInputRef, onFocusChatInput, interactions.searchInputProps, selectionStore.state.selected])
 
-  // --- Context value (shared across all SessionItems) ---
+  // --- Context values (shared across all SessionItems) ---
   const handleFocusZone = useCallback(() => focusZone('navigator', { intent: 'click', moveFocus: false }), [focusZone])
-  const handleOpenInNewWindow = useCallback((item: SessionMeta) => onOpenInNewWindow?.(item), [onOpenInNewWindow])
+  const handleOpenInNewWindow = useCallback((item: SessionMeta) => actionDepsRef.current.onOpenInNewWindow?.(item), [])
+  const handleSendToWorkspace = useCallback((ids: string[]) => setSendToWorkspace(ids), [])
   const resolvedSearchQuery = isSearchMode ? highlightQuery : searchQuery
 
-  const listContext = useMemo((): SessionListContextValue => ({
+  const listActions = useMemo((): SessionListActions => ({
     onRenameClick: handleRenameClick,
     onSessionStatusChange,
     onFlag: onFlag ? handleFlagWithToast : undefined,
@@ -710,29 +728,34 @@ export function SessionList({
     onSetProjectId,
     onSelectSessionById: handleSelectSessionById,
     onOpenInNewWindow: handleOpenInNewWindow,
-    onSendToWorkspace: (ids: string[]) => setSendToWorkspace(ids),
+    onSendToWorkspace: handleSendToWorkspace,
     onFocusZone: handleFocusZone,
     onKeyDown: handleKeyDown,
     sessionStatuses,
     flatLabels,
     labels,
-    searchQuery: resolvedSearchQuery,
-    selectedSessionId: focusedSessionId !== undefined ? focusedSessionId : selectionStore.state.selected,
-    isMultiSelectActive,
     sessionOptions,
-    contentSearchResults,
-    activeChatMatchInfo,
-    hasPendingPrompt,
   }), [
     handleRenameClick, onSessionStatusChange,
     onFlag, handleFlagWithToast, onUnflag, handleUnflagWithToast,
     onArchive, handleArchiveWithToast, onUnarchive, handleUnarchiveWithToast,
     onMarkUnread, handleDeleteWithToast, onLabelsChange,
     projects, onSetProjectId,
-    handleSelectSessionById, handleOpenInNewWindow, setSendToWorkspace, handleFocusZone, handleKeyDown,
-    sessionStatuses, flatLabels, labels, resolvedSearchQuery,
-    focusedSessionId, selectionStore.state.selected, isMultiSelectActive,
-    sessionOptions, contentSearchResults, activeChatMatchInfo, hasPendingPrompt,
+    handleSelectSessionById, handleOpenInNewWindow, handleSendToWorkspace, handleFocusZone, handleKeyDown,
+    sessionStatuses, flatLabels, labels, sessionOptions,
+  ])
+
+  const listView = useMemo((): SessionListView => ({
+    searchQuery: resolvedSearchQuery,
+    selectedSessionId: focusedSessionId !== undefined ? focusedSessionId : selectionStore.state.selected,
+    isMultiSelectActive,
+    contentSearchResults,
+    activeChatMatchInfo,
+    hasPendingPrompt,
+    hasPendingQuestion,
+  }), [
+    resolvedSearchQuery, focusedSessionId, selectionStore.state.selected, isMultiSelectActive,
+    contentSearchResults, activeChatMatchInfo, hasPendingPrompt, hasPendingQuestion,
   ])
 
   // --- Empty state (non-search) — render before EntityList ---
@@ -775,7 +798,8 @@ export function SessionList({
   // --- Render ---
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <SessionListProvider value={listContext}>
+      <SessionListActionsProvider value={listActions}>
+      <SessionListViewProvider value={listView}>
       <EntityList<SessionListRow>
         groups={rowData.groups}
         getKey={(row) => row.item.id}
@@ -858,7 +882,8 @@ export function SessionList({
         onCollapseAll={collapseAllGroups}
         onExpandAll={expandAllGroups}
       />
-      </SessionListProvider>
+      </SessionListViewProvider>
+      </SessionListActionsProvider>
 
       {/* Rename Dialog */}
       <RenameDialog

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import type { Workspace } from '@craft-agent/shared/config'
 import { SessionManager, createManagedSession } from './SessionManager.ts'
 
 // Regression tests for #710 — OAuth tokens expire without silent refresh.
@@ -44,10 +45,10 @@ describe('sendMessage OAuth refresh ordering (#710)', () => {
     }
     const managed = createManagedSession(
       { id, name: 'oauth-refresh test' },
-      workspace as never,
+      workspace as Workspace,
       { messagesLoaded: true },
     )
-    ;(sm as unknown as { sessions: Map<string, unknown> }).sessions.set(id, managed)
+    sm.registerManagedSession(managed)
     return managed
   }
 

@@ -78,6 +78,8 @@ export const RPC_NAMESPACES = {
     CREATE: 'workspaces:create',
     CHECK_SLUG: 'workspaces:checkSlug',
     UPDATE_REMOTE: 'workspaces:updateRemote',
+    GET_DEFAULT: 'workspaces:getDefault',
+    SET_DEFAULT: 'workspaces:setDefault',
   },
   window: {
     GET_WORKSPACE: 'window:getWorkspace',
@@ -103,6 +105,10 @@ export const RPC_NAMESPACES = {
     READ_USER_ATTACHMENT: 'file:readUserAttachment',
     STORE_ATTACHMENT: 'file:storeAttachment',
     GENERATE_THUMBNAIL: 'file:generateThumbnail',
+    RENDER_OFFICE: 'file:renderOffice',
+    SET_OFFICE_CELL: 'file:setOfficeCell',
+    OPEN_OFFICE_LIVE: 'file:openOfficeLive',
+    CLOSE_OFFICE_LIVE: 'file:closeOfficeLive',
   },
   fs: {
     SEARCH: 'fs:search',
@@ -134,6 +140,11 @@ export const RPC_NAMESPACES = {
     VERSIONS: 'system:versions',
     HOME_DIR: 'system:homeDir',
     IS_DEBUG_MODE: 'system:isDebugMode',
+  },
+  perf: {
+    SUBSCRIBE: 'perf:subscribe',
+    UNSUBSCRIBE: 'perf:unsubscribe',
+    SAMPLE: 'perf:sample',
   },
   update: {
     CHECK: 'update:check',
@@ -300,6 +311,9 @@ export const RPC_NAMESPACES = {
     CHANGED: 'sources:changed',
     GET_PERMISSIONS: 'sources:getPermissions',
     GET_MCP_TOOLS: 'sources:getMcpTools',
+    CATALOG_CAPABILITY: 'sources:catalogCapability',
+    DISCOVER_CATALOG: 'sources:discoverCatalog',
+    MATERIALIZE_CATALOG: 'sources:materializeCatalog',
   },
   oauth: {
     START: 'oauth:start',
@@ -447,6 +461,10 @@ export const RPC_NAMESPACES = {
     SET_PROFILE_SETTINGS: 'browser-pane:set-profile-settings',
     PROFILES_CHANGED: 'browser-pane:profiles-changed',
     PICKER_REQUESTED: 'browser-pane:picker-requested',
+    DISPLAY_MODE_REQUESTED: 'browser-pane:display-mode-requested',
+    SET_DISPLAY_MODE: 'browser-pane:set-display-mode',
+    SET_VIEWS_VISIBLE: 'browser-pane:set-views-visible',
+    SET_EMBEDDED_BOUNDS: 'browser-pane:set-embedded-bounds',
   },
   automations: {
     GET: 'automations:get',

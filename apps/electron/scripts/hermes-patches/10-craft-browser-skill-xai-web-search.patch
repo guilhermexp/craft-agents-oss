@@ -1,0 +1,728 @@
+diff --git a/model_tools.py b/model_tools.py
+index f461afff..73c6eb04 100644
+--- a/model_tools.py
++++ b/model_tools.py
+@@ -494,6 +494,75 @@ def _compute_tool_definitions(
+ # so if something slips through, the LLM sees a sensible message.
+ _AGENT_LOOP_TOOLS = {"todo", "memory", "session_search", "delegate_task"}
+ _READ_SEARCH_TOOLS = {"read_file", "search_files"}
++_CRAFT_BROWSER_TOOL_NAME = "mcp__session__browser_tool"
++
++
++def _craft_browser_command_for_legacy_tool(
++    function_name: str,
++    function_args: Dict[str, Any],
++) -> Optional[List[str]]:
++    """Translate legacy Hermes browser_* calls into Craft browser_tool argv.
++
++    Craft embeds Hermes with a session-scoped MCP browser tool. When that tool
++    is registered, it is the authoritative browser surface; routing legacy
++    browser_* calls through it prevents Hermes' standalone browser backend from
++    interpreting Craft session/tab identifiers as HTTP URLs.
++    """
++    if not function_name.startswith("browser_") or function_name == "browser_tool":
++        return None
++
++    if registry.get_entry(_CRAFT_BROWSER_TOOL_NAME) is None:
++        return None
++
++    if function_name == "browser_navigate":
++        url = str(function_args.get("url") or "").strip()
++        return ["navigate", url] if url else ["navigate"]
++    if function_name == "browser_snapshot":
++        return ["snapshot"]
++    if function_name == "browser_click":
++        ref = str(
++            function_args.get("ref")
++            or function_args.get("element")
++            or function_args.get("element_id")
++            or ""
++        ).strip()
++        return ["click", ref] if ref else ["click"]
++    if function_name == "browser_type":
++        text = str(function_args.get("text") or function_args.get("value") or "").strip()
++        return ["type", text] if text else ["type"]
++    if function_name == "browser_press":
++        key = str(function_args.get("key") or "").strip()
++        return ["key", key] if key else ["key"]
++    if function_name == "browser_scroll":
++        direction = str(function_args.get("direction") or "down").strip()
++        amount = function_args.get("amount")
++        command = ["scroll", direction or "down"]
++        if amount is not None:
++            command.append(str(amount))
++        return command
++    if function_name == "browser_back":
++        return ["back"]
++    if function_name == "browser_console":
++        command = ["console"]
++        limit = function_args.get("limit")
++        level = function_args.get("level")
++        if limit is not None:
++            command.append(str(limit))
++        if level is not None:
++            command.append(str(level))
++        return command
++
++    return None
++
++
++def _normalize_craft_browser_tool_call(
++    function_name: str,
++    function_args: Dict[str, Any],
++) -> Tuple[str, Dict[str, Any]]:
++    command = _craft_browser_command_for_legacy_tool(function_name, function_args)
++    if command is None:
++        return function_name, function_args
++    return _CRAFT_BROWSER_TOOL_NAME, {"command": command}
+ 
+ 
+ # =========================================================================
+@@ -764,6 +833,11 @@ def handle_function_call(
+     Returns:
+         Function result as a JSON string.
+     """
++    function_name, function_args = _normalize_craft_browser_tool_call(
++        function_name,
++        function_args,
++    )
++
+     # Coerce string arguments to their schema-declared types (e.g. "42"→42)
+     function_args = coerce_tool_args(function_name, function_args)
+ 
+diff --git a/tests/tools/test_skills_tool.py b/tests/tools/test_skills_tool.py
+index 95024675..c318c06a 100644
+--- a/tests/tools/test_skills_tool.py
++++ b/tests/tools/test_skills_tool.py
+@@ -1179,6 +1179,34 @@ class TestSkillViewCollisionDetection:
+         assert result["success"] is True
+         assert "LOCAL VERSION" in result["content"]
+ 
++    def test_hermes_agent_prefers_agent_ops_category_when_ambiguous(self, tmp_path):
++        """Craft/Hermes contexts should load the operational Hermes skill, not
++        the generic autonomous-agent overview, when both are installed."""
++        local_dir = tmp_path / "local"
++        local_dir.mkdir()
++
++        _make_skill(
++            local_dir,
++            "hermes-agent",
++            category="autonomous-ai-agents",
++            body="GENERIC HERMES AGENT OVERVIEW",
++        )
++        _make_skill(
++            local_dir,
++            "hermes-agent",
++            category="agent-ops",
++            body="CRAFT HERMES OPERATIONS RUNBOOK",
++        )
++
++        p1, p2 = self._patch_dirs(local_dir, [])
++        with p1, p2:
++            raw = skill_view("hermes-agent")
++
++        result = json.loads(raw)
++        assert result["success"] is True
++        assert "CRAFT HERMES OPERATIONS RUNBOOK" in result["content"]
++        assert "GENERIC HERMES AGENT OVERVIEW" not in result["content"]
++
+     def test_external_skill_resolves_when_no_collision(self, tmp_path):
+         """External-only skills still resolve normally when there's no
+         local skill of the same name."""
+diff --git a/tools/skills_tool.py b/tools/skills_tool.py
+index df6361ba..2f212cc8 100644
+--- a/tools/skills_tool.py
++++ b/tools/skills_tool.py
+@@ -143,6 +143,13 @@ _INJECTION_PATTERNS: list = [
+     "]]>",
+ ]
+ 
++_PREFERRED_SKILL_CATEGORIES: Dict[str, List[str]] = {
++    # In Craft/Hermes contexts, the operational runbook is more specific than
++    # the generic autonomous-agent overview when both share the hermes-agent
++    # skill slug.
++    "hermes-agent": ["agent-ops"],
++}
++
+ 
+ def set_secret_capture_callback(callback) -> None:
+     global _secret_capture_callback
+@@ -1008,6 +1015,25 @@ def skill_view(
+                 if found_md.name != "SKILL.md":
+                     _record(None, found_md)
+ 
++        preferred_categories = _PREFERRED_SKILL_CATEGORIES.get(name, [])
++        if len(candidates) > 1 and preferred_categories:
++            preferred_matches: List[Tuple[Optional[Path], Path]] = []
++            for candidate in candidates:
++                _, candidate_md = candidate
++                for search_dir in all_dirs:
++                    try:
++                        rel_parts = candidate_md.relative_to(search_dir).parts
++                    except ValueError:
++                        continue
++                    if len(rel_parts) >= 3 and rel_parts[-1] == "SKILL.md":
++                        category = "/".join(rel_parts[:-2])
++                        if category in preferred_categories:
++                            preferred_matches.append(candidate)
++                    break
++
++            if len(preferred_matches) == 1:
++                candidates = preferred_matches
++
+         if len(candidates) > 1:
+             paths = [str(smd) for _, smd in candidates]
+             logging.getLogger(__name__).warning(
+@@ -1565,4 +1591,3 @@ registry.register(
+     check_fn=check_skills_requirements,
+     emoji="📚",
+ )
+-
+diff --git a/tools/web_tools.py b/tools/web_tools.py
+index 597edb0c..bbf368e8 100644
+--- a/tools/web_tools.py
++++ b/tools/web_tools.py
+@@ -140,7 +140,7 @@ def _get_backend() -> str:
+     keys manually without running setup.
+     """
+     configured = (_load_web_config().get("backend") or "").lower().strip()
+-    if configured in {"parallel", "firecrawl", "tavily", "exa", "searxng", "brave-free", "ddgs"}:
++    if configured in {"parallel", "firecrawl", "tavily", "exa", "searxng", "brave-free", "ddgs", "xai"}:
+         return configured
+ 
+     # Fallback for manual / legacy config — pick the highest-priority
+@@ -156,6 +156,7 @@ def _get_backend() -> str:
+         ("searxng", _has_env("SEARXNG_URL")),
+         ("brave-free", _has_env("BRAVE_SEARCH_API_KEY")),
+         ("ddgs", _ddgs_package_importable()),
++        ("xai", _xai_web_search_available()),
+     )
+     for backend, available in backend_candidates:
+         if available:
+@@ -218,6 +219,8 @@ def _is_backend_available(backend: str) -> bool:
+         return _has_env("BRAVE_SEARCH_API_KEY")
+     if backend == "ddgs":
+         return _ddgs_package_importable()
++    if backend == "xai":
++        return _xai_web_search_available()
+     return False
+ 
+ 
+@@ -235,6 +238,216 @@ def _ddgs_package_importable() -> bool:
+     except ImportError:
+         return False
+ 
++
++def _get_xai_web_search_credentials() -> Dict[str, str]:
++    """Resolve xAI credentials through Hermes' secure credential plumbing."""
++    try:
++        from tools.xai_http import resolve_xai_http_credentials
++
++        return resolve_xai_http_credentials()
++    except Exception:
++        return {"provider": "xai", "api_key": "", "base_url": "https://api.x.ai/v1"}
++
++
++def _xai_web_search_available() -> bool:
++    try:
++        creds = _get_xai_web_search_credentials()
++        return bool(str(creds.get("api_key") or "").strip())
++    except Exception:
++        return False
++
++
++def _extract_xai_response_text(payload: Dict[str, Any]) -> str:
++    text = str(payload.get("output_text") or "").strip()
++    if text:
++        return text
++
++    parts: List[str] = []
++    for item in payload.get("output") or []:
++        if not isinstance(item, dict):
++            continue
++        for content in item.get("content") or []:
++            if not isinstance(content, dict):
++                continue
++            value = content.get("text") or content.get("content")
++            if isinstance(value, str) and value.strip():
++                parts.append(value.strip())
++    return "\n".join(parts).strip()
++
++
++def _normalize_xai_citation(citation: Any, position: int) -> Optional[Dict[str, Any]]:
++    if isinstance(citation, str):
++        url = citation.strip()
++        if not url:
++            return None
++        return {
++            "title": url,
++            "url": url,
++            "description": "",
++            "position": position,
++        }
++    if isinstance(citation, dict):
++        url = str(citation.get("url") or citation.get("href") or "").strip()
++        if not url:
++            return None
++        title = str(citation.get("title") or url).strip()
++        description = str(
++            citation.get("description")
++            or citation.get("snippet")
++            or citation.get("text")
++            or ""
++        ).strip()
++        return {
++            "title": title,
++            "url": url,
++            "description": description,
++            "position": position,
++        }
++    return None
++
++
++def _extract_xai_citations(payload: Dict[str, Any]) -> List[Any]:
++    citations = payload.get("citations")
++    if isinstance(citations, list):
++        return citations
++
++    found: List[Any] = []
++    for item in payload.get("output") or []:
++        if not isinstance(item, dict):
++            continue
++        for content in item.get("content") or []:
++            if not isinstance(content, dict):
++                continue
++            annotations = content.get("annotations")
++            if not isinstance(annotations, list):
++                continue
++            for annotation in annotations:
++                if isinstance(annotation, dict) and (annotation.get("url") or annotation.get("href")):
++                    found.append(annotation)
++    return found
++
++
++def _xai_web_search_fallback(
++    query: str,
++    limit: int = 5,
++    allowed_domains: Optional[List[str]] = None,
++    excluded_domains: Optional[List[str]] = None,
++    enable_image_understanding: bool = False,
++    failure_reason: str = "",
++) -> str:
++    if allowed_domains and excluded_domains:
++        return json.dumps(
++            {
++                "success": False,
++                "provider": "xai",
++                "fallback": True,
++                "error": "allowed_domains and excluded_domains cannot be used together.",
++            },
++            ensure_ascii=False,
++        )
++
++    creds = _get_xai_web_search_credentials()
++    api_key = str(creds.get("api_key") or "").strip()
++    if not api_key:
++        return json.dumps(
++            {
++                "success": False,
++                "provider": "xai",
++                "fallback": True,
++                "error": "No xAI credentials available. Set XAI_API_KEY or configure xAI OAuth in Hermes.",
++                **({"primary_error": failure_reason} if failure_reason else {}),
++            },
++            ensure_ascii=False,
++        )
++
++    base_url = str(creds.get("base_url") or "https://api.x.ai/v1").strip().rstrip("/")
++    model = os.getenv("XAI_WEB_SEARCH_MODEL", "grok-4.3").strip() or "grok-4.3"
++    timeout = float(os.getenv("XAI_WEB_SEARCH_TIMEOUT", "60") or "60")
++    tool_def: Dict[str, Any] = {"type": "web_search"}
++    if allowed_domains:
++        tool_def["allowed_domains"] = [
++            str(domain).strip()
++            for domain in allowed_domains
++            if str(domain).strip()
++        ][:5]
++    if excluded_domains:
++        tool_def["excluded_domains"] = [
++            str(domain).strip()
++            for domain in excluded_domains
++            if str(domain).strip()
++        ][:5]
++    if enable_image_understanding:
++        tool_def["enable_image_understanding"] = True
++
++    payload = {
++        "model": model,
++        "input": [{"role": "user", "content": query.strip()}],
++        "tools": [tool_def],
++        "store": False,
++    }
++
++    try:
++        from tools.xai_http import hermes_xai_user_agent
++
++        user_agent = hermes_xai_user_agent()
++    except Exception:
++        user_agent = "Hermes-Agent/unknown"
++
++    try:
++        response = httpx.post(
++            f"{base_url}/responses",
++            headers={
++                "Authorization": f"Bearer {api_key}",
++                "Content-Type": "application/json",
++                "User-Agent": user_agent,
++            },
++            json=payload,
++            timeout=timeout,
++        )
++        response.raise_for_status()
++        data = response.json()
++        answer = _extract_xai_response_text(data)
++        citations = _extract_xai_citations(data)
++        web_results = [
++            normalized
++            for idx, citation in enumerate(citations[:limit], start=1)
++            if (normalized := _normalize_xai_citation(citation, idx)) is not None
++        ]
++        if not web_results and answer:
++            web_results = [{
++                "title": "xAI web_search answer",
++                "url": "",
++                "description": answer[:500],
++                "position": 1,
++            }]
++
++        return json.dumps(
++            {
++                "success": True,
++                "provider": "xai",
++                "fallback": True,
++                "model": model,
++                "query": query.strip(),
++                "answer": answer,
++                "citations": citations,
++                "data": {"web": web_results},
++                **({"primary_error": failure_reason} if failure_reason else {}),
++            },
++            ensure_ascii=False,
++        )
++    except Exception as exc:
++        logger.warning("xAI web_search fallback failed: %s", exc)
++        return json.dumps(
++            {
++                "success": False,
++                "provider": "xai",
++                "fallback": True,
++                "error": f"xAI web_search fallback failed: {type(exc).__name__}: {exc}",
++                **({"primary_error": failure_reason} if failure_reason else {}),
++            },
++            ensure_ascii=False,
++        )
++
+ # ─── Firecrawl Client ────────────────────────────────────────────────────────
+ 
+ # ─── Firecrawl Client ────────────────────────────────────────────────────────
+@@ -267,6 +480,7 @@ def _web_requires_env() -> list[str]:
+         "TOOL_GATEWAY_DOMAIN",
+         "TOOL_GATEWAY_SCHEME",
+         "TOOL_GATEWAY_USER_TOKEN",
++        "XAI_API_KEY",
+     ]
+ 
+ 
+@@ -733,7 +947,13 @@ def clean_base64_images(text: str) -> str:
+ # dispatchers in this file resolve them via get_active_*_provider().
+ 
+ 
+-def web_search_tool(query: str, limit: int = 5) -> str:
++def web_search_tool(
++    query: str,
++    limit: int = 5,
++    allowed_domains: Optional[List[str]] = None,
++    excluded_domains: Optional[List[str]] = None,
++    enable_image_understanding: bool = False,
++) -> str:
+     """
+     Search the web for information using available search API backend.
+ 
+@@ -776,7 +996,10 @@ def web_search_tool(query: str, limit: int = 5) -> str:
+     debug_call_data = {
+         "parameters": {
+             "query": query,
+-            "limit": limit
++            "limit": limit,
++            "allowed_domains": allowed_domains,
++            "excluded_domains": excluded_domains,
++            "enable_image_understanding": enable_image_understanding,
+         },
+         "error": None,
+         "results_count": 0,
+@@ -799,6 +1022,15 @@ def web_search_tool(query: str, limit: int = 5) -> str:
+         )
+ 
+         backend = _get_search_backend()
++        if backend == "xai":
++            return _xai_web_search_fallback(
++                query,
++                limit=limit,
++                allowed_domains=allowed_domains,
++                excluded_domains=excluded_domains,
++                enable_image_understanding=enable_image_understanding,
++            )
++
+         provider = _wsp_get_provider(backend) if backend else None
+         if provider is None or not provider.supports_search():
+             # Fall back to availability-walked active provider when the
+@@ -821,6 +1053,16 @@ def web_search_tool(query: str, limit: int = 5) -> str:
+             )
+             response_data = provider.search(query, limit)
+ 
++            if response_data.get("success") is False and _xai_web_search_available():
++                return _xai_web_search_fallback(
++                    query,
++                    limit=limit,
++                    allowed_domains=allowed_domains,
++                    excluded_domains=excluded_domains,
++                    enable_image_understanding=enable_image_understanding,
++                    failure_reason=str(response_data.get("error") or "primary web_search provider failed"),
++                )
++
+         debug_call_data["results_count"] = len(response_data.get("data", {}).get("web", []))
+         result_json = json.dumps(response_data, indent=2, ensure_ascii=False)
+         debug_call_data["final_response_size"] = len(result_json)
+@@ -836,6 +1078,16 @@ def web_search_tool(query: str, limit: int = 5) -> str:
+         _debug.log_call("web_search_tool", debug_call_data)
+         _debug.save()
+ 
++        if _xai_web_search_available():
++            return _xai_web_search_fallback(
++                query,
++                limit=limit,
++                allowed_domains=allowed_domains,
++                excluded_domains=excluded_domains,
++                enable_image_understanding=enable_image_understanding,
++                failure_reason=error_msg,
++            )
++
+         return tool_error(error_msg)
+ 
+ 
+@@ -1357,11 +1609,11 @@ async def web_crawl_tool(
+ def check_web_api_key() -> bool:
+     """Check whether the configured web backend is available."""
+     configured = _load_web_config().get("backend", "").lower().strip()
+-    if configured in {"exa", "parallel", "firecrawl", "tavily", "searxng", "brave-free", "ddgs"}:
++    if configured in {"exa", "parallel", "firecrawl", "tavily", "searxng", "brave-free", "ddgs", "xai"}:
+         return _is_backend_available(configured)
+     return any(
+         _is_backend_available(backend)
+-        for backend in ("exa", "parallel", "firecrawl", "tavily", "searxng", "brave-free", "ddgs")
++        for backend in ("exa", "parallel", "firecrawl", "tavily", "searxng", "brave-free", "ddgs", "xai")
+     )
+ 
+ 
+@@ -1504,6 +1756,23 @@ WEB_SEARCH_SCHEMA = {
+                 "minimum": 1,
+                 "maximum": 100,
+                 "default": 5
++            },
++            "allowed_domains": {
++                "type": "array",
++                "items": {"type": "string"},
++                "description": "xAI fallback only: restrict Web Search to these domains (max 5). Cannot be used with excluded_domains.",
++                "maxItems": 5
++            },
++            "excluded_domains": {
++                "type": "array",
++                "items": {"type": "string"},
++                "description": "xAI fallback only: exclude these domains from Web Search (max 5). Cannot be used with allowed_domains.",
++                "maxItems": 5
++            },
++            "enable_image_understanding": {
++                "type": "boolean",
++                "description": "xAI fallback only: allow image understanding for images encountered during web search.",
++                "default": False
+             }
+         },
+         "required": ["query"]
+@@ -1531,7 +1800,13 @@ registry.register(
+     name="web_search",
+     toolset="web",
+     schema=WEB_SEARCH_SCHEMA,
+-    handler=lambda args, **kw: web_search_tool(args.get("query", ""), limit=args.get("limit", 5)),
++    handler=lambda args, **kw: web_search_tool(
++        args.get("query", ""),
++        limit=args.get("limit", 5),
++        allowed_domains=args.get("allowed_domains"),
++        excluded_domains=args.get("excluded_domains"),
++        enable_image_understanding=bool(args.get("enable_image_understanding", False)),
++    ),
+     check_fn=check_web_api_key,
+     requires_env=_web_requires_env(),
+     emoji="🔍",
+diff --git a/tests/test_craft_browser_tool_aliases.py b/tests/test_craft_browser_tool_aliases.py
+new file mode 100644
+index 00000000..3fbf0225
+--- /dev/null
++++ b/tests/test_craft_browser_tool_aliases.py
+@@ -0,0 +1,67 @@
++import json
++
++from model_tools import handle_function_call
++from tools.registry import registry
++
++
++def test_legacy_browser_navigate_routes_to_craft_browser_tool_when_available():
++    captured = {}
++
++    def _handler(args, **_kwargs):
++        captured["args"] = args
++        return json.dumps({"ok": True, "args": args})
++
++    registry.register(
++        name="mcp__session__browser_tool",
++        toolset="mcp-craft-session",
++        schema={
++            "name": "mcp__session__browser_tool",
++            "description": "Craft browser tool",
++            "parameters": {"type": "object", "properties": {"command": {}}},
++        },
++        handler=_handler,
++        override=True,
++    )
++    try:
++        result = json.loads(
++            handle_function_call(
++                "browser_navigate",
++                {"url": "https://example.com"},
++                task_id="craft-session-1",
++            )
++        )
++    finally:
++        registry.deregister("mcp__session__browser_tool")
++
++    assert result["ok"] is True
++    assert captured["args"] == {"command": ["navigate", "https://example.com"]}
++
++
++def test_legacy_browser_navigate_does_not_treat_session_tab_paths_as_urls():
++    captured = {}
++
++    def _handler(args, **_kwargs):
++        captured["args"] = args
++        return json.dumps({"ok": True})
++
++    registry.register(
++        name="mcp__session__browser_tool",
++        toolset="mcp-craft-session",
++        schema={
++            "name": "mcp__session__browser_tool",
++            "description": "Craft browser tool",
++            "parameters": {"type": "object", "properties": {"command": {}}},
++        },
++        handler=_handler,
++        override=True,
++    )
++    try:
++        handle_function_call(
++            "browser_navigate",
++            {"url": "900b5bb2-craft-session/tabs"},
++            task_id="craft-session-1",
++        )
++    finally:
++        registry.deregister("mcp__session__browser_tool")
++
++    assert captured["args"] == {"command": ["navigate", "900b5bb2-craft-session/tabs"]}
+diff --git a/tests/tools/test_web_tools_xai_fallback.py b/tests/tools/test_web_tools_xai_fallback.py
+new file mode 100644
+index 00000000..99d81a0e
+--- /dev/null
++++ b/tests/tools/test_web_tools_xai_fallback.py
+@@ -0,0 +1,84 @@
++import json
++from unittest.mock import Mock
++
++import tools.web_tools as web_tools
++import agent.web_search_registry as web_search_registry
++
++
++def test_web_search_falls_back_to_xai_responses_without_exposing_key(monkeypatch):
++    class BrokenProvider:
++        name = "broken"
++
++        def supports_search(self):
++            return True
++
++        def search(self, _query, _limit):
++            return {"success": False, "error": "primary backend down"}
++
++    captured = {}
++
++    def fake_post(url, headers, json, timeout):
++        captured["url"] = url
++        captured["headers"] = headers
++        captured["json"] = json
++        captured["timeout"] = timeout
++        response = Mock()
++        response.raise_for_status.return_value = None
++        response.json.return_value = {
++            "output_text": "xAI answer",
++            "citations": ["https://example.com/a", {"url": "https://example.com/b", "title": "B"}],
++        }
++        return response
++
++    monkeypatch.setattr(web_tools, "_get_search_backend", lambda: "broken")
++    monkeypatch.setattr(web_search_registry, "get_provider", lambda name: BrokenProvider() if name == "broken" else None)
++    monkeypatch.setattr(web_search_registry, "get_active_search_provider", lambda: None)
++    monkeypatch.setattr(web_tools, "_get_xai_web_search_credentials", lambda: {
++        "provider": "xai",
++        "api_key": "test-xai-token",
++        "base_url": "https://api.x.ai/v1",
++    })
++    monkeypatch.setattr(web_tools.httpx, "post", fake_post)
++
++    result = json.loads(web_tools.web_search_tool(
++        "craft hermes",
++        limit=2,
++        allowed_domains=["example.com", " "],
++        enable_image_understanding=True,
++    ))
++
++    assert result["success"] is True
++    assert result["provider"] == "xai"
++    assert result["fallback"] is True
++    assert result["data"]["web"][0]["url"] == "https://example.com/a"
++    assert captured["url"] == "https://api.x.ai/v1/responses"
++    assert captured["headers"]["Authorization"] == "Bearer test-xai-token"
++    assert "test-xai-token" not in json.dumps(result)
++    assert captured["json"]["model"] == "grok-4.3"
++    assert captured["json"]["tools"] == [{
++        "type": "web_search",
++        "allowed_domains": ["example.com"],
++        "enable_image_understanding": True,
++    }]
++
++
++def test_xai_web_search_rejects_conflicting_domain_filters(monkeypatch):
++    monkeypatch.setattr(web_tools, "_get_xai_web_search_credentials", lambda: {
++        "provider": "xai",
++        "api_key": "test-xai-token",
++        "base_url": "https://api.x.ai/v1",
++    })
++
++    result = json.loads(
++        web_tools._xai_web_search_fallback(
++            "craft hermes",
++            limit=2,
++            allowed_domains=["example.com"],
++            excluded_domains=["blocked.example"],
++            enable_image_understanding=False,
++            failure_reason="primary failed",
++        )
++    )
++
++    assert result["success"] is False
++    assert "allowed_domains and excluded_domains" in result["error"]

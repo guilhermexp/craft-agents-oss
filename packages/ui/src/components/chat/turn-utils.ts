@@ -10,7 +10,7 @@ import { isParentTaskTool } from '@craft-agent/shared/utils/toolNames'
 import { storedToMessage } from '@craft-agent/core'
 
 export { storedToMessage }
-import type { ActivityItem, ActivityStatus, ActivityType, ResponseContent, TodoItem } from './TurnCard'
+import type { ActivityItem, ActivityStatus, ActivityType, ResponseContent, TodoItem } from './turn-card-shared'
 
 // Re-export ActivityItem for consumers
 export type { ActivityItem }
@@ -49,6 +49,15 @@ export interface AssistantTurn {
   isStreaming: boolean
   isComplete: boolean
   timestamp: number
+  /**
+   * Grouping-time ordinal disambiguating turns that share the same
+   * `turnId` + `timestamp` (e.g. a tool turn interrupted by an `info`
+   * message followed by a plan turn, all stamped identically). Assigned in
+   * `groupMessagesByTurn` when the turn is flushed and stable across
+   * re-groupings, so `getTurnKey` yields a unique-yet-stable identity for
+   * split cards. Absent/0 for the common non-colliding case.
+   */
+  ordinal?: number
   /** Extracted from TodoWrite tool - latest todo state in this turn */
   todos?: TodoItem[]
 }
@@ -77,18 +86,26 @@ export interface AuthRequestTurn {
 export type Turn = AssistantTurn | UserTurn | SystemTurn | AuthRequestTurn
 
 /**
- * Build a stable UI identity key for an assistant turn card.
+ * Build the stable UI identity key for a turn.
  *
- * Why this exists:
- * - Backend turnId can be reused across visually split assistant cards
- *   (e.g., steer/interruption boundaries).
- * - Expansion state must be keyed by UI-card identity, not raw backend turnId.
+ * This is the single Turn identity: React reconciliation, the structural-sharing
+ * cache (reconcileTurns), search match ids, scroll anchoring AND expansion state
+ * all key off it, so a card's React node and its persisted expansion never key
+ * off different identities.
+ *
+ * The assistant key derives from `turnId` + `timestamp`, both assigned when the
+ * turn is created, so it stays stable across the turn's whole lifecycle — it does
+ * NOT change when `response.messageId` arrives mid-stream (which previously
+ * silently reset the card's expansion). When two turns share the same
+ * `turnId` + `timestamp` (split cards), the grouping-time `ordinal` breaks the
+ * tie so their identities — and thus their expansion state — stay distinct.
  */
-export function getAssistantTurnUiKey(turn: AssistantTurn, index: number): string {
-  if (turn.response?.messageId) {
-    return `assistant:msg:${turn.response.messageId}`
-  }
-  return `assistant:turn:${turn.turnId}:${turn.timestamp}:${index}`
+export function getTurnKey(turn: Turn): string {
+  if (turn.type === 'user') return `user-${turn.message.id}`
+  if (turn.type === 'system') return `system-${turn.message.id}`
+  if (turn.type === 'auth-request') return `auth-${turn.message.id}`
+  const ordinalSuffix = turn.ordinal ? `-${turn.ordinal}` : ''
+  return `turn-${turn.turnId}-${turn.timestamp}${ordinalSuffix}`
 }
 
 // ============================================================================
@@ -365,6 +382,9 @@ export function groupMessagesByTurn(messages: Message[], options: GroupTurnsOpti
 
   const turns: Turn[] = []
   let currentTurn: AssistantTurn | null = null
+  // Counts already-flushed assistant turns per (turnId, timestamp) so split
+  // cards sharing an identity get a stable disambiguating ordinal (see getTurnKey).
+  const ordinalByIdentity = new Map<string, number>()
 
   const flushCurrentTurn = (interrupted = false) => {
     if (currentTurn) {
@@ -417,6 +437,10 @@ export function groupMessagesByTurn(messages: Message[], options: GroupTurnsOpti
         }
       }
 
+      const identity = `${currentTurn.turnId}\u0000${currentTurn.timestamp}`
+      const ordinal = ordinalByIdentity.get(identity) ?? 0
+      currentTurn.ordinal = ordinal
+      ordinalByIdentity.set(identity, ordinal + 1)
       turns.push(currentTurn)
       currentTurn = null
     }
@@ -668,35 +692,6 @@ export function groupMessagesByTurn(messages: Message[], options: GroupTurnsOpti
 }
 
 /**
- * Get the primary intent for a turn (first available intent from activities)
- */
-export function getTurnIntent(turn: AssistantTurn): string | undefined {
-  // First check explicit turn intent
-  if (turn.intent) return turn.intent
-
-  // Then look for activity intents
-  for (const activity of turn.activities) {
-    if (activity.intent) return activity.intent
-  }
-
-  return undefined
-}
-
-/**
- * Check if any activity in the turn is still running
- */
-export function hasPendingActivities(turn: AssistantTurn): boolean {
-  return turn.activities.some(a => a.status === 'running' || a.status === 'pending' || a.status === 'backgrounded')
-}
-
-/**
- * Check if any activity in the turn has an error
- */
-export function hasErrorActivities(turn: AssistantTurn): boolean {
-  return turn.activities.some(a => a.status === 'error')
-}
-
-/**
  * Get a summary of completed activities
  */
 export function getActivitySummary(turn: AssistantTurn): string {
@@ -902,42 +897,6 @@ export function formatActivityAsMarkdown(activity: ActivityItem): string {
 // ============================================================================
 // Last Turn/Message Utilities
 // ============================================================================
-
-/**
- * Get the last assistant turn from a list of turns.
- * Useful for determining the current/most recent assistant response.
- */
-export function getLastAssistantTurn(turns: Turn[]): AssistantTurn | undefined {
-  for (let i = turns.length - 1; i >= 0; i--) {
-    const turn = turns[i]
-    if (turn?.type === 'assistant') {
-      return turn as AssistantTurn
-    }
-  }
-  return undefined
-}
-
-/**
- * Get the timestamp of the last user message from turns.
- * Useful for calculating elapsed time since user sent their message.
- */
-export function getLastUserMessageTime(turns: Turn[]): number | undefined {
-  for (let i = turns.length - 1; i >= 0; i--) {
-    const turn = turns[i]
-    if (turn?.type === 'user') {
-      return (turn as UserTurn).timestamp
-    }
-  }
-  return undefined
-}
-
-/**
- * Check if the last assistant turn is still streaming/processing.
- */
-export function isLastTurnStreaming(turns: Turn[]): boolean {
-  const lastAssistant = getLastAssistantTurn(turns)
-  return lastAssistant?.isStreaming ?? false
-}
 
 /**
  * Pre-compute which activities are the last child at their depth level.
@@ -1189,21 +1148,6 @@ export function groupActivitiesByParent(
   }
 
   return result
-}
-
-/**
- * Counts the total number of activities including those inside groups
- */
-export function countTotalActivities(items: (ActivityItem | ActivityGroup)[]): number {
-  let count = 0
-  for (const item of items) {
-    if (isActivityGroup(item)) {
-      count += 1 + item.children.length // Parent + children
-    } else {
-      count += 1
-    }
-  }
-  return count
 }
 
 // ============================================================================

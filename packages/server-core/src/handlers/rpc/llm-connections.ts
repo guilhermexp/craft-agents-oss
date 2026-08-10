@@ -77,33 +77,6 @@ async function getHermesSyncedConnections(): Promise<LlmConnection[]> {
   return connections.map(conn => applyHermesLiveModelMetadata(conn, metadata))
 }
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.llmConnections.LIST,
-  RPC_NAMESPACES.llmConnections.LIST_WITH_STATUS,
-  RPC_NAMESPACES.llmConnections.GET,
-  RPC_NAMESPACES.llmConnections.GET_API_KEY,
-  RPC_NAMESPACES.llmConnections.SAVE,
-  RPC_NAMESPACES.llmConnections.DELETE,
-  RPC_NAMESPACES.llmConnections.TEST,
-  RPC_NAMESPACES.llmConnections.SET_DEFAULT,
-  RPC_NAMESPACES.llmConnections.SET_WORKSPACE_DEFAULT,
-  RPC_NAMESPACES.llmConnections.REFRESH_MODELS,
-  RPC_NAMESPACES.chatgpt.START_OAUTH,
-  RPC_NAMESPACES.chatgpt.COMPLETE_OAUTH,
-  RPC_NAMESPACES.chatgpt.CANCEL_OAUTH,
-  RPC_NAMESPACES.chatgpt.GET_AUTH_STATUS,
-  RPC_NAMESPACES.chatgpt.LOGOUT,
-  RPC_NAMESPACES.copilot.START_OAUTH,
-  RPC_NAMESPACES.copilot.CANCEL_OAUTH,
-  RPC_NAMESPACES.copilot.GET_AUTH_STATUS,
-  RPC_NAMESPACES.copilot.LOGOUT,
-  RPC_NAMESPACES.settings.SETUP_LLM_CONNECTION,
-  RPC_NAMESPACES.settings.TEST_LLM_CONNECTION_SETUP,
-  RPC_NAMESPACES.pi.GET_API_KEY_PROVIDERS,
-  RPC_NAMESPACES.pi.GET_PROVIDER_BASE_URL,
-  RPC_NAMESPACES.pi.GET_PROVIDER_MODELS,
-] as const
-
 export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerDeps): void {
   const { sessionManager } = deps
 

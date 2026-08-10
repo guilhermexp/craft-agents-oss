@@ -27,6 +27,16 @@ const browserInstanceCountAtom = atom<number>(
 /** Currently active browser instance ID (selected/focused by user interactions) */
 export const activeBrowserInstanceIdAtom = atom<string | null>(null)
 
+/**
+ * Browser instance the Meetings page hosts inside itself.
+ *
+ * The dock request arrives on a global listener in AppShell, while the surface
+ * that can host it is a page mounted far below — the id travels through here
+ * instead of being threaded down the content panel. Cleared when the browser
+ * undocks, dies, or the page that hosts it goes away.
+ */
+export const meetingsHostedBrowserIdAtom = atom<string | null>(null)
+
 /** Tombstones for instances removed from renderer state (guards against late out-of-order updates) */
 const removedBrowserInstanceIdsAtom = atom<Set<string>>(new Set<string>())
 

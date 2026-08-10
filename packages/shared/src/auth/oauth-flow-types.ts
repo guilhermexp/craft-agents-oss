@@ -10,6 +10,10 @@
 
 export type OAuthProvider = 'mcp' | 'google' | 'slack' | 'microsoft' | 'generic'
 
+export type OAuthFailureReason =
+  | 'oauth-token-exchange-failed'
+  | 'source-oauth-authentication-failed'
+
 /**
  * Everything the server produces during the "prepare" phase.
  * Stored in the OAuthFlowStore and used later during "exchange".
@@ -54,4 +58,6 @@ export interface OAuthExchangeResult {
   /** OAuth client_secret for storage (Google needs it for refresh) */
   oauthClientSecret?: string
   error?: string
+  /** Stable, non-sensitive reason suitable for crossing process boundaries. */
+  errorCode?: OAuthFailureReason
 }

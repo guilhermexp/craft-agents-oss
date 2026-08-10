@@ -113,6 +113,9 @@ export class TestAgent extends BaseAgent {
 
   constructor(config: BackendConfig) {
     super(config, 'test-model', 100_000);
+    // Wire the shared PreToolUse dispatcher so respondToPermission delegates to
+    // the real BaseAgent path (whitelisting) instead of a stub.
+    this.initToolPermissionDispatcher();
   }
 
   protected async *chatImpl(
@@ -145,6 +148,7 @@ export class TestAgent extends BaseAgent {
 
   respondToPermission(requestId: string, allowed: boolean, alwaysAllow?: boolean): void {
     this.respondToPermissionCalls.push({ requestId, allowed, alwaysAllow });
+    super.respondToPermission(requestId, allowed, alwaysAllow);
   }
 
   async runMiniCompletion(_prompt: string): Promise<string | null> {
@@ -157,6 +161,13 @@ export class TestAgent extends BaseAgent {
 
   // Expose protected state for testing
   getConfigWatcherManager() { return this.configWatcherManager; }
+
+  // Expose protected managers for tests (BaseAgent keeps no public test-only
+  // getters; these live on the test subclass instead).
+  getSourceManagerForTest() { return this.sourceManager; }
+  getPermissionManagerForTest() { return this.permissionManager; }
+  getPromptBuilderForTest() { return this.promptBuilder; }
+  getDispatcherForTest() { return this.toolPermissionDispatcher; }
 
   // Helper to reset tracking
   resetTracking(): void {

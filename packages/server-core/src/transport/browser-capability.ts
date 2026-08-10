@@ -8,57 +8,30 @@
  * See docs/adr-transport-locality.md for the locality boundary definition.
  */
 
+import type { IBrowserPaneManager } from '../handlers/browser-pane-manager-interface'
+
 export const BROWSER_CAPABILITY_VERSION = 1
 
 /**
- * Names map 1:1 to `IBrowserPaneManager` methods.
- * Positional `args` carry the method's arguments in declaration order.
+ * Wire method names for the `client:browser:invoke` capability.
+ *
+ * DERIVED from `IBrowserPaneManager` so a new capability never restates this
+ * list — add the method to the interface and it appears here automatically.
+ * `setSessionPathResolver` and `assertEvaluateAllowed` are local-only (never
+ * cross the wire), so they are the excluded keys. Positional `args` carry the
+ * method's arguments in declaration order.
+ *
+ * PROTOCOL SAFETY: because this type is DERIVED, renaming an interface method
+ * silently renames the wire method too — a breaking change that still ships
+ * `v: 1`, so a new server × old desktop (or the reverse) fails at runtime with
+ * `Unknown browser capability method` and there is NO compile-time signal. The
+ * wire-name set is frozen by a snapshot test ("freezes the client:browser:invoke
+ * wire method names") in `apps/electron/.../browser-pane-manager.test.ts`, whose
+ * assertion runs over the compiler-exhaustive `capabilityDispatch` keys. Any
+ * rename MUST update that snapshot AND bump `BROWSER_CAPABILITY_VERSION` — that
+ * turns a silent production break into a caught test failure.
  */
-export type BrowserCapabilityMethod =
-  // Lifecycle / instances
-  | 'createForSession'
-  | 'getOrCreateForSession'
-  | 'focusBoundForSession'
-  | 'destroyInstance'
-  | 'destroyForSession'
-  | 'getInstance'
-  | 'listInstances'
-  | 'bindSession'
-  | 'unbindAllForSession'
-  | 'setAgentControl'
-  | 'clearAgentControl'
-  | 'clearAgentControlForInstance'
-  | 'clearVisualsForSession'
-  | 'focus'
-  | 'hide'
-  // Navigation
-  | 'navigate'
-  | 'goBack'
-  | 'goForward'
-  // Interaction
-  | 'getAccessibilitySnapshot'
-  | 'clickElement'
-  | 'clickAtCoordinates'
-  | 'drag'
-  | 'fillElement'
-  | 'typeText'
-  | 'selectOption'
-  | 'sendKey'
-  | 'scroll'
-  | 'waitFor'
-  | 'evaluate'
-  // Clipboard
-  | 'setClipboard'
-  | 'getClipboard'
-  // Capture / introspection
-  | 'screenshot'
-  | 'screenshotRegion'
-  | 'getConsoleLogs'
-  | 'getNetworkLogs'
-  | 'windowResize'
-  | 'getDownloads'
-  | 'uploadFile'
-  | 'detectSecurityChallenge'
+export type BrowserCapabilityMethod = Exclude<keyof IBrowserPaneManager, 'setSessionPathResolver' | 'assertEvaluateAllowed'>
 
 export interface BrowserCapabilityRequest {
   /** Protocol version. Always `1` for now; bumped on breaking shape changes. */

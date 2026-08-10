@@ -80,17 +80,18 @@ describe('parseError transient connection classification', () => {
     expect(parsed.canRetry).toBe(true)
   })
 
-  it('classifies other transient socket disconnects as retryable', () => {
-    const cases = [
-      'socket hang up',
-      'read ECONNRESET',
-      'WebSocket proxy connection dropped',
-    ]
-    for (const message of cases) {
+  it('classifies reset sockets as network_error', () => {
+    for (const message of ['socket hang up', 'read ECONNRESET']) {
       const parsed = parseError(new Error(message))
-      expect(parsed.code).toBe('service_error')
+      expect(parsed.code).toBe('network_error')
       expect(parsed.canRetry).toBe(true)
     }
+  })
+
+  it('keeps WebSocket proxy disconnects as service_error', () => {
+    const parsed = parseError(new Error('WebSocket proxy connection dropped'))
+    expect(parsed.code).toBe('service_error')
+    expect(parsed.canRetry).toBe(true)
   })
 
   it('lets auth errors win over the transient-disconnect branch', () => {

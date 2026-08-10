@@ -256,6 +256,7 @@ const mockAppShellContext = {
   activeSessionId: null,
   pendingPermissions: new Map(),
   pendingCredentials: new Map(),
+  pendingQuestions: new Map(),
   currentModel: 'haiku',
   connectionDefaultModel: null,
   sessionOptions: new Map(),

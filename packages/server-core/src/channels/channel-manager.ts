@@ -6,6 +6,8 @@ import type { HandlerDeps } from '../handlers/handler-deps'
 import { createChannelOrchestrator, resolveChannelTargets, type ChannelOrchestrator } from './channel-orchestrator'
 import { isTerminalKanbanStatus, listKanbanTasksByIds, listKanbanTasksCreatedSince } from './hermes-kanban'
 import { createChannelDispatch, listChannelDispatches, updateChannelDispatch } from '@craft-agent/shared/channels/dispatches'
+import { getChannelParticipantSession, setChannelParticipantSession } from '@craft-agent/shared/channels/session-bindings'
+import { loadChannelKanbanWatch, saveChannelKanbanWatch } from '@craft-agent/shared/channels/kanban-watches'
 import { mergeSessionScopedToolCallbacks } from '@craft-agent/shared/agent/session-scoped-tools'
 import type { ChannelDispatchRequest, ChannelDispatchResult } from '@craft-agent/session-tools-core'
 
@@ -20,6 +22,7 @@ export class ChannelManager {
   private orchestrators = new Map<string, ChannelOrchestrator>()
   private watchedKanbanTasks = new Map<string, WatchedKanbanTasks>()
   private kanbanWatchTimer: ReturnType<typeof setInterval> | null = null
+  private bootedWorkspaces = new Map<string, Promise<void>>()
 
   constructor(
     private readonly server: RpcServer,
@@ -29,6 +32,7 @@ export class ChannelManager {
   async list(workspaceId: string): Promise<WarRoomChannel[]> {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
+    await this.ensureWorkspaceBooted(workspaceId, workspace.rootPath)
 
     const { listChannels } = await import('@craft-agent/shared/channels/storage')
     return listChannels(workspace.rootPath)
@@ -72,6 +76,7 @@ export class ChannelManager {
   async listMessages(workspaceId: string, channelId: string): Promise<ReturnType<typeof import('@craft-agent/shared/channels/messages').listChannelMessages>> {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
+    await this.ensureWorkspaceBooted(workspaceId, workspace.rootPath)
 
     const { listChannels } = await import('@craft-agent/shared/channels/storage')
     const channel = listChannels(workspace.rootPath).find(item => item.id === channelId)
@@ -84,6 +89,7 @@ export class ChannelManager {
   async listDispatches(workspaceId: string, channelId: string): Promise<WarRoomDispatch[]> {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
+    await this.ensureWorkspaceBooted(workspaceId, workspace.rootPath)
 
     const { listChannels } = await import('@craft-agent/shared/channels/storage')
     const channel = listChannels(workspace.rootPath).find(item => item.id === channelId)
@@ -109,6 +115,7 @@ export class ChannelManager {
   }> {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
+    await this.ensureWorkspaceBooted(workspaceId, workspace.rootPath)
 
     const text = input.text.trim()
     if (!text) throw new Error('Channel message text is required')
@@ -178,12 +185,66 @@ export class ChannelManager {
     return `${workspaceId}:${channelId}`
   }
 
+  /**
+   * Runs once per workspace on first use (not in the constructor, which can't be async):
+   * fails dispatches left `queued`/`running` by a previous process, and re-arms Kanban
+   * watchers from their persisted watch lists.
+   */
+  private ensureWorkspaceBooted(workspaceId: string, workspaceRootPath: string): Promise<void> {
+    const existing = this.bootedWorkspaces.get(workspaceId)
+    if (existing) return existing
+
+    const booting = this.bootWorkspace(workspaceId, workspaceRootPath)
+    this.bootedWorkspaces.set(workspaceId, booting)
+    // Clear the flag on failure so the next call retries instead of leaving the
+    // workspace permanently unreconciled for the rest of the process lifetime.
+    booting.catch(() => {
+      this.bootedWorkspaces.delete(workspaceId)
+    })
+    return booting
+  }
+
+  private async bootWorkspace(workspaceId: string, workspaceRootPath: string): Promise<void> {
+    const { listChannels } = await import('@craft-agent/shared/channels/storage')
+    const channels = listChannels(workspaceRootPath)
+
+    for (const channel of channels) {
+      this.reconcileOrphanedDispatches(workspaceRootPath, channel.id)
+
+      const taskIds = loadChannelKanbanWatch(workspaceRootPath, channel.id)
+      if (taskIds.length > 0) {
+        this.watchKanbanTasks({ workspaceId, workspaceRootPath, channel, taskIds })
+      }
+    }
+
+    // Reconciliation of watched Kanban tasks runs a full agent turn per terminal
+    // task, so it must not sit in the RPC critical path (channels.list and friends
+    // await ensureWorkspaceBooted). Kick it off in the background and log failures
+    // instead of swallowing them.
+    void this.pollWatchedKanbanTasks().catch(error => {
+      this.deps.platform.logger.error('[channels] boot Kanban reconciliation failed:', error)
+    })
+  }
+
+  private reconcileOrphanedDispatches(workspaceRootPath: string, channelId: string): void {
+    const dispatches = listChannelDispatches(workspaceRootPath, channelId)
+    for (const dispatch of dispatches) {
+      if (dispatch.status === 'queued' || dispatch.status === 'running') {
+        updateChannelDispatch(workspaceRootPath, channelId, dispatch.id, {
+          status: 'failed',
+          error: 'App restarted before this dispatch completed',
+        })
+      }
+    }
+  }
+
   async dispatchFromSession(
     workspaceId: string,
     input: ChannelDispatchRequest & { sourceSessionId: string; inferredChannelId?: string },
   ): Promise<ChannelDispatchResult> {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
+    await this.ensureWorkspaceBooted(workspaceId, workspace.rootPath)
 
     const channelId = input.channelId ?? input.inferredChannelId
     if (!channelId) throw new Error('channel_dispatch requires channelId when the current session is not bound to a channel')
@@ -270,7 +331,18 @@ export class ChannelManager {
           return updateChannelDispatch(workspaceRootPath, channelId, dispatchId, updates)
         },
       },
+      sessionBindingStore: {
+        get(boundChannelId, participantId) {
+          return getChannelParticipantSession(workspaceRootPath, boundChannelId, participantId)
+        },
+        set(boundChannelId, participantId, sessionId) {
+          setChannelParticipantSession(workspaceRootPath, boundChannelId, participantId, sessionId)
+        },
+      },
       runtime: {
+        async sessionExists(sessionId) {
+          return (await deps.sessionManager.getSession(sessionId)) !== null
+        },
         async createSession(input) {
           const session = await deps.sessionManager.createSession(workspaceId, {
             name: input.name,
@@ -330,16 +402,20 @@ export class ChannelManager {
     if (input.taskIds.length === 0) return
     const key = this.orchestratorKey(input.workspaceId, input.channel.id)
     const existing = this.watchedKanbanTasks.get(key)
+    let taskIds: Set<string>
     if (existing) {
       for (const taskId of input.taskIds) existing.taskIds.add(taskId)
+      taskIds = existing.taskIds
     } else {
+      taskIds = new Set(input.taskIds)
       this.watchedKanbanTasks.set(key, {
         workspaceId: input.workspaceId,
         workspaceRootPath: input.workspaceRootPath,
         channel: input.channel,
-        taskIds: new Set(input.taskIds),
+        taskIds,
       })
     }
+    saveChannelKanbanWatch(input.workspaceRootPath, input.channel.id, [...taskIds])
 
     if (this.kanbanWatchTimer) return
     this.kanbanWatchTimer = setInterval(() => {
@@ -361,6 +437,13 @@ export class ChannelManager {
       const terminalTasks = tasks.filter(task => isTerminalKanbanStatus(task.status))
       if (terminalTasks.length === 0) continue
 
+      // Persist the remaining task ids before mutating memory. If the write throws
+      // (EACCES/ENOSPC), in-memory state is left untouched so the ids stay armed and
+      // the next poll retries — rather than dropping them from memory while disk
+      // still holds them, which would re-arm and re-post duplicates on the next boot.
+      const terminalTaskIds = new Set(terminalTasks.map(task => task.id))
+      const remainingTaskIds = [...watched.taskIds].filter(id => !terminalTaskIds.has(id))
+      saveChannelKanbanWatch(watched.workspaceRootPath, watched.channel.id, remainingTaskIds)
       for (const task of terminalTasks) watched.taskIds.delete(task.id)
       if (watched.taskIds.size === 0) this.watchedKanbanTasks.delete(key)
 

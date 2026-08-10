@@ -43,7 +43,7 @@ import { TelegramConnectDialog } from '@/components/messaging/TelegramConnectDia
 import { WhatsAppConnectDialog } from '@/components/messaging/WhatsAppConnectDialog'
 import { LarkConnectDialog } from '@/components/messaging/LarkConnectDialog'
 import { useActiveWorkspace } from '@/context/AppShellContext'
-import { useNavigation } from '@/contexts/NavigationContext'
+import { useNavigation } from '@/context/NavigationContext'
 import {
   messagingBindingsAtom,
   setMessagingBindingsAtom,

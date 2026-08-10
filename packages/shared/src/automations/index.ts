@@ -17,7 +17,7 @@
 
 export type {
   AppEvent,
-  AgentEvent,
+  AgentHookEvent,
   AutomationEvent,
   PromptAction,
   WebhookAction,

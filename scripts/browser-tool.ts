@@ -1,14 +1,17 @@
 #!/usr/bin/env bun
 /**
- * browser-tool (secondary path)
+ * browser-tool (secondary helper)
  *
- * CLI helper for browser automation workflows in Craft Agents.
+ * Thin, deterministic CLI for browser automation discovery outside agent turns:
+ * - `--help` prints the canonical `browser_tool` grammar (single source, from
+ *   the runtime's `getBrowserToolHelp()` — no duplicated per-command templates).
+ * - `parse-url <url>` prints structured URL fields for safe debugging in Explore
+ *   mode without running a generic interpreter snippet.
  *
- * This helper is intentionally thin and deterministic:
- * - It provides command discovery via --help
- * - It emits structured browser_* tool call templates as JSON
- * - Execution still happens through native browser_* tools in sessions
+ * Execution still happens through the native `browser_tool` tool in sessions.
  */
+
+import { getBrowserToolHelp } from '../packages/shared/src/agent/browser-tool-runtime.ts';
 
 type CommandSpec = {
   name: string;
@@ -23,33 +26,9 @@ type Io = {
 };
 
 const COMMANDS: CommandSpec[] = [
-  { name: 'help', description: 'Show usage', example: 'browser-tool --help' },
-  { name: 'list', description: 'List supported browser_* operations', example: 'browser-tool list' },
-  { name: 'template', args: '<operation>', description: 'Print JSON template for one browser_* operation', example: 'browser-tool template browser_navigate' },
-  { name: 'all-templates', description: 'Print JSON templates for all browser_* operations', example: 'browser-tool all-templates' },
+  { name: 'help', description: 'Show the canonical browser_tool grammar', example: 'browser-tool --help' },
   { name: 'parse-url', args: '<url>', description: 'Parse a URL and print structured fields for debugging', example: 'browser-tool parse-url file:///tmp/report.html' },
 ];
-
-const TOOL_TEMPLATES: Record<string, Record<string, unknown>> = {
-  browser_open: {},
-  browser_navigate: { url: 'https://example.com' },
-  browser_snapshot: {},
-  browser_click: { ref: '@e1', waitFor: 'network-idle', timeoutMs: 8000 },
-  browser_fill: { ref: '@e5', value: 'hello world' },
-  browser_select: { ref: '@e3', value: 'option_value' },
-  browser_screenshot: {},
-  browser_screenshot_region: { ref: '@e12', padding: 8 },
-  browser_console: { level: 'warn', limit: 50 },
-  browser_window_resize: { width: 1280, height: 720 },
-  browser_network: { limit: 50, status: 'failed' },
-  browser_wait: { kind: 'network-idle', timeoutMs: 8000 },
-  browser_key: { key: 'Enter' },
-  browser_downloads: { action: 'list', limit: 20 },
-  browser_scroll: { direction: 'down', amount: 500 },
-  browser_back: {},
-  browser_forward: {},
-  browser_evaluate: { expression: 'document.title' },
-};
 
 function printHelp(io: Io): void {
   io.log('browser-tool - Browser automation helper for Craft Agents');
@@ -64,14 +43,9 @@ function printHelp(io: Io): void {
     io.log(`  ${sig.padEnd(28)} ${cmd.description}`);
   }
   io.log('');
-  io.log('Notes:');
-  io.log('  - Primary execution path is native browser_* tools in sessions.');
-  io.log('  - This CLI is a secondary helper for discovery and templating.');
+  io.log('The only in-session tool is `browser_tool`; its command grammar:');
   io.log('');
-  io.log('Examples:');
-  for (const cmd of COMMANDS) {
-    io.log(`  ${cmd.example}`);
-  }
+  io.log(getBrowserToolHelp());
 }
 
 function printJson(io: Io, value: unknown): void {
@@ -113,31 +87,6 @@ export function runBrowserToolCli(argv: string[], io: Io = console): number {
 
   if (command === '--help' || command === '-h' || command === 'help') {
     printHelp(io);
-    return 0;
-  }
-
-  if (command === 'list') {
-    printJson(io, { operations: Object.keys(TOOL_TEMPLATES) });
-    return 0;
-  }
-
-  if (command === 'template') {
-    if (!op) {
-      io.error('Error: template requires <operation>');
-      return 1;
-    }
-    const input = TOOL_TEMPLATES[op];
-    if (!input) {
-      io.error(`Error: unknown operation "${op}"`);
-      return 1;
-    }
-    printJson(io, { tool: op, input });
-    return 0;
-  }
-
-  if (command === 'all-templates') {
-    const out = Object.entries(TOOL_TEMPLATES).map(([tool, input]) => ({ tool, input }));
-    printJson(io, { templates: out });
     return 0;
   }
 

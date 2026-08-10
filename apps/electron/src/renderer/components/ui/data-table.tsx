@@ -58,6 +58,8 @@ interface DataTableProps<TData, TValue> {
    * When set, rows can be expanded/collapsed. All rows start expanded by default.
    */
   getSubRows?: (row: TData) => TData[] | undefined
+  /** Stable row identity used to preserve row-local state across reordering. */
+  getRowId?: (row: TData, index: number, parent?: Row<TData>) => string
   /** Initial expanded state (default: all expanded when getSubRows is provided) */
   defaultExpanded?: boolean
 }
@@ -76,6 +78,7 @@ export function DataTable<TData, TValue>({
   pagination: paginationEnabled = false,
   pageSize = 50,
   getSubRows,
+  getRowId,
   defaultExpanded = true,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
@@ -114,6 +117,7 @@ export function DataTable<TData, TValue>({
   const table = useReactTable({
     data,
     columns,
+    getRowId,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),

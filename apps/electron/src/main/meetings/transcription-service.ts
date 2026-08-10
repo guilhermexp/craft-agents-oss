@@ -10,6 +10,8 @@ export interface TranscribeInput {
   model: string
   apiKey: string
   mimeType?: string
+  /** Código de idioma Deepgram (`pt-BR`, `en`…); ausente → `detect_language`. */
+  language?: string | null
 }
 
 export interface TranscribeOutput {
@@ -41,6 +43,14 @@ export class TranscriptionService {
     url.searchParams.set('punctuate', 'true')
     url.searchParams.set('diarize', 'true')
     url.searchParams.set('utterances', 'true')
+    // Sem `language` o Deepgram assume inglês e fonetiza áudio em outro idioma
+    // como palavras inglesas — foi o que gerou a transcrição sem sentido de
+    // uma call em português. Locale sem código mapeado cai em detect_language.
+    if (input.language) {
+      url.searchParams.set('language', input.language)
+    } else {
+      url.searchParams.set('detect_language', 'true')
+    }
 
     // Deepgram wants a clean container content-type, not the MediaRecorder mime
     // string. The recorder hands us `video/webm;codecs=vp9,opus`; passing that

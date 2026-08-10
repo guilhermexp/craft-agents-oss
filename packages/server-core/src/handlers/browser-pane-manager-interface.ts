@@ -1,8 +1,15 @@
 /**
- * IBrowserPaneManager — interface for browser pane operations used by SessionManager.
+ * IBrowserPaneManager — the transport seam for browser pane operations.
  *
- * Covers all 40 methods SessionManager calls on BrowserPaneManager.
- * The concrete BrowserPaneManager in apps/electron implements this.
+ * This is the async boundary SessionManager talks to: the local Electron
+ * `BrowserPaneManager` implements it in-process, and `RemoteBrowserPaneManager`
+ * ships each call to the user's desktop client over `client:browser:invoke`.
+ * Because the remote adapter is a WS round-trip, EVERY data-returning method is
+ * async — there are no sync/async twins and no fabricated placeholder values.
+ *
+ * The agent-facing command surface lives in `BrowserPaneFns` (packages/shared);
+ * this interface is only the instance-scoped transport it delegates to. The
+ * wire method names in `BrowserCapabilityMethod` are derived from these keys.
  *
  * Structurally compatible with BrowserOwnershipReleaser (domain layer)
  * so releaseBrowserOwnershipOnForcedStop() accepts IBrowserPaneManager.
@@ -19,6 +26,8 @@ export interface BrowserInstanceSnapshot {
   ownerType: 'session' | 'manual'
   ownerSessionId: string | null
   isVisible: boolean
+  /** Non-null enquanto a tela do pane está sob captura (gravação de reunião). */
+  captureLock?: { reason: 'meeting-recording'; since: number } | null
   title: string
   currentUrl: string
 }
@@ -140,28 +149,32 @@ export interface AccessibilitySnapshot {
 export interface IBrowserPaneManager {
   // -- Session lifecycle ---------------------------------------------------
 
-  /** Register a callback that resolves session IDs to file paths */
+  /** Register a callback that resolves session IDs to file paths (local-only, not a wire capability) */
   setSessionPathResolver(fn: (sessionId: string) => string | null): void
 
-  /** Destroy all browser instances bound to a session */
+  /**
+   * Assert that agent-driven JS evaluation is permitted by this client's local
+   * `allowRemoteEvaluate` config. Throws `CodedError('BROWSER_REMOTE_EVALUATE_BLOCKED')`
+   * when disabled. Local-only (never crosses the wire, like setSessionPathResolver):
+   * the desktop's `evaluate()` enforces this same gate authoritatively, so the
+   * remote adapter is a no-op and SessionManager can pre-check before creating an
+   * instance. Single policy source — `evaluate()` calls this too.
+   */
+  assertEvaluateAllowed(): void
+
+  /** Destroy all browser instances bound to a session (fire-and-forget) */
   destroyForSession(sessionId: string): void
 
   /** Clear agent control overlay and native overlay state for a session */
   clearVisualsForSession(sessionId: string): Promise<void>
 
-  /** Unbind all browser instances from a session (non-destructive) */
+  /** Unbind all browser instances from a session (non-destructive, fire-and-forget) */
   unbindAllForSession(sessionId: string): void
 
   /** Get or create a browser instance for a session, returning the instance ID */
-  getOrCreateForSession(sessionId: string, options?: { workspaceId?: string | null }): string
+  getOrCreateForSession(sessionId: string, options?: { workspaceId?: string | null }): Promise<string>
 
-  /**
-   * Async equivalent of {@link getOrCreateForSession}. Required for the remote
-   * bridge — the WS round-trip can't fit into a sync return.
-   */
-  getOrCreateForSessionAsync(sessionId: string, options?: { workspaceId?: string | null }): Promise<string>
-
-  /** Activate or update the agent control overlay for a session */
+  /** Activate or update the agent control overlay for a session (fire-and-forget) */
   setAgentControl(
     sessionId: string,
     meta: { displayName?: string; intent?: string },
@@ -170,55 +183,35 @@ export interface IBrowserPaneManager {
 
   // -- Instance management -------------------------------------------------
 
-  /** Create a browser instance for a session (optionally shown) */
-  createForSession(sessionId: string, options?: { show?: boolean; workspaceId?: string | null }): string
+  /** Create a browser instance for a session (optionally shown), returning the instance ID */
+  createForSession(sessionId: string, options?: { show?: boolean; workspaceId?: string | null }): Promise<string>
 
-  /**
-   * Async equivalent of {@link createForSession}. Required for the remote bridge.
-   */
-  createForSessionAsync(sessionId: string, options?: { show?: boolean; workspaceId?: string | null }): Promise<string>
+  /** Get a cloneable snapshot of an instance by ID (undefined when unknown). Wire name kept as `getInstance` for protocol v1 compat. */
+  getInstance(id: string): Promise<BrowserInstanceSnapshot | undefined>
 
-  /** Get instance info by ID (sync; local-only). For remote-aware code use {@link getInstanceAsync}. */
-  getInstance(id: string): BrowserInstanceSnapshot | undefined
-
-  /**
-   * Async equivalent of {@link getInstance} — required for the remote bridge,
-   * which can't synchronously return real data without a WS round-trip.
-   */
-  getInstanceAsync(id: string): Promise<BrowserInstanceSnapshot | undefined>
-
-  /** List all browser instances with their public info (sync; local-only). For remote-aware code use {@link listInstancesAsync}. */
-  listInstances(): BrowserInstanceInfo[]
-
-  /**
-   * Async equivalent of {@link listInstances} — required for the remote bridge,
-   * which can't synchronously return real data without a WS round-trip.
-   */
-  listInstancesAsync(): Promise<BrowserInstanceInfo[]>
+  /** List all browser instances with their public info */
+  listInstances(): Promise<BrowserInstanceInfo[]>
 
   /** Focus the bound browser instance for a session, creating if needed */
-  focusBoundForSession(sessionId: string, options?: { workspaceId?: string | null }): string
+  focusBoundForSession(sessionId: string, options?: { workspaceId?: string | null }): Promise<string>
 
-  /** Async equivalent of {@link focusBoundForSession}. */
-  focusBoundForSessionAsync(sessionId: string, options?: { workspaceId?: string | null }): Promise<string>
-
-  /** Bind a browser instance to a session */
+  /** Bind a browser instance to a session (fire-and-forget) */
   bindSession(id: string, sessionId: string, options?: { workspaceId?: string | null }): void
 
-  /** Focus a browser instance window */
+  /** Focus a browser instance window (fire-and-forget) */
   focus(id: string): void
 
-  /** Destroy a browser instance */
+  /** Destroy a browser instance (fire-and-forget) */
   destroyInstance(id: string): void
 
-  /** Hide a browser instance window */
+  /** Hide a browser instance window (fire-and-forget) */
   hide(id: string): void
 
-  /** Clear agent control overlay for all instances in a session */
+  /** Clear agent control overlay for all instances in a session (fire-and-forget) */
   clearAgentControl(sessionId: string): void
 
   /** Clear agent control overlay for a specific instance */
-  clearAgentControlForInstance(instanceId: string, sessionId?: string): { released: boolean; reason?: string }
+  clearAgentControlForInstance(instanceId: string, sessionId?: string): Promise<{ released: boolean; reason?: string }>
 
   // -- Navigation ----------------------------------------------------------
 
@@ -249,24 +242,9 @@ export interface IBrowserPaneManager {
 
   // -- Monitoring ----------------------------------------------------------
 
-  /** Sync; local-only. For remote-aware code use {@link getConsoleLogsAsync}. */
-  getConsoleLogs(id: string, options?: BrowserConsoleOptions): BrowserConsoleEntry[]
-  /**
-   * Async equivalent of {@link getConsoleLogs} — required for the remote
-   * bridge, which can't synchronously return real data without a WS round-trip.
-   */
-  getConsoleLogsAsync(id: string, options?: BrowserConsoleOptions): Promise<BrowserConsoleEntry[]>
-  /** Sync; local-only. For remote-aware code use {@link windowResizeAsync}. */
-  windowResize(id: string, width: number, height: number): { width: number; height: number }
-  /** Async equivalent of {@link windowResize} — required for the remote bridge. */
-  windowResizeAsync(id: string, width: number, height: number): Promise<{ width: number; height: number }>
-  /** Sync; local-only. For remote-aware code use {@link getNetworkLogsAsync}. */
-  getNetworkLogs(id: string, options?: BrowserNetworkOptions): BrowserNetworkEntry[]
-  /**
-   * Async equivalent of {@link getNetworkLogs} — required for the remote
-   * bridge, which can't synchronously return real data without a WS round-trip.
-   */
-  getNetworkLogsAsync(id: string, options?: BrowserNetworkOptions): Promise<BrowserNetworkEntry[]>
+  getConsoleLogs(id: string, options?: BrowserConsoleOptions): Promise<BrowserConsoleEntry[]>
+  windowResize(id: string, width: number, height: number): Promise<{ width: number; height: number }>
+  getNetworkLogs(id: string, options?: BrowserNetworkOptions): Promise<BrowserNetworkEntry[]>
   waitFor(id: string, args: BrowserWaitArgs): Promise<BrowserWaitResult>
   getDownloads(id: string, options?: BrowserDownloadOptions): Promise<BrowserDownloadEntry[]>
   detectSecurityChallenge(id: string): Promise<{ detected: boolean; provider: string; signals: string[] }>

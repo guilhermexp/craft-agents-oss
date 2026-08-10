@@ -122,10 +122,11 @@ Plan: `docs/plans/2026-07-24-001-feat-browser-cookie-import-plan.md` (U-IDs refe
 ## 3. Surfaces — bulk UI + agent tool (U4, U5)
 
 - [x] 3.1 Wire the RPC channel following the existing `browserPane.createProfile` recipe: add
-  `IMPORT_COOKIES` to `channels.ts`, register in `HANDLED_CHANNELS` + `server.handle` in
-  `handlers/browser.ts`, map in `channel-map.ts`, and add the signature to `shared/types.ts`.
-  - files: `packages/shared/src/protocol/channels.ts`, `apps/electron/src/main/handlers/browser.ts`, `apps/electron/src/transport/channel-map.ts`, `apps/electron/src/shared/types.ts`
-  - verify: `grep -q "IMPORT_COOKIES" packages/shared/src/protocol/channels.ts && grep -q "importCookies" apps/electron/src/transport/channel-map.ts`
+  `IMPORT_COOKIES` to `channels.ts`, add the `browserPane.importCookies` leaf to `RPC_CONTRACT` in
+  `shared/types.ts` (which derives both `ElectronAPI` and `CHANNEL_MAP` — no manual `channel-map.ts`
+  edit), and register the handler with `server.handle` in `handlers/browser.ts`.
+  - files: `packages/shared/src/protocol/channels.ts`, `apps/electron/src/shared/types.ts`, `apps/electron/src/main/handlers/browser.ts`
+  - verify: `grep -q "IMPORT_COOKIES" packages/shared/src/protocol/channels.ts && grep -q "importCookies" apps/electron/src/shared/types.ts`
 - [x] 3.2 Add the "Import from Chrome" action to
   `apps/electron/src/renderer/components/browser/BrowserProfilePicker.tsx` beside the existing
   create/delete actions (no new settings subpage). Show a confirmation naming which Chrome profile

@@ -49,30 +49,22 @@ import type { ThinkingLevel } from "@craft-agent/shared/agent/thinking-levels"
 import {
   TurnCard,
   UserMessageBubble,
-  groupMessagesByTurn,
-  reconcileTurns,
   formatTurnAsMarkdown,
   formatActivityAsMarkdown,
-  getAssistantTurnUiKey,
   asRecord,
   getAnnotationNoteText,
   isAnnotationFollowUpSent,
   extractAnnotationSelectedText,
   normalizeFollowUpText,
-  type Turn,
-  type AssistantTurn,
-  type UserTurn,
-  type SystemTurn,
-  type AuthRequestTurn,
 } from "@craft-agent/ui"
 import { MemoizedAuthRequestCard } from "@/components/chat/AuthRequestCard"
 import { ChatInputZone } from "./input/ChatInputZone"
 import type { StructuredInputState, StructuredResponse, PermissionResponse, AdminApprovalResponse } from "./input/structured/types"
 import type { RichTextInputHandle } from "@/components/ui/rich-text-input"
-import { useBackgroundTasks } from "@/hooks/useBackgroundTasks"
-import { useTurnCardExpansion } from "@/hooks/useTurnCardExpansion"
-import { useAutoExpandActivities } from "@/hooks/useAutoExpandActivities"
-import { useNavigation } from "@/contexts/NavigationContext"
+import { useTurnProjection } from "@/hooks/useTurnProjection"
+import { useAtom } from "jotai"
+import { backgroundTasksAtomFamily } from "@/atoms/sessions"
+import { useNavigation } from "@/context/NavigationContext"
 import { useAppShellContext } from "@/context/AppShellContext"
 import { navigate, routes } from "@/lib/navigate"
 import { CHAT_LAYOUT } from "@/config/layout"
@@ -82,6 +74,7 @@ import { handleErrorMessageAction } from "./error-message-actions"
 import {
   attachUpwardWheelIntentListener,
   isNearScrollBottom,
+  scrollDistanceFromBottom,
   shouldPinStreamingContentToBottom,
 } from "./ChatDisplay.auto-scroll"
 
@@ -129,13 +122,6 @@ type OverlayState =
 function isStackedActivityTool(activity: ActivityItem): boolean {
   const toolName = activity.toolName?.toLowerCase() || ''
   return toolName === 'bash' || toolName.startsWith('mcp__') || toolName.startsWith('browser_')
-}
-
-function getTurnKey(turn: Turn): string {
-  if (turn.type === 'user') return `user-${turn.message.id}`
-  if (turn.type === 'system') return `system-${turn.message.id}`
-  if (turn.type === 'auth-request') return `auth-${turn.message.id}`
-  return `turn-${turn.turnId}-${turn.timestamp}`
 }
 
 interface ChatDisplayProps {
@@ -205,7 +191,7 @@ interface ChatDisplayProps {
   onLabelsChange?: (labels: string[]) => void
   // State/status selection (for # menu and ActiveOptionBadges)
   /** Available workflow states */
-  sessionStatuses?: import('@/config/session-status-config').SessionStatus[]
+  sessionStatuses?: import('@/config/session-status-config').ResolvedSessionStatus[]
   /** Callback when session state changes */
   onSessionStatusChange?: (stateId: string) => void
   /** Workspace ID for loading skill icons */
@@ -529,6 +515,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const [visibleTurnCount, setVisibleTurnCount] = React.useState(TURNS_PER_PAGE)
   // Sticky-bottom: When true, auto-scroll on content changes. Toggled by user scroll behavior.
   const isStickToBottomRef = React.useRef(true)
+  // Show a floating "jump to latest" button once the user scrolls well above the
+  // newest message. Distinct from the tight stick-to-bottom threshold above.
+  const [showJumpToLatest, setShowJumpToLatest] = React.useState(false)
   // Mirror isFocusedPanel into a ref so long-lived closures read the latest value.
   // Sync after commit so render stays pure under React's replayable render model.
   const isFocusedPanelRef = React.useRef(isFocusedPanel)
@@ -576,20 +565,37 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     focusFirst: focusChatInput,
   })
 
-  // Background tasks management
-  const { tasks: backgroundTasks, killTask } = useBackgroundTasks({
-    sessionId: session?.id ?? ''
-  })
-
-  // TurnCard expansion state — persisted to localStorage across session switches.
-  // `autoExpand` flips the default for new turns/groups (collapsed → expanded).
-  const autoExpand = useAutoExpandActivities()
+  // Turn projection: cached/reconciled turns + the single Turn identity + the
+  // resolved (single-polarity) expansion controllers. Search and render below
+  // consume `allTurns` instead of regrouping.
   const {
+    turns: allTurns,
+    getTurnKey,
     isTurnExpanded,
     toggleTurn,
-    expandedActivityGroups,
-    setExpandedActivityGroups,
-  } = useTurnCardExpansion(session?.id, autoExpand)
+    groupExpansion,
+  } = useTurnProjection({
+    sessionId: session?.id,
+    messages: session?.messages,
+    isProcessing: session?.isProcessing,
+  })
+
+  // Background tasks: read the per-session atom directly.
+  const [backgroundTasks, setBackgroundTasks] = useAtom(backgroundTasksAtomFamily(session?.id ?? ''))
+  const killTask = useCallback(async (taskId: string, type: 'agent' | 'shell') => {
+    const sid = session?.id ?? ''
+    if (type === 'shell') {
+      try {
+        await window.electronAPI.killShell(sid, taskId)
+      } catch {
+        // Shell may already be gone — that's OK, still remove from UI.
+      }
+    } else {
+      // For agents, there is no direct kill mechanism yet.
+      console.warn('Killing agent tasks not yet implemented')
+    }
+    setBackgroundTasks(prev => (prev.some(t => t.id === taskId) ? prev.filter(t => t.id !== taskId) : prev))
+  }, [session?.id, setBackgroundTasks])
 
 
   // ============================================================================
@@ -685,10 +691,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // Find ALL individual match occurrences (not just turns)
   // Returns array with unique matchId for each occurrence
   const matchingOccurrences = useMemo(() => {
-    if (!searchQuery.trim() || !session?.messages) return []
+    if (!searchQuery.trim() || allTurns.length === 0) return []
     const startTime = performance.now()
     const query = searchQuery.toLowerCase()
-    const turns = groupMessagesByTurn(session.messages, { isSessionProcessing: session.isProcessing })
+    const turns = allTurns
     const matches: { matchId: string; turnId: string; turnIndex: number; matchIndexInTurn: number }[] = []
 
     for (let turnIndex = 0; turnIndex < turns.length; turnIndex++) {
@@ -728,7 +734,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       }
     }
     return matches
-  }, [searchQuery, session?.messages, session?.isProcessing, countOccurrences])
+  }, [searchQuery, allTurns, countOccurrences])
 
   // Auto-expand pagination when search is active to show all matching turns
   // This ensures match count is stable and all matches are highlightable from the start
@@ -740,7 +746,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       (min, m) => m.turnIndex < min ? m.turnIndex : min,
       matchingOccurrences[0]!.turnIndex
     )
-    const totalTurns = groupMessagesByTurn(session?.messages || [], { isSessionProcessing: session?.isProcessing }).length
+    const totalTurns = allTurns.length
 
     // Calculate how many turns we need to show to include all matches
     // totalTurns - visibleTurnCount = startIndex, so we need visibleTurnCount = totalTurns - earliestMatchTurnIndex + buffer
@@ -749,7 +755,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     if (requiredVisibleCount > visibleTurnCount) {
       setVisibleTurnCount(requiredVisibleCount)
     }
-  }, [isSearchActive, matchingOccurrences, session?.messages, session?.isProcessing, visibleTurnCount])
+  }, [isSearchActive, matchingOccurrences, allTurns, visibleTurnCount])
 
   // Extract unique turn IDs that have matches (for highlighting)
   const matchingTurnIds = useMemo(() => {
@@ -1066,9 +1072,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const totalTurnCountRef = React.useRef(0)
   const visibleTurnCountRef = React.useRef(visibleTurnCount)
 
-  // Structural-sharing cache for grouped turns (see reconcileTurns). Updated
-  // after commit so aborted/replayed React renders do not leak into the cache.
-  const turnCacheRef = React.useRef<{ sessionId: string | null; turns: Turn[] }>({ sessionId: null, turns: [] })
   // Pending scroll anchor for reverse pagination (see handleScroll + the
   // useLayoutEffect that restores scroll position after loading older turns).
   const pendingTurnAnchorRef = React.useRef<{ key: string; top: number } | null>(null)
@@ -1130,6 +1133,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     const { scrollTop } = viewport
     // 20px threshold for "at bottom" detection
     isStickToBottomRef.current = isNearScrollBottom(viewport)
+    // Surface the jump-to-latest button once well clear of the bottom.
+    setShowJumpToLatest(scrollDistanceFromBottom(viewport) > 160)
 
     // Load more turns when scrolling near top (within 100px)
     if (scrollTop < 100) {
@@ -1198,6 +1203,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     // On session switch: reset UI state (scroll handled by ScrollOnMount)
     if (isSessionSwitch) {
       isStickToBottomRef.current = true
+      setShowJumpToLatest(false)
       setVisibleTurnCount(TURNS_PER_PAGE)
     }
 
@@ -1265,6 +1271,12 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     })
   }, [session?.id, messageCount, lastMessageId, lastMessageRole])
 
+  const scrollToLatestMessage = React.useCallback((behavior: ScrollBehavior = 'smooth') => {
+    isStickToBottomRef.current = true
+    setShowJumpToLatest(false)
+    messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' })
+  }, [])
+
   // Handle message submission from InputContainer
   // Backend handles interruption and queueing if currently processing
   const handleSubmit = (message: string, attachments?: FileAttachment[], skillSlugs?: string[]) => {
@@ -1314,7 +1326,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     // Immediately scroll to bottom after sending - use requestAnimationFrame
     // to ensure the DOM has updated with the new message
     requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      scrollToLatestMessage('smooth')
     })
   }
 
@@ -1440,27 +1452,12 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     return undefined
   }, [pendingPermission, pendingCredential])
 
-  // Memoize turn grouping - avoids O(n) iteration on every render/keystroke
-  const allTurns = React.useMemo(() => {
-    if (!session) return []
-    // Pass isSessionProcessing so a turn that ends on a tool call (no final
-    // non-intermediate text) is marked complete once the session stops — avoids
-    // the chat sitting on "Thinking…" forever.
-    const fresh = groupMessagesByTurn(session.messages, { isSessionProcessing: session.isProcessing })
-    // Structural sharing: reuse unchanged turn objects so React.memo on TurnCard
-    // (reference equality on activities/response) skips re-rendering completed
-    // turns on every streaming token. Cache resets on session switch.
-    const cache = turnCacheRef.current
-    const prev = cache.sessionId === session.id ? cache.turns : []
-    return reconcileTurns(prev, fresh, getTurnKey)
-  }, [session?.messages, session?.isProcessing, session?.id])
 
   // Keep refs in sync for scroll handlers after commit; render remains pure.
   React.useLayoutEffect(() => {
-    turnCacheRef.current = { sessionId: session?.id ?? null, turns: allTurns }
     totalTurnCountRef.current = allTurns.length
     visibleTurnCountRef.current = visibleTurnCount
-  }, [allTurns, session?.id, visibleTurnCount])
+  }, [allTurns, visibleTurnCount])
 
   // Reverse pagination: only render last N turns for fast initial render
   const startIndex = Math.max(0, allTurns.length - visibleTurnCount)
@@ -1748,7 +1745,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                     const isLastResponse = index === turns.length - 1 || !turns.slice(index + 1).some(t => t.type === 'user')
 
                     // Assistant turns - render with TurnCard (buffered streaming)
-                    const assistantUiKey = getAssistantTurnUiKey(turn, index)
                     return (
                       <div
                         key={turnKey}
@@ -1771,11 +1767,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         intent={turn.intent}
                         isStreaming={turn.isStreaming}
                         isComplete={turn.isComplete}
-                        isExpanded={isTurnExpanded(assistantUiKey)}
-                        autoExpand={autoExpand}
-                        onExpandedChange={(expanded) => toggleTurn(assistantUiKey, expanded)}
-                        expandedActivityGroups={expandedActivityGroups}
-                        onExpandedActivityGroupsChange={setExpandedActivityGroups}
+                        isExpanded={isTurnExpanded(turnKey)}
+                        onExpandedChange={(expanded) => toggleTurn(turnKey, expanded)}
+                        groupExpansion={groupExpansion}
                         todos={turn.todos}
                         onOpenFile={onOpenFile}
                         onResolveFilePath={onResolveFilePath}
@@ -1884,9 +1878,11 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                             },
                           }))
                         }}
-                        onRespondToUserQuestion={(toolUseId, response) => {
-                          if (!session?.id) return
-                          void window.electronAPI.respondToUserQuestion(session.id, toolUseId, response)
+                        onRespondToUserQuestion={async (toolUseId, response) => {
+                          if (!session?.id) return false
+                          const ok = await window.electronAPI.respondToUserQuestion(session.id, toolUseId, response)
+                          if (!ok) toast.error(t('toast.questionNoLongerActive'))
+                          return ok
                         }}
                         onPopOut={(text) => {
                           // Open raw markdown source in code viewer
@@ -1971,6 +1967,18 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
               </div>
               </ScrollArea>
             </div>
+            {showJumpToLatest && (
+              <button
+                type="button"
+                onClick={() => scrollToLatestMessage()}
+                data-touch-reveal="true"
+                aria-label={t('chat.jumpToLatest')}
+                title={t('chat.jumpToLatest')}
+                className="absolute bottom-4 left-1/2 z-20 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border/50 bg-background shadow-minimal transition-colors hover:bg-foreground/5"
+              >
+                <ChevronDown className="size-4 text-muted-foreground" />
+              </button>
+            )}
           </div>
 
           {/* === INPUT CONTAINER: FreeForm or Structured Input === */}

@@ -11,7 +11,8 @@
  */
 
 import { tool } from '@anthropic-ai/claude-agent-sdk';
-import { z } from 'zod';
+import { BrowserToolSchema, TOOL_DESCRIPTIONS } from '@craft-agent/session-tools-core';
+import type { ZodRawShape } from 'zod';
 import { executeBrowserToolCommand } from './browser-tool-runtime.ts';
 
 // Tool result type - matches MCP CallToolResult content blocks
@@ -176,57 +177,6 @@ export interface BrowserToolsOptions {
 }
 
 // ============================================================================
-// Tool Descriptions
-// ============================================================================
-
-const BROWSER_TOOL_DESCRIPTION = `Run browser actions using a CLI-like command (string or array input).
-
-All browser interactions use this single tool with strict validation and actionable feedback.
-String mode supports batching with semicolons: \`fill @e1 value; fill @e2 value; click @e3\`
-Batch stops after navigation commands (click, navigate, back, forward) since page state may change.
-
-Array mode bypasses string parsing and preserves raw arguments exactly (recommended for semicolons, tabs, and newlines):
-- \`["evaluate", "var x = 1; var y = 2; x + y"]\`
-- \`["paste", "Name\\tAge\\nAlice\\t30"]\`
-
-Examples:
-- \`--help\`
-- \`open\`
-- \`navigate https://example.com\`
-- \`snapshot\`
-- \`find login button\` — search elements by keyword
-- \`click @e12\`
-- \`click-at 350 200\` — click at pixel coordinates (for canvas elements)
-- \`drag 100 200 300 400\` — drag from (100,200) to (300,400)
-- \`fill @e5 user@example.com\`
-- \`type Hello World\` — type into currently focused element (no ref needed)
-- \`select @e3 optionValue\`
-- \`select @e75 CNAME --assert-text Target --timeout 3000\`
-- \`set-clipboard Name\\tAge\\nAlice\\t30\` — write text to clipboard
-- \`get-clipboard\` — read clipboard text content
-- \`paste Name\\tAge\\nAlice\\t30\` — set clipboard and trigger Ctrl/Cmd+V
-- \`upload @e3 /path/to/file.pdf\` — attach local file(s) to a file input
-- \`scroll down 800\`
-- \`evaluate document.title\`
-- \`console 50 error\`
-- \`screenshot\` — raw screenshot
-- \`screenshot --annotated\` — screenshot with @eN labels overlaid on interactive elements
-- \`screenshot-region 100 200 640 480\`
-- \`screenshot-region --ref @e12 --padding 8\`
-- \`screenshot-region --selector div[data-testid="chart"]\`
-- \`window-resize 1440 900\`
-- \`network 50 failed\`
-- \`wait network-idle 8000\`
-- \`key Enter\`
-- \`key k meta\`
-- \`downloads wait 15000\`
-- \`focus [windowId]\` — focus existing browser window (no new window)
-- \`windows\` — list current browser windows and ownership state
-- \`release [windowId|all]\` — dismiss the agent control overlay when done
-- \`close [windowId]\` — close and destroy the browser window
-- \`hide [windowId]\` — hide the window while preserving state`;
-
-// ============================================================================
 // Tool Factories
 // ============================================================================
 
@@ -243,14 +193,12 @@ export function createBrowserTools(options: BrowserToolsOptions) {
     // Single CLI-like tool for all browser actions
     tool(
       'browser_tool',
-      BROWSER_TOOL_DESCRIPTION,
-      {
-        command: z.union([
-          z.string(),
-          z.array(z.string()),
-        ]).describe('Browser command as a string (e.g., "click @e1") or array (e.g., ["evaluate", "var x = 1; x + 2"]). Array mode preserves semicolons and whitespace in arguments.'),
-      },
-      async (args) => {
+      TOOL_DESCRIPTIONS.browser_tool,
+      // session-tools-core is pinned to zod v3; the Claude SDK's tool() types
+      // expect a zod v4 shape. Bridge the compile-time gap and re-validate.
+      BrowserToolSchema.shape as unknown as ZodRawShape,
+      async (rawArgs) => {
+        const args = BrowserToolSchema.parse(rawArgs);
         try {
           const result = await executeBrowserToolCommand({
             command: args.command,

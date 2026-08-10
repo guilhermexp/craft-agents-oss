@@ -6,6 +6,8 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { MeetingAskButton } from './MeetingAskButton'
 import { shouldClearSelectedMeeting } from '@/lib/meetings-selection'
+import { formatRecordingElapsed } from '@/lib/recording-elapsed'
+import { meetingStatusLabelKey } from '@/lib/meeting-status-label'
 import { cn } from '@/lib/utils'
 import type { MeetingRecord } from '../../../shared/types'
 
@@ -28,19 +30,8 @@ function formatMeetingDate(value: number): string {
   return MEETING_DATE_FORMAT.format(new Date(value))
 }
 
-function getStatusLabel(status: MeetingRecord['status'], t: (key: string) => string): string {
-  switch (status) {
-    case 'starting':
-      return t('meetings.statusStarting')
-    case 'running':
-      return t('meetings.statusRunning')
-    case 'stopped':
-      return t('meetings.statusStopped')
-    case 'error':
-      return t('meetings.statusError')
-    default:
-      return status
-  }
+function getStatusLabel(record: MeetingRecord, t: (key: string) => string): string {
+  return t(meetingStatusLabelKey(record))
 }
 
 function getCaptureLabel(record: MeetingRecord): string {
@@ -59,6 +50,17 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
   const [stoppingId, setStoppingId] = React.useState<string | null>(null)
   const [actionId, setActionId] = React.useState<string | null>(null)
   const [loadFailed, setLoadFailed] = React.useState(false)
+  const [now, setNow] = React.useState<number>(() => Date.now())
+
+  // Um único intervalo para o painel inteiro, vivo só enquanto há reunião ao
+  // vivo — um timer por linha multiplicaria re-renders sem ganho.
+  const hasLiveRecord = records.some(record => record.status === 'running' || record.status === 'starting')
+  React.useEffect(() => {
+    if (!hasLiveRecord) return
+    setNow(Date.now())
+    const timer = setInterval(() => { setNow(Date.now()) }, 1000)
+    return () => { clearInterval(timer) }
+  }, [hasLiveRecord])
 
   // `silent` background refreshes must NOT toggle the global `loading` flag —
   // doing so triggers the `if (loading) return <Carregando/>` early-return, which
@@ -227,9 +229,13 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
                   <span className="block truncate text-sm font-medium leading-5 text-foreground">
                     {record.title || record.code || 'Google Meet'}
                   </span>
-                  <span className="block truncate text-xs leading-5 text-muted-foreground">
-                    {formatMeetingDate(record.startedAt)} · {getCaptureLabel(record)} · {getStatusLabel(record.status, t)}
-                    {transcriptionLabel ? ` · ${transcriptionLabel}` : ''}
+                  <span className="block truncate text-xs leading-5 tabular-nums text-muted-foreground">
+                    {formatMeetingDate(record.startedAt)} · {getCaptureLabel(record)} · {isLive
+                      ? t('meetings.statusRunningWithElapsed', { elapsed: formatRecordingElapsed(now - record.startedAt) })
+                      : getStatusLabel(record, t)}
+                    {/* Enquanto ao vivo, o tempo ocupa o lugar do provedor de
+                        transcrição: a linha já truncava com "…" antes do timer. */}
+                    {!isLive && transcriptionLabel ? ` · ${transcriptionLabel}` : ''}
                   </span>
                 </span>
               </div>
@@ -260,11 +266,15 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
                   {workspaceId && (
                     <MeetingAskButton workspaceId={workspaceId} record={record} />
                   )}
+                  {/* Só-ícone: três botões com rótulo apertavam a linha. O nome
+                      acessível vive em aria-label + title, não no texto. */}
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-7 gap-1.5 px-2 text-xs opacity-90"
+                    className="size-7 p-0 opacity-90"
+                    aria-label={t('meetings.archive')}
+                    title={t('meetings.archive')}
                     disabled={actionId === `archive:${record.id}` || actionId === `delete:${record.id}`}
                     onClick={(event) => {
                       event.stopPropagation()
@@ -272,13 +282,14 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
                     }}
                   >
                     <Archive className="size-3" />
-                    {t('meetings.archive')}
                   </Button>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-7 gap-1.5 px-2 text-xs text-destructive opacity-90 hover:text-destructive"
+                    className="size-7 p-0 text-destructive opacity-90 hover:text-destructive"
+                    aria-label={t('meetings.delete')}
+                    title={t('meetings.delete')}
                     disabled={actionId === `archive:${record.id}` || actionId === `delete:${record.id}`}
                     onClick={(event) => {
                       event.stopPropagation()
@@ -286,7 +297,6 @@ export function MeetingsListPanel({ workspaceId, selectedMeetingId, onSelectMeet
                     }}
                   >
                     <Trash2 className="size-3" />
-                    {t('meetings.delete')}
                   </Button>
                 </div>
               )}

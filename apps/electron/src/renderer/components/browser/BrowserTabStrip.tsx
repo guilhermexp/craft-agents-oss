@@ -49,6 +49,8 @@ function BrowserActions({ instance, instancesOverride, onFocus, onOpenSession, o
     ? 'Open Session Using this Window'
     : 'Open Session Which Used this Window'
 
+  // Docking lives in the browser's own toolbar, not here: the decision is made
+  // while looking at the browser, and this menu sits behind it.
   return (
     <>
       <StyledDropdownMenuItem

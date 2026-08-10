@@ -77,7 +77,13 @@ export interface AdapterCapabilities {
   maxButtons: number
   maxMessageLength: number
   markdown: 'v2' | 'whatsapp' | 'lark-post'
-  webhookSupport: boolean
+  /**
+   * Supports workspace-level owner lists + access-mode policy (owners are
+   * stored per platform and evaluated by access-control). Absent = false.
+   * Telegram-only today — the owner/access-mode registry methods gate on this
+   * capability instead of a hardcoded platform check.
+   */
+  accessControl?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -207,30 +213,47 @@ export interface PlatformAdapter {
 
   /**
    * Clear the inline keyboard on a previously-sent message. Optional because
-   * only platforms with inline-button support (currently Telegram) need it.
+   * only platforms with inline-button support (Telegram, Lark) need it.
    * Errors are the caller's concern — most implementations should swallow
    * "message can't be edited" since it's non-fatal.
    */
   clearButtons?(messagingChannelId: MessagingChannelId, messageId: string, opts?: SendOptions): Promise<void>
 
   /**
-   * Update the set of chats the adapter accepts inbound messages from at
-   * runtime, without restarting the polling loop. Telegram uses this to
-   * (de)authorise a supergroup chatId after the user pairs/unpairs it in
-   * Settings. Adapters that don't have a configurable filter can implement
-   * this as a no-op.
+   * Best-effort human-facing identity for UI hints (connect dialogs, runtime
+   * status): Telegram → @username, Lark → app name. Undefined when it can't be
+   * resolved. Credential-based adapters implement this; the subprocess adapter
+   * derives identity from link events instead.
    */
-  setAcceptedSupergroupChatId?(chatId: string | undefined): void
+  getIdentity?(): Promise<string | undefined>
+}
 
+/** Result of verifying a credential against a platform's API. */
+export interface CredentialTestResult {
+  success: boolean
+  botName?: string
+  botUsername?: string
+  error?: string
+}
+
+/**
+ * Per-platform credential handling for credential-based adapters (Telegram,
+ * Lark). Registered alongside the adapter factory so the registry can save and
+ * verify credentials generically. Subprocess/interactive adapters (WhatsApp,
+ * which links via QR / pairing code) register none.
+ */
+export interface CredentialCodec {
   /**
-   * Telegram-only: create a new forum topic in a supergroup. Used by
-   * automation integrations that auto-spawn topics per session. Other
-   * platforms throw or omit the method.
+   * Validate the raw credential's structure and return the exact string to
+   * persist in the credential store. Throws with a user-facing message on
+   * structurally invalid input.
    */
-  createForumTopic?(chatId: string, name: string): Promise<{ threadId: number; name: string }>
-
-  /** Webhook handler for headless server (Telegram only). */
-  handleWebhook?(request: Request): Promise<Response>
+  normalize(raw: string): string
+  /**
+   * Verify the credential against the platform API. Never throws — network or
+   * structural failures come back as `{ success: false, error }`.
+   */
+  test(raw: string): Promise<CredentialTestResult>
 }
 
 // ---------------------------------------------------------------------------
@@ -466,56 +489,47 @@ export interface PendingSender {
   threadId?: number
 }
 
+/**
+ * Per-platform persisted settings. A superset across platforms: each field is
+ * only meaningful for platforms whose adapter supports it (guarded by
+ * capability), which keeps the config generic so a new platform needs no new
+ * shape here.
+ */
+export interface PlatformSettings {
+  enabled: boolean
+  /**
+   * Workspace-level access policy. Missing field = `'open'` for back-compat
+   * with workspaces that predate access control. Fresh setups land on
+   * `'owner-only'` automatically (registry sets it on first pair). Only
+   * meaningful for platforms whose adapter declares `accessControl`.
+   */
+  accessMode?: PlatformAccessMode
+  /**
+   * Platform user ids permitted to drive the bot at workspace level. Gates
+   * `/new`, `/bind`, `/unbind`, `/status`, `/stop` and serves as the default
+   * sender allow-list for bindings whose `accessMode === 'inherit'`. `/pair`
+   * itself stays open: the first successful redeem seeds the list, after which
+   * only existing owners may redeem further codes. `accessControl` platforms
+   * only.
+   */
+  owners?: PlatformOwner[]
+  /**
+   * Telegram only: configured supergroup ("forum"). The adapter accepts
+   * messages from this chat in addition to DMs; sessions can bind to specific
+   * topics within.
+   */
+  supergroup?: TelegramSupergroupConfig
+  /**
+   * WhatsApp only: when true, messages sent from other devices on the same WA
+   * account to the self-JID (your own number) are routed to a bound session.
+   * The worker filters its own echoes. Defaults to `true` when unset.
+   */
+  selfChatMode?: boolean
+}
+
 export interface MessagingConfig {
   enabled: boolean
-  platforms: {
-    telegram?: {
-      enabled: boolean
-      /**
-       * Optional configured supergroup. Adapter accepts messages from this
-       * chat in addition to DMs. Sessions can bind to specific topics within.
-       */
-      supergroup?: TelegramSupergroupConfig
-      /**
-       * Workspace-level access policy. Missing field = `'open'` for back-
-       * compat with workspaces that predate access control. Fresh setups
-       * land on `'owner-only'` automatically (registry sets it on first pair).
-       */
-      accessMode?: PlatformAccessMode
-      /**
-       * Telegram user ids permitted to drive the bot at workspace level.
-       * Gates `/new`, `/bind`, `/unbind`, `/status`, `/stop` and serves as
-       * the default sender allow-list for bindings whose `accessMode === 'inherit'`.
-       *
-       * `/pair` itself stays open: if the list is empty, the first
-       * successful redeem seeds the list with the consuming sender. After
-       * that, only existing owners may redeem further codes.
-       */
-      owners?: PlatformOwner[]
-    }
-    whatsapp?: {
-      enabled: boolean
-      /**
-       * When true, messages sent from other devices on the same WA account
-       * to the self-JID (your own number) are routed to a bound session.
-       * The worker filters its own echoes via sent-ID tracking + a response
-       * prefix. Defaults to `true` when unset — the no-second-phone flow is
-       * the expected UX for new users.
-       */
-      selfChatMode?: boolean
-    }
-    lark?: {
-      enabled: boolean
-      /**
-       * Which Lark/Feishu domain the bot belongs to. A bot is registered
-       * with one Open Platform — they're separate ecosystems despite
-       * sharing the same SDK + protocols.
-       *  - `lark` → open.larksuite.com (international)
-       *  - `feishu` → open.feishu.cn (China)
-       */
-      domain?: 'lark' | 'feishu'
-    }
-  }
+  platforms: Partial<Record<PlatformType, PlatformSettings>>
 }
 
 export const DEFAULT_MESSAGING_CONFIG: MessagingConfig = {

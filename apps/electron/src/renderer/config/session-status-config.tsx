@@ -20,7 +20,7 @@ export interface SessionStatusConfig {
   color?: EntityColor
 }
 
-export interface SessionStatus extends SessionStatusConfig {
+export interface ResolvedSessionStatus extends SessionStatusConfig {
   /**
    * Resolved CSS color string for inline style application.
    * System colors resolve to var(--name) or color-mix(...).
@@ -40,11 +40,11 @@ export interface SessionStatus extends SessionStatusConfig {
 }
 
 // ============================================================================
-// Status → SessionStatus Conversion
+// Status → ResolvedSessionStatus Conversion
 // ============================================================================
 
 /**
- * Convert StatusConfig to SessionStatus.
+ * Convert StatusConfig to ResolvedSessionStatus.
  * Resolves EntityColor to a CSS color string for inline style use.
  * System colors (e.g., "accent") resolve to CSS variable references that
  * auto-adapt to light/dark theme. Custom colors use isDark to pick the right value.
@@ -57,7 +57,7 @@ function statusConfigToSessionStatus(
   config: StatusConfig,
   workspaceId: string,
   isDark: boolean
-): SessionStatus {
+): ResolvedSessionStatus {
   // Emojis have their own colors and don't respond to CSS color inheritance.
   // SVGs with currentColor and the fallback Circle icon are colorable.
   const iconColorable = !isEmoji(config.icon)
@@ -88,13 +88,13 @@ function statusConfigToSessionStatus(
 }
 
 /**
- * Convert array of StatusConfig to SessionStatus[]
+ * Convert array of StatusConfig to ResolvedSessionStatus[]
  */
 export function statusConfigsToSessionStatuses(
   configs: StatusConfig[],
   workspaceId: string,
   isDark: boolean
-): SessionStatus[] {
+): ResolvedSessionStatus[] {
   return configs.map(c => statusConfigToSessionStatus(c, workspaceId, isDark))
 }
 
@@ -107,7 +107,7 @@ export function statusConfigsToSessionStatuses(
  */
 export function getStateIcon(
   stateId: string,
-  states: SessionStatus[]
+  states: ResolvedSessionStatus[]
 ): React.ReactNode {
   const state = states.find(s => s.id === stateId)
   return state?.icon ?? <span className="size-3.5">●</span>
@@ -119,7 +119,7 @@ export function getStateIcon(
  * Colorable icons (SVG/currentColor) receive the resolved status color.
  * Non-colorable icons (emoji/images) return undefined so they render at full native color/opacity.
  */
-export function getStatusIconStyle(state?: SessionStatus): CSSProperties | undefined {
+export function getStatusIconStyle(state?: ResolvedSessionStatus): CSSProperties | undefined {
   return state?.iconColorable ? { color: state.resolvedColor } : undefined
 }
 
@@ -128,7 +128,7 @@ export function getStatusIconStyle(state?: SessionStatus): CSSProperties | undef
  */
 export function getStateIconStyle(
   stateId: string,
-  states: SessionStatus[]
+  states: ResolvedSessionStatus[]
 ): CSSProperties | undefined {
   return getStatusIconStyle(states.find(s => s.id === stateId))
 }
@@ -138,7 +138,7 @@ export function getStateIconStyle(
  */
 export function getStateColor(
   stateId: string,
-  states: SessionStatus[]
+  states: ResolvedSessionStatus[]
 ): string | undefined {
   return states.find(s => s.id === stateId)?.resolvedColor
 }
@@ -148,8 +148,8 @@ export function getStateColor(
  */
 export function getState(
   stateId: string,
-  states: SessionStatus[]
-): SessionStatus | undefined {
+  states: ResolvedSessionStatus[]
+): ResolvedSessionStatus | undefined {
   return states.find(s => s.id === stateId)
 }
 

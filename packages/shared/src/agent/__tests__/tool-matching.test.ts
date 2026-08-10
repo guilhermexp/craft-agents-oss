@@ -681,7 +681,7 @@ describe('extractToolResults', () => {
     // WITHOUT run_in_background in the input. The "working in the background" +
     // output_file signature distinguishes it from a foreground agent that merely
     // mentions "agentId:".
-    toolIndex.register('toolu_async', 'Agent', { _intent: 'Investigate Intercom data' })
+    toolIndex.register('toolu_async', 'Agent', { _intent: 'Investigate Intercom data', name: 'researcher' })
 
     const asyncResult = [
       'Async agent launched successfully.',
@@ -703,6 +703,7 @@ describe('extractToolResults', () => {
       toolUseId: 'toolu_async',
       taskId: 'async_agent_9f8e7d',
       intent: 'Investigate Intercom data',
+      agentName: 'researcher',
     })
   })
 

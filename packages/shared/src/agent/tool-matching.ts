@@ -448,12 +448,14 @@ function detectBackgroundEvents(
       const intentValue = (typeof entry.input._intent === 'string' && entry.input._intent)
         || (typeof entry.input.description === 'string' && entry.input.description)
         || undefined;
+      const agentName = typeof entry.input.name === 'string' ? entry.input.name.trim() : '';
       events.push({
         type: 'task_backgrounded',
         toolUseId,
         taskId: agentIdMatch[1],
         turnId,
         ...(intentValue && { intent: intentValue }),
+        ...(agentName && { agentName }),
       });
     }
   }

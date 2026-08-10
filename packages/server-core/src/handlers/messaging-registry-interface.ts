@@ -167,14 +167,18 @@ export interface IMessagingGatewayRegistry {
   /** Unbind one specific binding row by ID. */
   unbindBinding(workspaceId: string, bindingId: string): boolean
 
-  /** Test a Telegram bot token. */
-  testTelegramToken(token: string): Promise<{ success: boolean; botName?: string; botUsername?: string; error?: string }>
+  /** Verify a platform credential without persisting it. */
+  testCredential(
+    platform: string,
+    credential: string,
+  ): Promise<{ success: boolean; botName?: string; botUsername?: string; error?: string }>
 
-  /** Save Telegram token and (re)initialize the adapter. */
-  saveTelegramToken(workspaceId: string, token: string): Promise<void>
-
-  /** Save Lark/Feishu credentials (JSON appId/appSecret/domain) and (re)initialize the adapter. */
-  saveLarkCredentials(workspaceId: string, credentialsJson: string): Promise<void>
+  /**
+   * Connect a platform for a workspace. Credential-based platforms (Telegram,
+   * Lark) pass the raw `credential` (validated + persisted here); interactive
+   * platforms (WhatsApp) omit it and start their link flow instead.
+   */
+  connectPlatform(workspaceId: string, platform: string, credential?: string): Promise<void>
 
   /** Disable a platform for a workspace, preserving WhatsApp auth state unless forgotten separately. */
   disconnectPlatform(workspaceId: string, platform: string): Promise<void>
@@ -183,16 +187,11 @@ export interface IMessagingGatewayRegistry {
   forgetPlatform(workspaceId: string, platform: string): Promise<void>
 
   /**
-   * Start the WhatsApp connect flow (spawns the worker, emits QR or pairing-code
-   * prompts via WA_UI_EVENT). Throws if WhatsApp support is not configured.
+   * Submit interactive pairing input to a platform mid-link (currently the
+   * WhatsApp phone number). Only meaningful for platforms with an interactive
+   * link flow; call after `connectPlatform`.
    */
-  startWhatsAppConnect(workspaceId: string): Promise<void>
-
-  /**
-   * Submit a phone number to the running WhatsApp worker to request a pairing
-   * code. Must be called after startWhatsAppConnect.
-   */
-  submitWhatsAppPhone(workspaceId: string, phoneNumber: string): Promise<void>
+  submitPairingInput(workspaceId: string, platform: string, input: string): Promise<void>
 
   // -------------------------------------------------------------------------
   // Access control (Phase 2/3)

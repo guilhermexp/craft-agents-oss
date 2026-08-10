@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { CHAT_LAYOUT } from '@/config/layout'
 import { flattenLabels, type LabelConfig } from '@craft-agent/shared/labels'
 import type { PermissionMode } from '@craft-agent/shared/agent/modes'
-import type { SessionStatus } from '@/config/session-status-config'
+import type { ResolvedSessionStatus } from '@/config/session-status-config'
 import type { BackgroundTask } from '../ActiveTasksBar'
 import { ActiveOptionBadges } from '../ActiveOptionBadges'
 import { InputContainer } from './InputContainer'
@@ -13,7 +13,7 @@ import { ModelPickerControl } from './ModelPickerControl'
 const EMPTY_TASKS: BackgroundTask[] = []
 const EMPTY_SESSION_LABELS: string[] = []
 const EMPTY_LABELS: LabelConfig[] = []
-const EMPTY_SESSION_STATUSES: SessionStatus[] = []
+const EMPTY_SESSION_STATUSES: ResolvedSessionStatus[] = []
 
 interface ChatInputZoneProps {
   compactMode?: boolean
@@ -28,7 +28,7 @@ interface ChatInputZoneProps {
   sessionLabels?: string[]
   labels?: LabelConfig[]
   onLabelsChange?: (labels: string[]) => void
-  sessionStatuses?: SessionStatus[]
+  sessionStatuses?: ResolvedSessionStatus[]
   currentSessionStatus?: string
   onSessionStatusChange?: (stateId: string) => void
   className?: string

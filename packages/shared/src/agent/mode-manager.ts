@@ -1784,6 +1784,10 @@ const ALWAYS_ALLOWED_TOOLS = new Set([
   'browser_tool',
 ]);
 
+// Built-in-only: never suffix-match these names. An external MCP tool such as
+// mcp__external__AskUserQuestion must not inherit safe-mode always-allow.
+const SUFFIX_MATCH_EXEMPT = new Set(['AskUserQuestion']);
+
 /**
  * Result type for tool permission checks
  */
@@ -1841,6 +1845,7 @@ export function shouldAllowToolInMode(
 
   // Check if tool name ends with an always-allowed tool (for MCP variants like mcp__plan__SubmitPlan)
   for (const allowedTool of ALWAYS_ALLOWED_TOOLS) {
+    if (SUFFIX_MATCH_EXEMPT.has(allowedTool)) continue;
     if (toolName.endsWith(`__${allowedTool}`)) {
       return { allowed: true };
     }
@@ -2093,8 +2098,15 @@ function getBlockReasonWithConfig(toolName: string, config: ToolCheckConfig): st
 }
 
 /**
- * Create a hook return value that blocks a tool.
- * Returns the correct SDK format for PreToolUse hook blocking.
+ * Create a hook return value that denies a tool WITHOUT ending the turn.
+ * Returns the correct SDK format for a PreToolUse hook denial.
+ *
+ * `permissionDecision: 'deny'` blocks the call and hands `permissionDecisionReason`
+ * back to the model, which keeps working and can correct course. The previous
+ * `continue: false` shape also blocked the call, but it ended the agent loop right
+ * after the hook: the model never read the reason and the user saw a dead turn with
+ * nothing but a red tool card. Turn termination is now opt-in and lives in the
+ * Claude encoder (encodeClaudeToolBlock), reserved for an explicit user denial.
  *
  * The reason is prefixed with "[ERROR]" so the Codex model can distinguish
  * blocked tool calls from successful ones. See the detailed comment on
@@ -2105,9 +2117,12 @@ function getBlockReasonWithConfig(toolName: string, config: ToolCheckConfig): st
  */
 export function blockWithReason(reason: string) {
   return {
-    continue: false,
-    decision: 'block' as const,
-    reason: `[ERROR] ${reason}`,
+    continue: true,
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse' as const,
+      permissionDecision: 'deny' as const,
+      permissionDecisionReason: `[ERROR] ${reason}`,
+    },
   };
 }
 

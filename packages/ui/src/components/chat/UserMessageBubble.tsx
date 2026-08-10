@@ -209,6 +209,23 @@ function InlineFileBadge({
 }
 
 /**
+ * Markdown classes for user message text.
+ *
+ * `whitespace-pre-wrap` preserves the soft line breaks the user actually
+ * typed. The block margins that `Markdown`'s minimal mode emits (`my-2` on
+ * paragraphs/lists/tables) are deliberately left intact so a user message
+ * reads as rich markdown instead of one flat wall of text — the bubble must
+ * not zero them out. First/last block margins collapse into the bubble
+ * padding so a plain single-paragraph message stays tight.
+ */
+const MARKDOWN_BLOCK_CLASSES =
+  'text-sm [&_a]:underline [&_code]:bg-foreground/10 [&_p]:whitespace-pre-wrap [&>*:first-child]:mt-0 [&>*:last-child]:mb-0'
+
+/** Same styling for text segments rendered inline between badges. */
+const MARKDOWN_INLINE_CLASSES =
+  'inline text-sm [&_a]:underline [&_code]:bg-foreground/10 [&_p]:whitespace-pre-wrap [&_p]:inline'
+
+/**
  * Render content with badges inserted at their positions.
  * Text segments between badges are rendered as Markdown.
  *
@@ -234,7 +251,7 @@ function renderContentWithBadges(
         onUrlClick={onUrlClick}
         onFileClick={onFileClick}
         onResolveFilePath={onResolveFilePath}
-        className="text-sm [&_a]:underline [&_code]:bg-foreground/10 [&_p]:whitespace-pre-wrap"
+        className={MARKDOWN_BLOCK_CLASSES}
       >
         {content}
       </Markdown>
@@ -259,7 +276,7 @@ function renderContentWithBadges(
             onUrlClick={onUrlClick}
             onFileClick={onFileClick}
             onResolveFilePath={onResolveFilePath}
-            className="inline text-sm [&_a]:underline [&_code]:bg-foreground/10 [&_p]:whitespace-pre-wrap [&_p]:inline"
+            className={MARKDOWN_INLINE_CLASSES}
           >
             {textBefore}
           </Markdown>
@@ -296,7 +313,7 @@ function renderContentWithBadges(
           onUrlClick={onUrlClick}
           onFileClick={onFileClick}
           onResolveFilePath={onResolveFilePath}
-          className="inline text-sm [&_a]:underline [&_code]:bg-foreground/10 [&_p]:whitespace-pre-wrap [&_p]:inline"
+          className={MARKDOWN_INLINE_CLASSES}
         >
           {textAfter}
         </Markdown>
@@ -497,7 +514,7 @@ export function UserMessageBubble({
           (#616 follow-up). */}
       <div
         className={cn(
-          "max-w-[80%] bg-user-message-bubble rounded-[16px] break-words min-w-0 select-text [&_p]:m-0",
+          "max-w-[80%] bg-user-message-bubble rounded-[16px] break-words min-w-0 select-text",
           compactMode ? "px-4 py-2" : "px-5 py-3.5"
         )}
       >
@@ -519,7 +536,7 @@ export function UserMessageBubble({
               onUrlClick={onUrlClick}
               onFileClick={onFileClick}
               onResolveFilePath={onResolveFilePath}
-              className="text-sm [&_a]:underline [&_code]:bg-foreground/10 [&_p]:whitespace-pre-wrap"
+              className={MARKDOWN_BLOCK_CLASSES}
             >
               {displayContent}
             </Markdown>

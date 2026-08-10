@@ -1,19 +1,24 @@
 import * as React from 'react'
 import type { ComponentEntry } from './types'
 import type { SessionMeta } from '@/atoms/sessions'
-import type { SessionStatus } from '@/config/session-status-config'
+import type { ResolvedSessionStatus } from '@/config/session-status-config'
 import type { ContentSearchResult } from '@/hooks/useSessionSearch'
 import { Circle } from 'lucide-react'
 import { SessionSearchHeader } from '@/components/app-shell/SessionSearchHeader'
 import { SessionItem } from '@/components/app-shell/SessionItem'
-import { SessionListProvider, type SessionListContextValue } from '@/context/SessionListContext'
+import {
+  SessionListActionsProvider,
+  SessionListViewProvider,
+  type SessionListActions,
+  type SessionListView,
+} from '@/context/SessionListContext'
 import { ActionRegistryProvider } from '@/actions/registry'
 
 // ============================================================================
 // Mock Todo States (minimal set for playground)
 // ============================================================================
 
-const mockSessionStatuses: SessionStatus[] = [
+const mockSessionStatuses: ResolvedSessionStatus[] = [
   {
     id: 'todo',
     label: 'Todo',
@@ -82,19 +87,22 @@ const sampleSessions: SessionMeta[] = [
   },
 ]
 
-function createMockContext(overrides: Partial<SessionListContextValue> = {}): SessionListContextValue {
+const mockActions: SessionListActions = {
+  onRenameClick: () => {},
+  onSessionStatusChange: () => {},
+  onMarkUnread: () => {},
+  onDelete: async () => true,
+  onSelectSessionById: () => {},
+  onOpenInNewWindow: () => {},
+  onFocusZone: () => {},
+  onKeyDown: () => {},
+  sessionStatuses: mockSessionStatuses,
+  flatLabels: [],
+  labels: [],
+}
+
+function createMockView(overrides: Partial<SessionListView> = {}): SessionListView {
   return {
-    onRenameClick: () => {},
-    onSessionStatusChange: () => {},
-    onMarkUnread: () => {},
-    onDelete: async () => true,
-    onSelectSessionById: () => {},
-    onOpenInNewWindow: () => {},
-    onFocusZone: () => {},
-    onKeyDown: () => {},
-    sessionStatuses: mockSessionStatuses,
-    flatLabels: [],
-    labels: [],
     isMultiSelectActive: false,
     contentSearchResults: new Map(),
     ...overrides,
@@ -148,17 +156,14 @@ function SessionListSearchPreview({
     contentSearchResults.set(selectedSessionId, { matchCount: chatMatchCount, snippet: '' })
   }
 
-  const ctx = createMockContext({
-    searchQuery,
-    selectedSessionId,
-    contentSearchResults,
-  })
+  const view = createMockView({ searchQuery, selectedSessionId, contentSearchResults })
 
   const displayCount = resultCount ?? filteredSessions.length
 
   return (
     <ActionRegistryProvider>
-      <SessionListProvider value={ctx}>
+      <SessionListActionsProvider value={mockActions}>
+      <SessionListViewProvider value={view}>
         <div className="w-[320px] h-[480px] flex flex-col border border-border rounded-lg overflow-hidden bg-background">
           {/* Search header - uses the SAME component as the real app */}
           {showSearchInput && (
@@ -207,7 +212,8 @@ function SessionListSearchPreview({
             )}
           </div>
         </div>
-      </SessionListProvider>
+      </SessionListViewProvider>
+      </SessionListActionsProvider>
     </ActionRegistryProvider>
   )
 }
@@ -221,7 +227,7 @@ interface SessionItemPreviewProps {
   isSelected?: boolean
   searchQuery?: string
   chatMatchCount?: number
-  state?: 'none' | 'loading' | 'plan' | 'new'
+  state?: 'none' | 'loading' | 'plan' | 'new' | 'question'
   flagged?: boolean
 }
 
@@ -248,15 +254,17 @@ function SessionItemPreview({
     contentSearchResults.set(resolvedItem.id, { matchCount: chatMatchCount, snippet: '' })
   }
 
-  const ctx = createMockContext({
+  const view = createMockView({
     searchQuery,
     selectedSessionId: isSelected ? resolvedItem.id : null,
     contentSearchResults,
+    hasPendingQuestion: state === 'question' ? () => true : undefined,
   })
 
   return (
     <ActionRegistryProvider>
-      <SessionListProvider value={ctx}>
+      <SessionListActionsProvider value={mockActions}>
+      <SessionListViewProvider value={view}>
         <SessionItem
           item={resolvedItem}
           index={0}
@@ -266,7 +274,8 @@ function SessionItemPreview({
           isInMultiSelect={false}
           onSelect={() => {}}
         />
-      </SessionListProvider>
+      </SessionListViewProvider>
+      </SessionListActionsProvider>
     </ActionRegistryProvider>
   )
 }
@@ -403,6 +412,7 @@ export const sessionListComponents: ComponentEntry[] = [
             { label: 'Loading', value: 'loading' },
             { label: 'Plan', value: 'plan' },
             { label: 'New', value: 'new' },
+            { label: 'Question', value: 'question' },
           ],
         },
         defaultValue: 'none',
@@ -463,6 +473,14 @@ export const sessionListComponents: ComponentEntry[] = [
         props: {
           item: sampleSessions[0],
           state: 'new',
+        },
+      },
+      {
+        name: 'Question Pending',
+        description: 'Agent asked a question awaiting the answer (shows help icon)',
+        props: {
+          item: sampleSessions[0],
+          state: 'question',
         },
       },
       {

@@ -5,20 +5,17 @@ import { Archive, ArchiveRestore, Ban } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   type SessionStatusId,
-  type SessionStatus,
+  type ResolvedSessionStatus,
   getStateIcon,
   getStateColor,
   getStatusIconStyle,
 } from '@/config/session-status-config'
 
-// Re-export types for backwards compatibility
-export { type SessionStatusId, type SessionStatus }
-
 // ============================================================================
 // Shared Styles (matching slash-command-menu)
 // ============================================================================
 
-const EMPTY_STATES: SessionStatus[] = []
+const EMPTY_STATES: ResolvedSessionStatus[] = []
 
 const MENU_CONTAINER_STYLE = 'min-w-[180px] overflow-hidden rounded-[8px] bg-background text-foreground shadow-modal-small'
 const MENU_LIST_STYLE = 'max-h-[240px] overflow-y-auto p-1 [&_[cmdk-list-sizer]]:space-y-px'
@@ -30,7 +27,7 @@ const MENU_ITEM_STYLE = 'flex cursor-pointer select-none items-center gap-3 roun
 
 const DEFAULT_STATUS_IDS = new Set(['backlog', 'todo', 'needs-review', 'done', 'cancelled'])
 
-function StateItemContent({ state }: { state: SessionStatus }) {
+function StateItemContent({ state }: { state: ResolvedSessionStatus }) {
   const { t } = useTranslation()
   const label = DEFAULT_STATUS_IDS.has(state.id) ? t(`status.${state.id}`, state.label) : state.label
   return (
@@ -48,7 +45,7 @@ function StateItemContent({ state }: { state: SessionStatus }) {
 // ============================================================================
 
 export interface SessionStatusMenuProps {
-  states?: SessionStatus[]
+  states?: ResolvedSessionStatus[]
   activeState: SessionStatusId
   onSelect: (stateId: SessionStatusId) => void
   /** Whether the session is currently archived */

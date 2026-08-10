@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 
 const AUTOMATIONS_CONFIG_FILE = 'automations.json';
-import type { SessionToolContext } from '../context.ts';
+import type { SessionToolContext, ConfigValidationKind } from '../context.ts';
 import type { ToolResult } from '../types.ts';
 import { successResponse, errorResponse } from '../response.ts';
 import {
@@ -23,6 +23,17 @@ export interface ConfigValidateArgs {
   target: 'config' | 'sources' | 'statuses' | 'preferences' | 'permissions' | 'automations' | 'tool-icons' | 'all';
   sourceSlug?: string;
 }
+
+const CONFIG_VALIDATE_TARGET_TO_KIND: Record<ConfigValidateArgs['target'], ConfigValidationKind> = {
+  config: 'config',
+  sources: 'source',
+  statuses: 'statuses',
+  preferences: 'preferences',
+  permissions: 'permissions',
+  automations: 'automations',
+  'tool-icons': 'tool-icons',
+  all: 'all',
+};
 
 /**
  * Handle the config_validate tool call.
@@ -40,40 +51,9 @@ export async function handleConfigValidate(
   // If full validators available (Claude), use them
   if (ctx.validators) {
     try {
-      let result;
-
-      switch (target) {
-        case 'config':
-          result = ctx.validators.validateConfig();
-          break;
-        case 'sources':
-          if (sourceSlug) {
-            result = ctx.validators.validateSource(ctx.workspacePath, sourceSlug);
-          } else {
-            result = ctx.validators.validateAllSources(ctx.workspacePath);
-          }
-          break;
-        case 'statuses':
-          result = ctx.validators.validateStatuses(ctx.workspacePath);
-          break;
-        case 'preferences':
-          result = ctx.validators.validatePreferences();
-          break;
-        case 'permissions':
-          result = ctx.validators.validatePermissions(ctx.workspacePath, sourceSlug);
-          break;
-        case 'automations':
-          result = ctx.validators.validateAutomations(ctx.workspacePath);
-          break;
-        case 'tool-icons':
-          result = ctx.validators.validateToolIcons();
-          break;
-        case 'all':
-          result = ctx.validators.validateAll(ctx.workspacePath);
-          break;
-      }
-
-      return successResponse(formatValidationResult(result!));
+      const kind = CONFIG_VALIDATE_TARGET_TO_KIND[target];
+      const result = ctx.validators.validate(kind, { path: ctx.workspacePath }, { slug: sourceSlug });
+      return successResponse(formatValidationResult(result));
     } catch (error) {
       return errorResponse(
         `Config validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`

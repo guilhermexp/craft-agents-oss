@@ -8,12 +8,15 @@
 
 import { join, parse as parsePath } from 'path'
 import { existsSync, mkdirSync } from 'fs'
+import { Readable } from 'stream'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
-import { BrowserView, BrowserWindow, app, ipcMain, nativeTheme, session, shell, webContents, type Session as ElectronSession, type Streams } from 'electron'
+import { BrowserWindow, WebContentsView, app, ipcMain, nativeTheme, net, session, shell, webContents, type Session as ElectronSession, type Streams } from 'electron'
 import { mainLog } from './logger'
 import type { WindowManager } from './window-manager'
 import { BrowserCDP, type AccessibilitySnapshot, type ElementGeometry } from './browser-cdp'
 import { BrowserVisualCapture } from './browser/browser-visual-capture'
+import { BrowserToolbarHost } from './browser/toolbar-host'
+import { BrowserThemeExtractor } from './browser/theme-extractor'
 import { normalizeChromeClientHints } from './browser-client-hints'
 import {
   type BrowserEmptyStateLaunchPayload,
@@ -26,116 +29,35 @@ import type { BrowserCookieSameSite } from '@craft-agent/shared/browser-cookies/
 import { CodedError } from '@craft-agent/shared/protocol'
 import { getBrowserLiveFxCornerRadii } from '../shared/browser-live-fx'
 import type { IBrowserPaneManager, BrowserInstanceSnapshot } from '@craft-agent/server-core/handlers'
-import type { BrowserCapabilityRequest, ScreenshotResultWire } from '@craft-agent/server-core/transport'
+import type { BrowserCapabilityRequest, BrowserCapabilityMethod, ScreenshotResultWire } from '@craft-agent/server-core/transport'
 
 export type { BrowserInstanceInfo }
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
-const TOOLBAR_LOAD_MAX_RETRIES = 4
-const TOOLBAR_LOAD_RETRY_DELAY_MS = 500
 const TOOLBAR_HEIGHT = 48
+/** Embedded session panel: default and the floors that keep both sides usable. */
+const DEFAULT_SESSION_PANEL_WIDTH = 420
+const MIN_SESSION_PANEL_WIDTH = 320
+const MIN_PAGE_WIDTH = 400
 const MAX_CONSOLE_LOG_ENTRIES = 500
 const MAX_NETWORK_LOG_ENTRIES = 500
 const MAX_DOWNLOAD_LOG_ENTRIES = 200
 const DEFAULT_WAIT_TIMEOUT_MS = 10_000
 const DEFAULT_WAIT_POLL_MS = 100
-const THEME_COLOR_SIGNAL_PREFIX = '__craft_theme_color__:'
-const THEME_COLOR_NULL_SENTINEL = '__NULL__'
-const THEME_OBSERVER_MIN_INTERVAL_MS = 120
-const EARLY_THEME_EXTRACTION_DELAY_MS = 100
 const BROWSER_EMPTY_STATE_PAGE = 'browser-empty-state.html'
-const CRAFT_DEEPLINK_SCHEME_PREFIX = `${process.env.CRAFT_DEEPLINK_SCHEME || 'craftagents'}://`
 
-/**
- * SECURITY (auditoria 2026-07-14): navegação de topo e popups do browser
- * agêntico são restritas a http/https (+ about:blank). Bloqueia `file:`,
- * `chrome:`, etc. que um agente sob prompt-injection poderia usar para ler
- * arquivos locais (~/.aws/credentials, .env, id_rsa) ou fazer SSRF.
- * TODO(security): considerar bloquear loopback/link-local (169.254.169.254,
- * localhost) — sem caso de uso legítimo do agente hoje.
- */
-function isAllowedTopLevelUrl(rawUrl: string): boolean {
-  if (rawUrl === 'about:blank') return true
-  let parsed: URL
-  try {
-    parsed = new URL(rawUrl)
-  } catch {
-    return false
-  }
-  return parsed.protocol === 'http:' || parsed.protocol === 'https:'
-}
-
-const THEME_COLOR_EXTRACTOR_FN = String.raw`
-() => {
-  const toHex = (r, g, b) => '#' + [r, g, b].map(c => c.toString(16).padStart(2, '0')).join('');
-
-  const parseColor = (str) => {
-    if (!str) return null;
-    str = str.trim();
-    const hm = /^#([0-9a-f]{3,8})$/i.exec(str);
-    if (hm) {
-      const h = hm[1];
-      let r, g, b;
-      if (h.length === 3) { r = parseInt(h[0]+h[0],16); g = parseInt(h[1]+h[1],16); b = parseInt(h[2]+h[2],16); }
-      else if (h.length >= 6) { r = parseInt(h.slice(0,2),16); g = parseInt(h.slice(2,4),16); b = parseInt(h.slice(4,6),16); }
-      else return null;
-      return toHex(r, g, b);
-    }
-    const rm = str.match(/rgba?[\(]\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/);
-    if (rm) return toHex(+rm[1], +rm[2], +rm[3]);
-    return null;
-  };
-
-  const parseBg = (el) => {
-    if (!el) return null;
-    const bg = getComputedStyle(el).backgroundColor;
-    if (!bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)') return null;
-    return parseColor(bg);
-  };
-
-  // 1. theme-color meta — respect media attribute for light/dark
-  const metas = document.querySelectorAll('meta[name="theme-color"]');
-  for (const m of metas) {
-    const media = m.getAttribute('media');
-    if (media && !window.matchMedia(media).matches) continue;
-    const c = parseColor(m.content);
-    if (c) return c;
-  }
-
-  // 2. Safari-like approach: sample fixed/sticky elements at viewport top-center
-  const els = document.elementsFromPoint(window.innerWidth / 2, 4);
-  for (const el of els) {
-    if (el === document.documentElement || el === document.body) continue;
-    const style = getComputedStyle(el);
-    const pos = style.position;
-    if (pos !== 'fixed' && pos !== 'sticky') continue;
-    const rect = el.getBoundingClientRect();
-    if (rect.width < window.innerWidth * 0.8) continue;
-    const c = parseBg(el);
-    if (c) return c;
-  }
-
-  // 3. Fallback: body then html
-  return parseBg(document.body) || parseBg(document.documentElement) || null;
-}
-`
-
-/** IPC channels for the browser toolbar preload */
-const TOOLBAR_CHANNELS = {
-  NAVIGATE: 'browser-toolbar:navigate',
-  GO_BACK: 'browser-toolbar:go-back',
-  GO_FORWARD: 'browser-toolbar:go-forward',
-  RELOAD: 'browser-toolbar:reload',
-  STOP: 'browser-toolbar:stop',
-  MENU_GEOMETRY: 'browser-toolbar:menu-geometry',
-  FORCE_CLOSE_MENU: 'browser-toolbar:force-close-menu',
-  HIDE: 'browser-toolbar:hide',
-  DESTROY: 'browser-toolbar:destroy',
-  STATE_UPDATE: 'browser-toolbar:state-update',
-  THEME_COLOR: 'browser-toolbar:theme-color',
-  REQUEST_PROFILE_MANAGEMENT: 'browser-toolbar:request-profile-management',
-  SWITCH_PROFILE: 'browser-toolbar:switch-profile',
-} as const
+import { TOOLBAR_CHANNELS } from '../shared/browser-toolbar-channels'
+import { BROWSER_CHROME_BG, PANEL_INTERIOR_RADIUS } from '../shared/browser-chrome'
+import { isAllowedTopLevelUrl, CRAFT_DEEPLINK_SCHEME_PREFIX, decideWillNavigate, decideWindowOpen } from './browser/navigation-policy'
+import { hardenSessionPermissions } from './browser/partition-hardening'
+import {
+  fetchFaviconDataUrl,
+  firstHeaderValue,
+  isFetchableFaviconUrl,
+  shouldFollowFaviconRedirect,
+  type FaviconFetcher,
+  type FaviconHttpResponse,
+} from './browser/favicon-transport'
 import {
   getProfilePartition,
   DEFAULT_BROWSER_PROFILE_PARTITION,
@@ -162,6 +84,16 @@ import { applyProxyToProfilePartition } from './network-proxy'
 import { randomUUID } from 'crypto'
 
 /**
+ * Favicon candidates tried per announcement.
+ *
+ * `page-favicon-updated` hands us the page's whole candidate list, and the
+ * content-type allowlist rejects SVG — so a site that lists `favicon.svg`
+ * first must still be able to reach its PNG/ICO. Attempts stay sequential and
+ * single-in-flight, so the cap is what bounds the worst case at four timeouts.
+ */
+const FAVICON_MAX_CANDIDATES = 4
+
+/**
  * Legacy export — preserved for callers that still depend on a single
  * partition string (e.g. network-proxy bootstrap before profiles are loaded).
  * Equivalent to `getProfilePartition(DEFAULT_BROWSER_PROFILE_ID)`.
@@ -180,18 +112,79 @@ interface AgentControlLockState {
   previousResizable: boolean
 }
 
+/**
+ * Marca um pane cuja tela está sendo capturada (gravação de reunião). Enquanto
+ * existe, o pane não pode ser adotado por sessão de agente: navegar a página
+ * não encerra as faixas capturadas — a gravação continuaria, gravando a tela do
+ * agente no mesmo arquivo.
+ */
+export interface BrowserPaneCaptureLock {
+  reason: 'meeting-recording'
+  since: number
+}
+
+export type BrowserDisplayMode = 'floating' | 'integrated'
+
+export interface EmbeddedBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 export interface BrowserInstance {
   id: string
   profileId: string
   workspaceId: string | null
   window: BrowserWindow
-  toolbarView: BrowserView
-  pageView: BrowserView
-  nativeOverlayView: BrowserView
+  toolbarView: WebContentsView
+  pageView: WebContentsView
+  nativeOverlayView: WebContentsView
+  /**
+   * `floating` keeps the views in the instance's own frameless window (the
+   * historical behaviour). `integrated` reparents them into a host window's
+   * contentView so they render as a card inside the app, positioned by bounds
+   * the renderer measures. The WebContents survive the move, so the page keeps
+   * its session, scroll position and navigation history.
+   */
+  /**
+   * Craft's own renderer, embedded as a sibling view on the right of the page.
+   * Created lazily — a second full renderer is not free, so browsers that never
+   * open the panel never pay for it.
+   */
+  sessionView: WebContentsView | null
+  /** Panel width in DIPs, or null when closed. */
+  sessionPanelWidth: number | null
+  displayMode: BrowserDisplayMode
+  /**
+   * True when docking hid the instance's own window. Undocking hands the views
+   * back to that window, so without this the browser would simply vanish —
+   * alive, listed in the tab strip, painting into something invisible.
+   */
+  hiddenByIntegration: boolean
+  /** Window the views are currently parented to while integrated. */
+  hostWindow: BrowserWindow | null
+  /** Card rect in host content coordinates (DIPs). Null until the renderer reports it. */
+  embeddedBounds: EmbeddedBounds | null
+  /** Radius currently applied to every native view, in DIPs. */
+  viewRadius: number
   cdp: BrowserCDP
   currentUrl: string
   title: string
+  /**
+   * Validated `data:` URL, never the URL the page asked for — see
+   * `browser/favicon-transport.ts` for why the raw URL stays in main.
+   */
   favicon: string | null
+  /**
+   * The page's whole candidate announcement, joined. Pages re-announce the same
+   * list on every SPA route change, so this is what dedupes them.
+   */
+  faviconCandidateKey: string | null
+  /** Monotonic per-instance token; a fetch whose token went stale is dropped. */
+  faviconToken: number
+  /** Aborts the in-flight favicon fetch on navigation or destroy. */
+  faviconAbort: AbortController | null
   isLoading: boolean
   canGoBack: boolean
   canGoForward: boolean
@@ -199,6 +192,8 @@ export interface BrowserInstance {
   ownerType: 'session' | 'manual'
   ownerSessionId: string | null
   isVisible: boolean
+  /** Não-nulo enquanto uma captura de tela está ativa neste pane. */
+  captureLock: BrowserPaneCaptureLock | null
   keepAliveOnWindowClose: boolean
   toolbarReady: boolean
   toolbarMenuOpen: boolean
@@ -381,14 +376,26 @@ interface LastBrowserAction {
 
 let instanceCounter = 0
 
+/** Context passed to every capability handler in {@link BrowserPaneManager.capabilityDispatch}. */
+interface CapabilityContext {
+  /** Owner-key namespace for this (workspaceId, sessionId) — see {@link BrowserPaneManager.toOwnerKey}. */
+  readonly ownerKey: string
+  readonly workspaceId: string
+}
+
+/** One wire-capability handler: unpacks positional args and runs the local method. */
+type CapabilityHandler = (args: unknown[], ctx: CapabilityContext) => unknown
+
 export class BrowserPaneManager implements IBrowserPaneManager {
   private instances: Map<string, BrowserInstance> = new Map()
   private destroyingIds: Set<string> = new Set()
   private stateChangeCallback: ((info: BrowserInstanceInfo) => void) | null = null
   private removedCallback: ((id: string) => void) | null = null
   private interactedCallback: ((id: string) => void) | null = null
+  private captureReleaseHook: ((browserInstanceId: string) => void) | null = null
   private profilesChangeCallback: ((settings: BrowserProfileSettings) => void) | null = null
   private profileManagementRequestCallback: ((instanceId: string) => void) | null = null
+  private displayModeRequestCallback: ((instanceId: string, mode: BrowserDisplayMode) => void) | null = null
   // SECURITY (auditoria 2026-07-14): dedup POR partition, não por instância.
   // O guard booleano antigo só registrava o handler na 1ª partition; profiles
   // secundários caíam no default permissivo do Electron. `session.fromPartition`
@@ -428,6 +435,33 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     updateNativeOverlayState: (instance) => this.updateNativeOverlayState(instance),
     waitFor: (id, args) => this.waitFor(id, args),
     sleep: (ms) => this.sleep(ms),
+  })
+
+  /** Toolbar surface: load/retry/fallback, state DTO push, ready gating, IPC. */
+  private toolbarHost = new BrowserToolbarHost({
+    getInstance: (id) => this.instances.get(id),
+    listProfiles: () => this.listProfiles(),
+    navigate: (id, url) => this.navigate(id, url),
+    goBack: (id) => this.goBack(id),
+    goForward: (id) => this.goForward(id),
+    reload: (id) => this.reload(id),
+    stop: (id) => this.stop(id),
+    hide: (id) => this.hide(id),
+    destroyInstance: (id) => this.destroyInstance(id),
+    forceCloseToolbarMenu: (instance, reason) => this.forceCloseToolbarMenu(instance, reason),
+    layoutAllViews: (instance) => this.layoutAllViews(instance),
+    switchProfile: (instanceId, targetProfileId) => this.switchProfile(instanceId, targetProfileId),
+    requestProfileManagement: (instanceId) => this.profileManagementRequestCallback?.(instanceId),
+    toggleSessionPanel: (instanceId) => this.toggleSessionPanel(instanceId),
+    requestDisplayMode: (instanceId, mode) => this.displayModeRequestCallback?.(instanceId, mode),
+    emitStateChange: (instance) => this.emitStateChange(instance),
+    sleep: (ms) => this.sleep(ms),
+  })
+
+  /** Theme-color derivation: one-shot extract, in-page observer, apply/dedupe. */
+  private themeExtractor = new BrowserThemeExtractor({
+    hasInstance: (id) => this.instances.has(id),
+    emitStateChange: (instance) => this.emitStateChange(instance),
   })
 
   setWindowManager(windowManager: WindowManager): void {
@@ -556,7 +590,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     // Native window chrome follows the OS theme. Embedded pages are left to honor
     // their own prefers-color-scheme (like a normal browser) — we do not override
     // the page color scheme.
-    const chromeBgColor = nativeTheme.shouldUseDarkColors ? '#2b292e' : '#fafafb'
+    const chromeBgColor = BROWSER_CHROME_BG[nativeTheme.shouldUseDarkColors ? 'dark' : 'light']
     const pageBgColor = '#ffffff'
 
     const window = new BrowserWindow({
@@ -566,7 +600,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       minHeight: 500,
       show: false, // Always hidden until toolbar is painted (ready-to-show)
       backgroundColor: chromeBgColor,
-      // Fully chromeless — toolbar is rendered in a dedicated BrowserView
+      // Fully chromeless — toolbar is rendered in a dedicated WebContentsView
       frame: false,
       webPreferences: {
         partition,
@@ -577,7 +611,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       },
     })
 
-    const toolbarView = new BrowserView({
+    const toolbarView = new WebContentsView({
       webPreferences: {
         preload: join(__dirname, 'browser-toolbar-preload.cjs'),
         partition,
@@ -588,7 +622,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       },
     })
 
-    const pageView = new BrowserView({
+    const pageView = new WebContentsView({
       webPreferences: {
         partition,
         session: ses,
@@ -598,12 +632,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       },
     })
 
-    const supportsMultiView = typeof window.addBrowserView === 'function' && typeof window.setTopBrowserView === 'function'
+    const supportsMultiView = typeof window.contentView?.addChildView === 'function'
     if (!supportsMultiView) {
-      throw new Error('[browser-pane] Native overlay requires BrowserWindow.addBrowserView + setTopBrowserView')
+      throw new Error('[browser-pane] Native overlay requires BrowserWindow.contentView.addChildView')
     }
 
-    const nativeOverlayView = new BrowserView({
+    const nativeOverlayView = new WebContentsView({
       webPreferences: {
         partition,
         session: ses,
@@ -613,7 +647,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       },
     })
 
-    // Set BrowserView backgrounds. External pages should not inherit Craft's dark
+    // Set view backgrounds. External pages should not inherit Craft's dark
     // chrome color behind transparent document areas.
     const toolbarWcWithBg = toolbarView.webContents as typeof toolbarView.webContents & { setBackgroundColor?: (color: string) => void }
     toolbarWcWithBg.setBackgroundColor?.('#00000000')
@@ -621,6 +655,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     pageWcWithBg.setBackgroundColor?.(pageBgColor)
     const overlayWcWithBg = nativeOverlayView.webContents as typeof nativeOverlayView.webContents & { setBackgroundColor?: (color: string) => void }
     overlayWcWithBg.setBackgroundColor?.('#00000000')
+
+    // A WebContentsView paints its own background *behind* the page, and it
+    // defaults to opaque white. BrowserView had no such layer, so setting the
+    // webContents colour used to be enough. Without this the toolbar — which
+    // expands to cover the window while its menu is open — turns the whole
+    // browser white, and the overlay tap-catcher stops being see-through.
+    toolbarView.setBackgroundColor('#00000000')
+    nativeOverlayView.setBackgroundColor('#00000000')
+    pageView.setBackgroundColor(pageBgColor)
 
     const cdp = new BrowserCDP(pageView.webContents)
 
@@ -632,10 +675,20 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       toolbarView,
       pageView,
       nativeOverlayView,
+      sessionView: null,
+      sessionPanelWidth: null,
+      displayMode: 'floating',
+      hiddenByIntegration: false,
+      hostWindow: null,
+      embeddedBounds: null,
+      viewRadius: 0,
       cdp,
       currentUrl: 'about:blank',
       title: 'New Tab',
       favicon: null,
+      faviconCandidateKey: null,
+      faviconToken: 0,
+      faviconAbort: null,
       isLoading: false,
       canGoBack: false,
       canGoForward: false,
@@ -643,6 +696,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       ownerType,
       ownerSessionId,
       isVisible: false,
+      captureLock: null,
       keepAliveOnWindowClose: true,
       toolbarReady: false,
       toolbarMenuOpen: false,
@@ -700,10 +754,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       }
     }
 
-    window.addBrowserView(pageView)
-    window.addBrowserView(nativeOverlayView)
-    window.addBrowserView(toolbarView)
-    window.setTopBrowserView(toolbarView)
+    // Stacking order is the child order: last added paints on top.
+    window.contentView.addChildView(pageView)
+    window.contentView.addChildView(nativeOverlayView)
+    window.contentView.addChildView(toolbarView)
     void this.loadNativeOverlayPage(instance)
 
     this.layoutAllViews(instance)
@@ -715,11 +769,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     mainLog.info(`[browser-pane] toolbar version: v4-react-chromeless`)
     mainLog.info(`[browser-pane] Created instance: ${instanceId} (show=${shouldShow}, ownerType=${ownerType}, ownerSessionId=${ownerSessionId ?? 'none'}, profileId=${profileId}, workspaceId=${workspaceId ?? 'none'})`)
 
-    void this.loadToolbarPage(instance)
+    void this.toolbarHost.loadPage(instance)
       .finally(() => {
         // Safety net: if Electron never fires ready-to-show, still unblock focus/show behavior.
         if (!instance.toolbarReady) {
-          this.markToolbarReady(instance, 'toolbar-load-finalized')
+          this.toolbarHost.markReady(instance, 'toolbar-load-finalized')
         }
       })
 
@@ -738,7 +792,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       void this.loadEmptyStatePage(instance).catch((error) => {
         const message = error instanceof Error ? error.message : String(error)
         mainLog.warn(`[browser-pane] empty-state load failed id=${instance.id}: ${message}`)
-        // If a caller navigates immediately after creating the BrowserView, the empty
+        // If a caller navigates immediately after creating the view, the empty
         // state data URL can be aborted by the real navigation. Loading about:blank
         // here races and can overwrite the requested page, so only blank on real errors.
         if (!message.includes('ERR_ABORTED')) {
@@ -750,6 +804,33 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return instanceId
   }
 
+  /**
+   * Marca/desmarca o pane como sob captura de tela. O dono da gravação chama
+   * isso no início e no fim; enquanto marcado, o pane sai do pool de adoção por
+   * sessão de agente.
+   */
+  setCaptureLock(id: string, lock: BrowserPaneCaptureLock | null): void {
+    const instance = this.instances.get(id)
+    if (!instance) return
+    instance.captureLock = lock
+    mainLog.info(`[browser-pane] captureLock ${lock ? `set reason=${lock.reason}` : 'cleared'} id=${id}`)
+    this.emitStateChange(instance)
+    this.toolbarHost.pushState(instance)
+  }
+
+  getCaptureLock(id: string): BrowserPaneCaptureLock | null {
+    return this.instances.get(id)?.captureLock ?? null
+  }
+
+  /**
+   * Hook disparado antes de um pane sob captura ser destruído, para o dono da
+   * gravação selar o arquivo. É fire-and-forget porque o teardown é síncrono: o
+   * que já foi escrito está no disco e só o tail em voo se perde.
+   */
+  setCaptureReleaseHook(hook: (browserInstanceId: string) => void): void {
+    this.captureReleaseHook = hook
+  }
+
   destroyInstance(id: string): void {
     const instance = this.instances.get(id)
     if (!instance) {
@@ -759,6 +840,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
     const destroyedBefore = instance.window.isDestroyed()
     mainLog.info(`[browser-pane] destroy requested id=${id} destroyedBefore=${destroyedBefore} keepAlive=${instance.keepAliveOnWindowClose}`)
+
+    if (instance.captureLock) {
+      this.captureReleaseHook?.(id)
+    }
 
     // Clear pending timers before destroying the window
     if (instance.inPageThemeTimer) {
@@ -800,7 +885,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
   }
 
-  getInstance(id: string): BrowserInstance | undefined {
+  /** Sync accessor for the live `BrowserInstance` — in-process callers only, NOT the wire seam. */
+  getLiveInstance(id: string): BrowserInstance | undefined {
     return this.instances.get(id)
   }
 
@@ -814,6 +900,15 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
   onProfileManagementRequested(callback: (instanceId: string) => void): void {
     this.profileManagementRequestCallback = callback
+  }
+
+  /**
+   * Dock/undock asked for from inside a browser window. Only the app renderer
+   * can complete it — it owns the card that gives the integrated views their
+   * rect — so the manager just relays the intent.
+   */
+  onDisplayModeRequested(callback: (instanceId: string, mode: BrowserDisplayMode) => void): void {
+    this.displayModeRequestCallback = callback
   }
 
   listProfiles(): BrowserProfile[] {
@@ -1047,7 +1142,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return true
   }
 
-  listInstances(): BrowserInstanceInfo[] {
+  async listInstances(): Promise<BrowserInstanceInfo[]> {
     const infos: BrowserInstanceInfo[] = []
     for (const instance of this.instances.values()) {
       if (instance.window.isDestroyed()) {
@@ -1097,14 +1192,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         timeoutHandle = setTimeout(() => reject(new Error(`Navigation to "${normalizedUrl}" timed out after ${timeoutMs / 1000}s`)), timeoutMs)
       })
       await Promise.race([loaded, timeout])
-      this.pushToolbarState(instance)
+      this.toolbarHost.pushState(instance)
 
       return { url: instance.currentUrl, title: instance.title }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (message.includes('ERR_ABORTED')) {
         mainLog.info(`[browser-pane] navigation reported ERR_ABORTED but may continue id=${id} url=${normalizedUrl}`)
-        this.pushToolbarState(instance)
+        this.toolbarHost.pushState(instance)
         return { url: instance.currentUrl || normalizedUrl, title: instance.title }
       }
       throw error
@@ -1373,7 +1468,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return this.visualCapture.screenshotRegion(id, target)
   }
 
-  getConsoleLogs(id: string, options?: BrowserConsoleOptions): BrowserConsoleEntry[] {
+  async getConsoleLogs(id: string, options?: BrowserConsoleOptions): Promise<BrowserConsoleEntry[]> {
     const instance = this.requireAliveInstance(id)
 
     const level = options?.level ?? 'all'
@@ -1386,11 +1481,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return filtered.slice(-limit)
   }
 
-  async getConsoleLogsAsync(id: string, options?: BrowserConsoleOptions): Promise<BrowserConsoleEntry[]> {
-    return this.getConsoleLogs(id, options)
-  }
-
-  getNetworkLogs(id: string, options?: BrowserNetworkOptions): BrowserNetworkEntry[] {
+  async getNetworkLogs(id: string, options?: BrowserNetworkOptions): Promise<BrowserNetworkEntry[]> {
     const instance = this.requireAliveInstance(id)
 
     const statusFilter = options?.status ?? 'all'
@@ -1412,10 +1503,6 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     return filtered.slice(-limit)
-  }
-
-  async getNetworkLogsAsync(id: string, options?: BrowserNetworkOptions): Promise<BrowserNetworkEntry[]> {
-    return this.getNetworkLogs(id, options)
   }
 
   async waitFor(id: string, args: BrowserWaitArgs): Promise<BrowserWaitResult> {
@@ -1524,7 +1611,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
   // validateUploadFilePath removed — uses shared validateFilePath from @craft-agent/server-core/handlers
 
-  async uploadFile(id: string, ref: string, filePaths: string[]): Promise<ElementGeometry> {
+  // Geometry is undefined when the input has no box model — the usual
+  // `<input type="file" style="display:none">`. The assignment still happened.
+  async uploadFile(id: string, ref: string, filePaths: string[]): Promise<ElementGeometry | undefined> {
     const instance = this.requireAliveInstance(id)
 
     const safePaths: string[] = []
@@ -1538,7 +1627,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return instance.cdp.setFileInputFiles(ref, safePaths)
   }
 
-  windowResize(id: string, width: number, height: number): { width: number; height: number } {
+  async windowResize(id: string, width: number, height: number): Promise<{ width: number; height: number }> {
     const instance = this.requireAliveInstance(id)
 
     const requestedViewportWidth = Math.max(320, Math.floor(width))
@@ -1555,11 +1644,22 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
   }
 
-  async windowResizeAsync(id: string, width: number, height: number): Promise<{ width: number; height: number }> {
-    return this.windowResize(id, width, height)
+  /**
+   * SECURITY: single policy source for browser_tool evaluate. The gate lives ONLY
+   * here; `evaluate()` calls it, and SessionManager pre-checks with it before
+   * resolving an instance so a denied call never spawns a hidden window. Local +
+   * remote paths converge on the desktop's `evaluate()`, enforcing
+   * allowRemoteEvaluate in exactly one place.
+   */
+  assertEvaluateAllowed(): void {
+    if (!getAllowRemoteEvaluate()) {
+      throw new CodedError('BROWSER_REMOTE_EVALUATE_BLOCKED',
+        'JavaScript evaluation from agents is disabled in this client (allowRemoteEvaluate=false).')
+    }
   }
 
   async evaluate(id: string, expression: string): Promise<unknown> {
+    this.assertEvaluateAllowed()
     const instance = this.requireAliveInstance(id)
     return instance.pageView.webContents.executeJavaScript(expression)
   }
@@ -1712,7 +1812,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private findReusableUnboundInstance(workspaceId: string | null): BrowserInstance | null {
     const unbound = Array.from(this.instances.values()).filter(
       i => i.boundSessionId === null && i.ownerType === 'manual'
-        && (i.workspaceId === null || i.workspaceId === workspaceId),
+        && (i.workspaceId === null || i.workspaceId === workspaceId)
+        // Um pane em captura nunca é adotado: navegar a página não encerra as
+        // faixas capturadas, então a gravação seguiria com o conteúdo do agente.
+        && !i.captureLock,
     )
     if (unbound.length === 0) return null
 
@@ -1720,19 +1823,29 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return unbound.find(i => i.isVisible) ?? unbound[0]
   }
 
-  createForSession(sessionId: string, options?: { show?: boolean; profileId?: string; allowReuseManual?: boolean; workspaceId?: string | null }): string {
+  async createForSession(sessionId: string, options?: { show?: boolean; profileId?: string; allowReuseManual?: boolean; workspaceId?: string | null }): Promise<string> {
     const requestedProfile = this.resolveProfileId(options?.profileId, 'session')
     const existing = this.getBoundForSession(sessionId)
     if (existing) {
-      // Already bound — adopt the workspace if the caller provided one.
-      if (options?.workspaceId !== undefined) {
-        const inst = this.instances.get(existing)
-        if (inst) inst.workspaceId = options.workspaceId
+      const boundInstance = this.instances.get(existing)
+      if (boundInstance?.captureLock) {
+        // A sessão já possuía este pane, mas ele está gravando: devolve a janela
+        // ao usuário (mantendo ownerSessionId para rastreio) e segue para criar
+        // outra — o filtro de adoção exclui a que acabou de ser liberada.
+        mainLog.warn(`[browser-pane] session ${sessionId} was bound to capture-locked instance ${existing}; unbinding and creating a new window`)
+        boundInstance.boundSessionId = null
+        boundInstance.ownerType = 'manual'
+        this.emitStateChange(boundInstance)
+      } else {
+        // Already bound — adopt the workspace if the caller provided one.
+        if (options?.workspaceId !== undefined && boundInstance) {
+          boundInstance.workspaceId = options.workspaceId
+        }
+        if (options?.show) {
+          this.focus(existing)
+        }
+        return existing
       }
-      if (options?.show) {
-        this.focus(existing)
-      }
-      return existing
     }
 
     const workspaceId = options?.workspaceId ?? this.resolveLaunchWorkspaceId()
@@ -1764,38 +1877,20 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
   }
 
-  focusBoundForSession(sessionId: string, options?: { workspaceId?: string | null }): string {
-    const id = this.createForSession(sessionId, { show: true, workspaceId: options?.workspaceId })
+  async focusBoundForSession(sessionId: string, options?: { workspaceId?: string | null }): Promise<string> {
+    const id = await this.createForSession(sessionId, { show: true, workspaceId: options?.workspaceId })
     this.focus(id)
     return id
   }
 
-  getOrCreateForSession(sessionId: string, options?: { workspaceId?: string | null }): string {
+  async getOrCreateForSession(sessionId: string, options?: { workspaceId?: string | null }): Promise<string> {
     return this.createForSession(sessionId, { show: false, workspaceId: options?.workspaceId })
   }
 
-  // --- Async variants (required by IBrowserPaneManager for the remote bridge) -
-  // The local manager is fully synchronous, so these just resolve the sync
-  // result. The RemoteBrowserPaneManager implements the real WS round-trips.
-
-  async getOrCreateForSessionAsync(sessionId: string, options?: { workspaceId?: string | null }): Promise<string> {
-    return this.getOrCreateForSession(sessionId, options)
-  }
-
-  async createForSessionAsync(sessionId: string, options?: { show?: boolean; workspaceId?: string | null }): Promise<string> {
-    return this.createForSession(sessionId, options)
-  }
-
-  async getInstanceAsync(id: string): Promise<BrowserInstanceSnapshot | undefined> {
-    return this.getInstance(id)
-  }
-
-  async listInstancesAsync(): Promise<BrowserInstanceInfo[]> {
-    return this.listInstances()
-  }
-
-  async focusBoundForSessionAsync(sessionId: string, options?: { workspaceId?: string | null }): Promise<string> {
-    return this.focusBoundForSession(sessionId, options)
+  /** Async snapshot for the transport seam — projects the live instance to a cloneable DTO. Wire name `getInstance` (protocol v1). */
+  async getInstance(id: string): Promise<BrowserInstanceSnapshot | undefined> {
+    const live = this.getLiveInstance(id)
+    return live ? this.toSnapshot(live) : undefined
   }
 
   getBoundInstanceId(sessionId: string): string | null {
@@ -1932,16 +2027,81 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private getToolbarEffectiveHeight(instance: BrowserInstance): number {
     if (!instance.toolbarMenuOpen) return TOOLBAR_HEIGHT
 
+    // An open toolbar menu grows the toolbar view to cover its container so the
+    // dropdown is not clipped — the card's height when integrated.
+    if (instance.displayMode === 'integrated') {
+      return Math.max(TOOLBAR_HEIGHT, instance.embeddedBounds?.height ?? TOOLBAR_HEIGHT)
+    }
+
     const [, contentHeight] = instance.window.getContentSize()
     return Math.max(TOOLBAR_HEIGHT, contentHeight)
   }
 
+  /** Window the views are currently parented to, or null if it is gone. */
+  private getContainerWindow(instance: BrowserInstance): BrowserWindow | null {
+    const container = instance.displayMode === 'integrated' ? instance.hostWindow : instance.window
+    if (!container || container.isDestroyed()) return null
+    return container
+  }
+
+  /**
+   * Rect the whole browser chrome occupies inside its container, in DIPs.
+   * Floating fills the instance window; integrated uses the card rect the
+   * renderer measured. Returns null when the container is gone or the card
+   * has not reported bounds yet.
+   */
+  private getLayoutFrame(instance: BrowserInstance): (EmbeddedBounds & { container: BrowserWindow }) | null {
+    const container = this.getContainerWindow(instance)
+    if (!container) return null
+
+    if (instance.displayMode === 'integrated') {
+      const bounds = instance.embeddedBounds
+      if (!bounds) return null
+      return { ...bounds, container }
+    }
+
+    const [width, height] = container.getContentSize()
+    return { x: 0, y: 0, width, height, container }
+  }
+
+  /**
+   * Re-adding an existing child reorders it to the top of the stack — the
+   * WebContentsView equivalent of the removed `setTopBrowserView`.
+   */
+  private raiseToolbar(instance: BrowserInstance): void {
+    const container = this.getContainerWindow(instance)
+    if (!container) return
+    container.contentView.addChildView(instance.toolbarView)
+  }
+
+  /**
+   * Width the session panel takes out of the frame, 0 when closed.
+   *
+   * Every other view is laid out against the remainder, so this has to be one
+   * number: toolbar, page and overlay disagreeing by a pixel is a visible tear.
+   */
+  private sessionPanelWidthFor(instance: BrowserInstance): number {
+    return instance.sessionPanelWidth === null
+      ? 0
+      : this.clampSessionPanelWidth(instance, instance.sessionPanelWidth)
+  }
+
   private layoutToolbarView(instance: BrowserInstance): void {
-    const [width] = instance.window.getContentSize()
+    const frame = this.getLayoutFrame(instance)
+    if (!frame) return
     const toolbarHeight = this.getToolbarEffectiveHeight(instance)
 
-    instance.toolbarView.setBounds({ x: 0, y: 0, width, height: toolbarHeight })
-    instance.toolbarView.setAutoResize({ width: true, height: false })
+    // The panel is a sibling column with its own header, not something parked
+    // under the browser's chrome — so the URL bar stays centred on the page it
+    // belongs to instead of drifting over the session.
+    // No setAutoResize on WebContentsView: bounds are recomputed by the window
+    // 'resize' listener, which already calls layoutAllViews.
+    instance.toolbarView.setBounds({
+      x: frame.x,
+      y: frame.y,
+      width: Math.max(0, frame.width - this.sessionPanelWidthFor(instance)),
+      height: toolbarHeight,
+    })
   }
 
   private updateNativeOverlayState(instance: BrowserInstance): void {
@@ -1950,19 +2110,23 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const menuActive = !!instance.toolbarMenuOverlayActive
     const shouldShow = agentActive || menuActive
 
-    if (!shouldShow || !instance.nativeOverlayReady || instance.window.isDestroyed()) {
+    const frame = this.getLayoutFrame(instance)
+    if (!shouldShow || !instance.nativeOverlayReady || !frame) {
       instance.nativeOverlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 })
-      if (!instance.window.isDestroyed()) {
-        instance.window.setTopBrowserView(instance.toolbarView)
-      }
+      this.raiseToolbar(instance)
       return
     }
 
-    const [width, height] = instance.window.getContentSize()
-    const overlayHeight = Math.max(100, height - TOOLBAR_HEIGHT)
-    instance.nativeOverlayView.setBounds({ x: 0, y: TOOLBAR_HEIGHT, width, height: overlayHeight })
-    instance.nativeOverlayView.setAutoResize({ width: true, height: true })
-    instance.window.setTopBrowserView(instance.toolbarView)
+    // The overlay shields the page, not the session panel: an agent driving the
+    // browser must not lock the chat the user is watching it from.
+    const overlayHeight = Math.max(100, frame.height - TOOLBAR_HEIGHT)
+    instance.nativeOverlayView.setBounds({
+      x: frame.x,
+      y: frame.y + TOOLBAR_HEIGHT,
+      width: Math.max(0, frame.width - this.sessionPanelWidthFor(instance)),
+      height: overlayHeight,
+    })
+    this.raiseToolbar(instance)
 
     if (agentActive) {
       const label = this.getAgentControlLabel(control)
@@ -2051,28 +2215,380 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         mainLog.warn(`[browser-pane] finalize cleanup failed id=${instance.id} step=${label} error=${error instanceof Error ? error.message : String(error)}`)
       }
     }
+    // While integrated the views live in the host window, so destroying the
+    // instance's own window does not take them down — detach them explicitly
+    // or they keep painting over the app.
+    safe('detachFromHost', () => {
+      const host = instance.hostWindow
+      if (!host || host.isDestroyed()) return
+      for (const view of this.orderedViews(instance)) {
+        host.contentView.removeChildView(view)
+      }
+      instance.hostWindow = null
+    })
     safe('closePopupsForParent', () => this.closePopupsForParent(instance.id, 'parent_destroy'))
     safe('applyAgentControlLock', () => this.applyAgentControlLock(instance, false))
     safe('updateNativeOverlayState', () => this.updateNativeOverlayState(instance))
     safe('cdp.detach', () => instance.cdp.detach())
+    safe('cancelFaviconFetch', () => this.cancelFaviconFetch(instance))
+    // Destroying the window used to take the attached BrowserViews' webContents
+    // with it. WebContentsView does not work that way: the view is a child of
+    // contentView and its webContents outlives the window unless closed here,
+    // leaving an orphan composited on screen and three renderers leaked.
+    safe('closeSessionPanel', () => {
+      if (instance.sessionPanelWidth !== null || instance.sessionView) {
+        this.closeSessionPanel(instance)
+      }
+    })
+    safe('closeViewWebContents', () => {
+      for (const view of this.orderedViews(instance)) {
+        if (!view.webContents.isDestroyed()) {
+          view.webContents.close()
+        }
+      }
+    })
     this.instances.delete(instance.id)
     this.removedCallback?.(instance.id)
     mainLog.info(`[browser-pane] Destroyed instance: ${instance.id} (${source})`)
   }
 
   private layoutPageView(instance: BrowserInstance): void {
-    const [width, height] = instance.window.getContentSize()
-    instance.pageView.setBounds({ x: 0, y: TOOLBAR_HEIGHT, width, height: Math.max(100, height - TOOLBAR_HEIGHT) })
-    instance.pageView.setAutoResize({ width: true, height: true })
+    const frame = this.getLayoutFrame(instance)
+    if (!frame) return
+
+    // The session panel eats into the page, not into the window.
+    instance.pageView.setBounds({
+      x: frame.x,
+      y: frame.y + TOOLBAR_HEIGHT,
+      width: Math.max(0, frame.width - this.sessionPanelWidthFor(instance)),
+      height: Math.max(100, frame.height - TOOLBAR_HEIGHT),
+    })
     this.updateNativeOverlayState(instance)
   }
 
   private layoutAllViews(instance: BrowserInstance): void {
     this.layoutToolbarView(instance)
     this.layoutPageView(instance)
-    if (!instance.window.isDestroyed()) {
-      instance.window.setTopBrowserView(instance.toolbarView)
+    this.layoutSessionView(instance)
+    this.raiseToolbar(instance)
+  }
+
+  /**
+   * Ordered back-to-front; the toolbar must end up on top.
+   *
+   * The session panel belongs in here: it is a sibling view like the others, so
+   * every caller that detaches, reparents or closes an instance's views has to
+   * take it along. Leaving it out stranded the panel on the previous window
+   * across a display-mode switch while the page stayed shrunk for it.
+   */
+  private orderedViews(instance: BrowserInstance): WebContentsView[] {
+    const views: WebContentsView[] = [instance.pageView, instance.nativeOverlayView]
+    if (instance.sessionView) views.push(instance.sessionView)
+    views.push(instance.toolbarView)
+    return views
+  }
+
+  /**
+   * Move an instance's views from one window to another. A WebContentsView can
+   * only be presented in one window at a time, so the removal must happen
+   * first. The underlying WebContents is untouched — the page keeps its
+   * session, history and scroll position across the move.
+   */
+  private reparentViews(instance: BrowserInstance, from: BrowserWindow | null, to: BrowserWindow): void {
+    const views = this.orderedViews(instance)
+
+    if (from && !from.isDestroyed()) {
+      for (const view of views) {
+        from.contentView.removeChildView(view)
+      }
     }
+    for (const view of views) {
+      to.contentView.addChildView(view)
+    }
+  }
+
+  /**
+   * Switch an instance between its own window and a card inside `hostWindow`.
+   * Returns false when the mode could not be applied (unknown instance, or a
+   * host window was required but not supplied).
+   */
+  setDisplayMode(instanceId: string, mode: BrowserDisplayMode, hostWindow?: BrowserWindow | null): boolean {
+    const instance = this.instances.get(instanceId)
+    if (!instance) return false
+    if (instance.displayMode === mode && (mode === 'floating' || instance.hostWindow === hostWindow)) {
+      return true
+    }
+
+    if (mode === 'integrated') {
+      if (!hostWindow || hostWindow.isDestroyed()) {
+        mainLog.warn(`[browser-pane] integrated mode needs a live host window id=${instanceId}`)
+        return false
+      }
+
+      // Docked, the app's own chat sits right beside the browser — the panel
+      // would be the same session twice. Close it before the reparent, while
+      // `getContainerWindow` still resolves to the window it is attached to.
+      if (instance.sessionPanelWidth !== null || instance.sessionView) {
+        this.closeSessionPanel(instance)
+      }
+
+      const previous = this.getContainerWindow(instance)
+      instance.displayMode = 'integrated'
+      instance.hostWindow = hostWindow
+      this.reparentViews(instance, previous, hostWindow)
+      // If the host goes away the views would be orphaned, so fall back to the
+      // instance's own window instead of leaking them.
+      hostWindow.once('closed', () => {
+        if (this.instances.get(instanceId) === instance && instance.hostWindow === hostWindow) {
+          instance.hostWindow = null
+          this.setDisplayMode(instanceId, 'floating')
+        }
+      })
+      // The instance's own window stays alive but hidden: destroying it would
+      // take the WebContents with it.
+      if (!instance.window.isDestroyed() && instance.window.isVisible()) {
+        instance.window.hide()
+        instance.hiddenByIntegration = true
+      }
+      // The panel it fills is rounded, so the views must be too — before any
+      // bounds message, which may be deduped or arrive late.
+      this.applyViewRadius(instance, PANEL_INTERIOR_RADIUS)
+      this.setViewsVisible(instanceId, true)
+      this.layoutAllViews(instance)
+      this.toolbarHost.pushState(instance)
+      mainLog.info(`[browser-pane] display mode=integrated id=${instanceId}`)
+      return true
+    }
+
+    const previous = this.getContainerWindow(instance)
+    if (instance.window.isDestroyed()) {
+      mainLog.warn(`[browser-pane] cannot float: instance window is gone id=${instanceId}`)
+      return false
+    }
+
+    instance.displayMode = 'floating'
+    instance.hostWindow = null
+    instance.embeddedBounds = null
+    this.reparentViews(instance, previous, instance.window)
+    // Concealment is a transient override the renderer applies while something
+    // covers the views - an app overlay, or another preview tab holding the
+    // pane. It must not survive the trip back to a window of its own, or the
+    // browser reappears blank.
+    this.setViewsVisible(instanceId, true)
+    // Corner rounding is a card affordance; a full window must not keep it.
+    this.applyViewRadius(instance, 0)
+    this.layoutAllViews(instance)
+    // Undo exactly what docking did. A browser that was already hidden before
+    // it was docked (agent-driven, never shown) stays hidden.
+    if (instance.hiddenByIntegration) {
+      instance.hiddenByIntegration = false
+      instance.window.show()
+    }
+    this.toolbarHost.pushState(instance)
+    mainLog.info(`[browser-pane] display mode=floating id=${instanceId}`)
+    return true
+  }
+
+  /**
+   * Card geometry reported by the renderer.
+   *
+   * `rect` is in the host renderer's CSS pixels; view bounds are in window
+   * DIPs. On displays with fractional scaling Electron applies a zoom factor to
+   * the renderer, so the two spaces diverge and the views would bleed outside
+   * the card. Multiply by the zoom to convert, and floor every axis so the view
+   * edge can never exceed the card's.
+   *
+   * Radius is re-applied here only to track the zoom. Docking already set it —
+   * it is a consequence of being docked, not of a particular bounds message,
+   * and a message that never lands must not leave the views square inside a
+   * rounded panel.
+   */
+  setEmbeddedBounds(instanceId: string, rect: EmbeddedBounds, zoomFactor = 1): boolean {
+    const instance = this.instances.get(instanceId)
+    if (!instance || instance.displayMode !== 'integrated') return false
+
+    const zoom = Number.isFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1
+    instance.embeddedBounds = {
+      x: Math.max(0, Math.floor(rect.x * zoom)),
+      y: Math.max(0, Math.floor(rect.y * zoom)),
+      width: Math.max(1, Math.floor(rect.width * zoom)),
+      height: Math.max(1, Math.floor(rect.height * zoom)),
+    }
+
+    this.applyViewRadius(instance, Math.round(PANEL_INTERIOR_RADIUS * zoom))
+
+    this.layoutAllViews(instance)
+    return true
+  }
+
+  /**
+   * Take the native views off screen without unloading them.
+   *
+   * A WebContentsView always paints above the renderer, so an app dropdown
+   * reaching over the docked browser is drawn behind it. There is no CSS answer
+   * — the views are not part of the document. Hiding them for the life of the
+   * overlay is the only lever, and it keeps the page's WebContents alive so
+   * nothing reloads when it comes back.
+   */
+  setViewsVisible(instanceId: string, visible: boolean): boolean {
+    const instance = this.instances.get(instanceId)
+    if (!instance) return false
+    for (const view of this.orderedViews(instance)) {
+      view.setVisible(visible)
+    }
+    return true
+  }
+
+  /**
+   * Corner radius for the native views.
+   *
+   * They are siblings composing one card, so they must agree: a rounded page
+   * next to a square session panel reads as two unrelated surfaces. Where two
+   * rounded neighbours curve away from each other the card's own background
+   * shows through, which is why that hole is painted chrome-coloured rather
+   * than left transparent.
+   */
+  private applyViewRadius(instance: BrowserInstance, radius: number): void {
+    instance.viewRadius = radius
+    instance.pageView.setBorderRadius(radius)
+    instance.toolbarView.setBorderRadius(radius)
+    instance.sessionView?.setBorderRadius(radius)
+  }
+
+  getDisplayMode(instanceId: string): BrowserDisplayMode | null {
+    return this.instances.get(instanceId)?.displayMode ?? null
+  }
+
+  /**
+   * Toggle the session panel embedded on the right of the page.
+   *
+   * The panel is a sibling WebContentsView running Craft's own renderer inside
+   * the browser window — not a second OS window. One window that drags and
+   * resizes as a unit, which is the whole point.
+   *
+   * Floating only. Docked into the app the session is already on screen next
+   * to the browser, and a panel would render it a second time.
+   */
+  toggleSessionPanel(instanceId: string): boolean {
+    const instance = this.instances.get(instanceId)
+    if (!instance || instance.window.isDestroyed()) return false
+
+    if (instance.sessionPanelWidth !== null) {
+      this.closeSessionPanel(instance)
+      return true
+    }
+    if (instance.displayMode === 'integrated') {
+      mainLog.info(`[browser-pane] session panel skipped while docked id=${instanceId}`)
+      return false
+    }
+    return this.openSessionPanel(instance)
+  }
+
+  private closeSessionPanel(instance: BrowserInstance): void {
+    instance.sessionPanelWidth = null
+
+    // Unload rather than hide: a parked Craft renderer keeps a websocket and a
+    // full React tree alive for a panel nobody is looking at.
+    const view = instance.sessionView
+    if (view) {
+      const wcId = view.webContents.isDestroyed() ? null : view.webContents.id
+      const container = this.getContainerWindow(instance)
+      if (container) container.contentView.removeChildView(view)
+      if (wcId !== null) {
+        this.windowManager?.unregisterViewClient(wcId)
+        view.webContents.close()
+      }
+      instance.sessionView = null
+    }
+
+    this.layoutAllViews(instance)
+    mainLog.info(`[browser-pane] session panel closed id=${instance.id}`)
+  }
+
+  private openSessionPanel(instance: BrowserInstance): boolean {
+    const container = this.getContainerWindow(instance)
+    if (!container) return false
+    if (!this.windowManager) {
+      mainLog.warn('[browser-pane] session panel needs a window manager')
+      return false
+    }
+
+    const workspaceId = instance.workspaceId ?? ''
+    const sessionId = instance.boundSessionId ?? instance.ownerSessionId
+
+    const view = new WebContentsView({
+      webPreferences: {
+        preload: join(__dirname, 'bootstrap-preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+      },
+    })
+    view.setBackgroundColor('#00000000')
+    // Born into whatever the siblings already carry, or a panel opened while
+    // the browser is docked comes up square against two rounded neighbours.
+    view.setBorderRadius(instance.viewRadius)
+
+    // Register BEFORE loading: the bootstrap preload asks for the workspace
+    // synchronously while it evaluates, so a late registration reads as "no
+    // workspace" and the renderer comes up empty.
+    this.windowManager.registerViewClient(view.webContents.id, workspaceId)
+
+    // Param names must match App.tsx:174 — `sessionId`, not `session`. With the
+    // wrong key focused mode has nothing to focus on and falls back to the full
+    // shell (sidebar + session list), which is not a panel.
+    const query: Record<string, string> = { workspaceId, focused: 'true' }
+    if (sessionId) query.sessionId = sessionId
+    const params = new URLSearchParams(query).toString()
+
+    if (VITE_DEV_SERVER_URL) {
+      void view.webContents.loadURL(`${VITE_DEV_SERVER_URL}?${params}`)
+    } else {
+      void view.webContents.loadFile(join(__dirname, 'renderer/index.html'), { query })
+    }
+
+    instance.sessionView = view
+    instance.sessionPanelWidth = this.clampSessionPanelWidth(instance, DEFAULT_SESSION_PANEL_WIDTH)
+    container.contentView.addChildView(view)
+
+    this.layoutAllViews(instance)
+    mainLog.info(`[browser-pane] session panel opened id=${instance.id} session=${sessionId ?? 'list'}`)
+    return true
+  }
+
+  /**
+   * Panel width for the current frame.
+   *
+   * Both floors together need MIN_PAGE_WIDTH + MIN_SESSION_PANEL_WIDTH. Below
+   * that they contradict each other, and honouring both would push the page
+   * out past the frame — reachable in integrated mode, where the frame is the
+   * card rect rather than the window. Split the frame evenly instead: cramped
+   * beats overflowing.
+   */
+  private clampSessionPanelWidth(instance: BrowserInstance, width: number): number {
+    const frame = this.getLayoutFrame(instance)
+    if (!frame) return width
+    const room = frame.width - MIN_PAGE_WIDTH
+    if (room < MIN_SESSION_PANEL_WIDTH) return Math.max(0, Math.floor(frame.width / 2))
+    return Math.min(Math.max(width, MIN_SESSION_PANEL_WIDTH), room)
+  }
+
+  private layoutSessionView(instance: BrowserInstance): void {
+    const view = instance.sessionView
+    const frame = this.getLayoutFrame(instance)
+    if (!view || !frame || instance.sessionPanelWidth === null) return
+
+    const width = this.clampSessionPanelWidth(instance, instance.sessionPanelWidth)
+    instance.sessionPanelWidth = width
+    // Full height, not offset by the toolbar: the panel is the browser's peer,
+    // and it brings its own header. Sitting under the URL bar made it look
+    // like a drawer of the page instead of a column beside it.
+    view.setBounds({
+      x: frame.x + frame.width - width,
+      y: frame.y,
+      width,
+      height: frame.height,
+    })
   }
 
   private forceCloseToolbarMenu(instance: BrowserInstance, reason: string): void {
@@ -2172,197 +2688,13 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     return handled
   }
 
-  private async loadToolbarPage(instance: BrowserInstance): Promise<void> {
-    const queryParams = new URLSearchParams({ instanceId: instance.id })
-    if (instance.workspaceId) queryParams.set('workspaceId', instance.workspaceId)
-    const query = queryParams.toString()
-    let lastError: unknown = null
-
-    for (let attempt = 0; attempt <= TOOLBAR_LOAD_MAX_RETRIES; attempt++) {
-      try {
-        if (VITE_DEV_SERVER_URL) {
-          await instance.toolbarView.webContents.loadURL(`${VITE_DEV_SERVER_URL}/browser-toolbar.html?${query}`)
-        } else {
-          await instance.toolbarView.webContents.loadFile(
-            join(__dirname, 'renderer/browser-toolbar.html'),
-            { query: { instanceId: instance.id } },
-          )
-        }
-
-        if (attempt > 0) {
-          mainLog.info(`[browser-pane] toolbar load recovered id=${instance.id} attempt=${attempt + 1}`)
-        }
-        return
-      } catch (error) {
-        lastError = error
-        const retrying = attempt < TOOLBAR_LOAD_MAX_RETRIES
-        mainLog.warn(
-          `[browser-pane] toolbar load failed id=${instance.id} attempt=${attempt + 1}/${TOOLBAR_LOAD_MAX_RETRIES + 1}: ${error instanceof Error ? error.message : String(error)}${retrying ? ' (retrying)' : ''}`,
-        )
-
-        if (retrying) {
-          await this.sleep(TOOLBAR_LOAD_RETRY_DELAY_MS)
-        }
-      }
-    }
-
-    const errorText = lastError instanceof Error ? lastError.message : String(lastError ?? 'unknown error')
-    await this.loadToolbarFallback(instance, errorText)
-  }
-
-  private async loadToolbarFallback(instance: BrowserInstance, reason: string): Promise<void> {
-    const safeReason = reason.replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch] || ch))
-    const html = `<!doctype html>
-<html>
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Browser Toolbar Error</title>
-    <style>
-      html, body { margin: 0; padding: 0; height: 100%; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fafafb; color: #1f2937; }
-      @media (prefers-color-scheme: dark) { html, body { background: #2b292e; color: #e5e7eb; } }
-      .wrap { height: 100%; display: flex; align-items: center; justify-content: center; }
-      .card { max-width: 640px; margin: 0 20px; padding: 14px 16px; border-radius: 10px; background: rgba(127,127,127,0.12); font-size: 12px; line-height: 1.45; }
-      .title { font-weight: 600; margin-bottom: 6px; }
-      .muted { opacity: 0.8; }
-    </style>
-  </head>
-  <body>
-    <div class="wrap">
-      <div class="card">
-        <div class="title">Browser toolbar failed to load</div>
-        <div class="muted">The page area still works, but toolbar UI is unavailable. Try reopening the browser window.</div>
-        <div class="muted" style="margin-top: 8px; word-break: break-word;">Reason: ${safeReason}</div>
-      </div>
-    </div>
-  </body>
-</html>`
-
-    try {
-      await instance.toolbarView.webContents.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(html)}`)
-      mainLog.warn(`[browser-pane] Loaded toolbar fallback id=${instance.id}`)
-    } catch (error) {
-      mainLog.error(`[browser-pane] Failed to load toolbar fallback id=${instance.id}: ${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms))
   }
 
-  private pushToolbarState(instance: BrowserInstance): void {
-    if (instance.window.isDestroyed() || instance.toolbarView.webContents.isDestroyed()) return
-    const allProfiles = this.listProfiles()
-    const profile = allProfiles.find(p => p.id === instance.profileId) ?? null
-    const state = {
-      url: instance.currentUrl,
-      title: instance.title,
-      isLoading: instance.isLoading,
-      canGoBack: instance.canGoBack,
-      canGoForward: instance.canGoForward,
-      themeColor: instance.themeColor,
-      profile: profile ? {
-        id: profile.id,
-        name: profile.name,
-        color: profile.color,
-        kind: profile.kind,
-        clientName: profile.clientName,
-      } : null,
-      availableProfiles: allProfiles.map(p => ({
-        id: p.id,
-        name: p.name,
-        color: p.color,
-        kind: p.kind,
-        clientName: p.clientName,
-      })),
-    }
-    try {
-      instance.toolbarView.webContents.send(TOOLBAR_CHANNELS.STATE_UPDATE, state)
-    } catch (error) {
-      mainLog.warn(`[browser-pane] toolbar state send skipped id=${instance.id}: ${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-
   /** Register IPC handlers for toolbar actions. Call once at app startup. */
   registerToolbarIpc(): void {
-    const findInstance = (instanceId: string): BrowserInstance | undefined => {
-      return this.instances.get(instanceId)
-    }
-
-    ipcMain.handle(TOOLBAR_CHANNELS.NAVIGATE, async (_event, instanceId: string, url: string) => {
-      const inst = findInstance(instanceId)
-      if (inst) await this.navigate(inst.id, url)
-    })
-
-    ipcMain.handle(TOOLBAR_CHANNELS.GO_BACK, async (_event, instanceId: string) => {
-      const inst = findInstance(instanceId)
-      if (inst) await this.goBack(inst.id)
-    })
-
-    ipcMain.handle(TOOLBAR_CHANNELS.GO_FORWARD, async (_event, instanceId: string) => {
-      const inst = findInstance(instanceId)
-      if (inst) await this.goForward(inst.id)
-    })
-
-    ipcMain.handle(TOOLBAR_CHANNELS.RELOAD, async (_event, instanceId: string) => {
-      const inst = findInstance(instanceId)
-      if (inst) this.reload(inst.id)
-    })
-
-    ipcMain.handle(TOOLBAR_CHANNELS.STOP, async (_event, instanceId: string) => {
-      const inst = findInstance(instanceId)
-      if (inst) this.stop(inst.id)
-    })
-
-    ipcMain.handle(TOOLBAR_CHANNELS.MENU_GEOMETRY, async (_event, instanceId: string, open: boolean, height?: number) => {
-      const inst = findInstance(instanceId)
-      if (!inst) return
-
-      const normalizedOpen = !!open
-      const normalizedHeight = Math.max(0, Math.ceil(Number(height ?? 0)))
-
-      if (!normalizedOpen) {
-        this.forceCloseToolbarMenu(inst, 'renderer-close')
-        return
-      }
-
-      const changed = !inst.toolbarMenuOpen
-        || inst.toolbarMenuHeight !== normalizedHeight
-        || !inst.toolbarMenuOverlayActive
-
-      if (!changed) return
-
-      inst.toolbarMenuOpen = true
-      inst.toolbarMenuHeight = normalizedHeight
-      inst.toolbarMenuOverlayActive = true
-      this.layoutAllViews(inst)
-    })
-
-    ipcMain.handle(TOOLBAR_CHANNELS.HIDE, async (_event, instanceId: string) => {
-      const inst = findInstance(instanceId)
-      mainLog.info(`[browser-pane] toolbar ipc hide requested instanceId=${instanceId} resolved=${inst?.id ?? 'none'}`)
-      if (inst) this.hide(inst.id)
-    })
-
-    ipcMain.handle(TOOLBAR_CHANNELS.DESTROY, async (_event, instanceId: string) => {
-      const inst = findInstance(instanceId)
-      mainLog.info(`[browser-pane] toolbar ipc destroy requested instanceId=${instanceId} resolved=${inst?.id ?? 'none'}`)
-      if (inst) this.destroyInstance(inst.id)
-    })
-
-    ipcMain.handle(TOOLBAR_CHANNELS.REQUEST_PROFILE_MANAGEMENT, async (_event, instanceId: string) => {
-      const inst = findInstance(instanceId)
-      mainLog.info(`[browser-pane] toolbar ipc requestProfileManagement instanceId=${instanceId} resolved=${inst?.id ?? 'none'}`)
-      this.profileManagementRequestCallback?.(inst?.id ?? instanceId)
-    })
-
-    ipcMain.handle(TOOLBAR_CHANNELS.SWITCH_PROFILE, async (_event, instanceId: string, profileId: string) => {
-      const inst = findInstance(instanceId)
-      if (!inst) return null
-      return this.switchProfile(inst.id, profileId)
-    })
-
-    mainLog.info('[browser-pane] Toolbar IPC handlers registered')
+    this.toolbarHost.registerIpc()
   }
 
   // ---------------------------------------------------------------------------
@@ -2427,6 +2759,18 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
   }
 
+  /**
+   * Defesa em profundidade: mesmo que um pane em captura chegue às mãos de uma
+   * sessão, o seam do agente não navega nem destrói. A navegação do usuário
+   * sobre o próprio pane continua livre — este guard só cobre o seam.
+   */
+  private requireUnlockedInstance(instanceId: string, operation: string): void {
+    const lock = this.instances.get(instanceId)?.captureLock
+    if (!lock) return
+    throw new CodedError('BROWSER_INSTANCE_CAPTURE_LOCKED',
+      `Browser instance "${instanceId}" is capturing (${lock.reason}); "${operation}" is not allowed while recording.`)
+  }
+
   /** Session-scoped listInstances — never returns workspace-wide windows to a remote agent. */
   private listInstancesForOwner(ownerKey: string): BrowserInstanceInfo[] {
     const infos: BrowserInstanceInfo[] = []
@@ -2445,8 +2789,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   /**
    * Extract a plain {@link BrowserInstanceSnapshot} from a live `BrowserInstance`.
    *
-   * `this.getInstance(id)` returns the full instance, which has non-cloneable
-   * Electron native references (`window: BrowserWindow`, `pageView: BrowserView`,
+   * `this.getLiveInstance(id)` returns the full instance, which has non-cloneable
+   * Electron native references (`window: BrowserWindow`, `pageView: WebContentsView`,
    * `toolbarView`, ...). When we ship the result back over the `__browser:invoke`
    * IPC channel, Electron's structured-clone serializer throws
    * "An object could not be cloned". Always pass the live instance through this
@@ -2457,6 +2801,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       ownerType: instance.ownerType,
       ownerSessionId: instance.ownerSessionId,
       isVisible: instance.isVisible,
+      captureLock: instance.captureLock,
       title: instance.title,
       currentUrl: instance.currentUrl,
     }
@@ -2471,276 +2816,229 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
   }
 
-  /** Main dispatcher. Strongly-typed `switch` over `IBrowserPaneManager` methods. */
-  private async dispatchCapability(req: BrowserCapabilityRequest): Promise<unknown> {
-    if (!req || req.v !== 1) {
-      throw new CodedError('HANDLER_ERROR',
-        `Unsupported browser capability request shape (v=${(req as { v?: unknown })?.v}).`)
-    }
-    const ownerKey = this.toOwnerKey(req.workspaceId, req.sessionId)
-    const args = req.args ?? []
+  /**
+   * Wire dispatch table — one entry per `BrowserCapabilityMethod`, keyed off the
+   * derived union so the compiler forces a handler for every capability (a new
+   * capability is a single entry here plus its real method above). Session-scoped
+   * methods remap the caller's sessionId to an owner-key namespace; instance-scoped
+   * methods first assert ownership so a remote agent can't touch another session's
+   * window. The evaluate gate lives in `evaluate()` itself, not here.
+   */
+  private readonly capabilityDispatch: Record<BrowserCapabilityMethod, CapabilityHandler> = {
+    // -- Session-scoped (sessionId → ownerKey) ------------------------------
+    createForSession: (args, { ownerKey, workspaceId }) => {
+      const [, options] = args as [string, { show?: boolean } | undefined]
+      return this.createForSession(ownerKey, { show: options?.show ?? false, allowReuseManual: false, workspaceId })
+    },
+    // Remote agents must NEVER reuse a manual/unbound window (allowReuseManual:false):
+    // each remote session-id namespace gets a fresh window unless it already owns one.
+    getOrCreateForSession: (_args, { ownerKey, workspaceId }) =>
+      this.createForSession(ownerKey, { show: false, allowReuseManual: false, workspaceId }),
+    focusBoundForSession: async (_args, { ownerKey, workspaceId }) => {
+      const id = await this.createForSession(ownerKey, { show: true, allowReuseManual: false, workspaceId })
+      this.focus(id)
+      return id
+    },
+    destroyForSession: (_args, { ownerKey }) => { this.destroyForSession(ownerKey) },
+    clearVisualsForSession: (_args, { ownerKey }) => this.clearVisualsForSession(ownerKey),
+    unbindAllForSession: (_args, { ownerKey }) => { this.unbindAllForSession(ownerKey) },
+    setAgentControl: (args, { ownerKey, workspaceId }) => {
+      const [, meta] = args as [string, { displayName?: string; intent?: string }]
+      this.setAgentControl(ownerKey, meta, { workspaceId })
+    },
+    clearAgentControl: (_args, { ownerKey }) => { this.clearAgentControl(ownerKey) },
 
-    switch (req.method) {
-      // -- Session-scoped (no instanceId arg, takes a sessionId) ----------------
-      case 'createForSession': {
-        const [, options] = args as [string, { show?: boolean } | undefined]
-        return this.createForSession(ownerKey, {
-          show: options?.show ?? false,
-          allowReuseManual: false,
-          workspaceId: req.workspaceId,
-        })
-      }
-      // Remote agents must NEVER reuse an existing manual / unbound window —
-      // even one that was previously bound to a local session. The
-      // workspaceId-aware reuse filter is best-effort (it can still match
-      // legacy windows stamped with workspaceId=null), so we belt-and-brace
-      // by disabling manual reuse on every remote lifecycle path. Each remote
-      // session-id namespace gets a fresh window unless it already owns one.
-      case 'getOrCreateForSession':
-        return this.createForSession(ownerKey, {
-          show: false,
-          allowReuseManual: false,
-          workspaceId: req.workspaceId,
-        })
-      case 'focusBoundForSession': {
-        const id = this.createForSession(ownerKey, {
-          show: true,
-          allowReuseManual: false,
-          workspaceId: req.workspaceId,
-        })
-        this.focus(id)
-        return id
-      }
-      case 'destroyForSession':
-        this.destroyForSession(ownerKey)
-        return undefined
-      case 'clearVisualsForSession':
-        await this.clearVisualsForSession(ownerKey)
-        return undefined
-      case 'unbindAllForSession':
-        this.unbindAllForSession(ownerKey)
-        return undefined
-      case 'setAgentControl': {
-        const [, meta] = args as [string, { displayName?: string; intent?: string }]
-        this.setAgentControl(ownerKey, meta, { workspaceId: req.workspaceId })
-        return undefined
-      }
-      case 'clearAgentControl':
-        this.clearAgentControl(ownerKey)
-        return undefined
+    // -- Mixed (instanceId + optional sessionId) ----------------------------
+    clearAgentControlForInstance: (args, { ownerKey }) => {
+      const [instanceId, sessionId] = args as [string, string | undefined]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.clearAgentControlForInstance(instanceId, sessionId !== undefined ? ownerKey : undefined)
+    },
 
-      // -- Mixed (instanceId + optional sessionId) ----------------------------
-      case 'clearAgentControlForInstance': {
-        const [instanceId, sessionId] = args as [string, string | undefined]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.clearAgentControlForInstance(
-          instanceId,
-          sessionId !== undefined ? ownerKey : undefined,
-        )
-      }
+    // -- Instance snapshots --------------------------------------------------
+    getInstance: (args, { ownerKey }) => {
+      const [instanceId] = args as [string]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      const live = this.getLiveInstance(instanceId)
+      // Project the live instance (non-cloneable Electron natives) to a plain snapshot.
+      return live ? this.stripOwnerKeysInPlace(this.toSnapshot(live)) : undefined
+    },
+    listInstances: (_args, { ownerKey }) => this.listInstancesForOwner(ownerKey),
 
-      // -- Instance-id only ----------------------------------------------------
-      case 'getInstance': {
-        const [instanceId] = args as [string]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        const live = this.getInstance(instanceId)
-        if (!live) return undefined
-        // `getInstance` returns the live BrowserInstance (which embeds non-
-        // cloneable Electron native objects). Project to a plain snapshot
-        // before crossing the IPC boundary.
-        return this.stripOwnerKeysInPlace(this.toSnapshot(live))
-      }
-      case 'listInstances':
-        return this.listInstancesForOwner(ownerKey)
-      case 'bindSession': {
-        const [instanceId] = args as [string, string]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        this.bindSession(instanceId, ownerKey, { workspaceId: req.workspaceId })
-        return undefined
-      }
-      case 'focus': {
-        const [instanceId] = args as [string]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        this.focus(instanceId)
-        return undefined
-      }
-      case 'hide': {
-        const [instanceId] = args as [string]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        this.hide(instanceId)
-        return undefined
-      }
-      case 'destroyInstance': {
-        const [instanceId] = args as [string]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        this.destroyInstance(instanceId)
-        return undefined
-      }
+    // -- Instance-id only ----------------------------------------------------
+    bindSession: (args, { ownerKey, workspaceId }) => {
+      const [instanceId] = args as [string, string]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      this.bindSession(instanceId, ownerKey, { workspaceId })
+    },
+    focus: (args, { ownerKey }) => {
+      const [instanceId] = args as [string]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      this.focus(instanceId)
+    },
+    hide: (args, { ownerKey }) => {
+      const [instanceId] = args as [string]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      this.hide(instanceId)
+    },
+    destroyInstance: (args, { ownerKey }) => {
+      const [instanceId] = args as [string]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      this.requireUnlockedInstance(instanceId, 'destroyInstance')
+      this.destroyInstance(instanceId)
+    },
 
-      // -- Navigation ----------------------------------------------------------
-      case 'navigate': {
-        const [instanceId, url] = args as [string, string]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.navigate(instanceId, url)
-      }
-      case 'goBack': {
-        const [instanceId] = args as [string]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.goBack(instanceId)
-      }
-      case 'goForward': {
-        const [instanceId] = args as [string]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.goForward(instanceId)
-      }
+    // -- Navigation ----------------------------------------------------------
+    navigate: (args, { ownerKey }) => {
+      const [instanceId, url] = args as [string, string]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      this.requireUnlockedInstance(instanceId, 'navigate')
+      return this.navigate(instanceId, url)
+    },
+    goBack: (args, { ownerKey }) => {
+      const [instanceId] = args as [string]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.goBack(instanceId)
+    },
+    goForward: (args, { ownerKey }) => {
+      const [instanceId] = args as [string]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.goForward(instanceId)
+    },
 
-      // -- Interaction ---------------------------------------------------------
-      case 'getAccessibilitySnapshot': {
-        const [instanceId] = args as [string]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.getAccessibilitySnapshot(instanceId)
-      }
-      case 'clickElement': {
-        const [instanceId, ref, options] = args as [
-          string, string,
-          { waitFor?: 'none' | 'navigation' | 'network-idle'; timeoutMs?: number } | undefined,
-        ]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.clickElement(instanceId, ref, options)
-      }
-      case 'clickAtCoordinates': {
-        const [instanceId, x, y] = args as [string, number, number]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.clickAtCoordinates(instanceId, x, y)
-      }
-      case 'drag': {
-        const [instanceId, x1, y1, x2, y2] = args as [string, number, number, number, number]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.drag(instanceId, x1, y1, x2, y2)
-      }
-      case 'fillElement': {
-        const [instanceId, ref, value] = args as [string, string, string]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.fillElement(instanceId, ref, value)
-      }
-      case 'typeText': {
-        const [instanceId, text] = args as [string, string]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.typeText(instanceId, text)
-      }
-      case 'selectOption': {
-        const [instanceId, ref, value] = args as [string, string, string]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.selectOption(instanceId, ref, value)
-      }
-      case 'sendKey': {
-        const [instanceId, keyArgs] = args as [string, BrowserKeyArgs]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.sendKey(instanceId, keyArgs)
-      }
-      case 'scroll': {
-        const [instanceId, direction, amount] = args as [
-          string, 'up' | 'down' | 'left' | 'right', number | undefined,
-        ]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.scroll(instanceId, direction, amount)
-      }
-      case 'waitFor': {
-        const [instanceId, waitArgs] = args as [string, BrowserWaitArgs]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.waitFor(instanceId, waitArgs)
-      }
-      case 'evaluate': {
-        const [instanceId, expression] = args as [string, string]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        if (!getAllowRemoteEvaluate()) {
-          throw new CodedError('BROWSER_REMOTE_EVALUATE_BLOCKED',
-            'JavaScript evaluation from remote agents is disabled in this client.')
-        }
-        return this.evaluate(instanceId, expression)
-      }
+    // -- Interaction ---------------------------------------------------------
+    getAccessibilitySnapshot: (args, { ownerKey }) => {
+      const [instanceId] = args as [string]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.getAccessibilitySnapshot(instanceId)
+    },
+    clickElement: (args, { ownerKey }) => {
+      const [instanceId, ref, options] = args as [
+        string, string,
+        { waitFor?: 'none' | 'navigation' | 'network-idle'; timeoutMs?: number } | undefined,
+      ]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.clickElement(instanceId, ref, options)
+    },
+    clickAtCoordinates: (args, { ownerKey }) => {
+      const [instanceId, x, y] = args as [string, number, number]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.clickAtCoordinates(instanceId, x, y)
+    },
+    drag: (args, { ownerKey }) => {
+      const [instanceId, x1, y1, x2, y2] = args as [string, number, number, number, number]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.drag(instanceId, x1, y1, x2, y2)
+    },
+    fillElement: (args, { ownerKey }) => {
+      const [instanceId, ref, value] = args as [string, string, string]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.fillElement(instanceId, ref, value)
+    },
+    typeText: (args, { ownerKey }) => {
+      const [instanceId, text] = args as [string, string]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.typeText(instanceId, text)
+    },
+    selectOption: (args, { ownerKey }) => {
+      const [instanceId, ref, value] = args as [string, string, string]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.selectOption(instanceId, ref, value)
+    },
+    sendKey: (args, { ownerKey }) => {
+      const [instanceId, keyArgs] = args as [string, BrowserKeyArgs]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.sendKey(instanceId, keyArgs)
+    },
+    scroll: (args, { ownerKey }) => {
+      const [instanceId, direction, amount] = args as [string, 'up' | 'down' | 'left' | 'right', number | undefined]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.scroll(instanceId, direction, amount)
+    },
+    waitFor: (args, { ownerKey }) => {
+      const [instanceId, waitArgs] = args as [string, BrowserWaitArgs]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.waitFor(instanceId, waitArgs)
+    },
+    evaluate: (args, { ownerKey }) => {
+      const [instanceId, expression] = args as [string, string]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.evaluate(instanceId, expression)
+    },
 
-      // -- Clipboard -----------------------------------------------------------
-      case 'setClipboard': {
-        const [instanceId, text] = args as [string, string]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.setClipboard(instanceId, text)
-      }
-      case 'getClipboard': {
-        const [instanceId] = args as [string]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.getClipboard(instanceId)
-      }
+    // -- Clipboard -----------------------------------------------------------
+    setClipboard: (args, { ownerKey }) => {
+      const [instanceId, text] = args as [string, string]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.setClipboard(instanceId, text)
+    },
+    getClipboard: (args, { ownerKey }) => {
+      const [instanceId] = args as [string]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.getClipboard(instanceId)
+    },
 
-      // -- Capture / introspection --------------------------------------------
-      case 'screenshot': {
-        const [instanceId, options] = args as [string, BrowserScreenshotOptions | undefined]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        const result = await this.screenshot(instanceId, options)
-        return this.toScreenshotWire(result)
-      }
-      case 'screenshotRegion': {
-        const [instanceId, target] = args as [string, BrowserScreenshotRegionTarget]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        const result = await this.screenshotRegion(instanceId, target)
-        return this.toScreenshotWire(result)
-      }
-      case 'getConsoleLogs': {
-        const [instanceId, options] = args as [string, BrowserConsoleOptions | undefined]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.getConsoleLogs(instanceId, options)
-      }
-      case 'getNetworkLogs': {
-        const [instanceId, options] = args as [string, BrowserNetworkOptions | undefined]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.getNetworkLogs(instanceId, options)
-      }
-      case 'windowResize': {
-        const [instanceId, width, height] = args as [string, number, number]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.windowResize(instanceId, width, height)
-      }
-      case 'getDownloads': {
-        const [instanceId, options] = args as [string, BrowserDownloadOptions | undefined]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.getDownloads(instanceId, options)
-      }
-      case 'uploadFile':
-        throw new CodedError('BROWSER_REMOTE_UPLOAD_NOT_SUPPORTED',
-          'File upload from a remote agent is not supported yet. Ask the user to attach the file to the session.')
-      case 'detectSecurityChallenge': {
-        const [instanceId] = args as [string]
-        this.requireOwnedInstance(instanceId, ownerKey)
-        return this.detectSecurityChallenge(instanceId)
-      }
-
-      default: {
-        const method = (req as { method?: unknown }).method
-        throw new CodedError('HANDLER_ERROR', `Unknown browser capability method: ${String(method)}`)
-      }
-    }
+    // -- Capture / introspection --------------------------------------------
+    screenshot: async (args, { ownerKey }) => {
+      const [instanceId, options] = args as [string, BrowserScreenshotOptions | undefined]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.toScreenshotWire(await this.screenshot(instanceId, options))
+    },
+    screenshotRegion: async (args, { ownerKey }) => {
+      const [instanceId, target] = args as [string, BrowserScreenshotRegionTarget]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.toScreenshotWire(await this.screenshotRegion(instanceId, target))
+    },
+    getConsoleLogs: (args, { ownerKey }) => {
+      const [instanceId, options] = args as [string, BrowserConsoleOptions | undefined]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.getConsoleLogs(instanceId, options)
+    },
+    getNetworkLogs: (args, { ownerKey }) => {
+      const [instanceId, options] = args as [string, BrowserNetworkOptions | undefined]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.getNetworkLogs(instanceId, options)
+    },
+    windowResize: (args, { ownerKey }) => {
+      const [instanceId, width, height] = args as [string, number, number]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.windowResize(instanceId, width, height)
+    },
+    getDownloads: (args, { ownerKey }) => {
+      const [instanceId, options] = args as [string, BrowserDownloadOptions | undefined]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.getDownloads(instanceId, options)
+    },
+    uploadFile: () => {
+      throw new CodedError('BROWSER_REMOTE_UPLOAD_NOT_SUPPORTED',
+        'File upload from a remote agent is not supported yet. Ask the user to attach the file to the session.')
+    },
+    detectSecurityChallenge: (args, { ownerKey }) => {
+      const [instanceId] = args as [string]
+      this.requireOwnedInstance(instanceId, ownerKey)
+      return this.detectSecurityChallenge(instanceId)
+    },
   }
 
-  private markToolbarReady(instance: BrowserInstance, reason: string): void {
-    if (instance.toolbarReady || instance.window.isDestroyed()) return
-
-    instance.toolbarReady = true
-    mainLog.info(`[browser-pane] toolbar ready id=${instance.id} reason=${reason}`)
-
-    const shouldShowNow = instance.showOnCreate || instance.pendingShowOnReady
-    if (!shouldShowNow) return
-
-    const tokenAtReady = instance.pendingShowToken
-    instance.pendingShowOnReady = false
-
-    if (instance.window.isDestroyed()) return
-    if (instance.pendingShowToken !== tokenAtReady) return
-
-    instance.window.show()
-    instance.window.focus()
-    instance.isVisible = true
-    this.emitStateChange(instance)
-
+  /** Main dispatcher — table lookup over the derived `BrowserCapabilityMethod` union. */
+  private async dispatchCapability(req: BrowserCapabilityRequest): Promise<unknown> {
+    if (!req || req.v !== 1) {
+      const version = req && typeof req === 'object' && 'v' in req ? req.v : undefined
+      throw new CodedError('HANDLER_ERROR',
+        `Unsupported browser capability request shape (v=${String(version)}).`)
+    }
+    // Object.hasOwn guards against Object.prototype keys (constructor, toString,
+    // hasOwnProperty, …) resolving to an inherited function via the prototype
+    // chain — the switch `default:` arm this table replaced rejected them, so the
+    // lookup must too.
+    if (!Object.hasOwn(this.capabilityDispatch, req.method)) {
+      throw new CodedError('HANDLER_ERROR', `Unknown browser capability method: ${String(req.method)}`)
+    }
+    const handler = this.capabilityDispatch[req.method]
+    return await handler(req.args ?? [], {
+      ownerKey: this.toOwnerKey(req.workspaceId, req.sessionId),
+      workspaceId: req.workspaceId,
+    })
   }
 
   // ---------------------------------------------------------------------------
@@ -2795,7 +3093,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
   }
 
-  clearAgentControlForInstance(instanceId: string, sessionId?: string): { released: boolean; reason?: string } {
+  async clearAgentControlForInstance(instanceId: string, sessionId?: string): Promise<{ released: boolean; reason?: string }> {
     const instance = this.instances.get(instanceId)
     if (!instance) {
       return { released: false, reason: `Browser window "${instanceId}" not found.` }
@@ -2822,168 +3120,6 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     mainLog.info(`[browser-pane] agent control released instance=${instanceId}${sessionId ? ` session=${sessionId}` : ''}`)
 
     return { released: true }
-  }
-
-  /**
-   * Extract a theme color from the page using Safari 26-style heuristics.
-   * Priority: media-aware theme-color meta → elementsFromPoint (fixed/sticky headers) → body/html bg.
-   * All colors pass through (including white/black) — contrast is handled by the renderer.
-   * Guards against stale extraction (URL change during async executeJavaScript).
-   */
-  private async extractThemeColor(instance: BrowserInstance): Promise<void> {
-    if (instance.themeColor) return // already set by did-change-theme-color or observer
-    const urlAtStart = instance.currentUrl
-    try {
-      const color = await instance.pageView.webContents.executeJavaScript(`(${THEME_COLOR_EXTRACTOR_FN})()`)
-      // Guard: if user navigated away during extraction, discard stale result
-      if (instance.currentUrl !== urlAtStart) return
-      if (typeof color === 'string' && color.length > 0) {
-        this.applyThemeColor(instance, color)
-      }
-    } catch {
-      // page destroyed or JS error — ignore
-    }
-  }
-
-  private applyThemeColor(instance: BrowserInstance, color: string | null): void {
-    if (instance.themeColor === color) return
-    instance.themeColor = color
-    if (!instance.window.isDestroyed() && !instance.toolbarView.webContents.isDestroyed()) {
-      instance.toolbarView.webContents.send(TOOLBAR_CHANNELS.THEME_COLOR, color)
-    }
-    this.emitStateChange(instance)
-  }
-
-  private installThemeObserver(instance: BrowserInstance, allowRetry = true): void {
-    // react-doctor-disable-next-line insecure-crypto-risk -- Math.random used only for a non-secret themeObserverToken correlation nonce, not auth/crypto
-    const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    const urlAtInstall = instance.currentUrl
-    instance.themeObserverToken = token
-
-    void instance.pageView.webContents.executeJavaScript(`
-      (() => {
-        const token = ${JSON.stringify(token)};
-        const prefix = ${JSON.stringify(THEME_COLOR_SIGNAL_PREFIX)} + token + ':';
-        const nullSentinel = ${JSON.stringify(THEME_COLOR_NULL_SENTINEL)};
-        const extractThemeColor = ${THEME_COLOR_EXTRACTOR_FN};
-
-        const w = window;
-        const previousCleanup = w.__CRAFT_THEME_OBSERVER_CLEANUP__;
-        if (typeof previousCleanup === 'function') {
-          try { previousCleanup(); } catch {}
-        }
-
-        let lastColor = '__unset__';
-        let rafId = 0;
-        let timerId = 0;
-        let lastRunAt = 0;
-        const minIntervalMs = ${THEME_OBSERVER_MIN_INTERVAL_MS};
-
-        const clearScheduled = () => {
-          if (timerId) {
-            clearTimeout(timerId);
-            timerId = 0;
-          }
-          if (rafId) {
-            cancelAnimationFrame(rafId);
-            rafId = 0;
-          }
-        };
-
-        const emit = (color) => {
-          const normalized = typeof color === 'string' && color.length > 0 ? color : null;
-          if (normalized === lastColor) return;
-          lastColor = normalized;
-          console.info(prefix + (normalized ?? nullSentinel));
-        };
-
-        const run = () => {
-          rafId = 0;
-          lastRunAt = Date.now();
-          try {
-            emit(extractThemeColor());
-          } catch {}
-        };
-
-        const schedule = () => {
-          if (rafId || timerId) return;
-          const waitMs = Math.max(0, minIntervalMs - (Date.now() - lastRunAt));
-          if (waitMs > 0) {
-            timerId = setTimeout(() => {
-              timerId = 0;
-              rafId = requestAnimationFrame(run);
-            }, waitMs);
-            return;
-          }
-          rafId = requestAnimationFrame(run);
-        };
-
-        const onScroll = () => schedule();
-        const onResize = () => schedule();
-        const onMutation = () => schedule();
-
-        const headObserver = new MutationObserver(onMutation);
-        if (document.head) {
-          headObserver.observe(document.head, {
-            subtree: true,
-            childList: true,
-            attributes: true,
-            attributeFilter: ['name', 'content', 'media'],
-          });
-        }
-
-        const rootObserver = new MutationObserver(onMutation);
-        if (document.documentElement) {
-          rootObserver.observe(document.documentElement, {
-            attributes: true,
-            attributeFilter: ['class', 'style'],
-          });
-        }
-        if (document.body) {
-          rootObserver.observe(document.body, {
-            attributes: true,
-            attributeFilter: ['class', 'style'],
-          });
-        }
-
-        w.addEventListener('scroll', onScroll, { passive: true });
-        w.addEventListener('resize', onResize, { passive: true });
-
-        const mql = w.matchMedia('(prefers-color-scheme: dark)');
-        const onSchemeChange = () => schedule();
-        if (typeof mql.addEventListener === 'function') mql.addEventListener('change', onSchemeChange);
-        else if (typeof mql.addListener === 'function') mql.addListener(onSchemeChange);
-
-        w.__CRAFT_THEME_OBSERVER_CLEANUP__ = () => {
-          headObserver.disconnect();
-          rootObserver.disconnect();
-          w.removeEventListener('scroll', onScroll);
-          w.removeEventListener('resize', onResize);
-          if (typeof mql.removeEventListener === 'function') mql.removeEventListener('change', onSchemeChange);
-          else if (typeof mql.removeListener === 'function') mql.removeListener(onSchemeChange);
-          clearScheduled();
-        };
-
-        // Fast first color for initial toolbar paint and after SPA route changes
-        schedule();
-      })()
-    `).catch(() => {
-      if (!allowRetry) return
-      setTimeout(() => {
-        if (!this.instances.has(instance.id)) return
-        if (instance.currentUrl !== urlAtInstall) return
-        if (instance.themeObserverToken !== token) return
-        this.installThemeObserver(instance, false)
-      }, 120)
-    })
-  }
-
-  private scheduleEarlyThemeExtraction(instance: BrowserInstance, urlAtSchedule: string): void {
-    setTimeout(() => {
-      if (!this.instances.has(instance.id)) return
-      if (instance.currentUrl !== urlAtSchedule) return
-      void this.extractThemeColor(instance)
-    }, EARLY_THEME_EXTRACTION_DELAY_MS)
   }
 
   private getInstanceByWebContentsId(webContentsId: number): BrowserInstance | undefined {
@@ -3274,47 +3410,13 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     if (this.configuredPermissionSessions.has(ses)) return
     this.configuredPermissionSessions.add(ses)
 
-    // SECURITY (auditoria 2026-07-14): clipboard-read e display-capture negados
-    // por default — revisável se forem features necessárias do browser agêntico.
-    const allow = new Set([
-      'fullscreen',
-      'pointerLock',
-      'window-management',
-      'notifications',
-      'geolocation',
-      'media',
-      'speaker-selection',
-      'screen-wake-lock',
-      'clipboard-sanitized-write',
-      'idle-detection',
-      // Storage Access API: cross-site cookie access requested by embedded
-      // Google flows (sign-in, Meet). Denying it produces
-      // "requestStorageAccess: Permission denied" and breaks the login handoff.
-      'storage-access',
-      'top-level-storage-access',
-    ])
-
-    if (typeof ses.setPermissionCheckHandler === 'function') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ses.setPermissionCheckHandler((_webContents, permission: string, requestingOrigin: string, _details: any) => {
-        const allowed = allow.has(permission)
-        if (!allowed) {
-          this.logPermissionDecision('check', permission, requestingOrigin)
-        }
-        return allowed
-      })
-    }
-
-    if (typeof ses.setPermissionRequestHandler === 'function') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ses.setPermissionRequestHandler((_webContents, permission: string, callback: (allow: boolean) => void, details: any) => {
-        const allowed = allow.has(permission)
-        if (!allowed) {
-          this.logPermissionDecision('request', permission, details?.requestingOrigin ?? 'unknown')
-        }
-        callback(allowed)
-      })
-    }
+    // SECURITY (auditoria 2026-07-14 / F1.3): clipboard-read and display-capture
+    // are denied by default. The allow-set decision and check/request handler
+    // wiring live in the partition-hardening module so they are unit-testable
+    // with a stub session; this class only owns the per-partition dedupe guard.
+    hardenSessionPermissions(ses, {
+      logDenied: (kind, permission, origin) => this.logPermissionDecision(kind, permission, origin),
+    })
 
     if (typeof ses.setDisplayMediaRequestHandler === 'function') {
       ses.setDisplayMediaRequestHandler((request, callback) => {
@@ -3387,12 +3489,12 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       const loadedUrl = typeof toolbarWc.getURL === 'function' ? toolbarWc.getURL() : ''
       if (!this.isToolbarUiDocumentUrl(loadedUrl)) {
         mainLog.info(`[browser-pane] toolbar did-finish-load ignored id=${instance.id} url=${loadedUrl || 'unknown'}`)
-        this.pushToolbarState(instance)
+        this.toolbarHost.pushState(instance)
         return
       }
 
-      this.markToolbarReady(instance, 'did-finish-load')
-      this.pushToolbarState(instance)
+      this.toolbarHost.markReady(instance, 'did-finish-load')
+      this.toolbarHost.pushState(instance)
     })
 
     toolbarWc.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -3403,7 +3505,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     pageWc.on('did-start-loading', () => {
       instance.isLoading = true
       this.emitStateChange(instance)
-      void this.pushToolbarState(instance)
+      void this.toolbarHost.pushState(instance)
     })
 
     pageWc.on('did-stop-loading', () => {
@@ -3414,18 +3516,18 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       this.inFlightRequestsByWebContentsId.set(pageWc.id, 0)
       this.lastNetworkActivityByWebContentsId.set(pageWc.id, Date.now())
       this.emitStateChange(instance)
-      void this.pushToolbarState(instance)
-      void this.extractThemeColor(instance)
+      void this.toolbarHost.pushState(instance)
+      void this.themeExtractor.extract(instance)
       this.reapplyAgentControlVisual(instance)
     })
 
     pageWc.on('dom-ready', () => {
-      this.installThemeObserver(instance)
-      void this.extractThemeColor(instance)
+      this.themeExtractor.installObserver(instance)
+      void this.themeExtractor.extract(instance)
     })
 
     pageWc.on('before-input-event', (event, input) => {
-      // DevTools toggle. The browser pane is a chromeless BrowserView with no
+      // DevTools toggle. The browser pane is a chromeless WebContentsView with no
       // menu, so the usual DevTools shortcut never reaches it. Wire it directly:
       // Cmd+Opt+I (mac), Ctrl+Shift+I, or F12. Use input.code (physical key) so
       // Option-composed characters on mac don't break the match. The automation
@@ -3479,6 +3581,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       }
       instance.themeObserverToken = null
       instance.themeColor = null // reset for new page (batched with state push below)
+      // The previous page's icon does not describe this one, and its fetch is
+      // now pointless — drop both before the state push below.
+      this.cancelFaviconFetch(instance)
+      instance.favicon = null
+      instance.faviconCandidateKey = null
       const normalized = this.normalizePageState(url, pageWc.getTitle())
       instance.currentUrl = normalized.url
       instance.title = normalized.title
@@ -3489,8 +3596,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       this.inFlightRequestsByWebContentsId.set(pageWc.id, 0)
       this.lastNetworkActivityByWebContentsId.set(pageWc.id, Date.now())
       this.emitStateChange(instance)
-      void this.pushToolbarState(instance)
-      this.scheduleEarlyThemeExtraction(instance, url)
+      void this.toolbarHost.pushState(instance)
+      this.themeExtractor.scheduleEarly(instance, url)
       this.reapplyAgentControlVisual(instance)
     })
 
@@ -3518,7 +3625,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       void this.maybeHandleEmptyStateLaunch(instance, url).then((handled) => {
         if (handled) {
           this.emitStateChange(instance)
-          void this.pushToolbarState(instance)
+          void this.toolbarHost.pushState(instance)
           return
         }
 
@@ -3527,9 +3634,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         instance.themeObserverToken = null
         instance.themeColor = null
         this.emitStateChange(instance)
-        void this.pushToolbarState(instance)
-        this.installThemeObserver(instance)
-        instance.inPageThemeTimer = setTimeout(() => { void this.extractThemeColor(instance) }, 300)
+        void this.toolbarHost.pushState(instance)
+        this.themeExtractor.installObserver(instance)
+        instance.inPageThemeTimer = setTimeout(() => { void this.themeExtractor.extract(instance) }, 300)
         this.reapplyAgentControlVisual(instance)
       }).catch((error) => {
         mainLog.warn(`[browser-pane] empty-state launch handling failed id=${instance.id}: ${error instanceof Error ? error.message : String(error)}`)
@@ -3540,16 +3647,22 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       const normalized = this.normalizePageState(pageWc.getURL(), title)
       instance.title = normalized.title
       this.emitStateChange(instance)
-      void this.pushToolbarState(instance)
+      void this.toolbarHost.pushState(instance)
     })
 
     pageWc.on('page-favicon-updated', (_event, favicons) => {
-      instance.favicon = favicons[0] || null
-      this.emitStateChange(instance)
+      this.updateFavicon(instance, favicons ?? [])
+    })
+
+    pageWc.on('render-process-gone', (_event, details) => {
+      mainLog.warn(`[browser-pane] render-process-gone id=${instance.id} reason=${details?.reason ?? 'unknown'}`)
+      // The instance survives a renderer crash, so an in-flight favicon would
+      // otherwise still paint onto the crashed page up to the fetch timeout.
+      this.cancelFaviconFetch(instance)
     })
 
     pageWc.on('did-change-theme-color', (_event, color) => {
-      this.applyThemeColor(instance, color ?? null)
+      this.themeExtractor.apply(instance, color ?? null)
     })
 
     pageWc.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
@@ -3557,22 +3670,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     pageWc.on('console-message', (_event, level, message) => {
-      if (message.startsWith(THEME_COLOR_SIGNAL_PREFIX)) {
-        const payload = message.slice(THEME_COLOR_SIGNAL_PREFIX.length)
-        const delimiterIdx = payload.indexOf(':')
-        if (delimiterIdx > 0) {
-          const token = payload.slice(0, delimiterIdx)
-          const value = payload.slice(delimiterIdx + 1).trim()
-          if (token === instance.themeObserverToken) {
-            if (value === THEME_COLOR_NULL_SENTINEL) {
-              this.applyThemeColor(instance, null)
-            } else if (value.length > 0) {
-              this.applyThemeColor(instance, value)
-            }
-          }
-        }
-        return
-      }
+      if (this.themeExtractor.handleConsoleSignal(instance, message)) return
 
       const mappedLevel: BrowserConsoleEntry['level'] = level >= 3 ? 'error' : level === 2 ? 'warn' : level === 1 ? 'info' : 'log'
       instance.consoleLogs.push({
@@ -3590,29 +3688,18 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     pageWc.on('will-navigate', (event, url) => {
-      const decision = instance.navigationPolicy?.willNavigate?.(url)
-      if (decision?.action === 'deny') {
-        event.preventDefault()
-        mainLog.warn(`[browser-pane] navigation denied id=${instance.id} reason=${decision.reason ?? 'policy'} url=${url}`)
-        return
-      }
-      if (decision?.action === 'external') {
-        event.preventDefault()
+      const outcome = decideWillNavigate(url, instance.navigationPolicy)
+      if (outcome.action === 'allow') return
+      event.preventDefault()
+      if (outcome.action === 'external') {
         void shell.openExternal(url)
         return
       }
-      if (url.startsWith(CRAFT_DEEPLINK_SCHEME_PREFIX)) {
-        event.preventDefault()
+      if (outcome.action === 'deep-link') {
         void this.handleDeepLinkUrl(url)
         return
       }
-      // SECURITY (F7/R1): a allowlist de esquemas também vale para navegação
-      // iniciada pela página (window.location, meta refresh) — sem isso, uma
-      // página comprometida contorna a checagem do call site `navigate`.
-      if (!isAllowedTopLevelUrl(url)) {
-        event.preventDefault()
-        mainLog.warn(`[browser-pane] navigation blocked id=${instance.id} reason=unsupported_scheme url=${url}`)
-      }
+      mainLog.warn(`[browser-pane] navigation blocked id=${instance.id} reason=${outcome.reason} url=${url}`)
     })
 
     pageWc.on('did-create-window', (popupWindow, details) => {
@@ -3625,23 +3712,17 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         `[browser-pane] window-open requested id=${instance.id} url=${details.url} disposition=${details.disposition ?? 'unknown'} frameName=${details.frameName || 'none'}`,
       )
 
-      if (details.url.startsWith(CRAFT_DEEPLINK_SCHEME_PREFIX)) {
+      const outcome = decideWindowOpen(details.url, instance.navigationPolicy)
+      if (outcome.action === 'deep-link') {
         void this.handleDeepLinkUrl(details.url)
         return { action: 'deny' }
       }
-
-      const policyDecision = instance.navigationPolicy?.windowOpen?.(details.url)
-      if (policyDecision?.action === 'deny') {
-        mainLog.warn(`[browser-pane] window-open denied id=${instance.id} reason=${policyDecision.reason ?? 'policy'} url=${details.url}`)
+      if (outcome.action === 'deny') {
+        mainLog.warn(`[browser-pane] window-open denied id=${instance.id} reason=${outcome.reason} url=${details.url}`)
         return { action: 'deny' }
       }
-      if (policyDecision?.action === 'external') {
+      if (outcome.action === 'external') {
         void shell.openExternal(details.url)
-        return { action: 'deny' }
-      }
-
-      if (!isAllowedTopLevelUrl(details.url)) {
-        mainLog.warn(`[browser-pane] window-open denied id=${instance.id} reason=unsupported_scheme url=${details.url}`)
         return { action: 'deny' }
       }
 
@@ -3679,10 +3760,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       instance.isVisible = true
       this.emitStateChange(instance)
       this.reapplyAgentControlVisual(instance)
-      this.pushToolbarState(instance)
+      this.toolbarHost.pushState(instance)
       this.updateNativeOverlayState(instance)
       if (!instance.themeColor) {
-        void this.extractThemeColor(instance)
+        void this.themeExtractor.extract(instance)
       }
     })
 
@@ -3711,9 +3792,136 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       ownerType: instance.ownerType,
       ownerSessionId: instance.ownerSessionId,
       isVisible: instance.isVisible,
+      captureLock: instance.captureLock,
       agentControlActive: !!instance.agentControl?.active,
       themeColor: instance.themeColor,
     }
+  }
+
+  /**
+   * SECURITY: the favicon URL comes from the page, so it never leaves this
+   * process. We fetch it here — in the pane's own session, so the proxy comes
+   * from that partition — and hand the renderer a validated `data:` URL, which
+   * the renderer CSP already allows. See `browser/favicon-transport.ts`.
+   *
+   * The state push does not wait for the bytes: the page would otherwise sit
+   * without state for as long as the favicon host takes to answer.
+   */
+  private updateFavicon(instance: BrowserInstance, candidateUrls: readonly string[]): void {
+    // Pages re-announce the same list on every SPA route change; refetching it
+    // (and blanking the badge in between) would be pure churn.
+    const key = candidateUrls.join('\n') || null
+    if (key && key === instance.faviconCandidateKey) return
+
+    this.cancelFaviconFetch(instance)
+    instance.faviconCandidateKey = key
+    instance.favicon = null
+    this.emitStateChange(instance)
+
+    const candidates = candidateUrls.filter(isFetchableFaviconUrl).slice(0, FAVICON_MAX_CANDIDATES)
+    if (candidates.length === 0) return
+    const pageWc = instance.pageView.webContents
+    if (pageWc.isDestroyed()) return
+
+    const controller = new AbortController()
+    const token = instance.faviconToken
+    instance.faviconAbort = controller
+
+    // fetchFaviconDataUrl never throws, so this promise never rejects and needs
+    // no catch. A favicon failure is not worth a log line per navigation.
+    void this.resolveFavicon(instance, candidates, controller, token)
+  }
+
+  /**
+   * Walk the page's candidates until one survives every guard.
+   *
+   * The list matters because the content-type allowlist rejects SVG: a site
+   * that announces `favicon.svg` first still has its PNG/ICO honoured. Attempts
+   * are sequential, so the single-in-flight invariant holds throughout.
+   */
+  private async resolveFavicon(
+    instance: BrowserInstance,
+    candidates: readonly string[],
+    controller: AbortController,
+    token: number,
+  ): Promise<void> {
+    const fetch = this.createFaviconFetcher(instance.pageView.webContents.session)
+    for (const candidate of candidates) {
+      const dataUrl = await fetchFaviconDataUrl(candidate, { fetch, signal: controller.signal })
+      // Navigation or destroy already moved on — this icon belongs to a page
+      // that is no longer on screen, and a newer fetch owns `faviconAbort`.
+      if (instance.faviconToken !== token) return
+      if (!dataUrl) continue
+      instance.faviconAbort = null
+      instance.favicon = dataUrl
+      this.emitStateChange(instance)
+      return
+    }
+    // Settled controller, no icon: clear it anyway so the field never claims a
+    // fetch is in flight.
+    instance.faviconAbort = null
+  }
+
+  /**
+   * `session.fetch` cannot do this: `net.fetch` registers no `redirect`
+   * listener, so `redirect: 'manual'` there just cancels the request, and
+   * `redirect: 'follow'` would chase a server-chosen destination that no guard
+   * ever saw (`Response.url` is documented as unreliable under `net.fetch`).
+   * Driving `ClientRequest` directly is what makes "every destination requested
+   * passed the scheme allowlist" an enforced invariant rather than a hope.
+   *
+   * `credentials: 'omit'` because decoration has no business carrying the
+   * partition's cookies or auth to a page-chosen host.
+   */
+  private createFaviconFetcher(paneSession: ElectronSession): FaviconFetcher {
+    return (url, init) => new Promise<FaviconHttpResponse>((resolve, reject) => {
+      const request = net.request({
+        url,
+        session: paneSession,
+        method: 'GET',
+        credentials: 'omit',
+        redirect: 'manual',
+      })
+      let hopsFollowed = 0
+      let settled = false
+      const onAbort = (): void => request.abort()
+      init.signal.addEventListener('abort', onAbort, { once: true })
+      const settle = (apply: () => void): void => {
+        if (settled) return
+        settled = true
+        init.signal.removeEventListener('abort', onAbort)
+        apply()
+      }
+
+      request.on('redirect', (_status, _method, redirectUrl) => {
+        // The hop target is chosen by the server, so it faces the same scheme
+        // allowlist as the URL the page announced. followRedirect() must be
+        // called synchronously or Electron cancels the request for us.
+        if (!shouldFollowFaviconRedirect(redirectUrl, hopsFollowed)) {
+          request.abort()
+          return
+        }
+        hopsFollowed += 1
+        request.followRedirect()
+      })
+      request.on('response', (response) => {
+        settle(() => resolve({
+          ok: response.statusCode >= 200 && response.statusCode <= 299,
+          status: response.statusCode,
+          headers: { get: (name) => firstHeaderValue(response.headers, name) },
+          body: Readable.toWeb(response as unknown as Readable) as unknown as ReadableStream<Uint8Array>,
+        }))
+      })
+      request.on('error', (error) => settle(() => reject(error)))
+      request.on('abort', () => settle(() => reject(new Error('favicon request aborted'))))
+      request.end()
+    })
+  }
+
+  private cancelFaviconFetch(instance: BrowserInstance): void {
+    instance.faviconToken += 1
+    instance.faviconAbort?.abort()
+    instance.faviconAbort = null
   }
 
   private emitStateChange(instance: BrowserInstance): void {

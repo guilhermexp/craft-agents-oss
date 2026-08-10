@@ -4,7 +4,7 @@
  */
 
 import type { ThemeOverrides } from '../config/index'
-import type { LoadedSource } from '../sources/types'
+import type { PublicSourceDto } from '../sources/public-source-dto'
 import type { LoadedSkill } from '../skills/types'
 import type { LoadedProject } from '../projects/types'
 import { RPC_NAMESPACES } from './channels'
@@ -16,6 +16,7 @@ import type {
   DeepLinkNavigation,
   TaskGenerateResult,
 } from './dto'
+import type { PerfMainSample } from '../perf/types'
 import type { BrowserProfileSettings } from '../config/types'
 
 export interface BroadcastEventMap {
@@ -25,7 +26,7 @@ export interface BroadcastEventMap {
   [RPC_NAMESPACES.sessions.FILES_CHANGED]: [sessionId: string]
 
   // Domain change broadcasts (global via broadcastToAll)
-  [RPC_NAMESPACES.sources.CHANGED]: [workspaceId: string, sources: LoadedSource[]]
+  [RPC_NAMESPACES.sources.CHANGED]: [workspaceId: string, sources: PublicSourceDto[]]
   [RPC_NAMESPACES.labels.CHANGED]: [workspaceId: string]
   [RPC_NAMESPACES.channels.CHANGED]: [workspaceId: string]
   [RPC_NAMESPACES.channels.MESSAGES_CHANGED]: [workspaceId: string, channelId: string]
@@ -47,6 +48,9 @@ export interface BroadcastEventMap {
   [RPC_NAMESPACES.update.AVAILABLE]: [info: UpdateInfo]
   [RPC_NAMESPACES.update.DOWNLOAD_PROGRESS]: [progress: number]
 
+  // Runtime perf monitor (per-client, only while an overlay is subscribed)
+  [RPC_NAMESPACES.perf.SAMPLE]: [sample: PerfMainSample]
+
   // Badge broadcasts (global)
   [RPC_NAMESPACES.badge.DRAW]: [data: { count: number; iconDataUrl: string }]
   [RPC_NAMESPACES.badge.DRAW_WINDOWS]: [data: { count: number }]
@@ -61,6 +65,7 @@ export interface BroadcastEventMap {
   [RPC_NAMESPACES.browserPane.INTERACTED]: [id: string]
   [RPC_NAMESPACES.browserPane.PROFILES_CHANGED]: [settings: BrowserProfileSettings]
   [RPC_NAMESPACES.browserPane.PICKER_REQUESTED]: [data: { instanceId: string }]
+  [RPC_NAMESPACES.browserPane.DISPLAY_MODE_REQUESTED]: [data: { instanceId: string; mode: 'floating' | 'integrated' }]
 
   // Navigation events (per-window)
   [RPC_NAMESPACES.notification.NAVIGATE]: [data: { workspaceId: string; sessionId: string }]

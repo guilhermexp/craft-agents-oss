@@ -6,12 +6,79 @@
  */
 
 import { describe, it, expect, beforeEach, mock } from 'bun:test'
+import * as sharedConfig from '@craft-agent/shared/config'
+import { PANEL_INTERIOR_RADIUS } from '../../shared/browser-chrome'
+import { Readable } from 'stream'
 
 const createdWindows: any[] = []
 let toolbarLoadFailuresRemaining = 0
 let nextMockWebContentsId = 1
 const mockShellOpenExternal = mock(async () => {})
 const mockIpcMainHandle = mock(() => {})
+const netRequests: MockClientRequest[] = []
+/** 8-byte PNG signature — enough to prove the bytes round-trip into the data: URL. */
+const FAVICON_PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const FAVICON_PNG_DATA_URL = `data:image/png;base64,${Buffer.from(FAVICON_PNG_BYTES).toString('base64')}`
+
+interface MockClientRequestOptions {
+  url?: string
+  session?: unknown
+  method?: string
+  credentials?: string
+  redirect?: string
+}
+
+interface MockClientRequest {
+  options: MockClientRequestOptions
+  aborted: boolean
+  ended: boolean
+  followed: number
+  on: (event: string, cb: Function) => MockClientRequest
+  end: () => void
+  abort: () => void
+  followRedirect: () => void
+  _emit: (event: string, ...args: unknown[]) => void
+  _respond: (init?: { statusCode?: number; headers?: Record<string, string | string[]>; bytes?: Uint8Array }) => void
+}
+
+/**
+ * Stand-in for Electron's `ClientRequest`. The favicon fetcher drives it
+ * directly (see `createFaviconFetcher`) because `session.fetch` cannot
+ * revalidate a redirect hop, so the redirect event is part of the contract
+ * under test — `followRedirect` must be called synchronously or not at all.
+ */
+function createMockClientRequest(options: MockClientRequestOptions): MockClientRequest {
+  const listeners: Record<string, Function[]> = {}
+  const req: MockClientRequest = {
+    options,
+    aborted: false,
+    ended: false,
+    followed: 0,
+    on: (event, cb) => {
+      if (!listeners[event]) listeners[event] = []
+      listeners[event].push(cb)
+      return req
+    },
+    end: () => { req.ended = true },
+    abort: () => {
+      req.aborted = true
+      req._emit('abort')
+    },
+    followRedirect: () => { req.followed += 1 },
+    _emit: (event, ...args) => {
+      for (const cb of [...(listeners[event] || [])]) cb(...args)
+    },
+    _respond: (init = {}) => {
+      // Electron's IncomingMessage is a Readable carrying statusCode/headers.
+      const stream = Object.assign(Readable.from([Buffer.from(init.bytes ?? FAVICON_PNG_BYTES)]), {
+        statusCode: init.statusCode ?? 200,
+        headers: init.headers ?? { 'content-type': 'image/png' },
+      })
+      req._emit('response', stream)
+    },
+  }
+  return req
+}
 
 function createMockWebContents() {
   const listeners: Record<string, Function[]> = {}
@@ -33,7 +100,7 @@ function createMockWebContents() {
       }
     }),
     loadFile: mock(async (path: string, _opts?: unknown) => {
-      // Only the toolbar BrowserView loads via loadFile with the toolbar HTML;
+      // Only the toolbar view loads via loadFile with the toolbar HTML;
       // scope the simulated failure to it so an unrelated loadFile (e.g. the
       // page's empty-state) does not consume a toolbar retry budget.
       const isToolbarFile = typeof path === 'string' && path.includes('browser-toolbar.html')
@@ -53,6 +120,7 @@ function createMockWebContents() {
     setUserAgent: mock(() => {}),
     setBackgroundColor: mock(() => {}),
     isDestroyed: mock(() => false),
+    close: mock(() => {}),
     capturePage: mock(async () => {
       const img = {
         isEmpty: () => false,
@@ -80,12 +148,14 @@ function createMockWebContents() {
   }
 }
 
-function createMockBrowserView() {
+function createMockWebContentsView() {
   const webContents = createMockWebContents()
   return {
     webContents,
     setBounds: mock(() => {}),
-    setAutoResize: mock(() => {}),
+    setBorderRadius: mock((_radius: number) => {}),
+    setVisible: mock((_visible: boolean) => {}),
+    setBackgroundColor: mock((_color: string) => {}),
   }
 }
 
@@ -96,6 +166,7 @@ function createMockWindow(opts?: { width?: number; height?: number; minWidth?: n
   let contentHeight = opts?.height ?? 900
   const minWidth = opts?.minWidth ?? 0
   const minHeight = opts?.minHeight ?? 0
+  let visible = true
 
   const win = {
     webContents,
@@ -116,20 +187,40 @@ function createMockWindow(opts?: { width?: number; height?: number; minWidth?: n
     },
     isDestroyed: mock(() => false),
     isMinimized: mock(() => false),
+    isVisible: mock(() => visible),
     restore: mock(() => {}),
-    show: mock(() => {}),
-    showInactive: mock(() => {}),
+    show: mock(() => {
+      visible = true
+    }),
+    showInactive: mock(() => {
+      visible = true
+    }),
     setWindowButtonVisibility: mock((_visible: boolean) => {}),
     hide: mock(() => {
+      visible = false
       win._emit('hide')
     }),
     focus: mock(() => {}),
     destroy: mock(() => {
       win._emit('closed')
     }),
-    setBrowserView: mock((_view: any) => {}),
-    addBrowserView: mock((_view: any) => {}),
-    setTopBrowserView: mock((_view: any) => {}),
+    // WebContentsView children live under window.contentView. Re-adding an
+    // existing child reorders it to the top, which is how the manager raises
+    // the toolbar now that setTopBrowserView is gone.
+    contentView: {
+      children: [] as any[],
+      addChildView: mock(function (this: any, view: any) {
+        const existing = win.contentView.children.indexOf(view)
+        if (existing !== -1) win.contentView.children.splice(existing, 1)
+        win.contentView.children.push(view)
+      }),
+      removeChildView: mock((view: any) => {
+        const idx = win.contentView.children.indexOf(view)
+        if (idx !== -1) win.contentView.children.splice(idx, 1)
+      }),
+    },
+    getBounds: mock(() => ({ x: 0, y: 0, width: contentWidth, height: contentHeight })),
+    setBounds: mock((_bounds: { x: number; y: number; width: number; height: number }) => {}),
     getContentSize: mock(() => [contentWidth, contentHeight]),
     setContentSize: mock((width: number, height: number) => {
       contentWidth = Math.max(minWidth, Math.floor(width))
@@ -160,16 +251,23 @@ mock.module('electron', () => ({
       Object.assign(this, win)
     }
   },
-  BrowserView: class MockBrowserView {
+  WebContentsView: class MockWebContentsView {
     webContents: any
     constructor(_opts?: any) {
-      const view = createMockBrowserView()
+      const view = createMockWebContentsView()
       this.webContents = view.webContents
       Object.assign(this, view)
     }
   },
   ipcMain: {
     handle: mockIpcMainHandle,
+  },
+  screen: {
+    // 1440x900 work area with a menu-bar inset, so tiling maths that ignore
+    // workArea.x/y show up as wrong coordinates instead of passing by accident.
+    getDisplayMatching: mock(() => ({
+      workArea: { x: 0, y: 25, width: 1440, height: 875 },
+    })),
   },
   Menu: {
     buildFromTemplate: mock(() => ({
@@ -178,6 +276,13 @@ mock.module('electron', () => ({
   },
   nativeTheme: {
     shouldUseDarkColors: false,
+  },
+  net: {
+    request: mock((options: MockClientRequestOptions) => {
+      const request = createMockClientRequest(options)
+      netRequests.push(request)
+      return request
+    }),
   },
   shell: {
     openExternal: mockShellOpenExternal,
@@ -257,6 +362,12 @@ mock.module('../browser-cdp', () => ({
   },
 }))
 
+let mockAllowRemoteEvaluate = true
+mock.module('@craft-agent/shared/config', () => ({
+  ...sharedConfig,
+  getAllowRemoteEvaluate: () => mockAllowRemoteEvaluate,
+}))
+
 process.env.CRAFT_BROWSER_SCREENSHOT_CAPTURE_TIMEOUT_MS = '50'
 
 const { BrowserPaneManager } = await import('../browser-pane-manager')
@@ -267,26 +378,361 @@ describe('BrowserPaneManager', () => {
   beforeEach(() => {
     createdWindows.length = 0
     toolbarLoadFailuresRemaining = 0
+    netRequests.length = 0
     mockShellOpenExternal.mockClear()
     mockIpcMainHandle.mockClear()
     manager = new BrowserPaneManager()
+    mockAllowRemoteEvaluate = true
   })
 
-  it('creates and lists instances', () => {
+  it('freezes the client:browser:invoke wire method names (protocol v1 — a rename is a breaking change)', () => {
+    // capabilityDispatch is Record<BrowserCapabilityMethod, …>, so its keys ARE the
+    // derived wire-method set. Renaming an interface method silently renames the
+    // wire method (see browser-capability.ts); freezing the names here makes a
+    // rename fail this test instead of breaking a staggered client/server rollout.
+    const wireMethods = Object.keys((manager as any).capabilityDispatch).sort()
+    expect(wireMethods).toEqual([
+      'bindSession', 'clearAgentControl', 'clearAgentControlForInstance', 'clearVisualsForSession',
+      'clickAtCoordinates', 'clickElement', 'createForSession', 'destroyForSession', 'destroyInstance',
+      'detectSecurityChallenge', 'drag', 'evaluate', 'fillElement', 'focus', 'focusBoundForSession',
+      'getAccessibilitySnapshot', 'getClipboard', 'getConsoleLogs', 'getDownloads', 'getInstance',
+      'getNetworkLogs', 'getOrCreateForSession', 'goBack', 'goForward', 'hide', 'listInstances',
+      'navigate', 'screenshot', 'screenshotRegion', 'scroll', 'selectOption', 'sendKey',
+      'setAgentControl', 'setClipboard', 'typeText', 'unbindAllForSession', 'uploadFile', 'waitFor',
+      'windowResize',
+    ])
+  })
+
+  it('rejects an Object.prototype key as an unknown capability method (no prototype-chain dispatch)', async () => {
+    // 'constructor' resolves to a function via the prototype chain on a plain
+    // object literal; the Object.hasOwn guard must reject it, not invoke it.
+    await expect(
+      (manager as any).dispatchCapability({ v: 1, method: 'constructor', args: [], sessionId: 's', workspaceId: 'w' }),
+    ).rejects.toThrow(/Unknown browser capability method/)
+  })
+
+  it('creates and lists instances', async () => {
     const id = manager.createInstance('test-1')
-    const list = manager.listInstances()
+    const list = await manager.listInstances()
     expect(id).toBe('test-1')
     expect(list).toHaveLength(1)
     expect(list[0].id).toBe('test-1')
     expect(list[0].agentControlActive).toBe(false)
   })
 
-  it('is idempotent when explicit ID already exists', () => {
+  it('reparents views into the host window when switching to integrated mode', () => {
+    manager.createInstance('mode-1')
+    const instance = (manager as any).instances.get('mode-1')
+    const host = createMockWindow()
+
+    expect(instance.window.contentView.children).toHaveLength(3)
+
+    const ok = manager.setDisplayMode('mode-1', 'integrated', host as any)
+
+    expect(ok).toBe(true)
+    expect(manager.getDisplayMode('mode-1')).toBe('integrated')
+    // A view can only be presented in one window at a time.
+    expect(instance.window.contentView.children).toHaveLength(0)
+    expect(host.contentView.children).toHaveLength(3)
+    // Toolbar must stay on top after the move.
+    expect(host.contentView.children[2]).toBe(instance.toolbarView)
+    expect(instance.window.hide).toHaveBeenCalled()
+  })
+
+  it('refuses integrated mode without a live host window', () => {
+    manager.createInstance('mode-2')
+    expect(manager.setDisplayMode('mode-2', 'integrated', null)).toBe(false)
+    expect(manager.getDisplayMode('mode-2')).toBe('floating')
+  })
+
+  it('returns views to the instance window and clears rounding when going back to floating', () => {
+    manager.createInstance('mode-3')
+    const instance = (manager as any).instances.get('mode-3')
+    const host = createMockWindow()
+
+    manager.setDisplayMode('mode-3', 'integrated', host as any)
+    manager.setDisplayMode('mode-3', 'floating')
+
+    expect(manager.getDisplayMode('mode-3')).toBe('floating')
+    expect(host.contentView.children).toHaveLength(0)
+    expect(instance.window.contentView.children).toHaveLength(3)
+    expect(instance.embeddedBounds).toBeNull()
+    expect(instance.pageView.setBorderRadius).toHaveBeenCalledWith(0)
+  })
+
+  it('converts CSS px to DIPs with floor so the view never exceeds the card', () => {
+    manager.createInstance('bounds-1')
+    const instance = (manager as any).instances.get('bounds-1')
+    const host = createMockWindow()
+    manager.setDisplayMode('bounds-1', 'integrated', host as any)
+
+    // zoom 1.5 with fractional results: every axis must round down.
+    manager.setEmbeddedBounds('bounds-1', { x: 10.4, y: 20.7, width: 800.9, height: 600.9 }, 1.5)
+
+    expect(instance.embeddedBounds).toEqual({ x: 15, y: 31, width: 1201, height: 901 })
+    // The radius scales with the zoom too, or the views round tighter than the
+    // panel they fill.
+    expect(instance.pageView.setBorderRadius).toHaveBeenLastCalledWith(15)
+  })
+
+  it('ignores bounds reported while floating', () => {
+    manager.createInstance('bounds-2')
+    const instance = (manager as any).instances.get('bounds-2')
+
+    expect(manager.setEmbeddedBounds('bounds-2', { x: 0, y: 0, width: 10, height: 10 })).toBe(false)
+    expect(instance.embeddedBounds).toBeNull()
+  })
+
+  it('falls back to floating when the host window closes', () => {
+    manager.createInstance('host-close')
+    const instance = (manager as any).instances.get('host-close')
+    const host = createMockWindow()
+
+    manager.setDisplayMode('host-close', 'integrated', host as any)
+    host._emit('closed')
+
+    expect(manager.getDisplayMode('host-close')).toBe('floating')
+    expect(instance.window.contentView.children).toHaveLength(3)
+  })
+
+  function windowManagerStub() {
+    return {
+      createWindow: mock((_options: unknown) => createMockWindow()),
+      registerViewClient: mock((_id: number, _ws: string) => {}),
+      unregisterViewClient: mock((_id: number) => {}),
+    }
+  }
+
+  it('embeds the session panel as a sibling view, not a second window', () => {
+    manager.createInstance('panel-1')
+    const instance = (manager as any).instances.get('panel-1')
+    const wm = windowManagerStub()
+    manager.setWindowManager(wm as any)
+
+    expect(manager.toggleSessionPanel('panel-1')).toBe(true)
+
+    // The whole point of option A: one window.
+    expect(wm.createWindow).not.toHaveBeenCalled()
+    expect(instance.sessionView).not.toBeNull()
+    expect(instance.window.contentView.children).toContain(instance.sessionView)
+    // Registered before load, or the preload reads "no workspace".
+    expect(wm.registerViewClient).toHaveBeenCalled()
+    // Toolbar stays on top of the new sibling.
+    const children = instance.window.contentView.children
+    expect(children[children.length - 1]).toBe(instance.toolbarView)
+  })
+
+  it('lays the panel out as a peer column, not a drawer under the chrome', () => {
+    manager.createInstance('panel-2')
+    const instance = (manager as any).instances.get('panel-2')
+    manager.setWindowManager(windowManagerStub() as any)
+
+    manager.toggleSessionPanel('panel-2')
+
+    // Mock window content is 1200x900; panel defaults to 420.
+    expect(instance.sessionPanelWidth).toBe(420)
+    expect(instance.pageView.setBounds).toHaveBeenLastCalledWith(
+      expect.objectContaining({ x: 0, width: 780 }),
+    )
+    // The toolbar stops at the page's edge, or the URL bar centres itself over
+    // the session instead of over the page it addresses.
+    expect(instance.toolbarView.setBounds).toHaveBeenLastCalledWith(
+      expect.objectContaining({ x: 0, width: 780 }),
+    )
+    // Full height: the panel brings its own header and sits beside the browser.
+    expect(instance.sessionView.setBounds).toHaveBeenLastCalledWith(
+      expect.objectContaining({ x: 780, y: 0, width: 420, height: 900 }),
+    )
+  })
+
+  it('unloads the panel renderer when toggled off instead of parking it', () => {
+    manager.createInstance('panel-3')
+    const instance = (manager as any).instances.get('panel-3')
+    const wm = windowManagerStub()
+    manager.setWindowManager(wm as any)
+
+    manager.toggleSessionPanel('panel-3')
+    const view = instance.sessionView
+
+    manager.toggleSessionPanel('panel-3')
+
+    expect(instance.sessionPanelWidth).toBeNull()
+    expect(instance.sessionView).toBeNull()
+    expect(view.webContents.close).toHaveBeenCalled()
+    expect(wm.unregisterViewClient).toHaveBeenCalled()
+    // Page takes the room back.
+    expect(instance.pageView.setBounds).toHaveBeenLastCalledWith(
+      expect.objectContaining({ width: 1200 }),
+    )
+  })
+
+  it('drops the session panel when the browser docks into the app', () => {
+    manager.createInstance('panel-4')
+    const instance = (manager as any).instances.get('panel-4')
+    manager.setWindowManager(windowManagerStub() as any)
+
+    manager.toggleSessionPanel('panel-4')
+    const view = instance.sessionView
+    const host = createMockWindow()
+
+    manager.setDisplayMode('panel-4', 'integrated', host as any)
+
+    // Docked, the app's own chat is beside the browser: the panel would show
+    // the same session twice. It also must not be left on the old window.
+    expect(instance.sessionView).toBeNull()
+    expect(instance.sessionPanelWidth).toBeNull()
+    expect(view.webContents.close).toHaveBeenCalled()
+    expect(instance.window.contentView.children).not.toContain(view)
+    expect(host.contentView.children).not.toContain(view)
+    expect(host.contentView.children[host.contentView.children.length - 1]).toBe(instance.toolbarView)
+  })
+
+  it('refuses to open the session panel while docked', () => {
+    manager.createInstance('panel-6')
+    const instance = (manager as any).instances.get('panel-6')
+    manager.setWindowManager(windowManagerStub() as any)
+    manager.setDisplayMode('panel-6', 'integrated', createMockWindow() as any)
+
+    expect(manager.toggleSessionPanel('panel-6')).toBe(false)
+    expect(instance.sessionView).toBeNull()
+  })
+
+  it('splits a frame too narrow for both floors instead of overflowing it', () => {
+    manager.createInstance('panel-5')
+    const instance = (manager as any).instances.get('panel-5')
+    manager.setWindowManager(windowManagerStub() as any)
+    // The window floors at 700; 700 DIPs cannot hold a 400 page next to a 320
+    // panel, so neither floor can be honoured.
+    instance.window.setContentSize(500, 400)
+
+    manager.toggleSessionPanel('panel-5')
+
+    expect(instance.sessionPanelWidth).toBe(350)
+    expect(instance.pageView.setBounds).toHaveBeenLastCalledWith(
+      expect.objectContaining({ x: 0, width: 350 }),
+    )
+    expect(instance.sessionView.setBounds).toHaveBeenLastCalledWith(
+      expect.objectContaining({ x: 350, width: 350 }),
+    )
+  })
+
+  it('gives the browser its window back when it stops being a card', () => {
+    manager.createInstance('undock-1')
+    const instance = (manager as any).instances.get('undock-1')
+    instance.window.show()
+    const host = createMockWindow()
+
+    manager.setDisplayMode('undock-1', 'integrated', host as any)
+    expect(instance.window.isVisible()).toBe(false)
+
+    manager.setDisplayMode('undock-1', 'floating')
+
+    // The views go back to this window. Left hidden, the browser just vanishes:
+    // still alive, still in the tab strip, painting into nothing.
+    expect(instance.window.isVisible()).toBe(true)
+  })
+
+  it('leaves a browser that was already hidden hidden after undocking', () => {
+    manager.createInstance('undock-2')
+    const instance = (manager as any).instances.get('undock-2')
+    instance.window.hide()
+    const host = createMockWindow()
+
+    manager.setDisplayMode('undock-2', 'integrated', host as any)
+    manager.setDisplayMode('undock-2', 'floating')
+
+    // Undocking undoes what docking did — it is not a "show the browser" button.
+    expect(instance.window.isVisible()).toBe(false)
+  })
+
+  it('keeps the sibling views on the same corner radius', () => {
+    manager.createInstance('radius-1')
+    const instance = (manager as any).instances.get('radius-1')
+    manager.setWindowManager(windowManagerStub() as any)
+    const host = createMockWindow()
+    manager.setDisplayMode('radius-1', 'integrated', host as any)
+
+    // Docking alone rounds them. The panel they fill is already rounded, and a
+    // bounds message can be deduped or arrive late — the corner cannot wait.
+    expect(instance.pageView.setBorderRadius).toHaveBeenLastCalledWith(PANEL_INTERIOR_RADIUS)
+    expect(instance.toolbarView.setBorderRadius).toHaveBeenLastCalledWith(PANEL_INTERIOR_RADIUS)
+
+    manager.setEmbeddedBounds('radius-1', { x: 0, y: 0, width: 1000, height: 800 })
+
+    expect(instance.pageView.setBorderRadius).toHaveBeenLastCalledWith(PANEL_INTERIOR_RADIUS)
+    expect(instance.toolbarView.setBorderRadius).toHaveBeenLastCalledWith(PANEL_INTERIOR_RADIUS)
+
+    manager.setDisplayMode('radius-1', 'floating')
+
+    // A full window is not a card: undocking has to drop it everywhere.
+    expect(instance.pageView.setBorderRadius).toHaveBeenLastCalledWith(0)
+    expect(instance.toolbarView.setBorderRadius).toHaveBeenLastCalledWith(0)
+  })
+
+  it('takes every native view off screen while an app overlay covers the browser', () => {
+    manager.createInstance('conceal-1')
+    const instance = (manager as any).instances.get('conceal-1')
+
+    expect(manager.setViewsVisible('conceal-1', false)).toBe(true)
+
+    // All of them: a toolbar left painting over a hidden page is worse than
+    // either state on its own.
+    expect(instance.pageView.setVisible).toHaveBeenCalledWith(false)
+    expect(instance.toolbarView.setVisible).toHaveBeenCalledWith(false)
+    expect(instance.nativeOverlayView.setVisible).toHaveBeenCalledWith(false)
+
+    manager.setViewsVisible('conceal-1', true)
+
+    // Hidden, not unloaded — the page must not reload when the menu closes.
+    expect(instance.pageView.webContents.close).not.toHaveBeenCalled()
+    expect(instance.pageView.setVisible).toHaveBeenLastCalledWith(true)
+  })
+
+  it('restores view visibility on every display-mode change', () => {
+    manager.createInstance('conceal-2')
+    const instance = (manager as any).instances.get('conceal-2')
+    const host = createMockWindow()
+
+    // A preview tab handed the pane to a file, so the views were concealed.
+    manager.setViewsVisible('conceal-2', false)
+    manager.setDisplayMode('conceal-2', 'integrated', host as any)
+
+    expect(instance.pageView.setVisible).toHaveBeenLastCalledWith(true)
+
+    manager.setViewsVisible('conceal-2', false)
+    manager.setDisplayMode('conceal-2', 'floating')
+
+    // Otherwise the browser returns to a window of its own and paints nothing.
+    expect(instance.pageView.setVisible).toHaveBeenLastCalledWith(true)
+  })
+
+  it('paints the toolbar and overlay views transparent', () => {
+    manager.createInstance('bg-1')
+    const instance = (manager as any).instances.get('bg-1')
+
+    // The View layer, not just the webContents: WebContentsView defaults to
+    // opaque white and would white out the window when the toolbar expands.
+    expect(instance.toolbarView.setBackgroundColor).toHaveBeenCalledWith('#00000000')
+    expect(instance.nativeOverlayView.setBackgroundColor).toHaveBeenCalledWith('#00000000')
+  })
+
+  it('closes every view webContents on destroy so none outlive the window', () => {
+    manager.createInstance('leak-1')
+    const instance = (manager as any).instances.get('leak-1')
+
+    manager.destroyInstance('leak-1')
+
+    expect(instance.pageView.webContents.close).toHaveBeenCalled()
+    expect(instance.toolbarView.webContents.close).toHaveBeenCalled()
+    expect(instance.nativeOverlayView.webContents.close).toHaveBeenCalled()
+  })
+
+  it('is idempotent when explicit ID already exists', async () => {
     const first = manager.createInstance('same-id')
     const second = manager.createInstance('same-id')
     expect(first).toBe('same-id')
     expect(second).toBe('same-id')
-    expect(manager.listInstances()).toHaveLength(1)
+    expect(await manager.listInstances()).toHaveLength(1)
   })
 
   it('allows http(s) popups with shared browser partition', () => {
@@ -421,10 +867,10 @@ describe('BrowserPaneManager', () => {
     expect((manager as any).popupWindowsByParentInstanceId.has('popup-parent')).toBe(false)
   })
 
-  it('destroys instances', () => {
+  it('destroys instances', async () => {
     manager.createInstance('d1')
     manager.destroyInstance('d1')
-    expect(manager.listInstances()).toHaveLength(0)
+    expect(await manager.listInstances()).toHaveLength(0)
   })
 
   it('destroys instance via toolbar destroy IPC handler', async () => {
@@ -444,10 +890,10 @@ describe('BrowserPaneManager', () => {
     const [, destroyHandler] = destroyRegistration
     await destroyHandler({}, 'd-ipc-destroy')
 
-    expect(manager.listInstances()).toHaveLength(0)
+    expect(await manager.listInstances()).toHaveLength(0)
   })
 
-  it('emits removed callback exactly once when destroy triggers closed', () => {
+  it('emits removed callback exactly once when destroy triggers closed', async () => {
     const removed: string[] = []
     manager.onRemoved((id) => removed.push(id))
 
@@ -455,7 +901,7 @@ describe('BrowserPaneManager', () => {
     manager.destroyInstance('d-removed-once')
 
     expect(removed).toEqual(['d-removed-once'])
-    expect(manager.listInstances()).toHaveLength(0)
+    expect(await manager.listInstances()).toHaveLength(0)
   })
 
   it('ignores late state events after instance was removed', () => {
@@ -475,46 +921,101 @@ describe('BrowserPaneManager', () => {
     expect(states.length).toBe(countAfterDestroy)
   })
 
-  it('binds and unbinds sessions', () => {
+  it('binds and unbinds sessions', async () => {
     manager.createInstance('b1')
     manager.bindSession('b1', 'session-abc')
-    expect(manager.listInstances()[0].boundSessionId).toBe('session-abc')
-    expect(manager.listInstances()[0].ownerType).toBe('session')
+    expect((await manager.listInstances())[0].boundSessionId).toBe('session-abc')
+    expect((await manager.listInstances())[0].ownerType).toBe('session')
 
     manager.unbindSession('b1')
-    expect(manager.listInstances()[0].boundSessionId).toBeNull()
-    expect(manager.listInstances()[0].ownerType).toBe('manual')
+    expect((await manager.listInstances())[0].boundSessionId).toBeNull()
+    expect((await manager.listInstances())[0].ownerType).toBe('manual')
   })
 
-  it('createForSession returns canonical bound instance', () => {
-    const id1 = manager.createForSession('sess-1')
-    const id2 = manager.createForSession('sess-1')
-    const info = manager.listInstances()[0]
+  it('createForSession returns canonical bound instance', async () => {
+    const id1 = await manager.createForSession('sess-1')
+    const id2 = await manager.createForSession('sess-1')
+    const info = (await manager.listInstances())[0]
 
     expect(id1).toBe(id2)
     expect(info.ownerType).toBe('session')
     expect(info.ownerSessionId).toBe('sess-1')
-    expect(manager.listInstances()).toHaveLength(1)
+    expect(await manager.listInstances()).toHaveLength(1)
   })
 
-  it('getOrCreateForSession reuses existing instance', () => {
-    const id1 = manager.getOrCreateForSession('sess-1')
-    const id2 = manager.getOrCreateForSession('sess-1')
+  it('getOrCreateForSession reuses existing instance', async () => {
+    const id1 = await manager.getOrCreateForSession('sess-1')
+    const id2 = await manager.getOrCreateForSession('sess-1')
     expect(id1).toBe(id2)
-    expect(manager.listInstances()).toHaveLength(1)
+    expect(await manager.listInstances()).toHaveLength(1)
   })
 
-  it('createForSession reuses an unbound manual window before creating new', () => {
+  it('createForSession reuses an unbound manual window before creating new', async () => {
     manager.createInstance('manual-1')
 
-    const id = manager.createForSession('sess-reuse')
+    const id = await manager.createForSession('sess-reuse')
 
     expect(id).toBe('manual-1')
-    const info = manager.listInstances()[0]
+    const info = (await manager.listInstances())[0]
     expect(info.ownerType).toBe('session')
     expect(info.ownerSessionId).toBe('sess-reuse')
     expect(info.boundSessionId).toBe('sess-reuse')
-    expect(manager.listInstances()).toHaveLength(1)
+    expect(await manager.listInstances()).toHaveLength(1)
+  })
+
+  it('does not adopt a capture-locked manual window', async () => {
+    manager.createInstance('recording-1')
+    manager.setCaptureLock('recording-1', { reason: 'meeting-recording', since: Date.now() })
+
+    const id = await manager.createForSession('sess-no-steal')
+
+    // A janela em gravação segue manual e intocada; a sessão ganha outra.
+    expect(id).not.toBe('recording-1')
+    expect(await manager.listInstances()).toHaveLength(2)
+    const recording = (await manager.listInstances()).find(info => info.id === 'recording-1')
+    expect(recording?.ownerType).toBe('manual')
+    expect(recording?.boundSessionId).toBeNull()
+    expect(recording?.captureLock).toEqual({ reason: 'meeting-recording', since: expect.any(Number) })
+  })
+
+  it('unbinds a capture-locked bound window and gives the session a new one', async () => {
+    const bound = await manager.createForSession('sess-locked')
+    manager.setCaptureLock(bound, { reason: 'meeting-recording', since: Date.now() })
+
+    const next = await manager.createForSession('sess-locked')
+
+    expect(next).not.toBe(bound)
+    const infos = await manager.listInstances()
+    const previous = infos.find(info => info.id === bound)
+    expect(previous?.boundSessionId).toBeNull()
+    expect(previous?.ownerType).toBe('manual')
+    // ownerSessionId é preservado: a janela continua rastreável à sessão original.
+    expect(previous?.ownerSessionId).toBe('sess-locked')
+    expect(infos.find(info => info.id === next)?.boundSessionId).toBe('sess-locked')
+  })
+
+  it('clearing the capture lock makes the window adoptable again', async () => {
+    manager.createInstance('recording-2')
+    manager.setCaptureLock('recording-2', { reason: 'meeting-recording', since: Date.now() })
+    manager.setCaptureLock('recording-2', null)
+
+    expect(manager.getCaptureLock('recording-2')).toBeNull()
+    expect(await manager.createForSession('sess-after-unlock')).toBe('recording-2')
+  })
+
+  it('fires the capture release hook when a locked pane is destroyed', () => {
+    const released: string[] = []
+    manager.setCaptureReleaseHook((instanceId) => { released.push(instanceId) })
+
+    manager.createInstance('recording-3')
+    manager.createInstance('idle-1')
+    manager.setCaptureLock('recording-3', { reason: 'meeting-recording', since: Date.now() })
+
+    manager.destroyInstance('idle-1')
+    expect(released).toEqual([])
+
+    manager.destroyInstance('recording-3')
+    expect(released).toEqual(['recording-3'])
   })
 
   it('navigate normalizes hostnames to https', async () => {
@@ -591,7 +1092,7 @@ describe('BrowserPaneManager', () => {
     expect(instance.window.focus.mock.calls.length).toBe(focusCallsBeforeReady)
   })
 
-  it('user close hides window and keeps instance alive', () => {
+  it('user close hides window and keeps instance alive', async () => {
     manager.createInstance('h1')
     const instance = (manager as any).instances.get('h1')
 
@@ -600,8 +1101,8 @@ describe('BrowserPaneManager', () => {
 
     expect(closeEvent.preventDefault).toHaveBeenCalled()
     expect(instance.window.hide).toHaveBeenCalled()
-    expect(manager.listInstances()).toHaveLength(1)
-    expect(manager.listInstances()[0].isVisible).toBe(false)
+    expect(await manager.listInstances()).toHaveLength(1)
+    expect((await manager.listInstances())[0].isVisible).toBe(false)
   })
 
   it('does not intercept close when destroy is explicit', () => {
@@ -617,7 +1118,7 @@ describe('BrowserPaneManager', () => {
     expect(instance.window.hide).not.toHaveBeenCalled()
   })
 
-  it('still destroys instance when cleanup throws', () => {
+  it('still destroys instance when cleanup throws', async () => {
     manager.createInstance('destroy-cleanup-throw')
     const instance = (manager as any).instances.get('destroy-cleanup-throw')
 
@@ -627,10 +1128,10 @@ describe('BrowserPaneManager', () => {
 
     expect(() => manager.destroyInstance('destroy-cleanup-throw')).not.toThrow()
     expect(instance.window.destroy).toHaveBeenCalledTimes(1)
-    expect(manager.listInstances()).toHaveLength(0)
+    expect(await manager.listInstances()).toHaveLength(0)
   })
 
-  it('emits removed callback when window closes', () => {
+  it('emits removed callback when window closes', async () => {
     const removed: string[] = []
     manager.onRemoved((id) => removed.push(id))
     manager.createInstance('r1')
@@ -639,7 +1140,7 @@ describe('BrowserPaneManager', () => {
     instance.window._emit('closed')
 
     expect(removed).toEqual(['r1'])
-    expect(manager.listInstances()).toHaveLength(0)
+    expect(await manager.listInstances()).toHaveLength(0)
   })
 
   it('retries toolbar load and recovers', async () => {
@@ -676,67 +1177,30 @@ describe('BrowserPaneManager', () => {
     expect(toolbarWc.loadURL).toHaveBeenCalledWith(expect.stringContaining('data:text/html'))
   })
 
-  it('captures and filters console entries', () => {
+  it('captures and filters console entries', async () => {
     manager.createInstance('console-1')
     const instance = (manager as any).instances.get('console-1')
 
     instance.pageView.webContents._emit('console-message', 2, 'warn message')
     instance.pageView.webContents._emit('console-message', 3, 'error message')
 
-    const allEntries = manager.getConsoleLogs('console-1', { level: 'all', limit: 10 })
+    const allEntries = await manager.getConsoleLogs('console-1', { level: 'all', limit: 10 })
     expect(allEntries).toHaveLength(2)
 
-    const warnEntries = manager.getConsoleLogs('console-1', { level: 'warn', limit: 10 })
+    const warnEntries = await manager.getConsoleLogs('console-1', { level: 'warn', limit: 10 })
     expect(warnEntries).toHaveLength(1)
     expect(warnEntries[0].message).toBe('warn message')
   })
 
-  it('applies observer theme signal and skips regular console logging for it', () => {
+  it('applies observer theme signal and skips regular console logging for it', async () => {
     manager.createInstance('theme-signal')
     const instance = (manager as any).instances.get('theme-signal')
     instance.themeObserverToken = 'tok-1'
 
     instance.pageView.webContents._emit('console-message', 1, '__craft_theme_color__:tok-1:#123456')
 
-    expect(manager.listInstances().find(i => i.id === 'theme-signal')?.themeColor).toBe('#123456')
-    expect(manager.getConsoleLogs('theme-signal', { level: 'all', limit: 10 })).toHaveLength(0)
-  })
-
-  it('dedupes repeated observer theme signals', () => {
-    manager.createInstance('theme-dedupe')
-    const instance = (manager as any).instances.get('theme-dedupe')
-    instance.themeObserverToken = 'tok-2'
-
-    instance.pageView.webContents._emit('console-message', 1, '__craft_theme_color__:tok-2:#445566')
-    const sendCallsAfterFirst = instance.window.webContents.send.mock.calls.length
-
-    instance.pageView.webContents._emit('console-message', 1, '__craft_theme_color__:tok-2:#445566')
-    const sendCallsAfterSecond = instance.window.webContents.send.mock.calls.length
-
-    expect(sendCallsAfterSecond).toBe(sendCallsAfterFirst)
-  })
-
-  it('ignores observer theme signals from stale token', () => {
-    manager.createInstance('theme-stale-token')
-    const instance = (manager as any).instances.get('theme-stale-token')
-    instance.themeObserverToken = 'tok-current'
-    instance.themeColor = '#aaaaaa'
-
-    instance.pageView.webContents._emit('console-message', 1, '__craft_theme_color__:tok-old:#bbccdd')
-
-    expect(manager.listInstances().find(i => i.id === 'theme-stale-token')?.themeColor).toBe('#aaaaaa')
-  })
-
-  it('clears theme on explicit null sentinel signal', () => {
-    manager.createInstance('theme-null')
-    const instance = (manager as any).instances.get('theme-null')
-    instance.themeObserverToken = 'tok-null'
-
-    instance.pageView.webContents._emit('console-message', 1, '__craft_theme_color__:tok-null:#223344')
-    expect(manager.listInstances().find(i => i.id === 'theme-null')?.themeColor).toBe('#223344')
-
-    instance.pageView.webContents._emit('console-message', 1, '__craft_theme_color__:tok-null:__NULL__')
-    expect(manager.listInstances().find(i => i.id === 'theme-null')?.themeColor).toBeNull()
+    expect((await manager.listInstances()).find(i => i.id === 'theme-signal')?.themeColor).toBe('#123456')
+    expect(await manager.getConsoleLogs('theme-signal', { level: 'all', limit: 10 })).toHaveLength(0)
   })
 
   it('replays toolbar state with theme color when window is shown', () => {
@@ -851,7 +1315,7 @@ describe('BrowserPaneManager', () => {
 
     await Bun.sleep(140)
 
-    expect(manager.listInstances().find(i => i.id === 'theme-early')?.themeColor).toBe('#0f1e2d')
+    expect((await manager.listInstances()).find(i => i.id === 'theme-early')?.themeColor).toBe('#0f1e2d')
   })
 
   it('clears pending in-page theme timer on full navigation', async () => {
@@ -1014,21 +1478,44 @@ describe('BrowserPaneManager', () => {
     ).rejects.toThrow('Resolved screenshot region is outside the current viewport')
   })
 
-  it('resizes browser window viewport and returns effective applied size', () => {
+  it('resizes browser window viewport and returns effective applied size', async () => {
     manager.createInstance('resize-1')
-    const resized = manager.windowResize('resize-1', 1280, 720)
+    const resized = await manager.windowResize('resize-1', 1280, 720)
 
     const instance = (manager as any).instances.get('resize-1')
     expect(instance.window.setContentSize).toHaveBeenCalledWith(1280, 768)
     expect(resized).toEqual({ width: 1280, height: 720 })
   })
 
-  it('returns effective viewport size when min window constraints apply', () => {
+  it('returns effective viewport size when min window constraints apply', async () => {
     manager.createInstance('resize-min')
-    const resized = manager.windowResize('resize-min', 200, 200)
+    const resized = await manager.windowResize('resize-min', 200, 200)
 
     // BrowserWindow minHeight is 500, toolbar is 48, so effective viewport height is 452.
     expect(resized).toEqual({ width: 700, height: 452 })
+  })
+
+  describe('evaluate gate (allowRemoteEvaluate)', () => {
+    // The gate is enforced inside evaluate() itself — the single seam both the
+    // local path (SessionManager → this) and the remote path (dispatch → this)
+    // cross. This test fails if the gate ever moves back to only the dispatcher
+    // and the local path slips under it: it rejects with the GATE error, which
+    // only fires because the check runs before the instance lookup.
+    it('rejects on the local path when allowRemoteEvaluate=false — single unified gate', async () => {
+      manager.createInstance('eval-gate')
+      mockAllowRemoteEvaluate = false
+      await expect(manager.evaluate('eval-gate', '1 + 1')).rejects.toThrow(/allowRemoteEvaluate=false/)
+    })
+
+    it('rejects before touching the instance when the gate is closed', async () => {
+      mockAllowRemoteEvaluate = false
+      await expect(manager.evaluate('never-created', '1 + 1')).rejects.toThrow(/allowRemoteEvaluate=false/)
+    })
+
+    it('runs the evaluation when allowRemoteEvaluate=true', async () => {
+      manager.createInstance('eval-ok')
+      await expect(manager.evaluate('eval-ok', '1 + 1')).resolves.toBeUndefined()
+    })
   })
 
   describe('agent control overlay', () => {
@@ -1048,7 +1535,7 @@ describe('BrowserPaneManager', () => {
       })
       expect(instance.nativeOverlayView.webContents.executeJavaScript).toHaveBeenCalled()
       expect(instance.nativeOverlayView.webContents.focus).not.toHaveBeenCalled()
-      expect(manager.listInstances().find(i => i.id === 'ac-1')?.agentControlActive).toBe(true)
+      expect((await manager.listInstances()).find(i => i.id === 'ac-1')?.agentControlActive).toBe(true)
     })
 
     it('keeps native overlay visible for active session control', async () => {
@@ -1064,7 +1551,7 @@ describe('BrowserPaneManager', () => {
       const instance = (manager as any).instances.get('ac-idle')
       expect(instance.nativeOverlayView.setBounds).toHaveBeenCalledWith({ x: 0, y: 48, width: 1200, height: 852 })
       expect(instance.nativeOverlayView.webContents.focus).not.toHaveBeenCalled()
-      expect(manager.listInstances().find(i => i.id === 'ac-idle')?.agentControlActive).toBe(true)
+      expect((await manager.listInstances()).find(i => i.id === 'ac-idle')?.agentControlActive).toBe(true)
     })
 
     it('emits state change when agent control is set and cleared', () => {
@@ -1291,24 +1778,187 @@ describe('BrowserPaneManager', () => {
       ;(manager as any).setupSessionPermissions(ses)
       expect(ses.setPermissionRequestHandler).toHaveBeenCalledTimes(1)
     })
+  })
 
-    it('denies clipboard-read and display-capture, allows geolocation (F1.3)', () => {
-      const ses = { setPermissionCheckHandler: mock(() => {}), setPermissionRequestHandler: mock(() => {}), setDisplayMediaRequestHandler: mock(() => {}) }
-      ;(manager as any).setupSessionPermissions(ses)
-
-      const requestHandler = (ses.setPermissionRequestHandler.mock.calls[0] as unknown[])[0] as (
-        wc: unknown, permission: string, cb: (allow: boolean) => void, details: unknown,
-      ) => void
-
-      const decide = (permission: string): boolean => {
-        let decision = false
-        requestHandler({}, permission, (allow: boolean) => { decision = allow }, { requestingOrigin: 'https://evil.example' })
-        return decision
+  describe('favicon transport lifecycle', () => {
+    /**
+     * Drain the event loop instead of waiting on the clock: the fetcher promise
+     * and the Node-Readable-to-web-stream read resolve across IO ticks, which
+     * neither fake timers nor a single microtask flush would advance.
+     */
+    const flush = async (): Promise<void> => {
+      for (let i = 0; i < 25; i += 1) {
+        const { promise, resolve } = Promise.withResolvers<void>()
+        setImmediate(resolve)
+        await promise
       }
+    }
 
-      expect(decide('clipboard-read')).toBe(false)
-      expect(decide('display-capture')).toBe(false)
-      expect(decide('geolocation')).toBe(true)
+    function startPane(id: string) {
+      manager.createInstance(id)
+      const instance = (manager as any).instances.get(id)
+      const infos: Array<{ id: string; favicon: string | null }> = []
+      manager.onStateChange((info) => { if (info.id === id) infos.push(info) })
+      netRequests.length = 0
+      infos.length = 0
+      return { instance, infos, pageWc: instance.pageView.webContents }
+    }
+
+    it('emits state without the icon first, then again once the data: URL is ready', async () => {
+      const { instance, infos, pageWc } = startPane('fav-async')
+
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.png'])
+
+      // The page must not wait on the favicon host to get a state push.
+      expect(infos).toHaveLength(1)
+      expect(infos[0].favicon).toBe(null)
+      expect(netRequests).toHaveLength(1)
+
+      netRequests[0]!._respond()
+      await flush()
+
+      expect(infos).toHaveLength(2)
+      // A `data:` URL, never the https URL the page announced.
+      expect(infos[1].favicon).toBe(FAVICON_PNG_DATA_URL)
+      expect(instance.favicon).toBe(FAVICON_PNG_DATA_URL)
+    })
+
+    it('requests on the pane session with credentials omitted and redirects held manual', () => {
+      const { pageWc } = startPane('fav-options')
+
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.png'])
+
+      expect(netRequests[0]!.options).toMatchObject({
+        url: 'https://example.com/favicon.png',
+        method: 'GET',
+        credentials: 'omit',
+        redirect: 'manual',
+      })
+      expect(netRequests[0]!.options.session).toBe(pageWc.session)
+      expect(netRequests[0]!.ended).toBe(true)
+    })
+
+    it('revalidates each redirect hop and refuses one that leaves the scheme allowlist', async () => {
+      const { instance, pageWc } = startPane('fav-redirect')
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.ico'])
+      const request = netRequests[0]!
+
+      request._emit('redirect', 302, 'GET', 'https://cdn.example.com/favicon.png', {})
+      expect(request.followed).toBe(1)
+      expect(request.aborted).toBe(false)
+
+      // A server-chosen hop to a non-network scheme is exactly what the entry
+      // allowlist exists to stop; inheriting the entry URL's verdict would let
+      // it through.
+      request._emit('redirect', 302, 'GET', 'file:///etc/passwd', {})
+      expect(request.followed).toBe(1)
+      expect(request.aborted).toBe(true)
+
+      await flush()
+      expect(instance.favicon).toBe(null)
+    })
+
+    it('stops following once the hop cap is reached', () => {
+      const { pageWc } = startPane('fav-redirect-cap')
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.ico'])
+      const request = netRequests[0]!
+
+      request._emit('redirect', 302, 'GET', 'https://a.example.com/favicon.png', {})
+      request._emit('redirect', 302, 'GET', 'https://b.example.com/favicon.png', {})
+      request._emit('redirect', 302, 'GET', 'https://c.example.com/favicon.png', {})
+
+      expect(request.followed).toBe(2)
+      expect(request.aborted).toBe(true)
+    })
+
+    it('walks the candidate list when the first icon is rejected', async () => {
+      const { instance, pageWc } = startPane('fav-candidates')
+
+      // A site that announces SVG first still has its PNG honoured — the
+      // written rationale for rejecting SVG depends on this.
+      pageWc._emit('page-favicon-updated', [
+        'https://example.com/favicon.svg',
+        'https://example.com/favicon.png',
+      ])
+      expect(netRequests).toHaveLength(1)
+      netRequests[0]!._respond({ headers: { 'content-type': 'image/svg+xml' } })
+      await flush()
+
+      expect(netRequests).toHaveLength(2)
+      expect(netRequests[1]!.options.url).toBe('https://example.com/favicon.png')
+      netRequests[1]!._respond()
+      await flush()
+
+      expect(instance.favicon).toBe(FAVICON_PNG_DATA_URL)
+    })
+
+    it('aborts on navigation and drops a response that arrives for the previous page', async () => {
+      const { instance, pageWc } = startPane('fav-navigate')
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.png'])
+      const request = netRequests[0]!
+
+      pageWc._emit('did-navigate', 'https://other.example.com/')
+
+      expect(request.aborted).toBe(true)
+      expect(instance.favicon).toBe(null)
+      expect(instance.faviconCandidateKey).toBe(null)
+
+      // Page A's bytes must not paint page B.
+      request._respond()
+      await flush()
+      expect(instance.favicon).toBe(null)
+    })
+
+    it('aborts when the instance is destroyed and emits no state for it afterwards', async () => {
+      const { instance, infos, pageWc } = startPane('fav-destroy')
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.png'])
+      const request = netRequests[0]!
+
+      manager.destroyInstance('fav-destroy')
+      expect(request.aborted).toBe(true)
+
+      const countAfterDestroy = infos.length
+      request._respond()
+      await flush()
+
+      expect(infos.length).toBe(countAfterDestroy)
+      expect(instance.favicon).toBe(null)
+    })
+
+    it('aborts when the page renderer crashes, so no icon paints onto a dead page', async () => {
+      const { instance, pageWc } = startPane('fav-crash')
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.png'])
+      const request = netRequests[0]!
+
+      // The instance survives the crash, so without this the fetch would still
+      // land up to the 4s timeout later.
+      pageWc._emit('render-process-gone', { reason: 'crashed', exitCode: 133 })
+
+      expect(request.aborted).toBe(true)
+      request._respond()
+      await flush()
+      expect(instance.favicon).toBe(null)
+      expect(instance.faviconAbort).toBe(null)
+    })
+
+    it('dedupes a re-announced candidate list and clears the in-flight marker when nothing is usable', async () => {
+      const { instance, pageWc } = startPane('fav-dedupe')
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.png'])
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.png'])
+      expect(netRequests).toHaveLength(1)
+
+      netRequests[0]!._respond({ statusCode: 404 })
+      await flush()
+
+      expect(instance.favicon).toBe(null)
+      // Item 6: a settled controller must not keep claiming a live fetch.
+      expect(instance.faviconAbort).toBe(null)
+    })
+
+    it('never requests a candidate outside the scheme allowlist', () => {
+      const { pageWc } = startPane('fav-scheme')
+      pageWc._emit('page-favicon-updated', ['file:///etc/passwd', 'data:image/png;base64,AAAA'])
+      expect(netRequests).toHaveLength(0)
     })
   })
 })

@@ -74,7 +74,7 @@ const DIST_MIRROR_EXCLUDED_TOP_LEVEL: Record<string, true> = {
  */
 export function shouldMirrorResourceToDist(resourceRelative: string): boolean {
   const topLevel = resourceRelative.split('/')[0];
-  if (DIST_MIRROR_EXCLUDED_TOP_LEVEL[topLevel]) return false;
+  if (topLevel && DIST_MIRROR_EXCLUDED_TOP_LEVEL[topLevel]) return false;
   return !(
     resourceRelative === 'vendor/hermes' ||
     resourceRelative.startsWith('vendor/hermes/') ||
@@ -95,6 +95,13 @@ export const BUN_VERSION = 'bun-v1.3.9';
  * Update this when upgrading uv. Check latest at: https://github.com/astral-sh/uv/releases
  */
 export const UV_VERSION = '0.10.6';
+
+/**
+ * OfficeCLI version to bundle with the app.
+ * Powers the in-app preview of .docx/.xlsx/.pptx by rendering them to HTML.
+ * Update this when upgrading. Check latest at: https://github.com/iOfficeAI/OfficeCLI/releases
+ */
+export const OFFICECLI_VERSION = 'v1.0.143';
 
 /**
  * Get platform key for resources/bin folder naming.
@@ -141,6 +148,21 @@ export function getUvDownloadName(platform: Platform, arch: Arch): string {
   if (platform === 'win32' && arch === 'x64') return 'uv-x86_64-pc-windows-msvc.zip';
 
   throw new Error(`Unsupported uv target: ${platform}-${arch}`);
+}
+
+/**
+ * Get OfficeCLI release artifact filename for a platform/arch combination.
+ * Releases ship bare binaries (no archive), one per target.
+ */
+export function getOfficeCliDownloadName(platform: Platform, arch: Arch): string {
+  if (platform === 'darwin' && arch === 'arm64') return 'officecli-mac-arm64';
+  if (platform === 'darwin' && arch === 'x64') return 'officecli-mac-x64';
+  if (platform === 'linux' && arch === 'arm64') return 'officecli-linux-arm64';
+  if (platform === 'linux' && arch === 'x64') return 'officecli-linux-x64';
+  if (platform === 'win32' && arch === 'arm64') return 'officecli-win-arm64.exe';
+  if (platform === 'win32' && arch === 'x64') return 'officecli-win-x64.exe';
+
+  throw new Error(`Unsupported OfficeCLI target: ${platform}-${arch}`);
 }
 
 /**
@@ -323,6 +345,78 @@ export async function downloadUv(config: BuildConfig): Promise<void> {
 }
 
 /**
+ * Download the OfficeCLI binary into resources/bin/{platform-arch}/.
+ *
+ * Backs the in-app preview of Office documents: the main process shells out to
+ * `officecli view <file> html` and the renderer displays the result. Releases
+ * publish bare binaries plus a single SHA256SUMS listing every asset.
+ */
+export async function downloadOfficeCli(config: BuildConfig): Promise<void> {
+  const { platform, arch, electronDir } = config;
+  const assetName = getOfficeCliDownloadName(platform, arch);
+  const binaryName = platform === 'win32' ? 'officecli.exe' : 'officecli';
+  const platformKey = getPlatformKey(platform, arch);
+
+  const targetDir = join(electronDir, 'resources', 'bin', platformKey);
+  const targetPath = join(targetDir, binaryName);
+
+  // Skip when already provisioned
+  if (existsSync(targetPath)) {
+    console.log(`OfficeCLI already present at ${targetPath}`);
+    return;
+  }
+
+  console.log(`Downloading OfficeCLI ${OFFICECLI_VERSION} for ${platformKey}...`);
+
+  mkdirSync(targetDir, { recursive: true });
+  const tempDir = join(electronDir, '.officecli-download-temp');
+  rmSync(tempDir, { recursive: true, force: true });
+  mkdirSync(tempDir, { recursive: true });
+
+  try {
+    const releaseBase = `https://github.com/iOfficeAI/OfficeCLI/releases/download/${OFFICECLI_VERSION}`;
+    const assetUrl = `${releaseBase}/${assetName}`;
+    const checksumUrl = `${releaseBase}/SHA256SUMS`;
+
+    const assetPath = join(tempDir, assetName);
+    const checksumPath = join(tempDir, 'SHA256SUMS');
+
+    console.log(`  Downloading ${assetUrl}...`);
+    await $`curl -fsSL --retry 3 --retry-delay 2 -o ${assetPath} ${assetUrl}`;
+
+    console.log('  Downloading checksums...');
+    await $`curl -fsSL --retry 3 --retry-delay 2 -o ${checksumPath} ${checksumUrl}`;
+
+    console.log('  Verifying checksum...');
+    // SHA256SUMS covers every asset — pick the line for this target only.
+    const checksumContent = await Bun.file(checksumPath).text();
+    const entry = checksumContent
+      .split('\n')
+      .map(line => line.trim().split(/\s+/))
+      .find(([, name]) => name === assetName);
+
+    if (!entry?.[0]) {
+      throw new Error(`Unable to find ${assetName} in SHA256SUMS`);
+    }
+
+    const isValid = await verifySha256(assetPath, entry[0]);
+    if (!isValid) {
+      throw new Error('OfficeCLI checksum verification failed');
+    }
+    console.log('  Checksum verified ✓');
+
+    copyFileSync(assetPath, targetPath);
+    if (platform !== 'win32') {
+      await $`chmod +x ${targetPath}`.quiet();
+    }
+
+    console.log(`  OfficeCLI installed to ${targetPath} ✓`);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+/**
  * Clean previous build artifacts
  */
 export function cleanBuildArtifacts(config: BuildConfig): void {
@@ -482,44 +576,6 @@ export function copyRipgrep(config: BuildConfig): void {
 }
 
 /**
- * Copy network interceptor source files (Anthropic — runs under Bun via --preload)
- */
-export function copyInterceptor(config: BuildConfig): void {
-  const { rootDir, electronDir } = config;
-
-  const sharedSrcDir = join('packages', 'shared', 'src');
-  const sourceDir = join(rootDir, sharedSrcDir);
-  const destDir = join(electronDir, sharedSrcDir);
-
-  const interceptorSource = join(sourceDir, 'unified-network-interceptor.ts');
-  if (!existsSync(interceptorSource)) {
-    throw new Error(`Interceptor not found at ${interceptorSource}`);
-  }
-
-  console.log('Copying interceptor...');
-  mkdirSync(destDir, { recursive: true });
-  copyFileSync(interceptorSource, join(destDir, 'unified-network-interceptor.ts'));
-
-  // Also copy shared infrastructure (imported by unified-network-interceptor.ts at runtime)
-  const commonSource = join(sourceDir, 'interceptor-common.ts');
-  if (existsSync(commonSource)) {
-    copyFileSync(commonSource, join(destDir, 'interceptor-common.ts'));
-  }
-
-  // Copy request utilities (imported by unified-network-interceptor.ts)
-  const requestUtilsSource = join(sourceDir, 'interceptor-request-utils.ts');
-  if (existsSync(requestUtilsSource)) {
-    copyFileSync(requestUtilsSource, join(destDir, 'interceptor-request-utils.ts'));
-  }
-
-  // Copy feature flags (imported by unified-network-interceptor.ts for fast mode / source templates)
-  const featureFlagsSource = join(sourceDir, 'feature-flags.ts');
-  if (existsSync(featureFlagsSource)) {
-    copyFileSync(featureFlagsSource, join(destDir, 'feature-flags.ts'));
-  }
-}
-
-/**
  * Verify the unified interceptor CJS bundle exists (runs under Node.js via --require)
  * Built by `bun run build:interceptor` into apps/electron/dist/
  */
@@ -597,6 +653,17 @@ export function copyPiAgentServer(config: BuildConfig, resourcesDir?: string): v
     console.log('  Copied pi-better-subagents extension');
   }
 
+  // 1c. Copy the vendored pi-computer-use runtime (staged into dist/ by
+  //     pi-agent-server's `craft-stage-runtime.mjs`). index.ts resolves it as
+  //     `<SERVER_DIR>/pi-computer-use` and silently disables desktop
+  //     computer-use when absent, so a packaged build without it loses the
+  //     feature with no error. Skipped if absent.
+  const computerUseSrc = join(piSourceDir, 'pi-computer-use');
+  if (existsSync(computerUseSrc)) {
+    cpSync(computerUseSrc, join(piDestDir, 'pi-computer-use'), { recursive: true });
+    console.log('  Copied pi-computer-use runtime');
+  }
+
   // 2. Copy koffi npm package (external import, resolved via node_modules at runtime)
   const koffiSource = join(rootDir, 'node_modules', 'koffi');
 
@@ -624,7 +691,8 @@ export function copyPiAgentServer(config: BuildConfig, resourcesDir?: string): v
   if (existsSync(nativeSrc)) {
     mkdirSync(nativeDest, { recursive: true });
     cpSync(nativeSrc, nativeDest, { recursive: true });
-    const size = lstatSync(join(nativeSrc, readdirSync(nativeSrc)[0])).size;
+    const [firstNativeEntry] = readdirSync(nativeSrc);
+    const size = firstNativeEntry ? lstatSync(join(nativeSrc, firstNativeEntry)).size : 0;
     console.log(`  Copied index.js + koffi/${targetDir} (${(size / 1024 / 1024).toFixed(1)}MB)`);
   } else {
     console.warn(`  Warning: koffi native binary not found for ${targetDir}`);
@@ -656,7 +724,7 @@ export function buildMcpServers(config: BuildConfig): void {
 
   execSync(
     `bun build ${join(sessionDir, 'src', 'index.ts')} --outfile ${sessionOut} --target node --format cjs`,
-    { cwd: rootDir, stdio: 'inherit', shell: true }
+    { cwd: rootDir, stdio: 'inherit' }
   );
 
   if (!existsSync(sessionOut)) {
@@ -672,7 +740,7 @@ export function buildMcpServers(config: BuildConfig): void {
     mkdirSync(join(piDir, 'dist'), { recursive: true });
     execSync(
       `bun build ${join(piDir, 'src', 'index.ts')} --outdir ${join(piDir, 'dist')} --target bun --format esm --external koffi`,
-      { cwd: rootDir, stdio: 'inherit', shell: true }
+      { cwd: rootDir, stdio: 'inherit' }
     );
     if (!existsSync(piOut)) {
       throw new Error(`Pi agent server output not found at ${piOut}`);
@@ -693,7 +761,7 @@ export function buildWhatsAppWorker(config: BuildConfig): void {
 
   console.log('Building WhatsApp worker...');
 
-  execSync('bun run build:wa-worker', { cwd: rootDir, stdio: 'inherit', shell: true });
+  execSync('bun run build:wa-worker', { cwd: rootDir, stdio: 'inherit' });
 
   if (!existsSync(workerOut)) {
     throw new Error(`WhatsApp worker output not found at ${workerOut}`);

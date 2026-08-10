@@ -1,0 +1,48 @@
+{
+  "capturedAt": "2026-08-01",
+  "commit": "5ce24920",
+  "runtime": {
+    "kind": "built-electron",
+    "isolatedRoot": "/tmp/craft-phase-a-smoke.ZGD344",
+    "cdpPort": 9331,
+    "stoppedAfterSmoke": true
+  },
+  "workspaces": {
+    "subject": "2ddce2e4-c280-6c4d-0a08-99b707766ca1",
+    "control": "1996f2a9-4f16-cad8-d7ef-fd1c546f83e4"
+  },
+  "object": {
+    "id": "object_people",
+    "initialRevision": 2,
+    "updatedRevision": 3,
+    "updatedRow": {
+      "Name": "Ana",
+      "Status": "Active"
+    }
+  },
+  "agentMcpChain": {
+    "toolVisible": true,
+    "objectId": "object_agent_audit",
+    "defineRevision": 1,
+    "upsertRevision": 2,
+    "projectionStatus": "ready",
+    "displayedRow": {
+      "Name": "MCP Agent",
+      "Status": "Updated"
+    }
+  },
+  "observedEvent": {
+    "workspaceId": "2ddce2e4-c280-6c4d-0a08-99b707766ca1",
+    "objectId": "object_people",
+    "revision": 3,
+    "changeKind": "projection-repaired",
+    "projectionStatus": "ready"
+  },
+  "assertions": {
+    "livePreviewUpdatedWithoutReload": true,
+    "controlWorkspaceHadNoObjectLeak": true,
+    "scopedTabRestoredOnReturn": true,
+    "rpcClientDisconnectedOnWindowClose": true,
+    "electronAndCdpStoppedAfterSmoke": true
+  }
+}

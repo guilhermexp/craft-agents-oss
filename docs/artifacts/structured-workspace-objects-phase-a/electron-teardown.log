@@ -1,0 +1,4 @@
+2026-08-01T08:14:17.160Z INFO  [window] Window closed for workspace 2ddce2e4-c280-6c4d-0a08-99b707766ca1
+2026-08-01T08:14:17.233Z [ws-rpc-server] INFO  Client disconnected {"clientId":"ef59b33a-2df1-44af-9c4a-1dd8633e650a"}
+POSTCONDITION no process matching "electron apps/electron|remote-debugging-port=9331"
+POSTCONDITION CDP http://localhost:9331/json/list unavailable

@@ -43,7 +43,6 @@ function makeAdapter(platform: 'telegram' | 'whatsapp', inlineButtons: boolean):
       maxButtons: 10,
       maxMessageLength: 4096,
       markdown: platform === 'telegram' ? 'v2' : 'whatsapp',
-      webhookSupport: false,
     },
     sent,
     async initialize() {},
@@ -104,7 +103,7 @@ describe('Commands', () => {
 
     await commands.handleCommand(adapter, makeMessage('/bind 1'))
 
-    expect(store.findByMessagingChannel('whatsapp', 'chan-1')?.sessionId).toBe('sess-2')
+    expect(store.findByChannel('whatsapp', 'chan-1')?.sessionId).toBe('sess-2')
     expect(adapter.sent.at(-1)).toContain('Newest')
   })
 

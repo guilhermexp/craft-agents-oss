@@ -1,7 +1,7 @@
-import { useMemo } from "react"
+import { memo, useMemo } from "react"
 import { formatDistanceToNowStrict } from "date-fns"
 import type { Locale } from "date-fns"
-import { Flag, ShieldAlert } from "lucide-react"
+import { CircleHelp, Flag, ShieldAlert } from "lucide-react"
 import { useActionLabel } from "@/actions"
 import { cn } from "@/lib/utils"
 import { rendererPerf } from "@/lib/perf"
@@ -15,8 +15,8 @@ import { SessionStatusIcon } from "./SessionStatusIcon"
 import { SessionBadges } from "./SessionBadges"
 import { SESSION_DRAG_MIME } from "./session-dnd"
 import { getSessionTitle, getSessionPreviewText, highlightMatch, hasUnreadMeta, shortTimeLocale } from "@/utils/session"
-import { useSessionListContext } from "@/context/SessionListContext"
-import { useAppShellContext } from "@/context/AppShellContext"
+import { useSessionListActions, useSessionListView } from "@/context/SessionListContext"
+import { useWorkspaceData, usePanelChrome } from "@/context/AppShellContext"
 import { navigate, routes } from "@/lib/navigate"
 import type { SessionMeta } from "@/atoms/sessions"
 import { messagingBindingsBySessionAtom } from "@/atoms/messaging"
@@ -67,7 +67,7 @@ function resolveSessionConnection(
   return llmConnections.find(connection => connection.isDefault) ?? llmConnections[0] ?? null
 }
 
-function SessionConnectionIcon({ connection }: { connection: LlmConnectionWithStatus }) {
+const SessionConnectionIcon = memo(function SessionConnectionIcon({ connection }: { connection: LlmConnectionWithStatus }) {
   return (
     <span
       className="flex !h-3.5 !w-3.5 shrink-0 items-center justify-center opacity-80"
@@ -77,7 +77,7 @@ function SessionConnectionIcon({ connection }: { connection: LlmConnectionWithSt
       <ConnectionIcon connection={connection} size={14} />
     </span>
   )
-}
+})
 
 export interface SessionItemProps {
   item: SessionMeta
@@ -101,23 +101,26 @@ export function SessionItem({
   onToggleSelect,
   onRangeSelect,
 }: SessionItemProps) {
-  const ctx = useSessionListContext()
-  const { workspaces, isCompactMode, llmConnections, workspaceDefaultLlmConnection } = useAppShellContext()
+  const ctx = useSessionListActions()
+  const view = useSessionListView()
+  const { workspaces, llmConnections, workspaceDefaultLlmConnection } = useWorkspaceData()
+  const { isCompactMode } = usePanelChrome()
   const hasRemoteWorkspaces = workspaces?.some(w => w.remoteServer) ?? false
   const { hotkey: nextHotkey } = useActionLabel('chat.nextSearchMatch')
   const { hotkey: prevHotkey } = useActionLabel('chat.prevSearchMatch')
   const title = getSessionTitle(item)
   // For the active session, prefer logical match count over ripgrep count
-  const activeMatch = ctx.activeChatMatchInfo
+  const activeMatch = view.activeChatMatchInfo
   const isActiveSession = isSelected && activeMatch?.sessionId === item.id
-  const ripgrepMatchCount = ctx.contentSearchResults.get(item.id)?.matchCount
+  const ripgrepMatchCount = view.contentSearchResults.get(item.id)?.matchCount
   const chatMatchCount = isActiveSession ? activeMatch!.count : ripgrepMatchCount
   const hasMatch = chatMatchCount != null && chatMatchCount > 0
   const hasLabels = !!(item.labels && item.labels.length > 0 && ctx.flatLabels.length > 0 && item.labels.some(entry => {
     const labelId = extractLabelId(entry)
     return ctx.flatLabels.some(l => l.id === labelId)
   }))
-  const hasPendingPrompt = ctx.hasPendingPrompt?.(item.id) ?? false
+  const hasPendingPrompt = view.hasPendingPrompt?.(item.id) ?? false
+  const hasPendingQuestion = view.hasPendingQuestion?.(item.id) ?? false
   const previewText = isCompactMode ? getSessionPreviewText(item) : null
   const messagingBindingsBySession = useAtomValue(messagingBindingsBySessionAtom)
   const sessionBindings = messagingBindingsBySession.get(item.id) ?? []
@@ -208,7 +211,7 @@ export function SessionItem({
   const handleClick = (e: React.MouseEvent) => {
     ctx.onFocusZone()
     if (e.button === 2) {
-      if (ctx.isMultiSelectActive && !isInMultiSelect && onToggleSelect) onToggleSelect()
+      if (view.isMultiSelectActive && !isInMultiSelect && onToggleSelect) onToggleSelect()
       return
     }
     if ((e.metaKey || e.ctrlKey) && e.shiftKey) {
@@ -250,7 +253,7 @@ export function SessionItem({
           ctx.onKeyDown(e, item)
         },
       }}
-      menuContent={
+      menuContent={() => (
         <SessionMenu
           item={item}
           sessionStatuses={ctx.sessionStatuses}
@@ -268,8 +271,8 @@ export function SessionItem({
           hasRemoteWorkspaces={hasRemoteWorkspaces}
           onDelete={() => ctx.onDelete(item.id)}
         />
-      }
-      contextMenuContent={ctx.isMultiSelectActive && isInMultiSelect ? <BatchSessionMenu /> : undefined}
+      )}
+      contextMenuContent={view.isMultiSelectActive && isInMultiSelect ? () => <BatchSessionMenu /> : undefined}
       icon={
         <>
           <SessionStatusIcon item={item} />
@@ -277,7 +280,7 @@ export function SessionItem({
           <div className={cn(
             "flex items-center justify-center overflow-hidden gap-1",
             "transition-all duration-200 ease-out",
-            (item.isProcessing || hasUnreadMeta(item) || item.lastMessageRole === 'plan' || hasPendingPrompt)
+            (item.isProcessing || hasUnreadMeta(item) || item.lastMessageRole === 'plan' || hasPendingPrompt || hasPendingQuestion)
               ? "opacity-100 ml-0"
               : "!w-0 opacity-0 -ml-[10px]"
           )}>
@@ -295,10 +298,11 @@ export function SessionItem({
               </svg>
             )}
             {hasPendingPrompt && <ShieldAlert className="size-3.5 text-info" />}
+            {hasPendingQuestion && <CircleHelp className="size-3.5 text-info" />}
           </div>
         </>
       }
-      title={ctx.searchQuery ? highlightMatch(title, ctx.searchQuery) : title}
+      title={view.searchQuery ? highlightMatch(title, view.searchQuery) : title}
       titleClassName={cn("text-[13px]", item.isAsyncOperationOngoing && "animate-shimmer-text")}
       subtitle={previewText}
       titleSuffix={titleSuffixNode}

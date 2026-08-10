@@ -7,7 +7,7 @@ import { spawn, type Subprocess } from "bun";
 import { existsSync, rmSync, cpSync, readFileSync, writeFileSync, statSync, mkdirSync } from "fs";
 import { join, basename, relative, sep } from "path";
 import * as esbuild from "esbuild";
-import { downloadUv, shouldMirrorResourceToDist, type Platform, type Arch } from "./build/common";
+import { downloadUv, downloadOfficeCli, shouldMirrorResourceToDist, type Platform, type Arch } from "./build/common";
 
 const ROOT_DIR = join(import.meta.dir, "..");
 const ELECTRON_DIR = join(ROOT_DIR, "apps/electron");
@@ -98,6 +98,30 @@ async function ensureBundledUvForCurrentPlatform(): Promise<void> {
 
   console.log(`⬇️  Bundled uv missing, bootstrapping ${platformKey}...`);
   await downloadUv({
+    platform,
+    arch,
+    upload: false,
+    uploadLatest: false,
+    uploadScript: false,
+    rootDir: ROOT_DIR,
+    electronDir: ELECTRON_DIR,
+  });
+}
+
+async function ensureBundledOfficeCliForCurrentPlatform(): Promise<void> {
+  const platform = resolveBuildPlatform();
+  const arch = resolveBuildArch();
+  const platformKey = `${platform}-${arch}`;
+  const binary = platform === "win32" ? "officecli.exe" : "officecli";
+  const officeCliPath = join(ELECTRON_DIR, "resources", "bin", platformKey, binary);
+
+  if (existsSync(officeCliPath)) {
+    console.log(`✅ Bundled OfficeCLI present: ${officeCliPath}`);
+    return;
+  }
+
+  console.log(`⬇️  Bundled OfficeCLI missing, bootstrapping ${platformKey}...`);
+  await downloadOfficeCli({
     platform,
     arch,
     upload: false,
@@ -482,6 +506,7 @@ async function main(): Promise<void> {
   }
 
   await ensureBundledUvForCurrentPlatform();
+  await ensureBundledOfficeCliForCurrentPlatform();
   await ensureNativeModulesForElectron();
 
   copyResources();

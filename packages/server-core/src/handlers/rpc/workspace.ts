@@ -2,38 +2,11 @@ import { existsSync } from 'node:fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
-import { getWorkspaces, getWorkspaceByNameOrId, addWorkspace, setActiveWorkspace, updateWorkspaceRemoteServer } from '@craft-agent/shared/config'
+import { getWorkspaces, getWorkspaceByNameOrId, addWorkspace, setActiveWorkspace, updateWorkspaceRemoteServer, getDefaultWorkspaceId, setDefaultWorkspace } from '@craft-agent/shared/config'
 import { perf } from '@craft-agent/shared/utils'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import { isValidWorkspaceRootPath } from '../../utils/path-validation'
-
-export const CORE_HANDLED_CHANNELS = [
-  RPC_NAMESPACES.workspaces.GET,
-  RPC_NAMESPACES.workspaces.CREATE,
-  RPC_NAMESPACES.workspaces.CHECK_SLUG,
-  RPC_NAMESPACES.workspaces.UPDATE_REMOTE,
-  RPC_NAMESPACES.window.GET_WORKSPACE,
-  RPC_NAMESPACES.window.GET_MODE,
-  RPC_NAMESPACES.window.SWITCH_WORKSPACE,
-  RPC_NAMESPACES.workspace.READ_IMAGE,
-  RPC_NAMESPACES.workspace.WRITE_IMAGE,
-  RPC_NAMESPACES.theme.GET_APP,
-  RPC_NAMESPACES.theme.SET_APP,
-  RPC_NAMESPACES.theme.GET_PRESETS,
-  RPC_NAMESPACES.theme.LOAD_PRESET,
-  RPC_NAMESPACES.theme.GET_COLOR_THEME,
-  RPC_NAMESPACES.theme.SET_COLOR_THEME,
-  RPC_NAMESPACES.theme.BROADCAST_PREFERENCES,
-  RPC_NAMESPACES.theme.GET_WORKSPACE_COLOR_THEME,
-  RPC_NAMESPACES.theme.SET_WORKSPACE_COLOR_THEME,
-  RPC_NAMESPACES.theme.GET_ALL_WORKSPACE_THEMES,
-  RPC_NAMESPACES.theme.BROADCAST_WORKSPACE_THEME,
-  RPC_NAMESPACES.views.LIST,
-  RPC_NAMESPACES.views.SAVE,
-  RPC_NAMESPACES.toolIcons.GET_MAPPINGS,
-  RPC_NAMESPACES.logo.GET_URL,
-] as const
 
 export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDeps): void {
   const { sessionManager } = deps
@@ -76,6 +49,18 @@ export function registerWorkspaceCoreHandlers(server: RpcServer, deps: HandlerDe
   server.handle(RPC_NAMESPACES.workspaces.UPDATE_REMOTE, async (_ctx, workspaceId: string, remoteServer: { url: string; token: string; remoteWorkspaceId: string }) => {
     updateWorkspaceRemoteServer(workspaceId, remoteServer)
     deps.platform.logger.info(`Updated remote server for workspace ${workspaceId}: ${remoteServer.url}`)
+    return { success: true }
+  })
+
+  // Return the workspace pinned as default-on-launch, or null when none.
+  server.handle(RPC_NAMESPACES.workspaces.GET_DEFAULT, async () => {
+    return getDefaultWorkspaceId()
+  })
+
+  // Pin/unpin a workspace as default-on-launch.
+  server.handle(RPC_NAMESPACES.workspaces.SET_DEFAULT, async (_ctx, workspaceId: string | null) => {
+    setDefaultWorkspace(workspaceId)
+    deps.platform.logger.info(`Default workspace ${workspaceId ? `set to ${workspaceId}` : 'cleared'}`)
     return { success: true }
   })
 

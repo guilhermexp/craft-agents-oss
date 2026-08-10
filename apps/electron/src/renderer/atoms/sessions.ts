@@ -713,14 +713,20 @@ export type BackgroundTaskStatus = 'running' | 'completed' | 'failed' | 'stopped
 export interface BackgroundTask {
   /** Task or shell ID */
   id: string
-  /** Task type. 'workflow' = a fan-out Workflow launch (many sub-agents). */
-  type: 'agent' | 'shell' | 'workflow'
-  /** Tool use ID for correlation with messages */
-  toolUseId: string
+  /** Task type. */
+  type: 'agent' | 'shell' | 'workflow' | 'team-task'
+  /** Tool use ID for correlation with messages; team tasks have no tool call. */
+  toolUseId?: string
   /** Workflow run id (wf_...) — set for type 'workflow'; correlates agent-completed updates. */
   workflowId?: string
   /** Count of sub-agents that have completed so far (type 'workflow' only). */
   agentsCompleted?: number
+  /** Stable agent IDs already counted for workflow progress deduplication. */
+  completedAgentIds?: string[]
+  /** Named Claude teammate that owns this agent/task. */
+  agentName?: string
+  /** True after TeammateIdle until the teammate receives another message. */
+  isIdle?: boolean
   /** When the task started */
   startTime: number
   /** Elapsed seconds (from progress events; the chip also derives it from startTime) */
@@ -738,9 +744,8 @@ export interface BackgroundTask {
 }
 
 /**
- * Atom family for tracking active background tasks per session
- * Updated on task_backgrounded, shell_backgrounded, task_progress events
- * Cleared when tasks complete or are killed
+ * Atom family for background task chips per session.
+ * Terminal entries are pruned by ActiveTasksBar after their retention window.
  */
 export const backgroundTasksAtomFamily = atomFamily(
   (_sessionId: string) => atom<BackgroundTask[]>([]),

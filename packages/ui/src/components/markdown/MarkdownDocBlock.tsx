@@ -29,6 +29,7 @@
 
 import * as React from 'react'
 import { FileText, Maximize2 } from 'lucide-react'
+import { OpenInSidePanelButton } from './OpenInSidePanelButton'
 import { cn } from '../../lib/utils'
 import { CodeBlock } from './CodeBlock'
 import { ItemNavigator } from '../overlay/ItemNavigator'
@@ -133,6 +134,7 @@ export function MarkdownDocBlock({ code, className, onUrlClick, onFileClick }: M
           <span className="text-[12px] text-muted-foreground font-medium flex-1">{headerTitle}</span>
           <div className="flex items-center gap-1">
             <ItemNavigator items={items} activeIndex={activeIndex} onSelect={setActiveIndex} />
+            <OpenInSidePanelButton src={items[activeIndex]?.src} alwaysVisible={hasMultiple} />
             <button
               type="button"
               onClick={() => setIsFullscreen((v) => !v)}

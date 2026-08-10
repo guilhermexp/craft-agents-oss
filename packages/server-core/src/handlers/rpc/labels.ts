@@ -3,12 +3,6 @@ import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.labels.LIST,
-  RPC_NAMESPACES.labels.CREATE,
-  RPC_NAMESPACES.labels.DELETE,
-] as const
-
 export function registerLabelsHandlers(server: RpcServer, _deps: HandlerDeps): void {
   // List all labels for a workspace
   server.handle(RPC_NAMESPACES.labels.LIST, async (_ctx, workspaceId: string) => {

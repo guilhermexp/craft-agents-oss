@@ -3,7 +3,7 @@ import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { useTranslation } from 'react-i18next'
 import { Check, ChevronDown, Trash2 } from 'lucide-react'
 import { PROJECT_COLOR_PALETTE, type ProjectColorTreatment } from '@/utils/project-colors'
-import { type SessionStatus, getStatusIconStyle } from '@/config/session-status-config'
+import { type ResolvedSessionStatus, getStatusIconStyle } from '@/config/session-status-config'
 import type { KanbanColumnColor } from '@/hooks/useKanbanColumnColors'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { SessionStatusMenu } from '@/components/ui/session-status-menu'
@@ -22,9 +22,9 @@ interface KanbanColumnProps {
   color?: KanbanColumnColor
   tasks: KanbanTask[]
   projectsById: Map<string, KanbanProject>
-  statusesById: Map<string, SessionStatus>
+  statusesById: Map<string, ResolvedSessionStatus>
   /** Ordered workspace statuses for the per-tile status picker. */
-  statuses?: SessionStatus[]
+  statuses?: ResolvedSessionStatus[]
   /** Change a task's status from its tile. Enables the status-badge picker when set. */
   onChangeStatus?: (taskId: string, statusId: string) => void
   treatment: ProjectColorTreatment
@@ -167,8 +167,8 @@ function ColumnHeader({
   label: string
   count: number
   color?: KanbanColumnColor
-  statuses?: SessionStatus[]
-  dropStatus?: SessionStatus
+  statuses?: ResolvedSessionStatus[]
+  dropStatus?: ResolvedSessionStatus
   onSelectDropStatus?: (statusId: string) => void
   editable?: boolean
   onRename?: (name: string) => void

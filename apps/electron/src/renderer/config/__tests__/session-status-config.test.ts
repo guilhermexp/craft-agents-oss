@@ -2,10 +2,10 @@ import { describe, it, expect } from 'bun:test'
 import {
   getStateIconStyle,
   getStatusIconStyle,
-  type SessionStatus,
+  type ResolvedSessionStatus,
 } from '../session-status-config'
 
-function makeStatus(overrides: Partial<SessionStatus>): SessionStatus {
+function makeStatus(overrides: Partial<ResolvedSessionStatus>): ResolvedSessionStatus {
   return {
     id: 'todo',
     label: 'Todo',
@@ -30,7 +30,7 @@ describe('session-status-config icon style helpers', () => {
   })
 
   it('getStateIconStyle resolves by id and applies same colorability rule', () => {
-    const states: SessionStatus[] = [
+    const states: ResolvedSessionStatus[] = [
       makeStatus({ id: 'todo', icon: '✅', iconColorable: false, resolvedColor: 'var(--foreground)' }),
       makeStatus({ id: 'in-progress', iconColorable: true, resolvedColor: 'var(--success)' }),
     ]

@@ -8,8 +8,10 @@ import { FILE_EXTENSIONS_PATTERN } from '../../lib/file-classification'
  * plus custom regex for local file paths.
  */
 
-// Initialize linkify-it with default settings (fuzzy URLs, emails enabled)
-const linkify = new LinkifyIt()
+// Fuzzy detection (bare domains like `example.com`, plus emails) is required:
+// chat/agent output routinely omits the scheme. linkify-it v6 flipped the
+// `fuzzyLink` default from true to false, so it is now pinned explicitly.
+const linkify = new LinkifyIt({ fuzzyLink: true, fuzzyEmail: true })
 
 // File path regex - detects absolute/home/explicit-relative/bare-relative paths with common extensions
 // Examples: /Users/foo.ts, ~/src/app.tsx, ./README.md, ../guide.md, apps/electron/src/main.ts

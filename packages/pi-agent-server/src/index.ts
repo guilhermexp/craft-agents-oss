@@ -130,6 +130,7 @@ interface InitMessage {
   customModels?: Array<string | { id: string; contextWindow?: number; supportsImages?: boolean }>;
   piAuth?: { provider: string; credential: PiCredential };
   enableComputerUse?: boolean;
+  enableSubagents?: boolean;
 }
 
 /** Messages from main process (stdin) */
@@ -704,7 +705,7 @@ async function ensureSession(): Promise<AgentSession> {
     // pi-better-subagents: async, non-blocking subagent delegation tools.
     // Cross-platform; the child `pi -p` invocation resolves the pi binary at
     // spawn time.
-    if (existsSync(SUBAGENTS_PACKAGE_DIR)) {
+    if (initConfig.enableSubagents && existsSync(SUBAGENTS_PACKAGE_DIR)) {
       extensionPaths.push(SUBAGENTS_PACKAGE_DIR);
       toolAllowlist = [...new Set([...toolAllowlist, ...SUBAGENT_TOOL_NAMES])];
       debugLog(`Enabled pi-better-subagents package: ${SUBAGENTS_PACKAGE_DIR}; added subagent tools to allowlist`);

@@ -44,7 +44,10 @@ const SUBAGENT_TOOLS = [
     "subagent_result",
 ];
 
-const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
+const text = (t: string) => ({
+    content: [{ type: "text" as const, text: t }],
+    details: {},
+});
 
 // ---- status formatting ---------------------------------------------------
 

@@ -7,7 +7,7 @@ Use `browser_tool` to control built-in browser windows (Chromium) inside Craft A
 ## Browser usage paths
 
 1. **Primary and only in-session tool surface:** `browser_tool`
-2. **Secondary helper CLI:** `bun run browser-tool --help` for command discovery/templates, and `bun run browser-tool parse-url <url>` for safe URL diagnostics outside agent turns
+2. **Secondary helper CLI:** `bun run browser-tool --help` prints the canonical `browser_tool` command grammar, and `bun run browser-tool parse-url <url>` gives safe URL diagnostics outside agent turns
 
 ---
 

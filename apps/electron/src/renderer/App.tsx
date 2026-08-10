@@ -23,9 +23,9 @@ import { DismissibleLayerProvider } from '@/context/DismissibleLayerContext'
 import { useWindowCloseHandler } from '@/hooks/useWindowCloseHandler'
 import { useOnboarding } from '@/hooks/useOnboarding'
 import { useNotifications } from '@/hooks/useNotifications'
-import { useSession } from '@/hooks/useSession'
+import { useSessionSelection } from '@/hooks/useSession'
 import { useUpdateChecker } from '@/hooks/useUpdateChecker'
-import { NavigationProvider } from '@/contexts/NavigationContext'
+import { NavigationProvider } from '@/context/NavigationContext'
 import { navigate, routes } from './lib/navigate'
 import { attachmentFromContentRef, toDraftRef } from './lib/drafts'
 import { stripMarkdown } from './utils/text'
@@ -65,6 +65,9 @@ import {
   JSONPreviewOverlay,
   ExcalidrawPreviewOverlay,
   AudioPreviewOverlay,
+  VideoPreviewOverlay,
+  HTMLPreviewOverlay,
+  OfficeLiveOverlay,
 } from '@craft-agent/ui'
 import { useLinkInterceptor, type FilePreviewState } from '@/hooks/useLinkInterceptor'
 import { useTransportConnectionState } from '@/hooks/useTransportConnectionState'
@@ -73,97 +76,19 @@ import { TransportConnectionBanner, shouldShowTransportConnectionBanner } from '
 import { getFileManagerName } from '@/lib/platform'
 import { ActionRegistryProvider } from '@/actions'
 import { toast } from 'sonner'
+import { reduceBackgroundTasks } from '@/lib/background-task-events'
 
 type AppState = 'loading' | 'onboarding' | 'reauth' | 'workspace-picker' | 'ready'
 
 /** Type for the Jotai store returned by useStore() */
 type JotaiStore = ReturnType<typeof getDefaultStore>
 
-/**
- * Helper to handle background task events from the agent.
- * Updates the backgroundTasksAtomFamily based on event type.
- * Extracted to avoid code duplication between streaming and non-streaming paths.
- */
-function handleBackgroundTaskEvent(
-  store: JotaiStore,
-  sessionId: string,
-  event: { type: string },
-  agentEvent: unknown
-): void {
-  // Type guard for accessing properties
-  const evt = agentEvent as Record<string, unknown>
-  const backgroundTasksAtom = backgroundTasksAtomFamily(sessionId)
-
-  if (event.type === 'task_backgrounded' && 'taskId' in evt && 'toolUseId' in evt) {
-    const currentTasks = store.get(backgroundTasksAtom)
-    const exists = currentTasks.some(t => t.toolUseId === evt.toolUseId)
-    if (!exists) {
-      store.set(backgroundTasksAtom, [
-        ...currentTasks,
-        {
-          id: evt.taskId as string,
-          type: 'agent' as const,
-          toolUseId: evt.toolUseId as string,
-          startTime: Date.now(),
-          elapsedSeconds: 0,
-          intent: evt.intent as string | undefined,
-          status: 'running',
-        },
-      ])
-    }
-  } else if (event.type === 'shell_backgrounded' && 'shellId' in evt && 'toolUseId' in evt) {
-    const currentTasks = store.get(backgroundTasksAtom)
-    const exists = currentTasks.some(t => t.toolUseId === evt.toolUseId)
-    if (!exists) {
-      store.set(backgroundTasksAtom, [
-        ...currentTasks,
-        {
-          id: evt.shellId as string,
-          type: 'shell' as const,
-          toolUseId: evt.toolUseId as string,
-          startTime: Date.now(),
-          elapsedSeconds: 0,
-          intent: evt.intent as string | undefined,
-          status: 'running',
-        },
-      ])
-    }
-  } else if (event.type === 'task_progress' && 'toolUseId' in evt && 'elapsedSeconds' in evt) {
-    const currentTasks = store.get(backgroundTasksAtom)
-    store.set(backgroundTasksAtom, currentTasks.map(t =>
-      t.toolUseId === evt.toolUseId
-        ? { ...t, elapsedSeconds: evt.elapsedSeconds as number }
-        : t
-    ))
-  } else if (event.type === 'task_completed' && 'taskId' in evt) {
-    // Remove task when background task completes
-    const currentTasks = store.get(backgroundTasksAtom)
-    store.set(backgroundTasksAtom, currentTasks.filter(t => t.id !== evt.taskId))
-  } else if (event.type === 'shell_killed' && 'shellId' in evt) {
-    // Remove shell task when KillShell succeeds
-    const currentTasks = store.get(backgroundTasksAtom)
-    store.set(backgroundTasksAtom, currentTasks.filter(t => t.id !== evt.shellId))
-  } else if (event.type === 'tool_result' && 'toolUseId' in evt) {
-    // Remove task when it completes - but NOT if this is the initial backgrounding result
-    // Background tasks return immediately with agentId/shell_id/backgroundTaskId,
-    // we should only remove when the task actually completes
-    const result = typeof evt.result === 'string' ? evt.result : JSON.stringify(evt.result)
-    const isBackgroundingResult = result && (
-      /agentId:\s*[a-zA-Z0-9_-]+/.test(result) ||
-      /shell_id:\s*[a-zA-Z0-9_-]+/.test(result) ||
-      /"backgroundTaskId":\s*"[a-zA-Z0-9_-]+"/.test(result)
-    )
-    if (!isBackgroundingResult) {
-      const currentTasks = store.get(backgroundTasksAtom)
-      store.set(backgroundTasksAtom, currentTasks.filter(t => t.toolUseId !== evt.toolUseId))
-    }
-  }
-  // Note: We do NOT clear background tasks on complete/error/interrupted
-  // Background tasks should persist and keep running after the turn ends
-  // They are only removed when:
-  // 1. task_completed event arrives (background task finished)
-  // 2. Their tool_result comes back (foreground task finished)
-  // 3. KillShell succeeds (shell_killed event)
+/** Project one session event into the existing background-task chips. */
+function handleBackgroundTaskEvent(store: JotaiStore, event: SessionEvent): void {
+  const tasksAtom = backgroundTasksAtomFamily(event.sessionId)
+  const current = store.get(tasksAtom)
+  const next = reduceBackgroundTasks(current, event, Date.now())
+  if (next !== current) store.set(tasksAtom, next)
 }
 
 function SessionLoadErrorScreen({
@@ -280,6 +205,15 @@ export default function App() {
   const [pendingPermissions, setPendingPermissions] = useState<Map<string, PermissionRequest[]>>(new Map())
   // Credential requests per session (queue to handle multiple concurrent requests)
   const [pendingCredentials, setPendingCredentials] = useState<Map<string, CredentialRequest[]>>(new Map())
+  // Parked AskUserQuestion tool calls per session (toolUseIds awaiting an answer).
+  // Surfaced in the sidebar so a pending question is visible when the session
+  // isn't open. Transient renderer state, mirroring pendingPermissions.
+  const [pendingQuestions, setPendingQuestions] = useState<Map<string, Set<string>>>(new Map())
+  const pendingQuestionsRef = useRef<Map<string, Set<string>>>(new Map())
+  const commitPendingQuestions = useCallback((next: Map<string, Set<string>>) => {
+    pendingQuestionsRef.current = next
+    setPendingQuestions(next)
+  }, [])
   // Draft composer state per session (text + attachment refs), preserved across mode
   // switches, conversation changes, and app restarts. Using a ref avoids re-renders
   // during typing; attachments are stored as lightweight refs (path + name) and
@@ -624,7 +558,7 @@ export default function App() {
   }, [setWindowWorkspaceId])
 
   // Session selection state
-  const [sessionSelection, setSession] = useSession()
+  const { state: sessionSelection, reset: resetSessionSelection } = useSessionSelection()
 
   // Notification system - shows native OS notifications and badge count
   const handleNavigateToSession = useCallback((sessionId: string) => {
@@ -772,6 +706,40 @@ export default function App() {
             })
             break
           }
+          case 'question_pending': {
+            const current = pendingQuestionsRef.current
+            const existing = current.get(sessionId)
+            const added = !existing?.has(effect.toolUseId)
+            if (added) {
+              const next = new Map(current)
+              const updated = new Set(existing ?? [])
+              updated.add(effect.toolUseId)
+              next.set(sessionId, updated)
+              commitPendingQuestions(next)
+            }
+            // Native notification (same UX as permission prompts) so the user
+            // notices a question awaiting their answer even off-screen.
+            if (added) {
+              const notifySession = store.get(sessionAtomFamily(sessionId))
+              if (notifySession && !notifySession.hidden) {
+                showSessionNotification(notifySession, 'A question is waiting for your answer')
+              }
+            }
+            break
+          }
+          case 'question_resolved': {
+            const current = pendingQuestionsRef.current
+            const existing = current.get(sessionId)
+            if (existing?.has(effect.toolUseId)) {
+              const next = new Map(current)
+              const updated = new Set(existing)
+              updated.delete(effect.toolUseId)
+              if (updated.size === 0) next.delete(sessionId)
+              else next.set(sessionId, updated)
+              commitPendingQuestions(next)
+            }
+            break
+          }
           case 'auto_retry': {
             // A source was auto-activated, automatically re-send the original message
             // Add suffix to indicate the source was activated
@@ -808,8 +776,8 @@ export default function App() {
         }
       }
 
-      // Clear pending permissions and credentials on complete
-      if (eventType === 'complete') {
+      // Clear pending permissions and credentials on terminal events.
+      if (eventType === 'complete' || eventType === 'typed_error') {
         setPendingPermissions(prevPerms => {
           if (prevPerms.has(sessionId)) {
             const next = new Map(prevPerms)
@@ -826,6 +794,17 @@ export default function App() {
           }
           return prevCreds
         })
+      }
+
+      // Clear parked questions when the turn terminates without a tool_result
+      // (timeout skip lands on complete; abort/error tear the parked call down).
+      if (eventType === 'complete' || eventType === 'error' || eventType === 'interrupted' || eventType === 'typed_error') {
+        const current = pendingQuestionsRef.current
+        if (current.has(sessionId)) {
+          const next = new Map(current)
+          next.delete(sessionId)
+          commitPendingQuestions(next)
+        }
       }
     }
 
@@ -893,6 +872,24 @@ export default function App() {
 
       if (event.type === 'session_deleted') {
         pendingSessions.delete(sessionId)
+        const currentQuestions = pendingQuestionsRef.current
+        if (currentQuestions.has(sessionId)) {
+          const nextQuestions = new Map(currentQuestions)
+          nextQuestions.delete(sessionId)
+          commitPendingQuestions(nextQuestions)
+        }
+        setPendingPermissions(prev => {
+          if (!prev.has(sessionId)) return prev
+          const next = new Map(prev)
+          next.delete(sessionId)
+          return next
+        })
+        setPendingCredentials(prev => {
+          if (!prev.has(sessionId)) return prev
+          const next = new Map(prev)
+          next.delete(sessionId)
+          return next
+        })
         removeSession(sessionId)
         return
       }
@@ -952,7 +949,7 @@ export default function App() {
         handleEffects(effects, sessionId, event.type)
 
         // Handle background task events
-        handleBackgroundTaskEvent(store, sessionId, event, agentEvent)
+        handleBackgroundTaskEvent(store, event)
 
         // For handoff events, update metadata map for list display
         // NOTE: No sessionsAtom to sync - atom and metadata are the source of truth
@@ -993,7 +990,7 @@ export default function App() {
       handleEffects(effects, sessionId, event.type)
 
       // Handle background task events
-      handleBackgroundTaskEvent(store, sessionId, event, agentEvent)
+      handleBackgroundTaskEvent(store, event)
 
       // Update per-session atom
       updateSessionDirect(sessionId, () => updatedSession)
@@ -1032,6 +1029,7 @@ export default function App() {
     syncSessionOptionsFromSession,
     applyPermissionModeState,
     reconcilePermissionModeState,
+    commitPendingQuestions,
   ])
 
   // Transport reconnect recovery — refresh session metadata plus active/processing
@@ -1655,6 +1653,8 @@ export default function App() {
     readFile: (path: string) => window.electronAPI.readFile(path),
     readFileDataUrl: (path: string) => window.electronAPI.readFileDataUrl(path),
     readFileBinary: (path: string) => window.electronAPI.readFileBinary(path),
+    renderOfficeDocument: (path: string) => window.electronAPI.renderOfficeDocument(path),
+    openOfficeLive: (path: string) => window.electronAPI.openOfficeLive(path),
   }), [t])
 
   const linkInterceptor = useLinkInterceptor(linkInterceptorOptions)
@@ -1735,11 +1735,12 @@ export default function App() {
       // 3. Clear selected session - the old session belongs to the previous workspace
       // and should not remain selected when switching to a new workspace.
       // This prevents showing stale session data from the wrong workspace.
-      setSession({ selected: null })
+      resetSessionSelection()
 
       // 4. Clear pending permissions/credentials (not relevant to new workspace)
       setPendingPermissions(new Map())
       setPendingCredentials(new Map())
+      commitPendingQuestions(new Map())
 
       // 5. Clear session options from previous workspace
       // (session IDs are unique UUIDs, but clearing prevents unbounded memory growth
@@ -1765,7 +1766,7 @@ export default function App() {
       // Sessions and theme will reload automatically due to windowWorkspaceId dependency
       // in useEffect hooks.
     }
-  }, [windowWorkspaceId, setSession, store, setWindowWorkspaceId])
+  }, [windowWorkspaceId, resetSessionSelection, store, setWindowWorkspaceId, commitPendingQuestions])
 
   // Handle workspace switch by slug (called by NavigationContext on popstate when ?ws= changes)
   const handleSwitchWorkspaceBySlug = useCallback((slug: string) => {
@@ -1800,6 +1801,7 @@ export default function App() {
     refreshLlmConnections,
     pendingPermissions,
     pendingCredentials,
+    pendingQuestions,
     getDraft,
     getDraftAttachmentRefs,
     hydrateDraftAttachments,
@@ -1846,6 +1848,7 @@ export default function App() {
     refreshLlmConnections,
     pendingPermissions,
     pendingCredentials,
+    pendingQuestions,
     getDraft,
     getDraftAttachmentRefs,
     hydrateDraftAttachments,
@@ -2138,6 +2141,39 @@ function FilePreviewRenderer({
           onClose={onClose}
           filePath={state.filePath}
           loadPdfData={loadPdfData}
+          theme={theme}
+        />
+      )
+
+    case 'video':
+      return (
+        <VideoPreviewOverlay
+          isOpen
+          onClose={onClose}
+          filePath={state.filePath}
+          theme={theme}
+        />
+      )
+
+    case 'officeLive':
+      return (
+        <OfficeLiveOverlay
+          isOpen
+          onClose={onClose}
+          filePath={state.filePath}
+          url={state.url}
+          error={state.error}
+          theme={theme}
+        />
+      )
+
+    case 'htmlDoc':
+      return (
+        <HTMLPreviewOverlay
+          isOpen
+          onClose={onClose}
+          html={state.content ?? ''}
+          title={state.filePath.split('/').pop() ?? 'Document'}
           theme={theme}
         />
       )

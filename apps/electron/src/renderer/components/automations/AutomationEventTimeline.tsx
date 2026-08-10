@@ -10,7 +10,7 @@ import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CheckCircle2, XCircle, ShieldAlert, ChevronDown, Copy, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useNavigation } from '@/contexts/NavigationContext'
+import { useNavigation } from '@/context/NavigationContext'
 import { type ExecutionEntry, type ExecutionStatus } from './types'
 import { formatShortRelativeTime } from './utils'
 
@@ -119,7 +119,7 @@ export function AutomationEventTimeline({ entries, className, onReplay }: Automa
 
         return (
           <div key={entry.id}>
-            {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- handlers are undefined for non-webhook rows */}
+            {/* Interactive only for webhook rows: role/tabIndex/handlers are spread together or not at all. */}
             <div
               className={cn(
                 'flex items-center gap-3 px-4 py-2.5 text-sm',

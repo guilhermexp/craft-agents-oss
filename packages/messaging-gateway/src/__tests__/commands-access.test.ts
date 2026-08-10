@@ -69,7 +69,6 @@ function makeAdapter(): PlatformAdapter & { sent: string[] } {
       maxButtons: 10,
       maxMessageLength: 4096,
       markdown: 'v2',
-      webhookSupport: false,
     },
     sent,
     async initialize() {},

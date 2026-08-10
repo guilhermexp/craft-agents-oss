@@ -9,15 +9,6 @@ import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import type { ServerHandlerContext } from '../../bootstrap/headless-start'
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.server.GET_WORKSPACES,
-  RPC_NAMESPACES.server.CREATE_WORKSPACE,
-  RPC_NAMESPACES.server.GET_STATUS,
-  RPC_NAMESPACES.server.GET_HEALTH,
-  RPC_NAMESPACES.server.GET_ACTIVE_SESSIONS,
-  RPC_NAMESPACES.server.HOME_DIR,
-] as const
-
 export function registerServerHandlers(
   server: RpcServer,
   deps: HandlerDeps,

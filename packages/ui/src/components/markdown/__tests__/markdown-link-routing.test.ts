@@ -92,10 +92,15 @@ describe('resolveMarkdownLinkTarget', () => {
 })
 
 describe('markdownUrlTransform', () => {
-  it('preserves dangerous anchor hrefs for custom click routing', () => {
+  // Hardened by 73142e5e ("block XSS schemes in markdownUrlTransform"): only
+  // file: is re-allowed from the set react-markdown's default transform
+  // strips, because file: is the scheme the custom <a> routes via onFileClick.
+  // XSS-class schemes are stripped at this layer regardless of what the
+  // consuming component does. See url-transform.test.ts for the full matrix.
+  it('preserves file hrefs for custom click routing but strips XSS schemes', () => {
     const anchorNode = { tagName: 'a' }
     expect(markdownUrlTransform('file:///tmp/test.md', 'href', anchorNode as never)).toBe('file:///tmp/test.md')
-    expect(markdownUrlTransform('javascript:alert(1)', 'href', anchorNode as never)).toBe('javascript:alert(1)')
+    expect(markdownUrlTransform('javascript:alert(1)', 'href', anchorNode as never)).toBe('')
   })
 
   it('still sanitizes dangerous non-anchor URL attributes', () => {
@@ -128,10 +133,11 @@ describe('ReactMarkdown anchor rendering with markdownUrlTransform', () => {
     expect(html).not.toContain('<a href="file:///Users/tester/report.pdf"')
   })
 
-  it('lets javascript links reach the custom anchor while keeping the DOM href sanitized', () => {
+  it('never lets javascript links reach the custom anchor', () => {
     const html = render('[boom](javascript:alert(1))')
-    expect(html).toContain('data-raw-href="javascript:alert(1)"')
+    expect(html).not.toContain('javascript:alert')
     expect(html).not.toContain('<a href="javascript:alert')
+    expect(html).toContain('data-raw-href=""')
   })
 
   it('keeps safe web links in the DOM href for normal browser affordances', () => {

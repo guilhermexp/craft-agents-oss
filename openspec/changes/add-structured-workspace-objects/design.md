@@ -1,0 +1,254 @@
+# Design — structured workspace objects
+
+## Context
+
+O requisito de produto é um único contrato de objetos que possa ser modificado
+por agentes e pelo Desktop, com atualização reativa da UI. O plano de origem é
+`docs/plans/2026-08-01-001-feat-structured-workspace-objects-plan.md` e mantém os
+IDs U1-U9 usados nas tasks.
+
+O repo já oferece quatro peças que devem ser compostas, não duplicadas:
+
+- `packages/shared/src/memory/sqlite-driver.ts` seleciona SQLite por runtime;
+- `packages/session-tools-core/src/tool-defs.ts` governa tools versionadas e Zod;
+- `packages/server-core/src/sessions/SessionManager.ts` governa subscriptions;
+- a sidebar em `AppShell.tsx` e `SessionFilesSection.tsx` já possui árvore,
+  preview inline e fallback para viewers especializados.
+
+## Domínio canônico
+
+Cada workspace estruturado possui `objects/objects.sqlite`. O schema normaliza:
+
+- objetos e revisões;
+- definições de campo e opções;
+- entries e valores tipados;
+- relações por stable ID;
+- saved views e settings;
+- action history;
+- read projections e estado da projeção em filesystem.
+
+Os tipos iniciais são text, number, boolean, date, datetime, select, status,
+relation e file. O tipo e suas constraints são dados versionados; novos tipos
+não exigem uma tabela física por feature.
+
+`object_payloads` mantém uma projeção denormalizada com a revisão fonte. Se o
+payload não existir ou estiver stale, o repository o reconstrói das tabelas
+normalizadas e regrava a projeção. Correção nunca depende da projeção existir.
+
+## Protocolo SQLite ↔ filesystem
+
+SQLite é a única autoridade. O runtime executa duas etapas recuperáveis:
+
+1. valida a operação, abre transação, atualiza rows normalizadas, read projection
+   e revisão, então faz commit;
+2. escreve atomicamente `objects/<slug>/object.yaml`, relê e valida stable ID e
+   revisão.
+
+Depois da segunda etapa publica exatamente um evento pós-commit:
+
+- `ready`: manifest válido;
+- `projection-error`: canonical commit existe, manifest requer reparo.
+
+Ambos os eventos invalidam o conteúdo para que o objeto canônico permaneça
+visível. `projection-error` também apresenta estado acionável. Deletar um
+manifest dispara reconstrução idempotente. Um manifest com stable ID divergente
+é conflito: não é importado nem sobrescrito silenciosamente.
+
+Para atravessar processos, o mesmo envelope redacted é persistido atomicamente
+em `objects/.events/<object-id-hash>.json`. O watcher usa o workspace ID da
+subscription configurada ao reemitir esse envelope; ele nunca confia no alias
+de workspace produzido por um subprocesso agent/MCP. A projeção guarda somente
+workspace/object IDs, revision, change kind e projection status, sem payloads,
+paths canônicos ou secrets. Entrega duplicada pelo fast path e pelo watcher é
+aceitável e deduplicada por workspace ID, object ID, revision e projection
+status no renderer. Assim o fast path e o watcher não duplicam um envelope,
+mas um `ready` de repair na mesma revisão não é descartado após
+`projection-error`.
+
+## Data plane do agente
+
+O frontier recebe uma tool genérica de objetos com variantes de action para:
+
+- definir schema;
+- criar/alterar/remover entries;
+- criar/alterar saved views;
+- consultar objetos e payloads;
+- verificar ou reparar projeções.
+
+Cada variante possui schema Zod estrito, limite de 64.000 caracteres por valor
+string, limites de cardinalidade e validação de
+workspace. O retorno inclui object ID, revision e projection status, nunca path
+do banco, SQL ou secrets. O mesmo service atende tool e RPC do Desktop.
+
+Orientação compacta é adicionada somente quando o store estruturado existe e o
+backend hospeda a tool. A documentação detalhada permanece fora do prompt.
+
+## Tabs e resolver
+
+Targets são uma união discriminada. IDs determinísticos incluem ownership:
+
+- arquivo: workspace, sessão e path normalizado;
+- objeto: workspace, object ID e view ID opcional.
+
+Há uma tab preview substituível por scope. Tabs promovidas ou pinned não são
+substituídas. Retarget de preview não-pinned entre scopes substitui o preview
+descartável já existente no destino, preservando pinned/permanent e o active
+caller quando ele continua válido. Restore é workspace-scoped e sempre repara
+`activeId` inválido. Targets de arquivo de outra sessão não atravessam a troca
+de sessão.
+
+O resolver mantém no máximo 20 payloads. Eviction remove o payload, não apenas a
+posição LRU. Load inicial e refresh usam a mesma geração monotônica e o mesmo
+AbortController. SWR preserva o último payload bem-sucedido enquanto a nova
+revisão carrega; respostas antigas nunca vencem uma geração nova.
+
+## Eventos e watchers
+
+O service publica eventos com workspace ID, object ID, revision, change kind e
+projection status. Server-core entrega apenas a clientes inscritos no mesmo
+workspace. O renderer deduplica por workspace/object/revision/status.
+Páginas de relation options inicializam somente a revision que realmente
+carregam; elas preservam um projection status já observado nessa mesma revision
+em vez de sintetizar `ready` a cada refresh. Em self-relations, essas páginas
+são dados auxiliares: revision e projection status do payload primário continuam
+autoritativos e não podem ser substituídos pelo envelope de options.
+
+O watcher de manifests possui uma instância por workspace e refcount de
+clientes. Ele ignora SQLite, WAL/SHM, temporários de atomic write e diretórios
+ruidosos. Debounce é por path. Ao zerar clientes ou trocar workspace, handles e
+timers são encerrados antes de remover o registry entry.
+
+Eventos do service são o caminho rápido. O watcher cobre edição/deleção externa,
+reconnect e recuperação, sem emitir um reload para cada write interno.
+
+## Renderer
+
+`AppShell` continua dono da sidebar. A árvore atual e a lista de objetos abrem o
+mesmo tab strip. Um registry de conteúdo seleciona componentes por payload:
+
+- Phase A: renderers atuais de image, text/code, Markdown, JSON, Excalidraw,
+  PDF, audio e datatable;
+- Phase B: table, Kanban, calendar, timeline, gallery e list.
+
+PDF, áudio e tipos não suportados inline mantêm o routing já especificado. A
+primeira fase não adiciona fallback local inseguro ao WebUI; surfaces ainda não
+suportadas retornam estado explícito.
+
+## Views
+
+Saved views armazenam filtros aninhados, search, multi-sort, column visibility e
+settings do adapter. A query é avaliada no shared domain para agente e UI
+receberem o mesmo resultado.
+
+No U5, o contrato persistido é `schemaVersion: 1` e estrito. O action adicional
+`query-object` aceita exatamente uma saved view por ID ou uma config inline e
+chama o mesmo evaluator usado pela table. Inputs legacy do placeholder Phase A
+permanecem compatíveis no frontier v1, mas são normalizados para v1 antes da
+gravação. A migration v3 adquire `BEGIN IMMEDIATE` antes de ler e normalizar as
+views, de modo que uma atualização canônica concorrente seja reavaliada sob o
+writer lock em vez de sobrescrita. A normalização mede o JSON final em bytes
+UTF-8, incluindo escaping e wrapper, e corta `legacyConfig` sem dividir surrogate
+pair para que a view migrada permaneça resavável sob o limite de 64.000 bytes.
+A migration v4 fecha o gap de rows já estritas em v1 que a v3 pulava antes da
+medição: reabre workspaces marcados como v3, mantém configs estritas dentro do
+budget sem rewrite e, para strict oversized, preserva search, filter, sort,
+visibility, adapter e settings, encurtando somente `legacyConfig`. Se o config
+sem esse campo ainda exceder o budget, a transação falha sem fallback para table
+nem marker v4. Rows corrigidas são persistidas/reprojetadas antes do marker.
+Sort usa a ordem canônica da entry como
+desempate; relation values continuam IDs e recebem labels dos payloads
+relacionados somente na leitura. Filtros relation comparam ID estável e label:
+operadores positivos combinam os matches com OR, e negados com AND. A
+query avalia todas as entries do snapshot canônico antes de limitar a resposta
+a 200 rows e inclui `totalEntries`/`truncated`, evitando falso vazio por corte
+antecipado. O envelope serializa somente relation labels referenciados nessas
+rows retornadas. Projeção stale tenta ser reparada antes de abrir o snapshot;
+se o writer lock estiver ocupado ou surgir nova divergência concorrente, o
+fallback reconstrói das rows sem escrever dentro da transação de leitura. A
+mesma fronteira vale para `getObject`: fora de transaction, o repair é
+best-effort e todo o retorno final relê revision, projection e fallback de rows
+em um único snapshot read-only; dentro de transaction existente, a leitura usa
+diretamente esse snapshot, sem promover para writer. Assim, um commit entre os
+SELECTs do payload não combina revision antiga com rows novas. A
+classificação de contenção cobre códigos string `SQLITE_BUSY`/`SQLITE_LOCKED`
+do Bun e o `errcode` numérico de `node:sqlite` cujo primary code é 5 ou 6;
+outros erros SQLite continuam sendo propagados.
+
+A seleção do field que rotula relations pertence a `query.ts`: primeiro text
+na ordem canônica, ou o primeiro field como fallback. A leitura SQL reutiliza
+esse helper sobre no máximo 200 fields e materializa em batch somente os
+candidate IDs bounded do snapshot, sem N+1 ou scan global de entries.
+
+A edição de field e o Kanban fazem read-modify-upsert no renderer: partem da
+entry atual do payload, sobrepõem somente o field alvo e enviam o snapshot
+completo de `values` pelo action `upsert-entries`. O action continua patch-like
+sobre os valores fornecidos; isso não transforma o repository em uma API
+replace-style nem autoriza o renderer a chamá-lo diretamente. Reenviar os
+sibling values atuais sem alteração os preserva explicitamente na fronteira do
+transporte. Não há precondition de revision na mutação. A confirmação continua
+canônica: o envelope precisa retornar a revisão commitada e field editor/Kanban
+permanecem em `awaiting-revalidation` até o SWR observar revisão igual ou
+superior com o valor alvo esperado. Validação local, resposta sem envelope de
+commit e exceção de transporte preservam o draft/estado recuperável e não
+produzem sucesso visual. O estado busy do field editor usa uma key própria em
+todos os locales, distinta de salvar view.
+Os prompts de ação U5/U6 em alemão e húngaro seguem o registro formal já usado
+pelos field editors, sem alternar para imperativos informais dentro do bloco.
+
+Falhas ao carregar relation options cruzam reducer/render por códigos estáveis:
+`invalid-response`, `stale-snapshot`, `changed-while-loading` e `transport`.
+O renderer traduz o código como mensagem principal; somente transporte pode
+preservar detalhe técnico opcional, exibido separadamente e nunca promovido a
+headline crua em inglês. O estado usa uma união discriminada que exclui
+`detail` das três variantes não-transport, e o JSX repete esse guard antes de
+renderizar o texto secundário.
+
+Os seis adapters consomem um payload comum. Kanban conserva a mutação original
+durante optimistic update e reverte tanto em resposta rejeitada quanto em
+exceção de transporte. Um envelope com revisão canônica e `projection-error`
+permanece aguardando revalidation, mostra warning de repair separado e só limpa
+o warning quando um payload `ready` alcança a revisão commitada; não existe
+rollback falso. Retry, rollback ou envelope `ready` posterior não apagam o
+warning anterior por conta própria; outro `projection-error` pode substituí-lo
+por revisão mais nova. Calendar é primeiro um adapter genérico de date/datetime; sync
+de Google Calendar apenas materializa dados nesse contrato.
+
+## Integrações
+
+Composio fornece catálogo e metadata de conexão long-tail. Craft sources/OAuth e
+credential storage continuam autoridades. Conexão saudável exige source test e
+probe em uma sessão compatível que observe as tools esperadas.
+
+Gmail e Google Calendar usam adapters nativos porque checkpoint, idempotência,
+timezone, cancelamento e relacionamento são invariantes do domínio. Listas de
+inbox carregam somente metadata; HTML completo é hidratado sob demanda e passa
+pelo sanitizer existente.
+
+## Falhas e recuperação
+
+- Migration futura desconhecida bloqueia writes, preserva reads possíveis e
+  retorna erro acionável.
+- Falha de manifest após commit mantém canonical visibility e agenda repair.
+- Falha da projeção durável de evento após commit retorna `projection-error` e
+  publica o mesmo status no fast path; nunca reporta rollback do commit canônico.
+- Falha de watcher não invalida mutations; reconnect restabelece uma subscription
+  e emite uma única invalidação por workspace para recarregar lista e objeto
+  ativo. Falha de revalidation conserva o payload stale e mostra erro com retry.
+- Falha de provider preserva checkpoint e dados visíveis.
+- Token incremental expirado troca para full reconciliation idempotente sem
+  limpar o estado atual antes do replacement.
+
+## Segurança
+
+- Paths e payloads passam pelos guards de workspace existentes.
+- Queries e mutations são bounded e Zod-validated.
+- Secrets nunca entram em manifest, object payload, renderer ou logs.
+- HTML continua na boundary sanitizada do preview.
+- `vibe-security` e Coderabbit são gates antes de qualquer push/merge.
+
+## Estratégia de rollout
+
+Phase A é local-first e Electron-first. Ela não encerra até um agente real criar
+e atualizar um objeto e o sidebar mostrar ambas as revisões sem restart. Cada
+fase posterior depende de auditor GO, testes focados, validação OpenSpec e smoke
+real correspondente.

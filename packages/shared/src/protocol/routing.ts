@@ -23,6 +23,8 @@ export const LOCAL_ONLY_NAMESPACES = new Set<string>([
   RPC_NAMESPACES.workspaces.CREATE,
   RPC_NAMESPACES.workspaces.CHECK_SLUG,
   RPC_NAMESPACES.workspaces.UPDATE_REMOTE,
+  RPC_NAMESPACES.workspaces.GET_DEFAULT,
+  RPC_NAMESPACES.workspaces.SET_DEFAULT,
 
   // window — Electron window management
   RPC_NAMESPACES.window.GET_WORKSPACE,
@@ -67,6 +69,11 @@ export const LOCAL_ONLY_NAMESPACES = new Set<string>([
   RPC_NAMESPACES.system.VERSIONS,
   RPC_NAMESPACES.system.HOME_DIR,
   RPC_NAMESPACES.system.IS_DEBUG_MODE,
+
+  // perf — local process metrics for the runtime perf overlay
+  RPC_NAMESPACES.perf.SUBSCRIBE,
+  RPC_NAMESPACES.perf.UNSUBSCRIBE,
+  RPC_NAMESPACES.perf.SAMPLE,
 
   // theme — app/OS-level preferences, not workspace content
   RPC_NAMESPACES.theme.GET_SYSTEM_PREFERENCE,
@@ -187,6 +194,11 @@ export const LOCAL_ONLY_NAMESPACES = new Set<string>([
   RPC_NAMESPACES.browserPane.EVALUATE,
   RPC_NAMESPACES.browserPane.SCROLL,
   RPC_NAMESPACES.browserPane.LAUNCH,
+  // Display mode is a desktop-only concern: it moves native views between the
+  // instance window and a host window, which has no meaning for remote panes.
+  RPC_NAMESPACES.browserPane.SET_DISPLAY_MODE,
+  RPC_NAMESPACES.browserPane.SET_EMBEDDED_BOUNDS,
+  RPC_NAMESPACES.browserPane.SET_VIEWS_VISIBLE,
   RPC_NAMESPACES.browserPane.STATE_CHANGED,
   RPC_NAMESPACES.browserPane.REMOVED,
   RPC_NAMESPACES.browserPane.INTERACTED,
@@ -199,6 +211,7 @@ export const LOCAL_ONLY_NAMESPACES = new Set<string>([
   RPC_NAMESPACES.browserPane.SET_PROFILE_SETTINGS,
   RPC_NAMESPACES.browserPane.PROFILES_CHANGED,
   RPC_NAMESPACES.browserPane.PICKER_REQUESTED,
+  RPC_NAMESPACES.browserPane.DISPLAY_MODE_REQUESTED,
 
   // gitbash — Windows-specific local
   RPC_NAMESPACES.gitbash.CHECK,

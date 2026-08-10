@@ -40,11 +40,148 @@ function pluralBase(key: string): string {
   return key.replace(/_(?:zero|one|two|few|many|other)$/, "");
 }
 
+const workspaceObjectFormalActionKeys = [
+  "chat.workspaceObjectAdapterMissingField",
+  "chat.workspaceObjectAdapterNoCompatibleField",
+  "chat.workspaceObjectFilterFieldRequired",
+  "chat.workspaceObjectViewNameRequired",
+] as const;
+
+type WorkspaceObjectFormalActionKey = typeof workspaceObjectFormalActionKeys[number];
+
+const workspaceObjectSelectActionKeys = new Set<WorkspaceObjectFormalActionKey>([
+  "chat.workspaceObjectAdapterMissingField",
+  "chat.workspaceObjectFilterFieldRequired",
+]);
+
+function usesFormalWorkspaceObjectRegister(
+  lang: "de" | "hu",
+  key: WorkspaceObjectFormalActionKey,
+  value: string,
+): boolean {
+  const normalized = value.normalize("NFC");
+  if (lang === "de") {
+    return !/(?<!\p{L})(?:wähle|füge|gib)(?!\p{L})/iu.test(normalized)
+      && /(?<!\p{L})Sie(?!\p{L})/u.test(normalized);
+  }
+
+  if (workspaceObjectSelectActionKeys.has(key)) {
+    return !/(?<!\p{L})(?:válassz|válaszd|válasszál|válasszad|jelölj|jelöld|jelöljél|jelöljed)(?!\p{L})/iu.test(normalized)
+      && /(?<!\p{L})(?:válasszon|válassza|jelöljön|jelölje)(?!\p{L})/iu.test(normalized);
+  }
+
+  const usesInformalAdd = /(?<!\p{L})(?:adj|add|adjál|adjad)(?!\p{L})/iu.test(normalized);
+  const usesFormalAdd = /(?<!\p{L})(?:adjon|adja)(?!\p{L})/iu.test(normalized);
+  const usesInformalWrite = /(?<!\p{L})(?:írj|írd|írjál|írjad)(?!\p{L})/iu.test(normalized);
+  const usesFormalWrite = /(?<!\p{L})(?:írjon|írja)(?!\p{L})/iu.test(normalized);
+  const usesExplicitAdd = /(?<!\p{L})hozzá(?!\p{L})/iu.test(normalized);
+  if (key === "chat.workspaceObjectAdapterNoCompatibleField") {
+    return !usesInformalAdd && !usesInformalWrite && !usesFormalWrite && usesFormalAdd && usesExplicitAdd;
+  }
+
+  return !usesInformalAdd
+    && !usesInformalWrite
+    && (usesFormalWrite || (usesFormalAdd && !usesExplicitAdd));
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe("i18n locale parity", () => {
+  it("every locale defines the dedicated workspace-object saving-field label", () => {
+    for (const [lang, translations] of Object.entries(locales)) {
+      expect(translations["chat.workspaceObjectSavingField"], lang).toBeString();
+      expect(translations["chat.workspaceObjectSavingField"], lang).not.toBe("");
+    }
+  });
+
+  it("every locale defines the workspace-object filter-value error with field context", () => {
+    for (const [lang, translations] of Object.entries(locales)) {
+      const value = translations["chat.workspaceObjectFilterValueRequired"];
+      expect(value, lang).toBeString();
+      expect(value, lang).toContain("{{field}}");
+    }
+  });
+
+  it("uses the feminine Polish form for the saved value", () => {
+    expect(locales.pl?.["chat.workspaceObjectEditNotConfirmed"]).toContain("zapisanej wartości");
+    expect(locales.pl?.["chat.workspaceObjectEditNotConfirmed"]).not.toContain("zapisanego wartości");
+  });
+
+  it("uses one Hungarian term for canonical workspace-object finalization", () => {
+    for (const key of ["chat.workspaceObjectCommitMissing", "chat.workspaceObjectKanbanCommitMissing"] as const) {
+      const value = locales.hu?.[key] ?? "";
+      expect(value, key).toMatch(/kanonikus\s+véglegesít\p{L}*/iu);
+      expect(value, key).not.toMatch(/commit/iu);
+    }
+  });
+
+  it("uses Hungarian relation-option terminology without collapsing distinct failures", () => {
+    const optionFailureKeys = [
+      "chat.workspaceObjectRelationChangedWhileLoading",
+      "chat.workspaceObjectRelationInvalidResponse",
+      "chat.workspaceObjectRelationTransportError",
+    ] as const;
+    const values = optionFailureKeys.map((key) => locales.hu?.[key] ?? "");
+    for (const [index, value] of values.entries()) {
+      expect(value, optionFailureKeys[index]).toMatch(/kapcsolati\s+lehetőség\p{L}*/iu);
+      expect(value, optionFailureKeys[index]).not.toMatch(/beállítás/iu);
+    }
+
+    const stale = locales.hu?.["chat.workspaceObjectRelationStaleSnapshot"] ?? "";
+    expect(new Set([...values, stale]).size).toBe(4);
+  });
+
+  it("treats the interpolated Hungarian field as the target of option and relation choices", () => {
+    for (const key of ["chat.workspaceObjectFieldOption", "chat.workspaceObjectFieldRelation"] as const) {
+      expect(locales.hu?.[key] ?? "", key).toMatch(/\{\{field\}\}\s+mezőhöz/iu);
+    }
+  });
+
+  it("uses the established formal register for German and Hungarian workspace-object actions", () => {
+    for (const lang of ["de", "hu"] as const) {
+      for (const key of workspaceObjectFormalActionKeys) {
+        expect(usesFormalWorkspaceObjectRegister(lang, key, locales[lang]?.[key] ?? ""), `${lang}:${key}`).toBe(true);
+      }
+    }
+
+    for (const oldGerman of ["Wähle ein Feld.", "Füge ein Feld hinzu.", "Wähle zuerst ein Feld.", "Gib einen Namen ein."]) {
+      expect(usesFormalWorkspaceObjectRegister("de", "chat.workspaceObjectAdapterMissingField", oldGerman)).toBe(false);
+    }
+    for (const adversarialGerman of ["Bitte wähle Sie ein Feld.", "Bitte fÜgE Sie ein Feld hinzu.", "Bitte gIb Sie einen Namen ein."]) {
+      expect(usesFormalWorkspaceObjectRegister("de", "chat.workspaceObjectAdapterMissingField", adversarialGerman)).toBe(false);
+    }
+    expect(usesFormalWorkspaceObjectRegister("de", "chat.workspaceObjectAdapterMissingField", "Bitte wa\u0308hle Sie ein Feld.")).toBe(false);
+
+    for (const [key, value] of [
+      ["chat.workspaceObjectAdapterMissingField", "Válassz mezőt."],
+      ["chat.workspaceObjectAdapterNoCompatibleField", "Adj hozzá mezőt."],
+      ["chat.workspaceObjectFilterFieldRequired", "Előbb válassz mezőt."],
+      ["chat.workspaceObjectViewNameRequired", "Adj nevet."],
+    ] as const) {
+      expect(usesFormalWorkspaceObjectRegister("hu", key, value)).toBe(false);
+    }
+    for (const [key, value] of [
+      ["chat.workspaceObjectAdapterMissingField", "Jelöljön ki egy mezőt."],
+      ["chat.workspaceObjectAdapterNoCompatibleField", "Adja hozzá a mezőt."],
+      ["chat.workspaceObjectFilterFieldRequired", "Válassza ki a mezőt."],
+      ["chat.workspaceObjectViewNameRequired", "Írjon be egy nevet."],
+    ] as const) {
+      expect(usesFormalWorkspaceObjectRegister("hu", key, value)).toBe(true);
+    }
+    expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectAdapterNoCompatibleField", "Írjon be egy nevet.")).toBe(false);
+    expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectAdapterNoCompatibleField", "Adjon nevet a nézetnek.")).toBe(false);
+    expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectViewNameRequired", "Adjon hozzá kompatibilis mezőt.")).toBe(false);
+    expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectAdapterMissingField", "A haszon fontos.")).toBe(false);
+    expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectAdapterMissingField", "Válassz, majd válasszon mezőt.")).toBe(false);
+    expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectFilterFieldRequired", "Jelöljél, majd jelöljön mezőt.")).toBe(false);
+    expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectViewNameRequired", "Adj, majd adjon nevet.")).toBe(false);
+    expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectAdapterNoCompatibleField", "Adjál, majd adjon hozzá mezőt.")).toBe(false);
+    expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectViewNameRequired", "Írjál, majd írjon be nevet.")).toBe(false);
+    expect(usesFormalWorkspaceObjectRegister("hu", "chat.workspaceObjectAdapterMissingField", "Va\u0301lassz mezőt.")).toBe(false);
+  });
+
   // Key parity — run for each non-EN locale
   for (const [lang, translations] of otherLangs) {
     const langKeys = Object.keys(translations);

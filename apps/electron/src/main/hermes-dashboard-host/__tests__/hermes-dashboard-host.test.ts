@@ -35,7 +35,7 @@ describe('HermesDashboardHost mount', () => {
       focus: (id: string) => {
         calls.push(`focus:${id}`)
       },
-      getInstance: (id: string) => calls.includes(`destroy:${id}`) ? undefined : ({ id }),
+      getLiveInstance: (id: string) => calls.includes(`destroy:${id}`) ? undefined : ({ id }),
       destroyInstance: (id: string) => {
         calls.push(`destroy:${id}`)
       },

@@ -90,6 +90,19 @@ export default [
     },
   },
 
+  // Shadows that carry meaning the approved scale cannot express. Waived rather
+  // than remapped: the shadow scale is owned by design, not by the linter.
+  {
+    files: [
+      // Annotation highlight painted as an inset 1px ring derived from --info.
+      // It is a marker, not an elevation, so no elevation token applies.
+      'src/components/annotations/block-markers.ts',
+    ],
+    rules: {
+      'craft-styles/no-nonstandard-shadows': 'off',
+    },
+  },
+
   // Allow raw Radix import in the styled wrapper itself
   {
     files: ['src/components/ui/StyledDropdown.tsx'],

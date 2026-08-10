@@ -97,15 +97,41 @@ describe('getModelShortName', () => {
 });
 
 describe('Opus registry', () => {
-  it('includes Opus 4.8 and keeps Opus 4.7, but excludes deprecated Opus 4.6', () => {
+  it('includes Opus 5 and keeps 4.8/4.7, but excludes deprecated Opus 4.6', () => {
     const ids = ANTHROPIC_MODELS.map(m => m.id);
+    expect(ids).toContain('claude-opus-5');
     expect(ids).toContain('claude-opus-4-8');
     expect(ids).toContain('claude-opus-4-7');
     expect(ids).not.toContain('claude-opus-4-6');
   });
 
-  it('resolves "Opus" shortName to 4.8 (first match wins)', () => {
-    // 4.8 is listed first in MODEL_REGISTRY so it is the default Opus.
-    expect(getModelIdByShortName('Opus')).toBe('claude-opus-4-8');
+  it('lists each Opus generation exactly once', () => {
+    const opusIds = ANTHROPIC_MODELS.filter(m => m.shortName === 'Opus').map(m => m.id);
+    expect(opusIds).toEqual(['claude-opus-5', 'claude-opus-4-8', 'claude-opus-4-7']);
+  });
+
+  it('resolves "Opus" shortName to Opus 5 (first match wins)', () => {
+    // Opus 5 is listed first in MODEL_REGISTRY so it is the default Opus.
+    expect(getModelIdByShortName('Opus')).toBe('claude-opus-5');
+  });
+
+  it('exposes Opus 5 metadata used by the picker and context accounting', () => {
+    expect(getModelDisplayName('claude-opus-5')).toBe('Opus 5');
+    expect(getModelShortName('claude-opus-5')).toBe('Opus');
+    expect(getModelContextWindow('claude-opus-5')).toBe(1_000_000);
+    expect(isClaudeModel('claude-opus-5')).toBe(true);
+    expect(getModelById('claude-opus-5')?.provider).toBe('anthropic');
+  });
+
+  it('normalizes deprecated Opus IDs onto Opus 5', () => {
+    expect(normalizeDeprecatedModelId('claude-opus-4-6')).toBe('claude-opus-5');
+    expect(normalizeDeprecatedModelId('claude-opus-4-5-20251101')).toBe('claude-opus-5');
+    expect(normalizeDeprecatedModelId('pi/claude-opus-4-6')).toBe('pi/claude-opus-5');
+  });
+
+  it('leaves current Opus IDs untouched', () => {
+    expect(normalizeDeprecatedModelId('claude-opus-5')).toBe('claude-opus-5');
+    expect(normalizeDeprecatedModelId('claude-opus-4-8')).toBe('claude-opus-4-8');
+    expect(normalizeDeprecatedModelId('claude-opus-4-7')).toBe('claude-opus-4-7');
   });
 });

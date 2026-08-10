@@ -35,6 +35,7 @@ import {
 } from '@craft-agent/shared/config'
 import type { ThemeOverrides } from '@craft-agent/shared/config'
 import { loadWorkspaceSources, type LoadedSource } from '@craft-agent/shared/sources'
+import { toPublicSourceDtos } from '@craft-agent/shared/sources/public-source-dto'
 import { loadAllSkills, type LoadedSkill } from '@craft-agent/shared/skills'
 import {
   AutomationSystem,
@@ -345,7 +346,7 @@ export class SessionWorkspaceRuntimeManager {
   broadcastSourcesChanged(workspaceId: string, sources: LoadedSource[]): void {
     const sink = this.deps.getEventSink()
     if (!sink) return
-    sink(RPC_NAMESPACES.sources.CHANGED, { to: 'workspace', workspaceId }, workspaceId, sources)
+    sink(RPC_NAMESPACES.sources.CHANGED, { to: 'workspace', workspaceId }, workspaceId, toPublicSourceDtos(sources))
   }
 
   broadcastStatusesChanged(workspaceId: string): void {

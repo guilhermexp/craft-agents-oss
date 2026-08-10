@@ -82,6 +82,14 @@ export interface BrowserControlsProps {
    * Text and icons automatically adjust for contrast.
    */
   themeColor?: string | null
+  /**
+   * Visual language of the bar.
+   * - `default`: flat chrome strip with a bottom border.
+   * - `glass`: visionOS material — 64px pill, translucent white fill over a blur,
+   *   44px round controls and a dark well for the URL. Ported from
+   *   vision-ui/DESIGN.md §5.5 (toolbar) and §4.1 (alpha scale).
+   */
+  variant?: 'default' | 'glass'
   /** Additional CSS classes on the root element */
   className?: string
 }
@@ -162,8 +170,10 @@ export function BrowserControls({
   urlBarClassName,
   leftClearance,
   themeColor,
+  variant = 'default',
   className,
 }: BrowserControlsProps) {
+  const isGlass = variant === 'glass'
   const { t } = useTranslation()
   const [localUrl, setLocalUrl] = useState(controlledUrl ?? '')
   const [isFocused, setIsFocused] = useState(false)
@@ -252,12 +262,16 @@ export function BrowserControls({
           placeholder={t('browser.urlPlaceholder')}
           aria-label={t('browser.urlPlaceholder')}
           className={cn(
-            'w-full rounded-[8px] bg-transparent px-3 pl-8 text-[13px] text-foreground/70 outline-none transition-all',
-            compact ? 'h-[28px]' : 'h-[30px]',
-            !safeThemeColor && (isFocused
+            'w-full bg-transparent px-3 pl-8 outline-none transition-all',
+            // §5.5: URL field is a dark well — black/.38, 14px/500, centered text
+            isGlass
+              ? 'h-[44px] rounded-full border border-transparent bg-black/[0.38] px-5 pl-9 text-center text-[14px] font-medium text-white/85 placeholder:text-white/40'
+              : 'rounded-[8px] text-[13px] text-foreground/70',
+            !isGlass && (compact ? 'h-[28px]' : 'h-[30px]'),
+            !isGlass && !safeThemeColor && (isFocused
               ? 'bg-background border border-transparent shadow-minimal'
               : 'border border-foreground/5'),
-            safeThemeColor && 'border border-transparent',
+            !isGlass && safeThemeColor && 'border border-transparent',
           )}
           style={safeThemeColor ? {
             color: isFocused ? (isDarkBg ? '#fff' : '#000') : 'var(--tb-fg)',
@@ -310,10 +324,16 @@ export function BrowserControls({
   return (
     <div
       className={cn(
-        'relative flex items-center gap-1',
-        compact ? 'h-[40px] px-2' : 'h-[48px] border-b border-foreground/6 px-3',
+        'relative flex items-center',
+        // §5.5 toolbar: 64px tall, gap 12px, padding 16px, white/.18 fill over blur(40px),
+        // white/.20 stroke. The pill shape only reads correctly when the bar floats,
+        // so the caller supplies rounded-full via className when that applies.
+        isGlass
+          ? 'h-[64px] gap-3 px-4 border border-white/20 bg-white/[0.18] backdrop-blur-[40px]'
+          : cn('gap-1', compact ? 'h-[40px] px-2' : 'h-[48px] border-b border-foreground/6 px-3'),
         className,
       )}
+      data-glass={isGlass ? '' : undefined}
       data-themed={safeThemeColor ? '' : undefined}
       style={{
         ...(safeThemeColor ? {
@@ -328,6 +348,18 @@ export function BrowserControls({
         transition: 'background-color 200ms ease, border-color 200ms ease',
       } as React.CSSProperties}
     >
+      {/* §5.5 icon buttons: 44px, fill white/.18, hover white/.28. Scoped rather than
+          threaded through NavButton so the default variant keeps its exact styling. */}
+      {isGlass && (
+        <style dangerouslySetInnerHTML={{ __html: `
+          [data-glass] > button, [data-glass] button[aria-label] {
+            width: 44px; height: 44px; border-radius: 9999px;
+            background: rgb(255 255 255 / 0.18); color: rgb(255 255 255 / 0.85);
+          }
+          [data-glass] button:hover:not(:disabled) { background: rgb(255 255 255 / 0.28) !important; }
+          [data-glass] svg { color: inherit; }
+        `}} />
+      )}
       {/* Scoped hover styles for themed toolbar — buttons use --tb-hover */}
       {safeThemeColor && (
         <style dangerouslySetInnerHTML={{ __html: `

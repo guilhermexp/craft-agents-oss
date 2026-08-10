@@ -45,6 +45,8 @@ const OS_THUMBNAIL_EXTENSIONS = new Set([
 const ALL_PREVIEWABLE = new Set([...IMAGE_EXTENSIONS, ...OS_THUMBNAIL_EXTENSIONS])
 const MEDIA_EXTENSIONS = new Map([
   ['webm', 'video/webm'],
+  ['mp4', 'video/mp4'],
+  ['mov', 'video/quicktime'],
 ])
 
 // In-memory LRU cache: path -> { mtime, data }
@@ -226,6 +228,17 @@ const WORKSPACES_ROOT = join(CONFIG_DIR, 'workspaces')
  * `meetings/recordings` segment. Returns the safe canonical path or null.
  */
 async function resolveRecordingPath(filePath: string): Promise<string | null> {
+  const canonical = await resolveWithinWorkspacesRoot(filePath)
+  if (!canonical) return null
+  if (!canonical.includes(`${sep}meetings${sep}recordings${sep}`)) return null
+  return canonical
+}
+
+/**
+ * Confine a path to the workspaces root, resolving symlinks first so a link
+ * pointing outside the root is rejected rather than followed.
+ */
+async function resolveWithinWorkspacesRoot(filePath: string): Promise<string | null> {
   let canonical: string
   try {
     canonical = await realpath(filePath)
@@ -234,7 +247,6 @@ async function resolveRecordingPath(filePath: string): Promise<string | null> {
   }
   const rootWithSep = WORKSPACES_ROOT.endsWith(sep) ? WORKSPACES_ROOT : WORKSPACES_ROOT + sep
   if (!canonical.startsWith(rootWithSep)) return null
-  if (!canonical.includes(`${sep}meetings${sep}recordings${sep}`)) return null
   return canonical
 }
 
@@ -272,7 +284,9 @@ export function registerMediaHandler(): void {
   protocol.handle('media', async (request) => {
     try {
       const url = new URL(request.url)
-      if (url.hostname !== 'recording') {
+      // 'recording' is confined to meeting recordings; 'workspace' serves any
+      // media file under the workspaces root, for the file preview panel.
+      if (url.hostname !== 'recording' && url.hostname !== 'workspace') {
         return new Response(null, { status: 404 })
       }
 
@@ -287,8 +301,10 @@ export function registerMediaHandler(): void {
         return new Response(null, { status: 404 })
       }
 
-      // Confine to the recordings directory — reject traversal/symlink escapes.
-      const filePath = await resolveRecordingPath(requestedPath)
+      // Confine to the allowed root — reject traversal/symlink escapes.
+      const filePath = url.hostname === 'recording'
+        ? await resolveRecordingPath(requestedPath)
+        : await resolveWithinWorkspacesRoot(requestedPath)
       if (!filePath) {
         return new Response(null, { status: 403 })
       }

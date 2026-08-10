@@ -1073,7 +1073,6 @@ bun test \
   apps/electron/src/renderer/lib/__tests__/meetings-selection.test.ts \
   apps/electron/src/main/handlers/__tests__/registration.test.ts \
   apps/electron/src/main/handlers/__tests__/registration-profiles.test.ts \
-  apps/electron/src/transport/__tests__/channel-map-parity.test.ts \
   packages/shared/src/mcp/session-tools-server.test.ts
 bun test ./apps/electron/src/main/meetings/transcription-service.isolated.ts
 bun test ./apps/electron/src/main/meetings/meeting-video-analysis-service.isolated.ts

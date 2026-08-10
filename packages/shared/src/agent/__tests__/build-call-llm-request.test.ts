@@ -85,6 +85,15 @@ describe('buildCallLlmRequest()', () => {
     expect(result.temperature).toBe(0.5);
   });
 
+  it('passes through thinking and thinkingBudget', async () => {
+    const result = await buildCallLlmRequest(
+      { prompt: 'test', thinking: true, thinkingBudget: 20000 },
+      { backendName: 'Test' }
+    );
+    expect(result.thinking).toBe(true);
+    expect(result.thinkingBudget).toBe(20000);
+  });
+
   // --- Attachments ---
 
   it('processes text file attachments', async () => {

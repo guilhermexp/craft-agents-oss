@@ -15,6 +15,8 @@
   </script>
   <style>
     html, body, #root { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; }
+    /* Pre-paint colour, before any module runs. MUST match BROWSER_CHROME_BG in
+       src/shared/browser-chrome.ts — a mismatch flashes on every new tab. */
     html, body { background: #fafafb; }
     @media (prefers-color-scheme: dark) {
       html, body { background: #2b292e; }

@@ -5,19 +5,27 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const rule = require('../no-hardcoded-z-index.cjs')
 
+// ESLint 10 dropped the eslintrc Linter mode and `linter.defineRule`, so the
+// rule is registered as an inline flat-config plugin instead.
 function runRule(code: string) {
-  const linter = new Linter({ configType: 'eslintrc' })
-  linter.defineRule('craft-styles/no-hardcoded-z-index', rule)
+  const linter = new Linter()
 
-  return linter.verify(code, {
-    parserOptions: {
-      ecmaVersion: 'latest',
-      sourceType: 'module',
+  return linter.verify(code, [
+    {
+      files: ['**/*.{js,jsx,ts,tsx}'],
+      plugins: {
+        'craft-styles': { rules: { 'no-hardcoded-z-index': rule } },
+      },
+      languageOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+        parserOptions: { ecmaFeatures: { jsx: true } },
+      },
+      rules: {
+        'craft-styles/no-hardcoded-z-index': 'error',
+      },
     },
-    rules: {
-      'craft-styles/no-hardcoded-z-index': 'error',
-    },
-  })
+  ])
 }
 
 describe('no-hardcoded-z-index (electron)', () => {

@@ -537,6 +537,10 @@ export type Effect =
   | { type: 'auto_retry'; sessionId: string; originalMessage: string; sourceSlug: string }
   | { type: 'restore_input'; text: string }
   | { type: 'toast_error'; message: string }
+  // AskUserQuestion (interactive questionnaire) lifecycle — surfaced to the
+  // sidebar so a parked question is visible even when the session isn't open.
+  | { type: 'question_pending'; sessionId: string; toolUseId: string }
+  | { type: 'question_resolved'; sessionId: string; toolUseId: string }
 
 /**
  * Result of processing an event

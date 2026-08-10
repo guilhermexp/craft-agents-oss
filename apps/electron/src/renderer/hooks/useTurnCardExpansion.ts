@@ -2,14 +2,18 @@
  * Hook for persisting TurnCard expanded/collapsed state across session switches.
  *
  * Stores per-session expansion state in a single localStorage key as a bounded
- * LRU map (max 100 sessions). Tracks two sets per session:
- *   - `turns` / `groups` — IDs the user explicitly EXPANDED (used when
- *     autoExpand is off, the historical default).
- *   - `collapsedTurns` / `collapsedGroups` — IDs the user explicitly COLLAPSED
- *     (used when autoExpand is on, so they survive when the user later flips
- *     the global toggle off and back on).
+ * LRU map (max 100 sessions). Each axis (turns, groups) keeps two override sets:
+ *   - `expanded` — ids the user explicitly EXPANDED (active when autoExpand is
+ *     off, the historical default).
+ *   - `collapsed` — ids the user explicitly COLLAPSED (active when autoExpand is
+ *     on, so they survive flipping the global toggle off and back on).
  *
- * Shape:
+ * The `autoExpand` polarity is resolved once, here, via the `turn-expansion`
+ * helpers (`isIdExpanded` / `applyExpansionToggle`, imported from
+ * `@craft-agent/ui`), so callers receive plain booleans and never re-derive
+ * the inverted-set semantics.
+ *
+ * Persisted shape:
  *   {
  *     [sessionId]: {
  *       turns: string[],
@@ -23,6 +27,12 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import * as storage from '@/lib/local-storage'
+import {
+  isIdExpanded,
+  applyExpansionToggle,
+  type ExpansionState,
+  type GroupExpansionController,
+} from '@craft-agent/ui'
 
 const MAX_SESSIONS = 100
 
@@ -57,70 +67,79 @@ function writeMap(map: ExpansionMap): void {
   }
 }
 
-function loadEntrySets(sessionId: string | undefined) {
-  if (!sessionId) {
-    return {
-      turns: new Set<string>(),
-      groups: new Set<string>(),
-      collapsedTurns: new Set<string>(),
-      collapsedGroups: new Set<string>(),
-    }
-  }
-  const entry = readMap()[sessionId]
+/**
+ * Legacy expansion ids used the `assistant:msg:<id>` / `assistant:turn:<...>`
+ * scheme; the current identity is `turn-<turnId>-<timestamp>` (getTurnKey). The
+ * localStorage key and schema are unchanged, so old entries linger with ids that
+ * no current turn can ever match. Drop them on load: this both prevents the
+ * one-time expand/collapse flip on upgrade AND lets the orphaned entry hit the
+ * `empty` branch so the LRU can evict it instead of renewing dead weight.
+ */
+function dropLegacyIds(ids: string[] | undefined): string[] {
+  return (ids ?? []).filter(id => !id.startsWith('assistant:'))
+}
+
+function loadEntry(sessionId: string | undefined): { turns: ExpansionState; groups: ExpansionState } {
+  const entry = sessionId ? readMap()[sessionId] : undefined
   return {
-    turns: new Set<string>(entry?.turns ?? []),
-    groups: new Set<string>(entry?.groups ?? []),
-    collapsedTurns: new Set<string>(entry?.collapsedTurns ?? []),
-    collapsedGroups: new Set<string>(entry?.collapsedGroups ?? []),
+    turns: {
+      expanded: new Set<string>(dropLegacyIds(entry?.turns)),
+      collapsed: new Set<string>(dropLegacyIds(entry?.collapsedTurns)),
+    },
+    groups: {
+      expanded: new Set<string>(dropLegacyIds(entry?.groups)),
+      collapsed: new Set<string>(dropLegacyIds(entry?.collapsedGroups)),
+    },
   }
+}
+
+export interface TurnCardExpansion {
+  /** Resolved boolean: is this turn currently expanded? */
+  isTurnExpanded: (turnId: string) => boolean
+  /** Record the user's expand/collapse intent for a turn. */
+  toggleTurn: (turnId: string, expanded: boolean) => void
+  /** Resolved, single-polarity controller for activity-group expansion. */
+  groupExpansion: GroupExpansionController
 }
 
 /**
  * Persist TurnCard expansion state for the given session.
  *
- * `autoExpand` flips the default: when true, every TurnCard / activity group is
+ * `autoExpand` flips the default: when true, every turn / activity group is
  * expanded unless the user explicitly collapsed it; when false (legacy
  * behavior), everything is collapsed unless explicitly expanded.
- *
- * The two sets are tracked independently so toggling the global preference
- * preserves prior user intent in both modes.
  */
-export function useTurnCardExpansion(sessionId: string | undefined, autoExpand: boolean) {
-  const initial = loadEntrySets(sessionId)
+export function useTurnCardExpansion(sessionId: string | undefined, autoExpand: boolean): TurnCardExpansion {
+  const initial = loadEntry(sessionId)
 
-  const [expandedTurns, setExpandedTurns] = useState<Set<string>>(initial.turns)
-  const [collapsedTurns, setCollapsedTurns] = useState<Set<string>>(initial.collapsedTurns)
-  const [userExpandedGroups, setUserExpandedGroups] = useState<Set<string>>(initial.groups)
-  const [userCollapsedGroups, setUserCollapsedGroups] = useState<Set<string>>(initial.collapsedGroups)
+  const [turnState, setTurnState] = useState<ExpansionState>(initial.turns)
+  const [groupState, setGroupState] = useState<ExpansionState>(initial.groups)
 
   const prevSessionIdRef = useRef(sessionId)
-
   useEffect(() => {
     if (prevSessionIdRef.current === sessionId) return
-    const next = loadEntrySets(sessionId)
-    setExpandedTurns(next.turns)
-    setCollapsedTurns(next.collapsedTurns)
-    setUserExpandedGroups(next.groups)
-    setUserCollapsedGroups(next.collapsedGroups)
+    const next = loadEntry(sessionId)
+    setTurnState(next.turns)
+    setGroupState(next.groups)
     prevSessionIdRef.current = sessionId
   }, [sessionId])
 
-  // Persist on change. We mirror state into refs so the writer effect always
-  // sees the latest value without causing extra renders.
-  const refs = useRef({ expandedTurns, collapsedTurns, userExpandedGroups, userCollapsedGroups })
+  // Mirror state into a ref so the writer effect always sees the latest value
+  // without causing extra renders.
+  const refs = useRef({ turnState, groupState })
   useEffect(() => {
-    refs.current = { expandedTurns, collapsedTurns, userExpandedGroups, userCollapsedGroups }
+    refs.current = { turnState, groupState }
   })
 
   useEffect(() => {
     if (!sessionId) return
     const map = readMap()
-    const turns = [...refs.current.expandedTurns]
-    const groups = [...refs.current.userExpandedGroups]
-    const collTurns = [...refs.current.collapsedTurns]
-    const collGroups = [...refs.current.userCollapsedGroups]
+    const turns = [...refs.current.turnState.expanded]
+    const groups = [...refs.current.groupState.expanded]
+    const collapsedTurns = [...refs.current.turnState.collapsed]
+    const collapsedGroups = [...refs.current.groupState.collapsed]
 
-    const empty = turns.length === 0 && groups.length === 0 && collTurns.length === 0 && collGroups.length === 0
+    const empty = turns.length === 0 && groups.length === 0 && collapsedTurns.length === 0 && collapsedGroups.length === 0
     if (empty) {
       if (map[sessionId]) {
         delete map[sessionId]
@@ -132,57 +151,32 @@ export function useTurnCardExpansion(sessionId: string | undefined, autoExpand: 
     map[sessionId] = {
       turns,
       groups,
-      collapsedTurns: collTurns.length > 0 ? collTurns : undefined,
-      collapsedGroups: collGroups.length > 0 ? collGroups : undefined,
+      collapsedTurns: collapsedTurns.length > 0 ? collapsedTurns : undefined,
+      collapsedGroups: collapsedGroups.length > 0 ? collapsedGroups : undefined,
       lastAccessed: Date.now(),
     }
     writeMap(map)
-  }, [sessionId, expandedTurns, collapsedTurns, userExpandedGroups, userCollapsedGroups])
+  }, [sessionId, turnState, groupState])
 
   const isTurnExpanded = useCallback(
-    (turnId: string): boolean =>
-      autoExpand ? !collapsedTurns.has(turnId) : expandedTurns.has(turnId),
-    [autoExpand, expandedTurns, collapsedTurns],
+    (turnId: string): boolean => isIdExpanded(turnState, autoExpand, turnId),
+    [turnState, autoExpand],
   )
 
   const toggleTurn = useCallback(
-    (turnId: string, expanded: boolean) => {
-      if (autoExpand) {
-        setCollapsedTurns(prev => {
-          const next = new Set(prev)
-          if (expanded) next.delete(turnId)
-          else next.add(turnId)
-          return next
-        })
-      } else {
-        setExpandedTurns(prev => {
-          const next = new Set(prev)
-          if (expanded) next.add(turnId)
-          else next.delete(turnId)
-          return next
-        })
-      }
-    },
+    (turnId: string, expanded: boolean) =>
+      setTurnState(prev => applyExpansionToggle(prev, autoExpand, turnId, expanded)),
     [autoExpand],
   )
 
-  // The Set passed to TurnCard always represents "user override from default"
-  // for the current mode: collapsed-IDs when autoExpand is on, expanded-IDs
-  // when autoExpand is off. TurnCard receives `autoExpand` to interpret it.
-  const expandedActivityGroups = useMemo(
-    () => (autoExpand ? userCollapsedGroups : userExpandedGroups),
-    [autoExpand, userCollapsedGroups, userExpandedGroups],
+  const groupExpansion = useMemo<GroupExpansionController>(
+    () => ({
+      isExpanded: (groupId: string) => isIdExpanded(groupState, autoExpand, groupId),
+      setExpanded: (groupId: string, expanded: boolean) =>
+        setGroupState(prev => applyExpansionToggle(prev, autoExpand, groupId, expanded)),
+    }),
+    [groupState, autoExpand],
   )
 
-  const setExpandedActivityGroups = useMemo<React.Dispatch<React.SetStateAction<Set<string>>>>(
-    () => (autoExpand ? setUserCollapsedGroups : setUserExpandedGroups),
-    [autoExpand],
-  )
-
-  return {
-    isTurnExpanded,
-    toggleTurn,
-    expandedActivityGroups,
-    setExpandedActivityGroups,
-  }
+  return { isTurnExpanded, toggleTurn, groupExpansion }
 }

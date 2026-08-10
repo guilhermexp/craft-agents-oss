@@ -14,6 +14,7 @@ export const KEYS = {
   sidebarVisible: 'sidebar-visible',
   sidebarWidth: 'sidebar-width',
   sessionListWidth: 'session-list-width',
+  sessionListVisible: 'session-list-visible',
   rightSidebarWidth: 'right-sidebar-width',
   rightSidebarPreviewWidth: 'right-sidebar-preview-width',
   sidebarMode: 'sidebar-mode',
@@ -31,6 +32,7 @@ export const KEYS = {
   // Session files panel state
   sessionFilesExpandedFolders: 'session-files-expanded', // Expanded folders in session files tree (keyed by sessionId)
   workspaceFilesExpandedFolders: 'workspace-files-expanded', // Expanded folders in workspace files tree (keyed by root path)
+  workspaceObjectTabs: 'workspace-object-tabs', // Content tabs scoped by workspace + session
 
   // Theme
   theme: 'theme',
@@ -63,6 +65,9 @@ export const KEYS = {
   // Workspace navigation state (workspace-scoped via suffix = workspaceSlug)
   // Stores the full URL search string so switching back restores panels/focus/sidebar
   workspaceUrl: 'workspace-url',
+
+  // Runtime perf monitor (dev overlay)
+  perfOverlayEnabled: 'perf-overlay-enabled',
 } as const
 
 export type StorageKey = typeof KEYS[keyof typeof KEYS]

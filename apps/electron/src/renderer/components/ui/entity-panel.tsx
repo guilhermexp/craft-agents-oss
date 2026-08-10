@@ -97,7 +97,7 @@ export function EntityPanel<T>({
               }
             }}
             buttonProps={rowProps.buttonProps}
-            menuContent={mapped.menu}
+            menuContent={mapped.menu != null ? () => mapped.menu : undefined}
             dataAttributes={mapped.dataAttributes}
           />
         )

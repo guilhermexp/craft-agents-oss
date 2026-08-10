@@ -26,20 +26,7 @@ import type {
   SourceConfig,
   DeveloperFeedback,
 } from '@craft-agent/session-tools-core';
-import {
-  validateConfig,
-  validateSource,
-  validateAllSources,
-  validateStatuses,
-  validatePreferences,
-  validateAll,
-  validateSkill,
-  validateWorkspacePermissions,
-  validateSourcePermissions,
-  validateAllPermissions,
-  validateToolIcons,
-} from '../config/validators.ts';
-import { validateAutomations } from '../automations/validation.ts';
+import { validateConfigArtifact } from '../config/validators.ts';
 import {
   validateMcpConnection as validateMcpConnectionImpl,
   validateStdioMcpConnection as validateStdioMcpConnectionImpl,
@@ -63,6 +50,7 @@ import { isGoogleOAuthConfigured as isGoogleOAuthConfiguredImpl } from '../auth/
 import { debug } from '../utils/debug.ts';
 import { getSessionPlansPath, getSessionPath, getSessionDataPath } from '../sessions/storage.ts';
 import { updatePreferences as updatePreferencesImpl } from '../config/preferences.ts';
+import { WorkspaceObjectService, WorkspaceObjectActionSchema } from '../workspace-objects/service.ts';
 
 // Re-export types that may be needed by consumers
 export type { SessionToolContext, SessionToolCallbacks } from '@craft-agent/session-tools-core';
@@ -116,21 +104,7 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
 
   // Validators implementation
   const validators: ValidatorInterface = {
-    validateConfig: () => validateConfig(),
-    validateSource: (wsPath: string, slug: string) => validateSource(wsPath, slug),
-    validateAllSources: (wsPath: string) => validateAllSources(wsPath),
-    validateStatuses: (wsPath: string) => validateStatuses(wsPath),
-    validatePreferences: () => validatePreferences(),
-    validatePermissions: (wsPath: string, sourceSlug?: string) => {
-      if (sourceSlug) {
-        return validateSourcePermissions(wsPath, sourceSlug);
-      }
-      return validateAllPermissions(wsPath);
-    },
-    validateAutomations: (wsPath: string) => validateAutomations(wsPath),
-    validateToolIcons: () => validateToolIcons(),
-    validateAll: (wsPath: string) => validateAll(wsPath),
-    validateSkill: (wsPath: string, slug: string) => validateSkill(wsPath, slug),
+    validate: validateConfigArtifact,
   };
 
   // Credential manager adapter
@@ -215,6 +189,16 @@ export function createClaudeContext(options: ClaudeContextOptions): SessionToolC
   const context: SessionToolContext = {
     sessionId,
     workspacePath,
+    workspaceObjects: {
+      execute: (input) => {
+        const service = WorkspaceObjectService.open({ workspaceId, workspaceRootPath: workspacePath });
+        try {
+          return service.execute(WorkspaceObjectActionSchema.parse(input)) as unknown as Record<string, unknown>;
+        } finally {
+          service.close();
+        }
+      },
+    },
     get sourcesPath() { return join(workspacePath, 'sources'); },
     get skillsPath() { return join(workspacePath, 'skills'); },
     plansFolderPath: getSessionPlansPath(workspacePath, sessionId),

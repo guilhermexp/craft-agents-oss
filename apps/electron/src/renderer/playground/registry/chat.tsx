@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { motion } from 'motion/react'
 import { ArrowUp, Paperclip, ChevronDown, Circle, Sparkles } from 'lucide-react'
 import type { LabelConfig } from '@craft-agent/shared/labels'
-import type { SessionStatus } from '@/config/session-status-config'
+import type { ResolvedSessionStatus } from '@/config/session-status-config'
 import type { FileAttachment, PermissionRequest, PermissionMode } from '../../../shared/types'
 import { cn } from '@/lib/utils'
 import { AppShellProvider } from '@/context/AppShellContext'
@@ -149,7 +149,7 @@ const inputContainerSampleLabels: LabelConfig[] = [
   { id: 'sprint', name: 'Sprint', color: { light: '#8B5CF6', dark: '#A78BFA' }, valueType: 'string' },
 ]
 
-const inputContainerSampleStatuses: SessionStatus[] = [
+const inputContainerSampleStatuses: ResolvedSessionStatus[] = [
   {
     id: 'todo',
     label: 'Todo',
@@ -185,6 +185,7 @@ const playgroundAppShellContext = {
   refreshLlmConnections: async () => {},
   pendingPermissions: new Map(),
   pendingCredentials: new Map(),
+  pendingQuestions: new Map(),
   getDraft: () => '',
   sessionOptions: new Map(),
   onCreateSession: async () => ({
@@ -1297,6 +1298,7 @@ export const chatComponents: ComponentEntry[] = [
         control: {
           type: 'select',
           options: [
+            { label: 'Opus 5', value: 'claude-opus-5' },
             { label: 'Opus 4.8', value: 'claude-opus-4-8' },
             { label: 'Opus 4.7', value: 'claude-opus-4-7' },
             { label: 'Sonnet 4.6', value: 'claude-sonnet-4-6' },

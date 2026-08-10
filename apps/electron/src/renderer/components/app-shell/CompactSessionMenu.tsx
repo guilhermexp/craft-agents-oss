@@ -69,7 +69,7 @@ import {
   getStateColor,
   getStateIcon,
   getStatusIconStyle,
-  type SessionStatus,
+  type ResolvedSessionStatus,
   type SessionStatusId,
 } from '@/config/session-status-config'
 import type { SessionMeta } from '@/atoms/sessions'
@@ -90,7 +90,7 @@ export interface CompactSessionMenuProps {
 
   // Session data — same as SessionMenu
   item: SessionMeta
-  sessionStatuses: SessionStatus[]
+  sessionStatuses: ResolvedSessionStatus[]
   labels?: LabelConfig[]
   hasRemoteWorkspaces?: boolean
 
@@ -365,7 +365,7 @@ export function CompactSessionMenu({
 
 interface RootPaneProps {
   sharedUrl?: string
-  sessionStatuses: SessionStatus[]
+  sessionStatuses: ResolvedSessionStatus[]
   currentSessionStatus: SessionStatusId
   labelsCount: number
   hasLabels: boolean
@@ -529,7 +529,7 @@ function StatusPane({
   activeStateId,
   onSelect,
 }: {
-  sessionStatuses: SessionStatus[]
+  sessionStatuses: ResolvedSessionStatus[]
   activeStateId?: SessionStatusId | null
   onSelect: (id: SessionStatusId) => void
 }) {
@@ -665,9 +665,9 @@ function Row({
   )
 }
 
-function Separator() {
+const Separator = React.memo(function Separator() {
   return <div className="my-1 mx-3 h-px bg-foreground/[0.06]" />
-}
+})
 
 function CountBadge({ count }: { count: number }) {
   return (

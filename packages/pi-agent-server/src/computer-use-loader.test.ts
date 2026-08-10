@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DefaultResourceLoader } from '@earendil-works/pi-coding-agent';
@@ -37,6 +37,7 @@ const LEGACY_COMPUTER_USE_TOOL_NAMES = [
 interface LoadedExtensions {
   extensionPaths: string[];
   toolNames: string[];
+  skillPaths: string[];
 }
 
 async function loadVendoredExtensions(extensionPaths: string[]): Promise<LoadedExtensions> {
@@ -52,10 +53,12 @@ async function loadVendoredExtensions(extensionPaths: string[]): Promise<LoadedE
 
     const result = loader.getExtensions();
     expect(result.errors).toEqual([]);
+    const skills = loader.getSkills();
 
     return {
       extensionPaths: result.extensions.map(extension => extension.path),
       toolNames: result.extensions.flatMap(extension => [...extension.tools.keys()]),
+      skillPaths: skills.skills.map(skill => skill.filePath),
     };
   } finally {
     rmSync(temporaryRoot, { recursive: true, force: true });
@@ -72,6 +75,7 @@ describe('Craft vendored Pi extension loader contract', () => {
     expect(loaded.extensionPaths).toHaveLength(2);
     expect(loaded.toolNames).toEqual(expect.arrayContaining([...SUBAGENT_TOOL_NAMES, ...COMPUTER_USE_TOOL_NAMES]));
     expect(new Set(loaded.toolNames).size).toBe(loaded.toolNames.length);
+    expect(loaded.skillPaths).toContain(join(computerUsePackageDir, 'skills/computer-use/SKILL.md'));
   });
 
   it('does not announce any computer-use tool when its package path is absent', async () => {
@@ -84,5 +88,19 @@ describe('Craft vendored Pi extension loader contract', () => {
     expect(loaded.extensionPaths).toHaveLength(1);
     expect(loaded.toolNames).toEqual(expect.arrayContaining([...SUBAGENT_TOOL_NAMES]));
     expect(loaded.toolNames.filter(toolName => computerUsePublicNames.has(toolName))).toEqual([]);
+  });
+
+  it('does not announce any subagent tool when enableSubagents omits its package path', async () => {
+    const serverSource = readFileSync(join(import.meta.dir, 'index.ts'), 'utf8');
+    expect(serverSource).toContain(
+      'if (initConfig.enableSubagents && existsSync(SUBAGENTS_PACKAGE_DIR))',
+    );
+
+    const loaded = await loadVendoredExtensions([computerUsePackageDir]);
+
+    expect(loaded.extensionPaths).toHaveLength(1);
+    expect(loaded.toolNames.filter(toolName => SUBAGENT_TOOL_NAMES.includes(
+      toolName as (typeof SUBAGENT_TOOL_NAMES)[number],
+    ))).toEqual([]);
   });
 });

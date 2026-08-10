@@ -14,7 +14,7 @@
 
 import { describe, it, expect } from 'bun:test'
 import { deriveTurnPhase, shouldShowThinkingIndicator, type TurnPhase, type AssistantTurn } from '../turn-utils'
-import type { ActivityItem, ResponseContent } from '../TurnCard'
+import type { ActivityItem, ResponseContent } from '../turn-card-shared'
 
 // ============================================================================
 // Test Helpers

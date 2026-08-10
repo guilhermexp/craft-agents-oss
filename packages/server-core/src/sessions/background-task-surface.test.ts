@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import type { AgentEvent } from '@craft-agent/shared/agent'
+import type { Workspace } from '@craft-agent/shared/config'
 import { SessionManager, createManagedSession } from './SessionManager.ts'
 
 // WS2 keep-alive: when a background agent finishes while the session is IDLE, the
@@ -24,8 +26,9 @@ describe('background task completion surfacing (idle keep-alive)', () => {
   let sm: SessionManager
 
   beforeEach(() => {
+    // buildSession() is the single construction point (it injects keepBackgroundTasksAlive
+    // per test), so beforeEach only provisions the temp workspace root.
     tmpRoot = mkdtempSync(join(tmpdir(), 'sm-bgsurface-'))
-    sm = new SessionManager()
   })
 
   afterEach(() => {
@@ -33,20 +36,18 @@ describe('background task completion surfacing (idle keep-alive)', () => {
   })
 
   function buildSession(id: string, opts?: { keepAlive?: boolean; processing?: boolean }) {
+    // keepBackgroundTasksAlive is resolved at construction; inject it via constructor
+    // DI so both flag states are exercised deterministically.
+    sm = new SessionManager({ keepBackgroundTasksAlive: opts?.keepAlive ?? true })
     const workspace = { id: 'ws_test', name: 'Test Workspace', rootPath: tmpRoot, createdAt: Date.now() }
-    const managed = createManagedSession({ id, name: 'bg surface test' }, workspace as never, { messagesLoaded: true })
+    const managed = createManagedSession({ id, name: 'bg surface test' }, workspace as Workspace, { messagesLoaded: true })
     managed.isProcessing = opts?.processing ?? false
-    ;(sm as unknown as { sessions: Map<string, unknown> }).sessions.set(id, managed)
-    // keepBackgroundTasksAlive is a readonly field resolved from env at construction;
-    // override it per-test to exercise both flag states deterministically.
-    ;(sm as unknown as { keepBackgroundTasksAlive: boolean }).keepBackgroundTasksAlive = opts?.keepAlive ?? true
+    sm.registerManagedSession(managed)
     return managed
   }
 
   function registerRunningTask(sessionId: string, taskId: string, intent?: string) {
-    const managed = (sm as unknown as {
-      sessions: Map<string, { backgroundTaskRegistry: Map<string, unknown> }>
-    }).sessions.get(sessionId)!
+    const managed = sm.getManagedSession(sessionId)!
     managed.backgroundTaskRegistry.set(taskId, {
       taskId,
       startTime: Date.now(),
@@ -57,17 +58,15 @@ describe('background task completion surfacing (idle keep-alive)', () => {
 
   function spyOnSendMessage() {
     const calls: Array<{ msg: string; hidden?: boolean }> = []
-    ;(sm as unknown as {
-      sendMessage: (id: string, msg: string, a?: unknown, s?: unknown, opts?: { hidden?: boolean }) => Promise<void>
-    }).sendMessage = async (_id, msg, _a, _s, opts) => {
+    sm.sendMessage = async (_id, msg, _a, _s, opts) => {
       calls.push({ msg, hidden: opts?.hidden })
     }
     return calls
   }
 
   async function fireTaskCompleted(sessionId: string, event: TaskCompletedEvent) {
-    const managed = (sm as unknown as { sessions: Map<string, unknown> }).sessions.get(sessionId)!
-    await (sm as unknown as { processEvent: (m: unknown, e: unknown) => Promise<void> }).processEvent(managed, event)
+    const managed = sm.getManagedSession(sessionId)!
+    await sm.dispatchAgentEvent(managed, event as AgentEvent)
   }
 
   it('surfaces a completed task to an idle keep-alive session with intent + output file', async () => {

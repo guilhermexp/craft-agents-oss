@@ -1,22 +1,45 @@
 import { RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
+import {
+  collectComposioCatalog,
+  materializeComposioSource,
+} from '@craft-agent/shared/sources/composio-catalog'
 import { loadWorkspaceSources } from '@craft-agent/shared/sources'
+import {
+  isPortablePublicToolName,
+  sanitizePublicSourceError,
+  toPublicSourceDto,
+  toPublicSourceDtos,
+} from '@craft-agent/shared/sources/public-source-dto'
 import { safeJsonParse } from '@craft-agent/shared/utils/files'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
-import type { RpcServer } from '@craft-agent/server-core/transport'
+import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
-export const HANDLED_CHANNELS = [
-  RPC_NAMESPACES.sources.GET,
-  RPC_NAMESPACES.sources.CREATE,
-  RPC_NAMESPACES.sources.DELETE,
-  RPC_NAMESPACES.sources.START_OAUTH,
-  RPC_NAMESPACES.sources.SAVE_CREDENTIALS,
-  RPC_NAMESPACES.sources.GET_PERMISSIONS,
-  RPC_NAMESPACES.workspace.GET_PERMISSIONS,
-  RPC_NAMESPACES.permissions.GET_DEFAULTS,
-  RPC_NAMESPACES.sources.GET_MCP_TOOLS,
-] as const
+type CatalogFetch = (input: URL, init?: RequestInit) => Promise<Response>
+
+export function createComposioCatalogFetcher(
+  endpoint: string,
+  fetchImpl: CatalogFetch = globalThis.fetch,
+): NonNullable<HandlerDeps['composioCatalog']>['fetchPage'] {
+  const catalogUrl = new URL(endpoint)
+  if (catalogUrl.username || catalogUrl.password) {
+    throw new Error('Composio catalog URL must not contain credentials')
+  }
+
+  return async ({ query, cursor }) => {
+    const url = new URL(catalogUrl)
+    if (query) url.searchParams.set('search', query)
+    if (cursor) url.searchParams.set('cursor', cursor)
+    const response = await fetchImpl(url, {
+      headers: { accept: 'application/json' },
+    })
+    if (!response.ok) {
+      throw new Error(`Composio catalog request failed with status ${response.status}`)
+    }
+    return response.json()
+  }
+}
 
 export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): void {
   const log = deps.platform.logger
@@ -28,7 +51,42 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
       log.error(`SOURCES_GET: Workspace not found: ${workspaceId}`)
       return []
     }
-    return loadWorkspaceSources(workspace.rootPath)
+    return loadWorkspaceSources(workspace.rootPath).map(toPublicSourceDto)
+  })
+
+  server.handle(RPC_NAMESPACES.sources.CATALOG_CAPABILITY, async () => ({
+    available: deps.composioCatalog !== undefined,
+  }))
+
+  server.handle(RPC_NAMESPACES.sources.DISCOVER_CATALOG, async (_ctx, workspaceId: string, query: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+    if (!deps.composioCatalog) throw new Error('Composio catalog is not configured')
+    return collectComposioCatalog({
+      query,
+      fetchPage: deps.composioCatalog.fetchPage,
+      maxPages: 20,
+    })
+  })
+
+  server.handle(RPC_NAMESPACES.sources.MATERIALIZE_CATALOG, async (_ctx, workspaceId: string, item: unknown) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
+    if (!deps.composioCatalog) throw new Error('Composio catalog is not configured')
+
+    const config = await materializeComposioSource(workspace.rootPath, item)
+    const publicSources = toPublicSourceDtos(loadWorkspaceSources(workspace.rootPath))
+    const materialized = publicSources.find((source) => source.config.id === config.id)
+    if (!materialized) throw new Error('Materialized source could not be loaded')
+
+    pushTyped(
+      server,
+      RPC_NAMESPACES.sources.CHANGED,
+      { to: 'workspace', workspaceId },
+      workspaceId,
+      publicSources,
+    )
+    return materialized
   })
 
   // Create a new source
@@ -36,7 +94,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
     const { createSource } = await import('@craft-agent/shared/sources')
-    return createSource(workspace.rootPath, {
+    const createdConfig = await createSource(workspace.rootPath, {
       name: config.name || 'New Source',
       provider: config.provider || 'custom',
       type: config.type || 'mcp',
@@ -45,6 +103,11 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
       api: config.api,
       local: config.local,
     })
+    const createdSource = loadWorkspaceSources(workspace.rootPath).find((source) => (
+      source.config.id === createdConfig.id
+    ))
+    if (!createdSource) throw new Error('Created source could not be loaded')
+    return toPublicSourceDto(createdSource)
   })
 
   // Delete a source
@@ -170,7 +233,12 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
         return { success: false, error: 'Source requires authentication' }
       }
       if (source.config.connectionStatus === 'failed') {
-        return { success: false, error: source.config.connectionError || 'Connection failed' }
+        return {
+          success: false,
+          error: source.config.connectionError
+            ? sanitizePublicSourceError(source.config.connectionError)
+            : 'Connection failed',
+        }
       }
       if (source.config.connectionStatus === 'untested') {
         return { success: false, error: 'Source has not been tested yet' }
@@ -183,7 +251,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
         if (!source.config.mcp.command) {
           return { success: false, error: 'Stdio MCP source is missing required "command" field' }
         }
-        log.info(`Fetching MCP tools via stdio: ${source.config.mcp.command}`)
+        log.info(`Fetching MCP tools for source '${sourceSlug}' via stdio`)
         client = new CraftMcpClient({
           transport: 'stdio',
           command: source.config.mcp.command,
@@ -205,7 +273,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
           accessToken = credential?.value
         }
 
-        log.info(`Fetching MCP tools from ${source.config.mcp.url}`)
+        log.info(`Fetching MCP tools for source '${sourceSlug}' via HTTP`)
         client = new CraftMcpClient({
           transport: 'http',
           url: source.config.mcp.url,
@@ -213,8 +281,12 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
         })
       }
 
-      const tools = await client.listTools()
-      await client.close()
+      let tools: Awaited<ReturnType<InstanceType<typeof CraftMcpClient>['listTools']>>
+      try {
+        tools = await client.listTools()
+      } finally {
+        await client.close()
+      }
 
       const { loadSourcePermissionsConfig, permissionsConfigCache } = await import('@craft-agent/shared/agent')
       const permissionsConfig = loadSourcePermissionsConfig(workspace.rootPath, sourceSlug)
@@ -224,19 +296,22 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
         activeSourceSlugs: [sourceSlug],
       })
 
-      const toolsWithPermission = tools.map(tool => {
+      const toolsWithPermission = tools.flatMap(tool => {
         const allowed = mergedConfig.readOnlyMcpPatterns.some((pattern: RegExp) => pattern.test(tool.name))
-        return {
+        if (!isPortablePublicToolName(tool.name)) return []
+        return [{
           name: tool.name,
-          description: tool.description,
+          description: tool.description ? sanitizePublicSourceError(tool.description) : undefined,
           allowed,
-        }
+        }]
       })
 
       return { success: true, tools: toolsWithPermission }
     } catch (error) {
-      log.error('Failed to get MCP tools:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch tools'
+      const errorMessage = sanitizePublicSourceError(
+        error instanceof Error ? error.message : 'Failed to fetch tools',
+      )
+      log.error(`Failed to get MCP tools for source '${sourceSlug}': ${errorMessage}`)
       if (errorMessage.includes('404')) {
         return { success: false, error: 'MCP server endpoint not found. The server may be offline or the URL may be incorrect.' }
       }

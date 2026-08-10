@@ -83,7 +83,7 @@ describe('cold-session metadata persistence', () => {
       buildWorkspace(),
       // messagesLoaded defaults to false — this is the cold-session state.
     )
-    ;(sm as unknown as { sessions: Map<string, unknown> }).sessions.set(sessionId, managed)
+    sm.registerManagedSession(managed)
   }
 
   function readDiskHeader(sessionId: string): Record<string, unknown> {
@@ -198,10 +198,9 @@ describe('cold-session metadata persistence', () => {
     // flushes (e.g. setSessionStatus, or any UI flow that quits the app
     // right after a metadata change). The disk must reflect the new value
     // by the time flushSession resolves — no debounce window.
-    const managed = (sm as unknown as { sessions: Map<string, { sessionStatus?: string }> })
-      .sessions.get(sessionId)!
+    const managed = sm.getManagedSession(sessionId)!
     managed.sessionStatus = 'cancelled'
-    ;(sm as unknown as { persistSession: (m: unknown) => void }).persistSession(managed)
+    await sm.setSessionStatus(sessionId, 'cancelled')
     await sm.flushSession(sessionId)
 
     expect(readDiskHeader(sessionId).sessionStatus).toBe('cancelled')

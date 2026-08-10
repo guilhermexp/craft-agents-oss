@@ -7,10 +7,21 @@
 
 import { describe, it, expect, mock, beforeAll } from 'bun:test';
 
-// mention-menu.tsx transitively imports pdfjs-dist via renderer component chain.
-// Vite's ?url suffix isn't supported by bun — mock before dynamic import.
+// mention-menu.tsx -> source-avatar -> source-status-indicator -> the
+// `@craft-agent/ui` barrel, which pulls MarkdownPdfBlock -> react-pdf ->
+// pdfjs-dist. Two things break under bun:
+//   1. Vite's `?url` suffix isn't a real module specifier.
+//   2. pdfjs evaluates `new DOMMatrix()` at module scope, and there is no DOM.
+// Mocking `pdfjs-dist` does NOT help: react-pdf resolves its own
+// `pdfjs-dist@5` copy under node_modules/.bun, a different physical module
+// than the hoisted copy this file's specifier resolves to. Mock `react-pdf`
+// instead — the actual edge the UI code imports.
 mock.module('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '' }));
-mock.module('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDocument: () => ({}) }));
+mock.module('react-pdf', () => ({
+  Document: () => null,
+  Page: () => null,
+  pdfjs: { GlobalWorkerOptions: { workerSrc: '' }, version: '0.0.0-test' },
+}));
 
 let isValidMentionTrigger: (text: string, position: number) => boolean;
 

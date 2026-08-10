@@ -1,7 +1,89 @@
 {
+  "automation_tool": {
+    "apiVersion": "v1",
+    "description": "Manage Craft-native automations for this workspace.\n\nUse this instead of Hermes native cron while running inside Craft. Scheduled prompt jobs are written to the workspace automations.json and appear in Craft Automations / Scheduled.\n\nCommands:\n- list: list configured automations\n- create_scheduled: create a SchedulerTick automation that starts a Craft session with a prompt\n- toggle: enable or disable an automation by id\n- delete: remove an automation by id\n- history: read recent automations-history.jsonl entries",
+    "executionMode": "backend",
+    "exposure": "mcp-only",
+    "inputSchema": {
+      "properties": {
+        "command": {
+          "enum": [
+            "list",
+            "create_scheduled",
+            "toggle",
+            "delete",
+            "history"
+          ],
+          "type": "string"
+        },
+        "cron": {
+          "description": "5-field cron expression for SchedulerTick, e.g. */30 * * * *",
+          "type": "string"
+        },
+        "enabled": {
+          "description": "Enable/disable value for create_scheduled or toggle",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "Automation matcher id for toggle/delete/history filtering",
+          "type": "string"
+        },
+        "labels": {
+          "description": "Labels applied to sessions created by the automation",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "limit": {
+          "description": "History entry limit, default 20",
+          "type": "number"
+        },
+        "llmConnection": {
+          "description": "Optional LLM connection slug for the spawned automation session",
+          "type": "string"
+        },
+        "model": {
+          "description": "Optional model id for the spawned automation session",
+          "type": "string"
+        },
+        "name": {
+          "description": "Human-readable automation name",
+          "type": "string"
+        },
+        "permissionMode": {
+          "description": "Permission mode for created sessions",
+          "enum": [
+            "safe",
+            "ask",
+            "allow-all"
+          ],
+          "type": "string"
+        },
+        "prompt": {
+          "description": "Prompt action text for create_scheduled",
+          "type": "string"
+        },
+        "timezone": {
+          "description": "IANA timezone, e.g. America/Sao_Paulo",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "type": "object"
+    },
+    "name": "automation_tool",
+    "outputSchema": {
+      "additionalProperties": {},
+      "type": "object"
+    },
+    "safeMode": "block"
+  },
   "browser_tool": {
     "apiVersion": "v1",
-    "description": "Run browser actions using a CLI-like command (string or array input).\n\nAll browser interactions use this single tool with strict validation and actionable feedback.\nString mode supports batching with semicolons: `fill @e1 value; fill @e2 value; click @e3`\nBatch stops after navigation commands (click, navigate, back, forward) since page state may change.\n\nArray mode bypasses string parsing and preserves raw arguments exactly (recommended for semicolons, tabs, and newlines):\n- `[\"evaluate\", \"var x = 1; var y = 2; x + y\"]`\n- `[\"paste\", \"Name\\tAge\\nAlice\\t30\"]`\n\nExamples:\n- `--help`\n- `open`\n- `navigate https://example.com`\n- `snapshot`\n- `find login button` — search elements by keyword\n- `click @e12`\n- `click-at 350 200` — click at pixel coordinates (for canvas elements)\n- `fill @e5 user@example.com`\n- `type Hello World` — type into currently focused element (no ref needed)\n- `select @e3 optionValue`\n- `select @e75 CNAME --assert-text Target --timeout 3000`\n- `set-clipboard Name\\tAge\\nAlice\\t30` — write text to clipboard\n- `get-clipboard` — read clipboard text content\n- `paste Name\\tAge\\nAlice\\t30` — set clipboard and trigger Ctrl/Cmd+V\n- `scroll down 800`\n- `evaluate document.title`\n- `console 50 error`\n- `screenshot` — raw screenshot\n- `screenshot --annotated` — screenshot with @eN labels overlaid on interactive elements\n- `screenshot-region 100 200 640 480`\n- `screenshot-region --ref @e12 --padding 8`\n- `screenshot-region --selector div[data-testid=\"chart\"]`\n- `window-resize 1440 900`\n- `network 50 failed`\n- `wait network-idle 8000`\n- `key Enter`\n- `key k meta`\n- `downloads wait 15000`\n- `focus [windowId]` — focus existing browser window (no new window)\n- `windows` — list current browser windows and ownership state\n- `release` — dismiss the agent control overlay when done\n- `close` — close and destroy the browser window\n- `hide` — hide the window while preserving state",
+    "description": "Run browser actions using a CLI-like command (string or array input).\n\nAll browser interactions use this single tool with strict validation and actionable feedback.\nString mode supports batching with semicolons: `fill @e1 value; fill @e2 value; click @e3`\nBatch stops after navigation commands (click, navigate, back, forward) since page state may change.\n\nArray mode bypasses string parsing and preserves raw arguments exactly (recommended for semicolons, tabs, and newlines):\n- `[\"evaluate\", \"var x = 1; var y = 2; x + y\"]`\n- `[\"paste\", \"Name\\tAge\\nAlice\\t30\"]`\n\nExamples:\n- `--help`\n- `open`\n- `navigate https://example.com`\n- `snapshot`\n- `find login button` — search elements by keyword\n- `click @e12`\n- `click-at 350 200` — click at pixel coordinates (for canvas elements)\n- `drag 100 200 300 400` — drag from (100,200) to (300,400)\n- `fill @e5 user@example.com`\n- `type Hello World` — type into currently focused element (no ref needed)\n- `select @e3 optionValue`\n- `select @e75 CNAME --assert-text Target --timeout 3000`\n- `set-clipboard Name\\tAge\\nAlice\\t30` — write text to clipboard\n- `get-clipboard` — read clipboard text content\n- `paste Name\\tAge\\nAlice\\t30` — set clipboard and trigger Ctrl/Cmd+V\n- `upload @e3 /path/to/file.pdf` — attach local file(s) to a file input\n- `scroll down 800`\n- `evaluate document.title`\n- `console 50 error`\n- `screenshot` — raw screenshot\n- `screenshot --annotated` — screenshot with @eN labels overlaid on interactive elements\n- `screenshot-region 100 200 640 480`\n- `screenshot-region --ref @e12 --padding 8`\n- `screenshot-region --selector div[data-testid=\"chart\"]`\n- `window-resize 1440 900`\n- `network 50 failed`\n- `wait network-idle 8000`\n- `key Enter`\n- `key k meta`\n- `downloads wait 15000`\n- `focus [windowId]` — focus existing browser window (no new window)\n- `windows` — list current browser windows and ownership state\n- `release [windowId|all]` — dismiss the agent control overlay when done\n- `close [windowId]` — close and destroy the browser window\n- `hide [windowId]` — hide the window while preserving state",
     "executionMode": "backend",
     "exposure": "native-and-mcp",
     "inputSchema": {
@@ -28,70 +110,14 @@
     },
     "name": "browser_tool",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "allow"
   },
   "call_llm": {
     "apiVersion": "v1",
-    "description": "Invoke a secondary LLM for focused subtasks. Use for:\n- Cost optimization: use a smaller model for simple tasks (summarization, classification)\n- Structured output: JSON schema compliance via prompt instructions\n- Parallel processing: call multiple times in one message - all run simultaneously\n- Context isolation: process content without polluting main context\n\nPut text/content directly in the 'prompt' parameter. Do NOT pass inline text via attachments.\nOnly use 'attachments' for existing file paths on disk - the tool loads file content automatically.\nFor large files (>2000 lines), use {path, startLine, endLine} to select a portion.",
+    "description": "Invoke a secondary LLM for focused subtasks. Use for:\n- Cost optimization: use a smaller model for simple tasks (summarization, classification)\n- Structured output: JSON schema compliance — native when the backend supports it (e.g. Claude), via prompt instructions otherwise (Pi/Hermes)\n- Parallel processing: call multiple times in one message - all run simultaneously\n- Context isolation: process content without polluting main context\n\nPut text/content directly in the 'prompt' parameter. Do NOT pass inline text via attachments.\nOnly use 'attachments' for existing file paths on disk - the tool loads file content automatically.\nFor large files (>2000 lines), use {path, startLine, endLine} to select a portion.",
     "executionMode": "backend",
     "exposure": "native-and-mcp",
     "inputSchema": {
@@ -202,63 +228,7 @@
     },
     "name": "call_llm",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
@@ -296,63 +266,7 @@
     },
     "name": "channel_dispatch",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -390,63 +304,7 @@
     },
     "name": "config_validate",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
@@ -468,63 +326,29 @@
     },
     "name": "get_session_info",
     "outputSchema": {
+      "additionalProperties": {},
+      "type": "object"
+    },
+    "readOnly": true,
+    "safeMode": "allow"
+  },
+  "list_background_tasks": {
+    "apiVersion": "v1",
+    "description": "Enumerate the background agents/tasks tracked for a session by the main-process registry (running, finished, or orphaned).\n\nThis is the ONLY reliable way to answer \"what is running / what's the status?\" — it reads the main-process registry, which tracks tasks across turns. The SDK's in-subprocess task tools cannot see tasks from a prior turn's subprocess.\n\nIf asked for status, call this and report exactly what it returns — never guess, and never claim \"the app restarted.\" A `status: 'orphaned'` task ended when its owning turn's subprocess was torn down; its in-process state was lost.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
       "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
+        "sessionId": {
+          "description": "Session ID to list background tasks for. Omit to use the current session.",
+          "type": "string"
         }
       },
-      "required": [
-        "content"
-      ],
+      "type": "object"
+    },
+    "name": "list_background_tasks",
+    "outputSchema": {
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
@@ -546,63 +370,7 @@
     },
     "name": "list_messaging_channels",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
@@ -649,67 +417,61 @@
     },
     "name": "list_sessions",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
     "safeMode": "allow"
+  },
+  "meeting_tool": {
+    "apiVersion": "v1",
+    "description": "Control Craft-native meeting capture for this session when desktop/native meeting callbacks are available.\n\nCommands:\n- start: start or attach to a meeting capture\n- status: get current meeting capture status\n- list: list known/recent meeting captures\n- transcript: fetch a meeting transcript\n- stop: stop an active meeting capture\n\nIf the active Craft runtime has not registered meeting callbacks, this tool returns a clear unavailable error instead of touching Hermes upstream.",
+    "executionMode": "backend",
+    "exposure": "mcp-only",
+    "inputSchema": {
+      "properties": {
+        "command": {
+          "enum": [
+            "start",
+            "status",
+            "list",
+            "transcript",
+            "stop"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "description": "Alias for meetingId when native callbacks use id",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Optional result limit for list/transcript",
+          "type": "number"
+        },
+        "meetingId": {
+          "description": "Meeting/capture id for status, transcript, or stop",
+          "type": "string"
+        },
+        "title": {
+          "description": "Optional meeting title for start",
+          "type": "string"
+        },
+        "url": {
+          "description": "Optional meeting URL for start/attach",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "type": "object"
+    },
+    "name": "meeting_tool",
+    "outputSchema": {
+      "additionalProperties": {},
+      "type": "object"
+    },
+    "safeMode": "block"
   },
   "memory_recall": {
     "apiVersion": "v1",
@@ -753,63 +515,7 @@
     },
     "name": "memory_recall",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
@@ -875,63 +581,7 @@
     },
     "name": "memory_store",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -959,63 +609,7 @@
     },
     "name": "mermaid_validate",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
@@ -1051,63 +645,7 @@
     },
     "name": "render_template",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "allow"
@@ -1158,63 +696,7 @@
     },
     "name": "script_sandbox",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "allow"
@@ -1264,63 +746,7 @@
     },
     "name": "send_agent_message",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -1344,63 +770,7 @@
     },
     "name": "send_developer_feedback",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "allow"
@@ -1431,63 +801,7 @@
     },
     "name": "set_session_labels",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -1515,63 +829,7 @@
     },
     "name": "set_session_status",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -1595,63 +853,7 @@
     },
     "name": "skill_validate",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "readOnly": true,
@@ -1723,63 +925,7 @@
     },
     "name": "source_credential_prompt",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -1803,63 +949,7 @@
     },
     "name": "source_google_oauth_trigger",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -1883,63 +973,7 @@
     },
     "name": "source_microsoft_oauth_trigger",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -1963,63 +997,7 @@
     },
     "name": "source_oauth_trigger",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -2043,63 +1021,7 @@
     },
     "name": "source_slack_oauth_trigger",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -2127,63 +1049,7 @@
     },
     "name": "source_test",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "allow"
@@ -2255,6 +1121,10 @@
           ],
           "type": "string"
         },
+        "projectId": {
+          "description": "Workspace project id to bind the new session to. Inherits the project working directory unless overridden.",
+          "type": "string"
+        },
         "prompt": {
           "description": "Instructions for the new session (required when not in help mode)",
           "type": "string"
@@ -2280,63 +1150,7 @@
     },
     "name": "spawn_session",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -2360,63 +1174,7 @@
     },
     "name": "SubmitPlan",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "allow"
@@ -2463,63 +1221,7 @@
     },
     "name": "transform_data",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "allow"
@@ -2545,63 +1247,7 @@
     },
     "name": "unbind_messaging_channel",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "text"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "type": "array"
-        },
-        "isError": {
-          "type": "boolean"
-        },
-        "structuredContent": {
-          "additionalProperties": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "content"
-      ],
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"
@@ -2646,63 +1292,822 @@
     },
     "name": "update_user_preferences",
     "outputSchema": {
-      "properties": {
-        "content": {
-          "items": {
-            "anyOf": [
-              {
+      "additionalProperties": {},
+      "type": "object"
+    },
+    "safeMode": "block"
+  },
+  "workspace_objects": {
+    "apiVersion": "v1",
+    "description": "Create, update, query, and repair structured workspace objects through one validated workspace-scoped data plane. SQLite is canonical; manifests are derived. Never use raw SQL or place secrets in values intended for manifests.",
+    "executionMode": "registry",
+    "exposure": "native-and-mcp",
+    "inputSchema": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "define-object",
+              "type": "string"
+            },
+            "object": {
+              "additionalProperties": false,
+              "properties": {
+                "fields": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "maxLength": 120,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "name": {
+                        "maxLength": 160,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "options": {
+                        "items": {
+                          "maxLength": 160,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 200,
+                        "type": "array"
+                      },
+                      "relationObjectId": {
+                        "maxLength": 120,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "type": {
+                        "enum": [
+                          "text",
+                          "number",
+                          "boolean",
+                          "date",
+                          "datetime",
+                          "select",
+                          "status",
+                          "relation",
+                          "file"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "type"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 200,
+                  "type": "array"
+                },
+                "id": {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "name": {
+                  "maxLength": 160,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "slug": {
+                  "maxLength": 120,
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug",
+                "name",
+                "fields"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "action",
+            "object"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "upsert-entries",
+              "type": "string"
+            },
+            "entries": {
+              "items": {
                 "additionalProperties": false,
                 "properties": {
-                  "text": {
+                  "id": {
+                    "maxLength": 120,
+                    "minLength": 1,
                     "type": "string"
                   },
-                  "type": {
-                    "const": "text",
-                    "type": "string"
+                  "values": {
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "maxLength": 64000,
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "propertyNames": {
+                      "maxLength": 120,
+                      "minLength": 1
+                    },
+                    "type": "object"
                   }
                 },
                 "required": [
-                  "type",
-                  "text"
+                  "id",
+                  "values"
                 ],
                 "type": "object"
               },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "data": {
-                    "type": "string"
-                  },
-                  "mimeType": {
-                    "type": "string"
-                  },
-                  "type": {
-                    "const": "image",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "data",
-                  "mimeType"
-                ],
-                "type": "object"
-              }
-            ]
+              "maxItems": 200,
+              "minItems": 1,
+              "type": "array"
+            },
+            "objectId": {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            }
           },
-          "type": "array"
+          "required": [
+            "action",
+            "objectId",
+            "entries"
+          ],
+          "type": "object"
         },
-        "isError": {
-          "type": "boolean"
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "delete-entries",
+              "type": "string"
+            },
+            "entryIds": {
+              "items": {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 200,
+              "minItems": 1,
+              "type": "array"
+            },
+            "objectId": {
+              "$ref": "#/anyOf/1/properties/objectId"
+            }
+          },
+          "required": [
+            "action",
+            "objectId",
+            "entryIds"
+          ],
+          "type": "object"
         },
-        "structuredContent": {
-          "additionalProperties": {},
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "upsert-view",
+              "type": "string"
+            },
+            "objectId": {
+              "$ref": "#/anyOf/1/properties/objectId"
+            },
+            "view": {
+              "additionalProperties": false,
+              "properties": {
+                "config": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "columnVisibility": {
+                      "additionalProperties": {
+                        "type": "boolean"
+                      },
+                      "propertyNames": {
+                        "maxLength": 120,
+                        "minLength": 1
+                      },
+                      "type": "object"
+                    },
+                    "filter": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "fieldId": {
+                                  "maxLength": 120,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "operator": {
+                                  "enum": [
+                                    "equals",
+                                    "not-equals",
+                                    "contains",
+                                    "not-contains",
+                                    "gt",
+                                    "gte",
+                                    "lt",
+                                    "lte",
+                                    "in",
+                                    "not-in",
+                                    "is-empty",
+                                    "is-not-empty",
+                                    "before",
+                                    "after"
+                                  ],
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "const": "rule",
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 64000,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "type": "null"
+                                    },
+                                    {
+                                      "items": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 64000,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "number"
+                                          },
+                                          {
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "maxItems": 200,
+                                      "type": "array"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "fieldId",
+                                "operator"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "clauses": {
+                                  "items": {
+                                    "anyOf": [
+                                      {
+                                        "$ref": "#/anyOf/3/properties/view/properties/config/properties/filter/anyOf/0/anyOf/0"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "clauses": {
+                                            "items": {
+                                              "anyOf": [
+                                                {
+                                                  "$ref": "#/anyOf/3/properties/view/properties/config/properties/filter/anyOf/0/anyOf/0"
+                                                },
+                                                {
+                                                  "additionalProperties": false,
+                                                  "properties": {
+                                                    "clauses": {
+                                                      "items": {
+                                                        "anyOf": [
+                                                          {
+                                                            "$ref": "#/anyOf/3/properties/view/properties/config/properties/filter/anyOf/0/anyOf/0"
+                                                          },
+                                                          {
+                                                            "additionalProperties": false,
+                                                            "properties": {
+                                                              "clauses": {
+                                                                "items": {
+                                                                  "anyOf": [
+                                                                    {
+                                                                      "$ref": "#/anyOf/3/properties/view/properties/config/properties/filter/anyOf/0/anyOf/0"
+                                                                    },
+                                                                    {
+                                                                      "additionalProperties": false,
+                                                                      "properties": {
+                                                                        "clauses": {
+                                                                          "items": {
+                                                                            "anyOf": [
+                                                                              {
+                                                                                "$ref": "#/anyOf/3/properties/view/properties/config/properties/filter/anyOf/0/anyOf/0"
+                                                                              },
+                                                                              {
+                                                                                "additionalProperties": false,
+                                                                                "properties": {
+                                                                                  "clauses": {
+                                                                                    "items": {
+                                                                                      "anyOf": [
+                                                                                        {
+                                                                                          "$ref": "#/anyOf/3/properties/view/properties/config/properties/filter/anyOf/0/anyOf/0"
+                                                                                        },
+                                                                                        {
+                                                                                          "additionalProperties": false,
+                                                                                          "properties": {
+                                                                                            "clauses": {
+                                                                                              "items": {
+                                                                                                "$ref": "#/anyOf/3/properties/view/properties/config/properties/filter/anyOf/0/anyOf/0"
+                                                                                              },
+                                                                                              "maxItems": 50,
+                                                                                              "minItems": 1,
+                                                                                              "type": "array"
+                                                                                            },
+                                                                                            "conjunction": {
+                                                                                              "enum": [
+                                                                                                "and",
+                                                                                                "or"
+                                                                                              ],
+                                                                                              "type": "string"
+                                                                                            },
+                                                                                            "type": {
+                                                                                              "const": "group",
+                                                                                              "type": "string"
+                                                                                            }
+                                                                                          },
+                                                                                          "required": [
+                                                                                            "type",
+                                                                                            "conjunction",
+                                                                                            "clauses"
+                                                                                          ],
+                                                                                          "type": "object"
+                                                                                        }
+                                                                                      ]
+                                                                                    },
+                                                                                    "maxItems": 50,
+                                                                                    "minItems": 1,
+                                                                                    "type": "array"
+                                                                                  },
+                                                                                  "conjunction": {
+                                                                                    "enum": [
+                                                                                      "and",
+                                                                                      "or"
+                                                                                    ],
+                                                                                    "type": "string"
+                                                                                  },
+                                                                                  "type": {
+                                                                                    "const": "group",
+                                                                                    "type": "string"
+                                                                                  }
+                                                                                },
+                                                                                "required": [
+                                                                                  "type",
+                                                                                  "conjunction",
+                                                                                  "clauses"
+                                                                                ],
+                                                                                "type": "object"
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          "maxItems": 50,
+                                                                          "minItems": 1,
+                                                                          "type": "array"
+                                                                        },
+                                                                        "conjunction": {
+                                                                          "enum": [
+                                                                            "and",
+                                                                            "or"
+                                                                          ],
+                                                                          "type": "string"
+                                                                        },
+                                                                        "type": {
+                                                                          "const": "group",
+                                                                          "type": "string"
+                                                                        }
+                                                                      },
+                                                                      "required": [
+                                                                        "type",
+                                                                        "conjunction",
+                                                                        "clauses"
+                                                                      ],
+                                                                      "type": "object"
+                                                                    }
+                                                                  ]
+                                                                },
+                                                                "maxItems": 50,
+                                                                "minItems": 1,
+                                                                "type": "array"
+                                                              },
+                                                              "conjunction": {
+                                                                "enum": [
+                                                                  "and",
+                                                                  "or"
+                                                                ],
+                                                                "type": "string"
+                                                              },
+                                                              "type": {
+                                                                "const": "group",
+                                                                "type": "string"
+                                                              }
+                                                            },
+                                                            "required": [
+                                                              "type",
+                                                              "conjunction",
+                                                              "clauses"
+                                                            ],
+                                                            "type": "object"
+                                                          }
+                                                        ]
+                                                      },
+                                                      "maxItems": 50,
+                                                      "minItems": 1,
+                                                      "type": "array"
+                                                    },
+                                                    "conjunction": {
+                                                      "enum": [
+                                                        "and",
+                                                        "or"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "type": {
+                                                      "const": "group",
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "type",
+                                                    "conjunction",
+                                                    "clauses"
+                                                  ],
+                                                  "type": "object"
+                                                }
+                                              ]
+                                            },
+                                            "maxItems": 50,
+                                            "minItems": 1,
+                                            "type": "array"
+                                          },
+                                          "conjunction": {
+                                            "enum": [
+                                              "and",
+                                              "or"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "type": {
+                                            "const": "group",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "type",
+                                          "conjunction",
+                                          "clauses"
+                                        ],
+                                        "type": "object"
+                                      }
+                                    ]
+                                  },
+                                  "maxItems": 50,
+                                  "minItems": 1,
+                                  "type": "array"
+                                },
+                                "conjunction": {
+                                  "enum": [
+                                    "and",
+                                    "or"
+                                  ],
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "const": "group",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "conjunction",
+                                "clauses"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "presentation": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "adapter": {
+                          "enum": [
+                            "table",
+                            "kanban",
+                            "calendar",
+                            "timeline",
+                            "gallery",
+                            "list"
+                          ],
+                          "type": "string"
+                        },
+                        "settings": {
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "maxLength": 64000,
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "items": {
+                                  "$ref": "#/anyOf/3/properties/view/properties/config/properties/presentation/properties/settings/additionalProperties"
+                                },
+                                "maxItems": 200,
+                                "type": "array"
+                              },
+                              {
+                                "additionalProperties": {
+                                  "$ref": "#/anyOf/3/properties/view/properties/config/properties/presentation/properties/settings/additionalProperties"
+                                },
+                                "propertyNames": {
+                                  "maxLength": 120
+                                },
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "propertyNames": {
+                            "maxLength": 120
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "adapter",
+                        "settings"
+                      ],
+                      "type": "object"
+                    },
+                    "schemaVersion": {
+                      "const": 1,
+                      "type": "number"
+                    },
+                    "search": {
+                      "maxLength": 500,
+                      "type": "string"
+                    },
+                    "sort": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "direction": {
+                            "enum": [
+                              "asc",
+                              "desc"
+                            ],
+                            "type": "string"
+                          },
+                          "fieldId": {
+                            "maxLength": 120,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "fieldId",
+                          "direction"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 10,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "search",
+                    "filter",
+                    "sort",
+                    "columnVisibility",
+                    "presentation"
+                  ],
+                  "type": "object"
+                },
+                "id": {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "name": {
+                  "maxLength": 160,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "config"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "action",
+            "objectId",
+            "view"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "get-object",
+              "type": "string"
+            },
+            "objectId": {
+              "$ref": "#/anyOf/1/properties/objectId"
+            }
+          },
+          "required": [
+            "action",
+            "objectId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "list-objects",
+              "type": "string"
+            },
+            "limit": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "repair-projection",
+              "type": "string"
+            },
+            "objectId": {
+              "$ref": "#/anyOf/1/properties/objectId"
+            }
+          },
+          "required": [
+            "action",
+            "objectId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "list-relation-options",
+              "type": "string"
+            },
+            "after": {
+              "$ref": "#/anyOf/1/properties/objectId"
+            },
+            "includeEntryIds": {
+              "items": {
+                "$ref": "#/anyOf/1/properties/objectId"
+              },
+              "maxItems": 200,
+              "type": "array"
+            },
+            "limit": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "objectId": {
+              "$ref": "#/anyOf/1/properties/objectId"
+            }
+          },
+          "required": [
+            "action",
+            "objectId"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "const": "query-object",
+              "type": "string"
+            },
+            "objectId": {
+              "$ref": "#/anyOf/1/properties/objectId"
+            },
+            "query": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "viewId": {
+                      "$ref": "#/anyOf/1/properties/objectId"
+                    }
+                  },
+                  "required": [
+                    "viewId"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "config": {
+                      "$ref": "#/anyOf/3/properties/view/properties/config"
+                    }
+                  },
+                  "required": [
+                    "config"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "required": [
+            "action",
+            "objectId",
+            "query"
+          ],
           "type": "object"
         }
-      },
-      "required": [
-        "content"
       ],
+      "type": "object"
+    },
+    "name": "workspace_objects",
+    "outputSchema": {
+      "additionalProperties": {},
       "type": "object"
     },
     "safeMode": "block"

@@ -15,7 +15,7 @@ import type { BackendConfig, PostInitResult, PermissionRequestType, SdkMcpServer
 import { parseError, type AgentError } from './errors.ts';
 import { mapClaudeSdkAssistantError, type ClaudeSdkApiError } from './claude-sdk-error-mapper.ts';
 import { runErrorDiagnostics } from './diagnostics.ts';
-import { loadStoredConfig, loadConfigDefaults, type Workspace, type AuthType, getDefaultLlmConnection, getLlmConnection, getRtkEnabled } from '../config/storage.ts';
+import { loadStoredConfig, loadConfigDefaults, type Workspace, type AuthType, getDefaultLlmConnection, getLlmConnection } from '../config/storage.ts';
 import { getValidClaudeOAuthToken } from '../auth/state.ts';
 import {
   clearClaudeBedrockRoutingEnvVars,
@@ -34,6 +34,7 @@ import { debug } from '../utils/debug.ts';
 import { guardLargeResult } from '../utils/large-response.ts';
 import { SourceActivationDrainController } from './source-activation-drain.ts';
 import { resolveKeepBackgroundTasksAlive, createPushableInputStream, type PushableInputStream } from './backend/claude/persistent-input.ts';
+import { normalizeClaudeTeamLifecycleHook } from './backend/claude/team-lifecycle.ts';
 import {
   getSessionPlansDir,
   getLastPlanFilePath,
@@ -44,7 +45,7 @@ import {
   cleanupSessionScopedTools,
   type AuthRequest,
 } from './session-scoped-tools.ts';
-import { type AutomationSystem, type SdkAutomationCallbackMatcher } from '../automations/index.ts';
+import { type AutomationSystem, type SdkAutomationCallback, type SdkAutomationCallbackMatcher } from '../automations/index.ts';
 import {
   getPermissionMode,
   getPermissionModeDiagnostics,
@@ -57,23 +58,20 @@ import {
   PERMISSION_MODE_CONFIG,
   SAFE_MODE_CONFIG,
 } from './mode-manager.ts';
-import { getSessionDataPath, getSessionPlansPath, getSessionPath } from '../sessions/storage.ts';
+import { getSessionPlansPath, getSessionPath } from '../sessions/storage.ts';
 import { getLastApiError } from '../interceptor-common.ts';
-import { extractWorkspaceSlug } from '../utils/workspace.ts';
 import {
   ConfigWatcher,
   createConfigWatcher,
   type ConfigWatcherCallbacks,
 } from '../config/watcher.ts';
-// Centralized PreToolUse pipeline
 import {
-  runPreToolUseChecks,
-  type PreToolUseCheckResult,
-  BUILT_IN_TOOLS,
-} from './core/pre-tool-use.ts';
-import { validateAskUserQuestions, ASK_USER_QUESTION_TIMEOUT_MS } from './ask-user-question.ts';
-import { getRtkPath } from './core/rtk-detector.ts';
-import type { RtkContext } from './core/rtk-rewrite.ts';
+  validateAskUserQuestions,
+  buildAskUserQuestionResult,
+  buildAskUserQuestionHookOutput,
+  ASK_USER_QUESTION_TIMEOUT_MS,
+  ASK_USER_QUESTION_TOOL_NAME,
+} from './ask-user-question.ts';
 import { type ThinkingLevel, THINKING_TO_EFFORT, getThinkingTokens, DEFAULT_THINKING_LEVEL } from './thinking-levels.ts';
 import { generateConversationSummary } from './conversation-summary.ts';
 import type { LoadedSource } from '../sources/types.ts';
@@ -129,6 +127,7 @@ export type { LoadedSource } from '../sources/types.ts';
 // Re-exported for backwards compatibility with existing imports from claude-agent.ts
 import { AbortReason } from './core/session-lifecycle.ts';
 import type { RecoveryMessage } from './core/types.ts';
+import type { ToolPermissionResult } from './core/tool-permission-dispatcher.ts';
 export { AbortReason, type RecoveryMessage };
 
 /** File extensions that can be converted to readable text by CLI tools. */
@@ -175,6 +174,105 @@ export function resolveClaudeThinkingOptions(args: {
   return {
     maxThinkingTokens: getThinkingTokens(thinkingLevel, model),
   };
+}
+
+/**
+ * Encode a dispatcher `block` result into the Claude SDK PreToolUse hook shape.
+ *
+ * A denied tool does NOT end the turn. `continue: false` stops the agent loop
+ * immediately after the hook, so the model never reads why it was blocked and the
+ * user is left with a dead turn — that is exactly how a strict prerequisite block
+ * on `mcp__session__browser_tool` silently killed a whole session. The default is
+ * therefore `permissionDecision: 'deny'` with `continue: true`: the tool is refused,
+ * the reason goes back to the model, and the model corrects course in the same turn.
+ * Only `endTurn` — set solely for an explicit user denial at a permission prompt —
+ * stops the loop, and it carries `stopReason` so the UI can explain the dead turn.
+ *
+ * Real errors (`isError`) get the `[ERROR]` marker via {@link blockWithReason} so
+ * the model reads them as failures. Control-flow blocks — notably the successful
+ * mid-turn source activation that asks the user to resend — carry the literal
+ * reason with no marker, because the model must relay a success message, not
+ * report a failure. See the `[ERROR]` contract in tool-matching.ts
+ * (isToolResultError).
+ *
+ * `steerContext` is a mid-turn user message riding along as `additionalContext`
+ * (the SDK allows it next to `permissionDecision`). A deny keeps the turn alive,
+ * so the model still reads it; the `endTurn` shape has no place to carry it and
+ * must be called without one — see {@link canDeliverSteer}.
+ */
+export function encodeClaudeToolBlock(
+  result: { reason: string; isError?: boolean; endTurn?: boolean },
+  steerContext?: string,
+) {
+  // blockWithReason owns the `[ERROR] ` marker; both shapes read the marked text
+  // off it so the marker keeps exactly one owner.
+  const deny = result.isError
+    ? blockWithReason(result.reason)
+    : {
+        continue: true,
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse' as const,
+          permissionDecision: 'deny' as const,
+          permissionDecisionReason: result.reason,
+        },
+      };
+
+  if (!result.endTurn) {
+    return steerContext
+      ? { ...deny, hookSpecificOutput: { ...deny.hookSpecificOutput, additionalContext: steerContext } }
+      : deny;
+  }
+
+  const reason = deny.hookSpecificOutput.permissionDecisionReason;
+  return { continue: false, decision: 'block' as const, reason, stopReason: reason };
+}
+
+/**
+ * Whether this PreToolUse outcome can carry a pending steer message to the model.
+ *
+ * Every outcome that leaves the turn running delivers it as `additionalContext`,
+ * including a deny — the model reads the denial reason and the user's new message
+ * in the same tool result. The turn-ending denial cannot: the agent loop stops
+ * right after the hook, so consuming the steer there would drop the user's
+ * message silently. Leaving it pending is what makes the turn emit
+ * `steer_undelivered` (see {@link withUndeliveredSteer}) so the session layer
+ * re-queues it for the next turn.
+ */
+export function canDeliverSteer(result: ToolPermissionResult): boolean {
+  return result.type !== 'block' || !result.endTurn;
+}
+
+/**
+ * Hand back a steer message the turn never delivered, **before** the turn's
+ * `complete` event.
+ *
+ * Ordering is the whole point. The session layer's event loop returns on the
+ * first `complete` (`SessionManager.sendMessage`), which abandons this
+ * generator via `iterator.return()`. A `yield` reached that way — from a
+ * `finally` block, for instance — is discarded by the abandoned loop, so
+ * anything emitted after `complete` is invisible to the consumer and the user's
+ * mid-turn message is lost. Emitting first is what makes the re-queue real.
+ *
+ * `takePendingSteer` consumes the pending message, so at most one
+ * `steer_undelivered` is emitted per turn.
+ */
+export async function* withUndeliveredSteer(
+  turn: AsyncGenerator<AgentEvent>,
+  takePendingSteer: () => string | null,
+): AsyncGenerator<AgentEvent> {
+  for await (const event of turn) {
+    if (event.type === 'complete') {
+      const undelivered = takePendingSteer();
+      if (undelivered) yield { type: 'steer_undelivered' as const, message: undelivered };
+    }
+    yield event;
+  }
+
+  // Turn paths that end without a `complete` — the source-activation restart
+  // returns early — still owe the message back. The consumer is still reading
+  // here, because the generator ended on its own.
+  const trailing = takePendingSteer();
+  if (trailing) yield { type: 'steer_undelivered' as const, message: trailing };
 }
 
 export interface ClaudeAgentConfig {
@@ -232,15 +330,6 @@ export interface ClaudeAgentConfig {
   connectionSlug?: string;
   /** Enable 1M context window for current Opus models. Default: true. Set false to use 200K and conserve usage limits. */
   enable1MContext?: boolean;
-}
-
-// Permission request tracking
-interface PendingPermission {
-  resolve: (allowed: boolean, alwaysAllow?: boolean) => void;
-  toolName: string;
-  command: string;
-  baseCommand: string;
-  type?: 'bash' | 'safe_mode';  // Type of permission request
 }
 
 // Dangerous commands that should always require permission (never auto-allow)
@@ -479,6 +568,11 @@ export class ClaudeAgent extends BaseAgent {
   private currentQueryAbortController: AbortController | null = null;
   private lastAbortReason: AbortReason | null = null;
   private sessionId: string | null = null;
+  // Structured AskUserQuestion payloads keyed by tool use id, staged by the
+  // PreToolUse hook and consumed by the matching tool_result event. The SDK's
+  // own tool result is prose written for the model ("Your questions have been
+  // answered: ..."), so the renderer would otherwise have nothing to parse.
+  private answeredUserQuestions = new Map<string, string>();
   // Whether the most recent user turn included image/PDF attachments. Read by
   // mapSDKErrorToTypedError to decide whether attachment-related hints belong
   // in the invalid_request error message.
@@ -487,7 +581,6 @@ export class ClaudeAgent extends BaseAgent {
   private branchFromSdkCwd: string | null = null;
   private branchFromSdkTurnId: string | null = null;
   private isHeadless: boolean = false;
-  private pendingPermissions: Map<string, PendingPermission> = new Map();
   // Permission whitelists are now managed by this.permissionManager (inherited from BaseAgent)
   // Source state tracking is now managed by this.sourceManager (inherited from BaseAgent)
   // Source MCP connections are managed by this.config.mcpPool (centralized in main process)
@@ -802,6 +895,11 @@ export class ClaudeAgent extends BaseAgent {
     this.isHeadless = config.isHeadless ?? false;
     this.automationSystem = config.automationSystem;
 
+    // Claude routes PreToolUse through the shared dispatcher. rerunAfterActivation
+    // is false: the SDK fixes its tool registry per query, so a source activated
+    // mid-turn only becomes callable after the user resends (STOP strategy).
+    this.initToolPermissionDispatcher({ rerunAfterActivation: false });
+
     // Initialize event adapter for SDK message → AgentEvent conversion
     this.eventAdapter = new ClaudeEventAdapter({
       onDebug: (msg) => this.onDebug?.(msg),
@@ -912,87 +1010,7 @@ export class ClaudeAgent extends BaseAgent {
   // Permission command utilities (getBaseCommand, isDangerousCommand, extractDomainFromNetworkCommand)
   // are now available via this.permissionManager
 
-  /**
-   * Respond to a pending permission request.
-   * Uses permissionManager for whitelisting.
-   */
-  respondToPermission(requestId: string, allowed: boolean, alwaysAllow: boolean = false): void {
-    this.debug(`respondToPermission: ${requestId}, allowed=${allowed}, alwaysAllow=${alwaysAllow}, pending=${this.pendingPermissions.has(requestId)}`);
-    const pending = this.pendingPermissions.get(requestId);
-    if (pending) {
-      this.debug(`Resolving permission promise for ${requestId}`);
-
-      // If "always allow" was selected, remember it (with special handling for curl/wget)
-      if (alwaysAllow && allowed) {
-        if (['curl', 'wget'].includes(pending.baseCommand)) {
-          // For curl/wget, whitelist the domain instead of the command
-          const domain = this.permissionManager.extractDomainFromNetworkCommand(pending.command);
-          if (domain) {
-            this.permissionManager.whitelistDomain(domain);
-            this.debug(`Added domain "${domain}" to always-allowed domains`);
-          }
-        } else if (!this.permissionManager.isDangerousCommand(pending.baseCommand)) {
-          this.permissionManager.whitelistCommand(pending.baseCommand);
-          this.debug(`Added "${pending.baseCommand}" to always-allowed commands`);
-        }
-      }
-
-      pending.resolve(allowed);
-      this.pendingPermissions.delete(requestId);
-    } else {
-      this.debug(`No pending permission found for ${requestId}`);
-    }
-  }
-
   // isInSafeMode() is now inherited from BaseAgent
-
-  /**
-   * Check if a tool requires permission and handle it
-   * Returns true if allowed, false if denied
-   */
-  private async checkToolPermission(
-    toolName: string,
-    input: Record<string, unknown>,
-    toolUseId: string
-  ): Promise<{ allowed: boolean; updatedInput: Record<string, unknown> }> {
-    // Bash commands require permission
-    if (toolName === 'Bash') {
-      const command = typeof input.command === 'string' ? input.command : JSON.stringify(input);
-      const baseCommand = command.trim().split(/\s+/)[0] || command;
-      const requestId = `perm-${toolUseId}`;
-
-      // Create a promise that will be resolved when user responds
-      const permissionPromise = new Promise<boolean>((resolve) => {
-        this.pendingPermissions.set(requestId, {
-          resolve,
-          toolName,
-          command,
-          baseCommand,
-        });
-      });
-
-      // Notify application of permission request via callback (not event yield)
-      if (this.onPermissionRequest) {
-        this.onPermissionRequest({
-          requestId,
-          toolName,
-          command,
-          description: `Execute bash command: ${command}`,
-        });
-      } else {
-        // No permission handler - deny by default for safety
-        this.pendingPermissions.delete(requestId);
-        return { allowed: false, updatedInput: input };
-      }
-
-      // Wait for user response
-      const allowed = await permissionPromise;
-      return { allowed, updatedInput: input };
-    }
-
-    // All other tools are auto-approved
-    return { allowed: true, updatedInput: input };
-  }
 
   private async getToken(): Promise<string | null> {
     // Only return token if explicitly provided via config
@@ -1001,6 +1019,23 @@ export class ClaudeAgent extends BaseAgent {
   }
 
   protected async *chatImpl(
+    userMessage: string,
+    attachments?: FileAttachment[],
+    options?: ChatOptions
+  ): AsyncGenerator<AgentEvent> {
+    yield* withUndeliveredSteer(
+      this.runChatTurn(userMessage, attachments, options),
+      () => {
+        const pending = this.pendingSteerMessage;
+        if (!pending) return null;
+        this.pendingSteerMessage = null;
+        this.debug(`Steer message was not delivered (no tool call fired) — emitting steer_undelivered`);
+        return pending;
+      },
+    );
+  }
+
+  private async *runChatTurn(
     userMessage: string,
     attachments?: FileAttachment[],
     options?: ChatOptions
@@ -1070,12 +1105,10 @@ export class ClaudeAgent extends BaseAgent {
       // This ensures Claude and Codex agents use the same detection and constants
       const miniConfig = this.getMiniAgentConfig();
 
-      // Block SDK tools that require UI we don't have:
-      // - EnterPlanMode/ExitPlanMode: We use safe mode instead (user-controlled via UI)
-      // AskUserQuestion is intentionally NOT blocked: it is intercepted in the
-      // PreToolUse hook below and rendered as an interactive questionnaire in the
-      // conversation, then its answers are fed back as the tool result.
-      // Note: Mini agents use a minimal tool list directly, so no additional blocking needed
+      // Craft replaces Claude's native plan mode with its user-controlled safe mode
+      // and loads skills through BaseAgent. AskUserQuestion remains enabled: the
+      // PreToolUse hook renders it as an interactive questionnaire and returns the
+      // user's answers as the tool result. Mini agents use a minimal tool list.
       const disallowedTools: string[] = ['EnterPlanMode', 'ExitPlanMode', 'Skill'];
 
       // Build MCP servers config
@@ -1265,6 +1298,16 @@ export class ClaudeAgent extends BaseAgent {
             debug('[CraftAgent] User SDK hooks loaded:', Object.keys(userHooks).join(', '));
           }
 
+          const forwardTeamLifecycle: SdkAutomationCallback = async (input) => {
+            const event = normalizeClaudeTeamLifecycleHook(input);
+            if (event) {
+              this.onBackgroundEvent?.(event);
+            } else {
+              debug(`[ClaudeAgent] Ignoring malformed ${input.hook_event_name} hook`);
+            }
+            return { continue: true };
+          };
+
           // Internal hooks for permission handling and logging
           const internalHooks: Record<string, SdkAutomationCallbackMatcher[]> = {
           PreToolUse: [{
@@ -1283,12 +1326,12 @@ export class ClaudeAgent extends BaseAgent {
               // The SDK's AskUserQuestion tool needs an interactive surface we
               // render in the conversation. We park the tool call here, let the
               // renderer show the questionnaire (from the streamed tool_start),
-              // and wait for the user to answer via respondToUserQuestion().
-              // Returning the answers as `updatedInput` makes the SDK run the
-              // tool's echo `call()`, so Claude receives {questions, answers,
-              // response} as the tool result. Malformed payloads are blocked with
-              // guidance instead of parking on an unanswerable questionnaire.
-              if (input.tool_name === 'AskUserQuestion') {
+              // and wait for the user to answer via respondToUserQuestion(), then
+              // hand the answers to the CLI's own tool — see
+              // buildAskUserQuestionHookOutput for why the payload looks like it
+              // does. Malformed payloads are blocked with guidance instead of
+              // parking on an unanswerable questionnaire.
+              if (input.tool_name === ASK_USER_QUESTION_TOOL_NAME) {
                 const questions = validateAskUserQuestions(input.tool_input);
                 if (!questions) {
                   return blockWithReason(
@@ -1297,18 +1340,14 @@ export class ClaudeAgent extends BaseAgent {
                 }
                 this.onDebug?.(`AskUserQuestion parked for ${input.tool_use_id} (${questions.length} question(s))`);
                 const answer = await this.awaitUserQuestion(input.tool_use_id, ASK_USER_QUESTION_TIMEOUT_MS);
-                const updatedInput: Record<string, unknown> = {
-                  questions,
-                  answers: answer.answers ?? {},
-                };
-                if (answer.response) updatedInput.response = answer.response;
-                return {
-                  continue: true,
-                  hookSpecificOutput: {
-                    hookEventName: 'PreToolUse' as const,
-                    updatedInput,
-                  },
-                };
+                // The model's tool result is prose; the renderer needs the same
+                // structured echo the Pi backend produces (consumed where the
+                // tool_result event is adapted below).
+                this.answeredUserQuestions.set(
+                  input.tool_use_id,
+                  JSON.stringify(buildAskUserQuestionResult(questions, answer)),
+                );
+                return buildAskUserQuestionHookOutput(questions, answer);
               }
 
               // Track Read tool calls for prerequisite checking
@@ -1359,192 +1398,58 @@ export class ClaudeAgent extends BaseAgent {
                 }
               }
 
-              // Get current permission mode (single source of truth)
-              const permissionMode = getPermissionMode(sessionId);
-              this.onDebug?.(`PreToolUse hook: ${input.tool_name} (sessionId=${sessionId}, permissionMode=${permissionMode})`);
-
               const toolInput = input.tool_input as Record<string, unknown>;
 
-              // Build RTK context fresh per call so toggling the preference
-              // takes effect without restart. `getRtkPath()` is cached per
-              // process; only the storage read happens each time.
-              const rtkContext: RtkContext | undefined = getRtkEnabled()
-                ? { enabled: true, path: getRtkPath(), exclude: [] }
-                : undefined;
+              // Delegate the whole PreToolUse pipeline to the shared dispatcher;
+              // this backend only encodes the result into the SDK hook shape.
+              const result = await this.toolPermissionDispatcher!.dispatch(
+                input.tool_name,
+                toolInput,
+                `perm-${input.tool_use_id}`,
+              );
 
-              // Run centralized PreToolUse checks
-              const checkResult = runPreToolUseChecks({
-                toolName: input.tool_name,
-                input: toolInput,
-                sessionId,
-                permissionMode,
-                workspaceRootPath: this.workspaceRootPath,
-                workspaceId: extractWorkspaceSlug(this.workspaceRootPath, this.config.workspace.id),
-                plansFolderPath: sessionId ? getSessionPlansPath(this.workspaceRootPath, sessionId) : undefined,
-                dataFolderPath: sessionId ? getSessionDataPath(this.workspaceRootPath, sessionId) : undefined,
-                workingDirectory: this.config.session?.workingDirectory,
-                activeSourceSlugs: Array.from(this.sourceManager.getActiveSlugs()),
-                allSourceSlugs: this.sourceManager.getAllSources().map(s => s.config.slug),
-                hasSourceActivation: !!this.onSourceActivationRequest,
-                permissionManager: this.permissionManager,
-                prerequisiteManager: this.prerequisiteManager,
-                rtkContext,
-                onDebug: (msg) => this.onDebug?.(msg),
-              });
-
-              // Consume pending steer message (if any) — will be injected via additionalContext
-              const steerMsg = this.pendingSteerMessage;
+              // Consume any pending steer message — injected as additionalContext
+              // on every outcome that keeps the turn alive, deny included. The
+              // turn-ending denial leaves it pending on purpose: the agent loop
+              // stops right after this hook, so `withUndeliveredSteer` emits
+              // steer_undelivered ahead of the turn's `complete` and the session
+              // layer re-queues it.
+              const steerMsg = canDeliverSteer(result) ? this.pendingSteerMessage : null;
               if (steerMsg) {
                 this.pendingSteerMessage = null;
                 this.debug(`Injecting steer via additionalContext on ${input.tool_name}`);
               }
+              const steerContext = steerMsg
+                ? `The user just sent a new message while you were working. Stop what you are currently doing and address their message instead:\n\n${steerMsg}`
+                : undefined;
 
-              // Translate result to SDK format
-              switch (checkResult.type) {
+              switch (result.type) {
                 case 'allow':
-                  if (steerMsg) {
-                    return {
-                      continue: true,
-                      hookSpecificOutput: {
-                        hookEventName: 'PreToolUse' as const,
-                        additionalContext: `The user just sent a new message while you were working. Stop what you are currently doing and address their message instead:\n\n${steerMsg}`,
-                      },
-                    };
-                  }
-                  return { continue: true };
+                case 'passthrough':
+                  // passthrough: Claude's session tools (call_llm / spawn_session)
+                  // run in-process via the SDK — nothing to intercept, just allow.
+                  return steerContext
+                    ? {
+                        continue: true,
+                        hookSpecificOutput: {
+                          hookEventName: 'PreToolUse' as const,
+                          additionalContext: steerContext,
+                        },
+                      }
+                    : { continue: true };
 
                 case 'modify':
                   return {
                     continue: true,
                     hookSpecificOutput: {
                       hookEventName: 'PreToolUse' as const,
-                      updatedInput: checkResult.input,
-                      ...(steerMsg ? { additionalContext: `The user just sent a new message while you were working. Stop what you are currently doing and address their message instead:\n\n${steerMsg}` } : {}),
+                      updatedInput: result.input,
+                      ...(steerContext ? { additionalContext: steerContext } : {}),
                     },
                   };
 
-                case 'block': {
-                  const diagnostics = getPermissionModeDiagnostics(sessionId);
-                  this.onDebug?.(`__PERMISSION_BLOCK__${JSON.stringify({
-                    sessionId,
-                    toolName: input.tool_name,
-                    effectiveMode: diagnostics.permissionMode,
-                    modeVersion: diagnostics.modeVersion,
-                    changedBy: diagnostics.lastChangedBy,
-                    changedAt: diagnostics.lastChangedAt,
-                    reason: checkResult.reason,
-                  })}`);
-                  return blockWithReason(checkResult.reason);
-                }
-
-                case 'source_activation_needed': {
-                  const { sourceSlug, sourceExists } = checkResult;
-                  if (sourceExists && this.onSourceActivationRequest) {
-                    this.onDebug?.(`Source "${sourceSlug}" not active, attempting auto-enable...`);
-                    try {
-                      const activated = await this.onSourceActivationRequest(sourceSlug);
-                      if (activated) {
-                        this.onDebug?.(`Source "${sourceSlug}" auto-enabled successfully, tools available next turn`);
-                        return {
-                          continue: false,
-                          decision: 'block' as const,
-                          reason: `STOP. Source "${sourceSlug}" has been activated successfully. The tools will be available on the next turn. Do NOT try other tool names or approaches. Respond to the user now: tell them the source is now active and ask them to send their request again.`,
-                        };
-                      } else {
-                        return {
-                          continue: false,
-                          decision: 'block' as const,
-                          reason: `Source "${sourceSlug}" could not be activated. It may require authentication. Please check the source status and authenticate if needed.`,
-                        };
-                      }
-                    } catch (error) {
-                      return {
-                        continue: false,
-                        decision: 'block' as const,
-                        reason: `Failed to activate source "${sourceSlug}": ${error instanceof Error ? error.message : 'Unknown error'}`,
-                      };
-                    }
-                  } else if (sourceExists) {
-                    return {
-                      continue: false,
-                      decision: 'block' as const,
-                      reason: `Source "${sourceSlug}" is available but not enabled for this session. Please enable it in the sources panel.`,
-                    };
-                  } else {
-                    return {
-                      continue: false,
-                      decision: 'block' as const,
-                      reason: `Source "${sourceSlug}" could not be connected. It may need re-authentication, or the server may be unreachable. Check the source in the sidebar for details.`,
-                    };
-                  }
-                }
-
-                case 'call_llm_intercept':
-                case 'spawn_session_intercept':
-                  // Claude's session tools run in-process via SDK — just allow
-                  return { continue: true };
-
-                case 'prompt': {
-                  const requestId = `perm-${input.tool_use_id}`;
-                  const command = checkResult.command || '';
-                  const baseCommand = this.permissionManager.getBaseCommand(command);
-
-                  debug(`[PreToolUse] Requesting permission for ${input.tool_name}: ${command}`);
-
-                  const permissionPromise = new Promise<boolean>((resolve) => {
-                    this.pendingPermissions.set(requestId, {
-                      resolve,
-                      toolName: input.tool_name,
-                      command,
-                      baseCommand,
-                    });
-                  });
-
-                  if (this.onPermissionRequest) {
-                    this.onPermissionRequest({
-                      requestId,
-                      toolName: input.tool_name,
-                      command,
-                      description: checkResult.description,
-                      type: checkResult.promptType,
-                      appName: checkResult.appName,
-                      reason: checkResult.reason,
-                      impact: checkResult.impact,
-                      requiresSystemPrompt: checkResult.requiresSystemPrompt,
-                      rememberForMinutes: checkResult.rememberForMinutes,
-                      commandHash: checkResult.commandHash,
-                      approvalTtlSeconds: checkResult.approvalTtlSeconds,
-                    });
-                  } else {
-                    this.pendingPermissions.delete(requestId);
-                    return {
-                      continue: false,
-                      decision: 'block' as const,
-                      reason: 'No permission handler available',
-                    };
-                  }
-
-                  const allowed = await permissionPromise;
-                  if (!allowed) {
-                    return {
-                      continue: false,
-                      decision: 'block' as const,
-                      reason: 'User denied permission',
-                    };
-                  }
-
-                  // User approved — return with modified input if transforms were applied
-                  if (checkResult.modifiedInput) {
-                    return {
-                      continue: true,
-                      hookSpecificOutput: {
-                        hookEventName: 'PreToolUse' as const,
-                        updatedInput: checkResult.modifiedInput,
-                      },
-                    };
-                  }
-                  return { continue: true };
-                }
+                case 'block':
+                  return encodeClaudeToolBlock(result, steerContext);
               }
             }],
           }],
@@ -1552,6 +1457,10 @@ export class ClaudeAgent extends BaseAgent {
           // For API tools (api_*), summarization happens in api-tools.ts.
           // For external MCP servers (stdio/HTTP), we cannot modify their output - they're responsible
           // for their own size management via pagination or filtering.
+
+          TaskCreated: [{ hooks: [forwardTeamLifecycle] }],
+          TaskCompleted: [{ hooks: [forwardTeamLifecycle] }],
+          TeammateIdle: [{ hooks: [forwardTeamLifecycle] }],
 
           // ═══════════════════════════════════════════════════════════════════════════
           // SUBAGENT HOOKS: Logging only - parent tracking uses SDK's parent_tool_use_id
@@ -1622,7 +1531,7 @@ export class ClaudeAgent extends BaseAgent {
         canUseTool: async (_toolName, input) => {
           return { behavior: 'allow' as const, updatedInput: input as Record<string, unknown> };
         },
-        // Selectively disable tools - file tools are disabled (use MCP), web/code controlled by settings
+        // Native plan mode and Skill are replaced by Craft-owned flows; all other preset tools remain available.
         disallowedTools,
         // No plugins — skills are handled by BaseAgent.chat() via read-before-execute
         // (the model reads SKILL.md files directly, enforced by PrerequisiteManager)
@@ -1839,6 +1748,19 @@ This is a branched conversation. All prior messages in this conversation are par
             // Reset prerequisite state on compaction (LLM loses guide content)
             if (event.type === 'info' && event.message === 'Compacted Conversation') {
               this.resetPrerequisiteState();
+            }
+
+            // AskUserQuestion: the SDK writes the tool result as prose for the
+            // model, which the questionnaire card cannot parse. Replace it with
+            // the canonical {questions, answers, response?, skipped?} echo the Pi
+            // backend emits, so a reopened session still renders the choices.
+            if (event.type === 'tool_result' && event.toolName === ASK_USER_QUESTION_TOOL_NAME) {
+              const answered = this.answeredUserQuestions.get(event.toolUseId);
+              if (answered !== undefined) {
+                this.answeredUserQuestions.delete(event.toolUseId);
+                yield { ...event, result: answered, isError: false };
+                continue;
+              }
             }
 
             // Intercept large/binary/media-rich tool results — save assets to disk,
@@ -2448,15 +2370,6 @@ This is a branched conversation. All prior messages in this conversation are par
         debug(`[bg-lifecycle] chat() finally — currentQuery nulled, subprocess torn down`, { sessionId: this.config.session?.id, sdkSessionId: this.sessionId, keepAlive: this.keepBackgroundTasksAlive });
         this.currentQuery = null;
       }
-
-      // If a steer message was never delivered (no PreToolUse fired), notify the session
-      // layer so it can re-queue the message for the next turn.
-      const undeliveredSteer = this.pendingSteerMessage;
-      if (undeliveredSteer) {
-        this.pendingSteerMessage = null;
-        this.debug(`Steer message was not delivered (no tool call fired) — emitting steer_undelivered`);
-        yield { type: 'steer_undelivered' as const, message: undeliveredSteer };
-      }
     }
   }
 
@@ -2848,7 +2761,14 @@ This is a branched conversation. All prior messages in this conversation are par
       this.currentQueryAbortController = null;
     }
     this.currentQuery = null;
+    // Resolve any parked permission prompts through the shared cleanup path so
+    // aborting a turn never leaves a pending entry (and its dispatch() promise)
+    // dangling. Mirrors PiAgent.forceAbort; abort()/close() route through here.
+    this.toolPermissionDispatcher?.clearPendingPermissions();
     this.clearPendingUserQuestions('the turn was aborted');
+    // An aborted turn never delivers the matching tool_result, so drop the
+    // staged renderer payloads instead of leaking them into the next turn.
+    this.answeredUserQuestions.clear();
   }
 
   getModel(): string {
@@ -2963,8 +2883,9 @@ This is a branched conversation. All prior messages in this conversation are par
     // WS2: tear down the persistent streaming-input query (if any) so no
     // subprocess/background sub-agents leak past the agent's lifetime.
     this.teardownPersistentQuery('destroy');
-    this.pendingPermissions.clear();
+    this.toolPermissionDispatcher?.clearPendingPermissions();
     this.clearPendingUserQuestions('the session ended');
+    this.answeredUserQuestions.clear();
 
     // Clear pinned system prompt state
     this.pinnedPreferencesPrompt = null;
@@ -3188,6 +3109,27 @@ This is a branched conversation. All prior messages in this conversation are par
   // queryLlm — Agent-native LLM query for call_llm tool (OAuth path)
   // ============================================================
 
+  /**
+   * Map the v1 `call_llm` thinking contract (a boolean + token budget) onto the
+   * Claude SDK options for {@link queryLlm}. Honoring, not dropping: extended
+   * thinking is incompatible with structured output and unsupported by non-Claude
+   * models, so those cases degrade with a debug log instead of silently.
+   */
+  private resolveQueryLlmThinking(request: LLMQueryRequest, model: string): Partial<Options> {
+    if (!request.thinking) return {};
+    if (request.outputSchema) {
+      this.debug(`[queryLlm] thinking ignored: incompatible with outputSchema (structured output)`);
+      return {};
+    }
+    if (!isClaudeModel(model)) {
+      this.debug(`[queryLlm] thinking ignored: model "${model}" does not support extended thinking`);
+      return {};
+    }
+    const maxThinkingTokens = request.thinkingBudget ?? 10_000;
+    this.debug(`[queryLlm] extended thinking enabled (maxThinkingTokens=${maxThinkingTokens})`);
+    return { maxThinkingTokens };
+  }
+
   async queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
     const model = request.model ?? this.config.miniModel ?? getDefaultSummarizationModel();
 
@@ -3203,6 +3145,7 @@ This is a branched conversation. All prior messages in this conversation are par
       ...(request.outputSchema ? {
         outputFormat: { type: 'json_schema' as const, schema: request.outputSchema },
       } : {}),
+      ...this.resolveQueryLlmThinking(request, model),
     };
 
     return consumeLlmQueryMessages(

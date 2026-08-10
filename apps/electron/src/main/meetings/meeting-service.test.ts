@@ -1,15 +1,45 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import type { BrowserPaneManager } from '../browser-pane-manager'
 import type { MeetingRecord, MeetingTranscriptSegment } from '../../shared/types'
 import { getWorkspaceMeetingsPath } from '@craft-agent/shared/workspaces'
 import type { LLMQueryRequest, LLMQueryResult } from '@craft-agent/shared/agent/llm-tool'
 import type { AgentBackend } from '@craft-agent/shared/agent/backend'
+import * as realCredentials from '@craft-agent/shared/credentials'
+import { createLoggerModuleStub } from '../__tests__/logger-module-stub'
+
+/**
+ * Meetings storage resolves the config root on every call, so the whole suite
+ * writes workspace metadata into one tmpdir instead of the user's real
+ * `~/.craft-agent`. Set before the service module loads and torn down as a
+ * single directory; per-test metadata bookkeeping is no longer needed.
+ */
+const configRoot = mkdtempSync(join(tmpdir(), 'craft-config-meetings-'))
+process.env.CRAFT_CONFIG_DIR = configRoot
+
+const realWorkspacesDir = join(homedir(), '.craft-agent', 'workspaces')
+
+function listRealWorkspaces(): string[] {
+  try {
+    return readdirSync(realWorkspacesDir).sort()
+  } catch {
+    return []
+  }
+}
+
+let realWorkspacesBefore: string[] = []
+
+beforeAll(() => {
+  realWorkspacesBefore = listRealWorkspaces()
+})
+
+afterAll(() => {
+  rmSync(configRoot, { recursive: true, force: true })
+})
 
 const tempDirs: string[] = []
-const metadataDirs: string[] = []
 const credentials = new Map<string, { value: string }>()
 const summaryRequests: LLMQueryRequest[] = []
 type VideoAnalysisInput = {
@@ -40,12 +70,13 @@ mock.module('../browser-profile-resolver', () => ({
   getProfilePartition: () => 'persist:default',
 }))
 
-mock.module('../logger', () => {
-  const logger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
-  return { mainLog: logger }
-})
+mock.module('../logger', () => createLoggerModuleStub())
 
+// Spread the real namespace: `mock.module` replaces the whole module for every
+// later file in the same test process, so a partial factory would strip exports
+// such as SOURCE_CREDENTIAL_TYPES from unrelated suites.
 mock.module('@craft-agent/shared/credentials', () => ({
+  ...realCredentials,
   getCredentialManager: () => ({
     get: async (id: unknown) => credentials.get(JSON.stringify(id)) ?? null,
     set: async (id: unknown, value: { value: string }) => { credentials.set(JSON.stringify(id), value) },
@@ -57,6 +88,9 @@ mock.module('@craft-agent/shared/config', () => ({
   getDefaultLlmConnection: () => 'claude-default',
   getLlmConnection: (slug: string) => ({ slug, providerType: 'anthropic' }),
   getLlmConnections: () => [{ slug: 'claude-default', providerType: 'anthropic' }],
+  // output-language.ts reads the persisted UI language; no preference here
+  // means Deepgram gets automatic detection instead of a forced `en`.
+  getPersistedUiLanguage: () => undefined,
 }))
 
 mock.module('@craft-agent/shared/skills', () => ({
@@ -105,7 +139,13 @@ mock.module('./meeting-video-analysis-service.ts', () => ({
   },
 }))
 
-const { MeetingService, HERMES_PLUGIN_TIMEOUT_MS } = await import('./meeting-service')
+const {
+  MeetingService,
+  HERMES_PLUGIN_TIMEOUT_MS,
+  MEETINGS_SHUTDOWN_DEADLINE_MS,
+  shutdownMeetingCaptures,
+  relaunchAfterSealingCaptures,
+} = await import('./meeting-service')
 
 function createBrowserPaneManager(): BrowserPaneManager {
   const instances = new Map<string, { id: string }>()
@@ -116,7 +156,7 @@ function createBrowserPaneManager(): BrowserPaneManager {
       instances.set(id, { id })
       return id
     }),
-    getInstance: mock((id: string) => instances.get(id)),
+    getLiveInstance: mock((id: string) => instances.get(id)),
     navigate: mock(async () => ({ url: 'https://meet.google.com/abc-defg-hij', title: 'Meet' })),
     focus: mock(() => {}),
     destroyInstance: mock((id: string) => { instances.delete(id) }),
@@ -131,9 +171,6 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true })
-  }
-  for (const dir of metadataDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true })
   }
 })
@@ -152,7 +189,6 @@ describe('MeetingService storage', () => {
     })
 
     const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
-    metadataDirs.push(dirname(meetingsDir))
     expect(existsSync(join(meetingsDir, 'meetings.json'))).toBe(true)
     expect(existsSync(join(meetingsDir, 'transcripts', `${record.id}.json`))).toBe(true)
     expect(existsSync(join(meetingsDir, 'summaries', `${record.id}.md`))).toBe(true)
@@ -166,7 +202,6 @@ describe('MeetingService storage', () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
     tempDirs.push(workspaceRoot)
     const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
-    metadataDirs.push(dirname(meetingsDir))
     mkdirSync(meetingsDir, { recursive: true })
     writeFileSync(join(meetingsDir, 'meetings.json'), '{ this is not json', 'utf8')
 
@@ -187,7 +222,6 @@ describe('MeetingService storage', () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
     tempDirs.push(workspaceRoot)
     const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
-    metadataDirs.push(dirname(meetingsDir))
     const recordingsDir = join(meetingsDir, 'recordings')
     mkdirSync(recordingsDir, { recursive: true })
     writeFileSync(join(meetingsDir, 'meetings.json'), 'garbage', 'utf8')
@@ -212,7 +246,6 @@ describe('MeetingService storage', () => {
     })
 
     const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
-    metadataDirs.push(dirname(meetingsDir))
     const summaryPath = join(meetingsDir, 'summaries', `${record.id}.md`)
     expect(existsSync(summaryPath)).toBe(true)
 
@@ -289,7 +322,6 @@ describe('MeetingService storage', () => {
     })
 
     const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
-    metadataDirs.push(dirname(meetingsDir))
     const recordingPath = join(meetingsDir, 'recordings', `${record.id}.webm`)
     mkdirSync(dirname(recordingPath), { recursive: true })
     writeFileSync(recordingPath, 'audio')
@@ -321,12 +353,137 @@ describe('MeetingService storage', () => {
     expect(existsSync(videoAnalysisDir)).toBe(false)
   })
 
+  it('keeps an interrupted craft recording on disk and marks it partial after a restart', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-partial-'))
+    tempDirs.push(workspaceRoot)
+
+    const service = new MeetingService(createBrowserPaneManager())
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+    })
+
+    const recordingPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings', `${record.id}.webm`)
+    mkdirSync(dirname(recordingPath), { recursive: true })
+    writeFileSync(recordingPath, 'partial-bytes')
+
+    // Referência desde o primeiro byte: é o que tira o parcial da mira do sweep.
+    service.attachRecordingTarget(workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      mimeType: 'video/webm;codecs=vp9,opus',
+    })
+    expect(service.status(workspaceRoot, record.id)?.recording).toEqual({
+      path: recordingPath,
+      mimeType: 'video/webm;codecs=vp9,opus',
+      bytesWritten: 0,
+      durationMs: 0,
+      partial: true,
+    })
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('running')
+
+    // Crash/quit: nenhum finalize, nenhum completeRecording. Próximo boot:
+    const reloaded = new MeetingService(createBrowserPaneManager())
+    const afterBoot = reloaded.list(workspaceRoot).find(item => item.id === record.id)
+
+    expect(existsSync(recordingPath)).toBe(true)
+    expect(afterBoot?.status).toBe('stopped')
+    expect(afterBoot?.recording?.partial).toBe(true)
+  })
+
+  it('clears the partial mark when the recording is sealed', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-sealed-'))
+    tempDirs.push(workspaceRoot)
+
+    const service = new MeetingService(createBrowserPaneManager())
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+    })
+
+    const recordingPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings', `${record.id}.webm`)
+    mkdirSync(dirname(recordingPath), { recursive: true })
+    writeFileSync(recordingPath, 'sealed-bytes')
+
+    service.attachRecordingTarget(workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      mimeType: 'video/webm',
+    })
+    await service.completeRecording('ws-test', workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      bytesWritten: 12,
+      durationMs: 3000,
+      mimeType: 'video/webm',
+    })
+
+    const sealed = service.status(workspaceRoot, record.id)
+    expect(sealed?.recording?.partial).toBeFalsy()
+    expect(sealed?.recording?.bytesWritten).toBe(12)
+    expect(sealed?.status).toBe('stopped')
+  })
+
+  it('reuses the live craft record for the same meeting on the same pane', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-dedupe-'))
+    tempDirs.push(workspaceRoot)
+
+    const paneManager = createBrowserPaneManager()
+    const service = new MeetingService(paneManager)
+    // Caminho da página: cria o pane, sem browserInstanceId explícito.
+    const fromPage = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+    })
+    // Caminho da toolbar: aponta o mesmo pane e a mesma reunião.
+    const fromToolbar = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      browserInstanceId: fromPage.browserInstanceId,
+      transcribe: false,
+    })
+
+    expect(fromToolbar.id).toBe(fromPage.id)
+    expect(service.list(workspaceRoot)).toHaveLength(1)
+    expect(paneManager.createInstance).toHaveBeenCalledTimes(1)
+  })
+
+  it('creates a new record for a different meeting on the same pane or after the previous stopped', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-dedupe-new-'))
+    tempDirs.push(workspaceRoot)
+
+    const paneManager = createBrowserPaneManager()
+    const service = new MeetingService(paneManager)
+    const first = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+    })
+
+    const differentMeeting = await service.start(workspaceRoot, {
+      urlOrCode: 'xyz-vwqr-stu',
+      captureMode: 'craft',
+      browserInstanceId: first.browserInstanceId,
+      transcribe: false,
+    })
+    expect(differentMeeting.id).not.toBe(first.id)
+
+    service.stop('ws-test', workspaceRoot, first.id)
+    const afterStop = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      browserInstanceId: first.browserInstanceId,
+      transcribe: false,
+    })
+    expect(afterStop.id).not.toBe(first.id)
+    expect(service.list(workspaceRoot)).toHaveLength(3)
+  })
+
   it('reconciles orphan .webm recordings on first ensureLoaded and keeps referenced files', async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-orphans-'))
     tempDirs.push(workspaceRoot)
 
     const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
-    metadataDirs.push(dirname(meetingsDir))
     const recordingsDir = join(meetingsDir, 'recordings')
 
     const keptPath = join(recordingsDir, '22222222-2222-2222-2222-222222222222.webm')
@@ -375,7 +532,6 @@ describe('MeetingService storage', () => {
 
     const meetingsDirA = getWorkspaceMeetingsPath(workspaceA)
     const meetingsDirB = getWorkspaceMeetingsPath(workspaceB)
-    metadataDirs.push(dirname(meetingsDirA), dirname(meetingsDirB))
     const recordingsA = join(meetingsDirA, 'recordings')
     const recordingsB = join(meetingsDirB, 'recordings')
     mkdirSync(recordingsA, { recursive: true })
@@ -418,7 +574,6 @@ describe('MeetingService storage', () => {
     })
 
     const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
-    metadataDirs.push(dirname(meetingsDir))
     const recordingPath = join(meetingsDir, 'recordings', `${record.id}.webm`)
     mkdirSync(dirname(recordingPath), { recursive: true })
     writeFileSync(recordingPath, 'video')
@@ -466,7 +621,6 @@ describe('MeetingService storage', () => {
     })
 
     const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
-    metadataDirs.push(dirname(meetingsDir))
     const recordingPath = join(meetingsDir, 'recordings', `${record.id}.webm`)
     mkdirSync(dirname(recordingPath), { recursive: true })
     writeFileSync(recordingPath, 'audio')
@@ -511,7 +665,6 @@ describe('MeetingService storage', () => {
     })
 
     const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
-    metadataDirs.push(dirname(meetingsDir))
     const recordingPath = join(meetingsDir, 'recordings', `${record.id}.webm`)
     mkdirSync(dirname(recordingPath), { recursive: true })
     writeFileSync(recordingPath, 'audio')
@@ -544,7 +697,6 @@ describe('MeetingService storage', () => {
     })
 
     const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
-    metadataDirs.push(dirname(meetingsDir))
     const recordingPath = join(meetingsDir, 'recordings', `${record.id}.webm`)
     mkdirSync(dirname(recordingPath), { recursive: true })
     writeFileSync(recordingPath, 'video')
@@ -569,7 +721,6 @@ describe('MeetingService storage', () => {
   // fire-and-forget transcribeRecording finishes).
   function writeInterruptedTranscriptionFixture(workspaceRoot: string, options: { audioOnDisk: boolean }): { meetingId: string; meetingsDir: string } {
     const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
-    metadataDirs.push(dirname(meetingsDir))
     const meetingId = '44444444-4444-4444-4444-444444444444'
     const recordingPath = join(meetingsDir, 'recordings', `${meetingId}.webm`)
     if (options.audioOnDisk) {
@@ -666,12 +817,203 @@ describe('MeetingService storage', () => {
     expect(transcript.message).toBe('Transcription API key not configured.')
   })
 
+  /**
+   * Fases escritas pelo pipeline, na ordem, com espera dirigida pela própria
+   * escrita. Espiar `updateRecord` é o que torna a etapa transitória
+   * (`preparing`) observável: o pipeline é fire-and-forget por contrato, então
+   * um `status()` amostrado depois já perdeu as etapas curtas — e esperar a
+   * escrita, em vez de um sleep, não amarra o teste ao relógio.
+   */
+  function watchPhaseWrites(service: InstanceType<typeof MeetingService>): {
+    phases: string[]
+    waitFor(phase: string): Promise<void>
+  } {
+    const phases: string[] = []
+    const gates = new Map<string, PromiseWithResolvers<void>>()
+    const privateService = service as unknown as {
+      updateRecord(state: unknown, id: string, updates: { postProcessingPhase?: string }): void
+    }
+    const original = privateService.updateRecord.bind(privateService)
+    privateService.updateRecord = (state, id, updates) => {
+      original(state, id, updates)
+      const phase = updates.postProcessingPhase
+      if (!phase) return
+      phases.push(phase)
+      gates.get(phase)?.resolve()
+    }
+    return {
+      phases,
+      waitFor(phase) {
+        if (phases.includes(phase)) return Promise.resolve()
+        const gate = gates.get(phase) ?? Promise.withResolvers<void>()
+        gates.set(phase, gate)
+        return gate.promise
+      },
+    }
+  }
+
+  it('keeps the stopped record in a running post-processing phase until the pipeline resolves', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-phase-'))
+    tempDirs.push(workspaceRoot)
+
+    const analysisStarted = Promise.withResolvers<void>()
+    const analysisResult = Promise.withResolvers<string>()
+    const service = new MeetingService(createBrowserPaneManager(), undefined, async (input) => {
+      videoAnalysisRequests.push(input)
+      analysisStarted.resolve()
+      return analysisResult.promise
+    })
+    const { phases, waitFor } = watchPhaseWrites(service)
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+    })
+
+    const recordingPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings', `${record.id}.webm`)
+    mkdirSync(dirname(recordingPath), { recursive: true })
+    writeFileSync(recordingPath, 'video')
+
+    await service.completeRecording('ws-test', workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      bytesWritten: 5,
+      durationMs: 1000,
+      mimeType: 'video/webm',
+    })
+    await analysisStarted.promise
+
+    const working = service.status(workspaceRoot, record.id)
+    // D-04: o status terminal continua `stopped`; a fase é campo separado.
+    expect(working?.status).toBe('stopped')
+    expect(working?.postProcessingPhase).toBe('analyzing')
+
+    analysisResult.resolve('## Visual analysis')
+    await waitFor('completed')
+    expect(service.status(workspaceRoot, record.id)?.postProcessingPhase).toBe('completed')
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('stopped')
+    // Preparação do arquivo antes da análise, sem nenhuma etapa saltada.
+    expect(phases).toEqual(['preparing', 'analyzing', 'completed'])
+  })
+
+  it('walks the phase through transcription and analysis when transcription is enabled', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-phase-transcribe-'))
+    tempDirs.push(workspaceRoot)
+
+    credentials.set(JSON.stringify({
+      type: 'meeting_transcription_api_key',
+      workspaceId: 'ws-test',
+      name: 'deepgram',
+    }), { value: 'dg-test-key' })
+
+    const analysisStarted = Promise.withResolvers<void>()
+    const analysisResult = Promise.withResolvers<string>()
+    const service = new MeetingService(createBrowserPaneManager(), undefined, async (input) => {
+      videoAnalysisRequests.push(input)
+      analysisStarted.resolve()
+      return analysisResult.promise
+    })
+    const { phases, waitFor } = watchPhaseWrites(service)
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: true,
+    })
+
+    const recordingPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings', `${record.id}.webm`)
+    mkdirSync(dirname(recordingPath), { recursive: true })
+    writeFileSync(recordingPath, 'audio')
+
+    await service.completeRecording('ws-test', workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      bytesWritten: 5,
+      durationMs: 1000,
+      mimeType: 'audio/webm',
+    })
+    await analysisStarted.promise
+
+    expect(service.status(workspaceRoot, record.id)?.postProcessingPhase).toBe('analyzing')
+    analysisResult.resolve('## Visual analysis')
+    await waitFor('completed')
+    expect(service.status(workspaceRoot, record.id)?.postProcessingPhase).toBe('completed')
+    expect(phases).toEqual(['preparing', 'transcribing', 'analyzing', 'completed'])
+  })
+
+  it('resolves the phase to failed when a pipeline step throws', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-phase-failed-'))
+    tempDirs.push(workspaceRoot)
+
+    const service = new MeetingService(createBrowserPaneManager(), undefined, async () => {
+      throw new Error('ffmpeg exploded')
+    })
+    const { waitFor } = watchPhaseWrites(service)
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'craft',
+      transcribe: false,
+    })
+
+    const recordingPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'recordings', `${record.id}.webm`)
+    mkdirSync(dirname(recordingPath), { recursive: true })
+    writeFileSync(recordingPath, 'video')
+
+    await service.completeRecording('ws-test', workspaceRoot, record.id, {
+      outputPath: recordingPath,
+      bytesWritten: 5,
+      durationMs: 1000,
+      mimeType: 'video/webm',
+    })
+
+    await waitFor('failed')
+    expect(service.status(workspaceRoot, record.id)?.postProcessingPhase).toBe('failed')
+    // Falha do pipeline não reabre a reunião: o status terminal segue `stopped`.
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('stopped')
+  })
+
+  it('resolves a phase orphaned by a crash to failed on the next boot', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-phase-orphan-'))
+    tempDirs.push(workspaceRoot)
+
+    const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
+    const meetingId = '55555555-5555-5555-5555-555555555555'
+    mkdirSync(meetingsDir, { recursive: true })
+    writeFileSync(join(meetingsDir, 'meetings.json'), JSON.stringify({
+      version: 1,
+      meetings: [{
+        id: meetingId,
+        provider: 'google-meet',
+        captureMode: 'craft',
+        status: 'stopped',
+        url: 'https://meet.google.com/abc-defg-hij',
+        browserInstanceId: 'browser-1',
+        startedAt: Date.now() - 10_000,
+        updatedAt: Date.now() - 5_000,
+        endedAt: Date.now() - 5_000,
+        postProcessingPhase: 'analyzing',
+      }],
+    }))
+
+    // O pipeline é in-process: uma fase não resolvida no disco não tem ninguém
+    // para continuá-la, senão a UI mostraria progresso para sempre.
+    const service = new MeetingService(createBrowserPaneManager())
+    expect(service.status(workspaceRoot, meetingId)?.postProcessingPhase).toBe('failed')
+  })
+
+  it('resolves the phase to failed when an interrupted transcription cannot be recovered', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-phase-demoted-'))
+    tempDirs.push(workspaceRoot)
+    const { meetingId } = writeInterruptedTranscriptionFixture(workspaceRoot, { audioOnDisk: false })
+
+    const service = new MeetingService(createBrowserPaneManager())
+    await service.recoverInterruptedTranscriptions('ws-test', workspaceRoot)
+
+    expect(service.status(workspaceRoot, meetingId)?.postProcessingPhase).toBe('failed')
+  })
+
   it('reconciles orphan video-analysis dirs on ensureLoaded and keeps owned ones', async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-va-orphans-'))
     tempDirs.push(workspaceRoot)
 
     const meetingsDir = getWorkspaceMeetingsPath(workspaceRoot)
-    metadataDirs.push(dirname(meetingsDir))
 
     const service = new MeetingService(createBrowserPaneManager())
     const record = await service.start(workspaceRoot, {
@@ -718,6 +1060,44 @@ function installHermesPluginMock(service: InstanceType<typeof MeetingService>, c
       if (command === 'transcript') return { ok: true, lines: ['Alice: hello world', 'Bob: hi'], total: 2 }
       return { ok: true, pid: 123 }
     }
+}
+
+type ServiceInternals = {
+  runHermesMeetPlugin: (command: PluginCommand, payload?: Record<string, unknown>, options?: { timeoutMs?: number }) => Promise<Record<string, unknown>>
+  getWorkspaceState: (workspaceRootPath: string) => object
+  runHermesHealthCheck: (state: object, meetingId: string) => Promise<void>
+  pollHermesTranscript: (state: object, meetingId: string) => Promise<void>
+  persistHermesTranscript: (state: object, meetingId: string, lines: string[], options: { seal: boolean }) => unknown
+  persist: (state: { records: Map<string, { status: string }> }) => void
+  hermesFinalizations: Map<string, Promise<unknown>>
+  pendingDeletions: Set<string>
+  generateAgentSummary: (workspaceId: string, workspaceRootPath: string, meetingId: string, segments: MeetingTranscriptSegment[]) => Promise<void>
+  healthCheckTimers: Map<string, unknown>
+  transcriptPollTimers: Map<string, unknown>
+  botReadyTimeoutMs: number
+}
+
+/** White-box access to the capture internals the lifecycle contract is built on. */
+function internals(service: InstanceType<typeof MeetingService>): ServiceInternals {
+  return service as unknown as ServiceInternals
+}
+
+function endReasonOf(record: MeetingRecord | null): string | undefined {
+  return (record as (MeetingRecord & { endReason?: string }) | null)?.endReason
+}
+
+/**
+ * Terminal capture paths are fire-and-forget (`void this.finalizeHermesCapture`),
+ * so the public API exposes no promise to await — poll the observable record or
+ * transcript state instead, with a bounded deadline so a regression fails fast.
+ */
+async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!predicate() && Date.now() < deadline) {
+    const { promise, resolve } = Promise.withResolvers<void>()
+    setTimeout(resolve, 10)
+    await promise
+  }
 }
 
 describe('Hermes capture transcript delivery', () => {
@@ -823,5 +1203,1020 @@ describe('Hermes bot lifecycle', () => {
     await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes', transcribe: false })
     expect(calls).toHaveLength(0) // nem start de bot, nem status de health check
     expect((service as unknown as { healthCheckTimers: Map<string, unknown> }).healthCheckTimers.size).toBe(0)
+  })
+})
+
+describe('Hermes terminal finalization', () => {
+  it('fetches and persists the transcript before stopping when the pane closes', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const panes = createBrowserPaneManager()
+    const service = new MeetingService(panes)
+    const calls: PluginCommand[] = []
+    installHermesPluginMock(service, calls)
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    expect(record.status).toBe('running')
+
+    // O usuário fecha o pane do browser sem passar pelo botão Stop.
+    panes.destroyInstance(record.browserInstanceId)
+    service.list(workspaceRoot)
+
+    await waitFor(() => service.transcript(workspaceRoot, record.id).status === 'ready')
+    const transcript = service.transcript(workspaceRoot, record.id)
+    expect(transcript.status).toBe('ready')
+    expect(transcript.transcript.map((s) => s.text)).toEqual(['Alice: hello world', 'Bob: hi'])
+
+    const transcriptIndex = calls.indexOf('transcript')
+    const stopIndex = calls.indexOf('stop')
+    expect(transcriptIndex).toBeGreaterThan(-1)
+    expect(stopIndex).toBeGreaterThan(transcriptIndex)
+
+    const final = service.status(workspaceRoot, record.id)
+    expect(final?.status).toBe('stopped')
+    expect(endReasonOf(final)).toBe('pane_closed')
+  })
+
+  it('finalizes exactly once when the pane close and the health check race', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const panes = createBrowserPaneManager()
+    const service = new MeetingService(panes)
+    const calls: PluginCommand[] = []
+    let exited = false
+    internals(service).runHermesMeetPlugin = async (command) => {
+      calls.push(command)
+      if (command === 'status') return exited ? { ok: true, exited: true } : { ok: true, alive: true, inCall: true }
+      if (command === 'transcript') return { ok: true, lines: ['Alice: hello world'], total: 1 }
+      return { ok: true, pid: 7 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const state = internals(service).getWorkspaceState(workspaceRoot)
+    exited = true
+    panes.destroyInstance(record.browserInstanceId)
+
+    // Ambos os sinais terminais observam a reunião ainda `running`.
+    await Promise.all([
+      Promise.resolve().then(() => { service.list(workspaceRoot) }),
+      internals(service).runHermesHealthCheck(state, record.id),
+    ])
+    await waitFor(() => service.transcript(workspaceRoot, record.id).status === 'ready')
+
+    expect(calls.filter((c) => c === 'transcript')).toHaveLength(1)
+    expect(calls.filter((c) => c === 'stop')).toHaveLength(1)
+    expect(service.transcript(workspaceRoot, record.id).transcript).toHaveLength(1)
+  })
+
+  it('seals the transcript and stops the bot when the health check sees the bot exit', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    let exited = false
+    internals(service).runHermesMeetPlugin = async (command) => {
+      calls.push(command)
+      if (command === 'status') {
+        return exited ? { ok: true, exited: true, leaveReason: 'call_ended' } : { ok: true, alive: true, inCall: true }
+      }
+      if (command === 'transcript') return { ok: true, lines: ['Alice: hello world', 'Bob: hi'], total: 2 }
+      return { ok: true, pid: 9 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const state = internals(service).getWorkspaceState(workspaceRoot)
+    exited = true
+
+    // Pane segue vivo: só o bot terminou. Hoje isso deixava a reunião presa.
+    await internals(service).runHermesHealthCheck(state, record.id)
+    await waitFor(() => service.transcript(workspaceRoot, record.id).status === 'ready')
+
+    expect(service.transcript(workspaceRoot, record.id).transcript).toHaveLength(2)
+    expect(calls).toContain('stop')
+    expect(calls.indexOf('transcript')).toBeLessThan(calls.indexOf('stop'))
+    const final = service.status(workspaceRoot, record.id)
+    expect(final?.status).toBe('stopped')
+    expect(endReasonOf(final)).toBe('bot_exited')
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(false)
+  })
+
+  it('ends as error when the bot exited and the transcript cannot be fetched', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    let exited = false
+    internals(service).runHermesMeetPlugin = async (command) => {
+      if (command === 'status') {
+        return exited ? { ok: true, exited: true, error: 'bot crashed' } : { ok: true, alive: true, inCall: true }
+      }
+      if (command === 'transcript') return { ok: false, error: 'no active bot' }
+      return { ok: true, pid: 11 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const state = internals(service).getWorkspaceState(workspaceRoot)
+    exited = true
+
+    await internals(service).runHermesHealthCheck(state, record.id)
+    await waitFor(() => service.status(workspaceRoot, record.id)?.status === 'error')
+
+    const final = service.status(workspaceRoot, record.id)
+    expect(final?.status).toBe('error')
+    expect(final?.error).toContain('bot crashed')
+    expect(endReasonOf(final)).toBe('bot_exited')
+  })
+
+  it('routes delete-while-running through the single finalization without leaving a transcript file', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    installHermesPluginMock(service, calls)
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const transcriptPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'transcripts', `${record.id}.json`)
+    expect(existsSync(transcriptPath)).toBe(true)
+
+    service.deleteMeeting(workspaceRoot, record.id)
+
+    expect(internals(service).hermesFinalizations.has(record.id)).toBe(true)
+    await internals(service).hermesFinalizations.get(record.id)
+
+    expect(calls.filter((c) => c === 'stop')).toHaveLength(1)
+    // O record foi descartado: nada pode recriar o transcript depois do delete.
+    expect(existsSync(transcriptPath)).toBe(false)
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(false)
+  })
+
+  it('keeps explicit stop on the same fetch-then-stop path', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    installHermesPluginMock(service, calls)
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    service.stop('ws-1', workspaceRoot, record.id)
+    await waitFor(() => service.transcript(workspaceRoot, record.id).status === 'ready')
+
+    const final = service.status(workspaceRoot, record.id)
+    expect(final?.status).toBe('stopped')
+    expect(endReasonOf(final)).toBe('user_stop')
+    expect(calls.filter((c) => c === 'stop')).toHaveLength(1)
+  })
+})
+
+function readPersistedTranscript(workspaceRoot: string, meetingId: string): { status: string; transcript: Array<{ text: string }>; updatedAt: number } {
+  const path = join(getWorkspaceMeetingsPath(workspaceRoot), 'transcripts', `${meetingId}.json`)
+  return JSON.parse(readFileSync(path, 'utf8')) as { status: string; transcript: Array<{ text: string }>; updatedAt: number }
+}
+
+describe('Hermes incremental transcript persistence', () => {
+  it('writes polled lines to disk before any stop', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    let lines = ['Alice: hello world']
+    internals(service).runHermesMeetPlugin = async (command) => {
+      calls.push(command)
+      if (command === 'status') return { ok: true, alive: true, inCall: true }
+      if (command === 'transcript') return { ok: true, lines, total: lines.length }
+      return { ok: true, pid: 3 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const state = internals(service).getWorkspaceState(workspaceRoot)
+    expect(internals(service).transcriptPollTimers.has(record.id)).toBe(true)
+
+    await internals(service).pollHermesTranscript(state, record.id)
+    expect(readPersistedTranscript(workspaceRoot, record.id).transcript.map((s) => s.text)).toEqual(['Alice: hello world'])
+
+    lines = ['Alice: hello world', 'Bob: hi']
+    await internals(service).pollHermesTranscript(state, record.id)
+    expect(readPersistedTranscript(workspaceRoot, record.id).transcript.map((s) => s.text)).toEqual(['Alice: hello world', 'Bob: hi'])
+
+    // Nada de stop: a reunião segue viva e o disco já tem o que foi capturado.
+    expect(calls).not.toContain('stop')
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('running')
+  })
+
+  it('keeps the polled tail on disk when the process dies without finalizing', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    installHermesPluginMock(service, [])
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    await internals(service).pollHermesTranscript(internals(service).getWorkspaceState(workspaceRoot), record.id)
+
+    // Nenhum finalize: o próximo boot recarrega do disco (simula kill -9).
+    const reloaded = new MeetingService(createBrowserPaneManager())
+    const restored = reloaded.transcript(workspaceRoot, record.id)
+    expect(restored.transcript.map((s) => s.text)).toEqual(['Alice: hello world', 'Bob: hi'])
+    expect(reloaded.status(workspaceRoot, record.id)?.status).toBe('stopped')
+  })
+
+  it('skips the write when a tick brings no new lines', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    installHermesPluginMock(service, [])
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const state = internals(service).getWorkspaceState(workspaceRoot)
+
+    await internals(service).pollHermesTranscript(state, record.id)
+    const first = readPersistedTranscript(workspaceRoot, record.id)
+    await internals(service).pollHermesTranscript(state, record.id)
+    const second = readPersistedTranscript(workspaceRoot, record.id)
+
+    expect(second.updatedAt).toBe(first.updatedAt)
+  })
+
+  it('recovers on the next tick after a failed fetch', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    let transcriptFails = true
+    internals(service).runHermesMeetPlugin = async (command) => {
+      if (command === 'status') return { ok: true, alive: true, inCall: true }
+      if (command === 'transcript') {
+        return transcriptFails ? { ok: false, error: 'plugin timed out' } : { ok: true, lines: ['Alice: back online'], total: 1 }
+      }
+      return { ok: true, pid: 5 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const state = internals(service).getWorkspaceState(workspaceRoot)
+
+    await internals(service).pollHermesTranscript(state, record.id)
+    expect(readPersistedTranscript(workspaceRoot, record.id).transcript).toEqual([])
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('running')
+
+    transcriptFails = false
+    await internals(service).pollHermesTranscript(state, record.id)
+    expect(readPersistedTranscript(workspaceRoot, record.id).transcript.map((s) => s.text)).toEqual(['Alice: back online'])
+  })
+
+  it('never shrinks the persisted transcript when the sealing fetch fails', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const panes = createBrowserPaneManager()
+    const service = new MeetingService(panes)
+    let transcriptFails = false
+    internals(service).runHermesMeetPlugin = async (command) => {
+      if (command === 'status') return { ok: true, alive: true, inCall: true }
+      if (command === 'transcript') {
+        return transcriptFails ? { ok: false, error: 'no active bot' } : { ok: true, lines: ['Alice: hello world', 'Bob: hi'], total: 2 }
+      }
+      return { ok: true, pid: 6 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    await internals(service).pollHermesTranscript(internals(service).getWorkspaceState(workspaceRoot), record.id)
+
+    // O bot morreu antes do seal: o fetch final falha, mas o tail já persistido fica.
+    transcriptFails = true
+    panes.destroyInstance(record.browserInstanceId)
+    service.list(workspaceRoot)
+    await waitFor(() => service.status(workspaceRoot, record.id)?.status === 'stopped')
+
+    expect(readPersistedTranscript(workspaceRoot, record.id).transcript.map((s) => s.text)).toEqual(['Alice: hello world', 'Bob: hi'])
+    const final = service.status(workspaceRoot, record.id)
+    expect(final?.status).toBe('stopped')
+    expect(endReasonOf(final)).toBe('pane_closed')
+  })
+
+  it('stops polling once the meeting is no longer running', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    installHermesPluginMock(service, [])
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    expect(internals(service).transcriptPollTimers.has(record.id)).toBe(true)
+
+    service.stop('ws-1', workspaceRoot, record.id)
+    expect(internals(service).transcriptPollTimers.has(record.id)).toBe(false)
+  })
+})
+
+describe('bounded shutdown', () => {
+  it('bounds the shutdown deadline', () => {
+    expect(MEETINGS_SHUTDOWN_DEADLINE_MS).toBeGreaterThan(0)
+    expect(MEETINGS_SHUTDOWN_DEADLINE_MS).toBeLessThanOrEqual(30_000)
+  })
+
+  it('adds no delay and touches no plugin when nothing is running', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    installHermesPluginMock(service, calls)
+
+    await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'craft', transcribe: false })
+    expect(await service.shutdown(50)).toBe('idle')
+    expect(calls).toHaveLength(0)
+  })
+
+  it('seals an active capture before the app exits', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    installHermesPluginMock(service, calls)
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    expect(await service.shutdown(2_000)).toBe('sealed')
+
+    expect(readPersistedTranscript(workspaceRoot, record.id).transcript.map((s) => s.text)).toEqual(['Alice: hello world', 'Bob: hi'])
+    const final = service.status(workspaceRoot, record.id)
+    expect(final?.status).toBe('stopped')
+    expect(endReasonOf(final)).toBe('app_quit')
+    expect(calls.indexOf('transcript')).toBeLessThan(calls.indexOf('stop'))
+    expect(internals(service).healthCheckTimers.size).toBe(0)
+    expect(internals(service).transcriptPollTimers.size).toBe(0)
+  })
+
+  it('seals active captures through the module-level quit hook', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    installHermesPluginMock(service, [])
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    await shutdownMeetingCaptures(2_000)
+
+    const final = service.status(workspaceRoot, record.id)
+    expect(final?.status).toBe('stopped')
+    expect(endReasonOf(final)).toBe('app_quit')
+    expect(service.transcript(workspaceRoot, record.id).status).toBe('ready')
+  })
+
+  it('gives up at the deadline when the plugin never returns, keeping the polled transcript', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const hung = Promise.withResolvers<Record<string, unknown>>()
+    internals(service).runHermesMeetPlugin = async (command) => {
+      if (command === 'status') return { ok: true, alive: true, inCall: true }
+      if (command === 'transcript') return { ok: true, lines: ['Alice: hello world'], total: 1 }
+      if (command === 'start') return { ok: true, pid: 12 }
+      // `stop` nunca responde: o teardown do bot travou.
+      return hung.promise
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const startedAt = Date.now()
+    expect(await service.shutdown(100)).toBe('deadline')
+    expect(Date.now() - startedAt).toBeLessThan(2_000)
+
+    // O seal já escreveu o tail antes de tentar parar o bot.
+    expect(readPersistedTranscript(workspaceRoot, record.id).transcript.map((s) => s.text)).toEqual(['Alice: hello world'])
+    hung.resolve({ ok: true })
+  })
+})
+
+describe('Hermes singleton stays busy until the capture is sealed', () => {
+  it('refuses a Start while an explicit Stop is still sealing, and allows it after the seal settles', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    const sealGate = Promise.withResolvers<void>()
+    internals(service).runHermesMeetPlugin = async (command) => {
+      calls.push(command)
+      if (command === 'status') return { ok: true, alive: true, inCall: true }
+      if (command === 'transcript') {
+        await sealGate.promise
+        return { ok: true, lines: ['Alice: hello world'], total: 1 }
+      }
+      return { ok: true, pid: 21 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    service.stop('ws-1', workspaceRoot, record.id)
+
+    // O seal está em voo: o bot singleton segue ocupado e nada terminal foi anunciado.
+    await expect(service.start(workspaceRoot, { urlOrCode: 'zzz-zzzz-zzz', captureMode: 'hermes' })).rejects.toThrow()
+    expect(calls.filter((c) => c === 'start')).toHaveLength(1)
+    expect(calls).not.toContain('stop')
+
+    sealGate.resolve()
+    await internals(service).hermesFinalizations.get(record.id)
+    expect(internals(service).hermesFinalizations.has(record.id)).toBe(false)
+    const sealed = service.status(workspaceRoot, record.id)
+    expect(sealed?.status).toBe('stopped')
+    expect(endReasonOf(sealed)).toBe('user_stop')
+    expect(service.transcript(workspaceRoot, record.id).status).toBe('ready')
+
+    // Liberado só depois do settle.
+    const next = await service.start(workspaceRoot, { urlOrCode: 'zzz-zzzz-zzz', captureMode: 'hermes' })
+    expect(next.status).toBe('running')
+    expect(calls.filter((c) => c === 'start')).toHaveLength(2)
+  }, 30_000)
+
+  it('refuses a Start while a delete-while-running seals, and purges only after transcript then stop', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    const sealGate = Promise.withResolvers<void>()
+    internals(service).runHermesMeetPlugin = async (command) => {
+      calls.push(command)
+      if (command === 'status') return { ok: true, alive: true, inCall: true }
+      if (command === 'transcript') {
+        await sealGate.promise
+        return { ok: true, lines: ['Alice: hello world'], total: 1 }
+      }
+      return { ok: true, pid: 22 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const transcriptPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'transcripts', `${record.id}.json`)
+    expect(existsSync(transcriptPath)).toBe(true)
+
+    service.deleteMeeting(workspaceRoot, record.id)
+
+    // Delete é observável na hora para a UI...
+    expect(service.list(workspaceRoot).map((r) => r.id)).not.toContain(record.id)
+    // ...mas o bot só é liberado depois de transcript → persist → stop.
+    await expect(service.start(workspaceRoot, { urlOrCode: 'zzz-zzzz-zzz', captureMode: 'hermes' })).rejects.toThrow()
+    expect(calls.filter((c) => c === 'start')).toHaveLength(1)
+    expect(calls).not.toContain('stop')
+
+    sealGate.resolve()
+    await internals(service).hermesFinalizations.get(record.id)
+
+    expect(calls.filter((c) => c === 'transcript')).toHaveLength(1)
+    expect(calls.filter((c) => c === 'stop')).toHaveLength(1)
+    expect(calls.indexOf('transcript')).toBeLessThan(calls.indexOf('stop'))
+    // Nada recria artefatos depois do cleanup.
+    expect(existsSync(transcriptPath)).toBe(false)
+    expect(service.status(workspaceRoot, record.id)).toBeNull()
+    expect(internals(service).hermesFinalizations.has(record.id)).toBe(false)
+
+    const next = await service.start(workspaceRoot, { urlOrCode: 'zzz-zzzz-zzz', captureMode: 'hermes' })
+    expect(next.status).toBe('running')
+  }, 30_000)
+})
+
+describe('failed finalization rearms the retry path', () => {
+  it('clears the in-flight entry and rearms health check and poll when the seal throws', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    let botGone = false
+    internals(service).runHermesMeetPlugin = async (command) => {
+      calls.push(command)
+      if (command === 'status') {
+        return botGone ? { ok: true, exited: true, leaveReason: 'call_ended' } : { ok: true, alive: true, inCall: true }
+      }
+      if (command === 'transcript') return { ok: true, lines: ['Alice: hello world'], total: 1 }
+      return { ok: true, pid: 23 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const state = internals(service).getWorkspaceState(workspaceRoot)
+    const realPersist = internals(service).persistHermesTranscript.bind(service)
+    let persistFails = true
+    internals(service).persistHermesTranscript = (persistState, meetingId, lines, options) => {
+      if (persistFails) throw new Error('ENOSPC: no space left on device')
+      return realPersist(persistState, meetingId, lines, options)
+    }
+
+    // O pane segue vivo: só o bot terminou, e o seal falha na persistência.
+    botGone = true
+    await internals(service).runHermesHealthCheck(state, record.id)
+
+    // Falha transitória: nada fica preso na tabela de finalizações...
+    expect(internals(service).hermesFinalizations.has(record.id)).toBe(false)
+    // ...e a reconciliação volta armada, então um sinal posterior retenta.
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(true)
+    expect(internals(service).transcriptPollTimers.has(record.id)).toBe(true)
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('running')
+
+    persistFails = false
+    await internals(service).runHermesHealthCheck(state, record.id)
+    await waitFor(() => service.status(workspaceRoot, record.id)?.status === 'stopped')
+
+    const sealed = service.status(workspaceRoot, record.id)
+    expect(sealed?.status).toBe('stopped')
+    expect(endReasonOf(sealed)).toBe('bot_exited')
+    expect(service.transcript(workspaceRoot, record.id).status).toBe('ready')
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(false)
+    expect(internals(service).transcriptPollTimers.has(record.id)).toBe(false)
+  })
+
+  it('does not report a sealed shutdown when the seal throws', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    installHermesPluginMock(service, [])
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    internals(service).persistHermesTranscript = () => { throw new Error('ENOSPC: no space left on device') }
+
+    expect(await service.shutdown(2_000)).toBe('failed')
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('running')
+  })
+})
+
+describe('health check bot-gone contract', () => {
+  it('finalizes when the plugin reports no active meeting', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    let botGone = false
+    internals(service).runHermesMeetPlugin = async (command) => {
+      calls.push(command)
+      // Contrato real de plugins/google_meet/process_manager.status().
+      if (command === 'status') return botGone ? { ok: false, reason: 'no active meeting' } : { ok: true, alive: true, inCall: true }
+      if (command === 'transcript') return { ok: true, lines: ['Alice: hello world'], total: 1 }
+      return { ok: true, pid: 31 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const state = internals(service).getWorkspaceState(workspaceRoot)
+    botGone = true
+
+    await internals(service).runHermesHealthCheck(state, record.id)
+    await waitFor(() => service.status(workspaceRoot, record.id)?.status === 'stopped')
+
+    const final = service.status(workspaceRoot, record.id)
+    expect(final?.status).toBe('stopped')
+    expect(endReasonOf(final)).toBe('bot_exited')
+    expect(calls.indexOf('transcript')).toBeLessThan(calls.indexOf('stop'))
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(false)
+  })
+
+  it('keeps the meeting running when the plugin call itself fails without bot evidence', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    let transportFails = false
+    internals(service).runHermesMeetPlugin = async (command) => {
+      calls.push(command)
+      if (command === 'status') {
+        // Forma que runHermesMeetPlugin devolve num timeout de exec: sem evidência do bot.
+        return transportFails
+          ? { ok: false, error: "Hermes Meet plugin 'status' failed or timed out: killed" }
+          : { ok: true, alive: true, inCall: true }
+      }
+      if (command === 'transcript') return { ok: true, lines: ['Alice: hello world'], total: 1 }
+      return { ok: true, pid: 32 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const state = internals(service).getWorkspaceState(workspaceRoot)
+    transportFails = true
+
+    await internals(service).runHermesHealthCheck(state, record.id)
+
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('running')
+    expect(calls).not.toContain('stop')
+    expect(internals(service).hermesFinalizations.has(record.id)).toBe(false)
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(true)
+  })
+})
+
+describe('relaunch seals captures before exiting', () => {
+  it('awaits the bounded shutdown before relaunch and exit', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    installHermesPluginMock(service, [])
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    // `app.relaunch()` + `app.exit(0)` não emitem `before-quit`, então o seal
+    // precisa acontecer aqui, antes de qualquer um dos dois.
+    const order: string[] = []
+    await relaunchAfterSealingCaptures({
+      relaunch: () => { order.push(`relaunch:${service.status(workspaceRoot, record.id)?.status ?? 'missing'}`) },
+      exit: () => { order.push('exit') },
+    }, 2_000)
+
+    expect(order).toEqual(['relaunch:stopped', 'exit'])
+    expect(service.transcript(workspaceRoot, record.id).status).toBe('ready')
+    expect(endReasonOf(service.status(workspaceRoot, record.id))).toBe('app_quit')
+  })
+})
+
+function persistedMeetingIds(workspaceRoot: string): string[] {
+  const storePath = join(getWorkspaceMeetingsPath(workspaceRoot), 'meetings.json')
+  if (!existsSync(storePath)) return []
+  const parsed = JSON.parse(readFileSync(storePath, 'utf8')) as { meetings?: Array<{ id: string }> }
+  return (parsed.meetings ?? []).map((meeting) => meeting.id)
+}
+
+function persistedRecordStatus(workspaceRoot: string, meetingId: string): string | undefined {
+  const storePath = join(getWorkspaceMeetingsPath(workspaceRoot), 'meetings.json')
+  if (!existsSync(storePath)) return undefined
+  const parsed = JSON.parse(readFileSync(storePath, 'utf8')) as { meetings?: Array<{ id: string; status: string }> }
+  return (parsed.meetings ?? []).find((meeting) => meeting.id === meetingId)?.status
+}
+
+/**
+ * Um pane pré-criado é reusado (`ownsBrowserInstance: false`), então nenhum
+ * caminho terminal o destrói e `refreshLiveStatuses` não injeta finalizações
+ * `pane_closed` extras enquanto o teste observa o retry.
+ */
+async function startOnSharedPane(
+  service: InstanceType<typeof MeetingService>,
+  panes: BrowserPaneManager,
+  workspaceRoot: string,
+  urlOrCode = 'abc-defg-hij',
+): Promise<MeetingRecord> {
+  const browserInstanceId = panes.createInstance(undefined, { show: true })
+  return service.start(workspaceRoot, { urlOrCode, captureMode: 'hermes', browserInstanceId })
+}
+
+describe('delete-while-running survives a failed seal', () => {
+  it('purges nothing, keeps the record active and lets a later delete seal and purge', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const panes = createBrowserPaneManager()
+    const service = new MeetingService(panes)
+    const calls: PluginCommand[] = []
+    installHermesPluginMock(service, calls)
+
+    const record = await startOnSharedPane(service, panes, workspaceRoot)
+    const transcriptPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'transcripts', `${record.id}.json`)
+    expect(existsSync(transcriptPath)).toBe(true)
+
+    const realPersist = internals(service).persistHermesTranscript.bind(service)
+    let persistFails = true
+    internals(service).persistHermesTranscript = (state, meetingId, lines, options) => {
+      if (persistFails) throw new Error('ENOSPC: no space left on device')
+      return realPersist(state, meetingId, lines, options)
+    }
+
+    service.deleteMeeting(workspaceRoot, record.id)
+    const failed = internals(service).hermesFinalizations.get(record.id)
+    expect(failed).toBeDefined()
+    expect(await failed).toBe('failed')
+
+    // Nada foi purgado: o transcript e o record continuam no disco.
+    expect(existsSync(transcriptPath)).toBe(true)
+    expect(persistedMeetingIds(workspaceRoot)).toContain(record.id)
+    // O bot não foi parado sem seal, então o record segue ativo e retomável.
+    expect(calls).not.toContain('stop')
+    // E o record não fica oculto para sempre atrás da intenção de delete.
+    expect(internals(service).pendingDeletions.has(record.id)).toBe(false)
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('running')
+    expect(service.list(workspaceRoot).map((r) => r.id)).toContain(record.id)
+    expect(internals(service).hermesFinalizations.has(record.id)).toBe(false)
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(true)
+    expect(internals(service).transcriptPollTimers.has(record.id)).toBe(true)
+
+    // Retry depois que a persistência volta: agora sela e purga de verdade.
+    persistFails = false
+    service.deleteMeeting(workspaceRoot, record.id)
+    expect(await internals(service).hermesFinalizations.get(record.id)).toBe('sealed')
+
+    expect(calls.filter((c) => c === 'stop')).toHaveLength(1)
+    expect(existsSync(transcriptPath)).toBe(false)
+    expect(persistedMeetingIds(workspaceRoot)).not.toContain(record.id)
+    expect(service.status(workspaceRoot, record.id)).toBeNull()
+    expect(internals(service).pendingDeletions.has(record.id)).toBe(false)
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(false)
+    expect(internals(service).transcriptPollTimers.has(record.id)).toBe(false)
+  })
+})
+
+describe('delete that lands on an in-flight seal', () => {
+  it('purges exactly once after the running seal, without a second transcript or stop', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    const sealGate = Promise.withResolvers<void>()
+    internals(service).runHermesMeetPlugin = async (command) => {
+      calls.push(command)
+      if (command === 'status') return { ok: true, alive: true, inCall: true }
+      if (command === 'transcript') {
+        await sealGate.promise
+        return { ok: true, lines: ['Alice: hello world'], total: 1 }
+      }
+      return { ok: true, pid: 41 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    const transcriptPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'transcripts', `${record.id}.json`)
+
+    // Stop explícito abre a janela de seal...
+    service.stop('ws-1', workspaceRoot, record.id)
+    const inflight = internals(service).hermesFinalizations.get(record.id)
+    expect(inflight).toBeDefined()
+    // ...e o Delete chega enquanto ela está em voo.
+    service.deleteMeeting(workspaceRoot, record.id)
+
+    expect(service.list(workspaceRoot).map((r) => r.id)).not.toContain(record.id)
+    await expect(service.start(workspaceRoot, { urlOrCode: 'zzz-zzzz-zzz', captureMode: 'hermes' })).rejects.toThrow()
+    expect(calls).not.toContain('stop')
+
+    sealGate.resolve()
+    expect(await inflight).toBe('sealed')
+
+    // Uma única sequência transcript → stop, e o Delete não foi perdido.
+    expect(calls.filter((c) => c === 'transcript')).toHaveLength(1)
+    expect(calls.filter((c) => c === 'stop')).toHaveLength(1)
+    expect(calls.indexOf('transcript')).toBeLessThan(calls.indexOf('stop'))
+    expect(existsSync(transcriptPath)).toBe(false)
+    expect(persistedMeetingIds(workspaceRoot)).not.toContain(record.id)
+    expect(service.status(workspaceRoot, record.id)).toBeNull()
+    expect(internals(service).pendingDeletions.has(record.id)).toBe(false)
+    expect(internals(service).hermesFinalizations.has(record.id)).toBe(false)
+
+    const next = await service.start(workspaceRoot, { urlOrCode: 'zzz-zzzz-zzz', captureMode: 'hermes' })
+    expect(next.status).toBe('running')
+  }, 30_000)
+
+  it('does not purge and does not strand the delete when the in-flight seal fails', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const panes = createBrowserPaneManager()
+    const service = new MeetingService(panes)
+    const calls: PluginCommand[] = []
+    installHermesPluginMock(service, calls)
+
+    const record = await startOnSharedPane(service, panes, workspaceRoot)
+    const transcriptPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'transcripts', `${record.id}.json`)
+    const realPersist = internals(service).persistHermesTranscript.bind(service)
+    let persistFails = true
+    internals(service).persistHermesTranscript = (state, meetingId, lines, options) => {
+      if (persistFails) throw new Error('ENOSPC: no space left on device')
+      return realPersist(state, meetingId, lines, options)
+    }
+
+    service.stop('ws-1', workspaceRoot, record.id)
+    const inflight = internals(service).hermesFinalizations.get(record.id)
+    service.deleteMeeting(workspaceRoot, record.id)
+    expect(await inflight).toBe('failed')
+
+    expect(existsSync(transcriptPath)).toBe(true)
+    expect(persistedMeetingIds(workspaceRoot)).toContain(record.id)
+    expect(internals(service).pendingDeletions.has(record.id)).toBe(false)
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('running')
+
+    // A reunião segue ativa e com timers armados: selar aqui evita que um tick de
+    // poll deste serviço estoure numa persistência ainda quebrada durante outro teste.
+    persistFails = false
+    service.deleteMeeting(workspaceRoot, record.id)
+    expect(await internals(service).hermesFinalizations.get(record.id)).toBe('sealed')
+    expect(internals(service).transcriptPollTimers.has(record.id)).toBe(false)
+  })
+})
+
+describe('bot stop must be confirmed before the capture is sealed', () => {
+  it('keeps the meeting active and retryable when pm.stop times out', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const panes = createBrowserPaneManager()
+    const service = new MeetingService(panes)
+    const calls: PluginCommand[] = []
+    let stopConfirms = false
+    internals(service).runHermesMeetPlugin = async (command) => {
+      calls.push(command)
+      if (command === 'status') return { ok: true, alive: true, inCall: true }
+      if (command === 'transcript') return { ok: true, lines: ['Alice: hello world'], total: 1 }
+      if (command === 'stop') {
+        // Forma que runHermesMeetPlugin devolve num timeout de exec: sem prova de
+        // que o bot saiu do call.
+        return stopConfirms
+          ? { ok: true, reason: 'Craft Meetings stopped' }
+          : { ok: false, error: "Hermes Meet plugin 'stop' failed or timed out: killed" }
+      }
+      return { ok: true, pid: 42 }
+    }
+
+    const record = await startOnSharedPane(service, panes, workspaceRoot)
+    service.stop('ws-1', workspaceRoot, record.id)
+    expect(await internals(service).hermesFinalizations.get(record.id)).toBe('failed')
+
+    // Sem evidência do stop nada terminal é gravado e o bot segue ocupado.
+    const stillRunning = service.status(workspaceRoot, record.id)
+    expect(stillRunning?.status).toBe('running')
+    expect(stillRunning?.endedAt).toBeUndefined()
+    expect(endReasonOf(stillRunning)).toBeUndefined()
+    expect(internals(service).hermesFinalizations.has(record.id)).toBe(false)
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(true)
+    expect(internals(service).transcriptPollTimers.has(record.id)).toBe(true)
+
+    stopConfirms = true
+    service.stop('ws-1', workspaceRoot, record.id)
+    expect(await internals(service).hermesFinalizations.get(record.id)).toBe('sealed')
+
+    const sealed = service.status(workspaceRoot, record.id)
+    expect(sealed?.status).toBe('stopped')
+    expect(endReasonOf(sealed)).toBe('user_stop')
+    expect(service.transcript(workspaceRoot, record.id).status).toBe('ready')
+  })
+
+  it('accepts the no-active-meeting answer as proof the bot is already gone', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    internals(service).runHermesMeetPlugin = async (command) => {
+      if (command === 'status') return { ok: true, alive: true, inCall: true }
+      if (command === 'transcript') return { ok: true, lines: ['Alice: hello world'], total: 1 }
+      // Contrato real de plugins/google_meet/process_manager.stop().
+      if (command === 'stop') return { ok: false, reason: 'no active meeting' }
+      return { ok: true, pid: 43 }
+    }
+
+    const record = await service.start(workspaceRoot, { urlOrCode: 'abc-defg-hij', captureMode: 'hermes' })
+    service.stop('ws-1', workspaceRoot, record.id)
+    expect(await internals(service).hermesFinalizations.get(record.id)).toBe('sealed')
+
+    const sealed = service.status(workspaceRoot, record.id)
+    expect(sealed?.status).toBe('stopped')
+    expect(endReasonOf(sealed)).toBe('user_stop')
+    expect(service.transcript(workspaceRoot, record.id).status).toBe('ready')
+  })
+})
+
+describe('optional summary never holds the bot singleton', () => {
+  it('releases the mutex and the shutdown result while the summary is still pending', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    const calls: PluginCommand[] = []
+    installHermesPluginMock(service, calls)
+
+    const summaryGate = Promise.withResolvers<void>()
+    let summaryStarted = false
+    internals(service).generateAgentSummary = async () => {
+      summaryStarted = true
+      await summaryGate.promise
+    }
+
+    const record = await service.start(workspaceRoot, {
+      urlOrCode: 'abc-defg-hij',
+      captureMode: 'hermes',
+      summarizeOnEnd: true,
+    })
+
+    service.stop('ws-1', workspaceRoot, record.id)
+    expect(await internals(service).hermesFinalizations.get(record.id)).toBe('sealed')
+
+    // O seal terminou com o summary ainda pendente.
+    expect(summaryStarted).toBe(true)
+    const sealed = service.status(workspaceRoot, record.id)
+    expect(sealed?.status).toBe('stopped')
+    expect(service.transcript(workspaceRoot, record.id).status).toBe('ready')
+    expect(internals(service).hermesFinalizations.has(record.id)).toBe(false)
+
+    // Nem o próximo Start nem o quit esperam pelo resumo.
+    const next = await service.start(workspaceRoot, { urlOrCode: 'zzz-zzzz-zzz', captureMode: 'hermes' })
+    expect(next.status).toBe('running')
+    expect(await service.shutdown(2_000)).toBe('sealed')
+
+    summaryGate.resolve()
+  }, 10_000)
+
+  it('absorbs a late summary failure without an unhandled rejection', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const service = new MeetingService(createBrowserPaneManager())
+    installHermesPluginMock(service, [])
+
+    const summaryGate = Promise.withResolvers<void>()
+    internals(service).generateAgentSummary = async () => {
+      await summaryGate.promise
+      throw new Error('summary backend exploded')
+    }
+
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown): void => { unhandled.push(reason) }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const record = await service.start(workspaceRoot, {
+        urlOrCode: 'abc-defg-hij',
+        captureMode: 'hermes',
+        followUpOnEnd: true,
+      })
+      service.stop('ws-1', workspaceRoot, record.id)
+      expect(await internals(service).hermesFinalizations.get(record.id)).toBe('sealed')
+
+      summaryGate.resolve()
+      // Duas voltas de macrotask: tempo de o runtime classificar a rejeição.
+      await waitFor(() => unhandled.length > 0, 50)
+      expect(unhandled).toEqual([])
+      expect(service.status(workspaceRoot, record.id)?.status).toBe('stopped')
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+  })
+})
+
+describe('purge is transactional against the store write', () => {
+  it('keeps record and transcript coherent, frees the delete intent and purges on a later retry', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const panes = createBrowserPaneManager()
+    const service = new MeetingService(panes)
+    const calls: PluginCommand[] = []
+    installHermesPluginMock(service, calls)
+
+    const record = await startOnSharedPane(service, panes, workspaceRoot)
+    const transcriptPath = join(getWorkspaceMeetingsPath(workspaceRoot), 'transcripts', `${record.id}.json`)
+
+    // Falha localizada na única escrita do purge: o store já sem o record.
+    // O seal (que escreve com o record ainda presente) roda inteiro.
+    const realPersist = internals(service).persist.bind(service)
+    let purgePersistFails = true
+    internals(service).persist = (state) => {
+      if (purgePersistFails && !state.records.has(record.id)) {
+        throw new Error('ENOSPC: no space left on device')
+      }
+      realPersist(state)
+    }
+
+    service.deleteMeeting(workspaceRoot, record.id)
+    expect(await internals(service).hermesFinalizations.get(record.id)).toBe('sealed')
+
+    // O store não persistiu, então nada pode ter sido removido: disco e memória
+    // continuam de acordo e o record selado volta visível.
+    expect(persistedMeetingIds(workspaceRoot)).toContain(record.id)
+    expect(existsSync(transcriptPath)).toBe(true)
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('stopped')
+    expect(service.list(workspaceRoot).map((r) => r.id)).toContain(record.id)
+    expect(service.transcript(workspaceRoot, record.id).status).toBe('ready')
+    expect(readPersistedTranscript(workspaceRoot, record.id).transcript).toHaveLength(2)
+    // A intenção de delete não fica presa atrás da falha.
+    expect(internals(service).pendingDeletions.has(record.id)).toBe(false)
+
+    // Retry depois que a escrita volta: agora o purge remove tudo, sem tocar no bot.
+    purgePersistFails = false
+    service.deleteMeeting(workspaceRoot, record.id)
+
+    expect(service.status(workspaceRoot, record.id)).toBeNull()
+    expect(persistedMeetingIds(workspaceRoot)).not.toContain(record.id)
+    expect(existsSync(transcriptPath)).toBe(false)
+    expect(calls.filter((c) => c === 'stop')).toHaveLength(1)
+    expect(internals(service).pendingDeletions.has(record.id)).toBe(false)
+  })
+})
+
+describe('terminal status is transactional against the store write', () => {
+  it('reports failed, keeps the record running on disk and in memory, and rearms for a retry', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'craft-meetings-'))
+    tempDirs.push(workspaceRoot)
+    const panes = createBrowserPaneManager()
+    const service = new MeetingService(panes)
+    const calls: PluginCommand[] = []
+    installHermesPluginMock(service, calls)
+
+    const record = await startOnSharedPane(service, panes, workspaceRoot)
+
+    // Falha localizada na escrita do status terminal, depois de o stop já ter
+    // sido confirmado: o store só falha quando o record deixou de estar ativo.
+    const realPersist = internals(service).persist.bind(service)
+    let terminalPersistFails = true
+    internals(service).persist = (state) => {
+      const pending = state.records.get(record.id)
+      if (terminalPersistFails && pending && !['starting', 'running'].includes(pending.status)) {
+        throw new Error('ENOSPC: no space left on device')
+      }
+      realPersist(state)
+    }
+
+    service.stop('ws-1', workspaceRoot, record.id)
+    expect(await internals(service).hermesFinalizations.get(record.id)).toBe('failed')
+    expect(calls.filter((c) => c === 'stop')).toHaveLength(1)
+
+    // Nada terminal chegou ao disco, então a memória também não pode parecer
+    // terminal: senão o rearme ignoraria um record que o disco ainda vê ativo.
+    expect(persistedRecordStatus(workspaceRoot, record.id)).toBe('running')
+    expect(service.status(workspaceRoot, record.id)?.status).toBe('running')
+    expect(service.status(workspaceRoot, record.id)?.endedAt).toBeUndefined()
+    expect(endReasonOf(service.status(workspaceRoot, record.id))).toBeUndefined()
+    expect(internals(service).hermesFinalizations.has(record.id)).toBe(false)
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(true)
+    expect(internals(service).transcriptPollTimers.has(record.id)).toBe(true)
+
+    // Sinal posterior, com a escrita de volta: agora sela como terminal.
+    terminalPersistFails = false
+    service.stop('ws-1', workspaceRoot, record.id)
+    expect(await internals(service).hermesFinalizations.get(record.id)).toBe('sealed')
+
+    const sealed = service.status(workspaceRoot, record.id)
+    expect(sealed?.status).toBe('stopped')
+    expect(endReasonOf(sealed)).toBe('user_stop')
+    expect(persistedRecordStatus(workspaceRoot, record.id)).toBe('stopped')
+    expect(service.transcript(workspaceRoot, record.id).status).toBe('ready')
+    expect(internals(service).healthCheckTimers.has(record.id)).toBe(false)
+    expect(internals(service).transcriptPollTimers.has(record.id)).toBe(false)
+  })
+})
+
+describe('meetings suite isolation', () => {
+  it('leaves the real user config root untouched', () => {
+    expect(listRealWorkspaces()).toEqual(realWorkspacesBefore)
   })
 })

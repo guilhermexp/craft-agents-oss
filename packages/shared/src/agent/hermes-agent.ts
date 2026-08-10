@@ -11,6 +11,7 @@ import { BaseAgent } from './base-agent.ts'
 import type { BackendConfig, ChatOptions, PostInitResult, SdkMcpServerConfig } from './backend/types.ts'
 import { AbortReason } from './backend/types.ts'
 import { getBackendRuntime } from './backend/internal/driver-types.ts'
+import { BACKEND_CAPABILITIES } from './backend/factory.ts'
 import type { FileAttachment } from '../utils/files.ts'
 import type { PermissionMode } from './mode-manager.ts'
 import type { LLMQueryRequest, LLMQueryResult } from './llm-tool.ts'
@@ -314,6 +315,12 @@ function chooseAcpPermissionOption(
 export class HermesAgent extends BaseAgent {
   protected backendName = 'Hermes'
 
+  // supportsBranching is declared once in BACKEND_CAPABILITIES (backend/factory.ts).
+  // Read it from there instead of duplicating the value in a protected field.
+  override get supportsBranching(): boolean {
+    return BACKEND_CAPABILITIES.hermes.supportsBranching
+  }
+
   private provider: ACPProvider | null = null
   private providerRuntimeHome: string | null = null
   private hermesSessionId: string | null = null
@@ -330,7 +337,6 @@ export class HermesAgent extends BaseAgent {
     // Hermes ignora agent/native de proposito: e uma integracao ACP/MCP
     // embedded com HERMES_HOME app-scoped, nao runtime nativo Claude/Pi.
     super(config, config.model || '', 200_000)
-    this._supportsBranching = false
     this.hermesSessionId = config.session?.sdkSessionId || null
     this.activeMcpServers = { ...(config.initialSources?.mcpServers ?? {}) }
     this.refreshSessionToolCallbacks()
@@ -782,6 +788,10 @@ export class HermesAgent extends BaseAgent {
 
       yield completionUsage ?? { type: 'complete' }
     } catch (error) {
+      const aborted = this.abortController?.signal.aborted === true
+      for (const event of adapter.drainPendingTools(aborted ? 'turn aborted' : 'turn failed')) {
+        yield event
+      }
       const message = error instanceof Error ? error.message : String(error)
       // Dead-pipe fallback for when the exit observer hasn't fired yet: an I/O
       // failure on the subprocess pipe means the provider is unusable, so mark
@@ -866,6 +876,12 @@ export class HermesAgent extends BaseAgent {
   }
 
   async queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
+    if (request.thinking) {
+      // runMiniCompletion goes through the Vercel AI SDK's generateText with a
+      // bare prompt — there is no thinking channel to forward the budget to.
+      // Degrade loudly rather than dropping a declared v1 input in silence.
+      this.debug(`queryLlm: thinking requested (budget=${request.thinkingBudget ?? 'default'}) but the Hermes mini-completion path has no thinking channel; ignoring`)
+    }
     const text = await this.runMiniCompletion(request.prompt)
     return {
       text: text || '',

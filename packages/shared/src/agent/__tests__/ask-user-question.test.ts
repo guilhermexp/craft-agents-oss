@@ -8,6 +8,8 @@ import { describe, it, expect } from 'bun:test';
 import {
   validateAskUserQuestions,
   buildAskUserQuestionResult,
+  buildAskUserQuestionHookOutput,
+  normalizeAskUserQuestionResponse,
   ASK_USER_QUESTION_TIMEOUT_MS,
 } from '../ask-user-question.ts';
 import type { AskUserQuestionResponse } from '@craft-agent/core/types';
@@ -45,6 +47,15 @@ describe('validateAskUserQuestions', () => {
     // Option without a label
     expect(validateAskUserQuestions({ questions: [{ question: 'q', options: [{ description: 'no label' }] }] })).toBeNull();
   });
+
+  it('rejects duplicate question text in the same questionnaire', () => {
+    expect(validateAskUserQuestions({
+      questions: [
+        { question: 'Same question?', header: 'First', options: [{ label: 'A' }] },
+        { question: 'Same question?', header: 'Second', options: [{ label: 'B' }] },
+      ],
+    })).toBeNull();
+  });
 });
 
 describe('buildAskUserQuestionResult', () => {
@@ -62,6 +73,79 @@ describe('buildAskUserQuestionResult', () => {
   it('includes the freeform response when present', () => {
     const result = buildAskUserQuestionResult(questions, { answers: {}, response: 'custom' });
     expect(result.response).toBe('custom');
+  });
+
+  it('preserves a skipped response in the tool result', () => {
+    const result = buildAskUserQuestionResult(questions, { answers: {}, skipped: true });
+    expect(result).toEqual({
+      questions,
+      answers: {},
+      skipped: true,
+    });
+  });
+});
+
+describe('buildAskUserQuestionHookOutput', () => {
+  const questions = validateAskUserQuestions({
+    questions: [{ question: 'q?', header: 'h', options: [{ label: 'A' }, { label: 'B' }] }],
+  })!;
+
+  // Without the explicit allow the CLI discards updatedInput and runs its own
+  // AskUserQuestion on the model's original input, so the model reads
+  // "The user did not answer the questions." however the user answered.
+  it('claims the permission decision so the CLI honors updatedInput', () => {
+    const output = buildAskUserQuestionHookOutput(questions, { answers: { 'q?': 'A' } });
+    expect(output.hookSpecificOutput.permissionDecision).toBe('allow');
+    expect(output.hookSpecificOutput.hookEventName).toBe('PreToolUse');
+    expect(output.continue).toBe(true);
+  });
+
+  it('sends only schema fields, echoing the questions with the answers', () => {
+    const { updatedInput } = buildAskUserQuestionHookOutput(questions, {
+      answers: { 'q?': 'A, B' },
+    }).hookSpecificOutput;
+    expect(updatedInput).toEqual({ questions, answers: { 'q?': 'A, B' } });
+  });
+
+  it('forwards the freeform response, which the CLI renders over the answers', () => {
+    const { updatedInput } = buildAskUserQuestionHookOutput(questions, {
+      answers: {},
+      response: 'timed out',
+    }).hookSpecificOutput;
+    expect(updatedInput.response).toBe('timed out');
+  });
+
+  // `skipped` is Craft-internal; an empty answers map is what tells the model
+  // nobody answered, and an unknown key would risk the CLI's schema validation.
+  it('drops the Craft-internal skipped flag', () => {
+    const { updatedInput } = buildAskUserQuestionHookOutput(questions, {
+      answers: {},
+      skipped: true,
+    }).hookSpecificOutput;
+    expect(updatedInput).toEqual({ questions, answers: {} });
+  });
+});
+
+describe('normalizeAskUserQuestionResponse', () => {
+  it('turns null into a skipped response', () => {
+    expect(normalizeAskUserQuestionResponse(null)).toEqual({ answers: {}, skipped: true });
+  });
+
+  it('preserves a valid answered response', () => {
+    expect(normalizeAskUserQuestionResponse({
+      answers: { 'Pick one?': 'A' },
+      response: 'A',
+    })).toEqual({
+      answers: { 'Pick one?': 'A' },
+      response: 'A',
+    });
+  });
+
+  it('preserves an explicit skipped response', () => {
+    expect(normalizeAskUserQuestionResponse({ answers: {}, skipped: true })).toEqual({
+      answers: {},
+      skipped: true,
+    });
   });
 });
 
@@ -82,6 +166,7 @@ describe('BaseAgent AskUserQuestion round-trip', () => {
     const delivered = agent.respondToUserQuestion('tool-1', { answers: { q: 'A' } });
     expect(delivered).toBe(true);
     await expect(pending).resolves.toEqual({ answers: { q: 'A' } });
+    expect(agent.respondToUserQuestion('tool-1', { answers: { q: 'B' } })).toBe(false);
   });
 
   it('returns false when there is no pending question for the id', () => {

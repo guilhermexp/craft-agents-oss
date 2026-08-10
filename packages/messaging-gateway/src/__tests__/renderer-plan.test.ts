@@ -42,7 +42,6 @@ function makeAdapter(platform: PlatformType = 'telegram'): PlatformAdapter & { c
     maxButtons: 3,
     maxMessageLength: 4096,
     markdown: platform === 'telegram' ? 'v2' : 'whatsapp',
-    webhookSupport: false,
   }
 
   return {

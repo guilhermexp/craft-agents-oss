@@ -79,7 +79,7 @@ if (record.captureMode === 'hermes') {
 **Arquivos:**
 - `packages/shared/src/protocol/channels.ts` — adicionar `ARCHIVE`, `UNARCHIVE`, `DELETE`
 - `apps/electron/src/main/meetings/meeting-service.ts` — métodos `archive()`, `unarchive()`, `delete()`
-- `apps/electron/src/main/handlers/meetings.ts` — registrar handlers + atualizar `HANDLED_CHANNELS`
+- `apps/electron/src/main/handlers/meetings.ts` — registrar handlers via `server.handle`
 - `apps/electron/src/shared/types.ts` — adicionar à ElectronAPI
 - `apps/electron/src/renderer/components/app-shell/MeetingsListPanel.tsx` — botões na UI
 
@@ -230,7 +230,7 @@ bun run typecheck:all
 
 # Tests
 bun test apps/electron/src/main/meetings/meeting-service.test.ts
-bun test apps/electron/src/transport/__tests__/channel-map-parity.test.ts
+bun test apps/electron/src/main/handlers/__tests__/registration.test.ts apps/electron/src/main/handlers/__tests__/registration-profiles.test.ts
 
 # i18n parity
 bun run lint:i18n:parity
@@ -255,5 +255,5 @@ Manual: `bun run electron:dev` → testar fluxo completo:
 | Provider diferente de Deepgram aparece no input | Rejeitar explicitamente; Meetings é Deepgram-only |
 | Hermes runtime não disponível (dev mode) | Health-check e summarization gracefully skip |
 | auth.json → bot-auth.json pode quebrar setup existente | Log warning se arquivo antigo existe |
-| Channel parity test | Manter HANDLED_CHANNELS sincronizado com channels.ts |
+| Registro de canal RPC | Adicionar leaf em `RPC_CONTRACT` (deriva `ElectronAPI` + `CHANNEL_MAP`) + `server.handle`; `registration.test` valida o registro |
 | 8 locales × 25 keys = 200 entries | Mecânico mas volumoso; usar translate pra non-pt-BR |

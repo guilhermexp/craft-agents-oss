@@ -20,15 +20,14 @@ describe('validateFilePath', () => {
     expect(result).toContain('craft-test.txt')
   })
 
-  it('allows non-existent paths under /tmp', async () => {
-    // On Unix /tmp is a conventional scratch dir; on macOS it is a symlink to
-    // /private/tmp. A non-existent path matches the plain /tmp allow entry.
-    const path = sep === '\\' ? 'C:\\tmp\\craft-test.txt' : '/tmp/craft-test.txt'
-    const result = await validateFilePath(path)
-    expect(result).toContain('craft-test.txt')
-  })
-
   if (sep !== '\\') {
+    it('allows non-existent paths under /tmp', async () => {
+      // On Unix /tmp is a conventional scratch dir; on macOS it is a symlink to
+      // /private/tmp. A non-existent path matches the plain /tmp allow entry.
+      const result = await validateFilePath('/tmp/craft-test.txt')
+      expect(result).toContain('craft-test.txt')
+    })
+
     // Regression: existing files under /tmp canonicalize to /private/tmp on
     // macOS. The allow list must resolve symlinks so those real paths match.
     const scratchDir = mkdtempSync('/tmp/craft-vfp-')
