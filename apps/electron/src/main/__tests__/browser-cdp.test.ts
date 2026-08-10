@@ -5,19 +5,26 @@
  * element interaction, and CDP lifecycle management.
  */
 
-import { describe, it, expect, beforeEach, mock } from 'bun:test'
+import { describe, it, expect, beforeEach, mock, jest } from 'bun:test'
+import type { WebContents } from 'electron'
 import { createLoggerModuleStub } from './logger-module-stub'
 
 // Mock logger before import
 mock.module('../logger', () => createLoggerModuleStub())
 
-const { BrowserCDP } = await import('../browser-cdp')
+const { BrowserCDP, decideIdleDetach, translateCdpNodeError } = await import('../browser-cdp')
 
 // ============================================================================
 // Mock Helpers
 // ============================================================================
 
-function createMockWebContents(sendCommandImpl?: (method: string, params?: any) => Promise<any>) {
+function createMockWebContents(
+  sendCommandImpl?: (method: string, params?: any) => Promise<any>,
+  // Left throwing by default: the real webContents.sendInputEvent is only
+  // reachable in a live Electron process, and code paths that reach for it
+  // must be exercised deliberately.
+  sendInputEventImpl?: (event: Record<string, unknown>) => void,
+) {
   const listeners: Record<string, Function[]> = {}
   const wcListeners: Record<string, Function[]> = {}
   return {
@@ -36,6 +43,9 @@ function createMockWebContents(sendCommandImpl?: (method: string, params?: any) 
     }),
     getURL: mock(() => 'https://example.com'),
     getTitle: mock(() => 'Example Page'),
+    sendInputEvent: mock(sendInputEventImpl ?? (() => {
+      throw new Error('sendInputEvent is not wired in this mock')
+    })),
     _debuggerListeners: listeners,
     _triggerDetach: () => {
       for (const cb of listeners['detach'] || []) cb()
@@ -564,6 +574,258 @@ describe('BrowserCDP', () => {
 
       // Should not throw
       expect(() => cdp.detach()).not.toThrow()
+    })
+  })
+
+  describe('decideIdleDetach', () => {
+    it('detaches only when attached with nothing in flight', () => {
+      expect(decideIdleDetach({ attached: true, inflight: 0 })).toBe('detach')
+    })
+
+    it('re-arms while a command is in flight', () => {
+      expect(decideIdleDetach({ attached: true, inflight: 1 })).toBe('re-arm')
+      expect(decideIdleDetach({ attached: true, inflight: 3 })).toBe('re-arm')
+    })
+
+    it('does nothing when already detached', () => {
+      expect(decideIdleDetach({ attached: false, inflight: 0 })).toBe('idle')
+      expect(decideIdleDetach({ attached: false, inflight: 2 })).toBe('idle')
+    })
+  })
+
+  describe('idle detach in-flight gate', () => {
+    async function waitForFirstCommand(dispatched: () => number): Promise<void> {
+      for (let i = 0; i < 50; i++) {
+        if (dispatched() > 0) return
+        await Promise.resolve()
+      }
+      throw new Error('sendCommand was never dispatched')
+    }
+
+    it('re-arms instead of detaching while a command awaits its response', async () => {
+      jest.useFakeTimers()
+      try {
+        const { promise, resolve } = Promise.withResolvers<unknown>()
+        const wc = createMockWebContents(() => promise)
+        const cdp = new BrowserCDP(wc as unknown as WebContents)
+
+        const pending = cdp.getClipboard()
+        await waitForFirstCommand(() => wc.debugger.sendCommand.mock.calls.length)
+
+        // Four idle deadlines pass with the command still in flight.
+        jest.advanceTimersByTime(20_000)
+        expect(wc.debugger.detach).not.toHaveBeenCalled()
+
+        resolve({ result: { value: 'copied' } })
+        await expect(pending).resolves.toBe('copied')
+
+        jest.advanceTimersByTime(6_000)
+        expect(wc.debugger.detach).toHaveBeenCalledTimes(1)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    it('releases the gate when the in-flight command rejects', async () => {
+      jest.useFakeTimers()
+      try {
+        const { promise, reject } = Promise.withResolvers<unknown>()
+        const wc = createMockWebContents(() => promise)
+        const cdp = new BrowserCDP(wc as unknown as WebContents)
+
+        const pending = cdp.getClipboard()
+        await waitForFirstCommand(() => wc.debugger.sendCommand.mock.calls.length)
+
+        reject(new Error('Protocol error: something else'))
+        await expect(pending).rejects.toThrow('Protocol error')
+
+        jest.advanceTimersByTime(6_000)
+        expect(wc.debugger.detach).toHaveBeenCalledTimes(1)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+  })
+
+  describe('clickAtCoordinates failure handling', () => {
+    it('re-attaches and replays through CDP when the debugger is lost mid-click', async () => {
+      const dispatched: Array<Record<string, unknown>> = []
+      let triggerDetach: (() => void) | undefined
+      let failedOnce = false
+      const wc = createMockWebContents(async (method, params) => {
+        if (method === 'Input.dispatchMouseEvent') {
+          if (params?.type === 'mousePressed' && !failedOnce) {
+            failedOnce = true
+            triggerDetach?.()
+            throw new Error('target closed while handling command')
+          }
+          dispatched.push(params ?? {})
+        }
+        return {}
+      })
+      triggerDetach = wc._triggerDetach
+
+      const cdp = new BrowserCDP(wc as unknown as WebContents)
+      await cdp.clickAtCoordinates(30, 40)
+
+      expect(wc.debugger.attach).toHaveBeenCalledTimes(2)
+      const replayed = dispatched.filter(e => e.type === 'mousePressed' || e.type === 'mouseReleased')
+      expect(replayed.map(e => e.type)).toEqual(['mousePressed', 'mouseReleased'])
+      expect(replayed[0]).toMatchObject({ x: 30, y: 40 })
+    })
+
+    it('rejects without native input when the CDP replay also fails', async () => {
+      let triggerDetach: (() => void) | undefined
+      const wc = createMockWebContents(
+        async (method, params) => {
+          if (method === 'Input.dispatchMouseEvent' && params?.type === 'mousePressed') {
+            triggerDetach?.()
+            throw new Error('target closed while handling command')
+          }
+          return {}
+        },
+        () => {},
+      )
+      triggerDetach = wc._triggerDetach
+
+      const cdp = new BrowserCDP(wc as unknown as WebContents)
+      await expect(cdp.clickAtCoordinates(10, 10)).rejects.toThrow('the debugger session was lost')
+      expect(wc.sendInputEvent).not.toHaveBeenCalled()
+    })
+
+    it('rejects without a second down/up pair when the press was already delivered', async () => {
+      const wc = createMockWebContents(
+        async (_method, params) => {
+          if (params?.type === 'mouseReleased') {
+            throw new Error('Input dispatch rejected by renderer')
+          }
+          return {}
+        },
+        () => {},
+      )
+
+      const cdp = new BrowserCDP(wc as unknown as WebContents)
+      await expect(cdp.clickAtCoordinates(5, 6)).rejects.toThrow('Input dispatch rejected by renderer')
+      expect(wc.sendInputEvent).not.toHaveBeenCalled()
+    })
+
+    it('falls back to native input, moving first, when nothing was pressed yet', async () => {
+      const native: Array<Record<string, unknown>> = []
+      const wc = createMockWebContents(
+        async (_method, params) => {
+          if (params?.type === 'mouseMoved') {
+            throw new Error('Input dispatch rejected by renderer')
+          }
+          return {}
+        },
+        (event) => { native.push(event) },
+      )
+
+      const cdp = new BrowserCDP(wc as unknown as WebContents)
+      await cdp.clickAtCoordinates(12, 34)
+
+      expect(native.map(e => e.type)).toEqual(['mouseMove', 'mouseDown', 'mouseUp'])
+      expect(native[0]).toMatchObject({ x: 12, y: 34 })
+    })
+
+    it('propagates a failing native fallback instead of reporting success', async () => {
+      const wc = createMockWebContents(
+        async (_method, params) => {
+          if (params?.type === 'mouseMoved') {
+            throw new Error('Input dispatch rejected by renderer')
+          }
+          return {}
+        },
+        () => { throw new Error('native input unavailable') },
+      )
+
+      const cdp = new BrowserCDP(wc as unknown as WebContents)
+      await expect(cdp.clickAtCoordinates(1, 2)).rejects.toThrow('native input unavailable')
+    })
+  })
+
+  describe('post-action geometry is best-effort', () => {
+    function createFillMock(boxModel: (call: number) => unknown) {
+      let boxCalls = 0
+      const sentCommands: string[] = []
+      const wc = createMockWebContents(async (method) => {
+        sentCommands.push(method)
+        if (method === 'Accessibility.getFullAXTree') {
+          return { nodes: [{ role: { value: 'textbox' }, name: { value: 'Email' }, backendDOMNodeId: 7 }] }
+        }
+        if (method === 'DOM.resolveNode') return { object: { objectId: 'obj-7' } }
+        if (method === 'DOM.getBoxModel') {
+          boxCalls += 1
+          return boxModel(boxCalls)
+        }
+        return {}
+      })
+      return { wc, sentCommands }
+    }
+
+    it('returns the pre-action geometry when the fill navigates the page away', async () => {
+      const { wc } = createFillMock((call) => {
+        if (call === 1) return { model: { content: [10, 10, 50, 10, 50, 50, 10, 50] } }
+        throw new Error('Node cannot be found in the current page.')
+      })
+
+      const cdp = new BrowserCDP(wc as unknown as WebContents)
+      await cdp.getAccessibilitySnapshot()
+
+      const geometry = await cdp.fillElement('@e1', 'user@example.com')
+      expect(geometry.box).toEqual({ x: 10, y: 10, width: 40, height: 40 })
+    })
+
+    it('still fills an element it cannot measure, then reports the read error', async () => {
+      const { wc, sentCommands } = createFillMock(() => { throw new Error('Could not compute box model.') })
+
+      const cdp = new BrowserCDP(wc as unknown as WebContents)
+      await cdp.getAccessibilitySnapshot()
+
+      await expect(cdp.fillElement('@e1', 'ab')).rejects.toThrow('Could not compute box model')
+      expect(sentCommands.filter(c => c === 'Input.dispatchKeyEvent').length).toBe(4)
+    })
+
+    it('still rejects a click whose target geometry cannot be resolved', async () => {
+      const { wc } = createFillMock(() => { throw new Error('Could not compute box model.') })
+
+      const cdp = new BrowserCDP(wc as unknown as WebContents)
+      await cdp.getAccessibilitySnapshot()
+
+      await expect(cdp.clickElement('@e1')).rejects.toThrow('Failed to click @e1')
+    })
+  })
+
+  describe('translateCdpNodeError', () => {
+    it('maps Blink stale-node wording onto the actionable stale-ref message', () => {
+      const translated = translateCdpNodeError(new Error('Node cannot be found in the current page.'))
+      expect((translated as Error).message).toContain('the ref is stale')
+      expect((translated as Error).message).toContain('browser_snapshot')
+    })
+
+    it('maps the other missing-node wording too', () => {
+      const translated = translateCdpNodeError(new Error('No node with given id found'))
+      expect((translated as Error).message).toContain('browser_snapshot')
+    })
+
+    it('leaves unrelated protocol errors untouched', () => {
+      const original = new Error('Protocol error (Runtime.evaluate): Target crashed')
+      expect(translateCdpNodeError(original)).toBe(original)
+    })
+
+    it('reaches the caller through a real command path', async () => {
+      const wc = createMockWebContents(async (method) => {
+        if (method === 'Accessibility.getFullAXTree') {
+          return { nodes: [{ role: { value: 'button' }, name: { value: 'Submit' }, backendDOMNodeId: 3 }] }
+        }
+        if (method === 'DOM.getBoxModel') throw new Error('Node cannot be found in the current page.')
+        return {}
+      })
+
+      const cdp = new BrowserCDP(wc as unknown as WebContents)
+      await cdp.getAccessibilitySnapshot()
+
+      await expect(cdp.getElementGeometry('@e1')).rejects.toThrow('browser_snapshot')
     })
   })
 })

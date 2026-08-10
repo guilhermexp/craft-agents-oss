@@ -444,6 +444,40 @@ constante de config root capturada no load do módulo para resolver paths: as
 suítes de meetings apontam `CRAFT_CONFIG_DIR` para um tmpdir e voltariam a
 escrever no `~/.craft-agent` real.
 
+## Browser pane CDP (`apps/electron/src/main/browser-cdp.ts`)
+
+`BrowserCDP` owns the single `webContents.debugger` session of a browser pane.
+The debugger idle-detaches after 5s because a permanently attached CDP debugger
+is a passive bot-detection tell — that timeout is deliberate, not a knob to
+widen when something races it. Preserve these invariants:
+
+- `send()` counts in-flight commands and `decideIdleDetach` gates the timer on
+  that count: the countdown re-arms while a command is awaiting a response and
+  only detaches at zero. Detaching mid-flight rejects the pending `sendCommand`
+  with `target closed while handling command`, which is how a click was lost 1ms
+  after an idle detach. Re-arming in `send`'s `finally` alone is NOT the gate —
+  it protects the next command, never the running one — so `send()` also re-arms
+  right after `ensureAttached()`.
+- A click that could not be shown to land MUST NOT resolve: `clickElement` and
+  `browser-pane-manager` record `lastAction.status: 'succeeded'` for anything
+  that resolves. `clickAtCoordinates` replays through CDP once after a
+  detached-target error, propagates if that replay fails, and propagates instead
+  of emitting a native down/up pair once the press was delivered. The
+  `sendInputEvent` fallback keeps only its narrow slot (CDP unusable, nothing
+  pressed yet) because it never reaches OOPIFs and cannot confirm delivery.
+- Geometry read around a fill/select/file-input assignment is bookkeeping for
+  the annotation overlay (`lastAction.geometry`), not the action's result. Both
+  reads are best-effort via `tryReadGeometry`, the pre-action reading is the
+  fallback, and only a page where nothing is measurable at all surfaces the read
+  error. The pre-click geometry in `clickElement` stays strict — there it is the
+  click target.
+- Raw Blink node errors never reach the agent: `translateCdpNodeError` maps
+  `Node cannot be found` / `No node with given id` onto the same stale-ref
+  message `resolveRef` produces (`STALE_REF_ADVICE`), because the command had
+  already passed `resolveRef` when navigation committed.
+- Refs are per-document: the navigation listeners in the constructor invalidate
+  `refMap`/`refDetails`/`backendNodeRefMap` and `nextRefCounter` is never reset.
+
 ## Validation
 
 For Hermes/Craft integration changes, run the focused Craft tests:
@@ -477,6 +511,14 @@ chat não regrediu:
 
 ```bash
 bun test apps/electron/src/renderer/components/browser/__tests__/
+```
+
+For `browser-cdp.ts` (debugger lifecycle, click delivery, geometry, ref
+translation) run the CDP harness plus the pane manager that consumes it:
+
+```bash
+bun test apps/electron/src/main/__tests__/browser-cdp.test.ts \
+  apps/electron/src/main/__tests__/browser-pane-manager.test.ts
 ```
 
 For Hermes overlay changes, first prove all overlays apply from a clean cache

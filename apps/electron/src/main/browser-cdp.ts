@@ -90,11 +90,68 @@ function summarizeTopCounts(map: Map<string, number>, maxEntries = 8): string {
 
 const CDP_IDLE_DETACH_MS = 5_000
 
+/**
+ * The one stale-ref wording, shared by the two sites that produce it:
+ * `resolveRef`, when the ref is already gone from the map, and `send`, when the
+ * node died while a command that had already passed `resolveRef` was in flight.
+ */
+const STALE_REF_ADVICE =
+  '— the ref is stale (page navigated or a newer snapshot replaced it). '
+  + 'Run browser_snapshot first to get current element refs.'
+
+// Blink wording for "the backendNodeId you sent no longer exists".
+const STALE_NODE_ERROR_PATTERNS = [
+  'node cannot be found',
+  'no node with given id',
+  'could not find node with given id',
+]
+
+/**
+ * Map raw Blink node-lookup failures onto the actionable stale-ref message. The
+ * agent sees "Node cannot be found in the current page." only because the
+ * command had already passed `resolveRef` when navigation committed — it still
+ * needs to be told to take a fresh snapshot. Every other protocol error is
+ * returned untouched.
+ */
+export function translateCdpNodeError(error: unknown): unknown {
+  const message = error instanceof Error ? error.message : String(error)
+  const normalized = message.toLowerCase()
+  if (!STALE_NODE_ERROR_PATTERNS.some(pattern => normalized.includes(pattern))) {
+    return error
+  }
+  return new Error(`The element this command targeted no longer exists ${STALE_REF_ADVICE}`)
+}
+
+// Electron/CDP wording for "the debugger session went away under this command",
+// matched where a click has to decide between replaying and failing.
+const DETACHED_TARGET_ERROR_PATTERNS = [
+  'target closed',
+  'not attached',
+  'detached',
+]
+
+export type IdleDetachDecision = 'detach' | 're-arm' | 'idle'
+
+/**
+ * Idle-detach gate. Detaching rejects every pending `sendCommand` with
+ * `target closed while handling command`, so a live command re-arms the
+ * countdown instead of dying to it. Re-arming in `send`'s `finally` alone is not
+ * enough: that protects the *next* command, never the running one.
+ */
+export function decideIdleDetach(state: { attached: boolean; inflight: number }): IdleDetachDecision {
+  if (!state.attached) return 'idle'
+  if (state.inflight > 0) return 're-arm'
+  return 'detach'
+}
+
 export class BrowserCDP {
   private webContents: WebContents
   private attached = false
   private detachListenerRegistered = false
   private idleDetachTimer: ReturnType<typeof setTimeout> | null = null
+  // Commands awaiting a CDP response. The idle detach must never fire while
+  // this is non-zero — see decideIdleDetach.
+  private inflight = 0
   private emulatedColorScheme: 'light' | 'dark' | null = null
   // Map from "@eN" refs to backend node IDs for the current snapshot.
   private refMap: Map<string, number> = new Map()
@@ -131,10 +188,7 @@ export class BrowserCDP {
   private resolveRef(ref: string): number {
     const backendNodeId = this.refMap.get(ref)
     if (!backendNodeId) {
-      throw new Error(
-        `Element ${ref} not found — the ref is stale (page navigated or a newer snapshot replaced it). `
-        + 'Run browser_snapshot first to get current element refs.',
-      )
+      throw new Error(`Element ${ref} not found ${STALE_REF_ADVICE}`)
     }
     return backendNodeId
   }
@@ -178,9 +232,16 @@ export class BrowserCDP {
   private resetIdleDetachTimer(): void {
     if (this.idleDetachTimer) {
       clearTimeout(this.idleDetachTimer)
+      this.idleDetachTimer = null
     }
     this.idleDetachTimer = setTimeout(() => {
-      if (this.attached) {
+      this.idleDetachTimer = null
+      const decision = decideIdleDetach({ attached: this.attached, inflight: this.inflight })
+      if (decision === 're-arm') {
+        this.resetIdleDetachTimer()
+        return
+      }
+      if (decision === 'detach') {
         mainLog.info('[browser-cdp] idle detach — detaching debugger after inactivity')
         this.detach()
       }
@@ -213,10 +274,17 @@ export class BrowserCDP {
 
   private async send(method: string, params?: Record<string, unknown>): Promise<any> {
     await this.ensureAttached()
+    // Start this command's countdown now. Re-arming only in `finally` left the
+    // current command running inside whatever was left of the previous window,
+    // which is how idle detach landed 1ms before a click.
+    this.resetIdleDetachTimer()
+    this.inflight += 1
     try {
       return await this.webContents.debugger.sendCommand(method, params)
+    } catch (err) {
+      throw translateCdpNodeError(err)
     } finally {
-      // Keep detach countdown tied to completed calls so we do not detach mid-flight.
+      this.inflight -= 1
       this.resetIdleDetachTimer()
     }
   }
@@ -442,6 +510,26 @@ export class BrowserCDP {
         height: maxY - minY,
       },
       clickPoint: { x: clickX, y: clickY },
+    }
+  }
+
+  /**
+   * Best-effort geometry read. Geometry taken around an action feeds
+   * `lastAction.geometry` for the screenshot annotation overlay — bookkeeping,
+   * not the result of the action. A fill that submits a login form navigates
+   * before the trailing read runs, killing the node, and a strict read would
+   * report the successful fill as a failure. Callers keep the reading they took
+   * before acting and fall back to it.
+   */
+  private async tryReadGeometry(ref: string): Promise<ElementGeometry | undefined> {
+    try {
+      return await this.getElementGeometry(ref)
+    } catch (err) {
+      mainLog.warn(
+        `[browser-cdp] best-effort geometry read failed for ${ref} (the action itself is unaffected): `
+        + `${err instanceof Error ? err.message : String(err)}`,
+      )
+      return undefined
     }
   }
 
@@ -747,9 +835,12 @@ export class BrowserCDP {
     // shadow DOM, and nested frames. sendInputEvent only reaches the main frame
     // and silently no-ops on OOPIFs (no throw), so it can never click a
     // cross-origin challenge widget.
+    const tx = Math.round(x)
+    const ty = Math.round(y)
+    // A click that never landed must surface as a failure: clickElement and the
+    // pane manager record `status: 'succeeded'` for anything that resolves.
+    let pressDelivered = false
     try {
-      const tx = Math.round(x)
-      const ty = Math.round(y)
       // Humanized approach trajectory for realism (still via CDP).
       const startX = x + (Math.random() - 0.5) * 60
       const startY = y + (Math.random() - 0.5) * 60
@@ -773,6 +864,7 @@ export class BrowserCDP {
         buttons: 1,
         clickCount: 1,
       })
+      pressDelivered = true
       await new Promise(resolve => setTimeout(resolve, 20 + Math.random() * 40))
       await this.send('Input.dispatchMouseEvent', {
         type: 'mouseReleased',
@@ -782,11 +874,44 @@ export class BrowserCDP {
         buttons: 0,
         clickCount: 1,
       })
+      return
     } catch (error) {
-      mainLog.warn(`[browser-cdp] CDP clickAt failed, falling back to native sendInputEvent: ${error instanceof Error ? error.message : String(error)}`)
-      this.sendMouseEvent('mouseDown', Math.round(x), Math.round(y), 'left', 1)
+      const message = error instanceof Error ? error.message : String(error)
+      const lost = DETACHED_TARGET_ERROR_PATTERNS.some(pattern => message.toLowerCase().includes(pattern))
+
+      if (lost) {
+        // The debugger went away under the click (idle detach, target swap). A
+        // half-delivered press is lost either way, so re-attach and replay the
+        // whole click through CDP — the only transport that reaches OOPIFs.
+        mainLog.warn(`[browser-cdp] CDP clickAt lost the debugger session, replaying through CDP: ${message}`)
+        try {
+          await this.ensureAttached()
+          await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: tx, y: ty, buttons: 0 })
+          await this.clickAtCDP(tx, ty)
+          return
+        } catch (replayError) {
+          const replayMessage = replayError instanceof Error ? replayError.message : String(replayError)
+          throw new Error(
+            `Click at (${tx}, ${ty}) failed: the debugger session was lost and the CDP replay also failed: ${replayMessage}`,
+          )
+        }
+      }
+
+      if (pressDelivered) {
+        // A native down/up pair on top of an already-delivered press
+        // double-fires the target. Report the click as lost instead.
+        mainLog.warn(`[browser-cdp] CDP clickAt failed after the press was delivered, not replaying natively: ${message}`)
+        throw error
+      }
+
+      // CDP is unusable and nothing was pressed yet, so sendInputEvent is the
+      // only transport left. It never reaches OOPIFs, so let its own failures
+      // propagate instead of manufacturing a success on top of them.
+      mainLog.warn(`[browser-cdp] CDP clickAt failed, falling back to native sendInputEvent: ${message}`)
+      this.sendMouseEvent('mouseMove', tx, ty)
+      this.sendMouseEvent('mouseDown', tx, ty, 'left', 1)
       await new Promise(resolve => setTimeout(resolve, 20))
-      this.sendMouseEvent('mouseUp', Math.round(x), Math.round(y), 'left', 1)
+      this.sendMouseEvent('mouseUp', tx, ty, 'left', 1)
     }
   }
 
@@ -893,6 +1018,11 @@ export class BrowserCDP {
       // Focus the element first
       await this.send('DOM.focus', { backendNodeId })
 
+      // Read geometry before typing: the fill may submit the form and navigate,
+      // and the node is gone by the time the trailing read runs. Best-effort —
+      // an unmeasurable input must still be fillable.
+      const before = await this.tryReadGeometry(ref)
+
       // Clear existing content
       const { object } = await this.send('DOM.resolveNode', { backendNodeId })
       await this.send('Runtime.callFunctionOn', {
@@ -923,7 +1053,10 @@ export class BrowserCDP {
         }`,
       })
 
-      return await this.getElementGeometry(ref)
+      const geometry = (await this.tryReadGeometry(ref)) ?? before
+      // Nothing measurable at either end: re-issue the strict read so the caller
+      // still gets the real measurement error instead of a fabricated box.
+      return geometry ?? await this.getElementGeometry(ref)
     } catch (err) {
       mainLog.error(`[browser-cdp] Fill failed for ${ref}:`, err)
       throw new Error(`Failed to fill ${ref}: ${err}`)
@@ -935,6 +1068,9 @@ export class BrowserCDP {
 
     try {
       const { object } = await this.send('DOM.resolveNode', { backendNodeId })
+      // Captured before the selection: a change handler can navigate away.
+      // Best-effort — a natively hidden <select> must still be selectable.
+      const before = await this.tryReadGeometry(ref)
       const result = await this.send('Runtime.callFunctionOn', {
         objectId: object.objectId,
         returnByValue: true,
@@ -1108,7 +1244,10 @@ export class BrowserCDP {
         )
       }
 
-      return await this.getElementGeometry(ref)
+      const geometry = (await this.tryReadGeometry(ref)) ?? before
+      // Nothing measurable at either end: re-issue the strict read so the caller
+      // still gets the real measurement error instead of a fabricated box.
+      return geometry ?? await this.getElementGeometry(ref)
     } catch (err) {
       mainLog.error(`[browser-cdp] Select failed for ${ref}:`, err)
       throw new Error(`Failed to select option in ${ref}: ${err}`)
@@ -1119,12 +1258,19 @@ export class BrowserCDP {
     const backendNodeId = this.resolveRef(ref)
 
     try {
+      // Captured before the assignment: a change handler can navigate away.
+      // Best-effort — file inputs are routinely hidden behind a styled button.
+      const before = await this.tryReadGeometry(ref)
+
       await this.send('DOM.setFileInputFiles', {
         files: filePaths,
         backendNodeId,
       })
 
-      return await this.getElementGeometry(ref)
+      const geometry = (await this.tryReadGeometry(ref)) ?? before
+      // Nothing measurable at either end: re-issue the strict read so the caller
+      // still gets the real measurement error instead of a fabricated box.
+      return geometry ?? await this.getElementGeometry(ref)
     } catch (err) {
       mainLog.error(`[browser-cdp] setFileInputFiles failed for ${ref}:`, err)
       throw new Error(`Failed to set files on ${ref}: ${err}`)
