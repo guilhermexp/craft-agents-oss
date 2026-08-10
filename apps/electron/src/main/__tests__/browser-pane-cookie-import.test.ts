@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import { createInertNetStub } from './electron-net-stub'
 import type { BrowserCookie } from '@craft-agent/shared/browser-cookies/types'
 import type { BrowserProfile } from '@craft-agent/shared/config/types'
 import { UserOnlyBrowserProfileError } from '../browser-profile-resolver'
@@ -35,14 +36,18 @@ mock.module('electron', () => ({
   nativeTheme: {
     shouldUseDarkColors: false,
   },
-  // Favicon transport (added on main) resolves `net` at module load.
-  net: {
-    request: mock(() => ({
-      on: mock(() => {}),
-      end: mock(() => {}),
-      abort: mock(() => {}),
-    })),
+  // Bun's mock.module registry is global and last-registration-wins, so this
+  // mock must cover every `electron` member any co-running suite resolves —
+  // not just the ones this file exercises. `Menu` is window-manager's.
+  Menu: {
+    buildFromTemplate: mock(() => ({ popup: mock(() => {}) })),
+    setApplicationMenu: mock(() => {}),
   },
+  // Favicon transport (added on main) resolves `net` at module load. The stub
+  // fails the request so the fetcher promise always settles — an inert `on`
+  // would leave it pending and, because mock.module is global, hang whichever
+  // suite loads next.
+  net: createInertNetStub(),
   WebContentsView: class MockWebContentsView {},
   session: {
     defaultSession: {},
@@ -59,7 +64,12 @@ mock.module('electron', () => ({
   },
 }))
 
+// Spread the real module: mock.module replaces the whole namespace globally,
+// so faking only the two functions would strip `ChromeCookieReaderError` from
+// every other suite in the same run.
+const actualCookieReader = await import('@craft-agent/shared/browser-cookies/chrome-cookie-reader')
 mock.module('@craft-agent/shared/browser-cookies/chrome-cookie-reader', () => ({
+  ...actualCookieReader,
   previewChromeCookies,
   readChromeCookies,
 }))

@@ -26,7 +26,14 @@ const SCREENSHOT_RETRY_DELAY_MS = 120
 const SCREENSHOT_RESCUE_PAINT_DELAY_MS = 180
 const SCREENSHOT_NETWORK_IDLE_TIMEOUT_MS = 1_000
 const SCREENSHOT_NETWORK_IDLE_MS = 300
-const SCREENSHOT_CAPTURE_TIMEOUT_MS = Number(process.env.CRAFT_BROWSER_SCREENSHOT_CAPTURE_TIMEOUT_MS ?? 8_000)
+/**
+ * Read at call time, not at module load: reading it once on import made the
+ * value depend on which test file happened to pull this module into the
+ * registry first, and Bun shares that registry across every file in a run.
+ */
+function screenshotCaptureTimeoutMs(): number {
+  return Number(process.env.CRAFT_BROWSER_SCREENSHOT_CAPTURE_TIMEOUT_MS ?? 8_000)
+}
 
 /** Parent-provided dependencies the capture pipeline needs. */
 export interface VisualCaptureDeps {
@@ -433,8 +440,8 @@ export class BrowserVisualCapture {
       options.rect
         ? instance.pageView.webContents.capturePage(options.rect, captureOpts)
         : instance.pageView.webContents.capturePage(undefined, captureOpts),
-      SCREENSHOT_CAPTURE_TIMEOUT_MS,
-      `Timed out capturing screenshot after ${SCREENSHOT_CAPTURE_TIMEOUT_MS}ms`,
+      screenshotCaptureTimeoutMs(),
+      `Timed out capturing screenshot after ${screenshotCaptureTimeoutMs()}ms`,
     )
 
     if (image.isEmpty()) {
