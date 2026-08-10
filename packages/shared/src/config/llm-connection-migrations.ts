@@ -109,7 +109,6 @@ function migrateCodexCopilotToPi(config: StoredConfig): boolean {
     // Cast to string for legacy providerType values that were removed from LlmProviderType
     // but may still exist on disk in old configs. Cast to any for legacy codexPath field.
     const providerStr = connection.providerType as string;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const connAny = connection as any;
     if (providerStr === 'openai' && connection.authType === 'oauth') {
       connection.providerType = 'pi';
@@ -147,7 +146,6 @@ function migrateCodexCopilotToPi(config: StoredConfig): boolean {
   }
 
   // Clean up openaiVariant config field (Codex-specific A/B testing, no longer relevant)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const configAny = config as any;
   if (configAny.openaiVariant) {
     delete configAny.openaiVariant;
@@ -709,7 +707,6 @@ function migrateHermesLocalSlug(config: StoredConfig): boolean {
   }
 
   // Workspace-scoped defaults may reference the old slug.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const configAny = config as any;
   if (configAny.workspaces && typeof configAny.workspaces === 'object') {
     for (const ws of Object.values(configAny.workspaces) as Array<Record<string, unknown>>) {
@@ -729,7 +726,6 @@ function migrateHermesLocalSlug(config: StoredConfig): boolean {
  * Same for openai. Then remove modelDefaults from config.
  */
 function migrateModelDefaultsToConnections(config: StoredConfig): boolean {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const configAny = config as any;
   if (!configAny.modelDefaults || !config.llmConnections) return false;
   let changed = false;

@@ -8,6 +8,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, M
 import { classifyFile } from '@craft-agent/ui/file-classification'
 import { prepareHtmlPreviewSrcDoc } from '@craft-agent/ui/html-preview-sanitizer'
 import { Markdown } from '@craft-agent/ui/markdown'
+import { usePlatform } from '@craft-agent/ui/context'
 import { ShikiCodeViewer } from '@/components/shiki/ShikiCodeViewer'
 import { useAppShellContext, useSession } from '@/context/AppShellContext'
 import { getLanguageFromPath } from '@/lib/file-utils'
@@ -264,6 +265,10 @@ export function InlineFilePreviewPanel({
 }) {
   const { t } = useTranslation()
   const { onOpenFile, onOpenUrl } = useAppShellContext()
+  // Already inside the in-app preview: "Open" must launch the system editor, so
+  // it goes through the interceptor's external path (which also toasts on failure)
+  // instead of onOpenFile, which would just re-enter this panel.
+  const { onOpenFileExternal } = usePlatform()
   const fileManagerName = getFileManagerName()
   const fileName = getFileName(filePath)
   const classification = React.useMemo(() => classifyFile(filePath), [filePath])
@@ -378,8 +383,12 @@ export function InlineFilePreviewPanel({
   }, [filePath, previewLoadState.kind, previewLoadState.loading])
 
   const openExternal = React.useCallback(() => {
-    void window.electronAPI.openFile(filePath)
-  }, [filePath])
+    if (onOpenFileExternal) {
+      onOpenFileExternal(filePath)
+      return
+    }
+    onOpenFile(filePath)
+  }, [filePath, onOpenFile, onOpenFileExternal])
 
   const reveal = React.useCallback(() => {
     void window.electronAPI.showInFolder(filePath)

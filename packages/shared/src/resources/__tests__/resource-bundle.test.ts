@@ -138,6 +138,7 @@ describe('resource-bundle', () => {
       const source = bundle.resources.sources![0]!
       expect(source.slug).toBe('github')
       // Auth state should be reset
+      // eslint-disable-next-line craft-shared/no-inline-source-auth-check -- asserts the exact persisted field the export sanitizer resets; isSourceUsable() would hide whether the flag itself was cleared
       expect(source.config.isAuthenticated).toBe(false)
       expect(source.config.connectionStatus).toBe('needs_auth')
       expect(source.config.connectionError).toBeUndefined()

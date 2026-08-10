@@ -22,7 +22,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@craft-agent/ui'
+import { Tooltip, TooltipContent, TooltipTrigger, usePlatform } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
 import { uint8ArrayToBase64 } from '@/lib/base64'
 import { PROJECT_COLOR_PALETTE } from '@/utils/project-colors'
@@ -40,7 +40,17 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
   const workspace = useActiveWorkspace()
   const workspaceId = workspace?.id
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
-  const { onCreateSession } = useAppShellContext()
+  const { onCreateSession, onOpenFile } = useAppShellContext()
+  // Folder location: bypass the preview classifier and hand the exact path to
+  // the OS. onOpenFile stays as the fallback when no platform provider is set.
+  const { onOpenFileExternal } = usePlatform()
+  const openProjectLocation = useCallback((folderPath: string) => {
+    if (onOpenFileExternal) {
+      onOpenFileExternal(folderPath)
+      return
+    }
+    onOpenFile(folderPath)
+  }, [onOpenFile, onOpenFileExternal])
 
   const [project, setProject] = useState<LoadedProject | null>(null)
   const [loading, setLoading] = useState(true)
@@ -403,7 +413,7 @@ export default function ProjectInfoPage({ projectSlug }: ProjectInfoPageProps) {
                     <TooltipTrigger asChild>
                       <button
                         type="button"
-                        onClick={() => window.electronAPI.openFile(project.folderPath)}
+                        onClick={() => openProjectLocation(project.folderPath)}
                         className="shrink-0 inline-flex h-6 w-6 items-center justify-center rounded text-foreground/50 hover:text-foreground hover:bg-foreground/5 transition-colors"
                         aria-label={t('projectInfo.openLocation')}
                       >

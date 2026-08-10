@@ -201,7 +201,10 @@ export function KanbanBoard({
           gone (it re-renders into the target), so a "fly back" would be wrong. */}
       <DragOverlay dropAnimation={null} style={{ zIndex: 'var(--z-floating-menu, 400)' }}>
         {activeTask ? (
-          <div className="cursor-grabbing rounded-lg shadow-dragging" style={{ transform: 'scale(1.025)' }}>
+          /* No elevation class here: `shadow-dragging` was referenced but never defined
+             (there is no `--shadow-dragging` in the theme), so it rendered nothing.
+             Choosing a lift shadow for the drag overlay is a design decision, not a lint fix. */
+          <div className="cursor-grabbing rounded-lg" style={{ transform: 'scale(1.025)' }}>
             <TaskTile
               task={activeTask}
               project={activeTask.projectId ? projectsById.get(activeTask.projectId) : undefined}
