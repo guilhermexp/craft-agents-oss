@@ -261,42 +261,75 @@ describe('PrerequisiteManager', () => {
   });
 
   // ============================================================
-  // Max Rejection (graceful fallback)
+  // Max Rejection (per-turn deadlock escape)
   // ============================================================
 
   describe('max rejection', () => {
-    it('blocks on first attempt, allows on second for same path', () => {
+    it('does not release the tool on the second call of the same turn', () => {
       mockExistsPaths.add(guidePath('linear'));
 
-      // First attempt — blocked
-      const first = manager.checkPrerequisites('mcp__linear__createIssue');
-      expect(first.allowed).toBe(false);
+      // A denied tool no longer ends the turn, so the model can emit both calls
+      // itself. Releasing on the second one would be a free self-bypass.
+      expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(false);
+      expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(false);
+      expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(false);
+    });
 
-      // Second attempt (same source, guide still not read) — allowed through
-      const second = manager.checkPrerequisites('mcp__linear__createIssue');
-      expect(second.allowed).toBe(true);
+    it('releases only after the deadlock escape is exhausted in the same turn', () => {
+      mockExistsPaths.add(guidePath('linear'));
+
+      for (let i = 0; i < 3; i++) {
+        expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(false);
+      }
+      // Escape hatch: the guide is unreachable for this model, so stop burning
+      // the turn on a tool-call loop.
+      expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(true);
     });
 
     it('tracks rejection counts per source independently', () => {
       mockExistsPaths.add(guidePath('linear'));
       mockExistsPaths.add(guidePath('slack'));
 
-      // Block linear once
-      expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(false);
-
-      // Slack should still block on first attempt
-      expect(manager.checkPrerequisites('mcp__slack__sendMessage').allowed).toBe(false);
-
-      // Linear second attempt — allowed
+      for (let i = 0; i < 3; i++) {
+        expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(false);
+      }
       expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(true);
+
+      // Slack never insisted — its own guard is untouched.
+      expect(manager.checkPrerequisites('mcp__slack__sendMessage').allowed).toBe(false);
+    });
+
+    it('re-arms the rejection counts on every new turn', () => {
+      mockExistsPaths.add(guidePath('linear'));
+
+      for (let i = 0; i < 3; i++) manager.checkPrerequisites('mcp__linear__createIssue');
+      expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(true);
+
+      manager.beginTurn();
+
+      // The escape hatch is per turn: the next turn blocks again instead of
+      // inheriting a spent counter.
+      expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(false);
+    });
+
+    it('keeps read state and pending skills across a turn boundary', () => {
+      const guideFile = guidePath('linear');
+      mockExistsPaths.add(guideFile);
+      manager.trackReadTool({ file_path: guideFile });
+      manager.registerSkillPrerequisites(['/test/workspace/skills/alpha/SKILL.md']);
+
+      manager.beginTurn();
+
+      expect(manager.hasRead(guideFile)).toBe(true);
+      expect(manager.checkPrerequisites('WebSearch').allowed).toBe(false);
     });
 
     it('resets rejection counts on resetReadState', () => {
       mockExistsPaths.add(guidePath('linear'));
 
       // Exhaust rejections
-      manager.checkPrerequisites('mcp__linear__createIssue'); // blocked
-      manager.checkPrerequisites('mcp__linear__createIssue'); // allowed (max reached)
+      for (let i = 0; i < 3; i++) manager.checkPrerequisites('mcp__linear__createIssue');
+      expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(true);
 
       // Reset
       manager.resetReadState();
@@ -305,13 +338,14 @@ describe('PrerequisiteManager', () => {
       expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(false);
     });
 
-    it('allows different tools from same source after one rejection', () => {
+    it('shares the rejection budget across tools of the same source', () => {
       mockExistsPaths.add(guidePath('linear'));
 
-      // First tool blocked
-      expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(false);
+      for (let i = 0; i < 3; i++) {
+        expect(manager.checkPrerequisites('mcp__linear__createIssue').allowed).toBe(false);
+      }
 
-      // Different tool from same source — same guide path, already rejected once
+      // Different tool, same guide path — the budget is per prerequisite file.
       expect(manager.checkPrerequisites('mcp__linear__listIssues').allowed).toBe(true);
     });
 
@@ -324,6 +358,59 @@ describe('PrerequisiteManager', () => {
 
       manager.trackReadTool({ file_path: docsPath });
       expect(manager.checkPrerequisites('browser_open').allowed).toBe(true);
+    });
+  });
+
+  // ============================================================
+  // Skill prerequisite escape hatch
+  // ============================================================
+
+  describe('skill prerequisite escape hatch', () => {
+    const alpha = '/test/workspace/skills/alpha/SKILL.md';
+    const beta = '/test/workspace/skills/beta/SKILL.md';
+
+    it('does not release the pending skills on the second call of the same turn', () => {
+      manager.registerSkillPrerequisites([alpha]);
+
+      expect(manager.checkPrerequisites('WebSearch').allowed).toBe(false);
+      expect(manager.checkPrerequisites('WebSearch').allowed).toBe(false);
+      expect(manager.checkPrerequisites('WebSearch').allowed).toBe(false);
+    });
+
+    it('releases only the insisted-on path and keeps the other skills pending', () => {
+      manager.registerSkillPrerequisites([alpha, beta]);
+
+      // Exhaust the escape hatch: it consumes exactly one pending path.
+      for (let i = 0; i < 4; i++) {
+        const result = manager.checkPrerequisites('WebSearch');
+        expect(result.allowed).toBe(false);
+      }
+
+      // alpha was released, beta still guards the turn.
+      const stillBlocked = manager.checkPrerequisites('WebSearch');
+      expect(stillBlocked.allowed).toBe(false);
+      expect(stillBlocked.blockReason).toContain(beta);
+      expect(stillBlocked.blockReason).not.toContain(alpha);
+    });
+
+    it('allows the tool once every pending skill has been released', () => {
+      manager.registerSkillPrerequisites([alpha]);
+
+      for (let i = 0; i < 3; i++) {
+        expect(manager.checkPrerequisites('WebSearch').allowed).toBe(false);
+      }
+      expect(manager.checkPrerequisites('WebSearch').allowed).toBe(true);
+    });
+
+    it('re-arms the skill escape hatch on every new turn', () => {
+      manager.registerSkillPrerequisites([alpha]);
+
+      for (let i = 0; i < 3; i++) manager.checkPrerequisites('WebSearch');
+      manager.beginTurn();
+
+      // A fresh turn must not inherit a nearly-spent budget.
+      expect(manager.checkPrerequisites('WebSearch').allowed).toBe(false);
+      expect(manager.checkPrerequisites('WebSearch').allowed).toBe(false);
     });
   });
 

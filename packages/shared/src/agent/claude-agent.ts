@@ -127,6 +127,7 @@ export type { LoadedSource } from '../sources/types.ts';
 // Re-exported for backwards compatibility with existing imports from claude-agent.ts
 import { AbortReason } from './core/session-lifecycle.ts';
 import type { RecoveryMessage } from './core/types.ts';
+import type { ToolPermissionResult } from './core/tool-permission-dispatcher.ts';
 export { AbortReason, type RecoveryMessage };
 
 /** File extensions that can be converted to readable text by CLI tools. */
@@ -193,8 +194,16 @@ export function resolveClaudeThinkingOptions(args: {
  * reason with no marker, because the model must relay a success message, not
  * report a failure. See the `[ERROR]` contract in tool-matching.ts
  * (isToolResultError).
+ *
+ * `steerContext` is a mid-turn user message riding along as `additionalContext`
+ * (the SDK allows it next to `permissionDecision`). A deny keeps the turn alive,
+ * so the model still reads it; the `endTurn` shape has no place to carry it and
+ * must be called without one — see {@link canDeliverSteer}.
  */
-export function encodeClaudeToolBlock(result: { reason: string; isError?: boolean; endTurn?: boolean }) {
+export function encodeClaudeToolBlock(
+  result: { reason: string; isError?: boolean; endTurn?: boolean },
+  steerContext?: string,
+) {
   // blockWithReason owns the `[ERROR] ` marker; both shapes read the marked text
   // off it so the marker keeps exactly one owner.
   const deny = result.isError
@@ -208,10 +217,28 @@ export function encodeClaudeToolBlock(result: { reason: string; isError?: boolea
         },
       };
 
-  if (!result.endTurn) return deny;
+  if (!result.endTurn) {
+    return steerContext
+      ? { ...deny, hookSpecificOutput: { ...deny.hookSpecificOutput, additionalContext: steerContext } }
+      : deny;
+  }
 
   const reason = deny.hookSpecificOutput.permissionDecisionReason;
   return { continue: false, decision: 'block' as const, reason, stopReason: reason };
+}
+
+/**
+ * Whether this PreToolUse outcome can carry a pending steer message to the model.
+ *
+ * Every outcome that leaves the turn running delivers it as `additionalContext`,
+ * including a deny — the model reads the denial reason and the user's new message
+ * in the same tool result. The turn-ending denial cannot: the agent loop stops
+ * right after the hook, so consuming the steer there would drop the user's
+ * message silently. Leaving it pending is what makes `chatImpl` emit
+ * `steer_undelivered` so the session layer re-queues it for the next turn.
+ */
+export function canDeliverSteer(result: ToolPermissionResult): boolean {
+  return result.type !== 'block' || !result.endTurn;
 }
 
 export interface ClaudeAgentConfig {
@@ -1331,8 +1358,11 @@ export class ClaudeAgent extends BaseAgent {
               );
 
               // Consume any pending steer message — injected as additionalContext
-              // on allow/modify so the agent addresses the user's new message.
-              const steerMsg = this.pendingSteerMessage;
+              // on every outcome that keeps the turn alive, deny included. The
+              // turn-ending denial leaves it pending on purpose: the agent loop
+              // stops right after this hook, so the finally block in chatImpl
+              // emits steer_undelivered and the session layer re-queues it.
+              const steerMsg = canDeliverSteer(result) ? this.pendingSteerMessage : null;
               if (steerMsg) {
                 this.pendingSteerMessage = null;
                 this.debug(`Injecting steer via additionalContext on ${input.tool_name}`);
@@ -1343,6 +1373,9 @@ export class ClaudeAgent extends BaseAgent {
 
               switch (result.type) {
                 case 'allow':
+                case 'passthrough':
+                  // passthrough: Claude's session tools (call_llm / spawn_session)
+                  // run in-process via the SDK — nothing to intercept, just allow.
                   return steerContext
                     ? {
                         continue: true,
@@ -1364,12 +1397,7 @@ export class ClaudeAgent extends BaseAgent {
                   };
 
                 case 'block':
-                  return encodeClaudeToolBlock(result);
-
-                case 'passthrough':
-                  // Claude's session tools (call_llm / spawn_session) run
-                  // in-process via the SDK — nothing to intercept, just allow.
-                  return { continue: true };
+                  return encodeClaudeToolBlock(result, steerContext);
               }
             }],
           }],

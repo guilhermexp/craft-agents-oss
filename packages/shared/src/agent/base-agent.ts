@@ -1188,6 +1188,11 @@ ${formattedMessages}
     attachments?: FileAttachment[],
     options?: ChatOptions
   ): AsyncGenerator<AgentEvent> {
+    // Re-arm the prerequisite deadlock escape. The budget is per turn: a denied
+    // tool keeps the turn alive now, so counts left over from a previous turn
+    // would hand the model a free bypass on its first call here.
+    this.prerequisiteManager.beginTurn();
+
     const { skillPaths, cleanMessage, missingSkills } = this.extractSkillPaths(message);
     if (missingSkills.length > 0) {
       yield { type: 'error', message: `Skill(s) not found: ${missingSkills.join(', ')}` };

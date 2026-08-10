@@ -117,8 +117,23 @@ const RULES: PrerequisiteRule[] = [
 // ============================================================
 
 export class PrerequisiteManager {
-  /** Max times to block a tool for the same prerequisite before allowing through */
-  private static readonly MAX_REJECTIONS = 1;
+  /**
+   * Blocks for the same prerequisite tolerated **within one turn** before the
+   * tool is let through.
+   *
+   * This is a deadlock escape, not a shortcut. A denied tool no longer ends the
+   * Claude turn (see `encodeClaudeToolBlock`), so the model reads the reason and
+   * can read the file in the same turn — a compliant model spends exactly one
+   * block. The budget exists for the model that *cannot* comply (guide path
+   * unreadable, missing after the existsSync check, Read tool disabled): denying
+   * forever would burn the whole turn on a tool-call loop with no assistant
+   * text, which is precisely the failure this change set removes. Three blocks
+   * leave room for one failed read plus one retry before conceding, and
+   * `beginTurn()` re-arms the budget so nothing carries across turns.
+   *
+   * `strict` rules (browser docs) never reach this fallback.
+   */
+  private static readonly MAX_REJECTIONS = 3;
 
   private readFiles: Set<string> = new Set();
   private rejectionCounts: Map<string, number> = new Map();
@@ -129,6 +144,19 @@ export class PrerequisiteManager {
   constructor(config: PrerequisiteManagerConfig) {
     this.workspaceRootPath = config.workspaceRootPath;
     this.onDebug = config.onDebug;
+  }
+
+  /**
+   * Re-arm the rejection budget at the start of a turn.
+   *
+   * Read state and pending skill paths are session-lived (only compaction drops
+   * them, via `resetReadState`); only the deadlock escape is per turn, so an
+   * exhausted budget can never make the next turn's first call a free pass.
+   */
+  beginTurn(): void {
+    if (this.rejectionCounts.size === 0) return;
+    this.rejectionCounts.clear();
+    this.onDebug?.('Prerequisite: re-armed rejection budget for new turn');
   }
 
   /**
@@ -147,7 +175,8 @@ export class PrerequisiteManager {
   /**
    * Check if a tool call's prerequisites are met.
    * Iterates rules, checks if required files have been read.
-   * After MAX_REJECTIONS blocks for the same path, allows through gracefully.
+   * After MAX_REJECTIONS blocks for the same path within one turn, allows
+   * through as a deadlock escape (see MAX_REJECTIONS / beginTurn).
    */
   checkPrerequisites(toolName: string): PrerequisiteCheckResult {
     // Check dynamic skill prerequisites first
@@ -186,6 +215,12 @@ export class PrerequisiteManager {
   /**
    * Check dynamic skill prerequisites.
    * If pending skill paths exist and the tool is NOT a Read targeting one of them, block.
+   *
+   * The deadlock escape is charged to a single pending path — the oldest one,
+   * which is also the one listed first in the block reason. Exhausting it
+   * releases exactly that path and leaves every other pending skill guarded, so
+   * insisting on one skill can no longer drop read-before-execute for all of
+   * them for the rest of the session.
    */
   private checkSkillPrerequisites(toolName: string): PrerequisiteCheckResult {
     if (this.pendingSkillPaths.size === 0) return { allowed: true };
@@ -193,21 +228,23 @@ export class PrerequisiteManager {
     // Allow Read tool through — trackReadTool will clear the prerequisite
     if (toolName === 'Read') return { allowed: true };
 
-    const pendingList = [...this.pendingSkillPaths].join(', ');
-    const key = `skill:${pendingList}`;
+    // `size > 0` is guaranteed above, so the insertion-ordered iterator yields.
+    const chargedPath = this.pendingSkillPaths.values().next().value!;
+    const key = `skill:${chargedPath}`;
     const count = (this.rejectionCounts.get(key) ?? 0) + 1;
     this.rejectionCounts.set(key, count);
 
-    if (count <= PrerequisiteManager.MAX_REJECTIONS) {
-      const blockReason = `You must read the skill instruction files before proceeding. Use Read or \`cat\` via Bash to read: ${pendingList}`;
-      this.onDebug?.(`Skill prerequisite blocked (${count}/${PrerequisiteManager.MAX_REJECTIONS}): ${toolName} — pending: ${pendingList}`);
-      return { allowed: false, blockReason };
+    if (count > PrerequisiteManager.MAX_REJECTIONS) {
+      this.pendingSkillPaths.delete(chargedPath);
+      this.rejectionCounts.delete(key);
+      this.onDebug?.(`Skill prerequisite: released ${chargedPath} after ${count} rejections (max reached)`);
+      if (this.pendingSkillPaths.size === 0) return { allowed: true };
     }
 
-    // Exceeded max rejections — allow through and clear
-    this.onDebug?.(`Skill prerequisite: allowing ${toolName} after ${count} rejections (max reached)`);
-    this.pendingSkillPaths.clear();
-    return { allowed: true };
+    const pendingList = [...this.pendingSkillPaths].join(', ');
+    const blockReason = `You must read the skill instruction files before proceeding. Use Read or \`cat\` via Bash to read: ${pendingList}`;
+    this.onDebug?.(`Skill prerequisite blocked (${count}/${PrerequisiteManager.MAX_REJECTIONS}): ${toolName} — pending: ${pendingList}`);
+    return { allowed: false, blockReason };
   }
 
   /**

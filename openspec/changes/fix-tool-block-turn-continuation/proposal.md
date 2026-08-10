@@ -56,15 +56,79 @@ exceção é a negação explícita do usuário num prompt de permissão.
   numa mensagem visível: erro 400 capturado mantém o comportamento atual; caso contrário emite uma
   mensagem genérica de turno encerrado sem resposta, com retry habilitado.
 
+## Correções da revisão (segunda rodada)
+
+Duas revisões independentes sobre o diff de `217d7b1c` apontaram três defeitos e um comentário
+inexato. Todos são consequência de o turno agora continuar vivo depois de um bloqueio.
+
+### 1. `No Response` disparava em parada intencional do usuário
+
+`cancelProcessing` marca `stopRequested`/`wasInterrupted` e **não** limpa `isProcessing` — de
+propósito, para o loop drenar os eventos em vôo. O evento `complete` então chega ao branch novo com
+`isProcessing === true`, e o usuário que aperta Stop antes de qualquer texto do assistente via o
+info "Response interrupted" **mais** um card vermelho "No Response" com retry. Mesmo efeito no
+redirect (`forceAbort(AbortReason.Redirect)`), que enfileira a mensagem e corta o turno.
+
+O branch genérico passa a ser guardado por `shouldReportMissingAssistantResponse()`, função pura
+exportada do `SessionManager` (o branch em si exige um turno real do SDK; a função é o seam de
+teste). Ela só reporta quando a mensagem não é intencional: sem `stopRequested`, sem
+`wasInterrupted` e sem mensagem na fila esperando replay. O caminho de erro 400 capturado não muda.
+
+### 2. `MAX_REJECTIONS` virou auto-bypass dentro do mesmo turno
+
+`MAX_REJECTIONS = 1` foi calibrado quando **um bloqueio encerrava o turno**: a segunda chamada da
+mesma tool exigia o usuário reenviar a mensagem. Com o turno vivo o modelo emite as duas chamadas
+sozinho e passa pelo prerequisite sem ninguém no circuito — e `rejectionCounts` só zerava em
+`resetReadState()` (compactação/`clearHistory`), então o contador atravessava turnos.
+
+- `PrerequisiteManager.beginTurn()` re-arma **só** `rejectionCounts`, chamado no início de
+  `BaseAgent.chat()` (vale para Claude e Pi). `readFiles` e `pendingSkillPaths` continuam com vida
+  de sessão: quem os derruba é a compactação, via `resetReadState()`.
+- `MAX_REJECTIONS = 3`. Justificativa de por que não é bypass barato: o orçamento é **por turno** e
+  o modelo que cumpre a regra gasta exatamente um bloqueio — ele recebe o motivo e lê o arquivo no
+  mesmo turno. O escape existe para o modelo que **não consegue** cumprir (guia ilegível, sumiu
+  depois do `existsSync`, Read desabilitado): negar para sempre queimaria o turno inteiro num loop
+  de tool call sem texto nenhum — exatamente a falha que esta change remove. Três bloqueios dão
+  espaço para uma leitura falha mais uma tentativa antes de conceder, e o contador não sobrevive ao
+  turno. Regras `strict` (docs do browser) não chegam ao fallback.
+- O braço de skills nunca mais faz `pendingSkillPaths.clear()`. O orçamento é cobrado de **um** path
+  pendente (o mais antigo, o primeiro listado no motivo do bloqueio); ao esgotar, só ele é liberado
+  e os demais continuam guardando o turno. Insistir numa skill não derruba mais o read-before-execute
+  de todas as outras pelo resto da sessão.
+
+### 3. Mensagem de steer descartada em silêncio no caminho de bloqueio
+
+O hook consumia `pendingSteerMessage` antes do `switch`, mas só `allow`/`modify` reanexavam via
+`additionalContext`; o ramo `block` chamava `encodeClaudeToolBlock()`, que não carregava contexto
+nenhum. Com o campo já zerado o fallback `steer_undelivered` também não disparava. A perda é
+anterior a `217d7b1c`, mas o commit a torna comum: o turno segue vivo por N tool calls.
+
+`PreToolUseHookSpecificOutput` aceita `additionalContext` junto de `permissionDecision`, então o
+deny passa a entregar o steer. `canDeliverSteer()` decide quem pode carregá-lo: todo desfecho que
+mantém o turno vivo (`allow`, `modify`, `passthrough`, `block` sem `endTurn`). No `endTurn` o steer
+**não** é consumido — o loop morre logo depois do hook, e deixá-lo pendente é o que faz o `finally`
+do `chatImpl` emitir `steer_undelivered` para a mensagem ser re-enfileirada.
+
+### 4. Invariante documentado do `endTurn`
+
+O comentário afirmava que só uma negação explícita do usuário seta `endTurn`. Duas rotas
+programáticas resolvem o mesmo prompt como negado: `clearPendingPermissions()` (forceAbort/destroy,
+onde o turno já está morrendo) e a rejeição fail-closed do broker em `respondToPermission`. Nenhuma
+é regressão — comportamento idêntico ao da `main`. O comentário passa a dizer isso.
+
 ## Impact
 
 - Affected specs: `agent-backends`, `session-management`
 - Affected code: `packages/shared/src/agent/core/tool-permission-dispatcher.ts`,
   `packages/shared/src/agent/claude-agent.ts`, `packages/shared/src/agent/mode-manager.ts`,
+  `packages/shared/src/agent/core/prerequisite-manager.ts`,
+  `packages/shared/src/agent/base-agent.ts`,
   `packages/server-core/src/sessions/SessionManager.ts`, testes correspondentes,
   `packages/shared/CLAUDE.md`.
-- Backend Pi intocado: usa `tool_execute_response`, caminho diferente e sadio.
-- `PrerequisiteManager` intocado: a política `strict` está correta; o bug é o encoding do bloqueio.
+- Backend Pi: o encoding do bloqueio não muda (usa `tool_execute_response`), mas o re-arme por turno
+  do `PrerequisiteManager` vale para ele também, porque mora em `BaseAgent.chat()`.
+- `PrerequisiteManager`: a política `strict` (docs do browser) continua intocada e imune ao
+  fallback; o que muda é a calibragem do escape hatch não-strict, agora por turno.
 - Sem mudança de contrato RPC ou de tipos compartilhados (`AgentEvent` não muda). O `stop_reason`
   do `result` do SDK não é plumbado até o `SessionManager`: isso exigiria campo novo atravessando
   `packages/core/src/types/message.ts`, o adapter de eventos do Claude e o `SessionManager`.

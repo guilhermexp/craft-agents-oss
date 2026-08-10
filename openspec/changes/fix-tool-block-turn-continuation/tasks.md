@@ -41,3 +41,25 @@
 ## 6. DOX
 
 - [x] 6.1 Atualizar `packages/shared/CLAUDE.md` com o contrato de bloqueio do backend Claude.
+
+## 7. Correções da revisão (segunda rodada)
+
+- [x] 7.1 Guardar o branch genérico do `SessionManager` contra parada intencional:
+      `shouldReportMissingAssistantResponse()` exportada como seam puro, negando
+      `stopRequested`, `wasInterrupted` e fila de mensagens não vazia (cobre Stop e Redirect).
+- [x] 7.2 Teste vermelho→verde em `packages/server-core/src/sessions/no-response-guard.test.ts`.
+- [x] 7.3 `PrerequisiteManager.beginTurn()` re-arma só `rejectionCounts`, chamado no início de
+      `BaseAgent.chat()`; `readFiles`/`pendingSkillPaths` seguem com vida de sessão.
+- [x] 7.4 `MAX_REJECTIONS = 3`, com a justificativa da nova semântica registrada no proposal.
+- [x] 7.5 Braço de skills libera apenas o path cobrado (o mais antigo pendente) em vez de
+      `pendingSkillPaths.clear()`.
+- [x] 7.6 Ampliar `packages/shared/src/agent/core/__tests__/prerequisite-manager.isolated.ts`:
+      duas chamadas no mesmo turno não liberam, re-arme por turno, liberação de um path só.
+      Registrar o run VERMELHO antes do fix e o VERDE depois.
+- [x] 7.7 `encodeClaudeToolBlock(result, steerContext?)` propaga o steer no deny; `canDeliverSteer()`
+      decide quem entrega. O ramo `endTurn` não consome o steer (`steer_undelivered` re-enfileira).
+- [x] 7.8 Cobrir 7.7 em `packages/shared/src/agent/__tests__/claude-tool-block-encoding.test.ts`.
+- [x] 7.9 Corrigir o comentário do invariante `endTurn` em `tool-permission-dispatcher.ts`: negação
+      no prompt vinda de usuário, cleanup (`clearPendingPermissions`) ou fail-closed do broker.
+- [x] 7.10 DOX: atualizar `packages/shared/CLAUDE.md` com o contrato do prerequisite por turno e a
+      entrega do steer no deny.

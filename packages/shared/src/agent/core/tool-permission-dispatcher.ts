@@ -69,9 +69,11 @@ export interface ToolPermissionContext {
  *
  * `endTurn` on a block is the ONLY way a denied tool ends the agent turn. The
  * default is to deny the tool and keep the turn alive, so the model reads the
- * reason and corrects course. Only an explicit user denial at a permission
- * prompt sets it: a turn ends when a human ended it, never because a guard
- * fired.
+ * reason and corrects course. It is set only by a denial at the permission
+ * prompt: the user answering no, `clearPendingPermissions()` resolving every
+ * pending prompt as denied during forceAbort/destroy (the turn is already dying
+ * there), or the session broker's fail-closed rejection when it cannot decide.
+ * A guard firing on its own never ends the turn.
  */
 export type ToolPermissionResult =
   | { type: 'allow' }
@@ -327,8 +329,11 @@ export class ToolPermissionDispatcher {
     this.pendingPermissions.delete(requestId);
 
     if (!allowed) {
-      // The one block that ends the turn: the human said no. Every other block
-      // denies the tool and leaves the model running to recover.
+      // The one block that ends the turn: the permission prompt came back
+      // denied. Usually that is the human saying no; abort cleanup
+      // (clearPendingPermissions) and the broker's fail-closed rejection
+      // resolve the same promise. Every other block denies the tool and leaves
+      // the model running to recover.
       return { type: 'block', reason: 'Permission denied by user.', endTurn: true };
     }
 

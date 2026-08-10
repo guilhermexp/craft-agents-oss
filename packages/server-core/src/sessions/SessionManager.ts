@@ -1177,6 +1177,31 @@ export function resolveSupportsBranching(managed: ManagedSession): boolean {
   }).capabilities.supportsBranching
 }
 
+/**
+ * Whether a turn that produced no assistant message should surface the generic
+ * retryable "No Response" error.
+ *
+ * Only unintentional silence qualifies. `cancelProcessing` leaves `isProcessing`
+ * true on purpose so the event loop drains, so the `complete` event lands on
+ * this branch with the stop signals still set — the early returns above it only
+ * cover auth retry and explicit handoffs. Stop already renders "Response
+ * interrupted", and a queued mid-stream message is about to be replayed as the
+ * next turn; a red retry card in either case is a false positive.
+ *
+ * `wasInterrupted` also covers the redirect path (`forceAbort(Redirect)`), which
+ * queues the message and cuts the turn short deliberately.
+ *
+ * Exported as the test seam for that condition: reaching the branch itself needs
+ * a live SDK turn.
+ */
+export function shouldReportMissingAssistantResponse(signals: {
+  stopRequested?: boolean
+  wasInterrupted?: boolean
+  queuedMessageCount: number
+}): boolean {
+  return !signals.stopRequested && !signals.wasInterrupted && signals.queuedMessageCount === 0
+}
+
 const DEFAULT_TOKEN_USAGE = {
   inputTokens: 0, outputTokens: 0, totalTokens: 0,
   contextTokens: 0, costUsd: 0,
@@ -6399,11 +6424,15 @@ export class SessionManager implements ISessionManager {
                 canRetry: false,
                 details: errorMessage.errorDetails,
               })
-            } else {
-              // No captured API error: the turn still ended with nothing to show.
-              // A blocked tool used to land here and leave the user with a red tool
-              // card and no explanation, so never stop at the warning above — always
-              // put something retryable on screen.
+            } else if (shouldReportMissingAssistantResponse({
+              stopRequested: managed.stopRequested,
+              wasInterrupted: managed.wasInterrupted,
+              queuedMessageCount: managed.messageQueue.length,
+            })) {
+              // No captured API error and nothing intentional about the silence:
+              // the turn ended with nothing to show. A blocked tool used to land
+              // here and leave the user with a red tool card and no explanation,
+              // so always put something retryable on screen.
               const genericTitle = 'No Response'
               const genericMessage = 'The turn ended without a response. This usually means a tool call was refused or the model stopped early.'
               const genericDetails = [

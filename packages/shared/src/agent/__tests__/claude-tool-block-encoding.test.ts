@@ -14,9 +14,15 @@
  * keep it (the model must read a failure), control-flow blocks must not get it
  * — notably the successful mid-turn source activation, where the marker would
  * tell the model the activation failed.
+ *
+ * A pending steer message (the user typing mid-turn) rides on the same hook
+ * output as `additionalContext`. It is deliverable on every outcome that keeps
+ * the turn alive — including a deny — and must NOT be attached to the turn-
+ * ending denial, where the agent loop stops before reading it: leaving it
+ * pending is what lets chatImpl emit `steer_undelivered` and re-queue it.
  */
 import { describe, it, expect } from 'bun:test';
-import { encodeClaudeToolBlock } from '../claude-agent.ts';
+import { canDeliverSteer, encodeClaudeToolBlock } from '../claude-agent.ts';
 
 describe('encodeClaudeToolBlock', () => {
   it('keeps the turn alive when a prerequisite blocks a tool', () => {
@@ -88,5 +94,66 @@ describe('encodeClaudeToolBlock', () => {
       reason: '[ERROR] Denied',
       stopReason: '[ERROR] Denied',
     });
+  });
+});
+
+describe('encodeClaudeToolBlock steer propagation', () => {
+  const steer = 'The user just sent a new message: switch to the other file.';
+
+  it('carries a pending steer as additionalContext on an error deny', () => {
+    const encoded = encodeClaudeToolBlock({ reason: 'Blocked in safe mode', isError: true }, steer);
+    expect(encoded).toEqual({
+      continue: true,
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: '[ERROR] Blocked in safe mode',
+        additionalContext: steer,
+      },
+    });
+  });
+
+  it('carries a pending steer as additionalContext on a control-flow deny', () => {
+    const encoded = encodeClaudeToolBlock({ reason: 'Source activated.' }, steer);
+    expect(encoded).toEqual({
+      continue: true,
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: 'Source activated.',
+        additionalContext: steer,
+      },
+    });
+  });
+
+  it('omits additionalContext when there is no pending steer', () => {
+    const encoded = encodeClaudeToolBlock({ reason: 'Blocked in safe mode', isError: true });
+    expect(encoded).not.toHaveProperty('hookSpecificOutput.additionalContext');
+  });
+
+  it('never attaches a steer to the turn-ending denial', () => {
+    const reason = 'Permission denied by user.';
+    const encoded = encodeClaudeToolBlock({ reason, endTurn: true }, steer);
+    expect(encoded).toEqual({
+      continue: false,
+      decision: 'block',
+      reason,
+      stopReason: reason,
+    });
+  });
+});
+
+describe('canDeliverSteer', () => {
+  it('delivers on every outcome that keeps the turn alive', () => {
+    expect(canDeliverSteer({ type: 'allow' })).toBe(true);
+    expect(canDeliverSteer({ type: 'modify', input: {} })).toBe(true);
+    expect(canDeliverSteer({ type: 'passthrough' })).toBe(true);
+    expect(canDeliverSteer({ type: 'block', reason: 'Prerequisite missing', isError: true })).toBe(true);
+  });
+
+  it('does not deliver on the turn-ending denial, so the steer stays pending', () => {
+    expect(
+      canDeliverSteer({ type: 'block', reason: 'Permission denied by user.', endTurn: true }),
+    ).toBe(false);
   });
 });
