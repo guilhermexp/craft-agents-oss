@@ -204,6 +204,11 @@ export const LOCAL_ONLY_NAMESPACES = new Set<string>([
   RPC_NAMESPACES.browserPane.INTERACTED,
   RPC_NAMESPACES.browserPane.LIST_PROFILES,
   RPC_NAMESPACES.browserPane.CREATE_PROFILE,
+  // Both cookie channels touch the local macOS Keychain and the local Chrome
+  // cookie DB, and write into a local Electron partition. Proxying them to a
+  // remote workspace would read the SERVER's cookie jar instead of the user's.
+  RPC_NAMESPACES.browserPane.PREVIEW_COOKIE_IMPORT,
+  RPC_NAMESPACES.browserPane.IMPORT_COOKIES,
   RPC_NAMESPACES.browserPane.DELETE_PROFILE,
   RPC_NAMESPACES.browserPane.RENAME_PROFILE,
   RPC_NAMESPACES.browserPane.SWITCH_PROFILE,

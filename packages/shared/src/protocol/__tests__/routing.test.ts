@@ -68,4 +68,20 @@ describe('channel routing behavior', () => {
       }
     }
   })
+
+  test('browserPane.importCookies is LOCAL_ONLY, like its profile siblings', () => {
+    // The reader touches the local macOS Keychain plus the local Chrome cookie
+    // DB and writes into a local Electron partition. An unclassified channel
+    // falls through isLocalOnly() to the workspaceClient, which would run the
+    // import against a REMOTE host's cookie jar.
+    expect(LOCAL_ONLY_NAMESPACES.has(RPC_NAMESPACES.browserPane.IMPORT_COOKIES)).toBe(true)
+    expect(REMOTE_ELIGIBLE_NAMESPACES.has(RPC_NAMESPACES.browserPane.IMPORT_COOKIES)).toBe(false)
+  })
+
+  test('every browserPane channel is LOCAL_ONLY', () => {
+    for (const ch of Object.values(RPC_NAMESPACES.browserPane)) {
+      expect({ channel: ch, local: LOCAL_ONLY_NAMESPACES.has(ch) })
+        .toEqual({ channel: ch, local: true })
+    }
+  })
 })

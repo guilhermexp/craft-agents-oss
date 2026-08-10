@@ -589,11 +589,38 @@ renderer privilegiado. O favicon é o caso que quase escapou:
 
 ## Browser cookie import
 
+**This feature is user-only. There is no agent-facing cookie import, and there
+must not be one.** The `userOnly` profile capability exists to keep the user's
+imported cookie jar away from an agent-driven pane; an agent-callable import
+would hand it over through the front door. The agent tool proposed as tasks
+3.3–3.7 of `openspec/changes/add-browser-cookie-import/` is cancelled, and the
+corresponding capability was removed from that change's spec delta.
+
 The macOS Chrome/Chromium reader lives under
 `packages/shared/src/browser-cookies/`. Keep it independent from Electron and
 keep decrypted values in memory only for the duration of a read. Never log,
 persist in app JSON, or return decrypted cookie values from a tool/UI result.
 Per-row decryption failures are counted as skipped and must not abort the read.
+Reader invariants that are load-bearing:
+
+- `DEFAULT_SENSITIVE_HOST_DENYLIST` (Google account hosts) is applied **before**
+  decryption — a denylisted row's value is never materialized, not even to be
+  discarded. Matching is exact per host with a leading dot ignored; the list is
+  overridable per call through `denylist`. Withheld rows are reported as
+  `blocked`, which must stay distinct from `skipped`.
+- `previewChromeCookies` selects `host_key` only. It must never decrypt and must
+  never need the Keychain password, because it runs *before* the user confirms.
+- The derived AES key is wiped with `key.fill(0)` in the read's `finally`. The
+  Keychain password is an immutable JS string and cannot be wiped — do not
+  pretend otherwise.
+- The temp copy of the cookie DB holds `host_key` and `name` in clear text.
+  `sweepStaleCookieTempDirs` runs at main-process startup because an exit hook
+  cannot run after SIGKILL, which is the case that strands the copy.
+- The Chrome profile name is validated against `/^[A-Za-z0-9 _-]+$/` and the
+  resolved path is confined under the browser's application-support directory.
+  `join` does not neutralize `..`.
+- The domain-hash prefix check uses `.equals()`, not `timingSafeEqual`: both
+  sides are derived locally from the row's own host, so there is no secret.
 
 Browser profiles may declare `userOnly: true`. Preserve that flag through
 `sanitizeBrowserProfileInput`, `normalizeBrowserProfile`, and
@@ -616,30 +643,55 @@ reader filter.
 Map Chrome SameSite integers to Electron strings, preserve dotted domains, and
 count individual write failures as skipped without aborting the remaining
 writes. Its result is counts-only (`imported`/`skipped`); do not expose this
-phase-only method through `IBrowserPaneManager` or the remote bridge.
+phase-only method — nor `previewCookieImport` — through `IBrowserPaneManager`
+or the remote bridge.
 
-The user bulk-import surface is the `browserPane.IMPORT_COOKIES` RPC plus
-`BrowserProfilePicker`. The handler must accept only a user-only target, force
-`callerIntent: "user"`, and keep the manager's empty-domain bulk read internal.
+The user bulk-import surface is the `browserPane.PREVIEW_COOKIE_IMPORT` and
+`browserPane.IMPORT_COOKIES` RPCs plus `BrowserProfilePicker`. Both channels
+MUST stay in `LOCAL_ONLY_NAMESPACES`: `isLocalOnly()` is a `Set.has`, so an
+unclassified channel is proxied to the workspace client, and against a remote
+workspace the reader would open the SERVER's Keychain and cookie store.
+`routing.test.ts` asserts that every `browserPane` channel is local-only.
+The handler must accept only a user-only target, force `callerIntent: "user"`,
+and keep the manager's empty-domain bulk read internal. It maps each
+`ChromeCookieReaderError` code (plus the not-user-only refusal) to a distinct
+`browser-cookie-import:<reason>` message and logs the reason code only — never
+the underlying error, which can carry host names.
 The picker must identify Google Chrome's `Default` profile and the receiving
-app profile before import, warn about the macOS Keychain prompt and agent
+app profile, preview the counts (cookies, distinct hosts, withheld) so the
+confirmation is not blind, warn about the macOS Keychain prompt and agent
 inaccessibility, and display counts only.
+
+`better-sqlite3` cannot be instantiated under Bun (oven-sh/bun#4290), so the
+bun tests inject a `bun:sqlite` fake through the `openCookieDatabase` seam. The
+production path is covered separately by
+`chrome-cookie-reader.production-path.test.ts`, which drives
+`chrome-cookie-reader.node-harness.ts` in a Node child process against a real
+SQLite file with no seam injected. Keep that harness working when the reader
+changes; it is the only test that exercises what actually runs on click.
 
 ### Browser cookie import child index
 
-- Reader and decrypted in-memory shape:
+- Reader, denylist, preview, temp sweep and decrypted in-memory shape:
   `packages/shared/src/browser-cookies/`.
+- Production-path coverage (real `better-sqlite3`, Node child process):
+  `packages/shared/src/browser-cookies/chrome-cookie-reader.node-harness.ts` and
+  `packages/shared/src/browser-cookies/chrome-cookie-reader.production-path.test.ts`.
 - Capability and partition resolution:
   `apps/electron/src/main/browser-profile-resolver.ts`.
-- Electron cookie injection:
+- Electron cookie injection and preview:
   `apps/electron/src/main/browser-pane-manager.ts`.
+- Channel definition and local-only routing:
+  `packages/shared/src/protocol/channels.ts` and
+  `packages/shared/src/protocol/routing.ts`.
 - User RPC registration and renderer contract:
-  `apps/electron/src/main/handlers/browser.ts`,
-  `apps/electron/src/transport/channel-map.ts`, and
-  `apps/electron/src/shared/types.ts`.
+  `apps/electron/src/main/handlers/browser.ts` and the `RPC_CONTRACT` leaves in
+  `apps/electron/src/shared/types.ts` (`channel-map.ts` is derived — do not edit
+  it by hand).
 - Profile creation and bulk-import UI:
   `apps/electron/src/renderer/components/browser/BrowserProfilePicker.tsx` and
   `apps/electron/src/renderer/hooks/useBrowserProfiles.ts`.
+- Startup sweep call site: `apps/electron/src/main/index.ts`.
 
 ## Validation
 

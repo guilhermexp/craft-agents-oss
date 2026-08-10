@@ -24,8 +24,8 @@ import {
   type BrowserInstanceInfo,
 } from '../shared/types'
 import { DEFAULT_THEME, loadAppTheme, getAllowRemoteEvaluate } from '@craft-agent/shared/config'
-import { readChromeCookies } from '@craft-agent/shared/browser-cookies/chrome-cookie-reader'
-import type { BrowserCookieSameSite } from '@craft-agent/shared/browser-cookies/types'
+import { previewChromeCookies, readChromeCookies } from '@craft-agent/shared/browser-cookies/chrome-cookie-reader'
+import type { BrowserCookieImportPreview, BrowserCookieSameSite } from '@craft-agent/shared/browser-cookies/types'
 import { CodedError } from '@craft-agent/shared/protocol'
 import { getBrowserLiveFxCornerRadii } from '../shared/browser-live-fx'
 import type { IBrowserPaneManager, BrowserInstanceSnapshot } from '@craft-agent/server-core/handlers'
@@ -558,6 +558,28 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       imported,
       skipped: readResult.skipped + writeResults.length - imported,
     }
+  }
+
+  /**
+   * Counts for the pre-import confirmation. Reads `host_key` only, so it
+   * neither decrypts a value nor triggers the macOS Keychain prompt — the user
+   * has not agreed to anything yet at this point.
+   */
+  async previewCookieImport(input: {
+    profileId?: string
+    callerIntent: 'agent' | 'user'
+  }): Promise<BrowserCookieImportPreview> {
+    if (
+      input.profileId
+      && input.profileId !== DEFAULT_BROWSER_PROFILE_ID
+      && !this.browserProfilesProvider().some(profile => profile.id === input.profileId)
+    ) {
+      throw new Error(`Unknown profile id: ${input.profileId}`)
+    }
+    // Same capability gate as the import it precedes: an agent must never
+    // learn the user's full signed-in host list either.
+    this.resolveProfileId(input.profileId, input.callerIntent === 'agent' ? 'session' : 'manual')
+    return previewChromeCookies({})
   }
 
   private touchProfileLastUsed(profileId: string): void {

@@ -6,9 +6,9 @@ import { join } from 'node:path'
 import { Database } from 'bun:sqlite'
 import {
   ChromeCookieReaderError,
+  previewChromeCookies,
   readChromeCookies,
   type ChromeCookieDatabase,
-  type ChromeCookieRow,
 } from './chrome-cookie-reader'
 
 const KEYCHAIN_PASSWORD = 'test-safe-storage-password'
@@ -24,6 +24,8 @@ interface FixtureCookie {
   httpOnly?: boolean
   sameSite?: -1 | 0 | 1 | 2
   domainHashPrefix?: boolean
+  /** Encrypt under a different Keychain password, so decryption throws. */
+  password?: string
 }
 
 describe('readChromeCookies', () => {
@@ -55,8 +57,13 @@ describe('readChromeCookies', () => {
     rmSync(fixtureDirectory, { recursive: true, force: true })
   })
 
-  function encryptValue(domain: string, value: string, domainHashPrefix = false): Buffer {
-    const key = pbkdf2Sync(KEYCHAIN_PASSWORD, 'saltysalt', 1003, 16, 'sha1')
+  function encryptValue(
+    domain: string,
+    value: string,
+    domainHashPrefix = false,
+    password = KEYCHAIN_PASSWORD,
+  ): Buffer {
+    const key = pbkdf2Sync(password, 'saltysalt', 1003, 16, 'sha1')
     const prefix = domainHashPrefix
       ? createHash('sha256').update(domain).digest()
       : Buffer.alloc(0)
@@ -78,7 +85,7 @@ describe('readChromeCookies', () => {
     `).run(
       cookie.domain,
       cookie.name,
-      encryptValue(cookie.domain, cookie.value, cookie.domainHashPrefix),
+      encryptValue(cookie.domain, cookie.value, cookie.domainHashPrefix, cookie.password),
       cookie.path ?? '/',
       cookie.expiresUtc ?? 0,
       cookie.secure ? 1 : 0,
@@ -87,15 +94,30 @@ describe('readChromeCookies', () => {
     )
   }
 
-  function read(domain?: string) {
+  function read(domain?: string, denylist?: readonly string[]) {
     if (!database) throw new Error('Fixture database is not open')
     database.close()
     database = null
     return readChromeCookies({
       cookieDbPath: databasePath,
       domain,
+      denylist,
       platform: 'darwin',
       readKeychainPassword: () => KEYCHAIN_PASSWORD,
+      openCookieDatabase: openBunSqliteDatabase,
+    })
+  }
+
+  function preview(domain?: string, denylist?: readonly string[]) {
+    if (!database) throw new Error('Fixture database is not open')
+    database.close()
+    database = null
+    // No `readKeychainPassword`: the preview must never need one.
+    return previewChromeCookies({
+      cookieDbPath: databasePath,
+      domain,
+      denylist,
+      platform: 'darwin',
       openCookieDatabase: openBunSqliteDatabase,
     })
   }
@@ -103,8 +125,8 @@ describe('readChromeCookies', () => {
   function openBunSqliteDatabase(path: string): ChromeCookieDatabase {
     const copiedDatabase = new Database(path, { readonly: true })
     return {
-      readCookies(sql, parameters) {
-        return copiedDatabase.query(sql).all(...parameters) as ChromeCookieRow[]
+      readCookies<TRow>(sql: string, parameters: readonly string[]): TRow[] {
+        return copiedDatabase.query(sql).all(...parameters) as TRow[]
       },
       close() {
         copiedDatabase.close()
@@ -129,6 +151,7 @@ describe('readChromeCookies', () => {
         sameSite: -1,
       }],
       skipped: 0,
+      blocked: 0,
     })
   })
 
@@ -241,6 +264,121 @@ describe('readChromeCookies', () => {
     } catch (error) {
       expect(error).toBeInstanceOf(ChromeCookieReaderError)
       expect((error as ChromeCookieReaderError).code).toBe('unsupported-platform')
+    }
+  })
+
+  it('withholds a denylisted host before it is ever decrypted', () => {
+    insertCookie({ domain: 'example.com', name: 'ok', value: 'fine' })
+    // Encrypted under a different password: decrypting it throws, so it would
+    // land in `skipped`. Landing in `blocked` with `skipped: 0` is the proof
+    // that the row was dropped before `decryptCookieValue` ever saw it.
+    insertCookie({
+      domain: 'accounts.google.com',
+      name: 'SID',
+      value: 'must-never-be-decrypted',
+      password: 'a-different-password',
+    })
+
+    const result = read()
+
+    expect(result.cookies.map(cookie => cookie.domain)).toEqual(['example.com'])
+    expect(result.blocked).toBe(1)
+    expect(result.skipped).toBe(0)
+  })
+
+  it('denies a dotted host the same as its bare form', () => {
+    insertCookie({ domain: '.google.com', name: 'SID', value: 'domain-cookie' })
+    insertCookie({ domain: 'mail.google.com', name: 'OSID', value: 'mail-cookie' })
+
+    const result = read()
+
+    expect(result.cookies).toHaveLength(0)
+    expect(result.blocked).toBe(2)
+  })
+
+  it('does not deny an unlisted sibling host', () => {
+    // Matching is exact per host, so the default list withholds exactly the
+    // hosts it names and nothing else.
+    insertCookie({ domain: 'notgoogle.com', name: 'a', value: 'one' })
+
+    const result = read()
+
+    expect(result.cookies.map(cookie => cookie.domain)).toEqual(['notgoogle.com'])
+    expect(result.blocked).toBe(0)
+  })
+
+  it('accepts a caller-supplied denylist in place of the default', () => {
+    insertCookie({ domain: 'accounts.google.com', name: 'SID', value: 'now-allowed' })
+    insertCookie({ domain: 'intranet.example.com', name: 'sso', value: 'now-denied' })
+
+    const result = read(undefined, ['intranet.example.com'])
+
+    expect(result.cookies.map(cookie => cookie.domain)).toEqual(['accounts.google.com'])
+    expect(result.blocked).toBe(1)
+  })
+
+  it('previews cookie and host counts without a Keychain password', () => {
+    insertCookie({ domain: 'example.com', name: 'a', value: 'one' })
+    insertCookie({ domain: '.example.com', name: 'b', value: 'two' })
+    insertCookie({ domain: 'other.com', name: 'c', value: 'three' })
+    insertCookie({ domain: 'accounts.google.com', name: 'SID', value: 'four' })
+    insertCookie({ domain: 'mail.google.com', name: 'OSID', value: 'five' })
+
+    // `preview` passes no `readKeychainPassword`; needing one would throw.
+    expect(preview()).toEqual({
+      cookies: 3,
+      hosts: 2,
+      blockedCookies: 2,
+      blockedHosts: 2,
+    })
+  })
+
+  it('honors the domain filter in the preview pass', () => {
+    insertCookie({ domain: 'example.com', name: 'a', value: 'one' })
+    insertCookie({ domain: 'other.com', name: 'b', value: 'two' })
+
+    expect(preview('example.com')).toEqual({
+      cookies: 1,
+      hosts: 1,
+      blockedCookies: 0,
+      blockedHosts: 0,
+    })
+  })
+
+  it('refuses a Chrome profile name that could traverse out of the browser dir', () => {
+    for (const profile of ['../../../../etc', 'Default/../../..', 'Default/Network']) {
+      try {
+        readChromeCookies({
+          profile,
+          platform: 'darwin',
+          readKeychainPassword: () => KEYCHAIN_PASSWORD,
+          openCookieDatabase: openBunSqliteDatabase,
+        })
+        throw new Error(`Expected readChromeCookies to refuse profile "${profile}"`)
+      } catch (error) {
+        expect(error).toBeInstanceOf(ChromeCookieReaderError)
+        expect((error as ChromeCookieReaderError).code).toBe('invalid-profile')
+      }
+    }
+  })
+
+  it('accepts the profile names Chrome actually creates', () => {
+    // These pass the name check and fail later, on the missing database —
+    // which is what proves the check did not reject them.
+    for (const profile of ['Default', 'Profile 1', 'Craft_Test-Profile 999']) {
+      try {
+        readChromeCookies({
+          browser: 'chromium',
+          profile: `${profile} craft-nonexistent`,
+          platform: 'darwin',
+          readKeychainPassword: () => KEYCHAIN_PASSWORD,
+          openCookieDatabase: openBunSqliteDatabase,
+        })
+        throw new Error(`Expected readChromeCookies to throw for profile "${profile}"`)
+      } catch (error) {
+        expect(error).toBeInstanceOf(ChromeCookieReaderError)
+        expect((error as ChromeCookieReaderError).code).toBe('cookie-db-not-found')
+      }
     }
   })
 })

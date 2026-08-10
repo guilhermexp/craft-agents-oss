@@ -12,6 +12,13 @@ const fromPartition = mock((_partition: string) => ({
 const readChromeCookies = mock(async (_options: { domain: string }) => ({
   cookies: [] as BrowserCookie[],
   skipped: 0,
+  blocked: 0,
+}))
+const previewChromeCookies = mock((_options: Record<string, unknown>) => ({
+  cookies: 0,
+  hosts: 0,
+  blockedCookies: 0,
+  blockedHosts: 0,
 }))
 
 mock.module('electron', () => ({
@@ -28,6 +35,15 @@ mock.module('electron', () => ({
   nativeTheme: {
     shouldUseDarkColors: false,
   },
+  // Favicon transport (added on main) resolves `net` at module load.
+  net: {
+    request: mock(() => ({
+      on: mock(() => {}),
+      end: mock(() => {}),
+      abort: mock(() => {}),
+    })),
+  },
+  WebContentsView: class MockWebContentsView {},
   session: {
     defaultSession: {},
     fromPartition,
@@ -44,6 +60,7 @@ mock.module('electron', () => ({
 }))
 
 mock.module('@craft-agent/shared/browser-cookies/chrome-cookie-reader', () => ({
+  previewChromeCookies,
   readChromeCookies,
 }))
 
@@ -101,6 +118,7 @@ describe('BrowserPaneManager.importCookies', () => {
     readChromeCookies.mockImplementation(async () => ({
       cookies: [],
       skipped: 0,
+      blocked: 0,
     }))
   })
 
@@ -129,6 +147,7 @@ describe('BrowserPaneManager.importCookies', () => {
         }),
       ],
       skipped: 0,
+      blocked: 0,
     })
     const manager = new BrowserPaneManager(() => profiles)
 
@@ -189,6 +208,7 @@ describe('BrowserPaneManager.importCookies', () => {
         cookie({ name: 'strict', sameSite: 2 }),
       ],
       skipped: 0,
+      blocked: 0,
     })
     const manager = new BrowserPaneManager(() => profiles)
 
@@ -214,6 +234,7 @@ describe('BrowserPaneManager.importCookies', () => {
         cookie({ name: 'third' }),
       ],
       skipped: 0,
+      blocked: 0,
     })
     setCookie.mockImplementation(async (details) => {
       if (details.name === 'rejected') {
@@ -240,6 +261,7 @@ describe('BrowserPaneManager.importCookies', () => {
         cookie({ name: 'third' }),
       ],
       skipped: 0,
+      blocked: 0,
     })
     setCookie.mockImplementation((details) => {
       if (details.name === 'throws-synchronously') {
@@ -293,6 +315,7 @@ describe('BrowserPaneManager.importCookies', () => {
     readChromeCookies.mockResolvedValue({
       cookies: [cookie()],
       skipped: 0,
+      blocked: 0,
     })
     const manager = new BrowserPaneManager(() => profiles)
 
@@ -305,5 +328,64 @@ describe('BrowserPaneManager.importCookies', () => {
     expect(readChromeCookies).not.toHaveBeenCalled()
     expect(fromPartition).not.toHaveBeenCalled()
     expect(setCookie).not.toHaveBeenCalled()
+  })
+})
+
+describe('BrowserPaneManager.previewCookieImport', () => {
+  beforeEach(() => {
+    fromPartition.mockClear()
+    setCookie.mockReset()
+    readChromeCookies.mockReset()
+    previewChromeCookies.mockReset()
+    previewChromeCookies.mockImplementation(() => ({
+      cookies: 12,
+      hosts: 5,
+      blockedCookies: 3,
+      blockedHosts: 2,
+    }))
+  })
+
+  it('returns counts without decrypting or writing anything', async () => {
+    const manager = new BrowserPaneManager(() => profiles)
+
+    const preview = await manager.previewCookieImport({
+      profileId: 'connected',
+      callerIntent: 'user',
+    })
+
+    expect(preview).toEqual({
+      cookies: 12,
+      hosts: 5,
+      blockedCookies: 3,
+      blockedHosts: 2,
+    })
+    // The preview must not open a partition, write a cookie, or reach the
+    // decrypting reader — otherwise it would trigger the Keychain prompt
+    // before the user has confirmed anything.
+    expect(readChromeCookies).not.toHaveBeenCalled()
+    expect(fromPartition).not.toHaveBeenCalled()
+    expect(setCookie).not.toHaveBeenCalled()
+  })
+
+  it('refuses an agent-intent preview of a user-only profile', async () => {
+    const manager = new BrowserPaneManager(() => profiles)
+
+    await expect(manager.previewCookieImport({
+      profileId: 'connected',
+      callerIntent: 'agent',
+    })).rejects.toBeInstanceOf(UserOnlyBrowserProfileError)
+
+    expect(previewChromeCookies).not.toHaveBeenCalled()
+  })
+
+  it('refuses an explicit unknown profile before scanning', async () => {
+    const manager = new BrowserPaneManager(() => profiles)
+
+    await expect(manager.previewCookieImport({
+      profileId: 'removed-profile',
+      callerIntent: 'user',
+    })).rejects.toThrow('Unknown profile id: removed-profile')
+
+    expect(previewChromeCookies).not.toHaveBeenCalled()
   })
 })

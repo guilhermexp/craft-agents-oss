@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { BrowserProfile, BrowserProfileSettings } from '@craft-agent/shared/config/types'
 import type { BrowserProfileInput } from '@craft-agent/shared/config/browser-profiles'
+import type { BrowserCookieImportPreview } from '@craft-agent/shared/browser-cookies/types'
 
 export interface UseBrowserProfilesResult {
   profiles: BrowserProfile[]
@@ -18,6 +19,7 @@ export interface UseBrowserProfilesResult {
   error: string | null
   refresh: () => Promise<void>
   createProfile: (input: BrowserProfileInput) => Promise<BrowserProfile>
+  previewCookieImport: (profileId: string) => Promise<BrowserCookieImportPreview>
   importCookies: (profileId: string) => Promise<{ imported: number; skipped: number }>
   renameProfile: (id: string, name: string) => Promise<BrowserProfile>
   deleteProfile: (id: string) => Promise<void>
@@ -67,6 +69,10 @@ export function useBrowserProfiles(): UseBrowserProfilesResult {
     return window.electronAPI.browserPane.importCookies(profileId)
   }, [])
 
+  const previewCookieImport = useCallback(async (profileId: string) => {
+    return window.electronAPI.browserPane.previewCookieImport(profileId)
+  }, [])
+
   const renameProfile = useCallback(async (id: string, name: string) => {
     return window.electronAPI.browserPane.renameProfile({ id, name })
   }, [])
@@ -91,6 +97,7 @@ export function useBrowserProfiles(): UseBrowserProfilesResult {
     error,
     refresh,
     createProfile,
+    previewCookieImport,
     importCookies,
     renameProfile,
     deleteProfile,

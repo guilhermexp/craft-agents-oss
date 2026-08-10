@@ -1,17 +1,50 @@
-import { createDecipheriv, createHash, pbkdf2Sync, timingSafeEqual } from 'node:crypto'
+import { createDecipheriv, createHash, pbkdf2Sync } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 import Database from 'better-sqlite3'
 import type {
   BrowserCookie,
+  BrowserCookieImportPreview,
   BrowserCookieReadResult,
   BrowserCookieSameSite,
 } from './types'
 
 const CHROME_EPOCH_OFFSET_SECONDS = 11_644_473_600
 const CHROME_COOKIE_IV = Buffer.alloc(16, 0x20)
+
+/** Prefix of the throwaway directory the locked cookie DB is copied into. */
+const COOKIE_TEMP_PREFIX = 'craft-chrome-cookies-'
+
+/**
+ * A temp copy older than this is a leftover from a process that died before
+ * its `finally` ran, never a read in flight. See `sweepStaleCookieTempDirs`.
+ */
+const STALE_COOKIE_TEMP_AGE_MS = 60 * 60 * 1000
+
+/**
+ * Profile directory names Chrome actually creates: `Default`, `Profile 1`,
+ * `Guest Profile`. Anything else — notably `..` — is refused before the path
+ * is built, because `join` happily resolves traversal segments.
+ */
+const CHROME_PROFILE_PATTERN = /^[A-Za-z0-9 _-]+$/
+
+/**
+ * Hosts whose cookies are never decrypted, not even to be discarded
+ * afterwards. Matching is exact on the host (a leading dot is ignored), so the
+ * list names each sensitive host rather than relying on suffix rules.
+ *
+ * Google is the default entry because it is where device-bound session
+ * credentials (DBSC) actually bite: those cookies would not authenticate a
+ * different browser even if copied, so withholding them is honest rather than
+ * restrictive. Callers may pass their own list through `denylist`.
+ */
+export const DEFAULT_SENSITIVE_HOST_DENYLIST: readonly string[] = [
+  'accounts.google.com',
+  'google.com',
+  'mail.google.com',
+]
 
 const CHROMIUM_BROWSERS = {
   chrome: {
@@ -40,6 +73,7 @@ export type ChromiumBrowser = keyof typeof CHROMIUM_BROWSERS
 
 export type ChromeCookieReaderErrorCode =
   | 'unsupported-platform'
+  | 'invalid-profile'
   | 'cookie-db-not-found'
   | 'keychain-read-failed'
   | 'cookie-db-read-failed'
@@ -54,14 +88,20 @@ export class ChromeCookieReaderError extends Error {
   }
 }
 
-export interface ReadChromeCookiesOptions {
+/** Everything needed to locate and open the cookie DB, without decrypting it. */
+export interface ChromeCookieScanOptions {
   browser?: ChromiumBrowser
   profile?: string
   domain?: string
   cookieDbPath?: string
   platform?: NodeJS.Platform
-  readKeychainPassword?: () => string
+  /** Overrides `DEFAULT_SENSITIVE_HOST_DENYLIST`. */
+  denylist?: readonly string[]
   openCookieDatabase?: ChromeCookieDatabaseFactory
+}
+
+export interface ReadChromeCookiesOptions extends ChromeCookieScanOptions {
+  readKeychainPassword?: () => string
 }
 
 export interface ChromeCookieRow {
@@ -75,12 +115,20 @@ export interface ChromeCookieRow {
   samesite: number
 }
 
+export interface ChromeCookieHostRow {
+  host_key: string
+}
+
 export interface ChromeCookieDatabase {
-  readCookies(sql: string, parameters: readonly string[]): ChromeCookieRow[]
+  readCookies<TRow = ChromeCookieRow>(sql: string, parameters: readonly string[]): TRow[]
   close(): void
 }
 
 export type ChromeCookieDatabaseFactory = (path: string) => ChromeCookieDatabase
+
+const COOKIE_COLUMNS = `host_key, name, encrypted_value, path, expires_utc,
+                 is_secure, is_httponly, samesite`
+const HOST_COLUMNS = 'host_key'
 
 function openBetterSqliteDatabase(path: string): ChromeCookieDatabase {
   const database = new Database(path, {
@@ -88,9 +136,9 @@ function openBetterSqliteDatabase(path: string): ChromeCookieDatabase {
     fileMustExist: true,
   })
   return {
-    readCookies(sql, parameters) {
+    readCookies<TRow>(sql: string, parameters: readonly string[]): TRow[] {
       return database
-        .prepare<string[], ChromeCookieRow>(sql)
+        .prepare<string[], TRow>(sql)
         .all(...parameters)
     },
     close() {
@@ -100,18 +148,36 @@ function openBetterSqliteDatabase(path: string): ChromeCookieDatabase {
 }
 
 function locateCookieDatabase(browser: ChromiumBrowser, profile: string): string {
+  if (!CHROME_PROFILE_PATTERN.test(profile)) {
+    throw new ChromeCookieReaderError(
+      'invalid-profile',
+      `Invalid ${browser} profile name`,
+    )
+  }
   const browserConfig = CHROMIUM_BROWSERS[browser]
-  const profileDirectory = join(
+  const browserDirectory = resolve(
     homedir(),
     'Library',
     'Application Support',
     ...browserConfig.applicationPath,
-    profile,
   )
+  const profileDirectory = resolve(browserDirectory, profile)
   const candidates = [
-    join(profileDirectory, 'Network', 'Cookies'),
-    join(profileDirectory, 'Cookies'),
+    resolve(profileDirectory, 'Network', 'Cookies'),
+    resolve(profileDirectory, 'Cookies'),
   ]
+  // Belt and braces: the pattern already rejects traversal, but the resolved
+  // path is what actually gets opened, so that is what gets confined.
+  const escapesBrowserDirectory = candidates.some((candidate) => {
+    const relativePath = relative(browserDirectory, candidate)
+    return relativePath === '' || relativePath.startsWith('..') || isAbsolute(relativePath)
+  })
+  if (escapesBrowserDirectory) {
+    throw new ChromeCookieReaderError(
+      'invalid-profile',
+      `Invalid ${browser} profile name`,
+    )
+  }
   const found = candidates.find(candidate => existsSync(candidate))
   if (!found) {
     throw new ChromeCookieReaderError(
@@ -165,8 +231,10 @@ function decryptCookieValue(row: ChromeCookieRow, key: Buffer): string {
   ])
 
   if (plaintext.length >= 32) {
+    // Both sides are derived locally from the row's own host, so there is no
+    // secret and no attacker to time here — a plain comparison is honest.
     const expectedDomainHash = createHash('sha256').update(row.host_key).digest()
-    if (timingSafeEqual(plaintext.subarray(0, 32), expectedDomainHash)) {
+    if (plaintext.subarray(0, 32).equals(expectedDomainHash)) {
       plaintext = plaintext.subarray(32)
     }
   }
@@ -193,9 +261,34 @@ function toBrowserCookie(row: ChromeCookieRow, key: Buffer): BrowserCookie {
   }
 }
 
-export function readChromeCookies(
-  options: ReadChromeCookiesOptions = {},
-): BrowserCookieReadResult {
+function normalizeHost(host: string): string {
+  return host.trim().toLowerCase().replace(/^\./, '')
+}
+
+function buildDenylist(denylist: readonly string[] | undefined): ReadonlySet<string> {
+  const entries = denylist ?? DEFAULT_SENSITIVE_HOST_DENYLIST
+  return new Set(entries.map(normalizeHost).filter(entry => entry.length > 0))
+}
+
+function buildCookieQuery(
+  columns: string,
+  domain: string | undefined,
+): { sql: string; parameters: string[] } {
+  const normalizedDomain = domain === undefined ? '' : normalizeHost(domain)
+  if (!normalizedDomain) {
+    return { sql: `SELECT ${columns} FROM cookies`, parameters: [] }
+  }
+  return {
+    sql: `SELECT ${columns} FROM cookies WHERE host_key = ? OR host_key = ?`,
+    parameters: [normalizedDomain, `.${normalizedDomain}`],
+  }
+}
+
+function resolveSourceDatabase(options: ChromeCookieScanOptions): {
+  browser: ChromiumBrowser
+  profile: string
+  path: string
+} {
   const platform = options.platform ?? process.platform
   if (platform !== 'darwin') {
     throw new ChromeCookieReaderError(
@@ -206,15 +299,97 @@ export function readChromeCookies(
 
   const browser = options.browser ?? 'chrome'
   const profile = options.profile?.trim() || 'Default'
-  const sourceDatabasePath = options.cookieDbPath
-    ?? locateCookieDatabase(browser, profile)
+  const path = options.cookieDbPath ?? locateCookieDatabase(browser, profile)
 
-  if (!existsSync(sourceDatabasePath)) {
+  if (!existsSync(path)) {
     throw new ChromeCookieReaderError(
       'cookie-db-not-found',
       `Cookie database not found for ${browser} profile "${profile}"`,
     )
   }
+  return { browser, profile, path }
+}
+
+/**
+ * Copy the (locked) live cookie DB to a private temp dir, hand the open handle
+ * to `use`, and always close and delete afterwards.
+ */
+function withCookieDatabase<T>(
+  options: ChromeCookieScanOptions,
+  use: (database: ChromeCookieDatabase) => T,
+): T {
+  const { browser, profile, path: sourceDatabasePath } = resolveSourceDatabase(options)
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), COOKIE_TEMP_PREFIX))
+  const temporaryDatabasePath = join(temporaryDirectory, 'Cookies')
+  let database: ChromeCookieDatabase | null = null
+
+  try {
+    copyFileSync(sourceDatabasePath, temporaryDatabasePath)
+    database = (options.openCookieDatabase ?? openBetterSqliteDatabase)(
+      temporaryDatabasePath,
+    )
+    return use(database)
+  } catch (cause) {
+    if (cause instanceof ChromeCookieReaderError) throw cause
+    throw new ChromeCookieReaderError(
+      'cookie-db-read-failed',
+      `Unable to read cookies for ${browser} profile "${profile}"`,
+      cause,
+    )
+  } finally {
+    database?.close()
+    rmSync(temporaryDirectory, { recursive: true, force: true })
+  }
+}
+
+/**
+ * Count what an import would carry without decrypting anything: this pass
+ * selects `host_key` only, so no cookie value is ever materialized and the
+ * Keychain is never touched. It exists so the confirmation the user sees is
+ * not blind.
+ */
+export function previewChromeCookies(
+  options: ChromeCookieScanOptions = {},
+): BrowserCookieImportPreview {
+  const denied = buildDenylist(options.denylist)
+
+  return withCookieDatabase(options, (database) => {
+    const { sql, parameters } = buildCookieQuery(HOST_COLUMNS, options.domain)
+    const rows = database.readCookies<ChromeCookieHostRow>(sql, parameters)
+
+    const hosts = new Set<string>()
+    const blockedHosts = new Set<string>()
+    let cookies = 0
+    let blockedCookies = 0
+
+    for (const row of rows) {
+      const host = normalizeHost(row.host_key)
+      if (denied.has(host)) {
+        blockedCookies += 1
+        blockedHosts.add(host)
+        continue
+      }
+      cookies += 1
+      hosts.add(host)
+    }
+
+    return {
+      cookies,
+      hosts: hosts.size,
+      blockedCookies,
+      blockedHosts: blockedHosts.size,
+    }
+  })
+}
+
+export function readChromeCookies(
+  options: ReadChromeCookiesOptions = {},
+): BrowserCookieReadResult {
+  const denied = buildDenylist(options.denylist)
+  const browser = options.browser ?? 'chrome'
+
+  // Fail on platform/profile/missing-DB before prompting for the Keychain.
+  const source = resolveSourceDatabase(options)
 
   let password: string
   try {
@@ -227,53 +402,78 @@ export function readChromeCookies(
       cause,
     )
   }
+
+  // This 16-byte key decrypts the whole cookie store; it must not outlive the
+  // read. (`password` is an immutable JS string and cannot be wiped.)
   const key = deriveEncryptionKey(password)
-  const temporaryDirectory = mkdtempSync(join(tmpdir(), 'craft-chrome-cookies-'))
-  const temporaryDatabasePath = join(temporaryDirectory, 'Cookies')
-  let database: ChromeCookieDatabase | null = null
-
   try {
-    copyFileSync(sourceDatabasePath, temporaryDatabasePath)
-    database = (options.openCookieDatabase ?? openBetterSqliteDatabase)(
-      temporaryDatabasePath,
-    )
+    return withCookieDatabase({ ...options, cookieDbPath: source.path }, (database) => {
+      const { sql, parameters } = buildCookieQuery(COOKIE_COLUMNS, options.domain)
+      const rows = database.readCookies<ChromeCookieRow>(sql, parameters)
 
-    let rows: ChromeCookieRow[]
-    const normalizedDomain = options.domain?.trim().toLowerCase().replace(/^\./, '')
-    if (normalizedDomain) {
-      rows = database.readCookies(`
-          SELECT host_key, name, encrypted_value, path, expires_utc,
-                 is_secure, is_httponly, samesite
-          FROM cookies
-          WHERE host_key = ? OR host_key = ?
-        `, [normalizedDomain, `.${normalizedDomain}`])
-    } else {
-      rows = database.readCookies(`
-          SELECT host_key, name, encrypted_value, path, expires_utc,
-                 is_secure, is_httponly, samesite
-          FROM cookies
-        `, [])
-    }
+      const cookies: BrowserCookie[] = []
+      let skipped = 0
+      let blocked = 0
 
-    const cookies: BrowserCookie[] = []
-    let skipped = 0
-    for (const row of rows) {
-      try {
-        cookies.push(toBrowserCookie(row, key))
-      } catch {
-        skipped += 1
+      for (const row of rows) {
+        // Denylisted hosts are dropped before decryption, so their values are
+        // never materialized — not even to be discarded afterwards.
+        if (denied.has(normalizeHost(row.host_key))) {
+          blocked += 1
+          continue
+        }
+        try {
+          cookies.push(toBrowserCookie(row, key))
+        } catch {
+          skipped += 1
+        }
       }
-    }
-    return { cookies, skipped }
-  } catch (cause) {
-    if (cause instanceof ChromeCookieReaderError) throw cause
-    throw new ChromeCookieReaderError(
-      'cookie-db-read-failed',
-      `Unable to read cookies for ${browser} profile "${profile}"`,
-      cause,
-    )
+      return { cookies, skipped, blocked }
+    })
   } finally {
-    database?.close()
-    rmSync(temporaryDirectory, { recursive: true, force: true })
+    key.fill(0)
   }
+}
+
+/**
+ * Delete cookie-DB temp copies left behind by a process that died between the
+ * copy and its `finally`. The copy keeps `host_key` and `name` in clear text —
+ * the full list of sites the user is signed into — so a leftover is a real
+ * disclosure.
+ *
+ * Startup sweep rather than an exit hook on purpose: an exit hook does not run
+ * on SIGKILL or a hard crash, which is exactly the case that strands the file.
+ *
+ * Returns the number of directories removed.
+ */
+export function sweepStaleCookieTempDirs(options: {
+  root?: string
+  maxAgeMs?: number
+  now?: number
+} = {}): number {
+  const root = options.root ?? tmpdir()
+  const maxAgeMs = options.maxAgeMs ?? STALE_COOKIE_TEMP_AGE_MS
+  const now = options.now ?? Date.now()
+
+  let entries: string[]
+  try {
+    entries = readdirSync(root)
+  } catch {
+    return 0
+  }
+
+  let removed = 0
+  for (const entry of entries) {
+    if (!entry.startsWith(COOKIE_TEMP_PREFIX)) continue
+    const candidate = join(root, entry)
+    try {
+      if (now - statSync(candidate).mtimeMs < maxAgeMs) continue
+      rmSync(candidate, { recursive: true, force: true })
+      removed += 1
+    } catch {
+      // Best effort: a concurrent sweep may have removed it already. Skipping
+      // one leftover must not abort the rest of the sweep.
+    }
+  }
+  return removed
 }

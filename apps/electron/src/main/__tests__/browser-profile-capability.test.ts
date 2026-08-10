@@ -24,6 +24,15 @@ mock.module('electron', () => ({
   nativeTheme: {
     shouldUseDarkColors: false,
   },
+  // Favicon transport (added on main) resolves `net` at module load.
+  net: {
+    request: mock(() => ({
+      on: mock(() => {}),
+      end: mock(() => {}),
+      abort: mock(() => {}),
+    })),
+  },
+  WebContentsView: class MockWebContentsView {},
   session: {
     defaultSession: {},
     fromPartition,
@@ -71,7 +80,7 @@ const profiles: BrowserProfile[] = [
 ]
 
 describe('browser profile capability', () => {
-  it('refuses an agent-owned user-only profile before an instance can be created', () => {
+  it('refuses an agent-owned user-only profile before an instance can be created', async () => {
     const manager = new BrowserPaneManager(() => profiles)
     fromPartition.mockClear()
 
@@ -81,7 +90,7 @@ describe('browser profile capability', () => {
       profileId: 'connected',
     })).toThrow(UserOnlyBrowserProfileError)
 
-    expect(manager.listInstances()).toHaveLength(0)
+    expect(await manager.listInstances()).toHaveLength(0)
     expect(fromPartition).not.toHaveBeenCalled()
   })
 

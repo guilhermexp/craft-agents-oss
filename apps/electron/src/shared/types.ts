@@ -62,6 +62,7 @@ export type {
 import type { AuthState, SetupNeeds } from '@craft-agent/shared/auth/types';
 import type { AuthType, BrowserProfile, BrowserProfileSettings } from '@craft-agent/shared/config/types';
 import type { BrowserProfileInput } from '@craft-agent/shared/config/browser-profiles';
+import type { BrowserCookieImportPreview } from '@craft-agent/shared/browser-cookies/types';
 export type { AuthState, SetupNeeds, AuthType };
 
 // Credential health types
@@ -718,6 +719,7 @@ export const RPC_CONTRACT = {
   'browserPane.getProfileSettings': invoke<(() => Promise<BrowserProfileSettings>)>(RPC_NAMESPACES.browserPane.GET_PROFILE_SETTINGS),
   'browserPane.setProfileSettings': invoke<((partial: { alwaysAsk?: boolean; lastUsedProfileId?: string }) => Promise<BrowserProfileSettings>)>(RPC_NAMESPACES.browserPane.SET_PROFILE_SETTINGS),
   'browserPane.createProfile': invoke<((input: BrowserProfileInput) => Promise<BrowserProfile>)>(RPC_NAMESPACES.browserPane.CREATE_PROFILE),
+  'browserPane.previewCookieImport': invoke<((profileId: string) => Promise<BrowserCookieImportPreview>)>(RPC_NAMESPACES.browserPane.PREVIEW_COOKIE_IMPORT),
   'browserPane.importCookies': invoke<((profileId: string) => Promise<{ imported: number; skipped: number }>)>(RPC_NAMESPACES.browserPane.IMPORT_COOKIES),
   'browserPane.renameProfile': invoke<((payload: { id: string; name: string }) => Promise<BrowserProfile>)>(RPC_NAMESPACES.browserPane.RENAME_PROFILE),
   'browserPane.switchProfile': invoke<((payload: { instanceId: string; profileId: string }) => Promise<string | null>)>(RPC_NAMESPACES.browserPane.SWITCH_PROFILE),

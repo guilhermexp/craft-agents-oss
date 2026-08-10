@@ -74,11 +74,13 @@ Plan: `docs/plans/2026-07-24-001-feat-browser-cookie-import-plan.md` (U-IDs refe
   user-only, or the resolver must check it. Decide and close in phase 3.
   - files: `apps/electron/src/main/browser-profile-resolver.ts`
   - verify: `grep -q "DEFAULT_BROWSER_PROFILE_ID" apps/electron/src/main/browser-profile-resolver.ts`
-- [ ] 1.9 CARRY-FORWARD: the production SQLite path (`better-sqlite3`) is unexercised by tests — Bun
+- [x] 1.9 CARRY-FORWARD: the production SQLite path (`better-sqlite3`) is unexercised by tests — Bun
   1.3.14 cannot load its native binding, so tests inject `bun:sqlite` through the database seam.
-  Verified separately that `better-sqlite3` loads correctly under Node (the Electron runtime), so
-  the production path is sound in principle but unproven end-to-end. Close this with the real
-  validation in task 4.1.
+  **Closed by 3.15**, not by 4.1: the path is now exercised end to end in a Node child process
+  (the Electron runtime) against a real SQLite file in Chrome's cookie schema, with no database
+  seam injected. 4.1 remains as the with-real-Chrome check.
+  - files: `packages/shared/src/browser-cookies/chrome-cookie-reader.node-harness.ts`, `packages/shared/src/browser-cookies/chrome-cookie-reader.production-path.test.ts`
+  - verify: `bun test packages/shared/src/browser-cookies/chrome-cookie-reader.production-path.test.ts`
 
 ## 2. Injection (U3)
 
@@ -119,7 +121,7 @@ Plan: `docs/plans/2026-07-24-001-feat-browser-cookie-import-plan.md` (U-IDs refe
   identically at `adff3c1a` (pristine baseline, before any feature code). Timing-sensitive
   (`Bun.sleep(140)`), unrelated to cookies. Not ours to fix in this change.
 
-## 3. Surfaces — bulk UI + agent tool (U4, U5)
+## 3. Surfaces — bulk UI (U4)
 
 - [x] 3.1 Wire the RPC channel following the existing `browserPane.createProfile` recipe: add
   `IMPORT_COOKIES` to `channels.ts`, add the `browserPane.importCookies` leaf to `RPC_CONTRACT` in
@@ -135,39 +137,72 @@ Plan: `docs/plans/2026-07-24-001-feat-browser-cookie-import-plan.md` (U-IDs refe
   cookie names or values. Add `en.json` + `pt-BR.json` strings.
   - files: `apps/electron/src/renderer/components/browser/BrowserProfilePicker.tsx`, `packages/shared/src/i18n/locales/en.json`, `packages/shared/src/i18n/locales/pt-BR.json`
   - verify: `grep -q "importCookies" apps/electron/src/renderer/components/browser/BrowserProfilePicker.tsx`
-- [ ] 3.3 Register the `import_cookies` tool in `packages/session-tools-core/src/tool-defs.ts`:
-  `ImportCookiesSchema = z.object({ domain: z.string().min(1) })`, a `TOOL_DESCRIPTIONS` entry, and
-  a `defineTool('import_cookies', { executionMode: 'backend', safeMode: 'block', handler: null })`
-  entry in `SESSION_TOOL_DEFS`.
-  - files: `packages/session-tools-core/src/tool-defs.ts`
-  - verify: `grep -q "import_cookies" packages/session-tools-core/src/tool-defs.ts`
-- [ ] 3.4 Add `importCookies(domain)` to the `BrowserPaneFns` interface in
-  `packages/shared/src/agent/browser-tools.ts` and implement it in the `browserPaneFns` object in
-  `packages/server-core/src/sessions/SessionManager.ts`, resolving the session's OWN instance —
-  the signature must accept no profileId, so the model cannot target another profile.
-  - files: `packages/shared/src/agent/browser-tools.ts`, `packages/server-core/src/sessions/SessionManager.ts`
-  - verify: `grep -q "importCookies" packages/shared/src/agent/browser-tools.ts && grep -q "importCookies" packages/server-core/src/sessions/SessionManager.ts`
-- [ ] 3.5 Implement the denylist and refuse BEFORE the reader runs: Google account hosts
-  (`accounts.google.com`, `google.com`, `mail.google.com`) plus a configurable high-sensitivity
-  list. The refusal message names the reason and points at the user-only profile. Google is also
-  where DBSC actually bites — those cookies are device-bound and would not authenticate even if
-  copied, so refusing is honest rather than restrictive.
-  - files: `packages/server-core/src/sessions/SessionManager.ts`
-  - verify: `grep -q "accounts.google.com" packages/server-core/src/sessions/SessionManager.ts`
-- [ ] 3.6 Implement ephemerality: record imported `(domain, cookie names)` on the session and clear
-  them from the partition on session end / instance destroy via the existing teardown path. Also
-  clear tracked agent-imported cookies on startup so a crashed session does not leak them forward.
-  - files: `packages/server-core/src/sessions/SessionManager.ts`
-  - verify: `grep -q "cookies.remove" packages/server-core/src/sessions/SessionManager.ts`
-- [ ] 3.7 Cover the tool: denylisted domain refused with ZERO reader calls; tool registered with
-  `safeMode: 'block'` and `executionMode: 'backend'`; schema rejects empty/non-string domain; tool
-  result contains no cookie values; teardown removes exactly what was imported.
-  - files: `packages/session-tools-core/src/tool-defs.test.ts`
-  - verify: `bun test packages/session-tools-core/src/tool-defs.test.ts`
-- [ ] 3.8 Run gates: `bun run typecheck:all`, `bun run lint:tool-contracts` (session-tool contract
-  changed), full `bun test`, and `openspec validate add-browser-cookie-import --strict
-  --no-interactive`.
-  - verify: `bun run lint:tool-contracts`
+
+### Cancelled — the agent-facing `import_cookies` tool (owner decision, 2026-08-10)
+
+Tasks 3.3–3.7 are **out of scope and will not be implemented**. The owner settled the product
+question: this feature is user-only. The `userOnly` capability exists precisely so an
+agent-driven pane can never resolve the partition holding the user's imported cookie jar; an
+agent-callable `import_cookies` would hand the agent that jar through the front door and
+dismantle the property the rest of this change is built around. The corresponding capability has
+been removed from the spec delta so the spec does not assert behavior the code will never have.
+
+- [ ] ~~3.3 Register the `import_cookies` tool in `packages/session-tools-core/src/tool-defs.ts`.~~
+  **Out of scope:** no agent-facing cookie tool.
+- [ ] ~~3.4 Add `importCookies(domain)` to `BrowserPaneFns` and `SessionManager`.~~
+  **Out of scope:** serves only the cancelled tool.
+- [ ] ~~3.5 Implement the agent-tool domain denylist in `SessionManager`.~~
+  **Out of scope as specified** (it guarded the cancelled tool). The denylist itself survives and
+  moved into the reader, where it protects the user path too — see 3.9.
+- [ ] ~~3.6 Implement ephemerality for agent-imported cookies.~~
+  **Out of scope:** there are no agent-imported cookies.
+- [ ] ~~3.7 Cover the tool in `tool-defs.test.ts`.~~
+  **Out of scope:** serves only the cancelled tool.
+
+### Hardening carried into this change
+
+- [x] 3.9 Classify `browserPane.IMPORT_COOKIES` (and the new
+  `browserPane.PREVIEW_COOKIE_IMPORT`) in `LOCAL_ONLY_NAMESPACES`. An unclassified channel makes
+  `isLocalOnly()` return `false`, so `RoutedClient` proxies it to the workspace client — against a
+  remote host the reader would open the SERVER's Keychain and cookie store.
+  - files: `packages/shared/src/protocol/routing.ts`, `packages/shared/src/protocol/__tests__/routing.test.ts`
+  - verify: `bun test packages/shared/src/protocol/__tests__/routing.test.ts`
+- [x] 3.10 Apply the sensitive-host denylist in the reader, **before** decryption, defaulting to
+  `accounts.google.com`, `google.com`, `mail.google.com` and overridable per call. A withheld row
+  is reported as `blocked`, distinct from a row that failed to decrypt.
+  - files: `packages/shared/src/browser-cookies/chrome-cookie-reader.ts`, `packages/shared/src/browser-cookies/types.ts`
+  - verify: `bun test packages/shared/src/browser-cookies/`
+- [x] 3.11 Replace the blind confirmation with counts: add `previewChromeCookies` (reads `host_key`
+  only — no decryption, no Keychain prompt), expose it as `browserPane.previewCookieImport`, and
+  have the picker state cookies, distinct hosts and withheld counts before the user confirms.
+  - files: `packages/shared/src/browser-cookies/chrome-cookie-reader.ts`, `apps/electron/src/main/browser-pane-manager.ts`, `apps/electron/src/main/handlers/browser.ts`, `apps/electron/src/renderer/components/browser/BrowserProfilePicker.tsx`, `apps/electron/src/renderer/hooks/useBrowserProfiles.ts`
+  - verify: `bun test apps/electron/src/main/__tests__/browser-pane-cookie-import.test.ts`
+- [x] 3.12 Wipe the derived AES key (`key.fill(0)`) once a read finishes, and sweep stranded
+  `craft-chrome-cookies-*` temp copies at main-process startup (an exit hook cannot run after
+  SIGKILL, which is the case that strands the copy).
+  - files: `packages/shared/src/browser-cookies/chrome-cookie-reader.ts`, `apps/electron/src/main/index.ts`
+  - verify: `bun test packages/shared/src/browser-cookies/chrome-cookie-reader.production-path.test.ts`
+- [x] 3.13 Validate the Chrome profile name against `/^[A-Za-z0-9 _-]+$/` and confine the resolved
+  database path under the browser's application-support directory; map each
+  `ChromeCookieReaderError` code to its own i18n message instead of one opaque string, logging only
+  the code.
+  - files: `packages/shared/src/browser-cookies/chrome-cookie-reader.ts`, `apps/electron/src/main/handlers/browser.ts`, `packages/shared/src/i18n/locales/*.json`
+  - verify: `bun test apps/electron/src/main/handlers/__tests__/browser-cookie-import.test.ts`
+- [x] 3.14 Replace `timingSafeEqual` with `.equals()` for the domain-hash prefix check. Both sides
+  are derived locally from the row's own host; there is no secret and no attacker measuring time,
+  so the constant-time call falsely signalled one.
+  - files: `packages/shared/src/browser-cookies/chrome-cookie-reader.ts`
+  - verify: `grep -q "timingSafeEqual" packages/shared/src/browser-cookies/chrome-cookie-reader.ts; test $? -ne 0`
+- [x] 3.15 Closes 1.9: exercise the production `better-sqlite3` path end to end against a real
+  SQLite file in Chrome's cookie schema, in a Node child process (Bun cannot instantiate
+  `better-sqlite3`). Covers decryption, domain-hash stripping, the denylist, `skipped` counting,
+  the key wipe and the temp sweep.
+  - files: `packages/shared/src/browser-cookies/chrome-cookie-reader.node-harness.ts`, `packages/shared/src/browser-cookies/chrome-cookie-reader.production-path.test.ts`
+  - verify: `bun test packages/shared/src/browser-cookies/chrome-cookie-reader.production-path.test.ts`
+- [x] 3.16 Run gates: `bun run typecheck:all`, `bun run lint`, `bun run lint:i18n:parity`, the
+  focused tests above, and `openspec validate add-browser-cookie-import --strict
+  --no-interactive`. `lint:tool-contracts` is not applicable — no session tool changed.
+  - verify: `openspec validate add-browser-cookie-import --strict --no-interactive`
 
 ## 4. Validation (orchestrator-owned — not worker-closeable)
 
@@ -175,7 +210,7 @@ Plan: `docs/plans/2026-07-24-001-feat-browser-cookie-import-plan.md` (U-IDs refe
   and SEE a previously logged-in site render authenticated in the embedded browser. Screenshot.
 - [ ] 4.2 Real validation: confirm the agent cannot drive the user-only profile (attempt an
   agent-driven browser call against it and observe the refusal).
-- [ ] 4.3 Real validation: exercise `import_cookies` on a benign non-denylisted domain, confirm the
-  pane is authenticated, then confirm cleanup removed the cookies after session end.
+- [ ] ~~4.3 Real validation: exercise `import_cookies` on a benign non-denylisted domain.~~
+  **Out of scope:** the agent tool was cancelled (see above).
 - [ ] 4.4 Run `vibe-security` before any push (mandatory for every push, and this is a credential
   path).

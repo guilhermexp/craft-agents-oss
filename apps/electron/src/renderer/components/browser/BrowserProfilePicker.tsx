@@ -15,6 +15,39 @@ import { useBrowserProfiles } from '@/hooks/useBrowserProfiles'
 import { DEFAULT_BROWSER_PROFILE_ID, type BrowserProfile, type BrowserProfileKind } from '@craft-agent/shared/config/types'
 import type { BrowserProfileInput } from '@craft-agent/shared/config/browser-profiles'
 import { cn } from '@/lib/utils'
+import {
+  COOKIE_IMPORT_FAILURE_PREFIX,
+  type BrowserCookieImportFailureReason,
+  type BrowserCookieImportPreview,
+} from '@craft-agent/shared/browser-cookies/types'
+
+/** The bulk import always reads Chrome's primary profile. */
+const CHROME_SOURCE_PROFILE = 'Default'
+
+const COOKIE_IMPORT_FAILURE_REASONS: Record<BrowserCookieImportFailureReason, true> = {
+  'user-only-required': true,
+  'unsupported-platform': true,
+  'invalid-profile': true,
+  'cookie-db-not-found': true,
+  'keychain-read-failed': true,
+  'cookie-db-read-failed': true,
+  unknown: true,
+}
+
+/**
+ * The main process encodes the refusal as `PREFIX + reason` because the RPC
+ * layer only carries an error message. Anything else — a transport failure, a
+ * bug — renders as the generic reason rather than leaking a raw string.
+ */
+function cookieImportFailureReason(err: unknown): BrowserCookieImportFailureReason {
+  const message = err instanceof Error ? err.message : ''
+  const index = message.indexOf(COOKIE_IMPORT_FAILURE_PREFIX)
+  if (index === -1) return 'unknown'
+  const reason = message.slice(index + COOKIE_IMPORT_FAILURE_PREFIX.length).trim()
+  return reason in COOKIE_IMPORT_FAILURE_REASONS
+    ? reason as BrowserCookieImportFailureReason
+    : 'unknown'
+}
 
 const COLORS = [
   '#22c55e',
@@ -43,6 +76,7 @@ export function BrowserProfilePicker({
     alwaysAsk,
     createProfile,
     deleteProfile,
+    previewCookieImport,
     importCookies,
     renameProfile,
     setAlwaysAsk,
@@ -79,6 +113,7 @@ export function BrowserProfilePicker({
             onRename={renameProfile}
             onDelete={deleteProfile}
             onImportCookies={importCookies}
+            onPreviewCookieImport={previewCookieImport}
           />
         ) : (
           <ProfileCreateForm
@@ -113,6 +148,7 @@ interface ProfileGridProps {
   onCreateClick: () => void
   onRename: (id: string, name: string) => Promise<BrowserProfile>
   onDelete: (id: string) => Promise<void>
+  onPreviewCookieImport: (profileId: string) => Promise<BrowserCookieImportPreview>
   onImportCookies: (profileId: string) => Promise<{ imported: number; skipped: number }>
 }
 
@@ -122,6 +158,7 @@ function ProfileGrid({
   onCreateClick,
   onRename,
   onDelete,
+  onPreviewCookieImport,
   onImportCookies,
 }: ProfileGridProps) {
   const { t } = useTranslation()
@@ -131,21 +168,30 @@ function ProfileGrid({
 
   async function handleImportCookies(profile: BrowserProfile) {
     if (profile.userOnly !== true || importingProfileId !== null) return
-    const confirmed = confirm(t('browserProfiles.importCookies.confirm', {
-      chromeProfile: 'Default',
-      appProfile: profile.name,
-    }))
-    if (!confirmed) return
 
     setImportingProfileId(profile.id)
     try {
+      // Count first, then ask: the confirmation names how many cookies and
+      // hosts would move and how many the denylist withholds, so the user is
+      // not agreeing to an unknown volume. This pass decrypts nothing.
+      const preview = await onPreviewCookieImport(profile.id)
+      const confirmed = confirm(t('browserProfiles.importCookies.confirm', {
+        chromeProfile: CHROME_SOURCE_PROFILE,
+        appProfile: profile.name,
+        cookies: preview.cookies,
+        hosts: preview.hosts,
+        blockedCookies: preview.blockedCookies,
+        blockedHosts: preview.blockedHosts,
+      }))
+      if (!confirmed) return
+
       const result = await onImportCookies(profile.id)
       alert(t('browserProfiles.importCookies.success', {
         imported: result.imported,
         skipped: result.skipped,
       }))
-    } catch {
-      alert(t('browserProfiles.importCookies.error'))
+    } catch (err) {
+      alert(t(`browserProfiles.importCookies.failure.${cookieImportFailureReason(err)}`))
     } finally {
       setImportingProfileId(null)
     }

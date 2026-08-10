@@ -453,6 +453,7 @@ export const RPC_NAMESPACES = {
     INTERACTED: 'browser-pane:interacted',
     LIST_PROFILES: 'browser-pane:list-profiles',
     CREATE_PROFILE: 'browser-pane:create-profile',
+    PREVIEW_COOKIE_IMPORT: 'browser-pane:preview-cookie-import',
     IMPORT_COOKIES: 'browser-pane:import-cookies',
     DELETE_PROFILE: 'browser-pane:delete-profile',
     RENAME_PROFILE: 'browser-pane:rename-profile',

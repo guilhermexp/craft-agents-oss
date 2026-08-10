@@ -91,32 +91,84 @@ profile will receive the cookies.
 - **THEN** it states that a macOS Keychain prompt will appear
 - **AND** it states that the agent cannot drive the receiving profile
 
-### Requirement: The agent can import a single domain ephemerally
-The system SHALL expose an `import_cookies` session tool that imports cookies for exactly one
-requested domain into the agent's own session profile. The tool SHALL be registered with
-`executionMode: 'backend'` and `safeMode: 'block'`, SHALL NOT accept a target profile from the
-model, and its imports SHALL NOT persist beyond the session.
+### Requirement: Sensitive hosts are withheld before decryption
+The system SHALL maintain a configurable denylist of sensitive hosts, defaulting to the Google
+account hosts, and SHALL drop a matching row before its value is decrypted. A withheld row SHALL
+be reported separately from a row that failed to decrypt.
 
-#### Scenario: Agent imports one domain into its own profile
-- **WHEN** the agent calls `import_cookies` with a permitted domain
-- **THEN** cookies for that domain only are imported into the session's own browser profile
-- **AND** the tool result reports counts without any cookie names or values
+#### Scenario: A denylisted host is never decrypted
+- **WHEN** the cookie store contains a row whose host is on the denylist
+- **THEN** the row is excluded before decryption is attempted
+- **AND** it is reported as withheld rather than as skipped
 
-#### Scenario: The model cannot choose a target profile
-- **WHEN** the agent invokes `import_cookies`
-- **THEN** the target profile is resolved from the session, and the tool accepts no profile
-  parameter from the model
+#### Scenario: The dotted form of a denylisted host is also withheld
+- **WHEN** a row's host is the dot-prefixed form of a denylisted host
+- **THEN** it is withheld on the same basis as the bare host
 
-#### Scenario: Denylisted and device-bound domains are refused
-- **WHEN** the agent requests a denylisted domain such as `accounts.google.com`
-- **THEN** the request is refused before the cookie store is read
-- **AND** the refusal names the reason and points to the user-only profile as the alternative
+#### Scenario: A caller-supplied denylist replaces the default
+- **WHEN** a caller provides its own denylist
+- **THEN** only the hosts it names are withheld
 
-#### Scenario: Agent-imported cookies do not survive the session
-- **WHEN** a session that imported cookies ends
-- **THEN** the cookies imported by that session are removed from the partition
-- **AND** cookies tracked from a previously crashed session are cleared at startup
+### Requirement: The import confirmation states what will be imported
+The system SHALL count the cookies and distinct hosts an import would carry, and the cookies and
+hosts the denylist withholds, before asking the user to confirm. The counting pass SHALL NOT
+decrypt any value and SHALL NOT require the Keychain password.
 
-#### Scenario: Tool posture is enforced at registration
-- **WHEN** the session tool registry is inspected
-- **THEN** `import_cookies` is registered with `executionMode: 'backend'` and `safeMode: 'block'`
+#### Scenario: The user sees counts before confirming
+- **WHEN** the user starts "Import from Chrome"
+- **THEN** the confirmation states how many cookies and how many distinct hosts will be imported
+- **AND** it states how many cookies were withheld by the denylist
+
+#### Scenario: Counting does not touch the Keychain
+- **WHEN** the counting pass runs
+- **THEN** no cookie value is decrypted
+- **AND** no Keychain password is requested
+
+### Requirement: The import runs only on the local machine
+The system SHALL classify the cookie import and preview channels as local-only, so they are never
+proxied to a remote workspace host.
+
+#### Scenario: Cookie channels are not remote-eligible
+- **WHEN** the channel routing table is inspected
+- **THEN** the cookie import and preview channels are local-only
+- **AND** they are not remote-eligible
+
+### Requirement: A failed import names its reason
+The system SHALL report a refused or failed import as a distinct reason code — an unsupported
+platform, an invalid profile name, a missing cookie database, a failed Keychain read, an
+unreadable cookie database, or a profile that is not user-only — and SHALL log only that code.
+
+#### Scenario: Distinct failures produce distinct messages
+- **WHEN** the Keychain read fails and, separately, the target profile is not user-only
+- **THEN** each failure surfaces its own message rather than one shared opaque string
+
+#### Scenario: Failure details do not leak
+- **WHEN** an import fails
+- **THEN** the log line contains the reason code
+- **AND** it contains neither the underlying error text nor any host or cookie name
+
+### Requirement: Cookie material does not outlive the read
+The system SHALL wipe the derived decryption key once a read completes, and SHALL remove the
+temporary copy of the cookie database. Copies stranded by a process that terminated before its
+cleanup ran SHALL be removed on the next start.
+
+#### Scenario: The decryption key is zeroed
+- **WHEN** a read completes, successfully or not
+- **THEN** the derived key buffer is zeroed
+
+#### Scenario: Stranded temporary copies are swept
+- **WHEN** the application starts and a previous run left a cookie database copy behind
+- **THEN** the stale copy is removed
+- **AND** a copy belonging to a read still in flight is left alone
+
+### Requirement: A Chrome profile name cannot escape the browser directory
+The system SHALL reject a Chrome profile name that is not a plain directory name, and SHALL
+confirm the resolved database path stays inside the browser's application-support directory.
+
+#### Scenario: A traversing profile name is refused
+- **WHEN** the requested Chrome profile name contains path separators or parent references
+- **THEN** the read is refused with an invalid-profile error before any file is opened
+
+#### Scenario: Real Chrome profile names are accepted
+- **WHEN** the requested profile is a name Chrome creates, such as `Default` or `Profile 1`
+- **THEN** the name check accepts it

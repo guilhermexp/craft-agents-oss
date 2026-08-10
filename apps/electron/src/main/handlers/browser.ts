@@ -3,6 +3,30 @@ import type { BrowserProfileInput } from '@craft-agent/shared/config/browser-pro
 import type { BrowserScreenshotOptions } from '../browser-pane-manager'
 import { pushTyped, type RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from './handler-deps'
+import { ChromeCookieReaderError } from '@craft-agent/shared/browser-cookies/chrome-cookie-reader'
+import {
+  COOKIE_IMPORT_FAILURE_PREFIX,
+  type BrowserCookieImportFailureReason,
+} from '@craft-agent/shared/browser-cookies/types'
+
+/** The bulk import is user-only by design; there is no agent-facing variant. */
+class UserOnlyProfileRequiredError extends Error {
+  constructor() {
+    super('Bulk cookie import requires a user-only profile')
+    this.name = 'UserOnlyProfileRequiredError'
+  }
+}
+
+/**
+ * Collapse a failure to a reason code. Distinguishing these matters: a
+ * cancelled Keychain prompt, an unsupported platform and a refused profile are
+ * different user problems that used to render as one opaque string.
+ */
+function classifyCookieImportFailure(err: unknown): BrowserCookieImportFailureReason {
+  if (err instanceof UserOnlyProfileRequiredError) return 'user-only-required'
+  if (err instanceof ChromeCookieReaderError) return err.code
+  return 'unknown'
+}
 
 export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): void {
   const { browserPaneManager, windowManager, platform } = deps
@@ -11,6 +35,15 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
   const resolveContextWorkspaceId = (ctx: { workspaceId?: string | null; webContentsId?: number | null }): string | null | undefined => {
     return ctx.workspaceId
       ?? (typeof ctx.webContentsId === 'number' ? windowManager?.getWorkspaceForWindow(ctx.webContentsId) : undefined)
+  }
+
+  const requireUserOnlyProfile = (profileId: string): void => {
+    const profile = browserPaneManager
+      .listProfiles()
+      .find(candidate => candidate.id === profileId)
+    if (profile?.userOnly !== true) {
+      throw new UserOnlyProfileRequiredError()
+    }
   }
 
   server.handle(RPC_NAMESPACES.browserPane.CREATE, (ctx, input?: string | BrowserPaneCreateOptions) => {
@@ -245,23 +278,39 @@ export function registerBrowserHandlers(server: RpcServer, deps: HandlerDeps): v
   )
 
   server.handle(
+    RPC_NAMESPACES.browserPane.PREVIEW_COOKIE_IMPORT,
+    async (_ctx, profileId: string) => {
+      try {
+        requireUserOnlyProfile(profileId)
+        return await browserPaneManager.previewCookieImport({
+          profileId,
+          callerIntent: 'user',
+        })
+      } catch (err) {
+        const reason = classifyCookieImportFailure(err)
+        // Only the reason code is logged: the failure context can name hosts.
+        platform.logger.error(`[browser-pane] previewCookieImport failed for profile ${profileId}: ${reason}`)
+        throw new Error(`${COOKIE_IMPORT_FAILURE_PREFIX}${reason}`)
+      }
+    },
+  )
+
+  server.handle(
     RPC_NAMESPACES.browserPane.IMPORT_COOKIES,
     async (_ctx, profileId: string) => {
       try {
-        const profile = browserPaneManager
-          .listProfiles()
-          .find(candidate => candidate.id === profileId)
-        if (profile?.userOnly !== true) {
-          throw new Error('Bulk cookie import requires a user-only profile')
-        }
+        requireUserOnlyProfile(profileId)
         return await browserPaneManager.importCookies({
           profileId,
           domain: '',
           callerIntent: 'user',
         })
-      } catch {
-        platform.logger.error(`[browser-pane] importCookies failed for profile ${profileId}`)
-        throw new Error('Browser cookie import failed')
+      } catch (err) {
+        const reason = classifyCookieImportFailure(err)
+        // Only the reason code is logged; never the cookie payload or the
+        // underlying error, which can carry host names.
+        platform.logger.error(`[browser-pane] importCookies failed for profile ${profileId}: ${reason}`)
+        throw new Error(`${COOKIE_IMPORT_FAILURE_PREFIX}${reason}`)
       }
     },
   )
