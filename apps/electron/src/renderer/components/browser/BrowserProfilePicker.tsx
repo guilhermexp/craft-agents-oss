@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Plus, Trash2, Pencil } from 'lucide-react'
+import { Download, Plus, Trash2, Pencil } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import {
   Dialog,
   DialogContent,
@@ -14,6 +15,43 @@ import { useBrowserProfiles } from '@/hooks/useBrowserProfiles'
 import { DEFAULT_BROWSER_PROFILE_ID, type BrowserProfile, type BrowserProfileKind } from '@craft-agent/shared/config/types'
 import type { BrowserProfileInput } from '@craft-agent/shared/config/browser-profiles'
 import { cn } from '@/lib/utils'
+import {
+  COOKIE_IMPORT_FAILURE_PREFIX,
+  type BrowserCookieImportFailureReason,
+  type BrowserCookieImportPreview,
+} from '@craft-agent/shared/browser-cookies/types'
+
+/** The bulk import always reads Chrome's primary profile. */
+const CHROME_SOURCE_PROFILE = 'Default'
+
+const COOKIE_IMPORT_FAILURE_REASONS: Record<BrowserCookieImportFailureReason, true> = {
+  'user-only-required': true,
+  'unsupported-platform': true,
+  'invalid-profile': true,
+  'cookie-db-not-found': true,
+  'keychain-read-failed': true,
+  'cookie-db-read-failed': true,
+  unknown: true,
+}
+
+/**
+ * The main process encodes the refusal as `PREFIX + reason` because the RPC
+ * layer only carries an error message, and the transport preserves that
+ * message verbatim — so the prefix is at the start, not somewhere inside.
+ * Anything else — a transport failure, a bug — renders as the generic reason
+ * rather than leaking a raw string. The membership test is `Object.hasOwn`:
+ * `in` reaches the prototype chain, so `constructor`/`toString`/`valueOf`
+ * would pass as reasons and resolve to a nonexistent i18n key that i18next
+ * renders as the key itself.
+ */
+function cookieImportFailureReason(err: unknown): BrowserCookieImportFailureReason {
+  const message = err instanceof Error ? err.message : ''
+  if (!message.startsWith(COOKIE_IMPORT_FAILURE_PREFIX)) return 'unknown'
+  const reason = message.slice(COOKIE_IMPORT_FAILURE_PREFIX.length).trim()
+  return Object.hasOwn(COOKIE_IMPORT_FAILURE_REASONS, reason)
+    ? reason as BrowserCookieImportFailureReason
+    : 'unknown'
+}
 
 const COLORS = [
   '#22c55e',
@@ -42,6 +80,8 @@ export function BrowserProfilePicker({
     alwaysAsk,
     createProfile,
     deleteProfile,
+    previewCookieImport,
+    importCookies,
     renameProfile,
     setAlwaysAsk,
   } = useBrowserProfiles()
@@ -76,6 +116,8 @@ export function BrowserProfilePicker({
             onCreateClick={() => setMode({ kind: 'create' })}
             onRename={renameProfile}
             onDelete={deleteProfile}
+            onImportCookies={importCookies}
+            onPreviewCookieImport={previewCookieImport}
           />
         ) : (
           <ProfileCreateForm
@@ -110,11 +152,54 @@ interface ProfileGridProps {
   onCreateClick: () => void
   onRename: (id: string, name: string) => Promise<BrowserProfile>
   onDelete: (id: string) => Promise<void>
+  onPreviewCookieImport: (profileId: string) => Promise<BrowserCookieImportPreview>
+  onImportCookies: (profileId: string) => Promise<{ imported: number; skipped: number }>
 }
 
-function ProfileGrid({ profiles, onPick, onCreateClick, onRename, onDelete }: ProfileGridProps) {
+function ProfileGrid({
+  profiles,
+  onPick,
+  onCreateClick,
+  onRename,
+  onDelete,
+  onPreviewCookieImport,
+  onImportCookies,
+}: ProfileGridProps) {
+  const { t } = useTranslation()
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [importingProfileId, setImportingProfileId] = useState<string | null>(null)
+
+  async function handleImportCookies(profile: BrowserProfile) {
+    if (profile.userOnly !== true || importingProfileId !== null) return
+
+    setImportingProfileId(profile.id)
+    try {
+      // Count first, then ask: the confirmation names how many cookies and
+      // hosts would move and how many the denylist withholds, so the user is
+      // not agreeing to an unknown volume. This pass decrypts nothing.
+      const preview = await onPreviewCookieImport(profile.id)
+      const confirmed = confirm(t('browserProfiles.importCookies.confirm', {
+        chromeProfile: CHROME_SOURCE_PROFILE,
+        appProfile: profile.name,
+        cookies: preview.cookies,
+        hosts: preview.hosts,
+        blockedCookies: preview.blockedCookies,
+        blockedHosts: preview.blockedHosts,
+      }))
+      if (!confirmed) return
+
+      const result = await onImportCookies(profile.id)
+      alert(t('browserProfiles.importCookies.success', {
+        imported: result.imported,
+        skipped: result.skipped,
+      }))
+    } catch (err) {
+      alert(t(`browserProfiles.importCookies.failure.${cookieImportFailureReason(err)}`))
+    } finally {
+      setImportingProfileId(null)
+    }
+  }
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-2">
@@ -163,6 +248,11 @@ function ProfileGrid({ profiles, onPick, onCreateClick, onRename, onDelete }: Pr
                   <div className="text-sm text-center truncate w-full" title={p.name}>
                     {p.name}
                   </div>
+                  {p.userOnly === true ? (
+                    <div className="max-w-full truncate rounded-full bg-foreground/5 px-2 py-0.5 text-[10px] text-muted-foreground">
+                      {t('browserProfiles.userOnly.badge')}
+                    </div>
+                  ) : null}
                   {(p.clientName || p.kind === 'client') && (
                     <div className="max-w-full truncate rounded-full bg-foreground/5 px-2 py-0.5 text-[10px] text-muted-foreground" title={p.clientName ?? p.kind}>
                       {p.clientName ?? 'Cliente'}
@@ -171,6 +261,19 @@ function ProfileGrid({ profiles, onPick, onCreateClick, onRename, onDelete }: Pr
                 </>
               )}
             </div>
+            {p.userOnly === true ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-1 h-7 w-full gap-1 px-2 text-[11px]"
+                disabled={importingProfileId !== null}
+                onClick={() => void handleImportCookies(p)}
+              >
+                <Download className="size-3" />
+                <span className="truncate">{t('browserProfiles.importCookies.action')}</span>
+              </Button>
+            ) : null}
             <div className="absolute top-1 right-1 hidden group-hover:flex gap-1">
               <button
                 type="button"
@@ -225,11 +328,13 @@ interface ProfileCreateFormProps {
 }
 
 function ProfileCreateForm({ onSubmit, onCancel }: ProfileCreateFormProps) {
+  const { t } = useTranslation()
   const [name, setName] = useState('')
   const [color, setColor] = useState<string>(COLORS[0])
   const [kind, setKind] = useState<BrowserProfileKind>('personal')
   const [clientName, setClientName] = useState('')
   const [domainHintsText, setDomainHintsText] = useState('')
+  const [userOnly, setUserOnly] = useState(false)
   const [busy, setBusy] = useState(false)
   const valid = useMemo(() => name.trim().length > 0, [name])
 
@@ -244,7 +349,11 @@ function ProfileCreateForm({ onSubmit, onCancel }: ProfileCreateFormProps) {
         clientName: clientName.trim() || undefined,
         domainHints: domainHintsText
           .split(/[\n,]/)
-          .flatMap((value) => { const t = value.trim(); return t ? [t] : [] }),
+          .flatMap((value) => {
+            const trimmed = value.trim()
+            return trimmed ? [trimmed] : []
+          }),
+        userOnly,
       })
     } finally {
       setBusy(false)
@@ -312,6 +421,20 @@ function ProfileCreateForm({ onSubmit, onCancel }: ProfileCreateFormProps) {
           Use vírgula para separar. O Craft pode sugerir este perfil nesses sites.
         </p>
       </div>
+      <label className="flex items-start gap-2 rounded-md border border-border p-3 text-sm">
+        <input
+          type="checkbox"
+          checked={userOnly}
+          onChange={(e) => setUserOnly(e.target.checked)}
+          className="mt-0.5"
+        />
+        <span>
+          <span className="block font-medium">{t('browserProfiles.userOnly.label')}</span>
+          <span className="block text-xs text-muted-foreground">
+            {t('browserProfiles.userOnly.description')}
+          </span>
+        </span>
+      </label>
       <div>
         <div className="text-xs text-muted-foreground mb-2">Cor do avatar</div>
         <div className="flex gap-2">

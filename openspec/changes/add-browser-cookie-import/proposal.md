@@ -29,9 +29,9 @@ can never resolve to — and only then the two import surfaces.
   partition's Chromium cookie store, honoring the user-only capability check.
 - Add an "Import from Chrome" action in the browser profile picker that bulk-populates a user-only
   profile, with a confirmation naming what is read and which profile receives it.
-- Add a discrete `import_cookies(domain)` session tool (`executionMode: 'backend'`,
-  `safeMode: 'block'`) that imports a single domain into the agent's own session profile,
-  ephemerally, refusing denylisted and device-bound (DBSC) domains.
+- Withhold cookies for a configurable list of sensitive hosts (Google account hosts by default)
+  **before** decryption, and precede the confirmation with a counting pass that reads `host_key`
+  only, so the user sees how many cookies and hosts will be imported and how many are withheld.
 
 ## Non-Goals
 
@@ -48,8 +48,9 @@ can never resolve to — and only then the two import surfaces.
   point-in-time action.
 - Do not implement just-in-time import on navigation. It depends on this plumbing and adds a
   request-interception surface that needs its own review.
-- Do not let the model name a target profile for `import_cookies`; the agent tool always resolves
-  the session's own profile.
+- Do not expose an agent-facing `import_cookies` session tool. The feature is user-only: the tool
+  would hand the agent the very cookie jar the user-only capability exists to keep away from it.
+- Do not add a per-origin selection screen; the user confirms the whole import or none of it.
 - Do not log, persist to app JSON, or return decrypted cookie values in any tool result or UI.
 - Do not modify or commit the unrelated dirty renderer/i18n/config files already present in the
   working tree.

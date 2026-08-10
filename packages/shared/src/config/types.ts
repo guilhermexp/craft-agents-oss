@@ -45,9 +45,22 @@ export interface BrowserProfile {
   description?: string;
   /** Hostname hints (e.g. cliente.com.br) used to suggest this profile for URLs. */
   domainHints?: string[];
+  /** When true, agent-owned browser instances cannot resolve this profile. */
+  userOnly?: boolean;
   createdAt: number;
   lastUsedAt?: number;
 }
+
+export type BrowserProfileInput = {
+  name: string;
+  color?: string;
+  avatar?: string;
+  kind?: BrowserProfileKind | string;
+  clientName?: string;
+  description?: string;
+  domainHints?: string[];
+  userOnly?: boolean;
+};
 
 export interface BrowserProfileSettings {
   profiles: BrowserProfile[];

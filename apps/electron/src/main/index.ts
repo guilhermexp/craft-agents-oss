@@ -55,6 +55,7 @@ import { initializeReleaseNotes } from '@craft-agent/shared/release-notes'
 import { ensureDefaultPermissions } from '@craft-agent/shared/agent/permissions-config'
 import { ensureHermesSeedSkills } from '@craft-agent/shared/hermes/seed'
 import { ensureToolIcons, ensurePresetThemes } from '@craft-agent/shared/config'
+import { sweepStaleCookieTempDirs } from '@craft-agent/shared/browser-cookies/chrome-cookie-reader'
 import { setBundledAssetsRoot } from '@craft-agent/shared/utils'
 import { initializeNativeAgentHostRuntime, setPowerShellValidatorRoot } from '@craft-agent/shared/agent'
 import { handleDeepLink } from './deep-link'
@@ -397,6 +398,14 @@ app.whenReady().then(async () => {
   // Seed preset themes to ~/.craft-agent/themes/ (copies bundled theme JSONs on first run)
   ensurePresetThemes()
   mainLog.info(`[boot] Seeded permissions/tool-icons/preset-themes in ${Date.now() - seedStartedAt}ms`)
+
+  // Delete cookie-DB temp copies stranded by a previous hard crash. The copy
+  // holds host names and cookie names in clear text, and an exit hook cannot
+  // clean it up after SIGKILL — only a sweep on the next start can.
+  const sweptCookieTempDirs = sweepStaleCookieTempDirs()
+  if (sweptCookieTempDirs > 0) {
+    mainLog.info(`[boot] Removed ${sweptCookieTempDirs} stale Chrome cookie temp dir(s)`)
+  }
 
   // Seed Craft-native Hermes skills into app-scoped HERMES_HOME on first run.
   const hermesSeed = ensureHermesSeedSkills()

@@ -24,6 +24,8 @@ import {
   type BrowserInstanceInfo,
 } from '../shared/types'
 import { DEFAULT_THEME, loadAppTheme, getAllowRemoteEvaluate } from '@craft-agent/shared/config'
+import { previewChromeCookies, readChromeCookies } from '@craft-agent/shared/browser-cookies/chrome-cookie-reader'
+import type { BrowserCookieImportPreview, BrowserCookieSameSite } from '@craft-agent/shared/browser-cookies/types'
 import { CodedError } from '@craft-agent/shared/protocol'
 import { getBrowserLiveFxCornerRadii } from '../shared/browser-live-fx'
 import type { IBrowserPaneManager, BrowserInstanceSnapshot } from '@craft-agent/server-core/handlers'
@@ -59,6 +61,8 @@ import {
 import {
   getProfilePartition,
   DEFAULT_BROWSER_PROFILE_PARTITION,
+  resolveBrowserProfileId,
+  UserOnlyBrowserProfileError,
 } from './browser-profile-resolver'
 import {
   DEFAULT_BROWSER_PROFILE_ID,
@@ -417,6 +421,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   private readonly popupWebContentsIdByWindow = new WeakMap<BrowserWindow, number>()
   private windowManager: WindowManager | null = null
   private sessionPathResolver: ((sessionId: string) => string | null) | null = null
+  private readonly browserProfilesProvider: () => BrowserProfile[]
+
+  constructor(browserProfilesProvider: () => BrowserProfile[] = getBrowserProfiles) {
+    this.browserProfilesProvider = browserProfilesProvider
+  }
 
   /** Screenshot capture pipeline (full-page, region, recovery, encoding). */
   private visualCapture = new BrowserVisualCapture({
@@ -480,21 +489,97 @@ export class BrowserPaneManager implements IBrowserPaneManager {
    * Falls back to the default profile when the requested id is missing or
    * was deleted, so callers never end up with an orphan partition.
    */
-  private resolveProfileId(requested?: string): string {
-    if (!requested || requested === DEFAULT_BROWSER_PROFILE_ID) {
-      return DEFAULT_BROWSER_PROFILE_ID
-    }
+  private resolveProfileId(
+    requested?: string,
+    ownerType: BrowserInstance['ownerType'] = 'manual',
+  ): string {
     try {
-      const exists = getBrowserProfiles().some(p => p.id === requested)
-      if (!exists) {
+      const resolved = resolveBrowserProfileId(this.browserProfilesProvider(), requested, ownerType)
+      if (requested && requested !== DEFAULT_BROWSER_PROFILE_ID && resolved === DEFAULT_BROWSER_PROFILE_ID) {
         mainLog.warn(`[browser-pane] Unknown profileId=${requested}; falling back to default`)
-        return DEFAULT_BROWSER_PROFILE_ID
       }
-      return requested
+      return resolved
     } catch (err) {
+      // A userOnly refusal is the security boundary; it must never enter the
+      // legacy unknown-profile fallback below.
+      if (err instanceof UserOnlyBrowserProfileError) throw err
       mainLog.warn(`[browser-pane] resolveProfileId failed: ${err instanceof Error ? err.message : String(err)}`)
       return DEFAULT_BROWSER_PROFILE_ID
     }
+  }
+
+  async importCookies(input: {
+    profileId?: string
+    domain: string
+    callerIntent: 'agent' | 'user'
+  }): Promise<{ imported: number; skipped: number }> {
+    if (
+      input.callerIntent === 'agent'
+      && !input.domain.trim().replace(/^\./, '')
+    ) {
+      throw new Error('Agent cookie import requires a domain')
+    }
+    if (
+      input.profileId
+      && input.profileId !== DEFAULT_BROWSER_PROFILE_ID
+      && !this.browserProfilesProvider().some(profile => profile.id === input.profileId)
+    ) {
+      throw new Error(`Unknown profile id: ${input.profileId}`)
+    }
+    const ownerType: BrowserInstance['ownerType'] = input.callerIntent === 'agent'
+      ? 'session'
+      : 'manual'
+    const profileId = this.resolveProfileId(input.profileId, ownerType)
+    const partition = getProfilePartition(profileId)
+    const targetSession = session.fromPartition(partition)
+    const readResult = await readChromeCookies({ domain: input.domain })
+    const sameSiteMap: Record<BrowserCookieSameSite, Electron.CookiesSetDetails['sameSite']> = {
+      [-1]: 'unspecified',
+      0: 'no_restriction',
+      1: 'lax',
+      2: 'strict',
+    }
+    const writeResults = await Promise.allSettled(readResult.cookies.map(async (cookie) => {
+      await targetSession.cookies.set({
+        url: `http${cookie.secure ? 's' : ''}://${cookie.domain.replace(/^\./, '')}${cookie.path}`,
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.domain,
+        path: cookie.path,
+        secure: cookie.secure,
+        httpOnly: cookie.httpOnly,
+        expirationDate: cookie.expirationDate,
+        sameSite: sameSiteMap[cookie.sameSite],
+      })
+    }))
+    const imported = writeResults.filter(result => result.status === 'fulfilled').length
+
+    return {
+      imported,
+      skipped: readResult.skipped + writeResults.length - imported,
+    }
+  }
+
+  /**
+   * Counts for the pre-import confirmation. Reads `host_key` only, so it
+   * neither decrypts a value nor triggers the macOS Keychain prompt — the user
+   * has not agreed to anything yet at this point.
+   */
+  async previewCookieImport(input: {
+    profileId?: string
+    callerIntent: 'agent' | 'user'
+  }): Promise<BrowserCookieImportPreview> {
+    if (
+      input.profileId
+      && input.profileId !== DEFAULT_BROWSER_PROFILE_ID
+      && !this.browserProfilesProvider().some(profile => profile.id === input.profileId)
+    ) {
+      throw new Error(`Unknown profile id: ${input.profileId}`)
+    }
+    // Same capability gate as the import it precedes: an agent must never
+    // learn the user's full signed-in host list either.
+    this.resolveProfileId(input.profileId, input.callerIntent === 'agent' ? 'session' : 'manual')
+    return previewChromeCookies({})
   }
 
   private touchProfileLastUsed(profileId: string): void {
@@ -511,7 +596,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     const ownerType = options?.ownerType ?? 'manual'
     const ownerSessionId = ownerType === 'session' ? (options?.ownerSessionId ?? null) : null
     const workspaceId = options?.workspaceId ?? this.resolveLaunchWorkspaceId()
-    const profileId = this.resolveProfileId(options?.profileId)
+    const profileId = this.resolveProfileId(options?.profileId, ownerType)
     const partition = getProfilePartition(profileId)
 
     if (this.instances.has(instanceId)) {
@@ -916,14 +1001,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       return null
     }
 
-    const resolvedTarget = this.resolveProfileId(targetProfileId)
+    const ownerType = instance.ownerType
+    const resolvedTarget = this.resolveProfileId(targetProfileId, ownerType)
     if (resolvedTarget === instance.profileId) {
       mainLog.info(`[browser-pane] switchProfile noop — already on profile ${resolvedTarget}`)
       return instance.id
     }
 
     const url = instance.currentUrl
-    const ownerType = instance.ownerType
     const ownerSessionId = instance.ownerSessionId
 
     this.destroyInstance(instance.id)
@@ -1688,6 +1773,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   bindSession(id: string, sessionId: string, options?: { workspaceId?: string | null }): void {
     const instance = this.instances.get(id)
     if (instance) {
+      this.resolveProfileId(instance.profileId, 'session')
       instance.boundSessionId = sessionId
       instance.ownerType = 'session'
       instance.ownerSessionId = sessionId
@@ -1760,6 +1846,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   }
 
   async createForSession(sessionId: string, options?: { show?: boolean; profileId?: string; allowReuseManual?: boolean; workspaceId?: string | null }): Promise<string> {
+    const requestedProfile = this.resolveProfileId(options?.profileId, 'session')
     const existing = this.getBoundForSession(sessionId)
     if (existing) {
       const boundInstance = this.instances.get(existing)
@@ -1792,9 +1879,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     // matches the requested profile (mismatched partitions can't be reused),
     // and that the caller's workspace is allowed to adopt it.
     const reusable = (options?.allowReuseManual ?? true) ? this.findReusableUnboundInstance(workspaceId) : null
-    const requestedProfile = options?.profileId
     const reuseMatchesProfile =
-      reusable && (!requestedProfile || reusable.profileId === this.resolveProfileId(requestedProfile))
+      reusable && reusable.profileId === requestedProfile
     if (reusable && reuseMatchesProfile) {
       this.bindSession(reusable.id, sessionId, { workspaceId })
       if (options?.show) {
@@ -1808,7 +1894,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       show: options?.show ?? false,
       ownerType: 'session',
       ownerSessionId: sessionId,
-      profileId: options?.profileId,
+      profileId: requestedProfile,
       workspaceId,
     })
   }
