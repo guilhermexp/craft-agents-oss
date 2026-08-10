@@ -92,9 +92,13 @@ profile will receive the cookies.
 - **AND** it states that the agent cannot drive the receiving profile
 
 ### Requirement: Sensitive hosts are withheld before decryption
-The system SHALL maintain a configurable denylist of sensitive hosts, defaulting to the Google
-account hosts, and SHALL drop a matching row before its value is decrypted. A withheld row SHALL
-be reported separately from a row that failed to decrypt.
+The system SHALL maintain a configurable denylist of sensitive hosts and SHALL drop a matching row
+before its value is decrypted. A withheld row SHALL be reported separately from a row that failed
+to decrypt. Matching is exact per host, so the default SHALL name every host that carries the same
+Google account session — the account, mail, docs, drive, account-settings, API and YouTube hosts,
+including their `www` forms — rather than relying on a domain-suffix rule. A caller-supplied
+denylist SHALL replace the default, except that an empty list SHALL fall back to the default so the
+protection cannot be disabled by omission.
 
 #### Scenario: A denylisted host is never decrypted
 - **WHEN** the cookie store contains a row whose host is on the denylist
@@ -105,9 +109,20 @@ be reported separately from a row that failed to decrypt.
 - **WHEN** a row's host is the dot-prefixed form of a denylisted host
 - **THEN** it is withheld on the same basis as the bare host
 
+#### Scenario: A sibling host carrying the same Google session is withheld
+- **WHEN** the cookie store contains account cookies on a Google session host other than the
+  account host — such as `.youtube.com`, `www.google.com`, `drive.google.com` or `googleapis.com`
+- **THEN** each of those rows is withheld before decryption
+- **AND** none of their values is decrypted
+
 #### Scenario: A caller-supplied denylist replaces the default
-- **WHEN** a caller provides its own denylist
+- **WHEN** a caller provides its own non-empty denylist
 - **THEN** only the hosts it names are withheld
+
+#### Scenario: An empty caller denylist does not disable the protection
+- **WHEN** a caller provides an empty denylist
+- **THEN** the default denylist is applied
+- **AND** the default sensitive hosts are still withheld
 
 ### Requirement: The import confirmation states what will be imported
 The system SHALL count the cookies and distinct hosts an import would carry, and the cookies and
@@ -163,7 +178,10 @@ cleanup ran SHALL be removed on the next start.
 
 ### Requirement: A Chrome profile name cannot escape the browser directory
 The system SHALL reject a Chrome profile name that is not a plain directory name, and SHALL
-confirm the resolved database path stays inside the browser's application-support directory.
+confirm that the database path it derives from that name stays inside the browser's
+application-support directory. This control applies to name-derived location only: an explicitly
+supplied `cookieDbPath` is a test seam that replaces location altogether, so it is neither
+pattern-checked nor confined, and it SHALL NOT be reachable from a user- or agent-facing surface.
 
 #### Scenario: A traversing profile name is refused
 - **WHEN** the requested Chrome profile name contains path separators or parent references
@@ -172,3 +190,8 @@ confirm the resolved database path stays inside the browser's application-suppor
 #### Scenario: Real Chrome profile names are accepted
 - **WHEN** the requested profile is a name Chrome creates, such as `Default` or `Profile 1`
 - **THEN** the name check accepts it
+
+#### Scenario: The database-path seam is not exposed
+- **WHEN** the cookie import and preview surfaces reachable by a user or an agent are inspected
+- **THEN** none of them lets a caller choose the cookie database path
+- **AND** the path is always derived from the browser and profile name

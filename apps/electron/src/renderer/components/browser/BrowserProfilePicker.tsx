@@ -36,15 +36,19 @@ const COOKIE_IMPORT_FAILURE_REASONS: Record<BrowserCookieImportFailureReason, tr
 
 /**
  * The main process encodes the refusal as `PREFIX + reason` because the RPC
- * layer only carries an error message. Anything else — a transport failure, a
- * bug — renders as the generic reason rather than leaking a raw string.
+ * layer only carries an error message, and the transport preserves that
+ * message verbatim — so the prefix is at the start, not somewhere inside.
+ * Anything else — a transport failure, a bug — renders as the generic reason
+ * rather than leaking a raw string. The membership test is `Object.hasOwn`:
+ * `in` reaches the prototype chain, so `constructor`/`toString`/`valueOf`
+ * would pass as reasons and resolve to a nonexistent i18n key that i18next
+ * renders as the key itself.
  */
 function cookieImportFailureReason(err: unknown): BrowserCookieImportFailureReason {
   const message = err instanceof Error ? err.message : ''
-  const index = message.indexOf(COOKIE_IMPORT_FAILURE_PREFIX)
-  if (index === -1) return 'unknown'
-  const reason = message.slice(index + COOKIE_IMPORT_FAILURE_PREFIX.length).trim()
-  return reason in COOKIE_IMPORT_FAILURE_REASONS
+  if (!message.startsWith(COOKIE_IMPORT_FAILURE_PREFIX)) return 'unknown'
+  const reason = message.slice(COOKIE_IMPORT_FAILURE_PREFIX.length).trim()
+  return Object.hasOwn(COOKIE_IMPORT_FAILURE_REASONS, reason)
     ? reason as BrowserCookieImportFailureReason
     : 'unknown'
 }

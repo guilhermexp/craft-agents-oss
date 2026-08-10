@@ -38,12 +38,24 @@ const CHROME_PROFILE_PATTERN = /^[A-Za-z0-9 _-]+$/
  * Google is the default entry because it is where device-bound session
  * credentials (DBSC) actually bite: those cookies would not authenticate a
  * different browser even if copied, so withholding them is honest rather than
- * restrictive. Callers may pass their own list through `denylist`.
+ * restrictive. Because the match is exact, every host that carries the same
+ * account session has to be named individually — the master cookies (`SID`,
+ * `SAPISID`, `__Secure-3PSID`) also ride on `.youtube.com` and on Google hosts
+ * other than the account/mail ones, and withholding only some of them would
+ * let an equivalent session through while the confirmation claims the account
+ * is protected. Callers may pass their own list through `denylist`.
  */
 export const DEFAULT_SENSITIVE_HOST_DENYLIST: readonly string[] = [
   'accounts.google.com',
   'google.com',
+  'www.google.com',
   'mail.google.com',
+  'docs.google.com',
+  'drive.google.com',
+  'myaccount.google.com',
+  'googleapis.com',
+  'youtube.com',
+  'www.youtube.com',
 ]
 
 const CHROMIUM_BROWSERS = {
@@ -95,7 +107,11 @@ export interface ChromeCookieScanOptions {
   domain?: string
   cookieDbPath?: string
   platform?: NodeJS.Platform
-  /** Overrides `DEFAULT_SENSITIVE_HOST_DENYLIST`. */
+  /**
+   * Replaces `DEFAULT_SENSITIVE_HOST_DENYLIST`. An empty array does NOT turn
+   * the protection off: it falls back to the default, so a caller writing
+   * `denylist: config.denylist ?? []` cannot silently disable it.
+   */
   denylist?: readonly string[]
   openCookieDatabase?: ChromeCookieDatabaseFactory
 }
@@ -266,7 +282,9 @@ function normalizeHost(host: string): string {
 }
 
 function buildDenylist(denylist: readonly string[] | undefined): ReadonlySet<string> {
-  const entries = denylist ?? DEFAULT_SENSITIVE_HOST_DENYLIST
+  // `?? DEFAULT` would not catch `[]`, which is not nullish — an empty
+  // override must fall back to the default rather than withhold nothing.
+  const entries = denylist?.length ? denylist : DEFAULT_SENSITIVE_HOST_DENYLIST
   return new Set(entries.map(normalizeHost).filter(entry => entry.length > 0))
 }
 

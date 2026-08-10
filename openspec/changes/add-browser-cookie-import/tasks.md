@@ -203,6 +203,35 @@ been removed from the spec delta so the spec does not assert behavior the code w
   focused tests above, and `openspec validate add-browser-cookie-import --strict
   --no-interactive`. `lint:tool-contracts` is not applicable — no session tool changed.
   - verify: `openspec validate add-browser-cookie-import --strict --no-interactive`
+- [x] 3.17 Close the denylist coverage hole: matching is exact per host, so name every host that
+  carries the same Google account session (`www.google.com`, `docs.google.com`, `drive.google.com`,
+  `myaccount.google.com`, `googleapis.com`, `youtube.com`, `www.youtube.com`) in
+  `DEFAULT_SENSITIVE_HOST_DENYLIST`. The master cookies (`SID`, `SAPISID`, `__Secure-3PSID`) ride on
+  `.youtube.com` too, so withholding only the account/mail hosts let an equivalent session through
+  while the confirmation claimed the account was protected. Do NOT switch to a registrable-suffix
+  rule — that changes the semantics the spec declares. Cover it with a test that asserts the value
+  is never decrypted (row encrypted under a foreign password lands in `blocked`, not `skipped`).
+  - files: `packages/shared/src/browser-cookies/chrome-cookie-reader.ts`, `packages/shared/src/browser-cookies/chrome-cookie-reader.test.ts`
+  - verify: `bun test packages/shared/src/browser-cookies/`
+- [x] 3.18 Stop an empty override from disabling the denylist: `denylist ?? DEFAULT` does not catch
+  `[]`, so the idiomatic `denylist: config.denylist ?? []` of a future consumer of the public
+  `ChromeCookieScanOptions` would silently withhold nothing. Use `denylist?.length ? denylist :
+  DEFAULT_SENSITIVE_HOST_DENYLIST` and say so in the jsdoc of the public field.
+  - files: `packages/shared/src/browser-cookies/chrome-cookie-reader.ts`, `packages/shared/src/browser-cookies/chrome-cookie-reader.test.ts`
+  - verify: `bun test packages/shared/src/browser-cookies/`
+- [x] 3.19 Replace `reason in COOKIE_IMPORT_FAILURE_REASONS` with
+  `Object.hasOwn(COOKIE_IMPORT_FAILURE_REASONS, reason)` in `BrowserProfilePicker`: `in` walks the
+  prototype chain, so `constructor`/`toString`/`valueOf` passed the guard and produced a
+  nonexistent i18n key that i18next renders as the key itself. Narrow `indexOf` to `startsWith` —
+  the transport preserves the message verbatim, so the prefix is at position 0.
+  - files: `apps/electron/src/renderer/components/browser/BrowserProfilePicker.tsx`
+  - verify: `grep -q "Object.hasOwn(COOKIE_IMPORT_FAILURE_REASONS" apps/electron/src/renderer/components/browser/BrowserProfilePicker.tsx`
+- [x] 3.20 Correct the spec delta: state the real denylist coverage and the empty-override fallback,
+  and qualify the path-confinement requirement so it does not claim a control the code does not
+  exercise — `cookieDbPath` is a test seam that replaces location entirely and is unreachable from
+  the user/agent surfaces (both RPCs take only `profileId`).
+  - files: `openspec/changes/add-browser-cookie-import/specs/browser-cookie-import/spec.md`
+  - verify: `bunx openspec validate add-browser-cookie-import --strict --no-interactive`
 
 ## 4. Validation (orchestrator-owned — not worker-closeable)
 

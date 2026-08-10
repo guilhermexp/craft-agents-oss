@@ -603,11 +603,20 @@ persist in app JSON, or return decrypted cookie values from a tool/UI result.
 Per-row decryption failures are counted as skipped and must not abort the read.
 Reader invariants that are load-bearing:
 
-- `DEFAULT_SENSITIVE_HOST_DENYLIST` (Google account hosts) is applied **before**
-  decryption — a denylisted row's value is never materialized, not even to be
-  discarded. Matching is exact per host with a leading dot ignored; the list is
-  overridable per call through `denylist`. Withheld rows are reported as
-  `blocked`, which must stay distinct from `skipped`.
+- `DEFAULT_SENSITIVE_HOST_DENYLIST` is applied **before** decryption — a
+  denylisted row's value is never materialized, not even to be discarded.
+  Matching is exact per host with a leading dot ignored, so the default has to
+  name EVERY host carrying the same Google account session, not just the
+  account host: the master cookies (`SID`, `SAPISID`, `__Secure-3PSID`) also
+  ride on `.youtube.com` and on `www`/`docs`/`drive`/`myaccount`/`googleapis`.
+  Adding a Google surface means adding it here; do not "fix" the coverage by
+  switching to a registrable-suffix rule — that changes the semantics the spec
+  declares. The list is overridable per call through `denylist`, but an EMPTY
+  override falls back to the default (`denylist?.length ? … : DEFAULT`): `??`
+  does not catch `[]`, and `ChromeCookieScanOptions` is public API, so the
+  idiomatic `denylist: config.denylist ?? []` would otherwise disable the guard
+  in silence. Withheld rows are reported as `blocked`, which must stay distinct
+  from `skipped`.
 - `previewChromeCookies` selects `host_key` only. It must never decrypt and must
   never need the Keychain password, because it runs *before* the user confirms.
 - The derived AES key is wiped with `key.fill(0)` in the read's `finally`. The
@@ -617,8 +626,12 @@ Reader invariants that are load-bearing:
   `sweepStaleCookieTempDirs` runs at main-process startup because an exit hook
   cannot run after SIGKILL, which is the case that strands the copy.
 - The Chrome profile name is validated against `/^[A-Za-z0-9 _-]+$/` and the
-  resolved path is confined under the browser's application-support directory.
-  `join` does not neutralize `..`.
+  path derived from it is confined under the browser's application-support
+  directory. `join` does not neutralize `..`. The confinement covers
+  name-derived location ONLY: `cookieDbPath` is a test seam that replaces
+  location entirely and is neither pattern-checked nor confined, so it must
+  never become reachable from a user- or agent-facing surface (both RPCs take
+  `profileId` and nothing else).
 - The domain-hash prefix check uses `.equals()`, not `timingSafeEqual`: both
   sides are derived locally from the row's own host, so there is no secret.
 
@@ -661,6 +674,13 @@ The picker must identify Google Chrome's `Default` profile and the receiving
 app profile, preview the counts (cookies, distinct hosts, withheld) so the
 confirmation is not blind, warn about the macOS Keychain prompt and agent
 inaccessibility, and display counts only.
+The picker's failure mapping uses
+`Object.hasOwn(COOKIE_IMPORT_FAILURE_REASONS, reason)`, never `reason in …`:
+`in` walks the prototype chain, so `constructor`/`toString`/`valueOf` pass as
+reasons and resolve to a nonexistent i18n key that i18next renders as the key
+string. Same defect class as the favicon `Content-Type` allowlist above. The
+prefix test is `startsWith`, because the transport preserves the handler's
+message verbatim.
 
 `better-sqlite3` cannot be instantiated under Bun (oven-sh/bun#4290), so the
 bun tests inject a `bun:sqlite` fake through the `openCookieDatabase` seam. The

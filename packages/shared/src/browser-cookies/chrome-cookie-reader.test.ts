@@ -307,6 +307,37 @@ describe('readChromeCookies', () => {
     expect(result.blocked).toBe(0)
   })
 
+  it('withholds the sibling hosts that carry the same Google session', () => {
+    // The master account cookies (`SID`, `SAPISID`, `__Secure-3PSID`) are set
+    // on `.youtube.com` and on Google hosts other than the three originally
+    // named. Each row is encrypted under a different password, so a value that
+    // reached `decryptCookieValue` would land in `skipped`; `blocked` with
+    // `skipped: 0` is the proof that none of them was decrypted.
+    const sessionHosts = [
+      '.youtube.com',
+      'www.google.com',
+      'docs.google.com',
+      'drive.google.com',
+      'myaccount.google.com',
+      'googleapis.com',
+    ]
+    for (const domain of sessionHosts) {
+      insertCookie({
+        domain,
+        name: 'SID',
+        value: 'must-never-be-decrypted',
+        password: 'a-different-password',
+      })
+    }
+    insertCookie({ domain: 'example.com', name: 'ok', value: 'fine' })
+
+    const result = read()
+
+    expect(result.cookies.map(cookie => cookie.domain)).toEqual(['example.com'])
+    expect(result.blocked).toBe(sessionHosts.length)
+    expect(result.skipped).toBe(0)
+  })
+
   it('accepts a caller-supplied denylist in place of the default', () => {
     insertCookie({ domain: 'accounts.google.com', name: 'SID', value: 'now-allowed' })
     insertCookie({ domain: 'intranet.example.com', name: 'sso', value: 'now-denied' })
@@ -315,6 +346,24 @@ describe('readChromeCookies', () => {
 
     expect(result.cookies.map(cookie => cookie.domain)).toEqual(['accounts.google.com'])
     expect(result.blocked).toBe(1)
+  })
+
+  it('falls back to the default denylist when the override is empty', () => {
+    // `[]` is not nullish, so a caller writing `denylist: config.denylist ?? []`
+    // would otherwise disable the protection entirely and in silence.
+    insertCookie({
+      domain: 'accounts.google.com',
+      name: 'SID',
+      value: 'must-never-be-decrypted',
+      password: 'a-different-password',
+    })
+    insertCookie({ domain: 'example.com', name: 'ok', value: 'fine' })
+
+    const result = read(undefined, [])
+
+    expect(result.cookies.map(cookie => cookie.domain)).toEqual(['example.com'])
+    expect(result.blocked).toBe(1)
+    expect(result.skipped).toBe(0)
   })
 
   it('previews cookie and host counts without a Keychain password', () => {
