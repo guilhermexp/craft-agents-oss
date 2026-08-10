@@ -4,15 +4,16 @@
  * Every other test in this directory injects a fake `ChromeCookieDatabase`,
  * so `openBetterSqliteDatabase` — the code that actually runs when the user
  * clicks "Import from Chrome" — was never executed by a test. Bun cannot
- * instantiate `better-sqlite3` (oven-sh/bun#4290), so this suite drives a Node
- * child process instead: same runtime as Electron main, real `better-sqlite3`,
- * real SQLite file in Chrome's cookie schema, no seam injected.
+ * instantiate `better-sqlite3` (oven-sh/bun#4290), so this suite drives a
+ * child process instead: Electron-as-Node when available (the ABI the addon
+ * is built for), plain `node` otherwise, real `better-sqlite3`, real SQLite
+ * file in Chrome's cookie schema, no seam injected.
  *
  * The harness lives in `chrome-cookie-reader.node-harness.ts`.
  */
 
 import { describe, expect, it, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -58,15 +59,43 @@ interface HarnessResult {
 
 const HARNESS = join(import.meta.dir, 'chrome-cookie-reader.node-harness.ts')
 
+/**
+ * Run the harness under the SAME Node ABI the app ships with.
+ *
+ * `better-sqlite3` is a native addon and this repo builds it for Electron
+ * (NODE_MODULE_VERSION 148). Spawning the system `node` (ABI 127) makes the
+ * addon refuse to load with ERR_DLOPEN_FAILED, so the test would report the
+ * production path as broken on exactly the machines set up to ship it.
+ * Electron with ELECTRON_RUN_AS_NODE=1 is plain Node on the right ABI.
+ */
+function resolveHarnessRuntime(): { command: string[]; env: Record<string, string> } {
+  try {
+    const electronBinary = require('electron') as unknown
+    if (typeof electronBinary === 'string' && existsSync(electronBinary)) {
+      return {
+        command: [electronBinary, '--no-warnings', '--experimental-strip-types', HARNESS],
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } as Record<string, string>,
+      }
+    }
+  } catch {
+    // Electron not installed (CI without the binary download) — fall through.
+  }
+  return {
+    command: ['node', '--no-warnings', '--experimental-strip-types', HARNESS],
+    env: process.env as Record<string, string>,
+  }
+}
+
 describe('readChromeCookies over real better-sqlite3', () => {
   let workdir: string
   let harness: HarnessResult
 
   beforeAll(async () => {
     workdir = mkdtempSync(join(tmpdir(), 'craft-cookie-prod-path-'))
+    const runtime = resolveHarnessRuntime()
     const proc = Bun.spawn(
-      ['node', '--no-warnings', '--experimental-strip-types', HARNESS, workdir],
-      { stdout: 'pipe', stderr: 'pipe' },
+      [...runtime.command, workdir],
+      { stdout: 'pipe', stderr: 'pipe', env: runtime.env },
     )
     const [stdout, stderr, exitCode] = await Promise.all([
       new Response(proc.stdout).text(),
