@@ -444,6 +444,36 @@ constante de config root capturada no load do módulo para resolver paths: as
 suítes de meetings apontam `CRAFT_CONFIG_DIR` para um tmpdir e voltariam a
 escrever no `~/.craft-agent` real.
 
+## Lint toolchain under TypeScript 7
+
+`bun run lint` is a blocking gate again (`apps/electron` `build` and `validate:ci`
+both run it), and the whole reason it can run is documented in
+`docs/eslint-typescript7.md`. Read that before touching any of it.
+
+- `typescript` stays on the 7.x native port. It has **no JS API**
+  (`require('typescript')` yields only `version`/`versionMajorMinor`), which is
+  what killed ESLint: `typescript-estree` reads `ts.Extension.Cjs` and
+  `ts-api-utils` reads `ts.Intrinsic`, both at module load. No published
+  `@typescript-eslint` release accepts TS 7 (`peerDependencies.typescript:
+  ">=4.8.4 <6.1.0"`).
+- The fix is scoped isolation, not a downgrade. `typescript-for-eslint`
+  (`npm:typescript@5.9.3`) is a root devDependency, and the root `postinstall`
+  runs `scripts/link-eslint-typescript.mjs`, which walks the lint dependency
+  closure and gives each `typescript` consumer a nested link to that alias.
+  `tsc` means TS 7 in every `typecheck:*` script; `bun run typecheck:all` must
+  keep passing.
+- The consumer list is discovered from the dependency graph, not hardcoded. Do
+  not replace the walk with a literal array, and do not move the work out of the
+  install lifecycle: a clean clone plus `bun install` has to be lintable with no
+  manual step. `overrides`/`resolutions` cannot substitute — `typescript` is a
+  peerDependency there, so there is no edge to rewrite.
+- Waivers are pointed and carry a reason: an inline
+  `eslint-disable-next-line <rule> -- why` at the site, or a file entry in the
+  documented exception block of the flat config. Never turn a rule off globally
+  to make the gate pass. `craft-styles/no-nonstandard-shadows` exceptions exist
+  because the shadow scale is owned by design — swap a shadow for an approved
+  token only when the equivalent is obvious, otherwise waive it.
+
 ## Validation
 
 For Hermes/Craft integration changes, run the focused Craft tests:
@@ -506,6 +536,17 @@ Electron distribution step:
 ```bash
 cd apps/electron
 bun run bundle:hermes
+```
+
+For lint-toolchain changes (root `typescript` pin, `typescript-for-eslint`,
+`scripts/link-eslint-typescript.mjs`, `postinstall`, any flat config or custom
+rule), prove the linter still comes up from a clean install and that the custom
+rules still behave:
+
+```bash
+rm -rf node_modules && bun install && bun run lint
+bun test packages/ui/eslint-rules/__tests__/ apps/electron/eslint-rules/__tests__/
+bun run typecheck:all
 ```
 
 ## CLAUDE.md / AGENTS.md scope

@@ -504,6 +504,7 @@ describe('TokenRefreshManager', () => {
 
       await manager.ensureFreshToken(source);
 
+      // eslint-disable-next-line craft-shared/no-inline-source-auth-check -- #710 is about the in-memory field being mutated; the derived isSourceUsable() check is asserted below
       expect(source.config.isAuthenticated).toBe(false);
       expect(source.config.connectionStatus).toBe('needs_auth');
       expect(source.config.connectionError).toBe('Token refresh failed');
@@ -540,6 +541,7 @@ describe('TokenRefreshManager', () => {
       const result = await manager.ensureFreshToken(source);
 
       expect(result).toEqual({ success: false, reason: 'token-refresh-failed' });
+      // eslint-disable-next-line craft-shared/no-inline-source-auth-check -- #710 is about the in-memory field being mutated; the derived isSourceUsable() check is asserted below
       expect(source.config.isAuthenticated).toBe(false);
       expect(source.config.connectionStatus).toBe('needs_auth');
       expect(source.config.connectionError).toBe('Token refresh failed');

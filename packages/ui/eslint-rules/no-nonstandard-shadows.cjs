@@ -6,6 +6,9 @@
  * - Disallows arbitrary shadow classes (shadow-[...]) unless explicitly allowlisted
  * - Disallows inline style boxShadow values
  * - Disallows direct style assignments (el.style.boxShadow = ...)
+ *
+ * `allowInlineNone` (default true) permits the two reset forms — `'none'` and
+ * `''` — since clearing a shadow cannot introduce a nonstandard one.
  */
 
 /** @type {import('eslint').Rule.RuleModule} */
@@ -119,13 +122,15 @@ module.exports = {
       )
     }
 
-    function isNoneLiteral(node) {
-      return (
-        node &&
-        node.type === 'Literal' &&
-        typeof node.value === 'string' &&
-        node.value.trim().toLowerCase() === 'none'
-      )
+    /**
+     * A shadow being cleared, not introduced: `'none'` and the empty string are
+     * both CSS resets, and `''` is the only way to drop an inline style back to
+     * the stylesheet value. Neither can produce a nonstandard shadow.
+     */
+    function isShadowResetLiteral(node) {
+      if (!node || node.type !== 'Literal' || typeof node.value !== 'string') return false
+      const value = node.value.trim().toLowerCase()
+      return value === 'none' || value === ''
     }
 
     return {
@@ -142,13 +147,13 @@ module.exports = {
 
       Property(node) {
         if (!isBoxShadowPropertyKey(node.key)) return
-        if (allowInlineNone && isNoneLiteral(node.value)) return
+        if (allowInlineNone && isShadowResetLiteral(node.value)) return
         context.report({ node: node.value, messageId: 'disallowedInline' })
       },
 
       AssignmentExpression(node) {
         if (!isStyleBoxShadowAssignment(node.left)) return
-        if (allowInlineNone && isNoneLiteral(node.right)) return
+        if (allowInlineNone && isShadowResetLiteral(node.right)) return
         context.report({ node: node.right, messageId: 'disallowedInline' })
       },
     }

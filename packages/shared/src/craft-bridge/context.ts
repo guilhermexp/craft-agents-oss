@@ -1,4 +1,5 @@
 import type { LoadedSource } from '../sources/types.ts';
+import { isSourceUsable } from '../sources/storage.ts';
 import { isCraftAgentsDocsSource, isCraftProductMcpSource } from './endpoint.ts';
 
 export type CraftBridgeContextAvailability = 'available' | 'unavailable';
@@ -43,7 +44,7 @@ export function getCraftDocumentContext(source: LoadedSource | undefined): Craft
     };
   }
 
-  if (!source.config.enabled || source.config.isAuthenticated !== true) {
+  if (!isSourceUsable(source)) {
     return {
       provider: 'craft-bridge',
       availability: 'unavailable',

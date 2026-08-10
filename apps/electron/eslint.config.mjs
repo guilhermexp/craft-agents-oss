@@ -159,6 +159,34 @@ export default [
     },
   },
 
+  // Shadows that carry meaning the approved scale cannot express. Waived rather
+  // than remapped: swapping any of these for a neutral token is a visual change,
+  // and the shadow scale is owned by design, not by the linter.
+  {
+    files: [
+      // Purple-tinted glow that belongs to the chip's purple palette.
+      'src/renderer/components/app-shell/BackgroundFinishedChip.tsx',
+      // Three-layer branded FAB elevation (ambient drop + accent glow + inner highlight),
+      // with a matching hover variant.
+      'src/renderer/components/app-shell/FabNewChat.tsx',
+      // `shadow-sm` on the active segmented-control pill; no approved token matches its weight.
+      'src/renderer/components/app-shell/kanban/BoardListToggle.tsx',
+      // Inset rings drawn from the column color to mark the drop target, plus the
+      // column popover's own elevation. Neither is an elevation token.
+      'src/renderer/components/app-shell/kanban/KanbanColumn.tsx',
+      // Accent-derived ring + glow marking a live task; the color comes from the task.
+      'src/renderer/components/app-shell/kanban/TaskTile.tsx',
+      // Diagnostic HUD in its own React root: styling is deliberately literal so it stays
+      // readable when the theme layer is what is being diagnosed (see the file header).
+      'src/renderer/components/perf/PerfOverlay.tsx',
+      // `shadow-md` on the column-visibility dropdown; no approved token matches its weight.
+      'src/renderer/components/workspace-objects/ObjectTableView.tsx',
+    ],
+    rules: {
+      'craft-styles/no-nonstandard-shadows': 'off',
+    },
+  },
+
   // Enforce backend abstraction boundary in Electron main process.
   {
     files: ['src/main/**/*.{ts,tsx}'],

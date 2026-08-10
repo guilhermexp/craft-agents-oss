@@ -40,7 +40,7 @@ bun run lint                      # ipc-sends + electron + shared + ui (eslint)
 bun run lint:i18n:parity          # checks i18n key parity across locales
 bun run lint:tool-contracts       # session-tool schema/contract drift
 bun run validate:dev              # typecheck:all + test:shared:all + test:doc-tools
-bun run validate:ci               # validate:dev + lint:i18n:parity
+bun run validate:ci               # validate:dev + lint + lint:i18n:parity + lint:i18n:sorted
 ```
 
 Single-test patterns:
@@ -61,6 +61,7 @@ Notes:
 - `bun test` script also runs every `*.isolated.ts` file in its own `bun test` invocation. A single isolated-test failure aborts the whole script — they need their own process for state isolation.
 - Doc-tool smoke tests (`test:doc-tools`) require `python3` with the deps under `apps/electron/resources/scripts/`.
 - `husky` is wired via `prepare`; commits run staged-only typecheck (`scripts/typecheck-staged.sh`) and i18n staged lint.
+- `bun run lint` needs a TypeScript with a JS API, which `typescript@7` (the native port) does not have. The root `postinstall` runs `scripts/link-eslint-typescript.mjs`, which gives only the ESLint dependency tree a nested `typescript@5.9.3` (`typescript-for-eslint`). `tsc` stays TS 7 everywhere. Read `docs/eslint-typescript7.md` before touching the lint toolchain, the `postinstall`, or the root `typescript` pin.
 
 ## Architecture
 

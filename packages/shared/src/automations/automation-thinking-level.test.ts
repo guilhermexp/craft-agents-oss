@@ -20,7 +20,6 @@ function promptConfig(action: Record<string, unknown>) {
 }
 
 function firstAction(result: ReturnType<typeof validateAutomationsConfig>) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const automations = result.config?.automations as any;
   return automations?.SchedulerTick?.[0]?.actions?.[0];
 }

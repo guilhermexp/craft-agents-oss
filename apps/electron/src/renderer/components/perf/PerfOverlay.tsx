@@ -32,11 +32,18 @@ const TABS: readonly { id: Tab; label: string }[] = [
 
 const ROWS = 12
 
+/**
+ * Above the whole app, deliberately outside the `--z-*` token scale (which tops
+ * out at `--z-splash: 600`). The overlay lives in its own React root and must
+ * stay visible over anything it is diagnosing, including the splash layer.
+ */
+const Z_PERF_OVERLAY = 2147483000
+
 const shell: React.CSSProperties = {
   position: 'fixed',
   right: 12,
   bottom: 12,
-  zIndex: 2147483000,
+  zIndex: Z_PERF_OVERLAY,
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
   fontSize: 11,
   lineHeight: 1.45,
