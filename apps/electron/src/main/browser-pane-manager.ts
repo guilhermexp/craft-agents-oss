@@ -47,6 +47,7 @@ import { TOOLBAR_CHANNELS } from '../shared/browser-toolbar-channels'
 import { BROWSER_CHROME_BG, PANEL_INTERIOR_RADIUS } from '../shared/browser-chrome'
 import { isAllowedTopLevelUrl, CRAFT_DEEPLINK_SCHEME_PREFIX, decideWillNavigate, decideWindowOpen } from './browser/navigation-policy'
 import { hardenSessionPermissions } from './browser/partition-hardening'
+import { fetchFaviconDataUrl, isFetchableFaviconUrl } from './browser/favicon-transport'
 import {
   getProfilePartition,
   DEFAULT_BROWSER_PROFILE_PARTITION,
@@ -148,7 +149,17 @@ export interface BrowserInstance {
   cdp: BrowserCDP
   currentUrl: string
   title: string
+  /**
+   * Validated `data:` URL, never the URL the page asked for — see
+   * `browser/favicon-transport.ts` for why the raw URL stays in main.
+   */
   favicon: string | null
+  /** Page-provided URL behind `favicon`; dedupes repeat announcements. */
+  faviconSourceUrl: string | null
+  /** Monotonic per-instance token; a fetch whose token went stale is dropped. */
+  faviconToken: number
+  /** Aborts the in-flight favicon fetch on navigation or destroy. */
+  faviconAbort: AbortController | null
   isLoading: boolean
   canGoBack: boolean
   canGoForward: boolean
@@ -591,6 +602,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       currentUrl: 'about:blank',
       title: 'New Tab',
       favicon: null,
+      faviconSourceUrl: null,
+      faviconToken: 0,
+      faviconAbort: null,
       isLoading: false,
       canGoBack: false,
       canGoForward: false,
@@ -2129,6 +2143,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     safe('applyAgentControlLock', () => this.applyAgentControlLock(instance, false))
     safe('updateNativeOverlayState', () => this.updateNativeOverlayState(instance))
     safe('cdp.detach', () => instance.cdp.detach())
+    safe('cancelFaviconFetch', () => this.cancelFaviconFetch(instance))
     // Destroying the window used to take the attached BrowserViews' webContents
     // with it. WebContentsView does not work that way: the view is a child of
     // contentView and its webContents outlives the window unless closed here,
@@ -3479,6 +3494,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       }
       instance.themeObserverToken = null
       instance.themeColor = null // reset for new page (batched with state push below)
+      // The previous page's icon does not describe this one, and its fetch is
+      // now pointless — drop both before the state push below.
+      this.cancelFaviconFetch(instance)
+      instance.favicon = null
+      instance.faviconSourceUrl = null
       const normalized = this.normalizePageState(url, pageWc.getTitle())
       instance.currentUrl = normalized.url
       instance.title = normalized.title
@@ -3544,8 +3564,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     pageWc.on('page-favicon-updated', (_event, favicons) => {
-      instance.favicon = favicons[0] || null
-      this.emitStateChange(instance)
+      this.updateFavicon(instance, favicons[0] || null)
     })
 
     pageWc.on('did-change-theme-color', (_event, color) => {
@@ -3683,6 +3702,56 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       agentControlActive: !!instance.agentControl?.active,
       themeColor: instance.themeColor,
     }
+  }
+
+  /**
+   * SECURITY: the favicon URL comes from the page, so it never leaves this
+   * process. We fetch it here — in the pane's own session, so cookies and proxy
+   * come from that partition and no other profile's credentials are used — and
+   * hand the renderer a validated `data:` URL, which the renderer CSP already
+   * allows. See `browser/favicon-transport.ts`.
+   *
+   * The state push does not wait for the bytes: the page would otherwise sit
+   * without state for as long as the favicon host takes to answer.
+   */
+  private updateFavicon(instance: BrowserInstance, candidateUrl: string | null): void {
+    // Pages re-announce the same icon on every SPA route change; refetching it
+    // (and blanking the badge in between) would be pure churn.
+    if (candidateUrl && candidateUrl === instance.faviconSourceUrl) return
+
+    this.cancelFaviconFetch(instance)
+    instance.faviconSourceUrl = candidateUrl
+    instance.favicon = null
+    this.emitStateChange(instance)
+
+    if (!isFetchableFaviconUrl(candidateUrl)) return
+    const pageWc = instance.pageView.webContents
+    if (pageWc.isDestroyed()) return
+
+    const controller = new AbortController()
+    const token = instance.faviconToken
+    instance.faviconAbort = controller
+
+    void fetchFaviconDataUrl(candidateUrl, {
+      fetch: (url, init) => pageWc.session.fetch(url, init),
+      signal: controller.signal,
+    }).then((dataUrl) => {
+      // Navigation or destroy already moved on — this icon belongs to a page
+      // that is no longer on screen.
+      if (instance.faviconToken !== token || !dataUrl) return
+      instance.faviconAbort = null
+      instance.favicon = dataUrl
+      this.emitStateChange(instance)
+    }).catch(() => {
+      // Favicon is decoration: a failure here is never worth a log line per
+      // navigation, let alone a visible error.
+    })
+  }
+
+  private cancelFaviconFetch(instance: BrowserInstance): void {
+    instance.faviconToken += 1
+    instance.faviconAbort?.abort()
+    instance.faviconAbort = null
   }
 
   private emitStateChange(instance: BrowserInstance): void {

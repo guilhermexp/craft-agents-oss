@@ -444,6 +444,35 @@ constante de config root capturada no load do módulo para resolver paths: as
 suítes de meetings apontam `CRAFT_CONFIG_DIR` para um tmpdir e voltariam a
 escrever no `~/.craft-agent` real.
 
+## Agentic browser pane
+
+`apps/electron/src/main/browser/` owns the pure, unit-testable decision layers
+of the browser pane (`navigation-policy.ts`, `partition-hardening.ts`,
+`favicon-transport.ts`); `browser-pane-manager.ts` only wires them into
+Electron events and performs the side effects. Keep that split.
+
+Nada escolhido por uma página carregada no pane pode virar requisição do
+renderer privilegiado. O favicon é o caso que quase escapou:
+
+- `page-favicon-updated` entrega uma URL escolhida pela página. O handler
+  SHALL NOT propagá-la; `BrowserInstance.favicon` só recebe uma `data:` URL
+  produzida por `fetchFaviconDataUrl`, que busca os bytes na `session` da
+  própria partition do pane (cookies/proxy daquele perfil, credencial de
+  nenhum outro) e valida esquema (`http:`/`https:`), status, content-type
+  (allowlist raster — `image/svg+xml` é rejeitado de propósito) e tamanho
+  (`FAVICON_MAX_BYTES`, 32 KiB, checado no `content-length` e por chunk).
+- Qualquer guarda que falhe vira `null` em silêncio: favicon é decoração e não
+  pode derrubar a instância, logar por navegação nem virar erro visível.
+- `emitStateChange` nunca espera pelos bytes. `did-navigate` e
+  `finalizeDestroyedInstance` abortam a busca em voo, e `faviconToken`
+  descarta resposta de uma página que já saiu de cena.
+- A CSP do renderer (`apps/electron/src/renderer/index.html:6`) fica intacta —
+  `data:` já está em `img-src`. Adicionar `http:`/`http://localhost:*` ali é o
+  anti-fix: reabre o vetor de sondagem de portas locais que
+  `openspec/changes/archive/2026-07-15-harden-navigation-and-ssrf/` fechou.
+  O contrato completo está em
+  `openspec/changes/harden-browser-favicon-transport/`.
+
 ## Validation
 
 For Hermes/Craft integration changes, run the focused Craft tests:
@@ -477,6 +506,13 @@ chat não regrediu:
 
 ```bash
 bun test apps/electron/src/renderer/components/browser/__tests__/
+```
+
+Para mudanças nas camadas puras do browser pane (navegação, hardening de
+partition, favicon transport), rode:
+
+```bash
+bun test apps/electron/src/main/browser/__tests__/
 ```
 
 For Hermes overlay changes, first prove all overlays apply from a clean cache
