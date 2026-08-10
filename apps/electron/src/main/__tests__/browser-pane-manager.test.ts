@@ -8,12 +8,77 @@
 import { describe, it, expect, beforeEach, mock } from 'bun:test'
 import * as sharedConfig from '@craft-agent/shared/config'
 import { PANEL_INTERIOR_RADIUS } from '../../shared/browser-chrome'
+import { Readable } from 'stream'
 
 const createdWindows: any[] = []
 let toolbarLoadFailuresRemaining = 0
 let nextMockWebContentsId = 1
 const mockShellOpenExternal = mock(async () => {})
 const mockIpcMainHandle = mock(() => {})
+const netRequests: MockClientRequest[] = []
+/** 8-byte PNG signature — enough to prove the bytes round-trip into the data: URL. */
+const FAVICON_PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const FAVICON_PNG_DATA_URL = `data:image/png;base64,${Buffer.from(FAVICON_PNG_BYTES).toString('base64')}`
+
+interface MockClientRequestOptions {
+  url?: string
+  session?: unknown
+  method?: string
+  credentials?: string
+  redirect?: string
+}
+
+interface MockClientRequest {
+  options: MockClientRequestOptions
+  aborted: boolean
+  ended: boolean
+  followed: number
+  on: (event: string, cb: Function) => MockClientRequest
+  end: () => void
+  abort: () => void
+  followRedirect: () => void
+  _emit: (event: string, ...args: unknown[]) => void
+  _respond: (init?: { statusCode?: number; headers?: Record<string, string | string[]>; bytes?: Uint8Array }) => void
+}
+
+/**
+ * Stand-in for Electron's `ClientRequest`. The favicon fetcher drives it
+ * directly (see `createFaviconFetcher`) because `session.fetch` cannot
+ * revalidate a redirect hop, so the redirect event is part of the contract
+ * under test — `followRedirect` must be called synchronously or not at all.
+ */
+function createMockClientRequest(options: MockClientRequestOptions): MockClientRequest {
+  const listeners: Record<string, Function[]> = {}
+  const req: MockClientRequest = {
+    options,
+    aborted: false,
+    ended: false,
+    followed: 0,
+    on: (event, cb) => {
+      if (!listeners[event]) listeners[event] = []
+      listeners[event].push(cb)
+      return req
+    },
+    end: () => { req.ended = true },
+    abort: () => {
+      req.aborted = true
+      req._emit('abort')
+    },
+    followRedirect: () => { req.followed += 1 },
+    _emit: (event, ...args) => {
+      for (const cb of [...(listeners[event] || [])]) cb(...args)
+    },
+    _respond: (init = {}) => {
+      // Electron's IncomingMessage is a Readable carrying statusCode/headers.
+      const stream = Object.assign(Readable.from([Buffer.from(init.bytes ?? FAVICON_PNG_BYTES)]), {
+        statusCode: init.statusCode ?? 200,
+        headers: init.headers ?? { 'content-type': 'image/png' },
+      })
+      req._emit('response', stream)
+    },
+  }
+  return req
+}
 
 function createMockWebContents() {
   const listeners: Record<string, Function[]> = {}
@@ -212,6 +277,13 @@ mock.module('electron', () => ({
   nativeTheme: {
     shouldUseDarkColors: false,
   },
+  net: {
+    request: mock((options: MockClientRequestOptions) => {
+      const request = createMockClientRequest(options)
+      netRequests.push(request)
+      return request
+    }),
+  },
   shell: {
     openExternal: mockShellOpenExternal,
   },
@@ -306,6 +378,7 @@ describe('BrowserPaneManager', () => {
   beforeEach(() => {
     createdWindows.length = 0
     toolbarLoadFailuresRemaining = 0
+    netRequests.length = 0
     mockShellOpenExternal.mockClear()
     mockIpcMainHandle.mockClear()
     manager = new BrowserPaneManager()
@@ -1704,6 +1777,188 @@ describe('BrowserPaneManager', () => {
       ;(manager as any).setupSessionPermissions(ses)
       ;(manager as any).setupSessionPermissions(ses)
       expect(ses.setPermissionRequestHandler).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('favicon transport lifecycle', () => {
+    /**
+     * Drain the event loop instead of waiting on the clock: the fetcher promise
+     * and the Node-Readable-to-web-stream read resolve across IO ticks, which
+     * neither fake timers nor a single microtask flush would advance.
+     */
+    const flush = async (): Promise<void> => {
+      for (let i = 0; i < 25; i += 1) {
+        const { promise, resolve } = Promise.withResolvers<void>()
+        setImmediate(resolve)
+        await promise
+      }
+    }
+
+    function startPane(id: string) {
+      manager.createInstance(id)
+      const instance = (manager as any).instances.get(id)
+      const infos: Array<{ id: string; favicon: string | null }> = []
+      manager.onStateChange((info) => { if (info.id === id) infos.push(info) })
+      netRequests.length = 0
+      infos.length = 0
+      return { instance, infos, pageWc: instance.pageView.webContents }
+    }
+
+    it('emits state without the icon first, then again once the data: URL is ready', async () => {
+      const { instance, infos, pageWc } = startPane('fav-async')
+
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.png'])
+
+      // The page must not wait on the favicon host to get a state push.
+      expect(infos).toHaveLength(1)
+      expect(infos[0].favicon).toBe(null)
+      expect(netRequests).toHaveLength(1)
+
+      netRequests[0]!._respond()
+      await flush()
+
+      expect(infos).toHaveLength(2)
+      // A `data:` URL, never the https URL the page announced.
+      expect(infos[1].favicon).toBe(FAVICON_PNG_DATA_URL)
+      expect(instance.favicon).toBe(FAVICON_PNG_DATA_URL)
+    })
+
+    it('requests on the pane session with credentials omitted and redirects held manual', () => {
+      const { pageWc } = startPane('fav-options')
+
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.png'])
+
+      expect(netRequests[0]!.options).toMatchObject({
+        url: 'https://example.com/favicon.png',
+        method: 'GET',
+        credentials: 'omit',
+        redirect: 'manual',
+      })
+      expect(netRequests[0]!.options.session).toBe(pageWc.session)
+      expect(netRequests[0]!.ended).toBe(true)
+    })
+
+    it('revalidates each redirect hop and refuses one that leaves the scheme allowlist', async () => {
+      const { instance, pageWc } = startPane('fav-redirect')
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.ico'])
+      const request = netRequests[0]!
+
+      request._emit('redirect', 302, 'GET', 'https://cdn.example.com/favicon.png', {})
+      expect(request.followed).toBe(1)
+      expect(request.aborted).toBe(false)
+
+      // A server-chosen hop to a non-network scheme is exactly what the entry
+      // allowlist exists to stop; inheriting the entry URL's verdict would let
+      // it through.
+      request._emit('redirect', 302, 'GET', 'file:///etc/passwd', {})
+      expect(request.followed).toBe(1)
+      expect(request.aborted).toBe(true)
+
+      await flush()
+      expect(instance.favicon).toBe(null)
+    })
+
+    it('stops following once the hop cap is reached', () => {
+      const { pageWc } = startPane('fav-redirect-cap')
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.ico'])
+      const request = netRequests[0]!
+
+      request._emit('redirect', 302, 'GET', 'https://a.example.com/favicon.png', {})
+      request._emit('redirect', 302, 'GET', 'https://b.example.com/favicon.png', {})
+      request._emit('redirect', 302, 'GET', 'https://c.example.com/favicon.png', {})
+
+      expect(request.followed).toBe(2)
+      expect(request.aborted).toBe(true)
+    })
+
+    it('walks the candidate list when the first icon is rejected', async () => {
+      const { instance, pageWc } = startPane('fav-candidates')
+
+      // A site that announces SVG first still has its PNG honoured — the
+      // written rationale for rejecting SVG depends on this.
+      pageWc._emit('page-favicon-updated', [
+        'https://example.com/favicon.svg',
+        'https://example.com/favicon.png',
+      ])
+      expect(netRequests).toHaveLength(1)
+      netRequests[0]!._respond({ headers: { 'content-type': 'image/svg+xml' } })
+      await flush()
+
+      expect(netRequests).toHaveLength(2)
+      expect(netRequests[1]!.options.url).toBe('https://example.com/favicon.png')
+      netRequests[1]!._respond()
+      await flush()
+
+      expect(instance.favicon).toBe(FAVICON_PNG_DATA_URL)
+    })
+
+    it('aborts on navigation and drops a response that arrives for the previous page', async () => {
+      const { instance, pageWc } = startPane('fav-navigate')
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.png'])
+      const request = netRequests[0]!
+
+      pageWc._emit('did-navigate', 'https://other.example.com/')
+
+      expect(request.aborted).toBe(true)
+      expect(instance.favicon).toBe(null)
+      expect(instance.faviconCandidateKey).toBe(null)
+
+      // Page A's bytes must not paint page B.
+      request._respond()
+      await flush()
+      expect(instance.favicon).toBe(null)
+    })
+
+    it('aborts when the instance is destroyed and emits no state for it afterwards', async () => {
+      const { instance, infos, pageWc } = startPane('fav-destroy')
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.png'])
+      const request = netRequests[0]!
+
+      manager.destroyInstance('fav-destroy')
+      expect(request.aborted).toBe(true)
+
+      const countAfterDestroy = infos.length
+      request._respond()
+      await flush()
+
+      expect(infos.length).toBe(countAfterDestroy)
+      expect(instance.favicon).toBe(null)
+    })
+
+    it('aborts when the page renderer crashes, so no icon paints onto a dead page', async () => {
+      const { instance, pageWc } = startPane('fav-crash')
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.png'])
+      const request = netRequests[0]!
+
+      // The instance survives the crash, so without this the fetch would still
+      // land up to the 4s timeout later.
+      pageWc._emit('render-process-gone', { reason: 'crashed', exitCode: 133 })
+
+      expect(request.aborted).toBe(true)
+      request._respond()
+      await flush()
+      expect(instance.favicon).toBe(null)
+      expect(instance.faviconAbort).toBe(null)
+    })
+
+    it('dedupes a re-announced candidate list and clears the in-flight marker when nothing is usable', async () => {
+      const { instance, pageWc } = startPane('fav-dedupe')
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.png'])
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.png'])
+      expect(netRequests).toHaveLength(1)
+
+      netRequests[0]!._respond({ statusCode: 404 })
+      await flush()
+
+      expect(instance.favicon).toBe(null)
+      // Item 6: a settled controller must not keep claiming a live fetch.
+      expect(instance.faviconAbort).toBe(null)
+    })
+
+    it('never requests a candidate outside the scheme allowlist', () => {
+      const { pageWc } = startPane('fav-scheme')
+      pageWc._emit('page-favicon-updated', ['file:///etc/passwd', 'data:image/png;base64,AAAA'])
+      expect(netRequests).toHaveLength(0)
     })
   })
 })

@@ -8,8 +8,9 @@
 
 import { join, parse as parsePath } from 'path'
 import { existsSync, mkdirSync } from 'fs'
+import { Readable } from 'stream'
 import { validateFilePath, getWorkspaceAllowedDirs } from '@craft-agent/server-core/handlers'
-import { BrowserWindow, WebContentsView, app, ipcMain, nativeTheme, session, shell, webContents, type Session as ElectronSession, type Streams } from 'electron'
+import { BrowserWindow, WebContentsView, app, ipcMain, nativeTheme, net, session, shell, webContents, type Session as ElectronSession, type Streams } from 'electron'
 import { mainLog } from './logger'
 import type { WindowManager } from './window-manager'
 import { BrowserCDP, type AccessibilitySnapshot, type ElementGeometry } from './browser-cdp'
@@ -48,6 +49,14 @@ import { BROWSER_CHROME_BG, PANEL_INTERIOR_RADIUS } from '../shared/browser-chro
 import { isAllowedTopLevelUrl, CRAFT_DEEPLINK_SCHEME_PREFIX, decideWillNavigate, decideWindowOpen } from './browser/navigation-policy'
 import { hardenSessionPermissions } from './browser/partition-hardening'
 import {
+  fetchFaviconDataUrl,
+  firstHeaderValue,
+  isFetchableFaviconUrl,
+  shouldFollowFaviconRedirect,
+  type FaviconFetcher,
+  type FaviconHttpResponse,
+} from './browser/favicon-transport'
+import {
   getProfilePartition,
   DEFAULT_BROWSER_PROFILE_PARTITION,
 } from './browser-profile-resolver'
@@ -69,6 +78,16 @@ import {
 } from '@craft-agent/shared/config'
 import { applyProxyToProfilePartition } from './network-proxy'
 import { randomUUID } from 'crypto'
+
+/**
+ * Favicon candidates tried per announcement.
+ *
+ * `page-favicon-updated` hands us the page's whole candidate list, and the
+ * content-type allowlist rejects SVG — so a site that lists `favicon.svg`
+ * first must still be able to reach its PNG/ICO. Attempts stay sequential and
+ * single-in-flight, so the cap is what bounds the worst case at four timeouts.
+ */
+const FAVICON_MAX_CANDIDATES = 4
 
 /**
  * Legacy export — preserved for callers that still depend on a single
@@ -148,7 +167,20 @@ export interface BrowserInstance {
   cdp: BrowserCDP
   currentUrl: string
   title: string
+  /**
+   * Validated `data:` URL, never the URL the page asked for — see
+   * `browser/favicon-transport.ts` for why the raw URL stays in main.
+   */
   favicon: string | null
+  /**
+   * The page's whole candidate announcement, joined. Pages re-announce the same
+   * list on every SPA route change, so this is what dedupes them.
+   */
+  faviconCandidateKey: string | null
+  /** Monotonic per-instance token; a fetch whose token went stale is dropped. */
+  faviconToken: number
+  /** Aborts the in-flight favicon fetch on navigation or destroy. */
+  faviconAbort: AbortController | null
   isLoading: boolean
   canGoBack: boolean
   canGoForward: boolean
@@ -591,6 +623,9 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       currentUrl: 'about:blank',
       title: 'New Tab',
       favicon: null,
+      faviconCandidateKey: null,
+      faviconToken: 0,
+      faviconAbort: null,
       isLoading: false,
       canGoBack: false,
       canGoForward: false,
@@ -2131,6 +2166,7 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     safe('applyAgentControlLock', () => this.applyAgentControlLock(instance, false))
     safe('updateNativeOverlayState', () => this.updateNativeOverlayState(instance))
     safe('cdp.detach', () => instance.cdp.detach())
+    safe('cancelFaviconFetch', () => this.cancelFaviconFetch(instance))
     // Destroying the window used to take the attached BrowserViews' webContents
     // with it. WebContentsView does not work that way: the view is a child of
     // contentView and its webContents outlives the window unless closed here,
@@ -3481,6 +3517,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       }
       instance.themeObserverToken = null
       instance.themeColor = null // reset for new page (batched with state push below)
+      // The previous page's icon does not describe this one, and its fetch is
+      // now pointless — drop both before the state push below.
+      this.cancelFaviconFetch(instance)
+      instance.favicon = null
+      instance.faviconCandidateKey = null
       const normalized = this.normalizePageState(url, pageWc.getTitle())
       instance.currentUrl = normalized.url
       instance.title = normalized.title
@@ -3546,8 +3587,14 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     })
 
     pageWc.on('page-favicon-updated', (_event, favicons) => {
-      instance.favicon = favicons[0] || null
-      this.emitStateChange(instance)
+      this.updateFavicon(instance, favicons ?? [])
+    })
+
+    pageWc.on('render-process-gone', (_event, details) => {
+      mainLog.warn(`[browser-pane] render-process-gone id=${instance.id} reason=${details?.reason ?? 'unknown'}`)
+      // The instance survives a renderer crash, so an in-flight favicon would
+      // otherwise still paint onto the crashed page up to the fetch timeout.
+      this.cancelFaviconFetch(instance)
     })
 
     pageWc.on('did-change-theme-color', (_event, color) => {
@@ -3685,6 +3732,132 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       agentControlActive: !!instance.agentControl?.active,
       themeColor: instance.themeColor,
     }
+  }
+
+  /**
+   * SECURITY: the favicon URL comes from the page, so it never leaves this
+   * process. We fetch it here — in the pane's own session, so the proxy comes
+   * from that partition — and hand the renderer a validated `data:` URL, which
+   * the renderer CSP already allows. See `browser/favicon-transport.ts`.
+   *
+   * The state push does not wait for the bytes: the page would otherwise sit
+   * without state for as long as the favicon host takes to answer.
+   */
+  private updateFavicon(instance: BrowserInstance, candidateUrls: readonly string[]): void {
+    // Pages re-announce the same list on every SPA route change; refetching it
+    // (and blanking the badge in between) would be pure churn.
+    const key = candidateUrls.join('\n') || null
+    if (key && key === instance.faviconCandidateKey) return
+
+    this.cancelFaviconFetch(instance)
+    instance.faviconCandidateKey = key
+    instance.favicon = null
+    this.emitStateChange(instance)
+
+    const candidates = candidateUrls.filter(isFetchableFaviconUrl).slice(0, FAVICON_MAX_CANDIDATES)
+    if (candidates.length === 0) return
+    const pageWc = instance.pageView.webContents
+    if (pageWc.isDestroyed()) return
+
+    const controller = new AbortController()
+    const token = instance.faviconToken
+    instance.faviconAbort = controller
+
+    // fetchFaviconDataUrl never throws, so this promise never rejects and needs
+    // no catch. A favicon failure is not worth a log line per navigation.
+    void this.resolveFavicon(instance, candidates, controller, token)
+  }
+
+  /**
+   * Walk the page's candidates until one survives every guard.
+   *
+   * The list matters because the content-type allowlist rejects SVG: a site
+   * that announces `favicon.svg` first still has its PNG/ICO honoured. Attempts
+   * are sequential, so the single-in-flight invariant holds throughout.
+   */
+  private async resolveFavicon(
+    instance: BrowserInstance,
+    candidates: readonly string[],
+    controller: AbortController,
+    token: number,
+  ): Promise<void> {
+    const fetch = this.createFaviconFetcher(instance.pageView.webContents.session)
+    for (const candidate of candidates) {
+      const dataUrl = await fetchFaviconDataUrl(candidate, { fetch, signal: controller.signal })
+      // Navigation or destroy already moved on — this icon belongs to a page
+      // that is no longer on screen, and a newer fetch owns `faviconAbort`.
+      if (instance.faviconToken !== token) return
+      if (!dataUrl) continue
+      instance.faviconAbort = null
+      instance.favicon = dataUrl
+      this.emitStateChange(instance)
+      return
+    }
+    // Settled controller, no icon: clear it anyway so the field never claims a
+    // fetch is in flight.
+    instance.faviconAbort = null
+  }
+
+  /**
+   * `session.fetch` cannot do this: `net.fetch` registers no `redirect`
+   * listener, so `redirect: 'manual'` there just cancels the request, and
+   * `redirect: 'follow'` would chase a server-chosen destination that no guard
+   * ever saw (`Response.url` is documented as unreliable under `net.fetch`).
+   * Driving `ClientRequest` directly is what makes "every destination requested
+   * passed the scheme allowlist" an enforced invariant rather than a hope.
+   *
+   * `credentials: 'omit'` because decoration has no business carrying the
+   * partition's cookies or auth to a page-chosen host.
+   */
+  private createFaviconFetcher(paneSession: ElectronSession): FaviconFetcher {
+    return (url, init) => new Promise<FaviconHttpResponse>((resolve, reject) => {
+      const request = net.request({
+        url,
+        session: paneSession,
+        method: 'GET',
+        credentials: 'omit',
+        redirect: 'manual',
+      })
+      let hopsFollowed = 0
+      let settled = false
+      const onAbort = (): void => request.abort()
+      init.signal.addEventListener('abort', onAbort, { once: true })
+      const settle = (apply: () => void): void => {
+        if (settled) return
+        settled = true
+        init.signal.removeEventListener('abort', onAbort)
+        apply()
+      }
+
+      request.on('redirect', (_status, _method, redirectUrl) => {
+        // The hop target is chosen by the server, so it faces the same scheme
+        // allowlist as the URL the page announced. followRedirect() must be
+        // called synchronously or Electron cancels the request for us.
+        if (!shouldFollowFaviconRedirect(redirectUrl, hopsFollowed)) {
+          request.abort()
+          return
+        }
+        hopsFollowed += 1
+        request.followRedirect()
+      })
+      request.on('response', (response) => {
+        settle(() => resolve({
+          ok: response.statusCode >= 200 && response.statusCode <= 299,
+          status: response.statusCode,
+          headers: { get: (name) => firstHeaderValue(response.headers, name) },
+          body: Readable.toWeb(response as unknown as Readable) as unknown as ReadableStream<Uint8Array>,
+        }))
+      })
+      request.on('error', (error) => settle(() => reject(error)))
+      request.on('abort', () => settle(() => reject(new Error('favicon request aborted'))))
+      request.end()
+    })
+  }
+
+  private cancelFaviconFetch(instance: BrowserInstance): void {
+    instance.faviconToken += 1
+    instance.faviconAbort?.abort()
+    instance.faviconAbort = null
   }
 
   private emitStateChange(instance: BrowserInstance): void {
