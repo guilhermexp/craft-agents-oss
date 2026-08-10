@@ -39,12 +39,19 @@ export const FAVICON_FETCH_TIMEOUT_MS = 4_000
 /**
  * Raster-only allowlist.
  *
+ * Membership is tested with `Object.hasOwn`, never by truthiness: the lookup
+ * key is an attacker-chosen response header, and every object literal inherits
+ * from `Object.prototype`, so `Content-Type: constructor` or `__proto__` would
+ * otherwise resolve to something truthy and be interpolated straight into the
+ * `data:` URL. The guard the rest of this module leans on has to be a closed
+ * set. Same reasoning as the capability dispatch in `browser-pane-manager.ts`.
+ *
  * `image/svg+xml` is deliberately absent. An SVG in a `data:` URL inside `<img>`
  * cannot run script, but it is still parsed by the privileged renderer's SVG
  * engine — a far larger parser surface than a raster decoder, selected by an
  * untrusted page. The upside is nil (sites that ship `favicon.svg` also expose
- * an ICO/PNG candidate, and Electron hands us the whole candidate list), while
- * the downside is asymmetric: wrongly accepting means parser execution in the
+ * an ICO/PNG candidate, and we walk the whole candidate list), while the
+ * downside is asymmetric: wrongly accepting means parser execution in the
  * privileged process, wrongly rejecting means a generic icon.
  */
 export const ALLOWED_FAVICON_CONTENT_TYPES: Readonly<Record<string, true>> = {
@@ -56,23 +63,68 @@ export const ALLOWED_FAVICON_CONTENT_TYPES: Readonly<Record<string, true>> = {
   'image/webp': true,
 }
 
-/** Minimal response shape shared by `session.fetch` and the test stubs. */
+/**
+ * Hard cap on redirect hops.
+ *
+ * Every hop target is chosen by the server, so each one is revalidated against
+ * the scheme allowlist before it is followed. The cap is what stops a redirect
+ * chain from holding a partition socket for the whole timeout window; two hops
+ * covers the real pattern (`/favicon.ico` -> canonical path -> CDN).
+ */
+export const FAVICON_MAX_REDIRECTS = 2
+
+/**
+ * Minimal response shape the transport needs.
+ *
+ * `body` is required: a favicon response is read with the ceiling applied per
+ * chunk, and an `arrayBuffer()` fallback would buffer the whole body before
+ * anyone could compare it against the ceiling.
+ */
 export interface FaviconHttpResponse {
   readonly ok: boolean
   readonly status: number
   readonly headers: { get(name: string): string | null }
-  readonly body?: ReadableStream<Uint8Array> | null
-  arrayBuffer(): Promise<ArrayBuffer>
+  readonly body: ReadableStream<Uint8Array>
 }
 
 export type FaviconFetcher = (url: string, init: { signal: AbortSignal }) => Promise<FaviconHttpResponse>
 
 export interface FaviconFetchOptions {
-  /** Bound to the pane's own session so cookies/proxy come from that partition. */
+  /**
+   * Bound to the pane's own session, so the proxy comes from that partition.
+   * The caller pins `credentials: 'omit'` and per-hop redirect validation — see
+   * `BrowserPaneManager.createFaviconFetcher`.
+   */
   fetch: FaviconFetcher
   /** Fires when the instance navigates away or is destroyed. */
   signal?: AbortSignal
   timeoutMs?: number
+}
+
+/**
+ * Whether a redirect hop may be followed: the target passes the same scheme
+ * allowlist as the URL the page announced, and the chain is still under the cap.
+ *
+ * Pure so the policy is unit-testable; the Electron `ClientRequest` wiring that
+ * calls it lives in `browser-pane-manager.ts`.
+ */
+export function shouldFollowFaviconRedirect(nextUrl: string | null | undefined, hopsFollowed: number): boolean {
+  if (hopsFollowed >= FAVICON_MAX_REDIRECTS) return false
+  return isFetchableFaviconUrl(nextUrl)
+}
+
+/**
+ * First value of a header from an Electron `IncomingMessage.headers` bag.
+ *
+ * `Object.hasOwn` for the same reason the content-type allowlist uses it: the
+ * bag is a plain object, so a lookup of `constructor` or `toString` would
+ * otherwise return an inherited function instead of `null`.
+ */
+export function firstHeaderValue(headers: Record<string, string | string[]>, name: string): string | null {
+  const key = name.toLowerCase()
+  if (!Object.hasOwn(headers, key)) return null
+  const value = headers[key]
+  return Array.isArray(value) ? (value[0] ?? null) : (value ?? null)
 }
 
 /** True when `raw` is a favicon URL the main process is willing to request. */
@@ -91,7 +143,7 @@ export function isFetchableFaviconUrl(raw: string | null | undefined): raw is st
 export function normalizeFaviconContentType(raw: string | null | undefined): string | null {
   if (!raw) return null
   const type = raw.split(';')[0].trim().toLowerCase()
-  return ALLOWED_FAVICON_CONTENT_TYPES[type] ? type : null
+  return Object.hasOwn(ALLOWED_FAVICON_CONTENT_TYPES, type) ? type : null
 }
 
 /** `data:<type>;base64,<bytes>`, or `null` for an empty or oversized body. */
@@ -106,13 +158,7 @@ export function toFaviconDataUrl(contentType: string, bytes: Uint8Array): string
  * buffering until the timeout.
  */
 async function readCappedBody(response: FaviconHttpResponse, controller: AbortController): Promise<Uint8Array | null> {
-  const body = response.body
-  if (!body) {
-    const buffer = await response.arrayBuffer()
-    return buffer.byteLength > FAVICON_MAX_BYTES ? null : new Uint8Array(buffer)
-  }
-
-  const reader = body.getReader()
+  const reader = response.body.getReader()
   const chunks: Uint8Array[] = []
   let total = 0
   try {

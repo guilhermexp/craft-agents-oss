@@ -12,9 +12,12 @@ import { describe, it, expect } from 'bun:test'
 import {
   ALLOWED_FAVICON_CONTENT_TYPES,
   FAVICON_MAX_BYTES,
+  FAVICON_MAX_REDIRECTS,
   fetchFaviconDataUrl,
+  firstHeaderValue,
   isFetchableFaviconUrl,
   normalizeFaviconContentType,
+  shouldFollowFaviconRedirect,
   toFaviconDataUrl,
   type FaviconFetcher,
   type FaviconHttpResponse,
@@ -28,32 +31,54 @@ interface StubResponseInit {
   contentType?: string | null
   contentLength?: string | null
   bytes?: Uint8Array
-  /** Emit the body as a stream in these chunks instead of a single buffer. */
+  /** Split the body across these chunks instead of emitting it in one. */
   chunks?: Uint8Array[]
 }
 
-function stubResponse(init: StubResponseInit = {}): FaviconHttpResponse {
-  const bytes = init.bytes ?? PNG_BYTES
+interface StubResponse {
+  response: FaviconHttpResponse
+  /** True once the transport reached for the body stream. */
+  bodyRead: () => boolean
+}
+
+/**
+ * Always streams. Electron hands `readCappedBody` a stream in production, so a
+ * buffered default would leave the real path covered only by the explicitly
+ * chunked cases.
+ */
+function stubResponseWithProbe(init: StubResponseInit = {}): StubResponse {
   const headers = new Map<string, string>()
   const contentType = init.contentType === undefined ? 'image/png' : init.contentType
   if (contentType !== null) headers.set('content-type', contentType)
   if (init.contentLength) headers.set('content-length', init.contentLength)
 
-  const chunks = init.chunks
+  const chunks = init.chunks ?? [init.bytes ?? PNG_BYTES]
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) {
+        if (chunk.byteLength > 0) controller.enqueue(chunk)
+      }
+      controller.close()
+    },
+  })
+
+  let bodyRead = false
   return {
-    ok: init.ok ?? true,
-    status: init.status ?? 200,
-    headers: { get: (name) => headers.get(name.toLowerCase()) ?? null },
-    body: chunks
-      ? new ReadableStream<Uint8Array>({
-          start(controller) {
-            for (const chunk of chunks) controller.enqueue(chunk)
-            controller.close()
-          },
-        })
-      : null,
-    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+    bodyRead: () => bodyRead,
+    response: {
+      ok: init.ok ?? true,
+      status: init.status ?? 200,
+      headers: { get: (name) => headers.get(name.toLowerCase()) ?? null },
+      get body() {
+        bodyRead = true
+        return stream
+      },
+    },
   }
+}
+
+function stubResponse(init: StubResponseInit = {}): FaviconHttpResponse {
+  return stubResponseWithProbe(init).response
 }
 
 /** Fetcher that records what it was called with, so "never requested" is provable. */
@@ -106,6 +131,61 @@ describe('normalizeFaviconContentType', () => {
     expect(normalizeFaviconContentType('')).toBe(null)
     expect(normalizeFaviconContentType(null)).toBe(null)
   })
+
+  it('rejects Object.prototype keys — the allowlist must be a closed set, not a truthiness lookup', () => {
+    // The header is attacker-chosen. On a plain object literal `constructor`,
+    // `__proto__` and friends resolve through the prototype chain to something
+    // truthy, and the value is interpolated straight into the `data:` URL.
+    expect(normalizeFaviconContentType('constructor')).toBe(null)
+    expect(normalizeFaviconContentType('__proto__')).toBe(null)
+    expect(normalizeFaviconContentType('toString')).toBe(null)
+    expect(normalizeFaviconContentType('hasOwnProperty')).toBe(null)
+    expect(normalizeFaviconContentType('valueOf')).toBe(null)
+    expect(normalizeFaviconContentType('CONSTRUCTOR; charset=utf-8')).toBe(null)
+    expect(normalizeFaviconContentType(' __PROTO__ ')).toBe(null)
+  })
+})
+
+describe('shouldFollowFaviconRedirect', () => {
+  it('follows a hop whose target passes the same scheme allowlist, up to the cap', () => {
+    expect(FAVICON_MAX_REDIRECTS).toBe(2)
+    expect(shouldFollowFaviconRedirect('https://cdn.example.com/favicon.png', 0)).toBe(true)
+    expect(shouldFollowFaviconRedirect('http://localhost:3003/favicon.ico', 1)).toBe(true)
+  })
+
+  it('refuses a hop past the cap, so a redirect loop cannot hold a partition socket', () => {
+    expect(shouldFollowFaviconRedirect('https://cdn.example.com/favicon.png', 2)).toBe(false)
+    expect(shouldFollowFaviconRedirect('https://cdn.example.com/favicon.png', 7)).toBe(false)
+  })
+
+  it('revalidates the hop target — a 302 is a server-chosen destination', () => {
+    // The scheme allowlist exists because the destination is untrusted. A
+    // redirect target is chosen by the same untrusted side, so it gets the
+    // same guard rather than inheriting the entry URL's verdict.
+    expect(shouldFollowFaviconRedirect('file:///etc/passwd', 0)).toBe(false)
+    expect(shouldFollowFaviconRedirect('data:image/png;base64,AAAA', 0)).toBe(false)
+    expect(shouldFollowFaviconRedirect('javascript:alert(1)', 0)).toBe(false)
+    expect(shouldFollowFaviconRedirect('thumbnail://x', 0)).toBe(false)
+    expect(shouldFollowFaviconRedirect('not a url', 0)).toBe(false)
+    expect(shouldFollowFaviconRedirect('', 0)).toBe(false)
+  })
+})
+
+describe('firstHeaderValue', () => {
+  it('reads a single value and the first of a repeated header', () => {
+    expect(firstHeaderValue({ 'content-type': 'image/png' }, 'Content-Type')).toBe('image/png')
+    expect(firstHeaderValue({ 'content-type': ['image/png', 'text/html'] }, 'content-type')).toBe('image/png')
+  })
+
+  it('returns null for an absent header, an empty repeat and any prototype key', () => {
+    expect(firstHeaderValue({}, 'content-type')).toBe(null)
+    expect(firstHeaderValue({ 'content-type': [] }, 'content-type')).toBe(null)
+    // Same closed-set discipline as the content-type allowlist: a header name
+    // that only exists on Object.prototype is not a header.
+    expect(firstHeaderValue({}, 'constructor')).toBe(null)
+    expect(firstHeaderValue({}, '__proto__')).toBe(null)
+    expect(firstHeaderValue({}, 'toString')).toBe(null)
+  })
 })
 
 describe('toFaviconDataUrl', () => {
@@ -150,18 +230,16 @@ describe('fetchFaviconDataUrl', () => {
     expect(await fetchFaviconDataUrl('https://example.com/favicon.ico', missing)).toBe(null)
   })
 
-  it('rejects a declared content-length past the ceiling without reading the body', async () => {
-    let bodyRead = false
-    const response: FaviconHttpResponse = {
-      ...stubResponse({ contentLength: String(FAVICON_MAX_BYTES + 1) }),
-      arrayBuffer: async () => {
-        bodyRead = true
-        return new ArrayBuffer(0)
-      },
-    }
-    const { fetch } = recordingFetcher(response)
+  it('never emits a data: URL for a prototype-chain content type', async () => {
+    const { fetch } = recordingFetcher(stubResponse({ contentType: 'constructor' }))
     expect(await fetchFaviconDataUrl('https://example.com/favicon.ico', { fetch })).toBe(null)
-    expect(bodyRead).toBe(false)
+  })
+
+  it('rejects a declared content-length past the ceiling without reading the body', async () => {
+    const stub = stubResponseWithProbe({ contentLength: String(FAVICON_MAX_BYTES + 1) })
+    const { fetch } = recordingFetcher(stub.response)
+    expect(await fetchFaviconDataUrl('https://example.com/favicon.ico', { fetch })).toBe(null)
+    expect(stub.bodyRead()).toBe(false)
   })
 
   it('aborts a chunked body that grows past the ceiling', async () => {

@@ -96,12 +96,74 @@ A allowlist final é `image/png`, `image/x-icon`, `image/vnd.microsoft.icon`,
 `14fec059`): aquele é asset próprio do app, servido por `'self'`, e não passa
 por este caminho.
 
+### Decisão: allowlist é conjunto fechado, não lookup por veracidade
+
+A chave do lookup é um header escolhido pelo atacante. Um object literal herda
+de `Object.prototype`, então `Content-Type: constructor` e `__proto__`
+passavam a allowlist e o valor era interpolado direto na `data:` URL
+(`data:constructor;base64,<32 KiB>`). A checagem é `Object.hasOwn`, a mesma
+disciplina do dispatch de capability em `browser-pane-manager.ts`. O mesmo
+vale para ler headers da resposta (`firstHeaderValue`).
+
+### Decisão: redirect é revalidado salto a salto, com `net.request`
+
+O esquema era validado só na URL de entrada; o `session.fetch` seguia redirect
+por default, então a URL final de um 302 nunca era revalidada. A invariante
+"destino requisitado passou pela allowlist" não existia — o que segurava o
+caso era o isolamento de partition, não este código.
+
+`session.fetch` não consegue corrigir isso. `net.fetch` não registra listener
+de `redirect`, então `redirect: 'manual'` lá apenas mata a requisição
+(`ClientRequest._die(new Error('Redirect was cancelled'))`,
+`lib/common/api/net-client-request.ts:481-493` do Electron 43.1.1) e não expõe
+`Location`; e `redirect: 'follow'` não permite revalidar depois, porque
+`Response.url` é documentado como incorreto sob `net.fetch`.
+
+Então o fetcher injetado passa a dirigir `net.request` na `session` da
+partition, com `credentials: 'omit'` e `redirect: 'manual'`, e chama
+`followRedirect()` **synchronously** apenas quando o alvo do salto passa a
+mesma allowlist de esquema, com teto de 2 saltos. A decisão fica pura em
+`shouldFollowFaviconRedirect`; o `ClientRequest` só a executa.
+
+`credentials: 'omit'` é independente disso: decoração não tem motivo para
+levar cookie ou autenticação da partition a um host escolhido pela página.
+
+### Decisão: a lista de candidatos é percorrida
+
+O racional de rejeitar SVG se apoia em "o Electron entrega a lista de
+candidatos". Usar só `favicons[0]` tornava a frase falsa: um site que anuncia
+`favicon.svg` primeiro perdia o ícone mesmo tendo PNG em seguida. O pane
+percorre até 4 candidatos buscáveis, sequencialmente, mantendo uma única busca
+em voo.
+
+### Ciclo de vida
+
+`render-process-gone` também aborta a busca: a instância sobrevive ao crash do
+renderer da página, então sem isso um ícone ainda pintaria até 4s depois.
+`faviconAbort` é limpo em todo caminho terminal cujo token ainda é o corrente,
+não só no sucesso, para o campo não mentir que há busca em voo.
+
 ## Impact
 
-- `apps/electron/src/main/browser/favicon-transport.ts` (novo)
+- `apps/electron/src/main/browser/favicon-transport.ts` (novo; allowlist
+  fechada, política de redirect pura, leitura de header, corpo só por stream)
 - `apps/electron/src/main/browser/__tests__/favicon-transport.test.ts` (novo)
-- `apps/electron/src/main/browser-pane-manager.ts` (handler de favicon, campos
-  de ciclo de vida da instância, reset em `did-navigate`, abort no destroy)
+- `apps/electron/src/main/browser-pane-manager.ts` (fetcher `net.request` com
+  `credentials: 'omit'` e revalidação de salto, caminhada pela lista de
+  candidatos, campos de ciclo de vida da instância, reset em `did-navigate`,
+  abort em `render-process-gone` e no destroy)
+- `apps/electron/src/main/__tests__/browser-pane-manager.test.ts` (ciclo de
+  vida do favicon: anti-stale, abort, redirect, candidatos)
 - Specs: `session-tools-mcp`
 - **Não** muda: `apps/electron/src/renderer/index.html` (CSP), os componentes
   que consomem `instance.favicon`, o DTO `BrowserInstanceInfo`.
+
+### Conhecido e aceito: amplificação de IPC
+
+A `data:` URL viaja em todo `toInfo()` e portanto em todo `emitStateChange`,
+que é broadcast `to: 'all'`. No teto são 43.714 bytes por push. O churn por
+troca de favicon está contido pelo single-in-flight e pelo dedupe da lista de
+candidatos, mas `page-title-updated` emite sem throttle: uma página hostil
+fazendo `document.title = n++` custa ~44 KB por push. Não corrigido aqui —
+coalescer `emitStateChange` mudaria a ordem observável para todos os
+consumidores do estado do pane, o que é redesenho, não hardening de favicon.

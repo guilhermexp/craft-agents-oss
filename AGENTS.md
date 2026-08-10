@@ -454,18 +454,43 @@ Electron events and performs the side effects. Keep that split.
 Nada escolhido por uma página carregada no pane pode virar requisição do
 renderer privilegiado. O favicon é o caso que quase escapou:
 
-- `page-favicon-updated` entrega uma URL escolhida pela página. O handler
-  SHALL NOT propagá-la; `BrowserInstance.favicon` só recebe uma `data:` URL
-  produzida por `fetchFaviconDataUrl`, que busca os bytes na `session` da
-  própria partition do pane (cookies/proxy daquele perfil, credencial de
-  nenhum outro) e valida esquema (`http:`/`https:`), status, content-type
-  (allowlist raster — `image/svg+xml` é rejeitado de propósito) e tamanho
-  (`FAVICON_MAX_BYTES`, 32 KiB, checado no `content-length` e por chunk).
+- `page-favicon-updated` entrega a lista de candidatos escolhida pela página. O
+  handler SHALL NOT propagar nenhuma delas; `BrowserInstance.favicon` só recebe
+  uma `data:` URL produzida por `fetchFaviconDataUrl`, que busca os bytes na
+  `session` da própria partition do pane (proxy daquele perfil) e valida
+  esquema (`http:`/`https:`), status, content-type (allowlist raster —
+  `image/svg+xml` é rejeitado de propósito) e tamanho (`FAVICON_MAX_BYTES`,
+  32 KiB, checado no `content-length` e por chunk; `body` é obrigatório, não
+  existe fallback que bufferize antes do teto).
+- Toda allowlist é conjunto fechado, testada com `Object.hasOwn`. A chave é um
+  header do atacante: com lookup por veracidade num object literal,
+  `Content-Type: constructor` produzia `data:constructor;base64,<32 KiB>`.
+  Vale para `normalizeFaviconContentType` e para `firstHeaderValue`.
+- Redirect é revalidado salto a salto. O pane dirige `net.request` na session
+  da partition com `credentials: 'omit'` e `redirect: 'manual'`, e só chama
+  `followRedirect()` — **synchronously**, ou o Electron cancela — quando
+  `shouldFollowFaviconRedirect` aprova o alvo, com teto de 2 saltos.
+  `session.fetch` não serve aqui: `net.fetch` não registra listener de
+  `redirect`, então `manual` só mata a requisição sem expor `Location`, e
+  `follow` não dá como revalidar depois (`Response.url` é documentado como
+  incorreto sob `net.fetch`).
+- Os candidatos são percorridos em ordem (teto de 4, sequencial,
+  single-in-flight) até um sobreviver às guardas. Sem isso o racional escrito
+  para rejeitar SVG é falso: um site que anuncia `favicon.svg` primeiro
+  perderia o PNG que vem em seguida.
 - Qualquer guarda que falhe vira `null` em silêncio: favicon é decoração e não
   pode derrubar a instância, logar por navegação nem virar erro visível.
-- `emitStateChange` nunca espera pelos bytes. `did-navigate` e
-  `finalizeDestroyedInstance` abortam a busca em voo, e `faviconToken`
-  descarta resposta de uma página que já saiu de cena.
+  `fetchFaviconDataUrl` nunca lança, então não há `catch` no caminho de wiring.
+- `emitStateChange` nunca espera pelos bytes. `did-navigate`,
+  `render-process-gone` e `finalizeDestroyedInstance` abortam a busca em voo, e
+  `faviconToken` descarta resposta de uma página que já saiu de cena.
+  `faviconAbort` é limpo em todo caminho terminal cujo token ainda é o
+  corrente, não só no sucesso.
+- A `data:` URL viaja em todo `emitStateChange`, que é broadcast `to: 'all'`
+  (43.714 bytes no teto). `page-title-updated` emite sem throttle, então uma
+  página hostil mexendo em `document.title` custa ~44 KB por push. Conhecido e
+  aceito: coalescer `emitStateChange` muda ordem observável para todos os
+  consumidores do estado do pane.
 - A CSP do renderer (`apps/electron/src/renderer/index.html:6`) fica intacta —
   `data:` já está em `img-src`. Adicionar `http:`/`http://localhost:*` ali é o
   anti-fix: reabre o vetor de sondagem de portas locais que

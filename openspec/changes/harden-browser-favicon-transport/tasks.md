@@ -37,3 +37,17 @@
 ## 5. DOX
 
 - [x] 5.1 Atualizar `AGENTS.md` raiz com o contrato do favicon transport
+- [x] 5.2 Atualizar `AGENTS.md` raiz com allowlist fechada, política de redirect e caminhada de candidatos
+
+## 6. Hardening pós-revisão de segurança
+
+- [x] 6.1 Allowlist de content-type vira conjunto fechado (`Object.hasOwn`); `constructor`, `__proto__`, `toString`, `hasOwnProperty` e variações de caixa rejeitados
+- [x] 6.2 `firstHeaderValue` lê headers da resposta com a mesma disciplina, sem lookup pela cadeia de protótipo
+- [x] 6.3 Fetcher passa a dirigir `net.request` na session da partition com `credentials: 'omit'` e `redirect: 'manual'` — `session.fetch` não expõe o salto (evidência no proposal)
+- [x] 6.4 `shouldFollowFaviconRedirect` revalida o alvo de cada salto contra a allowlist de esquema, teto de 2 saltos; salto reprovado aborta a requisição
+- [x] 6.5 `FaviconHttpResponse.body` passa a ser obrigatório; o fallback `arrayBuffer()` (que bufferizava antes de checar o teto) foi eliminado, e o stub default dos testes passa a exercitar o caminho streaming de produção
+- [x] 6.6 `page-favicon-updated` percorre a lista de candidatos (teto de 4, sequencial, single-in-flight) em vez de só `favicons[0]`
+- [x] 6.7 `render-process-gone` aborta a busca em voo
+- [x] 6.8 `.catch()` morto removido; `faviconAbort` limpo em todo caminho terminal cujo token ainda é o corrente
+- [x] 6.9 Testes de ciclo de vida em `browser-pane-manager.test.ts`: estado antes dos bytes, abort em navegação com resposta tardia descartada, abort no destroy sem state change, abort no crash do renderer, opções da requisição, saltos de redirect, caminhada de candidatos
+- [ ] 6.10 Amplificação de IPC (`data:` URL em todo `emitStateChange`, 43.714 bytes no teto, `page-title-updated` sem throttle) — **não corrigido de propósito**: coalescer `emitStateChange` muda a ordem observável para todos os consumidores. Registrado no proposal e em `forward.fragile[]`
