@@ -64,14 +64,31 @@ export function getSessionFileOpenMode({
   return canPreviewInline && canPreviewFileInline(filePath) ? 'inline-preview' : 'app-open-file'
 }
 
-export function getRightSidebarFilePaneLayout(previewFilePath: string | null): {
-  mode: 'tree-only' | 'split'
-  showTree: true
+/** Which column the right sidebar's preview slot is currently showing. */
+export type RightSidebarContentKind = 'file' | 'object' | 'browser'
+
+export interface RightSidebarFilePaneLayout {
+  mode: 'tree-only' | 'split' | 'preview-only'
+  showTree: boolean
   showPreview: boolean
-} {
-  return previewFilePath
-    ? { mode: 'split', showTree: true, showPreview: true }
-    : { mode: 'tree-only', showTree: true, showPreview: false }
+}
+
+/**
+ * With nothing to preview the tree owns the panel and cannot be collapsed away
+ * — that would leave an empty sidebar. Otherwise the caller's explicit
+ * collapse/expand wins, and `null` falls back to the default for the content:
+ * a docked browser is the whole reason the panel is open, so the file tree
+ * beside it is noise the user did not ask for.
+ */
+export function getRightSidebarFilePaneLayout(
+  activeContentKind: RightSidebarContentKind | null,
+  treeCollapsedOverride: boolean | null = null,
+): RightSidebarFilePaneLayout {
+  if (!activeContentKind) return { mode: 'tree-only', showTree: true, showPreview: false }
+  const collapsed = treeCollapsedOverride ?? activeContentKind === 'browser'
+  return collapsed
+    ? { mode: 'preview-only', showTree: false, showPreview: true }
+    : { mode: 'split', showTree: true, showPreview: true }
 }
 
 /**
@@ -466,7 +483,12 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
   const [files, setFiles] = useState<SessionFile[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
-  const [hasSavedExpandedState, setHasSavedExpandedState] = useState(false)
+  // A ref, not state: nothing renders from it, and as state its flip inside
+  // `loadFiles` changed that callback's identity, which re-ran the mount effect
+  // below — a second full tree walk plus an unwatch/watch cycle on every mount.
+  // The effect declared right after this one runs before the loader's, so the
+  // ref is already correct the first time `loadFiles` reads it.
+  const hasSavedExpandedStateRef = useRef(false)
   const mountedRef = useRef(true)
 
   // Load expanded paths from storage when session changes.
@@ -477,14 +499,14 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
       if (raw !== null) {
         const saved = storage.get<string[]>(storage.KEYS.sessionFilesExpandedFolders, [], sessionId)
         setExpandedPaths(new Set(saved))
-        setHasSavedExpandedState(true)
+        hasSavedExpandedStateRef.current = true
       } else {
         setExpandedPaths(new Set())
-        setHasSavedExpandedState(false)
+        hasSavedExpandedStateRef.current = false
       }
     } else {
       setExpandedPaths(new Set())
-      setHasSavedExpandedState(false)
+      hasSavedExpandedStateRef.current = false
     }
   }, [sessionId])
 
@@ -509,12 +531,12 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
         setFiles(sessionFiles)
 
         // Default behavior: expand the entire folder tree when there's no saved state yet.
-        if (!hasSavedExpandedState) {
+        if (!hasSavedExpandedStateRef.current) {
           const allDirectoryPaths = new Set(collectDirectoryPaths(sessionFiles))
           if (allDirectoryPaths.size > 0) {
             setExpandedPaths(allDirectoryPaths)
             saveExpandedPaths(allDirectoryPaths)
-            setHasSavedExpandedState(true)
+            hasSavedExpandedStateRef.current = true
           }
         }
       }
@@ -528,7 +550,7 @@ export function SessionFilesSection({ sessionId, className, sessionFolderPath, h
         setIsLoading(false)
       }
     }
-  }, [sessionId, hasSavedExpandedState, saveExpandedPaths])
+  }, [sessionId, saveExpandedPaths])
 
   // Initial load and file watcher setup
   useEffect(() => {

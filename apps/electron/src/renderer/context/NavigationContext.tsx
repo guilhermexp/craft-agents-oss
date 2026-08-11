@@ -33,6 +33,7 @@ import {
   useEffect,
   useRef,
   useState,
+  startTransition,
   useMemo,
   useEffectEvent,
   type ReactNode,
@@ -1187,8 +1188,16 @@ export function NavigationProvider({
   // SIDEBAR HELPERS
   // =========================================================================
 
+  // A click is a discrete event, so React would render this at synchronous
+  // priority and the whole shell re-render lands in one blocking task — traced
+  // at 26-46ms, five dropped frames right under the pointer. Opening a panel is
+  // not urgent input feedback: as a transition the same work is time-sliced and
+  // yields to paint, so the click frame stays free and the open animation starts
+  // on an unblocked thread.
   const updateRightSidebar = useCallback((panel: RightSidebarPanel | undefined) => {
-    setRightSidebar(panel)
+    startTransition(() => {
+      setRightSidebar(panel)
+    })
     // pushState handled by the rightSidebar change effect
   }, [])
 

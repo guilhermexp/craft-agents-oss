@@ -2,15 +2,14 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
-import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ArrowLeft, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Maximize2 } from 'lucide-react'
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Maximize2, X } from 'lucide-react'
 import { classifyFile } from '@craft-agent/ui/file-classification'
 import { prepareHtmlPreviewSrcDoc } from '@craft-agent/ui/html-preview-sanitizer'
 import { Markdown } from '@craft-agent/ui/markdown'
 import { usePlatform } from '@craft-agent/ui/context'
 import { ShikiCodeViewer } from '@/components/shiki/ShikiCodeViewer'
-import { useAppShellContext, useSession } from '@/context/AppShellContext'
+import { useAppShellContext } from '@/context/AppShellContext'
 import { getLanguageFromPath } from '@/lib/file-utils'
 import { cn } from '@/lib/utils'
 import { getFileManagerName } from '@/lib/platform'
@@ -127,104 +126,68 @@ export function SessionInfoPopover({
   )
 }
 
-export function SessionInfoPopoverContent({ sessionId, sessionFolderPath, compactTabs = false, onPreviewFileInline, onPreviewObjectInline }: { sessionId: string; sessionFolderPath?: string; compactTabs?: boolean; onPreviewFileInline?: (path: string) => void; onPreviewObjectInline?: (objectId: string) => void }) {
+export function SessionInfoPopoverContent({ sessionId, sessionFolderPath, compactTabs = false, onClose, onPreviewFileInline, onPreviewObjectInline }: { sessionId: string; sessionFolderPath?: string; compactTabs?: boolean; onClose?: () => void; onPreviewFileInline?: (path: string) => void; onPreviewObjectInline?: (objectId: string) => void }) {
   const { t } = useTranslation()
-  const session = useSession(sessionId)
-  const { onRenameSession } = useAppShellContext()
-  const [name, setName] = React.useState('')
   const [tab, setTab] = React.useState<SessionInfoTab>('workspace')
-  const renameTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  React.useEffect(() => {
-    setName(session?.name || '')
-  }, [session?.name])
-
-  React.useEffect(() => {
-    return () => {
-      // Capture current value so the cleanup closure sees the correct timer id
-      const timeout = renameTimeoutRef.current
-      if (timeout) {
-        clearTimeout(timeout)
-      }
-    }
-  }, [])
-
-  const handleNameChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const newName = e.target.value
-    setName(newName)
-
-    if (renameTimeoutRef.current) {
-      clearTimeout(renameTimeoutRef.current)
-    }
-
-    renameTimeoutRef.current = setTimeout(() => {
-      const trimmed = newName.trim()
-      if (trimmed) {
-        onRenameSession(sessionId, trimmed)
-      }
-    }, 500)
-  }, [onRenameSession, sessionId])
 
   return (
     <div className="h-full min-h-0 flex flex-col">
-      <div className="shrink-0 p-3 border-b border-border/50">
-        <label
-          htmlFor={`session-title-${sessionId}`}
-          className="text-xs font-medium text-muted-foreground block mb-1.5 select-none"
-        >
-          {t("chat.title")}
-        </label>
-        <div className="rounded-lg bg-foreground-2 has-[:focus]:bg-background shadow-minimal transition-colors">
-          <Input
-            id={`session-title-${sessionId}`}
-            value={name}
-            onChange={handleNameChange}
-            placeholder={t("chat.titlePlaceholder")}
-            className="h-9 py-2 text-sm border-0 shadow-none bg-transparent focus-visible:ring-0"
-          />
-        </div>
-      </div>
       <Tabs value={tab} onValueChange={value => setTab(value as SessionInfoTab)} className="flex-1 min-h-0 flex flex-col overflow-hidden">
-        <div className="shrink-0 border-b border-border/50 px-3 py-2">
-          {compactTabs ? (
-            // Three labels cannot share ~55px: side by side they become three
-            // ellipses, which name nothing. One readable label at a time, with
-            // the neighbours a click away. The arrows announce where they go,
-            // so the destination is spoken instead of a bare direction.
-            <div className="flex h-8 w-full items-center gap-0.5 rounded-[8px] bg-muted p-1 text-muted-foreground">
-              <button
-                type="button"
-                aria-label={t(SESSION_INFO_TAB_LABEL_KEYS[stepSessionInfoTab(tab, -1)])}
-                onClick={() => setTab(current => stepSessionInfoTab(current, -1))}
-                className="flex size-6 shrink-0 items-center justify-center rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <ChevronLeft className="size-3.5" />
-              </button>
-              <span className="min-w-0 flex-1 truncate rounded-md bg-background px-1 py-0.5 text-center text-xs font-medium text-foreground shadow">
-                {t(SESSION_INFO_TAB_LABEL_KEYS[tab])}
-              </span>
-              <button
-                type="button"
-                aria-label={t(SESSION_INFO_TAB_LABEL_KEYS[stepSessionInfoTab(tab, 1)])}
-                onClick={() => setTab(current => stepSessionInfoTab(current, 1))}
-                className="flex size-6 shrink-0 items-center justify-center rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <ChevronRight className="size-3.5" />
-              </button>
-            </div>
-          ) : (
-            <TabsList className="grid h-8 w-full grid-cols-3 rounded-[8px]">
-              <TabsTrigger value="session" className="h-6 min-w-0 px-1.5 text-xs">
-                <span className="truncate">{t('chat.sessionFilesTab')}</span>
-              </TabsTrigger>
-              <TabsTrigger value="workspace" className="h-6 min-w-0 px-1.5 text-xs">
-                <span className="truncate">{t('chat.workspaceFilesTab')}</span>
-              </TabsTrigger>
-              <TabsTrigger value="objects" className="h-6 min-w-0 px-1.5 text-xs">
-                <span className="truncate">{t('chat.workspaceObjectsTab')}</span>
-              </TabsTrigger>
-            </TabsList>
-          )}
+        {/* The panel has no title bar of its own, so the dismiss control rides
+            the tab row instead of costing a header. */}
+        <div className="shrink-0 flex items-center gap-1.5 border-b border-border/50 px-2 py-2">
+          <div className="min-w-0 flex-1">
+            {compactTabs ? (
+              // Three labels cannot share ~55px: side by side they become three
+              // ellipses, which name nothing. One readable label at a time, with
+              // the neighbours a click away. The arrows announce where they go,
+              // so the destination is spoken instead of a bare direction.
+              <div className="flex h-8 w-full items-center gap-0.5 rounded-[8px] bg-muted p-1 text-muted-foreground">
+                <button
+                  type="button"
+                  aria-label={t(SESSION_INFO_TAB_LABEL_KEYS[stepSessionInfoTab(tab, -1)])}
+                  onClick={() => setTab(current => stepSessionInfoTab(current, -1))}
+                  className="flex size-6 shrink-0 items-center justify-center rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <ChevronLeft className="size-3.5" />
+                </button>
+                <span className="min-w-0 flex-1 truncate rounded-md bg-background px-1 py-0.5 text-center text-xs font-medium text-foreground shadow">
+                  {t(SESSION_INFO_TAB_LABEL_KEYS[tab])}
+                </span>
+                <button
+                  type="button"
+                  aria-label={t(SESSION_INFO_TAB_LABEL_KEYS[stepSessionInfoTab(tab, 1)])}
+                  onClick={() => setTab(current => stepSessionInfoTab(current, 1))}
+                  className="flex size-6 shrink-0 items-center justify-center rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <ChevronRight className="size-3.5" />
+                </button>
+              </div>
+            ) : (
+              <TabsList className="grid h-8 w-full grid-cols-3 rounded-[8px]">
+                <TabsTrigger value="session" className="h-6 min-w-0 px-1.5 text-xs">
+                  <span className="truncate">{t('chat.sessionFilesTab')}</span>
+                </TabsTrigger>
+                <TabsTrigger value="workspace" className="h-6 min-w-0 px-1.5 text-xs">
+                  <span className="truncate">{t('chat.workspaceFilesTab')}</span>
+                </TabsTrigger>
+                <TabsTrigger value="objects" className="h-6 min-w-0 px-1.5 text-xs">
+                  <span className="truncate">{t('chat.workspaceObjectsTab')}</span>
+                </TabsTrigger>
+              </TabsList>
+            )}
+          </div>
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              title={t("common.close")}
+              aria-label={t("common.close")}
+            >
+              <X className="size-3.5" />
+            </button>
+          ) : null}
         </div>
         <TabsContent value="session" className="m-0 flex-1 min-h-0 overflow-hidden">
           <SessionFilesSection
@@ -254,6 +217,8 @@ function getFileName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() || filePath
 }
 
+const PREVIEW_ACTION_BUTTON_CLASS = 'flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
+
 export function InlineFilePreviewPanel({
   filePath,
   onBack,
@@ -281,6 +246,8 @@ export function InlineFilePreviewPanel({
   const [pdfData, setPdfData] = React.useState<Uint8Array | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(false)
+  const [copied, setCopied] = React.useState(false)
+  const copiedTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   React.useEffect(() => {
     let cancelled = false
@@ -396,44 +363,69 @@ export function InlineFilePreviewPanel({
 
   const copyPath = React.useCallback(() => {
     void navigator.clipboard?.writeText(filePath)
+    setCopied(true)
+    clearTimeout(copiedTimeoutRef.current ?? undefined)
+    copiedTimeoutRef.current = setTimeout(() => setCopied(false), 1500)
   }, [filePath])
+
+  React.useEffect(() => () => {
+    clearTimeout(copiedTimeoutRef.current ?? undefined)
+  }, [])
 
 
   return (
     <div className="h-full min-h-0 flex flex-col">
-      <div className="shrink-0 border-b border-border/50 px-3 py-2">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onBack}
-            className="size-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-foreground/5"
-            title={t('common.back')}
-          >
-            <ArrowLeft className="size-4" />
-          </button>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium">{fileName}</div>
-            <div className="truncate text-[11px] text-muted-foreground">{filePath}</div>
-          </div>
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <button type="button" onClick={() => onOpenDialog(filePath)} className="h-7 rounded-md px-2 text-xs text-foreground/80 hover:bg-foreground/5 flex items-center gap-1">
-            <Maximize2 className="size-3.5" />
-            {t('chat.openInPreviewDialog')}
-          </button>
-          <button type="button" onClick={openExternal} className="h-7 rounded-md px-2 text-xs text-foreground/80 hover:bg-foreground/5 flex items-center gap-1">
-            <ExternalLink className="size-3.5" />
-            {t('common.open')}
-          </button>
-          <button type="button" onClick={reveal} className="h-7 rounded-md px-2 text-xs text-foreground/80 hover:bg-foreground/5 flex items-center gap-1">
-            <FolderOpen className="size-3.5" />
-            {t('chat.showInFileManager', { fileManager: fileManagerName })}
-          </button>
-          <button type="button" onClick={copyPath} className="h-7 rounded-md px-2 text-xs text-foreground/80 hover:bg-foreground/5 flex items-center gap-1">
-            <Copy className="size-3.5" />
-            {t('common.copyPath')}
-          </button>
-        </div>
+      <div className="shrink-0 flex h-9 items-center gap-0.5 border-b border-border/50 px-1.5">
+        <button
+          type="button"
+          onClick={onBack}
+          className={PREVIEW_ACTION_BUTTON_CLASS}
+          title={t('common.back')}
+          aria-label={t('common.back')}
+        >
+          <ArrowLeft className="size-3.5" />
+        </button>
+        {/* The full path is the tooltip, not a second line: it is reference
+            information, and spending a row on it shrinks the preview itself. */}
+        <div className="min-w-0 flex-1 truncate px-1 text-xs font-medium" title={filePath}>{fileName}</div>
+        <button
+          type="button"
+          onClick={() => onOpenDialog(filePath)}
+          className={PREVIEW_ACTION_BUTTON_CLASS}
+          title={t('chat.openInPreviewDialog')}
+          aria-label={t('chat.openInPreviewDialog')}
+        >
+          <Maximize2 className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={openExternal}
+          className={PREVIEW_ACTION_BUTTON_CLASS}
+          title={t('common.open')}
+          aria-label={t('common.open')}
+        >
+          <ExternalLink className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={reveal}
+          className={PREVIEW_ACTION_BUTTON_CLASS}
+          title={t('chat.showInFileManager', { fileManager: fileManagerName })}
+          aria-label={t('chat.showInFileManager', { fileManager: fileManagerName })}
+        >
+          <FolderOpen className="size-3.5" />
+        </button>
+        {/* Without a label there is nothing to confirm the copy happened, so the
+            icon itself acknowledges it. */}
+        <button
+          type="button"
+          onClick={copyPath}
+          className={PREVIEW_ACTION_BUTTON_CLASS}
+          title={t('common.copyPath')}
+          aria-label={t('common.copyPath')}
+        >
+          {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+        </button>
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto bg-foreground-3">

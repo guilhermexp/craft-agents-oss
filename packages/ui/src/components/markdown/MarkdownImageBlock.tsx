@@ -1,8 +1,11 @@
 /**
- * MarkdownImageBlock - Renders ```image-preview code blocks as inline image previews.
+ * MarkdownImageBlock - Renders ```image-preview code blocks as inline previews.
  *
- * Loads image(s) from file(s) (via `src` or `items` field) using data URLs.
- * Supports multiple items with a swipeable card stack preview.
+ * The block is named for its common case, not its contract: agents point it at
+ * whatever artefact they just produced. Anything that is not an image is handed
+ * to the app's file view instead of being forced through an `<img>` — a video
+ * read as a data URL decodes to nothing but the broken-image glyph, and the
+ * bytes were loaded for no one.
  *
  * Expected JSON shapes:
  * Single item:
@@ -22,13 +25,14 @@
  */
 
 import * as React from 'react'
-import { Maximize2 } from 'lucide-react'
+import { File as FileIcon, Maximize2, PanelRight } from 'lucide-react'
 import { OpenInSidePanelButton } from './OpenInSidePanelButton'
 import { cn } from '../../lib/utils'
 import { CodeBlock } from './CodeBlock'
 import { ImagePreviewOverlay } from '../overlay/ImagePreviewOverlay'
 import { usePlatform } from '../../context/PlatformContext'
 import { ImageCardStack } from './ImageCardStack'
+import { classifyFile } from '../../lib/file-classification'
 import { useTranslation } from 'react-i18next'
 
 interface PreviewItem {
@@ -79,6 +83,48 @@ function detectImageRatio(src: string): Promise<number | null> {
   })
 }
 
+/**
+ * `data:` sources carry their own type; a path is judged by its extension, so
+ * the `{{SESSION_PATH}}` placeholders agents emit classify fine unresolved.
+ */
+function isImageSource(src: string): boolean {
+  if (src.startsWith('data:')) return src.startsWith('data:image/')
+  return classifyFile(src).type === 'image'
+}
+
+/**
+ * The block for everything the `<img>` path cannot show. It is the whole card,
+ * not a badge beside a broken glyph: the file view is the only surface that
+ * renders these, so reaching it must not depend on finding a hover button.
+ */
+function NonImagePreviewCard({ src, label }: { src: string; label?: string }) {
+  const { t } = useTranslation()
+  const { onOpenFileInSidePanel, onOpenFile } = usePlatform()
+  const open = onOpenFileInSidePanel ?? onOpenFile
+  const fileName = label || src.split('/').pop() || src
+  const kind = classifyFile(src).type
+
+  return (
+    <button
+      type="button"
+      onClick={open ? () => open(src) : undefined}
+      disabled={!open}
+      className={cn(
+        'flex w-full max-w-2xl items-center gap-3 rounded-[8px] border border-border/60 bg-foreground-2 px-3 py-2.5 text-left',
+        open ? 'cursor-pointer transition-colors hover:bg-foreground/5' : 'cursor-default',
+      )}
+      title={open ? t('preview.openInSidePanel') : undefined}
+    >
+      <FileIcon className="size-4 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] text-foreground">{fileName}</span>
+        <span className="block truncate text-[11px] uppercase tracking-wide text-muted-foreground">{kind}</span>
+      </span>
+      {open ? <PanelRight className="size-3.5 shrink-0 text-muted-foreground" /> : null}
+    </button>
+  )
+}
+
 export function MarkdownImageBlock({ code, className, onCreateRegionAnnotation: _onCreateRegionAnnotation }: MarkdownImageBlockProps) {
   const { t } = useTranslation()
   const { onReadFileDataUrl } = usePlatform()
@@ -126,7 +172,9 @@ export function MarkdownImageBlock({ code, className, onCreateRegionAnnotation: 
   React.useEffect(() => {
     if (!onReadFileDataUrl || items.length === 0) return
 
-    const pendingItems = items.filter((item) => !contentCache[item.src])
+    // Only images: a data URL is how an `<img>` is fed, and nothing else here
+    // consumes one. Base64-ing a video the user may never open is pure waste.
+    const pendingItems = items.filter((item) => isImageSource(item.src) && !contentCache[item.src])
     if (pendingItems.length === 0) {
       setError(null)
       return
@@ -216,6 +264,19 @@ export function MarkdownImageBlock({ code, className, onCreateRegionAnnotation: 
     return fallback
   }
 
+  // A single non-image artefact is not a degraded image — it is a different
+  // surface, so it replaces the frame instead of sitting inside it. In a mixed
+  // stack the image chrome stays: the neighbours still need it.
+  if (!hasMultiple && !isImageSource(safeActiveItem.src)) {
+    return (
+      <ImageBlockErrorBoundary fallback={fallback}>
+        <div className={cn('my-2', className)}>
+          <NonImagePreviewCard src={safeActiveItem.src} label={safeActiveItem.label ?? spec.title} />
+        </div>
+      </ImageBlockErrorBoundary>
+    )
+  }
+
   return (
     <ImageBlockErrorBoundary fallback={fallback}>
       <div className={cn('relative group rounded-[8px] overflow-visible', className)}>
@@ -261,6 +322,10 @@ export function MarkdownImageBlock({ code, className, onCreateRegionAnnotation: 
                 draggable={false}
               />
             </button>
+          )}
+
+          {hasMultiple && stackItems.length === 0 && !loading && (
+            <NonImagePreviewCard src={safeActiveItem.src} label={safeActiveItem.label ?? spec.title} />
           )}
 
           {loading && (!activeDataUrl || (hasMultiple && stackItems.length === 0)) && (

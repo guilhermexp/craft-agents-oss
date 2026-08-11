@@ -25,8 +25,8 @@ describe('getSessionFileOpenMode', () => {
 })
 
 describe('getRightSidebarFilePaneLayout', () => {
-  it('keeps the file tree visible beside an inline preview', () => {
-    expect(getRightSidebarFilePaneLayout('/repo/AGENTS.md')).toEqual({
+  it('keeps the file tree visible beside a file preview', () => {
+    expect(getRightSidebarFilePaneLayout('file')).toEqual({
       mode: 'split',
       showTree: true,
       showPreview: true,
@@ -35,6 +35,38 @@ describe('getRightSidebarFilePaneLayout', () => {
 
   it('uses the full width for the file tree before a preview is selected', () => {
     expect(getRightSidebarFilePaneLayout(null)).toEqual({
+      mode: 'tree-only',
+      showTree: true,
+      showPreview: false,
+    })
+  })
+
+  it('hides the file tree by default beside a docked browser', () => {
+    expect(getRightSidebarFilePaneLayout('browser')).toEqual({
+      mode: 'preview-only',
+      showTree: false,
+      showPreview: true,
+    })
+  })
+
+  it('lets an explicit expand override the browser default', () => {
+    expect(getRightSidebarFilePaneLayout('browser', false)).toEqual({
+      mode: 'split',
+      showTree: true,
+      showPreview: true,
+    })
+  })
+
+  it('lets an explicit collapse override the file default', () => {
+    expect(getRightSidebarFilePaneLayout('file', true)).toEqual({
+      mode: 'preview-only',
+      showTree: false,
+      showPreview: true,
+    })
+  })
+
+  it('never collapses the tree away when there is nothing to preview', () => {
+    expect(getRightSidebarFilePaneLayout(null, true)).toEqual({
       mode: 'tree-only',
       showTree: true,
       showPreview: false,

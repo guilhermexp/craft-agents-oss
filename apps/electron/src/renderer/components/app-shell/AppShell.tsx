@@ -34,6 +34,7 @@ import {
   Hash,
   Info,
   PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
@@ -146,7 +147,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { PanelHeader } from "./PanelHeader"
-import { PanelHeaderCenterButton } from "@/components/ui/PanelHeaderCenterButton"
 import { SendToWorkspaceDialog } from "./SendToWorkspaceDialog"
 import { MessagingDialogHost } from "@/components/messaging/MessagingDialogHost"
 import { EditPopover, getEditConfig, type EditContextKey } from "@/components/ui/EditPopover"
@@ -671,7 +671,15 @@ function AppShellContent({
       ? activeRightSidebarTab.target
       : null
   const rightSidebarPreviewPath = rightSidebarContentTarget?.kind === 'file' ? rightSidebarContentTarget.path : null
-  const rightSidebarFilePaneLayout = getRightSidebarFilePaneLayout(rightSidebarContentTarget ? 'active-content' : null)
+  const rightSidebarContentKind = rightSidebarContentTarget?.kind ?? null
+  // `null` means "no opinion yet", so the default for the content kind applies.
+  const [rightSidebarTreeCollapsed, setRightSidebarTreeCollapsed] = React.useState<boolean | null>(null)
+  React.useEffect(() => {
+    // A collapse/expand answers the content currently in front of the user;
+    // a different kind of content is a new question, so the default answers it.
+    setRightSidebarTreeCollapsed(null)
+  }, [rightSidebarContentKind])
+  const rightSidebarFilePaneLayout = getRightSidebarFilePaneLayout(rightSidebarContentKind, rightSidebarTreeCollapsed)
   const rightSidebarWidth = getRightSidebarEffectiveWidth({
     width: rightSidebarContentTarget ? rightSidebarPreviewPreferredWidth : rightSidebarPreferredWidth,
     windowWidth: shellWidth > 0
@@ -1261,6 +1269,11 @@ function AppShellContent({
     }
   })
 
+  // Same reason as the right sidebar (see NavigationContext.updateRightSidebar):
+  // a click is discrete input, so React would render the whole shell at
+  // synchronous priority in one non-yielding task — traced at 16-23ms here.
+  // Collapsing a panel is not urgent input feedback, so it renders as a
+  // transition and the click frame stays free for the opening animation.
   const handleToggleSidebar = useCallback(() => {
     if (isSidebarAndNavigatorHidden) {
       setIsSidebarAndNavigatorHidden(false)
@@ -1283,8 +1296,12 @@ function AppShellContent({
     setIsSessionListVisible(v => !v)
   }, [isSidebarAndNavigatorHidden])
 
+  const handleToggleFocusMode = useCallback(() => {
+    setIsSidebarAndNavigatorHidden(v => !v)
+  }, [])
+
   // Focus mode toggle (CMD+.) - hides both sidebars
-  useAction('view.toggleFocusMode', () => setIsSidebarAndNavigatorHidden(v => !v))
+  useAction('view.toggleFocusMode', handleToggleFocusMode)
 
   // Panel focus navigation (CMD+SHIFT+[ / ])
   const focusNextPanel = useSetAtom(focusNextPanelAtom)
@@ -2647,7 +2664,7 @@ function AppShellContent({
           onToggleSidebar={handleToggleSidebar}
           onToggleSessionList={handleToggleSessionList}
           isSessionListVisible={isSessionListVisible && !effectiveSidebarAndNavigatorHidden}
-          onToggleFocusMode={() => setIsSidebarAndNavigatorHidden(prev => !prev)}
+          onToggleFocusMode={handleToggleFocusMode}
           onAddSessionPanel={() => handleNewChat(true)}
           onAddBrowserPanel={() => { void handleNewBrowserWindow() }}
           isCompact={isAutoCompact}
@@ -3800,58 +3817,80 @@ function AppShellContent({
               }}
             >
               <div className="h-full min-h-0 flex flex-col" style={{ width: rightSidebarWidth }}>
-                <PanelHeader
-                  title={t("chat.sessionInfo")}
-                  actions={(
-                    <PanelHeaderCenterButton
-                      icon={<X className="size-4" />}
-                      tooltip={t("common.close")}
-                      onClick={() => {
-                        updateRightSidebar(undefined)
-                      }}
-                    />
-                  )}
-                />
+                {/* No title bar: the sidebar's own content names it, and the
+                    dismiss control lives inline in SessionInfoPopoverContent. */}
                 <div className="flex-1 min-h-0 overflow-hidden">
+                  {/* Grid in every mode, never `block`: a docked browser is a
+                      measured hole, and an auto-height column measures 0 tall,
+                      so its native view never receives bounds. */}
                   <div className={cn(
-                    "h-full min-h-0",
-                    rightSidebarFilePaneLayout.mode === 'split' ? "grid grid-cols-[minmax(170px,0.26fr)_1px_minmax(380px,1.74fr)]" : "block",
+                    "h-full min-h-0 grid",
+                    rightSidebarFilePaneLayout.mode === 'split' ? "grid-cols-[minmax(170px,0.26fr)_1px_minmax(380px,1.74fr)]" : "grid-cols-1",
                   )}>
-                    <div className="min-h-0 min-w-0 overflow-hidden">
-                      <SessionInfoPopoverContent
-                        sessionId={rightSidebarSessionId}
-                        sessionFolderPath={rbSessionFolderPath}
-                        compactTabs={rightSidebarFilePaneLayout.mode === 'split'}
-                        onPreviewFileInline={handleRightSidebarPreviewFile}
-                        onPreviewObjectInline={handleRightSidebarPreviewObject}
-                      />
-                    </div>
+                    {rightSidebarFilePaneLayout.showTree ? (
+                      <div className="min-h-0 min-w-0 overflow-hidden">
+                        <SessionInfoPopoverContent
+                          sessionId={rightSidebarSessionId}
+                          sessionFolderPath={rbSessionFolderPath}
+                          compactTabs={rightSidebarFilePaneLayout.mode === 'split'}
+                          onClose={() => updateRightSidebar(undefined)}
+                          onPreviewFileInline={handleRightSidebarPreviewFile}
+                          onPreviewObjectInline={handleRightSidebarPreviewObject}
+                        />
+                      </div>
+                    ) : null}
                     {rightSidebarFilePaneLayout.showPreview && rightSidebarContentTarget ? (
                       <>
-                        <div className="bg-border/60" />
+                        {rightSidebarFilePaneLayout.showTree ? <div className="bg-border/60" /> : null}
                         <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-                          <div className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-border/60 px-2">
-                            {rightSidebarContentTabs.tabs.map(tab => (
-                              <div
-                                key={tab.id}
-                                className={cn(
-                                  "group flex max-w-44 items-center gap-1 rounded-md px-2 py-1 text-xs",
-                                  tab.id === rightSidebarContentTabs.activeId ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5",
-                                )}
-                              >
-                                <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => dispatchRightSidebarContentTabs({ type: 'select', id: tab.id })}>
-                                  {contentTabLabel(tab.target, browserInstances)}
-                                </button>
-                                <button
-                                  type="button"
-                                  aria-label={t('common.close')}
-                                  onClick={() => dispatchRightSidebarContentTabs({ type: 'close', id: tab.id })}
-                                  className="rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                          <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border/60 px-1.5">
+                            {/* The tabs scroll; the pane controls must not scroll away with them. */}
+                            <button
+                              type="button"
+                              onClick={() => setRightSidebarTreeCollapsed(rightSidebarFilePaneLayout.showTree)}
+                              className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                              title={t(rightSidebarFilePaneLayout.showTree ? 'chat.collapseFilePane' : 'chat.expandFilePane')}
+                              aria-label={t(rightSidebarFilePaneLayout.showTree ? 'chat.collapseFilePane' : 'chat.expandFilePane')}
+                              aria-expanded={rightSidebarFilePaneLayout.showTree}
+                            >
+                              {rightSidebarFilePaneLayout.showTree ? <PanelLeftClose className="size-3.5" /> : <PanelLeftOpen className="size-3.5" />}
+                            </button>
+                            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+                              {rightSidebarContentTabs.tabs.map(tab => (
+                                <div
+                                  key={tab.id}
+                                  className={cn(
+                                    "group flex max-w-44 shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs",
+                                    tab.id === rightSidebarContentTabs.activeId ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5",
+                                  )}
                                 >
-                                  <X className="size-3" />
-                                </button>
-                              </div>
-                            ))}
+                                  <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => dispatchRightSidebarContentTabs({ type: 'select', id: tab.id })}>
+                                    {contentTabLabel(tab.target, browserInstances)}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    aria-label={t('common.close')}
+                                    onClick={() => dispatchRightSidebarContentTabs({ type: 'close', id: tab.id })}
+                                    className="rounded-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                                  >
+                                    <X className="size-3" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                            {/* With the tree hidden its inline dismiss goes with it, so the
+                                sidebar's own close moves here for exactly that case. */}
+                            {rightSidebarFilePaneLayout.showTree ? null : (
+                              <button
+                                type="button"
+                                onClick={() => updateRightSidebar(undefined)}
+                                className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                title={t('common.close')}
+                                aria-label={t('common.close')}
+                              >
+                                <X className="size-3.5" />
+                              </button>
+                            )}
                           </div>
                           <div className="min-h-0 flex-1 overflow-hidden">
                             <ContentPreviewHost
