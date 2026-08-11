@@ -294,7 +294,7 @@
   "chat.workingDirectory": "作業ディレクトリ",
   "chat.workspaceFiles": "ワークスペースファイル",
   "chat.workspaceFilesEmpty": "作業ディレクトリが利用可能な場合、ワークスペースファイルがここに表示されます。",
-  "chat.workspaceFilesTab": "ワークスペース",
+  "chat.workspaceFilesTab": "Files",
   "chat.workspaceObjectAdapterCalendar": "カレンダー",
   "chat.workspaceObjectAdapterGallery": "ギャラリー",
   "chat.workspaceObjectAdapterKanban": "カンバン",

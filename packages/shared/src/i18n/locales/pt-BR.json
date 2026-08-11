@@ -294,7 +294,7 @@
   "chat.workingDirectory": "Diretório de trabalho",
   "chat.workspaceFiles": "Arquivos do Workspace",
   "chat.workspaceFilesEmpty": "Os arquivos do workspace aparecerão aqui quando houver um diretório de trabalho.",
-  "chat.workspaceFilesTab": "Workspace",
+  "chat.workspaceFilesTab": "Files",
   "chat.workspaceObjectAdapterCalendar": "Calendário",
   "chat.workspaceObjectAdapterGallery": "Galeria",
   "chat.workspaceObjectAdapterKanban": "Kanban",

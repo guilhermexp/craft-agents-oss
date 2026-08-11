@@ -294,7 +294,7 @@
   "chat.workingDirectory": "Munkakönyvtár",
   "chat.workspaceFiles": "Workspace fájlok",
   "chat.workspaceFilesEmpty": "A workspace fájlok itt jelennek meg, ha elérhető munkakönyvtár.",
-  "chat.workspaceFilesTab": "Workspace",
+  "chat.workspaceFilesTab": "Files",
   "chat.workspaceObjectAdapterCalendar": "Naptár",
   "chat.workspaceObjectAdapterGallery": "Galéria",
   "chat.workspaceObjectAdapterKanban": "Kanban",

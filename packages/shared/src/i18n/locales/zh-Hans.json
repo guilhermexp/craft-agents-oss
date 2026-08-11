@@ -294,7 +294,7 @@
   "chat.workingDirectory": "工作目录",
   "chat.workspaceFiles": "工作区文件",
   "chat.workspaceFilesEmpty": "有工作目录时，工作区文件会显示在这里。",
-  "chat.workspaceFilesTab": "工作区",
+  "chat.workspaceFilesTab": "Files",
   "chat.workspaceObjectAdapterCalendar": "日历",
   "chat.workspaceObjectAdapterGallery": "画廊",
   "chat.workspaceObjectAdapterKanban": "看板",
