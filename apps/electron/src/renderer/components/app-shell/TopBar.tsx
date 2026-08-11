@@ -163,6 +163,12 @@ interface TopBarProps {
   onToggleFocusMode: () => void
   onAddSessionPanel: () => void
   onAddBrowserPanel: () => void
+  /**
+   * The right sidebar's tab strip. It lives up here rather than inside the
+   * panel so the panel keeps its full height for content; `null` while the
+   * sidebar is closed or showing something the tabs do not switch.
+   */
+  rightSidebarTabs?: React.ReactNode
   /** When true, hides controls that don't apply in compact/mobile layout */
   isCompact?: boolean
 }
@@ -191,6 +197,7 @@ export function TopBar({
   onToggleFocusMode,
   onAddSessionPanel,
   onAddBrowserPanel,
+  rightSidebarTabs,
   isCompact,
 }: TopBarProps) {
   const { t } = useTranslation()
@@ -433,6 +440,11 @@ export function TopBar({
         <div className="min-w-0">
           <BrowserTabStrip activeSessionId={activeSessionId} maxVisibleBadges={maxVisibleBrowserBadges} />
         </div>
+        {rightSidebarTabs ? (
+          // `titlebar-no-drag`: the row is a drag region, so without it a click
+          // on a tab starts a window move instead of switching the panel.
+          <div className="titlebar-no-drag shrink-0">{rightSidebarTabs}</div>
+        ) : null}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <TopBarButton aria-label={t("menu.addPanelMenu")} className="ml-1 size-[26px] rounded-lg">

@@ -75,7 +75,7 @@ import {
 import { SessionList, type ChatGroupingMode } from "./SessionList"
 import { MainContentPanel } from "./MainContentPanel"
 import { PanelStackContainer } from "./PanelStackContainer"
-import { SessionInfoPopoverContent } from "./SessionInfoPopover"
+import { SessionInfoPopoverContent, SessionInfoTabs, type SessionInfoTab } from "./SessionInfoPopover"
 import { ContentPreviewHost } from './content-preview-host'
 import { getRightSidebarFilePaneLayout } from "../right-sidebar/SessionFilesSection"
 import {
@@ -680,6 +680,9 @@ function AppShellContent({
     setRightSidebarTreeCollapsed(null)
   }, [rightSidebarContentKind])
   const rightSidebarFilePaneLayout = getRightSidebarFilePaneLayout(rightSidebarContentKind, rightSidebarTreeCollapsed)
+  // Owned here, not by the panel: the strip that drives it is rendered in the
+  // title bar, two trees away from the content it switches.
+  const [rightSidebarTab, setRightSidebarTab] = React.useState<SessionInfoTab>('workspace')
   const rightSidebarWidth = getRightSidebarEffectiveWidth({
     width: rightSidebarContentTarget ? rightSidebarPreviewPreferredWidth : rightSidebarPreferredWidth,
     windowWidth: shellWidth > 0
@@ -2667,6 +2670,9 @@ function AppShellContent({
           onToggleFocusMode={handleToggleFocusMode}
           onAddSessionPanel={() => handleNewChat(true)}
           onAddBrowserPanel={() => { void handleNewBrowserWindow() }}
+          rightSidebarTabs={isRightSidebarVisible && rightSidebarFilePaneLayout.showTree ? (
+            <SessionInfoTabs value={rightSidebarTab} onValueChange={setRightSidebarTab} />
+          ) : null}
           isCompact={isAutoCompact}
         />
 
@@ -3832,7 +3838,8 @@ function AppShellContent({
                         <SessionInfoPopoverContent
                           sessionId={rightSidebarSessionId}
                           sessionFolderPath={rbSessionFolderPath}
-                          compactTabs={rightSidebarFilePaneLayout.mode === 'split'}
+                          tab={rightSidebarTab}
+                          onTabChange={setRightSidebarTab}
                           onClose={() => updateRightSidebar(undefined)}
                           onPreviewFileInline={handleRightSidebarPreviewFile}
                           onPreviewObjectInline={handleRightSidebarPreviewObject}

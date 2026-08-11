@@ -8,13 +8,12 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { AlertCircle, Globe, Copy, RefreshCw, Link2Off, Info, Trash2 } from 'lucide-react'
+import { AlertCircle, ChevronsRight, Globe, Copy, RefreshCw, Link2Off, Info, Trash2 } from 'lucide-react'
 import { ChatDisplay, type ChatDisplayHandle } from '@/components/app-shell/ChatDisplay'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ChannelBadge } from '@/components/app-shell/ChannelBadge'
 import { SessionMenu } from '@/components/app-shell/SessionMenu'
 import { SessionInfoPopover } from '@/components/app-shell/SessionInfoPopover'
-import { PanelRightRounded } from '@/components/icons/PanelRightRounded'
 import { RenameDialog } from '@/components/ui/rename-dialog'
 import { toast } from 'sonner'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
@@ -621,7 +620,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId, rightSidebarButton, l
 
     return (
       <PanelHeaderCenterButton
-        icon={<PanelRightRounded className="size-4" />}
+        icon={<ChevronsRight className="size-4" />}
         tooltip={t("chat.sessionInfo")}
         aria-pressed={isOpen}
         onClick={() => updateRightSidebar(isOpen ? undefined : { type: 'session-info' })}

@@ -11,7 +11,7 @@
  */
 
 import * as React from 'react'
-import { PanelRight, Table2 } from 'lucide-react'
+import { ChevronsRight, Table2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { PreviewOverlay } from './PreviewOverlay'
 import { usePlatform } from '../../context/PlatformContext'
@@ -56,7 +56,7 @@ export function OfficeLiveOverlay({
       )}
       title={t('preview.openInSidePanel')}
     >
-      <PanelRight className="size-3.5" />
+      <ChevronsRight className="size-3.5" />
       {t('preview.openInSidePanel')}
     </button>
   ) : undefined

@@ -2,8 +2,8 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from '@/components/ui/drawer'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Maximize2, X } from 'lucide-react'
+import { Tabs, TabsContent } from '@/components/ui/tabs'
+import { ArrowLeft, Check, Copy, ExternalLink, FolderOpen, Maximize2, X } from 'lucide-react'
 import { classifyFile } from '@craft-agent/ui/file-classification'
 import { prepareHtmlPreviewSrcDoc } from '@craft-agent/ui/html-preview-sanitizer'
 import { Markdown } from '@craft-agent/ui/markdown'
@@ -42,8 +42,8 @@ const DEFAULT_DRAWER_CONTENT_CLASS = [
   'overflow-hidden rounded-[14px] border border-border/60 bg-background shadow-modal-small',
 ].join(' ')
 
-const SESSION_INFO_TABS = ['session', 'workspace', 'objects'] as const
-type SessionInfoTab = (typeof SESSION_INFO_TABS)[number]
+export const SESSION_INFO_TABS = ['session', 'workspace', 'objects'] as const
+export type SessionInfoTab = (typeof SESSION_INFO_TABS)[number]
 
 const SESSION_INFO_TAB_LABEL_KEYS: Record<SessionInfoTab, string> = {
   session: 'chat.sessionFilesTab',
@@ -51,9 +51,53 @@ const SESSION_INFO_TAB_LABEL_KEYS: Record<SessionInfoTab, string> = {
   objects: 'chat.workspaceObjectsTab',
 }
 
-function stepSessionInfoTab(current: SessionInfoTab, delta: number): SessionInfoTab {
-  const next = (SESSION_INFO_TABS.indexOf(current) + delta + SESSION_INFO_TABS.length) % SESSION_INFO_TABS.length
-  return SESSION_INFO_TABS[next] as SessionInfoTab
+/**
+ * The heading the panel shows when the tab strip is hosted elsewhere. Objects
+ * has no section heading of its own, so it reuses its tab name.
+ */
+const SESSION_INFO_SECTION_TITLE_KEYS: Record<SessionInfoTab, string> = {
+  session: 'chat.sessionFiles',
+  workspace: 'chat.workspaceFiles',
+  objects: 'chat.workspaceObjectsTab',
+}
+
+/**
+ * The panel's tab strip, hostable outside the panel. The shell renders it in
+ * the title bar next to the panel controls, so it cannot be a Radix `TabsList`
+ * — those need the `Tabs` root, which lives with the content two trees away.
+ * `aria-controls` is therefore absent: Radix owns the panel ids and does not
+ * expose them. The rest of the tab pattern is intact.
+ */
+export function SessionInfoTabs({
+  value,
+  onValueChange,
+  className,
+}: {
+  value: SessionInfoTab
+  onValueChange: (tab: SessionInfoTab) => void
+  className?: string
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div role="tablist" aria-label={t('chat.sessionInfo')} className={cn('flex items-center gap-0.5', className)}>
+      {SESSION_INFO_TABS.map(tab => (
+        <button
+          key={tab}
+          type="button"
+          role="tab"
+          aria-selected={tab === value}
+          onClick={() => onValueChange(tab)}
+          className={cn(
+            'h-[26px] min-w-0 rounded-lg px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+            tab === value ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <span className="truncate">{t(SESSION_INFO_TAB_LABEL_KEYS[tab])}</span>
+        </button>
+      ))}
+    </div>
+  )
 }
 
 export function SessionInfoPopover({
@@ -126,57 +170,52 @@ export function SessionInfoPopover({
   )
 }
 
-export function SessionInfoPopoverContent({ sessionId, sessionFolderPath, compactTabs = false, onClose, onPreviewFileInline, onPreviewObjectInline }: { sessionId: string; sessionFolderPath?: string; compactTabs?: boolean; onClose?: () => void; onPreviewFileInline?: (path: string) => void; onPreviewObjectInline?: (objectId: string) => void }) {
+export function SessionInfoPopoverContent({ sessionId, sessionFolderPath, tab: controlledTab, onTabChange, onClose, onPreviewFileInline, onPreviewObjectInline }: {
+  sessionId: string
+  sessionFolderPath?: string
+  /**
+   * Supplied when the shell hosts the tab strip in the title bar. The panel
+   * then renders no strip of its own — two live copies of the same control is
+   * the bug, not the redundancy.
+   */
+  tab?: SessionInfoTab
+  onTabChange?: (tab: SessionInfoTab) => void
+  onClose?: () => void
+  onPreviewFileInline?: (path: string) => void
+  onPreviewObjectInline?: (objectId: string) => void
+}) {
   const { t } = useTranslation()
-  const [tab, setTab] = React.useState<SessionInfoTab>('workspace')
+  const [ownTab, setOwnTab] = React.useState<SessionInfoTab>('workspace')
+  const hostsOwnTabs = controlledTab === undefined || onTabChange === undefined
+  const tab = hostsOwnTabs ? ownTab : controlledTab
+  const setTab = hostsOwnTabs ? setOwnTab : onTabChange
 
   return (
     <div className="h-full min-h-0 flex flex-col">
       <Tabs value={tab} onValueChange={value => setTab(value as SessionInfoTab)} className="flex-1 min-h-0 flex flex-col overflow-hidden">
-        {/* The panel has no title bar of its own, so the dismiss control rides
-            the tab row instead of costing a header. */}
-        <div className="shrink-0 flex items-center gap-1.5 border-b border-border/50 px-2 py-2">
+        {/* The panel has no title bar of its own, so this row is all the chrome
+            it gets: the strip when the panel hosts it, otherwise the active
+            section's name — which the sections then stop drawing themselves,
+            because a title one row below an empty bar is wasted height. */}
+        <div className="shrink-0 flex h-9 items-center gap-1 border-b border-border/50 px-1.5">
           <div className="min-w-0 flex-1">
-            {compactTabs ? (
-              // Three labels cannot share ~55px: side by side they become three
-              // ellipses, which name nothing. One readable label at a time, with
-              // the neighbours a click away. The arrows announce where they go,
-              // so the destination is spoken instead of a bare direction.
-              <div className="flex h-8 w-full items-center gap-0.5 rounded-[8px] bg-muted p-1 text-muted-foreground">
-                <button
-                  type="button"
-                  aria-label={t(SESSION_INFO_TAB_LABEL_KEYS[stepSessionInfoTab(tab, -1)])}
-                  onClick={() => setTab(current => stepSessionInfoTab(current, -1))}
-                  className="flex size-6 shrink-0 items-center justify-center rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  <ChevronLeft className="size-3.5" />
-                </button>
-                <span className="min-w-0 flex-1 truncate rounded-md bg-background px-1 py-0.5 text-center text-xs font-medium text-foreground shadow">
-                  {t(SESSION_INFO_TAB_LABEL_KEYS[tab])}
-                </span>
-                <button
-                  type="button"
-                  aria-label={t(SESSION_INFO_TAB_LABEL_KEYS[stepSessionInfoTab(tab, 1)])}
-                  onClick={() => setTab(current => stepSessionInfoTab(current, 1))}
-                  className="flex size-6 shrink-0 items-center justify-center rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  <ChevronRight className="size-3.5" />
-                </button>
-              </div>
+            {hostsOwnTabs ? (
+              <SessionInfoTabs value={tab} onValueChange={setTab} />
             ) : (
-              <TabsList className="grid h-8 w-full grid-cols-3 rounded-[8px]">
-                <TabsTrigger value="session" className="h-6 min-w-0 px-1.5 text-xs">
-                  <span className="truncate">{t('chat.sessionFilesTab')}</span>
-                </TabsTrigger>
-                <TabsTrigger value="workspace" className="h-6 min-w-0 px-1.5 text-xs">
-                  <span className="truncate">{t('chat.workspaceFilesTab')}</span>
-                </TabsTrigger>
-                <TabsTrigger value="objects" className="h-6 min-w-0 px-1.5 text-xs">
-                  <span className="truncate">{t('chat.workspaceObjectsTab')}</span>
-                </TabsTrigger>
-              </TabsList>
+              <span className="block truncate px-1 text-xs font-medium text-muted-foreground select-none">
+                {t(SESSION_INFO_SECTION_TITLE_KEYS[tab])}
+              </span>
             )}
           </div>
+          {!hostsOwnTabs && tab === 'session' && sessionFolderPath ? (
+            <button
+              type="button"
+              onClick={() => window.electronAPI.showInFolder(sessionFolderPath)}
+              className="shrink-0 rounded-md px-1.5 text-xs text-foreground/50 transition-colors hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              {t('chat.viewInFileManager', { fileManager: getFileManagerName() })}
+            </button>
+          ) : null}
           {onClose ? (
             <button
               type="button"
@@ -193,7 +232,7 @@ export function SessionInfoPopoverContent({ sessionId, sessionFolderPath, compac
           <SessionFilesSection
             sessionId={sessionId}
             sessionFolderPath={sessionFolderPath}
-            hideHeader={false}
+            hideHeader={!hostsOwnTabs}
             className="h-full min-h-0"
             onPreviewFileInline={onPreviewFileInline}
           />
@@ -201,6 +240,7 @@ export function SessionInfoPopoverContent({ sessionId, sessionFolderPath, compac
         <TabsContent value="workspace" className="m-0 flex-1 min-h-0 overflow-hidden">
           <WorkspaceFilesSection
             sessionId={sessionId}
+            hideHeader={!hostsOwnTabs}
             className="h-full min-h-0"
             onPreviewFileInline={onPreviewFileInline}
           />

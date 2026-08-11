@@ -708,7 +708,7 @@ function updateTreeNode(entries: SessionFile[], path: string, children: SessionF
   })
 }
 
-export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInline }: { sessionId?: string; className?: string; onPreviewFileInline?: (path: string) => void }) {
+export function WorkspaceFilesSection({ sessionId, className, hideHeader = false, onPreviewFileInline }: { sessionId?: string; className?: string; hideHeader?: boolean; onPreviewFileInline?: (path: string) => void }) {
   const { t } = useTranslation()
   const session = useSession(sessionId || '')
   const { workspaces, activeWorkspaceId, onOpenFile } = useAppShellContext()
@@ -824,9 +824,13 @@ export function WorkspaceFilesSection({ sessionId, className, onPreviewFileInlin
 
   return (
     <div className={cn('flex flex-col h-full min-h-0', className)}>
-      <div className="flex items-center justify-between px-4 pt-4 pb-2 shrink-0 select-none">
-        <span className="text-xs font-medium text-muted-foreground">{t('chat.workspaceFiles')}</span>
-      </div>
+      {/* Hidden when the embedding panel already names the section in its own
+          chrome — see SessionInfoPopoverContent. */}
+      {!hideHeader && (
+        <div className="flex items-center justify-between px-4 pt-4 pb-2 shrink-0 select-none">
+          <span className="text-xs font-medium text-muted-foreground">{t('chat.workspaceFiles')}</span>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden pb-2 min-h-0">
         {!rootPath || files.length === 0 ? (

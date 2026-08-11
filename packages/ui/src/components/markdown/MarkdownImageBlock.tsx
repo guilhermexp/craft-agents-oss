@@ -25,7 +25,7 @@
  */
 
 import * as React from 'react'
-import { File as FileIcon, Maximize2, PanelRight } from 'lucide-react'
+import { ChevronsRight, File as FileIcon, Maximize2 } from 'lucide-react'
 import { OpenInSidePanelButton } from './OpenInSidePanelButton'
 import { cn } from '../../lib/utils'
 import { CodeBlock } from './CodeBlock'
@@ -120,7 +120,7 @@ function NonImagePreviewCard({ src, label }: { src: string; label?: string }) {
         <span className="block truncate text-[13px] text-foreground">{fileName}</span>
         <span className="block truncate text-[11px] uppercase tracking-wide text-muted-foreground">{kind}</span>
       </span>
-      {open ? <PanelRight className="size-3.5 shrink-0 text-muted-foreground" /> : null}
+      {open ? <ChevronsRight className="size-3.5 shrink-0 text-muted-foreground" /> : null}
     </button>
   )
 }

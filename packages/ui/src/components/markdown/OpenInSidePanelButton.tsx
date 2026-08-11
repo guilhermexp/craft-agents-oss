@@ -8,7 +8,7 @@
  * rows have nothing a file tab could show.
  */
 
-import { PanelRight } from 'lucide-react'
+import { ChevronsRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { usePlatform } from '../../context/PlatformContext'
 import { cn } from '../../lib/utils'
@@ -39,7 +39,7 @@ export function OpenInSidePanelButton({
       )}
       title={t('preview.openInSidePanel')}
     >
-      <PanelRight className="size-3.5" />
+      <ChevronsRight className="size-3.5" />
     </button>
   )
 }
