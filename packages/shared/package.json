@@ -20,6 +20,8 @@
     "./auth": "./src/auth/index.ts",
     "./auth/callback-page": "./src/auth/callback-page.ts",
     "./auth/types": "./src/auth/types.ts",
+    "./browser-cookies/types": "./src/browser-cookies/types.ts",
+    "./browser-cookies/chrome-cookie-reader": "./src/browser-cookies/chrome-cookie-reader.ts",
     "./config": "./src/config/index.ts",
     "./config/workspace-storage": "./src/config/workspace-storage.ts",
     "./docs": "./src/docs/index.ts",
