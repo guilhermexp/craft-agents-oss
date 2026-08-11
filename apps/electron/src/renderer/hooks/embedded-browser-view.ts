@@ -54,6 +54,13 @@ export interface EmbeddedBoundsReporter {
  * Reports the hole's geometry, skipping rects identical to the last accepted
  * one — every report costs a native re-layout. Sub-pixel holes are a
  * mid-layout artefact, not geometry worth reporting.
+ *
+ * The rect is re-read into a literal before it crosses the bridge.
+ * `getBoundingClientRect()` returns a `DOMRect`, whose every field is a
+ * prototype accessor, and contextBridge copies own enumerable properties only:
+ * passing the `DOMRect` through lands `{}` in the main process, and each axis
+ * floors to `NaN`, which Chromium clamps to a 0x0 view. The panel then shows
+ * its empty hole with no browser in it.
  */
 export function createEmbeddedBoundsReporter(
   api: EmbeddedBrowserPaneApi,
@@ -69,7 +76,12 @@ export function createEmbeddedBoundsReporter(
       if (key === lastKey) return
       lastKey = key
 
-      void api.setEmbeddedBounds(instanceId, rect).then(applied => {
+      void api.setEmbeddedBounds(instanceId, {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      }).then(applied => {
         // Rejected because the browser had not finished docking yet. Forget the
         // rect or the retry with the same one is skipped and the views never
         // get bounds at all.

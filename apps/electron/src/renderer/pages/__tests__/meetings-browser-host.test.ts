@@ -169,6 +169,28 @@ describe('mecânica de embed compartilhada', () => {
     expect(pane.calls).toEqual([])
   })
 
+  it('envia propriedades próprias: um DOMRect não atravessa o contextBridge', async () => {
+    const pane = fakePane()
+    const reporter = createEmbeddedBoundsReporter(pane.api, 'browser-1')
+
+    // `getBoundingClientRect()` devolve um DOMRect, cujos campos são todos
+    // acessores do protótipo. O contextBridge copia só propriedades próprias,
+    // então repassar o DOMRect entrega `{}` no main e cada eixo vira NaN.
+    const domRectLike = Object.create({
+      get x() { return 10 },
+      get y() { return 20 },
+      get width() { return 800 },
+      get height() { return 600 },
+    }) as EmbeddedBrowserRect
+
+    reporter.report(domRectLike)
+    await settle()
+
+    const sent = pane.calls.find((entry) => entry.call === 'bounds')
+    expect(sent?.call === 'bounds' && Object.keys(sent.rect).sort()).toEqual(['height', 'width', 'x', 'y'])
+    expect(sent?.call === 'bounds' && sent.rect).toEqual(rect())
+  })
+
   it('esconder a pane não desencaixa: trocar de aba não devolve a janela', () => {
     const pane = fakePane()
 

@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, mock } from 'bun:test'
+import type { BrowserWindow } from 'electron'
 import * as sharedConfig from '@craft-agent/shared/config'
 import { PANEL_INTERIOR_RADIUS } from '../../shared/browser-chrome'
 import { Readable } from 'stream'
@@ -481,6 +482,20 @@ describe('BrowserPaneManager', () => {
 
     expect(manager.setEmbeddedBounds('bounds-2', { x: 0, y: 0, width: 10, height: 10 })).toBe(false)
     expect(instance.embeddedBounds).toBeNull()
+  })
+
+  it('refuses a non-finite rect instead of collapsing the views to 0x0', () => {
+    manager.createInstance('bounds-3')
+    // The mock stands in for a real window at the one boundary that needs one.
+    const host = createMockWindow() as unknown as BrowserWindow
+    manager.setDisplayMode('bounds-3', 'integrated', host)
+
+    // What an empty object from the renderer bridge floors to. Clamping it
+    // would hand Chromium a 0x0 view and still report success, so the card
+    // stays empty and the renderer never retries.
+    expect(manager.setEmbeddedBounds('bounds-3', { x: NaN, y: NaN, width: NaN, height: NaN })).toBe(false)
+    // The refusal is not sticky: the retry it asks for still lands.
+    expect(manager.setEmbeddedBounds('bounds-3', { x: 10, y: 20, width: 800, height: 600 })).toBe(true)
   })
 
   it('falls back to floating when the host window closes', () => {

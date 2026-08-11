@@ -69,14 +69,22 @@ export function useEmbeddedBrowserView({
     }
   }, [instanceId, reportBounds, reporter])
 
-  // The hole moves for reasons a resize listener alone would miss (sidebar
-  // collapse, panel splits), so observe the element itself and the window.
+  // The hole is positioned by its ancestors, and its own box can hold still
+  // while they move it: the panel slides in with a fixed-width column inside,
+  // so a ResizeObserver on the element alone never fires and the views stay
+  // wherever the first mid-animation report put them - offset from the panel
+  // and clipped by the window edge. Observing the chain catches every layout
+  // that relocates it (panel entry, sidebar collapse, splits, window resize).
+  // The window listener stays for zoom changes: they alter the CSS px to DIP
+  // conversion the main process applies without moving the hole in CSS px.
   useEffect(() => {
     const el = holeRef.current
     if (!el) return
 
     const observer = new ResizeObserver(reportBounds)
-    observer.observe(el)
+    for (let node: Element | null = el; node; node = node.parentElement) {
+      observer.observe(node)
+    }
     window.addEventListener('resize', reportBounds)
 
     return () => {

@@ -2420,6 +2420,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
    * the card. Multiply by the zoom to convert, and floor every axis so the view
    * edge can never exceed the card's.
    *
+   * A non-finite axis is refused rather than clamped. `NaN` floors to `NaN`,
+   * which Chromium turns into a 0x0 view — a docked browser that renders
+   * nothing and reports success. Refusing makes the renderer report again.
+   *
    * Radius is re-applied here only to track the zoom. Docking already set it —
    * it is a consequence of being docked, not of a particular bounds message,
    * and a message that never lands must not leave the views square inside a
@@ -2428,6 +2432,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   setEmbeddedBounds(instanceId: string, rect: EmbeddedBounds, zoomFactor = 1): boolean {
     const instance = this.instances.get(instanceId)
     if (!instance || instance.displayMode !== 'integrated') return false
+    if (!Number.isFinite(rect.x) || !Number.isFinite(rect.y)
+      || !Number.isFinite(rect.width) || !Number.isFinite(rect.height)) {
+      mainLog.warn(`[browser-pane] ignoring non-finite embedded bounds id=${instanceId}`)
+      return false
+    }
 
     const zoom = Number.isFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1
     instance.embeddedBounds = {
