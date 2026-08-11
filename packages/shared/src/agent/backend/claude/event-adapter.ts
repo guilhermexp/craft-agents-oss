@@ -12,7 +12,7 @@
  * - Tracks usage per-message (not cumulative) for accurate context window display
  */
 
-import type { SDKMessage, SDKAssistantMessageError } from '@anthropic-ai/claude-agent-sdk';
+import type { SDKMessage, SDKAssistantMessage, SDKAssistantMessageError } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentEvent } from '@craft-agent/core/types';
 import type { AgentError } from '../../errors.ts';
 import { BaseEventAdapter } from '../base-event-adapter.ts';
@@ -28,6 +28,11 @@ export interface ClaudeAdapterCallbacks {
   mapSDKError: (errorCode: SDKAssistantMessageError) => Promise<{ type: 'typed_error'; error: AgentError }>;
   /** Session directory for tool metadata (prevents cross-session race condition) */
   sessionDir?: string;
+  /**
+   * Reads the live context window from the SDK (`Query.getContextUsage().maxTokens`).
+   * Resolves null when no query is live or the control request fails.
+   */
+  readContextWindow?: () => Promise<number | null>;
 }
 
 /**
@@ -57,6 +62,42 @@ export function buildWindowsSkillsDirError(errorText: string): { type: 'typed_er
       originalError: errorText,
     },
   };
+}
+
+/** `claude-opus-5[1m]` and `claude-opus-5` are the same model to the usage map. */
+const LONG_CONTEXT_SUFFIX = /\[1m\]$/;
+
+/**
+ * Pick the main loop model's context window out of `result.modelUsage`.
+ *
+ * The map is keyed by model and accumulates the CLI's *own* helper calls, not just
+ * the session's model: a `claude-haiku-*` entry (200k) is routinely inserted before
+ * the main model's, so reading the map positionally reported a 200k window for a 1M
+ * Opus session and pinned the context badge at its clamp. Keys keep the `[1m]`
+ * suffix that assistant messages drop, so the match is suffix-insensitive.
+ */
+function selectModelContextWindow(
+  modelUsage: Record<string, { contextWindow?: number } | undefined> | undefined,
+  mainModel: string | null,
+): number | undefined {
+  const entries = Object.entries(modelUsage ?? {});
+  if (mainModel) {
+    const target = mainModel.trim().toLowerCase().replace(LONG_CONTEXT_SUFFIX, '');
+    for (const [model, usage] of entries) {
+      if (usage?.contextWindow && model.trim().toLowerCase().replace(LONG_CONTEXT_SUFFIX, '') === target) {
+        return usage.contextWindow;
+      }
+    }
+  }
+  // No model match (aliases, provider-prefixed ids). The main loop model always has
+  // the widest window of the models in play, because helper calls run on Haiku.
+  let widest: number | undefined;
+  for (const [, usage] of entries) {
+    if (usage?.contextWindow && (widest === undefined || usage.contextWindow > widest)) {
+      widest = usage.contextWindow;
+    }
+  }
+  return widest;
 }
 
 /**
@@ -97,7 +138,22 @@ export class ClaudeEventAdapter extends BaseEventAdapter {
 
   // Session-persistent state (survives across turns)
   private lastAssistantUsage: AssistantUsage | null = null;
+  /** Model of the last non-sidechain assistant message — keys the modelUsage lookup. */
+  private lastAssistantModel: string | null = null;
+  /** Last known context window from either SDK source; kept across turns so the UI never blanks. */
   private cachedContextWindow?: number;
+  /**
+   * Window this turn's `getContextUsage()` reported, if it answered.
+   *
+   * Authoritative over `result.modelUsage`: the two mean different things once a
+   * compaction budget is configured. `getContextUsage()` reports the window the CLI
+   * actually budgets against (733k with `autoCompactWindow` set), while `modelUsage`
+   * keeps reporting the model's raw capacity (1M). The budget is what the user gets
+   * compacted against, so it wins; `modelUsage` only fills in when the read failed.
+   */
+  private sdkContextWindow?: number;
+  /** In-flight `getContextUsage()` read for the current turn, or null when none was started. */
+  private contextWindowRead: Promise<void> | null = null;
   private _sdkTools: string[] = [];
 
   private callbacks: ClaudeAdapterCallbacks;
@@ -117,6 +173,10 @@ export class ClaudeEventAdapter extends BaseEventAdapter {
     this.activeParentTools = new Set();
     this.pendingText = null;
     this.lastAssistantUsage = null;
+    // Re-read the window once per turn: the model (and with it the window) can
+    // change between turns via /model or a connection switch.
+    this.contextWindowRead = null;
+    this.sdkContextWindow = undefined;
   }
 
   // ============================================================
@@ -163,7 +223,7 @@ export class ClaudeEventAdapter extends BaseEventAdapter {
         break;
 
       case 'result':
-        this.adaptResult(message, events);
+        await this.adaptResult(message, events);
         break;
 
       case 'system':
@@ -231,6 +291,32 @@ export class ClaudeEventAdapter extends BaseEventAdapter {
     this.callbacks.sessionDir = sessionDir;
   }
 
+  /**
+   * Start this turn's authoritative context-window read, at most once per turn.
+   *
+   * `result.modelUsage` only lands at turn end, and a local model registry cannot
+   * know about 1M-credit downgrades or an `autoCompactWindow` override, so the SDK
+   * control request is the only source that is correct while the turn is running.
+   * Deliberately not awaited by the caller: a control response can queue behind an
+   * in-flight API call, and stalling the message loop would stall text deltas.
+   */
+  private ensureContextWindowRead(): void {
+    const read = this.callbacks.readContextWindow;
+    if (this.contextWindowRead || !read) return;
+    this.contextWindowRead = read()
+      .then((contextWindow) => {
+        if (contextWindow && contextWindow > 0) {
+          this.sdkContextWindow = contextWindow;
+          this.cachedContextWindow = contextWindow;
+        }
+      })
+      .catch((error: unknown) => {
+        this.callbacks.onDebug?.(
+          `getContextUsage failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+  }
+
   // ============================================================
   // Per-message-type Handlers
   // ============================================================
@@ -251,14 +337,17 @@ export class ClaudeEventAdapter extends BaseEventAdapter {
     }
 
     // Track usage from non-sidechain assistant messages
-    const isSidechain = (message as any).parent_tool_use_id !== null;
-    if (!isSidechain && (message as any).message?.usage) {
-      const usage = (message as any).message.usage;
+    const assistant = message as SDKAssistantMessage;
+    const isSidechain = assistant.parent_tool_use_id !== null;
+    if (!isSidechain && assistant.message?.usage) {
+      const usage = assistant.message.usage;
+      this.lastAssistantModel = assistant.message.model || this.lastAssistantModel;
       this.lastAssistantUsage = {
         input_tokens: usage.input_tokens,
         cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
         cache_creation_input_tokens: usage.cache_creation_input_tokens ?? 0,
       };
+      this.ensureContextWindowRead();
 
       const currentInputTokens =
         this.lastAssistantUsage.input_tokens +
@@ -466,7 +555,7 @@ export class ClaudeEventAdapter extends BaseEventAdapter {
     }
   }
 
-  private adaptResult(message: SDKMessage, events: AgentEvent[]): void {
+  private async adaptResult(message: SDKMessage, events: AgentEvent[]): Promise<void> {
     const msg = message as any;
 
     // Debug logging
@@ -474,12 +563,20 @@ export class ClaudeEventAdapter extends BaseEventAdapter {
       `[ClaudeAdapter] result message: subtype=${msg.subtype}, errors=${'errors' in msg ? JSON.stringify(msg.errors) : 'none'}`,
     );
 
-    // Get contextWindow from modelUsage
-    const modelUsageEntries = Object.values(msg.modelUsage || {});
-    const primaryModelUsage = modelUsageEntries[0] as any;
+    // The turn's `getContextUsage()` read was started on the first assistant message,
+    // so this only orders the write ahead of the `complete` event that gets persisted.
+    if (this.contextWindowRead) {
+      await this.contextWindowRead;
+    }
 
-    if (primaryModelUsage?.contextWindow) {
-      this.cachedContextWindow = primaryModelUsage.contextWindow;
+    // Fallback only. `modelUsage` reports the model's raw capacity, which is not the
+    // budget once `autoCompactWindow` is configured (1M model → 733k budget), so it
+    // must not overwrite a window the control request already gave us this turn.
+    if (this.sdkContextWindow === undefined) {
+      const reportedWindow = selectModelContextWindow(msg.modelUsage, this.lastAssistantModel);
+      if (reportedWindow) {
+        this.cachedContextWindow = reportedWindow;
+      }
     }
 
     // Use lastAssistantUsage for per-message context display (not cumulative)
@@ -505,7 +602,7 @@ export class ClaudeEventAdapter extends BaseEventAdapter {
       cacheReadTokens: cacheRead,
       cacheCreationTokens: cacheCreation,
       costUsd: msg.total_cost_usd,
-      contextWindow: primaryModelUsage?.contextWindow,
+      contextWindow: this.cachedContextWindow,
     };
 
     if (msg.subtype === 'success') {
@@ -532,6 +629,9 @@ export class ClaudeEventAdapter extends BaseEventAdapter {
         this._sdkTools = msg.tools;
         this.callbacks.onDebug?.(`SDK init: captured ${this._sdkTools.length} tools`);
       }
+      // Earliest point at which the query is provably live — start the window read
+      // here so the very first `usage_update` of a turn already carries it.
+      this.ensureContextWindowRead();
     } else if (msg.subtype === 'compact_boundary') {
       events.push({
         type: 'info',

@@ -392,6 +392,176 @@ describe('ClaudeEventAdapter', () => {
       expect(completeEvent.usage.cacheReadTokens).toBe(400);
       expect(completeEvent.usage.cacheCreationTokens).toBe(100);
     });
+
+    // Regression: the badge sat at its clamp on every long 1M session because
+    // `modelUsage` was read positionally. The CLI inserts its own Haiku helper
+    // call before the main model, so entry 0 reported a 200k window.
+    it('should report the main model window when a helper model was billed first', async () => {
+      await adapter.adapt({
+        type: 'assistant',
+        message: {
+          model: 'claude-opus-5',
+          content: [{ type: 'text', text: 'test' }],
+          usage: { input_tokens: 2, cache_read_input_tokens: 0, cache_creation_input_tokens: 227_712 },
+        },
+        parent_tool_use_id: null,
+        session_id: 'sess-1',
+      } as any);
+
+      const events = await adapter.adapt({
+        type: 'result',
+        subtype: 'success',
+        usage: { input_tokens: 2, output_tokens: 4, cache_read_input_tokens: 0, cache_creation_input_tokens: 227_712 },
+        total_cost_usd: 0.18,
+        // Key order as the SDK emits it: Haiku helper call first, main model second.
+        modelUsage: {
+          'claude-haiku-4-5-20251001': { contextWindow: 200_000 },
+          'claude-opus-5[1m]': { contextWindow: 1_000_000 },
+        },
+        session_id: 'sess-1',
+      } as any);
+
+      const completeEvent = events.find(e => e.type === 'complete') as any;
+      expect(completeEvent.usage.contextWindow).toBe(1_000_000);
+      // The window must exceed the tokens actually sent, or the badge overflows.
+      expect(completeEvent.usage.inputTokens).toBeLessThan(completeEvent.usage.contextWindow);
+    });
+
+    it('should fall back to the widest window when no usage key matches the model', async () => {
+      // Bedrock/Vertex key usage by inference profile, which never equals the plain
+      // model id on the assistant message. Helper calls always run on the smaller
+      // Haiku window, so the widest entry is still the main loop model.
+      await adapter.adapt({
+        type: 'assistant',
+        message: {
+          model: 'claude-opus-5',
+          content: [{ type: 'text', text: 'test' }],
+          usage: { input_tokens: 100, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+        },
+        parent_tool_use_id: null,
+        session_id: 'sess-1',
+      } as any);
+
+      const events = await adapter.adapt({
+        type: 'result',
+        subtype: 'success',
+        usage: { input_tokens: 100, output_tokens: 4, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+        total_cost_usd: 0.01,
+        modelUsage: {
+          'claude-haiku-4-5-20251001': { contextWindow: 200_000 },
+          'us.anthropic.claude-opus-5-v1:0': { contextWindow: 1_000_000 },
+        },
+        session_id: 'sess-1',
+      } as any);
+
+      expect((events.find(e => e.type === 'complete') as any).usage.contextWindow).toBe(1_000_000);
+    });
+
+    it('should report the configured compaction budget, not the model capacity', async () => {
+      // With `autoCompactWindow` set, `getContextUsage()` reports the budgeted window
+      // (733k → compaction at 700k) while `modelUsage` keeps reporting the model's raw
+      // 1M capacity. The budget is what the session actually gets compacted against, so
+      // the turn-end `modelUsage` must not overwrite it.
+      adapter = new ClaudeEventAdapter(createCallbacks({ readContextWindow: async () => 733_000 }));
+      adapter.startTurn();
+
+      await adapter.adapt({
+        type: 'assistant',
+        message: {
+          model: 'claude-opus-5',
+          content: [{ type: 'text', text: 'test' }],
+          usage: { input_tokens: 10, cache_read_input_tokens: 0, cache_creation_input_tokens: 90 },
+        },
+        parent_tool_use_id: null,
+        session_id: 'sess-1',
+      } as any);
+
+      const events = await adapter.adapt({
+        type: 'result',
+        subtype: 'success',
+        usage: { input_tokens: 10, output_tokens: 4, cache_read_input_tokens: 0, cache_creation_input_tokens: 90 },
+        total_cost_usd: 0.01,
+        modelUsage: { 'claude-opus-5[1m]': { contextWindow: 1_000_000 } },
+        session_id: 'sess-1',
+      } as any);
+
+      expect((events.find(e => e.type === 'complete') as any).usage.contextWindow).toBe(733_000);
+    });
+
+    it('should carry the live SDK window before any modelUsage exists', async () => {
+      // `modelUsage` only lands with `result`. The control request is what makes the
+      // badge correct *during* the turn — including when 1M credits are exhausted and
+      // the CLI silently budgets against 200k, which no local model registry knows.
+      adapter = new ClaudeEventAdapter(createCallbacks({ readContextWindow: async () => 200_000 }));
+      adapter.startTurn();
+
+      // `system: init` is the earliest proof the query is live, so the read starts here.
+      await adapter.adapt({
+        type: 'system',
+        subtype: 'init',
+        tools: ['Read'],
+        session_id: 'sess-1',
+      } as any);
+
+      const assistantEvents = await adapter.adapt({
+        type: 'assistant',
+        message: {
+          model: 'claude-opus-5',
+          content: [{ type: 'text', text: 'test' }],
+          usage: { input_tokens: 10, cache_read_input_tokens: 0, cache_creation_input_tokens: 90 },
+        },
+        parent_tool_use_id: null,
+        session_id: 'sess-1',
+      } as any);
+
+      expect(assistantEvents.find(e => e.type === 'usage_update')).toMatchObject({
+        usage: { inputTokens: 100, contextWindow: 200_000 },
+      });
+
+      const events = await adapter.adapt({
+        type: 'result',
+        subtype: 'success',
+        usage: { input_tokens: 10, output_tokens: 4, cache_read_input_tokens: 0, cache_creation_input_tokens: 90 },
+        total_cost_usd: 0.01,
+        modelUsage: {},
+        session_id: 'sess-1',
+      } as any);
+
+      expect((events.find(e => e.type === 'complete') as any).usage.contextWindow).toBe(200_000);
+    });
+
+    it('should keep emitting usage when the SDK window read fails', async () => {
+      adapter = new ClaudeEventAdapter(createCallbacks({
+        readContextWindow: async () => { throw new Error('Query closed before response received'); },
+      }));
+      adapter.startTurn();
+
+      const assistantEvents = await adapter.adapt({
+        type: 'assistant',
+        message: {
+          model: 'claude-opus-5',
+          content: [{ type: 'text', text: 'test' }],
+          usage: { input_tokens: 10, cache_read_input_tokens: 0, cache_creation_input_tokens: 90 },
+        },
+        parent_tool_use_id: null,
+        session_id: 'sess-1',
+      } as any);
+
+      expect(assistantEvents.find(e => e.type === 'usage_update')).toMatchObject({
+        usage: { inputTokens: 100 },
+      });
+
+      const events = await adapter.adapt({
+        type: 'result',
+        subtype: 'success',
+        usage: { input_tokens: 10, output_tokens: 4, cache_read_input_tokens: 0, cache_creation_input_tokens: 90 },
+        total_cost_usd: 0.01,
+        modelUsage: { 'claude-opus-5[1m]': { contextWindow: 1_000_000 } },
+        session_id: 'sess-1',
+      } as any);
+
+      expect((events.find(e => e.type === 'complete') as any).usage.contextWindow).toBe(1_000_000);
+    });
   });
 
   describe('system', () => {

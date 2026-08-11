@@ -10,7 +10,12 @@ This file accumulates release notes for the next unreleased version. PRs that ad
 ## Improvements
 
 - **Bundled Claude Agent SDK uplifted to 0.3.219** — the embedded Claude Code CLI moves from 2.1.215 to 2.1.219, so the runtime itself knows Opus 5 (the `opus` alias, its 1M context window, and its `high` effort default).
+- **Auto-compaction now triggers at 700k tokens on 1M models** — the CLI's own trigger is `window − 33k`, so a 1M session ran all the way to 967k before summarizing and every request in that tail paid for ~900k input tokens. Craft now sets `autoCompactWindow`, moving the trigger to 700k. The CLI clamps the setting to each model's real capacity, so 200k models keep their natural 167k trigger.
 
 ## Bug Fixes
 
+- **Context badge was stuck near 99 %** — the badge read the *first* entry of the SDK's `modelUsage` map, but the CLI bills its own internal Haiku helper call before the session's model, so every 1M Opus session was measured against Haiku's 200k window. Combined with a `Math.min(99, …)` clamp and a guessed "77.5 % of the window" compaction threshold, any decent session pinned at 99 %. The window now comes from `Query.getContextUsage()` — the budget the CLI actually compacts against — with the model-matched `modelUsage` entry as a fallback, the percentage is a plain share of that window, and a window contradicted by its own token count is discarded instead of rendered.
+- **Context badge no longer disappears** — it used to render only above 80 % and hid itself during compaction. It is now always present once a session has consumed context: quiet below 75 %, amber from 75 %, red from 90 %, and legible (no opacity drop) while a turn is in flight. Hovering shows the precise reading — `27.0% · 270.1K / 1.0M context` — plus why clicking will or will not compact.
+
 ## Breaking Changes
+

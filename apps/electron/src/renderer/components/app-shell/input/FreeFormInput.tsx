@@ -42,6 +42,7 @@ import { isMac, getPathBasename } from '@/lib/platform'
 import { applySmartTypography } from '@/lib/smart-typography'
 import { AttachmentPreview } from '../AttachmentPreview'
 import { getModelContextWindow } from '@config/models'
+import { deriveContextUsage } from './context-usage'
 import { useOptionalAppShellContext } from '@/context/AppShellContext'
 import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
 import { SourceAvatar } from '@/components/ui/source-avatar'
@@ -1874,52 +1875,61 @@ export function FreeFormInput({
           {/* Right side: Model + Send - never shrink so they're always visible */}
           <div className="flex items-center shrink-0">
 
-          {/* 5.5 Context Usage Warning Badge - shows when approaching auto-compaction threshold */}
+          {/* 5.5 Context usage badge — persistent readout of how full the window is */}
           {(() => {
-            // Calculate usage percentage based on compaction threshold (~77.5% of context window),
-            // not the full context window - this gives users meaningful warnings before compaction kicks in.
-            // SDK triggers compaction at ~155k tokens for a 200k context window.
-            // Falls back to known per-model context window when SDK hasn't reported usage yet.
-            const effectiveContextWindow = contextStatus?.contextWindow || getModelContextWindow(currentModel)
-            const compactionThreshold = effectiveContextWindow
-              ? Math.round(effectiveContextWindow * 0.775)
-              : null
-            const usagePercent = contextStatus?.inputTokens && compactionThreshold
-              ? Math.min(99, Math.round((contextStatus.inputTokens / compactionThreshold) * 100))
-              : null
-            // Show badge when >= 80% of compaction threshold AND not currently compacting
-            // Hide for Codex and Copilot models which don't support context compaction
-            const showWarning = usagePercent !== null && usagePercent >= 80 && !contextStatus?.isCompacting
+            const usage = deriveContextUsage({
+              usedTokens: contextStatus?.inputTokens,
+              reportedContextWindow: contextStatus?.contextWindow,
+              fallbackContextWindow: getModelContextWindow(currentModel),
+              isCompacting: contextStatus?.isCompacting === true,
+              isProcessing,
+            })
+            if (!usage) return null
+            const { percent, percentText, usedText, totalText, accent, canCompact } = usage
 
-            if (!showWarning) return null
-
-            const handleCompactClick = () => {
-              if (!isProcessing) {
-                onSubmit('/compact', [])
-              }
-            }
+            const hint = contextStatus?.isCompacting
+              ? t('chat.contextUsage.hintCompacting')
+              : isProcessing
+                ? t('chat.contextUsage.hintBusy')
+                : t('chat.contextUsage.hintCompact')
 
             return (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    onClick={handleCompactClick}
-                    disabled={isProcessing}
-                    className="inline-flex items-center h-6 px-2 text-[12px] font-medium bg-info/10 rounded-[6px] shadow-tinted select-none cursor-pointer hover:bg-info/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{
-                      '--shadow-color': 'var(--info-rgb)',
-                      color: 'color-mix(in oklab, var(--info) 30%, var(--foreground))',
-                    } as React.CSSProperties}
+                    onClick={() => { if (canCompact) onSubmit('/compact', []) }}
+                    disabled={!canCompact}
+                    aria-label={t('chat.contextUsage.ariaLabel', { percent: percentText, used: usedText, total: totalText })}
+                    className={cn(
+                      'inline-flex items-center h-6 px-2 text-[12px] font-medium tabular-nums rounded-[6px] select-none transition-colors',
+                      // No opacity drop while disabled: a turn in flight is exactly when the
+                      // user is watching this number climb, and the tooltip already says why
+                      // clicking does nothing.
+                      'cursor-pointer disabled:cursor-default',
+                      accent ? 'shadow-tinted' : 'text-muted-foreground enabled:hover:text-foreground',
+                      accent === 'destructive' && 'bg-destructive/10 enabled:hover:bg-destructive/20',
+                      accent === 'info' && 'bg-info/10 enabled:hover:bg-info/20',
+                    )}
+                    style={accent
+                      ? ({
+                          '--shadow-color': `var(--${accent}-rgb)`,
+                          color: `color-mix(in oklab, var(--${accent}) 30%, var(--foreground))`,
+                        } as React.CSSProperties)
+                      : undefined}
                   >
-                    {usagePercent}%
+                    {percent}%
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="top">
-                  {isProcessing
-                    ? `${usagePercent}% context used — wait for current operation`
-                    : `${usagePercent}% context used — click to compact`
-                  }
+                <TooltipContent side="top" className="flex flex-col gap-0.5">
+                  <span>
+                    <span className="font-semibold tabular-nums">{percentText}</span>
+                    <span className="text-muted-foreground">
+                      {' · '}
+                      {t('chat.contextUsage.detail', { used: usedText, total: totalText })}
+                    </span>
+                  </span>
+                  <span className="text-muted-foreground">{hint}</span>
                 </TooltipContent>
               </Tooltip>
             )

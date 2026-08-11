@@ -328,8 +328,6 @@ export interface ClaudeAgentConfig {
   mcpPool?: McpClientPool;
   /** LLM connection slug for credential lookup in postInit(). */
   connectionSlug?: string;
-  /** Enable 1M context window for current Opus models. Default: true. Set false to use 200K and conserve usage limits. */
-  enable1MContext?: boolean;
 }
 
 // Dangerous commands that should always require permission (never auto-allow)
@@ -904,6 +902,7 @@ export class ClaudeAgent extends BaseAgent {
     this.eventAdapter = new ClaudeEventAdapter({
       onDebug: (msg) => this.onDebug?.(msg),
       mapSDKError: (errorCode) => this.mapSDKErrorToTypedError(errorCode),
+      readContextWindow: () => this.readSdkContextWindow(),
     });
 
     // Log which model is being used (helpful for debugging custom models)
@@ -1188,15 +1187,16 @@ export class ClaudeAgent extends BaseAgent {
         });
       }
 
-      // Enable 1M context window for models that support it.
-      // Despite Anthropic docs claiming 1M is GA, the API still defaults to 200k
-      // without an explicit opt-in. The betas header only works for API key users;
-      // for OAuth the [1m] model suffix is the way. Use the suffix unconditionally
-      // since it works for both auth paths. See: anthropics/claude-agent-sdk-typescript#238
-      // Gated by enable1MContext in global config (~/.craft-agent/config.json).
-      // The interceptor also reads this to strip the SDK-injected beta header.
-      const use1M = this.config.enable1MContext !== false;
-      const effectiveModel = use1M && getModelContextWindow(model) === 1_000_000
+      // Ask for the 1M window on every model the registry marks as 1M.
+      //
+      // The `[1m]` suffix is the mechanism for both auth paths (the `context-1m`
+      // betas header only ever worked for API keys, and the interceptor strips it —
+      // see anthropics/claude-agent-sdk-typescript#238). It is not optional:
+      // Opus 5 / Opus 4.8 / Fable 5 are natively 1M on first-party auth, but a
+      // proxied or third-party connection only reports 1M when the suffix is present.
+      // There is deliberately no opt-out — the old `enable1MContext` toggle promised
+      // "disable for 200K" and could not deliver it for these models.
+      const effectiveModel = getModelContextWindow(model) === 1_000_000
         ? `${model}[1m]`
         : model;
 
@@ -2919,6 +2919,23 @@ This is a branched conversation. All prior messages in this conversation are par
    */
   isProcessing(): boolean {
     return this.currentQuery !== null;
+  }
+
+  /**
+   * Authoritative context window for the live query, in tokens.
+   *
+   * `getContextUsage().maxTokens` is the window the CLI actually budgets against:
+   * it already accounts for the `[1m]` opt-in, a 1M-credits downgrade back to 200k,
+   * and `autoCompactWindow` overrides — none of which the local model registry can
+   * see. Returns null (caller keeps its last known value) when no query is live or
+   * the control request fails; the query closes right after `result`, so a late
+   * caller gets "Query closed before response received" rather than a value.
+   */
+  private async readSdkContextWindow(): Promise<number | null> {
+    const activeQuery = this.currentQuery;
+    if (!activeQuery) return null;
+    const usage = await activeQuery.getContextUsage();
+    return usage.maxTokens > 0 ? usage.maxTokens : null;
   }
 
   /**

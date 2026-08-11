@@ -558,6 +558,9 @@ interface InputContainerPlaygroundProps {
   attachmentCount?: number
   showFollowUps?: boolean
   followUpCount?: number
+  contextUsedTokens?: number
+  contextWindowTokens?: number
+  isCompacting?: boolean
 }
 
 function InputContainerPlayground({
@@ -583,6 +586,9 @@ function InputContainerPlayground({
   attachmentCount = 2,
   showFollowUps = false,
   followUpCount = 2,
+  contextUsedTokens = 0,
+  contextWindowTokens = 1_000_000,
+  isCompacting = false,
 }: InputContainerPlaygroundProps) {
   const playgroundSessionId = 'playground-session'
   const [model, setModel] = React.useState(currentModel)
@@ -780,6 +786,11 @@ function InputContainerPlayground({
             onHeightChange: mockInputCallbacks.onHeightChange,
             onFocusChange: mockInputCallbacks.onFocusChange,
             onStop: mockInputCallbacks.onStop,
+            contextStatus: {
+              inputTokens: contextUsedTokens,
+              contextWindow: contextWindowTokens,
+              isCompacting,
+            },
           }}
         />
       </div>
@@ -1417,6 +1428,24 @@ export const chatComponents: ComponentEntry[] = [
         control: { type: 'number', min: 1, max: 4, step: 1 },
         defaultValue: 2,
       },
+      {
+        name: 'contextUsedTokens',
+        description: 'Tokens on the wire, driving the context usage badge (0 hides it)',
+        control: { type: 'number', min: 0, max: 1_000_000, step: 10_000 },
+        defaultValue: 0,
+      },
+      {
+        name: 'contextWindowTokens',
+        description: 'Context window the badge measures against',
+        control: { type: 'number', min: 100_000, max: 1_000_000, step: 100_000 },
+        defaultValue: 1_000_000,
+      },
+      {
+        name: 'isCompacting',
+        description: 'Backend is compacting — badge stays visible but is not clickable',
+        control: { type: 'boolean' },
+        defaultValue: false,
+      },
     ],
     mockData: () => ({}),
     variants: [
@@ -1537,6 +1566,22 @@ export const chatComponents: ComponentEntry[] = [
         description: 'Fully disabled state',
         props: {
           disabled: true,
+        },
+      },
+      {
+        name: 'Context badge — quiet',
+        description: 'Early in a 1M session: untinted badge, precise counts on hover',
+        props: {
+          contextUsedTokens: 270_000,
+          contextWindowTokens: 1_000_000,
+        },
+      },
+      {
+        name: 'Context badge — near compaction',
+        description: 'Amber at 75 %+, red at 90 %+, of a 200k window',
+        props: {
+          contextUsedTokens: 190_000,
+          contextWindowTokens: 200_000,
         },
       },
     ],

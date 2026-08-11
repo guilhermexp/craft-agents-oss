@@ -78,11 +78,31 @@ function nativeBinaryName(): string {
     return process.platform === 'win32' ? 'claude.exe' : 'claude';
 }
 
+/**
+ * Auto-compact once a turn carries this many tokens.
+ *
+ * The CLI's own trigger is `window - 33k`, which on a 1M model means letting a
+ * conversation reach 967k before summarizing — every request in the tail of such a
+ * session pays for ~900k input tokens, for a summary that is no better than one taken
+ * far earlier. 700k keeps most of the headroom while cutting that tail.
+ */
+const AUTO_COMPACT_AT_TOKENS = 700_000;
+
+/**
+ * Fixed headroom the CLI keeps between the budgeted window and the compaction trigger
+ * (verified: 200k window → 167k trigger, 1M → 967k). `autoCompactWindow` configures the
+ * *window*, so the trigger lands this far below it.
+ */
+const AUTO_COMPACT_RESERVE_TOKENS = 33_000;
+
 export function getDefaultOptions(envOverrides?: Record<string, string>): Partial<Options> {
     const env = buildClaudeSubprocessEnv(envOverrides);
     const baseOptions: Partial<Options> = {
         env,
         settingSources: ['project', 'local'],
+        // The CLI clamps this to the model's own capacity, so a 200k model keeps its
+        // natural 167k trigger and only 1M models are pulled in (verified, not assumed).
+        settings: { autoCompactWindow: AUTO_COMPACT_AT_TOKENS + AUTO_COMPACT_RESERVE_TOKENS },
     };
 
     // If custom path is set (e.g., for Electron packaged build), point the SDK at it.
