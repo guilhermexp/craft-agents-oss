@@ -235,28 +235,6 @@ export function setAllowRemoteEvaluate(allowed: boolean): void {
 }
 
 /**
- * Get whether 1M context window is enabled.
- * When disabled, models use 200K context and the interceptor strips the context-1m beta header.
- * Defaults to false — the 1M beta requires Anthropic Tier 4+, and enabling it by default
- * causes 400 "Invalid Request" for lower-tier API keys on large contexts (issue #567).
- * Users opt in via AI Settings → Performance → Extended Context (1M).
- */
-export function getEnable1MContext(): boolean {
-  const config = loadStoredConfig();
-  return config?.enable1MContext === true;
-}
-
-/**
- * Set whether 1M context window is enabled.
- */
-export function setEnable1MContext(enabled: boolean): void {
-  const config = loadStoredConfig();
-  if (!config) return;
-  config.enable1MContext = enabled;
-  saveConfig(config);
-}
-
-/**
  * Get whether rtk Bash-output compression is enabled.
  * When enabled, the PreToolUse pipeline rewrites Bash commands to their `rtk` equivalents
  * to reduce token consumption on common dev commands (git, ls, grep, test runners, etc.).

@@ -19,3 +19,4 @@ This file accumulates release notes for the next unreleased version. PRs that ad
 
 ## Breaking Changes
 
+- **"Extended Context (1M)" setting removed** — *AI Settings → Performance* no longer offers the toggle, and 1M is requested unconditionally for every model whose context window is 1M. The setting could not deliver what it promised: Opus 5, Opus 4.8 and Fable 5 are natively 1M on first-party auth, so disabling it never produced a 200k window there, while on proxied or third-party connections the `[1m]` suffix it suppressed was the *only* way to reach 1M. Its other half — stripping the `context-1m` beta header — had not run on the Claude path since the SDK moved to a native binary (the interceptor is Pi-only); that header is now always stripped, since Craft opts in through the model suffix on both auth paths. The persisted `enable1MContext` value is ignored.

@@ -269,18 +269,6 @@ export function registerSettingsHandlers(server: RpcServer, deps: HandlerDeps): 
     setExtendedPromptCache(enabled)
   })
 
-  // Get 1M context window setting
-  server.handle(RPC_NAMESPACES.caching.GET_ENABLE_1M_CONTEXT, async () => {
-    const { getEnable1MContext } = await import('@craft-agent/shared/config/storage')
-    return getEnable1MContext()
-  })
-
-  // Set 1M context window setting
-  server.handle(RPC_NAMESPACES.caching.SET_ENABLE_1M_CONTEXT, async (_ctx, enabled: boolean) => {
-    const { setEnable1MContext } = await import('@craft-agent/shared/config/storage')
-    setEnable1MContext(enabled)
-  })
-
   // Get auto-expand chat activities setting
   server.handle(RPC_NAMESPACES.appearance.GET_AUTO_EXPAND_ACTIVITIES, async () => {
     const { getAutoExpandActivities } = await import('@craft-agent/shared/config/storage')

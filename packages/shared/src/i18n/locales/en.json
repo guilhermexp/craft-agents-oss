@@ -1077,8 +1077,6 @@
   "settings.ai.description": "Model, thinking, connections",
   "settings.ai.duplicateAccount": "Same Anthropic account as another connection",
   "settings.ai.enterConnectionName": "Enter connection name...",
-  "settings.ai.extendedContext": "Extended Context (1M)",
-  "settings.ai.extendedContextDesc": "Use 1M token context window for current Opus models. Disable to use 200K and conserve usage limits.",
   "settings.ai.extendedPromptCache": "Extended prompt cache (1 hour)",
   "settings.ai.extendedPromptCacheDesc": "Cache prompts for 1 hour instead of 5 minutes. Only applies to Claude models via Anthropic API. Reduces cost for long sessions but increases cache write cost.",
   "settings.ai.inheritFromApp": "Inherit from app settings",

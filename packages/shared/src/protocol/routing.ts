@@ -163,8 +163,6 @@ export const LOCAL_ONLY_NAMESPACES = new Set<string>([
   // caching — prompt cache and context settings
   RPC_NAMESPACES.caching.GET_EXTENDED_PROMPT_CACHE,
   RPC_NAMESPACES.caching.SET_EXTENDED_PROMPT_CACHE,
-  RPC_NAMESPACES.caching.GET_ENABLE_1M_CONTEXT,
-  RPC_NAMESPACES.caching.SET_ENABLE_1M_CONTEXT,
 
   // rtk — token-optimization opt-in
   RPC_NAMESPACES.rtk.GET_ENABLED,

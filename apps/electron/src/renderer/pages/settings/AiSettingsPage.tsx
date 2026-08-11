@@ -590,7 +590,6 @@ export default function AiSettingsPage() {
   // Default settings state (app-level)
   const [defaultThinking, setDefaultThinking] = useState<ThinkingLevel>(DEFAULT_THINKING_LEVEL)
   const [extendedPromptCache, setExtendedPromptCache] = useState(false)
-  const [enable1MContext, setEnable1MContext] = useState(false)
   const [rtkEnabled, setRtkEnabledState] = useState(false)
   const [rtkInstalled, setRtkInstalled] = useState(false)
 
@@ -625,10 +624,6 @@ export default function AiSettingsPage() {
         const extendedCache = await window.electronAPI.getExtendedPromptCache()
         if (cancelled) return
         setExtendedPromptCache(extendedCache)
-
-        const enable1M = await window.electronAPI.getEnable1MContext()
-        if (cancelled) return
-        setEnable1MContext(enable1M)
 
         const rtkOn = await window.electronAPI.getRtkEnabled()
         if (cancelled) return
@@ -908,11 +903,6 @@ export default function AiSettingsPage() {
     await window.electronAPI?.setExtendedPromptCache(enabled)
   }, [])
 
-  const handleEnable1MContextChange = useCallback(async (enabled: boolean) => {
-    setEnable1MContext(enabled)
-    await window.electronAPI?.setEnable1MContext(enabled)
-  }, [])
-
   const handleRtkEnabledChange = useCallback(async (enabled: boolean) => {
     setRtkEnabledState(enabled)
     await window.electronAPI?.setRtkEnabled(enabled)
@@ -1041,12 +1031,6 @@ export default function AiSettingsPage() {
               {/* Performance */}
               <SettingsSection title={t("settings.ai.performance")} description={t("settings.ai.performanceDesc")}>
                 <SettingsCard>
-                  <SettingsToggle
-                    label={t("settings.ai.extendedContext")}
-                    description={t("settings.ai.extendedContextDesc")}
-                    checked={enable1MContext}
-                    onCheckedChange={handleEnable1MContextChange}
-                  />
                   <SettingsToggle
                     label={t("settings.ai.extendedPromptCache")}
                     description={t("settings.ai.extendedPromptCacheDesc")}

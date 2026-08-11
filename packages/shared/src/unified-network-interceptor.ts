@@ -24,7 +24,6 @@ import {
   debugLog,
   isRichToolDescriptionsEnabled,
   isExtendedPromptCacheEnabled,
-  is1MContextEnabled,
   setStoredError,
   toolMetadataStore,
   displayNameSchema,
@@ -806,16 +805,15 @@ export const anthropicAdapter: ApiAdapter = {
     sanitizeEmptyTextCacheControl(body);
     upgradePromptCacheTtl(body);
 
-    // Strip SDK-injected 1M context beta when setting disables it.
-    // The SDK adds this header automatically for Opus/Sonnet 4.6 models,
-    // but the user may want 200K context to conserve usage limits.
-    if (!is1MContextEnabled()) {
-      debugLog('[Anthropic] Stripping context-1m beta header (enable1MContext=false)');
-      init = {
-        ...init,
-        headers: stripBetaHeader(init?.headers as HeadersInitType | undefined, 'context-1m-2025-08-07'),
-      };
-    }
+    // Always strip the SDK-injected 1M context beta. Craft opts into the 1M window
+    // through the `[1m]` model suffix, which works on both auth paths; the header
+    // only ever worked for API keys and requires Anthropic Tier 4+, so letting it
+    // through returned 400 "Invalid Request" on large contexts for lower tiers
+    // (issue #567). Nothing in the model registry needs it to reach 1M.
+    init = {
+      ...init,
+      headers: stripBetaHeader(init?.headers as HeadersInitType | undefined, 'context-1m-2025-08-07'),
+    };
 
     const fastMode = shouldEnableFastMode(body.model);
     if (fastMode) {
