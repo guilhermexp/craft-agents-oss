@@ -5,6 +5,7 @@ import { tmpdir } from 'os'
 import { pathToFileURL } from 'url'
 
 const STORAGE_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', 'storage.ts')).href
+const VALIDATORS_MODULE_PATH = pathToFileURL(join(import.meta.dir, '..', 'validators.ts')).href
 
 function setupConfigDir() {
   const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-theme-'))
@@ -101,5 +102,82 @@ describe('app theme storage', () => {
     }
 
     expect(readFileSync(imagePath).length).toBeGreaterThan(0)
+  })
+
+  it('uses the bundled Vision OS theme for a fresh installation', () => {
+    const configDir = mkdtempSync(join(tmpdir(), 'craft-agent-theme-fresh-'))
+
+    const run = Bun.spawnSync(
+      [
+        process.execPath,
+        '--eval',
+        `
+          import { ensureConfigDefaults, getColorTheme, ensurePresetThemes, loadPresetTheme } from '${STORAGE_MODULE_PATH}';
+          import { isValidThemeFile } from '${VALIDATORS_MODULE_PATH}';
+
+          ensureConfigDefaults();
+          ensurePresetThemes();
+
+          if (getColorTheme() !== 'vision-os') {
+            throw new Error('Expected a fresh installation to select Vision OS');
+          }
+
+          const preset = loadPresetTheme('vision-os');
+          if (
+            !preset ||
+            preset.theme.mode !== 'scenic' ||
+            preset.theme.accent !== '#5ac8f5' ||
+            !preset.theme.backgroundImage?.includes('%23565b63') ||
+            !isValidThemeFile(preset.path)
+          ) {
+            throw new Error('Expected the bundled gray Vision OS preset to be available and valid');
+          }
+        `,
+      ],
+      {
+        cwd: join(import.meta.dir, '../../../../../apps/electron'),
+        env: {
+          ...process.env,
+          CRAFT_CONFIG_DIR: configDir,
+        },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    )
+
+    expect(run.exitCode, run.stderr.toString()).toBe(0)
+  })
+
+  it('preserves an existing color theme selection when defaults are synced', () => {
+    const { configDir } = setupConfigDir()
+    const configPath = join(configDir, 'config.json')
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'))
+    config.colorTheme = 'nord'
+    writeFileSync(configPath, JSON.stringify(config), 'utf-8')
+
+    const run = Bun.spawnSync(
+      [
+        process.execPath,
+        '--eval',
+        `
+          import { ensureConfigDefaults, getColorTheme } from '${STORAGE_MODULE_PATH}';
+          ensureConfigDefaults();
+          if (getColorTheme() !== 'nord') {
+            throw new Error('Expected the persisted color theme to win over the bundled default');
+          }
+        `,
+      ],
+      {
+        cwd: join(import.meta.dir, '../../../../../apps/electron'),
+        env: {
+          ...process.env,
+          CRAFT_CONFIG_DIR: configDir,
+        },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    )
+
+    expect(run.exitCode, run.stderr.toString()).toBe(0)
   })
 })

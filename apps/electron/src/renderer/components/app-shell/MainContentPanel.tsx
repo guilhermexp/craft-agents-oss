@@ -19,6 +19,9 @@ import * as React from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/button'
+import { navigate } from '@/lib/navigate'
+import { routes } from '../../../shared/routes'
 import { Panel } from './Panel'
 import { MultiSelectPanel } from './MultiSelectPanel'
 import { ChannelConversationPanel } from './ChannelConversationPanel'
@@ -280,8 +283,14 @@ export function MainContentPanel({
     // No source selected - empty state
     return wrapWithStoplight(
       <Panel variant="grow" className={className}>
-        <div className="flex items-center justify-center h-full text-muted-foreground">
-          <p className="text-sm">{t("sourcesList.noSourcesConfigured")}</p>
+        <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+          <div>
+            <p className="text-sm font-medium text-foreground">{t("sourcesList.noSourcesConfigured")}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t("sourcesList.emptyDescription")}</p>
+          </div>
+          <Button size="sm" onClick={() => navigate(routes.action.addSource())}>
+            {t("sourcesList.addSource")}
+          </Button>
         </div>
       </Panel>
     )
@@ -417,8 +426,14 @@ export function MainContentPanel({
     // No session selected - empty state
     return wrapWithStoplight(
       <Panel variant="grow" className={className}>
-        <div className="flex items-center justify-center h-full text-muted-foreground">
-          <p className="text-sm">{t("session.noSessionSelected")}</p>
+        <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+          <div>
+            <p className="text-sm font-medium text-foreground">{t("session.noSessionSelected")}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t("session.selectConversation")}</p>
+          </div>
+          <Button size="sm" onClick={() => navigate(routes.action.newSession())}>
+            {t("session.newSession")}
+          </Button>
         </div>
       </Panel>
     )

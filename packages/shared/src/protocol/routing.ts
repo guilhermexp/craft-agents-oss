@@ -47,6 +47,15 @@ export const LOCAL_ONLY_NAMESPACES = new Set<string>([
   // — even when the workspace itself lives on a remote server. Routing this REMOTE_ELIGIBLE
   // would send the local path to a remote filesystem that can't resolve it.
   RPC_NAMESPACES.file.READ_USER_ATTACHMENT,
+  // file — live Office preview server. The result is a `http://127.0.0.1:<port>`
+  // URL the renderer frames, and the renderer's CSP allows `frame-src
+  // http://127.0.0.1:*`. Routed REMOTE_ELIGIBLE, a remote workspace server would
+  // hand back a loopback port on ITS machine and the renderer would frame that
+  // port on the USER's machine — a destination chosen by the remote host. The
+  // `officecli watch` child also has to be able to read the document, which only
+  // holds for a local workspace.
+  RPC_NAMESPACES.file.OPEN_OFFICE_LIVE,
+  RPC_NAMESPACES.file.CLOSE_OFFICE_LIVE,
 
   // dialog — native folder dialog
   RPC_NAMESPACES.dialog.OPEN_FOLDER,
@@ -436,6 +445,9 @@ export const REMOTE_ELIGIBLE_NAMESPACES = new Set<string>([
   RPC_NAMESPACES.sources.CHANGED,
   RPC_NAMESPACES.sources.GET_PERMISSIONS,
   RPC_NAMESPACES.sources.GET_MCP_TOOLS,
+  RPC_NAMESPACES.sources.CATALOG_CAPABILITY,
+  RPC_NAMESPACES.sources.DISCOVER_CATALOG,
+  RPC_NAMESPACES.sources.MATERIALIZE_CATALOG,
 
   // oauth — OAuth state management
   RPC_NAMESPACES.oauth.START,
@@ -529,7 +541,6 @@ export const REMOTE_ELIGIBLE_NAMESPACES = new Set<string>([
   RPC_NAMESPACES.messaging.UPDATE_CONFIG,
   RPC_NAMESPACES.messaging.TEST_TELEGRAM,
   RPC_NAMESPACES.messaging.SAVE_TELEGRAM,
-  RPC_NAMESPACES.messaging.SAVE_LARK,
   RPC_NAMESPACES.messaging.DISCONNECT,
   RPC_NAMESPACES.messaging.FORGET,
   RPC_NAMESPACES.messaging.GET_BINDINGS,

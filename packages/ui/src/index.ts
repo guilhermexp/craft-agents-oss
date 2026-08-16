@@ -68,6 +68,7 @@ export {
 export {
   isIdExpanded,
   applyExpansionToggle,
+  autoExpandApplies,
   type ExpansionState,
   type GroupExpansionController,
 } from './components/chat'

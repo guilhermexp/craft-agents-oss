@@ -446,7 +446,7 @@ function TabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        'px-3 py-1.5 text-sm rounded-t-md border-b-2',
+        'px-3 py-1.5 text-sm border-b-2',
         active
           ? 'border-foreground/80 text-foreground'
           : 'border-transparent text-foreground/60 hover:text-foreground/80'

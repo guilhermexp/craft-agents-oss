@@ -28,13 +28,13 @@ import { messagingDialogAtom } from '@/atoms/messaging'
 
 type TranslationFn = ReturnType<typeof useTranslation>['t']
 
-export type MessagingPlatform = 'telegram' | 'whatsapp' | 'lark'
+export type MessagingPlatform = 'telegram' | 'whatsapp'
 
 export interface UseMessagingConnectOptions {
   /** Session to bind the pairing code to. */
   sessionId: string
   /**
-   * Called when the user clicks Telegram or Lark but the platform isn't
+   * Called when the user clicks Telegram but the platform isn't
    * connected yet. Default: navigate to messaging settings + toast.
    * Playground overrides this to toast only (it has no router).
    */
@@ -73,8 +73,8 @@ export function useMessagingConnect({
         } else if (onTelegramNotConfigured) {
           onTelegramNotConfigured()
         } else {
-          // Telegram + Lark share the "open Settings" path — both use
-          // a Settings dialog rather than an inline connect flow.
+          // Telegram uses the "open Settings" path — a Settings dialog
+          // rather than an inline connect flow.
           navigate(routes.view.settings('messaging'))
           toast.info(t('toast.telegramNotConfiguredOpenSettings'))
         }
@@ -133,9 +133,6 @@ export function MessagingSessionMenuItem(props: MessagingSessionMenuItemProps) {
         </MenuItem>
         <MenuItem onClick={() => handleConnectMessaging('whatsapp')}>
           <span>WhatsApp</span>
-        </MenuItem>
-        <MenuItem onClick={() => handleConnectMessaging('lark')}>
-          <span>Lark / Feishu</span>
         </MenuItem>
       </SubContent>
     </Sub>

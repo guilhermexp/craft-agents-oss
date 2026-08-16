@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils"
+import { useTranslation } from "react-i18next"
 import { WelcomeStep } from "./WelcomeStep"
 import type { ApiSetupMethod } from "./APISetupStep"
 import { ProviderSelectStep, type ProviderChoice } from "./ProviderSelectStep"
@@ -18,6 +19,16 @@ export type OnboardingStep =
   | 'complete'
 
 export type LoginStatus = 'idle' | 'waiting' | 'success' | 'error'
+const ONBOARDING_PROGRESS: Record<OnboardingStep, number> = {
+  welcome: 1,
+  'git-bash': 2,
+  'provider-select': 2,
+  'local-model': 3,
+  credentials: 3,
+  complete: 4,
+}
+
+const ONBOARDING_STEP_COUNT = 4
 
 export interface OnboardingState {
   step: OnboardingStep
@@ -116,6 +127,8 @@ export function OnboardingWizard({
   editInitialValues,
   className
 }: OnboardingWizardProps) {
+  const { t } = useTranslation()
+  const currentStep = ONBOARDING_PROGRESS[state.step]
   const renderStep = () => {
     switch (state.step) {
       case 'welcome':
@@ -201,8 +214,26 @@ export function OnboardingWizard({
       {/* Draggable title bar region for transparent window (macOS) */}
       <div className="titlebar-drag-region fixed top-0 left-0 right-0 h-[50px] z-titlebar" />
 
-      {/* Main content */}
-      <main className="flex flex-1 items-center justify-center p-8">
+      <main className="flex min-h-0 flex-1 flex-col items-center justify-start gap-6 overflow-y-auto p-8 pt-[max(4rem,env(safe-area-inset-top))]">
+        <div
+          role="progressbar"
+          aria-valuemin={1}
+          aria-valuemax={ONBOARDING_STEP_COUNT}
+          aria-valuenow={currentStep}
+          aria-label={t('onboarding.progress', { current: currentStep, total: ONBOARDING_STEP_COUNT })}
+          className="flex items-center gap-2"
+        >
+          {Array.from({ length: ONBOARDING_STEP_COUNT }, (_, index) => (
+            <span
+              key={index}
+              aria-hidden="true"
+              className={cn(
+                "h-1.5 w-8 rounded-full transition-colors",
+                index < currentStep ? "bg-accent" : "bg-foreground/10",
+              )}
+            />
+          ))}
+        </div>
         {renderStep()}
       </main>
     </div>

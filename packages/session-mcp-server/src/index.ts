@@ -34,7 +34,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSy
 import { join } from 'node:path';
 import { isDeveloperFeedbackEnabled, isMemoryEnabled } from '@craft-agent/shared/feature-flags';
 import { basename } from 'node:path';
-import { WorkspaceObjectService, WorkspaceObjectActionSchema } from '../../shared/src/workspace-objects/service.ts';
+import { executeWorkspaceObjectAction, WorkspaceObjectActionSchema } from '../../shared/src/workspace-objects/service.ts';
 // Import from session-tools-core
 import {
   type SessionToolContext,
@@ -206,14 +206,10 @@ function createCodexContext(config: SessionConfig): SessionToolContext {
     sessionId,
     workspacePath: workspaceRootPath,
     workspaceObjects: {
-      execute: (input) => {
-        const service = WorkspaceObjectService.open({ workspaceId: basename(workspaceRootPath), workspaceRootPath });
-        try {
-          return service.execute(WorkspaceObjectActionSchema.parse(input)) as unknown as Record<string, unknown>;
-        } finally {
-          service.close();
-        }
-      },
+      execute: (input) => executeWorkspaceObjectAction(
+        { workspaceId: basename(workspaceRootPath), workspaceRootPath },
+        WorkspaceObjectActionSchema.parse(input),
+      ) as unknown as Record<string, unknown>,
     },
     get sourcesPath() { return join(workspaceRootPath, 'sources'); },
     get skillsPath() { return join(workspaceRootPath, 'skills'); },

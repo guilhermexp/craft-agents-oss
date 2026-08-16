@@ -11,8 +11,6 @@ import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import {
   resizeImageForAPI,
   inspectImageBuffer,
-  renderOfficeToHtml,
-  setOfficeCellValue,
   openOfficeLiveServer,
   closeOfficeLiveServer,
 } from '@craft-agent/server-core/services'
@@ -200,38 +198,6 @@ export function registerFilesHandlers(server: RpcServer, deps: HandlerDeps): voi
       throw new Error(`Failed to read file as binary: ${message}`)
     }
   })
-
-  // Render .docx/.xlsx/.pptx to self-contained HTML via the bundled OfficeCLI
-  // binary, so the renderer can preview them in its sandboxed iframe.
-  server.handle(RPC_NAMESPACES.file.RENDER_OFFICE, async (ctx, path: string): Promise<string> => {
-    try {
-      const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
-      const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
-      return await renderOfficeToHtml(safePath)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error'
-      deps.platform.logger.error('renderOffice error:', message)
-      throw new Error(`Failed to render Office document: ${message}`)
-    }
-  })
-
-  // Write a single cell back to a spreadsheet, then return the re-rendered HTML
-  // so the panel reflects the edit (and any formula results) in one round trip.
-  server.handle(
-    RPC_NAMESPACES.file.SET_OFFICE_CELL,
-    async (ctx, path: string, cellPath: string, value: string): Promise<string> => {
-      try {
-        const workspaceId = ctx.workspaceId ?? deps.windowManager?.getWorkspaceForWindow(ctx.webContentsId!)
-        const safePath = await validateFilePath(path, getWorkspaceAllowedDirs(workspaceId))
-        await setOfficeCellValue(safePath, cellPath, value)
-        return await renderOfficeToHtml(safePath)
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error'
-        deps.platform.logger.error('setOfficeCell error:', message)
-        throw new Error(`Failed to edit cell: ${message}`)
-      }
-    }
-  )
 
   // Start (or reuse) an `officecli watch` server for a document and return its
   // loopback URL. The served page carries OfficeCLI's own editor and formula

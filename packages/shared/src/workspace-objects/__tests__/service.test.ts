@@ -27,8 +27,7 @@ describe('WorkspaceObjectService', () => {
   test('publishes one ready event after canonical commit and writes a matching manifest', () => {
     const root = makeRoot();
     const events: unknown[] = [];
-    const service = WorkspaceObjectService.open({ workspaceId: 'ws_one', workspaceRootPath: root });
-    service.events.subscribe(event => events.push(event));
+    const service = WorkspaceObjectService.open({ workspaceId: 'ws_one', workspaceRootPath: root, onEvent: event => events.push(event) });
     const result = service.execute({ action: 'define-object', object: {
       id: 'object_people', slug: 'people', name: 'People', fields: [],
     }});
@@ -46,8 +45,8 @@ describe('WorkspaceObjectService', () => {
     const service = WorkspaceObjectService.open({
       workspaceId: 'ws_two', workspaceRootPath: root,
       writeManifest: () => { throw new Error('disk unavailable'); },
+      onEvent: event => events.push(event),
     });
-    service.events.subscribe(event => events.push(event));
     const result = service.execute({ action: 'define-object', object: {
       id: 'object_tasks', slug: 'tasks', name: 'Tasks', fields: [],
     }});
@@ -69,8 +68,8 @@ describe('WorkspaceObjectService', () => {
       workspaceId: 'ws_event_failure',
       workspaceRootPath: root,
       writeEventProjection: () => { throw new Error('event sidecar unavailable'); },
+      onEvent: event => events.push(event),
     });
-    service.events.subscribe(event => events.push(event));
 
     expect(service.execute({ action: 'define-object', object: {
       id: 'object_committed', slug: 'committed', name: 'Committed', fields: [],

@@ -7,6 +7,7 @@
  */
 
 import type { PerfSnapshot } from './store'
+import { interactionDisplay } from './interactions'
 
 /** Rows per table — enough to see the tail, short enough to read. */
 const TOP_N = 15
@@ -151,7 +152,16 @@ export function buildPerfReport(history: readonly PerfSnapshot[]): string {
   // snapshot already holds every retained one; summing across windows would
   // count each click as many times as it stayed in the buffer.
   const interactions = last.interactions
-  if (interactions.length > 0) {
+  const display = interactionDisplay(last.commitTrackingAvailable)
+  if (!display.showSettle) {
+    // Settle latency comes from the React commit hook, which is absent in a
+    // packaged build. Reporting the resulting all-zero timings as real numbers
+    // is worse than saying nothing, so the section is a warning, not a table.
+    lines.push('## Recent interactions')
+    lines.push('')
+    lines.push('Settle latency unavailable in this build (packaged renderer — no React commit hook); interaction timings omitted.')
+    lines.push('')
+  } else if (interactions.length > 0) {
     lines.push('## Recent interactions')
     lines.push('')
     lines.push('`settled` = input event → the UI stopped committing. That is the number the user feels.')
@@ -161,29 +171,6 @@ export function buildPerfReport(history: readonly PerfSnapshot[]): string {
     for (const item of [...interactions].sort((a, b) => b.settledMs - a.settledMs).slice(0, TOP_N)) {
       const firstCommit = item.firstCommitMs === null ? '—' : formatMs(item.firstCommitMs)
       lines.push(`|${item.label}|${firstCommit}|${formatMs(item.settledMs)}${item.timedOut ? ' (timeout)' : ''}|${item.commits}|`)
-    }
-    lines.push('')
-  }
-
-  // --- spans ---------------------------------------------------------------
-  const spans = new Map<string, { calls: number; selfMs: number; waitMs: number; maxMs: number }>()
-  for (const window of windows) {
-    for (const stat of window.spans) {
-      const bucket = spans.get(stat.name) ?? { calls: 0, selfMs: 0, waitMs: 0, maxMs: 0 }
-      bucket.calls += stat.calls
-      bucket.selfMs += stat.selfMs
-      bucket.waitMs += stat.waitMs
-      bucket.maxMs = Math.max(bucket.maxMs, stat.maxMs)
-      spans.set(stat.name, bucket)
-    }
-  }
-  if (spans.size > 0) {
-    lines.push('## Instrumented spans')
-    lines.push('')
-    lines.push('|Span|Calls|Self ms|Wait ms|Max ms|')
-    lines.push('|---|---:|---:|---:|---:|')
-    for (const [name, stat] of [...spans.entries()].sort((a, b) => b[1].selfMs - a[1].selfMs).slice(0, TOP_N)) {
-      lines.push(`|${name}|${stat.calls}|${formatMs(stat.selfMs)}|${formatMs(stat.waitMs)}|${formatMs(stat.maxMs)}|`)
     }
     lines.push('')
   }

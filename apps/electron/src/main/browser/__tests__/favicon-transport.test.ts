@@ -37,8 +37,10 @@ interface StubResponseInit {
 
 interface StubResponse {
   response: FaviconHttpResponse
-  /** True once the transport reached for the body stream. */
+  /** True once the transport pulled a reader off the body stream. */
   bodyRead: () => boolean
+  /** True once the body was cancelled — via `stream.cancel()` or `reader.cancel()`. */
+  cancelled: () => boolean
 }
 
 /**
@@ -53,6 +55,7 @@ function stubResponseWithProbe(init: StubResponseInit = {}): StubResponse {
   if (init.contentLength) headers.set('content-length', init.contentLength)
 
   const chunks = init.chunks ?? [init.bytes ?? PNG_BYTES]
+  let cancelled = false
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       for (const chunk of chunks) {
@@ -60,19 +63,34 @@ function stubResponseWithProbe(init: StubResponseInit = {}): StubResponse {
       }
       controller.close()
     },
+    // The source cancel runs for both `stream.cancel()` (abandon paths) and
+    // `reader.cancel()` (ceiling bail-out), so one probe covers every route.
+    cancel() {
+      cancelled = true
+    },
   })
 
+  // The read probe fires on getReader, not on the `body` getter: cancelling an
+  // abandoned body reaches for `.body`, but that must not count as "read the
+  // bytes into the partition".
   let bodyRead = false
+  const realGetReader = stream.getReader.bind(stream)
+  Object.defineProperty(stream, 'getReader', {
+    configurable: true,
+    value: (...args: unknown[]) => {
+      bodyRead = true
+      return (realGetReader as (...a: unknown[]) => unknown)(...args)
+    },
+  })
+
   return {
     bodyRead: () => bodyRead,
+    cancelled: () => cancelled,
     response: {
       ok: init.ok ?? true,
       status: init.status ?? 200,
       headers: { get: (name) => headers.get(name.toLowerCase()) ?? null },
-      get body() {
-        bodyRead = true
-        return stream
-      },
+      body: stream,
     },
   }
 }
@@ -313,5 +331,49 @@ describe('fetchFaviconDataUrl', () => {
     expect(await fetchFaviconDataUrl('https://example.com/favicon.ico', { fetch, timeoutMs: 20 })).toBe(null)
     expect(Date.now() - started).toBeLessThan(2_000)
     expect(signals[0]!.aborted).toBe(true)
+  })
+
+  it('resolves null instead of hanging when the response body stalls after headers', async () => {
+    // 200 image/png, but the body never delivers a chunk and never closes — the
+    // real "server went quiet after headers" hang. readCappedBody must race the
+    // abort instead of waiting on reader.read() forever.
+    const stalling = new ReadableStream<Uint8Array>({ start() {} })
+    const response: FaviconHttpResponse = {
+      ok: true,
+      status: 200,
+      headers: { get: (name) => (name.toLowerCase() === 'content-type' ? 'image/png' : null) },
+      body: stalling,
+    }
+    const { fetch } = recordingFetcher(response)
+    const started = Date.now()
+    expect(await fetchFaviconDataUrl('https://example.com/favicon.ico', { fetch, timeoutMs: 20 })).toBe(null)
+    expect(Date.now() - started).toBeLessThan(2_000)
+  })
+
+  it('cancels the body on every post-response abandon path', async () => {
+    const notOk = stubResponseWithProbe({ ok: false, status: 404 })
+    expect(await fetchFaviconDataUrl('https://example.com/favicon.ico', { fetch: recordingFetcher(notOk.response).fetch })).toBe(null)
+    expect(notOk.cancelled()).toBe(true)
+
+    const badType = stubResponseWithProbe({ contentType: 'text/html' })
+    expect(await fetchFaviconDataUrl('https://example.com/favicon.ico', { fetch: recordingFetcher(badType.response).fetch })).toBe(null)
+    expect(badType.cancelled()).toBe(true)
+
+    // Declared content-length past the ceiling: dropped and cancelled, but the
+    // bytes are never read into the partition.
+    const declared = stubResponseWithProbe({ contentLength: String(FAVICON_MAX_BYTES + 1) })
+    expect(await fetchFaviconDataUrl('https://example.com/favicon.ico', { fetch: recordingFetcher(declared.response).fetch })).toBe(null)
+    expect(declared.cancelled()).toBe(true)
+    expect(declared.bodyRead()).toBe(false)
+  })
+
+  it('cancels the body when a chunked stream overruns the ceiling', async () => {
+    const chunk = new Uint8Array(8 * 1024).fill(1)
+    // Extra chunks past the ceiling so the overrun is caught while data is still
+    // queued — cancel then reaches the source instead of an already-closed stream.
+    const chunks = Array.from({ length: Math.ceil(FAVICON_MAX_BYTES / chunk.byteLength) + 4 }, () => chunk)
+    const stub = stubResponseWithProbe({ chunks })
+    expect(await fetchFaviconDataUrl('https://example.com/favicon.ico', { fetch: recordingFetcher(stub.response).fetch })).toBe(null)
+    expect(stub.cancelled()).toBe(true)
   })
 })

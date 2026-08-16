@@ -18,8 +18,6 @@ import type { PerfMainSample, PerfProcessSample } from '@craft-agent/shared/perf
 import type { EventSink } from '@craft-agent/server-core/transport'
 
 const SAMPLE_INTERVAL_MS = 1000
-/** A window this many times longer than the interval means the clock jumped. */
-const DISCONTINUITY_FACTOR = 3
 /** Cap the process table so a fan-out of utility processes cannot flood the wire. */
 const MAX_PROCESSES = 16
 
@@ -182,7 +180,6 @@ export class MainPerfSampler {
     const startedAt = performance.now()
     const now = Date.now()
     const windowMs = Math.max(1, now - this.lastSampleAt)
-    const discontinuity = windowMs > this.intervalMs * DISCONTINUITY_FACTOR
     this.lastSampleAt = now
 
     // --- main-process CPU: measured directly, not Chromium's estimate --------
@@ -232,7 +229,6 @@ export class MainPerfSampler {
     return {
       ts: now,
       windowMs,
-      discontinuity,
       processes: processes.slice(0, MAX_PROCESSES),
       eventLoop: { meanMs: round(meanMs, 2), maxMs: round(maxMs, 2) },
       heap: {

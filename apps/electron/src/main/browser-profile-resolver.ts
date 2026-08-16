@@ -29,6 +29,23 @@ export class UserOnlyBrowserProfileError extends Error {
   }
 }
 
+/**
+ * A cookie import target must be a known, user-only profile. Thrown when the
+ * requested profile is unknown or is not user-only. This is the inverse of
+ * {@link UserOnlyBrowserProfileError}, which refuses agent control *of* a
+ * user-only profile; here a user-only profile is *required*.
+ */
+export class UserOnlyBrowserProfileRequiredError extends Error {
+  readonly code = 'BROWSER_PROFILE_USER_ONLY_REQUIRED';
+  readonly profileId: string;
+
+  constructor(profileId: string) {
+    super(`Browser profile "${profileId}" must be a user-only profile for cookie import`);
+    this.name = 'UserOnlyBrowserProfileRequiredError';
+    this.profileId = profileId;
+  }
+}
+
 export function resolveBrowserProfileId(
   profiles: readonly BrowserProfile[],
   requested: string | undefined,

@@ -174,8 +174,8 @@ export interface IMessagingGatewayRegistry {
   ): Promise<{ success: boolean; botName?: string; botUsername?: string; error?: string }>
 
   /**
-   * Connect a platform for a workspace. Credential-based platforms (Telegram,
-   * Lark) pass the raw `credential` (validated + persisted here); interactive
+   * Connect a platform for a workspace. Credential-based platforms (Telegram)
+   * pass the raw `credential` (validated + persisted here); interactive
    * platforms (WhatsApp) omit it and start their link flow instead.
    */
   connectPlatform(workspaceId: string, platform: string, credential?: string): Promise<void>

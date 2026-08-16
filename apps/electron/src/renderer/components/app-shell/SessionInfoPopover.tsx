@@ -16,7 +16,7 @@ import { getFileManagerName } from '@/lib/platform'
 import { filePreviewLog } from '@/lib/logger'
 import { SessionFilesSection, WorkspaceFilesSection } from '../right-sidebar/SessionFilesSection'
 import { WorkspaceObjectsSection } from '../right-sidebar/workspace-objects-section'
-import { getInlinePreviewLoadState } from './right-sidebar-preview-state'
+import { getInlinePreviewLoadState, resolveVideoPreview } from './right-sidebar-preview-state'
 import { Document, Page } from 'react-pdf'
 import { PDF_DOCUMENT_OPTIONS } from '@craft-agent/ui/pdf-worker'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -285,6 +285,11 @@ export function InlineFilePreviewPanel({
   const [dataUrl, setDataUrl] = React.useState<string | null>(null)
   const [pdfData, setPdfData] = React.useState<Uint8Array | null>(null)
   const [error, setError] = React.useState<string | null>(null)
+  // Video is streamed by the <video> element itself, not a loader, so its only
+  // failure signal is the element's `error` event (e.g. media://workspace 403 for
+  // a file outside the confined workspaces root). Track it so the panel shows a
+  // fallback instead of a silently dead player.
+  const [videoFailed, setVideoFailed] = React.useState(false)
   const [loading, setLoading] = React.useState(false)
   const [copied, setCopied] = React.useState(false)
   const copiedTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -297,6 +302,7 @@ export function InlineFilePreviewPanel({
     setDataUrl(null)
     setPdfData(null)
     setError(null)
+    setVideoFailed(false)
     setLoading(previewLoadState.loading)
 
     // Which branch a file takes is invisible from the outside when a preview
@@ -478,15 +484,40 @@ export function InlineFilePreviewPanel({
             <img src={dataUrl} alt={fileName} className="max-h-full max-w-full rounded-md object-contain shadow-minimal" />
           </div>
         ) : previewType === 'video' ? (
-          <div className="flex min-h-full items-center justify-center p-4">
-            {/* Streams over media:// so large files aren't buffered into memory,
-                and seeking works via byte-range requests. */}
-            <video
-              src={`media://workspace/${encodeURIComponent(filePath)}`}
-              controls
-              className="max-h-full max-w-full rounded-md shadow-minimal"
-            />
-          </div>
+          (() => {
+            const videoPreview = resolveVideoPreview(filePath, videoFailed)
+            // media://workspace is confined to ~/.craft-agent/workspaces; a video
+            // outside that root (workspaces can live anywhere) makes the element
+            // fire `error`. Surface it and offer the external opener instead of
+            // leaving a dead player, matching the other previews' error path.
+            if (videoPreview.mode === 'fallback') {
+              return (
+                <div className="flex min-h-full flex-col items-center justify-center gap-3 p-4 text-center">
+                  <div className="text-xs text-destructive">{t('chat.videoPreviewFailed')}</div>
+                  <button
+                    type="button"
+                    onClick={openExternal}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-foreground/5"
+                  >
+                    <ExternalLink className="size-3.5" />
+                    {t('common.open')}
+                  </button>
+                </div>
+              )
+            }
+            return (
+              <div className="flex min-h-full items-center justify-center p-4">
+                {/* Streams over media:// so large files aren't buffered into memory,
+                    and seeking works via byte-range requests. */}
+                <video
+                  src={videoPreview.src}
+                  controls
+                  onError={() => setVideoFailed(true)}
+                  className="max-h-full max-w-full rounded-md shadow-minimal"
+                />
+              </div>
+            )
+          })()
         ) : previewLoadState.kind === 'office' && liveUrl !== null ? (
           // Points at the loopback `officecli watch` server rather than a
           // srcdoc snapshot: double-click editing, formula recalculation and

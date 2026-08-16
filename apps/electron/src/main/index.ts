@@ -910,6 +910,10 @@ app.whenReady().then(async () => {
       // ativas acontece aqui, antes de relançar. A gravação craft é selada
       // primeiro: é fs local e rápida, e não depende do Hermes.
       ipcMain.handle('app:relaunch', async () => {
+        // `app.exit(0)` skips before-quit, so the officecli watch children are
+        // torn down here too — otherwise every relaunch orphans them holding
+        // loopback ports in the range findFreePort scans.
+        shutdownOfficeLiveServers()
         const craftOutcome = await shutdownCraftRecordings()
         if (craftOutcome !== 'idle') {
           mainLog.info(`[meetings] craft recording shutdown outcome=${craftOutcome} (relaunch)`)

@@ -4,6 +4,7 @@ import {
   canNestedScrollerConsumeUpwardWheel,
   isNearScrollBottom,
   scrollDistanceFromBottom,
+  scrollTargetOncePerKey,
   shouldPinStreamingContentToBottom,
 } from '../ChatDisplay.auto-scroll'
 
@@ -262,6 +263,51 @@ describe('ChatDisplay streaming auto-scroll wheel guard', () => {
     detach()
     target.dispatchEvent(wheelEvent(-1))
     expect(onUpwardWheel).not.toHaveBeenCalled()
+  })
+})
+
+describe('scrollTargetOncePerKey', () => {
+  it('does not force a stopped conversation back to the bottom on same-session rerenders', () => {
+    const scrollIntoView = mock(() => {})
+    const onScroll = mock(() => {})
+    const targetRef = { current: { scrollIntoView } }
+    const lastScrolledKeyRef = { current: null as string | null }
+
+    expect(scrollTargetOncePerKey({
+      scrollKey: 'session-1',
+      lastScrolledKeyRef,
+      targetRef,
+      onScroll,
+    })).toBe(true)
+    expect(scrollTargetOncePerKey({
+      scrollKey: 'session-1',
+      lastScrolledKeyRef,
+      targetRef,
+      onScroll,
+    })).toBe(false)
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(onScroll).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows a new session to scroll once and preserves a skipped session for later', () => {
+    const scrollIntoView = mock(() => {})
+    const targetRef = { current: { scrollIntoView } }
+    const lastScrolledKeyRef = { current: 'session-1' as string | null }
+
+    expect(scrollTargetOncePerKey({
+      scrollKey: 'session-2',
+      lastScrolledKeyRef,
+      targetRef,
+      skip: true,
+    })).toBe(false)
+    expect(scrollTargetOncePerKey({
+      scrollKey: 'session-2',
+      lastScrolledKeyRef,
+      targetRef,
+    })).toBe(true)
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
   })
 })
 

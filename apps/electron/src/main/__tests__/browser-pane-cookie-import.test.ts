@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import { createInertNetStub } from './electron-net-stub'
 import type { BrowserCookie } from '@craft-agent/shared/browser-cookies/types'
 import type { BrowserProfile } from '@craft-agent/shared/config/types'
-import { UserOnlyBrowserProfileError } from '../browser-profile-resolver'
+import { UserOnlyBrowserProfileRequiredError } from '../browser-profile-resolver'
 
 const setCookie = mock(async (_details: Electron.CookiesSetDetails) => {})
 const fromPartition = mock((_partition: string) => ({
@@ -10,7 +10,7 @@ const fromPartition = mock((_partition: string) => ({
     set: setCookie,
   },
 }))
-const readChromeCookies = mock(async (_options: { domain: string }) => ({
+const readChromeCookies = mock(async (_options: Record<string, unknown>) => ({
   cookies: [] as BrowserCookie[],
   skipped: 0,
   blocked: 0,
@@ -161,20 +161,15 @@ describe('BrowserPaneManager.importCookies', () => {
     })
     const manager = new BrowserPaneManager(() => profiles)
 
-    const result = await manager.importCookies({
-      profileId: 'default',
-      domain: 'example.com',
-      callerIntent: 'user',
-    })
+    const result = await manager.importCookies('connected')
 
-    expect(readChromeCookies).toHaveBeenCalledWith({ domain: 'example.com' })
-    expect(fromPartition).toHaveBeenCalledWith('persist:browser-pane')
+    expect(readChromeCookies).toHaveBeenCalledWith({})
+    expect(fromPartition).toHaveBeenCalledWith('persist:browser-pane:connected')
     expect(setCookie).toHaveBeenCalledTimes(3)
     expect(setCookie).toHaveBeenNthCalledWith(1, {
       url: 'http://example.com/',
       name: 'plain',
       value: 'plain-secret',
-      domain: 'example.com',
       path: '/',
       secure: false,
       httpOnly: true,
@@ -196,7 +191,6 @@ describe('BrowserPaneManager.importCookies', () => {
       url: 'http://sub.example.com/path',
       name: 'lax',
       value: 'lax-secret',
-      domain: 'sub.example.com',
       path: '/path',
       secure: false,
       httpOnly: true,
@@ -207,6 +201,42 @@ describe('BrowserPaneManager.importCookies', () => {
     expect(JSON.stringify(result)).not.toContain('plain-secret')
     expect(JSON.stringify(result)).not.toContain('secure-secret')
     expect(JSON.stringify(result)).not.toContain('lax-secret')
+  })
+
+  it('omits domain for a host-only cookie and keeps it for a dotted one', async () => {
+    readChromeCookies.mockResolvedValue({
+      cookies: [
+        cookie({ name: 'host-only', domain: 'example.com' }),
+        cookie({ name: 'dotted', domain: '.example.com' }),
+      ],
+      skipped: 0,
+      blocked: 0,
+    })
+    const manager = new BrowserPaneManager(() => profiles)
+
+    await manager.importCookies('connected')
+
+    // A dot-less host_key stays host-only: Electron would prepend a dot to any
+    // domain we pass, widening the cookie to every subdomain.
+    expect(setCookie.mock.calls[0]?.[0]).not.toHaveProperty('domain')
+    // A genuinely dotted cookie was already subdomain-scoped in Chrome.
+    expect(setCookie.mock.calls[1]?.[0].domain).toBe('.example.com')
+  })
+
+  it('imports a __Host- cookie without a domain', async () => {
+    // The spec requires __Host- cookies to be host-only and forbids a Domain
+    // attribute; forwarding one would make Electron reject the write.
+    readChromeCookies.mockResolvedValue({
+      cookies: [cookie({ name: '__Host-session', domain: 'example.com', secure: true, path: '/' })],
+      skipped: 0,
+      blocked: 0,
+    })
+    const manager = new BrowserPaneManager(() => profiles)
+
+    await manager.importCookies('connected')
+
+    expect(setCookie.mock.calls[0]?.[0]).not.toHaveProperty('domain')
+    expect(setCookie.mock.calls[0]?.[0].name).toBe('__Host-session')
   })
 
   it('maps every Chrome sameSite value to Electron', async () => {
@@ -222,11 +252,7 @@ describe('BrowserPaneManager.importCookies', () => {
     })
     const manager = new BrowserPaneManager(() => profiles)
 
-    await manager.importCookies({
-      profileId: 'default',
-      domain: 'example.com',
-      callerIntent: 'user',
-    })
+    await manager.importCookies('connected')
 
     expect(setCookie.mock.calls.map(([details]) => details.sameSite)).toEqual([
       'unspecified',
@@ -253,11 +279,7 @@ describe('BrowserPaneManager.importCookies', () => {
     })
     const manager = new BrowserPaneManager(() => profiles)
 
-    const result = await manager.importCookies({
-      profileId: 'default',
-      domain: 'example.com',
-      callerIntent: 'user',
-    })
+    const result = await manager.importCookies('connected')
 
     expect(setCookie).toHaveBeenCalledTimes(3)
     expect(result).toEqual({ imported: 2, skipped: 1 })
@@ -281,47 +303,24 @@ describe('BrowserPaneManager.importCookies', () => {
     })
     const manager = new BrowserPaneManager(() => profiles)
 
-    const result = await manager.importCookies({
-      profileId: 'default',
-      domain: 'example.com',
-      callerIntent: 'user',
-    })
+    const result = await manager.importCookies('connected')
 
     expect(setCookie).toHaveBeenCalledTimes(3)
     expect(result).toEqual({ imported: 2, skipped: 1 })
   })
 
-  it('refuses an agent domain that would disable the reader filter', async () => {
+  it('refuses an unknown profile before reading or writing', async () => {
     const manager = new BrowserPaneManager(() => profiles)
 
-    for (const domain of ['   ', '.']) {
-      await expect(manager.importCookies({
-        profileId: 'default',
-        domain,
-        callerIntent: 'agent',
-      })).rejects.toThrow('Agent cookie import requires a domain')
-    }
+    await expect(manager.importCookies('removed-profile'))
+      .rejects.toBeInstanceOf(UserOnlyBrowserProfileRequiredError)
 
     expect(readChromeCookies).not.toHaveBeenCalled()
     expect(fromPartition).not.toHaveBeenCalled()
     expect(setCookie).not.toHaveBeenCalled()
   })
 
-  it('refuses an explicit unknown profile before reading or writing', async () => {
-    const manager = new BrowserPaneManager(() => profiles)
-
-    await expect(manager.importCookies({
-      profileId: 'removed-profile',
-      domain: 'example.com',
-      callerIntent: 'user',
-    })).rejects.toThrow('Unknown profile id: removed-profile')
-
-    expect(readChromeCookies).not.toHaveBeenCalled()
-    expect(fromPartition).not.toHaveBeenCalled()
-    expect(setCookie).not.toHaveBeenCalled()
-  })
-
-  it('refuses an agent import into a user-only profile before reading or writing', async () => {
+  it('refuses a profile that is not user-only before reading or writing', async () => {
     readChromeCookies.mockResolvedValue({
       cookies: [cookie()],
       skipped: 0,
@@ -329,11 +328,8 @@ describe('BrowserPaneManager.importCookies', () => {
     })
     const manager = new BrowserPaneManager(() => profiles)
 
-    await expect(manager.importCookies({
-      profileId: 'connected',
-      domain: 'example.com',
-      callerIntent: 'agent',
-    })).rejects.toBeInstanceOf(UserOnlyBrowserProfileError)
+    await expect(manager.importCookies('default'))
+      .rejects.toBeInstanceOf(UserOnlyBrowserProfileRequiredError)
 
     expect(readChromeCookies).not.toHaveBeenCalled()
     expect(fromPartition).not.toHaveBeenCalled()
@@ -358,10 +354,7 @@ describe('BrowserPaneManager.previewCookieImport', () => {
   it('returns counts without decrypting or writing anything', async () => {
     const manager = new BrowserPaneManager(() => profiles)
 
-    const preview = await manager.previewCookieImport({
-      profileId: 'connected',
-      callerIntent: 'user',
-    })
+    const preview = await manager.previewCookieImport('connected')
 
     expect(preview).toEqual({
       cookies: 12,
@@ -377,24 +370,20 @@ describe('BrowserPaneManager.previewCookieImport', () => {
     expect(setCookie).not.toHaveBeenCalled()
   })
 
-  it('refuses an agent-intent preview of a user-only profile', async () => {
+  it('refuses a profile that is not user-only before scanning', async () => {
     const manager = new BrowserPaneManager(() => profiles)
 
-    await expect(manager.previewCookieImport({
-      profileId: 'connected',
-      callerIntent: 'agent',
-    })).rejects.toBeInstanceOf(UserOnlyBrowserProfileError)
+    await expect(manager.previewCookieImport('default'))
+      .rejects.toBeInstanceOf(UserOnlyBrowserProfileRequiredError)
 
     expect(previewChromeCookies).not.toHaveBeenCalled()
   })
 
-  it('refuses an explicit unknown profile before scanning', async () => {
+  it('refuses an unknown profile before scanning', async () => {
     const manager = new BrowserPaneManager(() => profiles)
 
-    await expect(manager.previewCookieImport({
-      profileId: 'removed-profile',
-      callerIntent: 'user',
-    })).rejects.toThrow('Unknown profile id: removed-profile')
+    await expect(manager.previewCookieImport('removed-profile'))
+      .rejects.toBeInstanceOf(UserOnlyBrowserProfileRequiredError)
 
     expect(previewChromeCookies).not.toHaveBeenCalled()
   })

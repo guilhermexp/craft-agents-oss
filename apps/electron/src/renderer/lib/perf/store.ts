@@ -22,12 +22,10 @@ import {
 import { drainFrameWindow, startFrameCollectors, stopFrameCollectors, type FrameWindow } from './frames'
 import {
   clearInteractions,
-  drainSpans,
   getRecentInteractions,
   startInteractionCapture,
   stopInteractionCapture,
   type InteractionSample,
-  type SpanStat,
 } from './interactions'
 import type { RpcChannelStat } from '../../../preload/rpc-probe'
 
@@ -66,7 +64,6 @@ export interface PerfSnapshot {
   readonly discontinuity: boolean
   readonly frames: FrameWindow
   readonly commits: CommitWindow
-  readonly spans: readonly SpanStat[]
   readonly rpc: readonly RpcChannelStat[]
   readonly interactions: readonly InteractionSample[]
   /** Latest main-process sample, or `null` before the first push arrives. */
@@ -107,7 +104,6 @@ const EMPTY_SNAPSHOT: PerfSnapshot = {
   discontinuity: false,
   frames: EMPTY_FRAMES,
   commits: EMPTY_COMMITS,
-  spans: [],
   rpc: [],
   interactions: [],
   main: null,
@@ -147,9 +143,9 @@ function average(values: (number | null)[]): number | null {
   return count === 0 ? null : sum / count
 }
 
-function buildSmoothed(latest: PerfSnapshot): SmoothedReadout {
-  // The current window is not in `history` yet, so include it explicitly.
-  const windows = [...history.slice(-(SMOOTHING_WINDOWS - 1)), latest].filter((w) => !w.discontinuity)
+export function buildSmoothed(latest: PerfSnapshot, priorWindows: readonly PerfSnapshot[]): SmoothedReadout {
+  // The current window is not in `priorWindows` yet, so include it explicitly.
+  const windows = [...priorWindows.slice(-(SMOOTHING_WINDOWS - 1)), latest].filter((w) => !w.discontinuity)
   if (windows.length === 0) return latest.smoothed
 
   const seconds = windows.reduce((sum, w) => sum + w.windowMs, 0) / 1000 || 1
@@ -182,7 +178,6 @@ function aggregate(): void {
 
   const frames = drainFrameWindow(windowMs)
   const commits = drainCommitWindow()
-  const spans = drainSpans()
   const rpc = window.craftPerfRpc?.drain() ?? []
 
   const next: PerfSnapshot = {
@@ -194,7 +189,6 @@ function aggregate(): void {
     discontinuity: windowMs > AGGREGATION_INTERVAL_MS * 3,
     frames,
     commits,
-    spans,
     rpc: rpc.sort((a, b) => b.totalMs - a.totalMs),
     interactions: [...getRecentInteractions()],
     main: latestMainSample,
@@ -202,7 +196,7 @@ function aggregate(): void {
     commitTrackingAvailable: isCommitHookInstalled(),
   }
 
-  snapshot = { ...next, smoothed: buildSmoothed(next) }
+  snapshot = { ...next, smoothed: buildSmoothed(next, history) }
   history.push(snapshot)
   if (history.length > MAX_HISTORY) history.shift()
   emit()

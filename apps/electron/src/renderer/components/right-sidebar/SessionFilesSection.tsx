@@ -75,17 +75,18 @@ export interface RightSidebarFilePaneLayout {
 
 /**
  * With nothing to preview the tree owns the panel and cannot be collapsed away
- * — that would leave an empty sidebar. Otherwise the caller's explicit
- * collapse/expand wins, and `null` falls back to the default for the content:
- * a docked browser is the whole reason the panel is open, so the file tree
- * beside it is noise the user did not ask for.
+ * — that would leave an empty sidebar. Once there is something to preview the
+ * caller's explicit collapse/expand wins, and `null` — no opinion yet —
+ * collapses: opening a preview asks for that one thing, not for the file tree
+ * beside it. The tree is reachable from the pane's own expand control, or by
+ * opening the sidebar with nothing to preview.
  */
 export function getRightSidebarFilePaneLayout(
   activeContentKind: RightSidebarContentKind | null,
   treeCollapsedOverride: boolean | null = null,
 ): RightSidebarFilePaneLayout {
   if (!activeContentKind) return { mode: 'tree-only', showTree: true, showPreview: false }
-  const collapsed = treeCollapsedOverride ?? activeContentKind === 'browser'
+  const collapsed = treeCollapsedOverride ?? true
   return collapsed
     ? { mode: 'preview-only', showTree: false, showPreview: true }
     : { mode: 'split', showTree: true, showPreview: true }

@@ -44,8 +44,9 @@ Both were tried against `bun install` and both left the crash in place.
 ## What actually happens
 
 `scripts/link-eslint-typescript.mjs` runs from the root `postinstall`. It walks the dependency
-closure of the lint toolchain — `eslint`, `eslint-plugin-*`, `eslint-config-*`,
-`@typescript-eslint/*` — collects every package that declares `typescript` in
+closure of the lint toolchain — `eslint`, `typescript-eslint`, `@typescript-eslint/*`, and any
+`eslint-plugin*`/`eslint-config*` package, scoped or not (`@stylistic/eslint-plugin`,
+`@scope/eslint-config-y`) — collects every package that declares `typescript` in
 `dependencies`/`peerDependencies`/`optionalDependencies`, and materializes
 `<package>/node_modules/typescript` pointing at `node_modules/typescript-for-eslint`
 (a junction on Windows). Node resolution finds that nested copy before it reaches the root, so
@@ -71,6 +72,11 @@ next `bun install` covers it automatically. Do not replace the walk with a liter
 
 - `typescript` at the root stays 7.x. `tsc` means TS 7 in every `typecheck:*` script, and
   `bun run typecheck:all` must keep passing. Never "fix" a lint problem by downgrading the root.
+- `node_modules/.bin/tsc` must resolve under `node_modules/typescript/` (TS 7). The alias also
+  ships a `bin.tsc`, so it competes for that link; bun happens to order `typescript` first, but
+  that is an accident, not a guarantee. `apps/electron`'s `typecheck` is a bare `tsc --noEmit`, so
+  an alias win would silently downgrade it to TS 5. The `postinstall` asserts the realpath and
+  fails the install loudly if the alias ever wins.
 - `typescript-for-eslint` must satisfy `>=4.8.4 <6.1.0`. The script refuses a non-5.x alias.
 - The script is idempotent, fails loudly when the alias is missing (a silent skip means a linter
   that crashes on the next run), and never replaces a real nested `typescript` directory that a

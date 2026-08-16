@@ -25,12 +25,16 @@ describe('getSessionFileOpenMode', () => {
 })
 
 describe('getRightSidebarFilePaneLayout', () => {
-  it('keeps the file tree visible beside a file preview', () => {
-    expect(getRightSidebarFilePaneLayout('file')).toEqual({
-      mode: 'split',
-      showTree: true,
-      showPreview: true,
-    })
+  it('collapses the file tree by default beside a fresh preview', () => {
+    // Opening a file from chat asks for that file. Handing back a split panel
+    // put a file tree nobody requested next to it.
+    for (const kind of ['file', 'object', 'browser'] as const) {
+      expect(getRightSidebarFilePaneLayout(kind)).toEqual({
+        mode: 'preview-only',
+        showTree: false,
+        showPreview: true,
+      })
+    }
   })
 
   it('uses the full width for the file tree before a preview is selected', () => {
@@ -41,23 +45,17 @@ describe('getRightSidebarFilePaneLayout', () => {
     })
   })
 
-  it('hides the file tree by default beside a docked browser', () => {
-    expect(getRightSidebarFilePaneLayout('browser')).toEqual({
-      mode: 'preview-only',
-      showTree: false,
-      showPreview: true,
-    })
+  it('lets an explicit expand win for any content kind', () => {
+    for (const kind of ['file', 'object', 'browser'] as const) {
+      expect(getRightSidebarFilePaneLayout(kind, false)).toEqual({
+        mode: 'split',
+        showTree: true,
+        showPreview: true,
+      })
+    }
   })
 
-  it('lets an explicit expand override the browser default', () => {
-    expect(getRightSidebarFilePaneLayout('browser', false)).toEqual({
-      mode: 'split',
-      showTree: true,
-      showPreview: true,
-    })
-  })
-
-  it('lets an explicit collapse override the file default', () => {
+  it('keeps an explicit collapse collapsed', () => {
     expect(getRightSidebarFilePaneLayout('file', true)).toEqual({
       mode: 'preview-only',
       showTree: false,

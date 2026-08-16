@@ -14,6 +14,7 @@ import type { WsRpcClient, TransportConnectionState } from './client'
 import type { RpcClient } from '@craft-agent/server-core/transport'
 import type { RemoteServerConfig } from '@craft-agent/core/types'
 import { isLocalOnly, RPC_NAMESPACES } from '@craft-agent/shared/protocol'
+import { WORKSPACE_OBJECT_RPC_CHANNELS } from '@craft-agent/shared/workspace-objects/types'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -22,6 +23,12 @@ import { isLocalOnly, RPC_NAMESPACES } from '@craft-agent/shared/protocol'
 interface ListenerEntry {
   callback: (...args: any[]) => void
   unsub: () => void
+}
+
+/** Records the client + remote id a workspace-object SUBSCRIBE was issued on. */
+interface ObjectSubscriptionBinding {
+  client: WsRpcClient
+  remoteId: string | null
 }
 
 /** Returned by the enhanced SWITCH_WORKSPACE handler. */
@@ -60,6 +67,14 @@ export class RoutedClient implements RpcClient {
    */
   private workspaceIdMapping: { localId: string; remoteId: string } | null = null
 
+  /**
+   * Workspace-object subscription bindings. A SUBSCRIBE records the client and
+   * remote id it was issued on, keyed by the local workspace id, so a later
+   * UNSUBSCRIBE tears down on the same client/remote id even after a workspace
+   * switch has already swapped workspaceClient or cleared the mapping.
+   */
+  private objectSubscriptions = new Map<string, ObjectSubscriptionBinding>()
+
   constructor(
     private readonly localClient: WsRpcClient,
     initialWorkspaceClient: WsRpcClient,
@@ -94,6 +109,22 @@ export class RoutedClient implements RpcClient {
 
   async invoke(channel: string, ...args: any[]): Promise<any> {
     const isLocal = isLocalOnly(channel)
+
+    // Workspace-object UNSUBSCRIBE must reach the same client + remote id the
+    // matching SUBSCRIBE was issued on, even if a workspace switch has since
+    // swapped workspaceClient or cleared the mapping.
+    if (channel === WORKSPACE_OBJECT_RPC_CHANNELS.UNSUBSCRIBE) {
+      const localId = args[0]
+      const binding = this.objectSubscriptions.get(String(localId))
+      if (binding) {
+        this.objectSubscriptions.delete(String(localId))
+        const unsubArgs = binding.remoteId !== null
+          ? args.map(arg => (arg === localId ? binding.remoteId : arg))
+          : args
+        return binding.client.invoke(channel, ...unsubArgs)
+      }
+    }
+
     const target = isLocal ? this.localClient : this.workspaceClient
 
     // Translate local workspace IDs → remote workspace IDs for remote-routed calls.
@@ -114,6 +145,16 @@ export class RoutedClient implements RpcClient {
 
     const result = await target.invoke(channel, ...translatedArgs)
 
+    // Record where a workspace-object SUBSCRIBE landed so its future
+    // UNSUBSCRIBE can round-trip to the same client + remote id.
+    if (!isLocal && channel === WORKSPACE_OBJECT_RPC_CHANNELS.SUBSCRIBE) {
+      const localId = args[0]
+      const remoteId = this.workspaceIdMapping && this.workspaceIdMapping.localId === localId
+        ? this.workspaceIdMapping.remoteId
+        : null
+      this.objectSubscriptions.set(String(localId), { client: target, remoteId })
+    }
+
     // Intercept SWITCH_WORKSPACE response to swap workspace client
     if (channel === RPC_NAMESPACES.window.SWITCH_WORKSPACE) {
       this.handleWorkspaceSwitch(result as WorkspaceSwitchResult)
@@ -127,15 +168,23 @@ export class RoutedClient implements RpcClient {
       return this.localClient.on(channel, callback)
     }
 
+    // EVENT and RELOAD arrive from the workspace server carrying its own
+    // (remote) workspace id, but the renderer keys on the local id — so
+    // translate remote → local, the mirror of the invoke local → remote map.
+    const translated = channel === WORKSPACE_OBJECT_RPC_CHANNELS.EVENT || channel === WORKSPACE_OBJECT_RPC_CHANNELS.RELOAD
+    const registered = translated
+      ? (...args: any[]) => callback(...this.translateInboundWorkspaceId(channel, args))
+      : callback
+
     // REMOTE_ELIGIBLE — subscribe on workspaceClient and track for re-subscription
-    const unsub = this.workspaceClient.on(channel, callback)
+    const unsub = this.workspaceClient.on(channel, registered)
 
     let set = this.remoteListeners.get(channel)
     if (!set) {
       set = new Set()
       this.remoteListeners.set(channel, set)
     }
-    const entry: ListenerEntry = { callback, unsub }
+    const entry: ListenerEntry = { callback: registered, unsub }
     set.add(entry)
 
     return () => {
@@ -143,6 +192,20 @@ export class RoutedClient implements RpcClient {
       set!.delete(entry)
       if (set!.size === 0) this.remoteListeners.delete(channel)
     }
+  }
+
+  private translateInboundWorkspaceId(channel: string, args: any[]): any[] {
+    const mapping = this.workspaceIdMapping
+    if (!mapping) return args
+    // RELOAD delivers the workspace id as a bare string argument.
+    if (channel === WORKSPACE_OBJECT_RPC_CHANNELS.RELOAD) {
+      return args.map(arg => (arg === mapping.remoteId ? mapping.localId : arg))
+    }
+    // EVENT delivers a WorkspaceObjectEvent object carrying a workspaceId field.
+    return args.map(arg =>
+      arg && typeof arg === 'object' && 'workspaceId' in arg && arg.workspaceId === mapping.remoteId
+        ? { ...arg, workspaceId: mapping.localId }
+        : arg)
   }
 
   handleCapability(channel: string, handler: (...args: any[]) => Promise<any> | any): void {

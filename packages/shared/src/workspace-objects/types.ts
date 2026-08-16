@@ -95,4 +95,5 @@ export const WORKSPACE_OBJECT_RPC_CHANNELS = {
   SUBSCRIBE: 'workspace-objects:subscribe',
   UNSUBSCRIBE: 'workspace-objects:unsubscribe',
   EVENT: 'workspace-objects:event',
+  RELOAD: 'workspace-objects:reload',
 } as const;

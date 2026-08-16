@@ -44,7 +44,7 @@ const COOKIE_IMPORT_FAILURE_REASONS: Record<BrowserCookieImportFailureReason, tr
  * would pass as reasons and resolve to a nonexistent i18n key that i18next
  * renders as the key itself.
  */
-function cookieImportFailureReason(err: unknown): BrowserCookieImportFailureReason {
+export function cookieImportFailureReason(err: unknown): BrowserCookieImportFailureReason {
   const message = err instanceof Error ? err.message : ''
   if (!message.startsWith(COOKIE_IMPORT_FAILURE_PREFIX)) return 'unknown'
   const reason = message.slice(COOKIE_IMPORT_FAILURE_PREFIX.length).trim()

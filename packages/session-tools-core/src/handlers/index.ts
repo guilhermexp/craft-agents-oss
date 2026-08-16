@@ -25,6 +25,21 @@ export type { MermaidValidateArgs } from './mermaid-validate.ts';
 export { handleSourceTest } from './source-test.ts';
 export type { SourceTestArgs } from './source-test.ts';
 
+// Source Readiness
+export {
+  resolveSourceReadiness,
+  isSourceToolVersionCompatible,
+  createUnsupportedSessionSourceReadiness,
+} from './source-readiness.ts';
+export type {
+  SessionSourceReadiness,
+  SourceReadinessRequest,
+  SourceReadinessOutcome,
+  SourceProbeOutcome,
+  SourceActivationOutcome,
+  SourceActivationReason,
+} from './source-readiness.ts';
+
 // OAuth Triggers
 export {
   handleSourceOAuthTrigger,

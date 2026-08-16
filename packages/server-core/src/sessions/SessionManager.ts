@@ -74,7 +74,7 @@ import {
   type SessionHeader,
   pickSessionFields,
 } from '@craft-agent/shared/sessions'
-import { loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceUsable, type LoadedSource, type McpServerConfig, getSourcesNeedingAuth, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential, isApiOAuthProvider, hasRenewEndpoint, SERVER_BUILD_ERRORS, TokenRefreshManager, createTokenGetter } from '@craft-agent/shared/sources'
+import { loadWorkspaceSources, loadAllSources, getSourcesBySlugs, isSourceUsable, saveSourceConfig, type LoadedSource, type FolderSourceConfig, type McpServerConfig, getSourcesNeedingAuth, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential, isApiOAuthProvider, hasRenewEndpoint, SERVER_BUILD_ERRORS, TokenRefreshManager, createTokenGetter } from '@craft-agent/shared/sources'
 import { ConfigWatcher, type ConfigWatcherCallbacks } from '@craft-agent/shared/config'
 import { getValidClaudeOAuthToken } from '@craft-agent/shared/auth'
 import { resolveAuthEnvVars } from '@craft-agent/shared/config'
@@ -109,6 +109,7 @@ import { SessionEventPublisher } from './session-event-publisher'
 import { SessionMessageStore, getPiTurnAnchor, savePiTurnAnchor, copyPiTurnAnchorsForBranch, getClaudeTurnAnchor, saveClaudeTurnAnchor, isClaudeMessageUuid } from './session-message-store'
 import { SessionArtifactRenderer } from './session-artifact-renderer'
 import { SessionSourceReadinessProbe } from './session-source-readiness-probe'
+import { createSessionSourceReadinessAdapter } from './session-source-readiness-adapter'
 import { applySourceServerBranches } from './session-source-server-application'
 export { sanitizeForTitle }
 
@@ -898,6 +899,13 @@ export interface ManagedSession {
   lastFinalMessageId?: string
   // Turn baseline: last final assistant message ID at turn start (runtime-only, not persisted)
   turnStartFinalMessageId?: string
+  // Turn baseline: id of the last message (ANY role) at turn start (runtime-only, not persisted).
+  // Lets the no-response guard tell a real error raised THIS turn from an older one still in history.
+  turnStartLastMessageId?: string
+  // Set when this turn ran a successful compaction (/compact). Runtime-only, not persisted:
+  // a compaction turn produces only info/status + complete and no assistant message, which the
+  // no-response guard must not mistake for a silent failure.
+  turnCompacted?: boolean
   // External session metadata updates seen while processing (applied after turn stop)
   pendingExternalMetadata?: SessionHeader
   // Guard: suppress external metadata revert after programmatic writes (setSessionStatus/setSessionLabels).
@@ -1196,6 +1204,31 @@ function lastFinalAssistantMessageId(messages: Message[]): string | undefined {
 }
 
 /**
+ * Whether an error message (`role === 'error'`) exists strictly after the turn
+ * baseline. `baselineId` is the id of the last message present when the turn
+ * started: any error past that point was raised by THIS turn. When the session
+ * had no messages at turn start (`baselineId` undefined), every error counts.
+ * A baseline id no longer in `messages` (e.g. history trimmed mid-turn) also
+ * treats all current errors as this turn's, which is the safe direction —
+ * surface the real error, never the generic card.
+ */
+function hasErrorMessageAfter(messages: Message[], baselineId: string | undefined): boolean {
+  let baselineIndex = -1
+  if (baselineId) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].id === baselineId) {
+        baselineIndex = i
+        break
+      }
+    }
+  }
+  for (let i = baselineIndex + 1; i < messages.length; i++) {
+    if (messages[i].role === 'error') return true
+  }
+  return false
+}
+
+/**
  * Whether a turn that produced no assistant message should surface the generic
  * retryable "No Response" error.
  *
@@ -1224,13 +1257,32 @@ function lastFinalAssistantMessageId(messages: Message[]): string | undefined {
  * text of the turn it arrived in, so the timestamps alone would flag a turn
  * that did answer.
  *
+ * Two more turns look silent but are not failures the generic card should own:
+ *
+ * - A turn that already produced a real `role: 'error'` message (rate limit,
+ *   overloaded, network failure, credit balance, auth). Those errors do not
+ *   advance `lastFinalAssistantMessageId`, so without this check the real,
+ *   sometimes `canRetry: false`, diagnosis would be shadowed by a generic
+ *   `canRetry: true` card — the exact failure-hiding this guard exists to kill.
+ *   "Real error THIS turn" is an error message newer than `turnStartLastMessageId`
+ *   (the last message id at turn start); an error from a prior turn must not
+ *   deafen the guard, so an *older* error still reports.
+ * - A successful `/compact`. It runs as an ordinary turn but produces only
+ *   info/status + `complete` with no assistant message and no stop/abort
+ *   signals, so `turnCompacted` marks it explicitly.
+ *
  * Exported as the test seam for that condition: reaching the branch itself
  * needs a live SDK turn.
  */
 export function shouldReportMissingAssistantResponse(
-  managed: Pick<ManagedSession, 'stopRequested' | 'wasInterrupted' | 'messages' | 'turnStartFinalMessageId'>,
+  managed: Pick<
+    ManagedSession,
+    'stopRequested' | 'wasInterrupted' | 'messages' | 'turnStartFinalMessageId' | 'turnStartLastMessageId' | 'turnCompacted'
+  >,
 ): boolean {
   if (managed.stopRequested || managed.wasInterrupted) return false
+  if (managed.turnCompacted) return false
+  if (hasErrorMessageAfter(managed.messages, managed.turnStartLastMessageId)) return false
   const finalId = lastFinalAssistantMessageId(managed.messages)
   return !finalId || finalId === managed.turnStartFinalMessageId
 }
@@ -4468,8 +4520,6 @@ export class SessionManager implements ISessionManager {
         getSourceTools: (sourceSlug) => managed.mcpPool?.getTools(sourceSlug) ?? [],
       })
 
-      const readinessActivationRollbackSlugs = new Map<string, string[]>()
-
       mergeSessionScopedToolCallbacks(managed.id, {
         setSessionLabelsFn: async (sessionId: string | undefined, labels: string[]) => {
           await this.setSessionLabels(sessionId ?? managed.id, labels)
@@ -4639,67 +4689,17 @@ export class SessionManager implements ISessionManager {
           }
           return { ok: true, availability: 'next-turn' as const }
         },
-        sourceProbeBackend: sourceReadinessProbe.backend,
-        injectSourceForProbeFn: (sourceSlug) => sourceReadinessProbe.inject(sourceSlug),
-        observeSourceToolsForProbeFn: async (probeId) => sourceReadinessProbe.observe(probeId),
-        removeSourceProbeFn: (probeId) => sourceReadinessProbe.remove(probeId),
-        prepareSourceReadinessActivationFn: async (sourceSlug) => {
-          const { probeId } = await sourceReadinessProbe.inject(sourceSlug)
-          return { activationId: probeId }
-        },
-        commitSourceReadinessActivationFn: (activationId) => {
-          sourceReadinessProbe.commit(activationId, (sourceSlug) => {
-            const previousEnabledSlugs = [...(managed.enabledSourceSlugs ?? [])]
-            const enabledSlugs = new Set(previousEnabledSlugs)
-            enabledSlugs.add(sourceSlug)
-            try {
-              managed.enabledSourceSlugs = [...enabledSlugs]
-              this.store.persist(managed)
-              this.events.sourcesChanged(managed, managed.enabledSourceSlugs)
-              readinessActivationRollbackSlugs.set(activationId, previousEnabledSlugs)
-
-              const userMessage = managed.agent?.getCurrentTurnUserMessage?.() ?? ''
-              if (userMessage) {
-                managed.agent?.setPendingSourceActivationRestart({ sourceSlug, userMessage })
-              }
-            } catch {
-              managed.enabledSourceSlugs = previousEnabledSlugs
-              try {
-                this.store.persist(managed)
-                this.events.sourcesChanged(managed, previousEnabledSlugs)
-              } catch {
-                // The handler will still roll back runtime exposure and ready config.
-              }
-              throw new Error('Source readiness activation commit failed')
-            }
-          })
-        },
-        finalizeSourceReadinessActivationFn: (activationId) => {
-          sourceReadinessProbe.finalize(activationId)
-          readinessActivationRollbackSlugs.delete(activationId)
-        },
-        rollbackSourceReadinessActivationFn: async (activationId) => {
-          const previousEnabledSlugs = readinessActivationRollbackSlugs.get(activationId)
-          let bookkeepingFailed = false
-          if (previousEnabledSlugs !== undefined) {
-            managed.enabledSourceSlugs = previousEnabledSlugs
-            try {
-              this.store.persist(managed)
-              this.events.sourcesChanged(managed, previousEnabledSlugs)
-            } catch {
-              bookkeepingFailed = true
-            }
-          }
-          readinessActivationRollbackSlugs.delete(activationId)
-          try {
-            await sourceReadinessProbe.remove(activationId)
-          } catch {
-            throw new Error('Source readiness activation rollback failed')
-          }
-          if (bookkeepingFailed) {
-            throw new Error('Source readiness activation rollback failed')
-          }
-        },
+        sessionSourceReadiness: createSessionSourceReadinessAdapter(sourceReadinessProbe, {
+          getEnabledSlugs: () => [...(managed.enabledSourceSlugs ?? [])],
+          setEnabledSlugs: (slugs) => { managed.enabledSourceSlugs = slugs },
+          persistSession: () => { this.store.persist(managed) },
+          emitSourcesChanged: (slugs) => { this.events.sourcesChanged(managed, slugs) },
+          getCurrentTurnUserMessage: () => managed.agent?.getCurrentTurnUserMessage?.() ?? '',
+          schedulePendingRestart: (input) => { managed.agent?.setPendingSourceActivationRestart(input) },
+          persistSourceConfig: (source) => {
+            saveSourceConfig(managed.workspace.rootPath, source as unknown as FolderSourceConfig)
+          },
+        }),
       })
 
       // WS2 keep-alive: forward background task events that arrive BETWEEN turns
@@ -6163,6 +6163,8 @@ export class SessionManager implements ISessionManager {
     managed.streamingText = ''
     managed.processingGeneration++
     managed.turnStartFinalMessageId = this.getLastFinalAssistantMessageId(managed.messages)
+    managed.turnStartLastMessageId = managed.messages[managed.messages.length - 1]?.id
+    managed.turnCompacted = false
 
     // Reset auth retry flag for this new message (allows one retry per message)
     // IMPORTANT: Skip reset if this is an auth retry call - the flag is already true
@@ -6768,6 +6770,8 @@ export class SessionManager implements ISessionManager {
 
     const turnStartFinalMessageId = managed.turnStartFinalMessageId
     managed.turnStartFinalMessageId = undefined
+    managed.turnStartLastMessageId = undefined
+    managed.turnCompacted = false
 
     // Clear agent control overlay between turns. The session keeps browser
     // ownership (boundSessionId) — only the visual overlay is removed.
@@ -8113,6 +8117,10 @@ export class SessionManager implements ISessionManager {
             statusType: 'compaction_complete',
           }
           managed.messages.push(compactionMessage)
+
+          // A /compact turn produces only this info message + `complete` and no
+          // assistant message; flag it so the no-response guard does not fire.
+          managed.turnCompacted = true
 
           // Mark compaction complete in the session state.
           // This is done here (backend) rather than in the renderer so it's

@@ -22,7 +22,7 @@ export {
   type OpenAnnotationRequest,
   type GroupExpansionController,
 } from './turn-card-shared'
-export { isIdExpanded, applyExpansionToggle, type ExpansionState } from './turn-expansion'
+export { isIdExpanded, applyExpansionToggle, autoExpandApplies, type ExpansionState } from './turn-expansion'
 export { InlineExecution, mapToolEventToActivity, type InlineExecutionProps, type InlineExecutionStatus, type InlineActivityItem } from './InlineExecution'
 export { TurnCardActionsMenu, type TurnCardActionsMenuProps } from './TurnCardActionsMenu'
 export { SessionViewer, type SessionViewerProps, type SessionViewerMode } from './SessionViewer'

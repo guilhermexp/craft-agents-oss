@@ -8,8 +8,7 @@
  * what the user experiences as "slow".
  *
  * Capture is automatic: one capture-phase `pointerdown` listener labels the
- * interaction from the DOM, so no component needs instrumenting. Explicit
- * spans (`perfSpan`) exist for work that is not click-driven.
+ * interaction from the DOM, so no component needs instrumenting.
  */
 
 import { commitClock } from './react-commits'
@@ -18,10 +17,17 @@ import { commitClock } from './react-commits'
 const SETTLE_QUIET_MS = 250
 /** Hard stop so a permanently churning UI cannot leak a pending interaction. */
 const MAX_INTERACTION_MS = 15_000
+/**
+ * Largest gap between two `poll` ticks a live rAF loop can produce. A bigger
+ * gap means the tab was backgrounded (rAF is throttled or paused when hidden)
+ * or the machine slept: the elapsed wall time is not latency the user waited
+ * through, so the interaction is discarded instead of being reported — without
+ * this, a click left in a background tab surfaces as a multi-minute "latency"
+ * that sorts to the top of the report.
+ */
+const MAX_POLL_GAP_MS = 1_000
 /** Interactions retained for the overlay's recent list. */
 const MAX_RECENT = 24
-/** Distinct span names tracked before new ones are dropped. */
-const MAX_SPANS = 128
 
 export interface InteractionSample {
   readonly label: string
@@ -35,21 +41,23 @@ export interface InteractionSample {
   readonly timedOut: boolean
 }
 
-export interface SpanStat {
-  readonly name: string
-  readonly calls: number
-  /** Synchronous time on the main thread, in ms. */
-  readonly selfMs: number
-  /** Wall time including awaited work, in ms. `0` for sync spans. */
-  readonly waitMs: number
-  readonly maxMs: number
+/** How the overlay/report should present interaction settle latency. */
+export interface InteractionDisplay {
+  /** Show the settle latency figure; false when it cannot be measured. */
+  readonly showSettle: boolean
+  /** Warn that settle latency is unmeasurable in this build. */
+  readonly warnUnavailable: boolean
 }
 
-interface MutableSpan {
-  calls: number
-  selfMs: number
-  waitMs: number
-  maxMs: number
+/**
+ * Settle latency is derived entirely from React commit activity (`commitClock`),
+ * which only advances while the DevTools commit hook is installed — development
+ * only. In a packaged renderer every interaction reports `settledMs: 0` with 0
+ * commits, so rendering that as a green number is a lie: warn and omit it
+ * instead. Pure so both the overlay and the report share one decision.
+ */
+export function interactionDisplay(commitTrackingAvailable: boolean): InteractionDisplay {
+  return { showSettle: commitTrackingAvailable, warnUnavailable: !commitTrackingAvailable }
 }
 
 interface Pending {
@@ -57,13 +65,14 @@ interface Pending {
   startedAt: number
   startSeq: number
   firstCommitAt: number | null
+  /** `performance.now()` of the previous poll — used to spot a suspended tab. */
+  lastPollAt: number
   rafHandle: number
 }
 
 let enabled = false
 let pending: Pending | null = null
 const recent: InteractionSample[] = []
-const spans = new Map<string, MutableSpan>()
 
 /**
  * A short, stable identity for whatever the user clicked. Prefers an explicit
@@ -93,35 +102,80 @@ function finish(sample: InteractionSample): void {
   if (recent.length > MAX_RECENT) recent.shift()
 }
 
+/** The outcome of evaluating a pending interaction on one poll tick. */
+export type PollResolution =
+  | { readonly kind: 'settled'; readonly sample: InteractionSample }
+  | { readonly kind: 'discarded' }
+
+export interface PollDecision {
+  /** First-commit timestamp to write back onto the pending interaction. */
+  readonly firstCommitAt: number | null
+  /** `null` ⇒ still pending; otherwise the interaction is resolved. */
+  readonly resolution: PollResolution | null
+}
+
+/**
+ * Pure settle decision for one poll tick, split out from the rAF plumbing so it
+ * can be exercised deterministically. `clockSeq`/`clockAt` are `commitClock`
+ * read at the tick; `now` and `pending.lastPollAt` are `performance.now()`.
+ */
+export function evaluatePoll(
+  pending: Pick<Pending, 'label' | 'startedAt' | 'startSeq' | 'firstCommitAt' | 'lastPollAt'>,
+  now: number,
+  clockSeq: number,
+  clockAt: number,
+): PollDecision {
+  const elapsed = now - pending.startedAt
+  const commits = clockSeq - pending.startSeq
+  const firstCommitAt =
+    pending.firstCommitAt === null && commits > 0 ? clockAt : pending.firstCommitAt
+
+  // A tick that arrives long after the last one means rAF stopped firing: the
+  // tab was hidden or the machine slept. `elapsed` then spans dead wall time,
+  // not interaction latency, so the sample is dropped rather than reported.
+  if (now - pending.lastPollAt > MAX_POLL_GAP_MS) {
+    return { firstCommitAt, resolution: { kind: 'discarded' } }
+  }
+
+  const quietFor = commits > 0 ? now - clockAt : elapsed
+  const timedOut = elapsed >= MAX_INTERACTION_MS
+
+  if (timedOut || quietFor >= SETTLE_QUIET_MS) {
+    return {
+      firstCommitAt,
+      resolution: {
+        kind: 'settled',
+        sample: {
+          label: pending.label,
+          firstCommitMs: firstCommitAt === null ? null : firstCommitAt - pending.startedAt,
+          // The quiet period is detection latency, not user-visible latency, so
+          // it is subtracted: the UI actually stopped changing at the last commit.
+          settledMs: timedOut ? elapsed : Math.max(0, clockAt - pending.startedAt),
+          commits,
+          timedOut,
+        },
+      },
+    }
+  }
+
+  return { firstCommitAt, resolution: null }
+}
+
 function poll(): void {
   const current = pending
   if (!current) return
 
   const now = performance.now()
-  const elapsed = now - current.startedAt
-  const commits = commitClock.seq - current.startSeq
+  const decision = evaluatePoll(current, now, commitClock.seq, commitClock.at)
+  current.firstCommitAt = decision.firstCommitAt
 
-  if (current.firstCommitAt === null && commits > 0) {
-    current.firstCommitAt = commitClock.at
-  }
-
-  const quietFor = commits > 0 ? now - commitClock.at : elapsed
-  const timedOut = elapsed >= MAX_INTERACTION_MS
-
-  if (timedOut || quietFor >= SETTLE_QUIET_MS) {
+  if (decision.resolution) {
     pending = null
-    finish({
-      label: current.label,
-      firstCommitMs: current.firstCommitAt === null ? null : current.firstCommitAt - current.startedAt,
-      // The quiet period is detection latency, not user-visible latency, so it
-      // is subtracted: the UI actually stopped changing at the last commit.
-      settledMs: timedOut ? elapsed : Math.max(0, commitClock.at - current.startedAt),
-      commits,
-      timedOut,
-    })
+    if (decision.resolution.kind === 'settled') finish(decision.resolution.sample)
     return
   }
 
+  current.lastPollAt = now
   current.rafHandle = requestAnimationFrame(poll)
 }
 
@@ -130,11 +184,13 @@ function onPointerDown(event: Event): void {
   // A new interaction supersedes an unsettled one: the user moved on, and
   // attributing the old span's tail to the new click would be a lie.
   if (pending) cancelAnimationFrame(pending.rafHandle)
+  const startedAt = performance.now()
   pending = {
     label: labelForTarget(event.target),
-    startedAt: performance.now(),
+    startedAt,
     startSeq: commitClock.seq,
     firstCommitAt: null,
+    lastPollAt: startedAt,
     rafHandle: requestAnimationFrame(poll),
   }
 }
@@ -152,7 +208,6 @@ export function stopInteractionCapture(): void {
   if (pending) cancelAnimationFrame(pending.rafHandle)
   pending = null
   recent.length = 0
-  spans.clear()
 }
 
 export function getRecentInteractions(): readonly InteractionSample[] {
@@ -161,64 +216,4 @@ export function getRecentInteractions(): readonly InteractionSample[] {
 
 export function clearInteractions(): void {
   recent.length = 0
-}
-
-function bucketFor(name: string): MutableSpan | null {
-  const existing = spans.get(name)
-  if (existing) return existing
-  if (spans.size >= MAX_SPANS) return null
-  const created: MutableSpan = { calls: 0, selfMs: 0, waitMs: 0, maxMs: 0 }
-  spans.set(name, created)
-  return created
-}
-
-/**
- * Time a synchronous block. Self time and wall time are the same here, which is
- * exactly why sync work is what shows up as jank.
- */
-export function perfSpan<T>(name: string, fn: () => T): T {
-  if (!enabled) return fn()
-  const startedAt = performance.now()
-  try {
-    return fn()
-  } finally {
-    const elapsed = performance.now() - startedAt
-    const bucket = bucketFor(name)
-    if (bucket) {
-      bucket.calls++
-      bucket.selfMs += elapsed
-      if (elapsed > bucket.maxMs) bucket.maxMs = elapsed
-    }
-  }
-}
-
-/**
- * Time an async operation. Wall time is recorded separately from self time so a
- * span that only waits on IO never competes with one that burns the main
- * thread — ranking them together would bury the real CPU cost.
- */
-export async function perfSpanAsync<T>(name: string, fn: () => Promise<T>): Promise<T> {
-  if (!enabled) return fn()
-  const startedAt = performance.now()
-  try {
-    return await fn()
-  } finally {
-    const elapsed = performance.now() - startedAt
-    const bucket = bucketFor(name)
-    if (bucket) {
-      bucket.calls++
-      bucket.waitMs += elapsed
-      if (elapsed > bucket.maxMs) bucket.maxMs = elapsed
-    }
-  }
-}
-
-/** Snapshot and reset the span table. */
-export function drainSpans(): SpanStat[] {
-  const out: SpanStat[] = []
-  for (const [name, value] of spans) {
-    out.push({ name, calls: value.calls, selfMs: value.selfMs, waitMs: value.waitMs, maxMs: value.maxMs })
-  }
-  spans.clear()
-  return out.sort((a, b) => b.selfMs - a.selfMs || b.waitMs - a.waitMs)
 }

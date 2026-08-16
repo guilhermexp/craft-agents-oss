@@ -84,22 +84,23 @@ Plan: `docs/plans/2026-07-24-001-feat-browser-cookie-import-plan.md` (U-IDs refe
 
 ## 2. Injection (U3)
 
-- [x] 2.1 Add `BrowserPaneManager.importCookies({ profileId, domain, callerIntent })`: resolve the
-  partition via `getProfilePartition(resolveProfileId(profileId))`, obtain the session with
+- [x] 2.1 Add `BrowserPaneManager.importCookies(profileId)`: refuse a target that is not a known,
+  user-only profile with a typed `UserOnlyBrowserProfileRequiredError` before any read or write,
+  resolve the partition via `getProfilePartition(profileId)`, obtain the session with
   `session.fromPartition(...)` (idempotent — same Session the pane uses), and write each cookie with
   `cookies.set(...)`. Build `url` as `http${secure?'s':''}://${host_key without leading dot}${path}`,
   preserve the leading dot in `domain` for domain cookies, and map Chrome's integer `samesite`
   (`-1|0|1|2`) to Electron's `unspecified|no_restriction|lax|strict`. Return `{imported, skipped}`
-  counts only — never cookie values. Refuse agent-intent calls against a `userOnly` profile before
-  any write.
+  counts only — never cookie values.
   - files: `apps/electron/src/main/browser-pane-manager.ts`
   - verify: `grep -q "cookies.set" apps/electron/src/main/browser-pane-manager.ts`
 - [x] 2.2 Cover injection in
   `apps/electron/src/main/__tests__/browser-pane-cookie-import.test.ts`: three cookies map to three
   `cookies.set` calls with asserted `url`/`sameSite`/dotted-domain mapping; secure→`https`,
   non-secure→`http`; all four `samesite` values map correctly; one rejection among three still
-  imports the others and reports `skipped: 1`; an agent-intent call against a user-only profile
-  makes ZERO `cookies.set` calls; the returned object serializes with no cookie values.
+  imports the others and reports `skipped: 1`; an unknown profile and a non-user-only profile each
+  make ZERO `cookies.set` calls and reject with `UserOnlyBrowserProfileRequiredError`; the returned
+  object serializes with no cookie values.
   - files: `apps/electron/src/main/__tests__/browser-pane-cookie-import.test.ts`
   - verify: `bun test apps/electron/src/main/__tests__/browser-pane-cookie-import.test.ts`
 - [x] 2.3 Run gates: `bun run typecheck:all` and the two new test files.

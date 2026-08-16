@@ -30,9 +30,8 @@ export const SessionStatusIcon = memo(function SessionStatusIcon({ item }: Sessi
   return (
     <Popover modal={true} open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <span
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           className={cn(
             "!h-5 !w-5 flex items-center justify-center rounded-full transition-colors cursor-pointer",
             "hover:bg-foreground/5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
@@ -41,7 +40,7 @@ export const SessionStatusIcon = memo(function SessionStatusIcon({ item }: Sessi
           style={getStateIconStyle(status, ctx.sessionStatuses)}
           aria-haspopup="menu"
           aria-expanded={open}
-          aria-label="Change todo state"
+          aria-label={ctx.sessionStatuses.find((entry) => entry.id === status)?.label ?? status}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault()
@@ -63,7 +62,7 @@ export const SessionStatusIcon = memo(function SessionStatusIcon({ item }: Sessi
           }}
         >
           {getStateIcon(status, ctx.sessionStatuses)}
-        </span>
+        </button>
       </PopoverTrigger>
       <PopoverContent
         className="w-auto p-0 border-0 shadow-none bg-transparent"

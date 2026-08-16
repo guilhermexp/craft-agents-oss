@@ -29,7 +29,6 @@ import { ConfigStore } from './config-store'
 import { PairingCodeManager } from './pairing'
 import { TelegramAdapter, telegramCredentialCodec } from './adapters/telegram/index'
 import { WhatsAppAdapter, type WhatsAppEvent } from './adapters/whatsapp/index'
-import { LarkAdapter, larkCredentialCodec } from './adapters/lark/index'
 import { MessageAdapterRegistry } from './adapter-registry'
 import { TopicRegistry } from './topic-registry'
 import {
@@ -110,7 +109,6 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
     this.log = (opts.logger ?? consoleLogger).child({ component: 'registry' })
     this.adapterRegistry.registerFactory('telegram', () => new TelegramAdapter(), telegramCredentialCodec)
     this.adapterRegistry.registerFactory('whatsapp', () => new WhatsAppAdapter())
-    this.adapterRegistry.registerFactory('lark', () => new LarkAdapter(), larkCredentialCodec)
 
     // Install the automation→topic binder hook on the SessionManager so
     // executePromptAutomation can route topic-bound sessions without the
@@ -591,8 +589,8 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
   }
 
   /**
-   * Connect a platform for a workspace. Credential-based platforms (Telegram,
-   * Lark) validate + persist the supplied `credential` and initialise the
+   * Connect a platform for a workspace. Credential-based platforms (Telegram)
+   * validate + persist the supplied `credential` and initialise the
    * adapter; interactive platforms (WhatsApp) ignore `credential` and start
    * their link flow. Single lifecycle entry point so a new platform costs an
    * adapter directory + a factory registration — nothing here.
@@ -669,7 +667,7 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
     this.pairing.clearWorkspace(workspaceId)
 
     // Preserve per-platform fields (owners / accessMode / supergroup for
-    // telegram, selfChatMode for whatsapp, domain for lark) so reconnecting
+    // telegram, selfChatMode for whatsapp) so reconnecting
     // doesn't surprise the operator with a reset to public. Use
     // `forgetPlatform` for the full wipe.
     const currentConfig = state.configStore.get()
@@ -951,11 +949,11 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
   }
 
   /**
-   * Connect a credential-based adapter (Telegram, Lark) from its stored
+   * Connect a credential-based adapter (Telegram) from its stored
    * credential: validate the stored value, initialise the adapter, capture its
    * identity, and publish runtime status. Shared by the restore path
    * (initializeWorkspace) and the connect path (connectPlatform). Adapter-
-   * specific details (Lark's JSON shape, Telegram's supergroup, per-platform
+   * specific details (Telegram's supergroup, per-platform
    * identity) live in the codec + adapter, not here.
    */
   private async connectCredentialAdapter(
@@ -978,7 +976,7 @@ export class MessagingGatewayRegistry implements IMessagingGatewayRegistry {
     }
 
     // Let the adapter's codec reject a structurally-broken stored credential
-    // (e.g. malformed Lark JSON) before we try to connect.
+    // before we try to connect.
     try {
       this.adapterRegistry.getCredentialCodec(platform)?.normalize(cred.value)
     } catch (err) {

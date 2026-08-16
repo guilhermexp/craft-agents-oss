@@ -10,7 +10,7 @@ import type { Opaque } from '@craft-agent/shared/opaque'
 // Platform types
 // ---------------------------------------------------------------------------
 
-export type PlatformType = 'telegram' | 'whatsapp' | 'lark'
+export type PlatformType = 'telegram' | 'whatsapp'
 export type MessagingChannelId = Opaque<string, 'MessagingChannelId'>
 
 export function messagingChannelId(value: string): MessagingChannelId {
@@ -76,7 +76,7 @@ export interface AdapterCapabilities {
   inlineButtons: boolean
   maxButtons: number
   maxMessageLength: number
-  markdown: 'v2' | 'whatsapp' | 'lark-post'
+  markdown: 'v2' | 'whatsapp'
   /**
    * Supports workspace-level owner lists + access-mode policy (owners are
    * stored per platform and evaluated by access-control). Absent = false.
@@ -103,7 +103,7 @@ export interface IncomingMessage {
   senderName?: string
   /**
    * Platform-native username if the user has one set. Telegram supplies this
-   * via `from.username`; WhatsApp/Lark may leave it undefined. Used by the
+   * via `from.username`; WhatsApp may leave it undefined. Used by the
    * access-control layer to render friendlier "pending requests" rows in the
    * Settings UI without forcing the operator to read raw user_ids.
    */
@@ -213,7 +213,7 @@ export interface PlatformAdapter {
 
   /**
    * Clear the inline keyboard on a previously-sent message. Optional because
-   * only platforms with inline-button support (Telegram, Lark) need it.
+   * only platforms with inline-button support (Telegram) need it.
    * Errors are the caller's concern — most implementations should swallow
    * "message can't be edited" since it's non-fatal.
    */
@@ -221,7 +221,7 @@ export interface PlatformAdapter {
 
   /**
    * Best-effort human-facing identity for UI hints (connect dialogs, runtime
-   * status): Telegram → @username, Lark → app name. Undefined when it can't be
+   * status): Telegram → @username. Undefined when it can't be
    * resolved. Credential-based adapters implement this; the subprocess adapter
    * derives identity from link events instead.
    */
@@ -237,8 +237,8 @@ export interface CredentialTestResult {
 }
 
 /**
- * Per-platform credential handling for credential-based adapters (Telegram,
- * Lark). Registered alongside the adapter factory so the registry can save and
+ * Per-platform credential handling for credential-based adapters (Telegram).
+ * Registered alongside the adapter factory so the registry can save and
  * verify credentials generically. Subprocess/interactive adapters (WhatsApp,
  * which links via QR / pairing code) register none.
  */

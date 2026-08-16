@@ -49,12 +49,20 @@ const ALIAS_PACKAGE = 'typescript-for-eslint'
 const LINK_TYPE = process.platform === 'win32' ? 'junction' : 'dir'
 
 /** Nomes de pacote que iniciam o fecho: só a toolchain de lint. */
-function isLintRootName(name) {
+export function isLintRootName(name) {
+  // `typescript-eslint` é o meta-pacote flat-config; `@typescript-eslint/*` são
+  // os pacotes internos. Plugins/configs com escopo (`@stylistic/eslint-plugin`,
+  // `@scope/eslint-config-y`) seguem a convenção do ESLint no nome *sem* escopo,
+  // então descamamos o escopo antes de casar — senão o fecho ignora a subárvore
+  // deles e o linter volta a crashar no próximo clone limpo.
+  if (name === 'eslint' || name === 'typescript-eslint') return true
+  if (name.startsWith('@typescript-eslint/')) return true
+  const unscoped = name.startsWith('@') ? name.slice(name.indexOf('/') + 1) : name
   return (
-    name === 'eslint' ||
-    name.startsWith('eslint-plugin-') ||
-    name.startsWith('eslint-config-') ||
-    name.startsWith('@typescript-eslint/')
+    unscoped === 'eslint-plugin' ||
+    unscoped === 'eslint-config' ||
+    unscoped.startsWith('eslint-plugin-') ||
+    unscoped.startsWith('eslint-config-')
   )
 }
 
@@ -155,7 +163,59 @@ function linkTypescript(consumerDir, aliasDir) {
   return 'linked'
 }
 
+/**
+ * Garante que `node_modules/.bin/tsc` resolve para o `typescript` da raiz (TS 7).
+ *
+ * POR QUE ISTO EXISTE
+ * -------------------
+ * O alias `typescript-for-eslint` (`npm:typescript@5.9.3`) também declara
+ * `bin: { tsc }`, então disputa `node_modules/.bin/tsc` com o `typescript@7`
+ * da raiz. O bun resolve o `.bin` por ordem de nome de pacote e `typescript`
+ * ordena antes de `typescript-for-eslint` — mas isso é acidente, não invariante.
+ * O `typecheck` de `apps/electron` é um `tsc --noEmit` pelado; se o alias 5.9.x
+ * vencesse o link, o typecheck faria downgrade silencioso para TS 5 sem nenhum
+ * sinal. Este assert transforma esse downgrade invisível em falha de install
+ * alta e acionável. O resolvedor de realpath é injetável para testar os dois
+ * caminhos sem mexer no `node_modules` real.
+ */
+export function assertTscBinIsTypescript(realpath = fs.realpathSync) {
+  const binPath = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsc')
+  const typescriptDir = path.join(REPO_ROOT, 'node_modules', 'typescript')
+  let resolved
+  try {
+    resolved = realpath(binPath)
+  } catch {
+    throw new Error(
+      `[link-eslint-typescript] node_modules/.bin/tsc não existe.\n` +
+        '  O `typescript` da raiz (TS 7) deveria ter linkado esse bin no install.\n' +
+        '  Rode `bun install` de novo; sem ele todo `typecheck:*` falha.',
+    )
+  }
+  const withinTypescript =
+    resolved === typescriptDir || resolved.startsWith(typescriptDir + path.sep)
+  if (!withinTypescript) {
+    throw new Error(
+      `[link-eslint-typescript] node_modules/.bin/tsc resolve para\n` +
+        `    ${resolved}\n` +
+        `  fora de ${typescriptDir}.\n` +
+        '  O alias `typescript-for-eslint` (TS 5.9.x) venceu a disputa pelo `.bin/tsc`\n' +
+        '  e todo `typecheck:*` faria downgrade silencioso para TS 5. O invariante\n' +
+        '  do AGENTS.md ("tsc = TS 7 em todo typecheck:*") está quebrado.\n' +
+        '  Rode `rm -rf node_modules && bun install`; se persistir, o alias precisa\n' +
+        '  parar de expor `bin.tsc` (import via ./node_modules/typescript-for-eslint).',
+    )
+  }
+}
+
 function main() {
+  try {
+    assertTscBinIsTypescript()
+  } catch (err) {
+    console.error(err.message)
+    process.exitCode = 1
+    return
+  }
+
   const aliasDir = path.join(REPO_ROOT, 'node_modules', ALIAS_PACKAGE)
   const aliasPkg = readPackageJson(aliasDir)
   if (!aliasPkg) {
@@ -207,4 +267,7 @@ function main() {
   }
 }
 
-main()
+// Só executa quando invocado direto (postinstall/CLI); import de teste não roda.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main()
+}

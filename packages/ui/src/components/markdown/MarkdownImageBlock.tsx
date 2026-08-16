@@ -34,6 +34,7 @@ import { usePlatform } from '../../context/PlatformContext'
 import { ImageCardStack } from './ImageCardStack'
 import { classifyFile } from '../../lib/file-classification'
 import { useTranslation } from 'react-i18next'
+import { loadBlockDataUrl } from './markdown-image-cache'
 
 interface PreviewItem {
   src: string
@@ -123,26 +124,6 @@ function NonImagePreviewCard({ src, label }: { src: string; label?: string }) {
       {open ? <ChevronsRight className="size-3.5 shrink-0 text-muted-foreground" /> : null}
     </button>
   )
-}
-
-/**
- * Shared by every block on screen, because the same artefact is routinely
- * referenced by more than one message and each instance would otherwise read
- * the file again — the dev log showed the same PNG fetched twice per pass.
- * A rejection is evicted so a file the agent writes later is still picked up.
- */
-const blockDataUrlCache = new Map<string, Promise<string>>()
-
-function loadBlockDataUrl(src: string, read: (path: string) => Promise<string>): Promise<string> {
-  const cached = blockDataUrlCache.get(src)
-  if (cached) return cached
-
-  const request = read(src).catch((err: unknown) => {
-    blockDataUrlCache.delete(src)
-    throw err
-  })
-  blockDataUrlCache.set(src, request)
-  return request
 }
 
 export function MarkdownImageBlock({ code, className, onCreateRegionAnnotation: _onCreateRegionAnnotation }: MarkdownImageBlockProps) {

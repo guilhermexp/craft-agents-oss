@@ -153,6 +153,28 @@ export function toFaviconDataUrl(contentType: string, bytes: Uint8Array): string
 }
 
 /**
+ * Best-effort teardown of a body we are dropping. Cancellation is decoration
+ * cleanup: a rejected `cancel()` means the body is already gone, so nothing here
+ * may throw — the transport promise never rejects on a favicon failure.
+ */
+async function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
+  try {
+    await reader.cancel()
+  } catch {
+    // Already torn down; there is nothing left to salvage.
+  }
+}
+
+/** Drop an abandoned body without reading it, so it never streams into the partition. */
+function cancelBody(response: FaviconHttpResponse): void {
+  try {
+    void response.body.cancel().catch(() => {})
+  } catch {
+    // A synchronously-throwing or already-locked body is still being dropped.
+  }
+}
+
+/**
  * Read the body with the ceiling applied per chunk, so a `chunked` response
  * with no `content-length` is torn down as soon as it overruns instead of
  * buffering until the timeout.
@@ -161,14 +183,36 @@ async function readCappedBody(response: FaviconHttpResponse, controller: AbortCo
   const reader = response.body.getReader()
   const chunks: Uint8Array[] = []
   let total = 0
+  // A `200` whose body then stalls (no chunk, no `close`) would pin
+  // `reader.read()` forever, hanging the sequential resolveFavicon walk and
+  // holding the partition socket. Both the timeout and the byte ceiling fire
+  // `controller`, so race every read against it and observe the abort here
+  // rather than waiting for the transport to cooperate. Built once — one
+  // listener for the whole body, not one per chunk.
+  const { promise: aborted, resolve: resolveAborted } = Promise.withResolvers<null>()
+  if (controller.signal.aborted) {
+    resolveAborted(null)
+  } else {
+    controller.signal.addEventListener('abort', () => resolveAborted(null), { once: true })
+  }
   try {
     for (;;) {
-      const { done, value } = await reader.read()
+      const next = await Promise.race([reader.read(), aborted])
+      if (next === null) {
+        // Abort won the race: cancel to settle the pending read (releaseLock
+        // rejects while a read is outstanding) and to drop the body.
+        await cancelReader(reader)
+        return null
+      }
+      const { done, value } = next
       if (done) break
       if (!value) continue
       total += value.byteLength
       if (total > FAVICON_MAX_BYTES) {
         controller.abort()
+        // Best-effort: stop the transport from streaming the rest into the
+        // partition. Cancel before releaseLock.
+        await cancelReader(reader)
         return null
       }
       chunks.push(value)
@@ -205,14 +249,23 @@ export async function fetchFaviconDataUrl(rawUrl: string, options: FaviconFetchO
 
   try {
     const response = await options.fetch(rawUrl, { signal: controller.signal })
-    if (!response.ok) return null
+    if (!response.ok) {
+      cancelBody(response)
+      return null
+    }
 
     const contentType = normalizeFaviconContentType(response.headers.get('content-type'))
-    if (!contentType) return null
+    if (!contentType) {
+      cancelBody(response)
+      return null
+    }
 
     // A lying/absent header is not trusted either way — readCappedBody re-caps.
     const declaredLength = Number.parseInt(response.headers.get('content-length') ?? '', 10)
-    if (Number.isFinite(declaredLength) && declaredLength > FAVICON_MAX_BYTES) return null
+    if (Number.isFinite(declaredLength) && declaredLength > FAVICON_MAX_BYTES) {
+      cancelBody(response)
+      return null
+    }
 
     const bytes = await readCappedBody(response, controller)
     if (!bytes) return null

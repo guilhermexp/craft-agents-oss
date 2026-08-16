@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { SessionToolContext } from '../context.ts'
+import type { SessionSourceReadiness } from './source-readiness.ts'
 import type { SourceConfig } from '../types.ts'
 import { handleSourceTest } from './source-test.ts'
 
@@ -26,7 +27,13 @@ afterEach(() => {
   for (const path of tempDirs.splice(0)) rmSync(path, { recursive: true, force: true })
 })
 
-function createHarness(observedTools: typeof expectedTools): {
+interface HarnessOptions {
+  observedTools: typeof expectedTools
+  activate?: SessionSourceReadiness['activateSource']
+  persistSourceConfig?: SessionSourceReadiness['persistSourceConfig']
+}
+
+function createHarness(options: HarnessOptions): {
   ctx: SessionToolContext
   configPath: string
   events: string[]
@@ -55,10 +62,27 @@ function createHarness(observedTools: typeof expectedTools): {
   )
 
   const events: string[] = []
+
+  const sessionSourceReadiness: SessionSourceReadiness = {
+    backend: 'claude',
+    probeSourceTools: async (sourceSlug) => {
+      events.push(`inject:${sourceSlug}`)
+      events.push('observe:probe-1')
+      events.push('cleanup:probe-1')
+      return { ok: true, observedTools: options.observedTools }
+    },
+    activateSource: options.activate ?? (async (sourceSlug, persistReady) => {
+      events.push(`activate:${sourceSlug}`)
+      persistReady()
+      return { ok: true }
+    }),
+    persistSourceConfig: options.persistSourceConfig
+      ?? ((source) => writeFileSync(configPath, JSON.stringify(source))),
+  }
+
   const ctx = {
     sessionId: 'session-1',
     workspacePath,
-    sourceProbeBackend: 'claude',
     get sourcesPath() { return join(workspacePath, 'sources') },
     get skillsPath() { return join(workspacePath, 'skills') },
     plansFolderPath: join(workspacePath, 'plans'),
@@ -76,46 +100,20 @@ function createHarness(observedTools: typeof expectedTools): {
       },
     },
     loadSourceConfig: () => JSON.parse(readFileSync(configPath, 'utf8')) as SourceConfig,
-    saveSourceConfig: (source: SourceConfig) => writeFileSync(configPath, JSON.stringify(source)),
     validateStdioMcpConnection: async () => ({
       success: true,
       toolCount: expectedTools.length,
       toolNames: expectedTools.map((tool) => tool.name),
     }),
-    injectSourceForProbe: async (sourceSlug: string) => {
-      events.push(`inject:${sourceSlug}`)
-      return { probeId: 'probe-1' }
-    },
-    observeSourceToolsForProbe: async (probeId: string) => {
-      events.push(`observe:${probeId}`)
-      return observedTools
-    },
-    removeSourceProbe: async (probeId: string) => {
-      events.push(`cleanup:${probeId}`)
-    },
-    activateSourceInSession: async (sourceSlug: string) => {
-      events.push(`activate:${sourceSlug}`)
-      return { ok: true, availability: 'next-turn' as const }
-    },
+    sessionSourceReadiness,
   } as unknown as SessionToolContext
-
-  ctx.prepareSourceReadinessActivation = async (sourceSlug: string) => {
-    const result = await ctx.activateSourceInSession!(sourceSlug)
-    if (!result.ok) throw new Error('readiness activation failed')
-    return { activationId: 'activation-1' }
-  }
-  ctx.commitSourceReadinessActivation = () => {}
-  ctx.finalizeSourceReadinessActivation = () => {}
-  ctx.rollbackSourceReadinessActivation = async (activationId: string) => {
-    events.push(`rollback:${activationId}`)
-  }
 
   return { ctx, configPath, events }
 }
 
 describe('source_test Composio readiness wiring', () => {
   test('persists ready and enables exposure only after observing every expected tool in session', async () => {
-    const harness = createHarness(expectedTools)
+    const harness = createHarness({ observedTools: expectedTools })
 
     await handleSourceTest(harness.ctx, { sourceSlug: 'composio-linear' })
 
@@ -135,7 +133,7 @@ describe('source_test Composio readiness wiring', () => {
   })
 
   test('persists unhealthy, remains disabled, and does not expose when a session tool is missing', async () => {
-    const harness = createHarness([expectedTools[0]!])
+    const harness = createHarness({ observedTools: [expectedTools[0]!] })
 
     const result = await handleSourceTest(harness.ctx, { sourceSlug: 'composio-linear' })
 
@@ -155,12 +153,14 @@ describe('source_test Composio readiness wiring', () => {
     expect(result.isError).toBe(true)
   })
 
-  test('rolls persisted readiness back when final session exposure fails', async () => {
-    const harness = createHarness(expectedTools)
-    harness.ctx.activateSourceInSession = async (sourceSlug) => {
-      harness.events.push(`activate:${sourceSlug}`)
-      return { ok: false, reason: 'backend rejected injection' }
-    }
+  test('keeps the staged unhealthy config when final session exposure fails', async () => {
+    const harness = createHarness({
+      observedTools: expectedTools,
+      activate: async (sourceSlug) => {
+        harness.events.push(`activate:${sourceSlug}`)
+        return { ok: false, reason: 'commit-failed' }
+      },
+    })
 
     const result = await handleSourceTest(harness.ctx, { sourceSlug: 'composio-linear' })
 
@@ -174,11 +174,13 @@ describe('source_test Composio readiness wiring', () => {
     expect(result.isError).toBe(true)
   })
 
-  test('does not expose when ready health cannot be persisted', async () => {
-    const harness = createHarness(expectedTools)
-    harness.ctx.saveSourceConfig = () => {
-      throw new Error('disk failed credential-sentinel')
-    }
+  test('does not expose when readiness state cannot be persisted', async () => {
+    const harness = createHarness({
+      observedTools: expectedTools,
+      persistSourceConfig: () => {
+        throw new Error('disk failed credential-sentinel')
+      },
+    })
 
     const result = await handleSourceTest(harness.ctx, { sourceSlug: 'composio-linear' })
 

@@ -1,0 +1,26 @@
+{
+  "name": "Vision OS",
+  "description": "Default scenic theme with crisp gray depth, glass chrome, and alpha-driven hierarchy.",
+  "author": "Craft Agents",
+  "license": "Apache-2.0",
+  "mode": "scenic",
+  "backgroundImage": "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%228%22%20height%3D%228%22%3E%3Crect%20width%3D%228%22%20height%3D%228%22%20fill%3D%22%23565b63%22%2F%3E%3C%2Fsvg%3E",
+  "scenicBackgroundOpacity": 1,
+  "scenicBackgroundContrast": 1.25,
+  "scenicBackgroundBlur": 3,
+  "supportedModes": ["dark"],
+  "shikiTheme": {
+    "dark": "github-dark"
+  },
+  "background": "rgba(17, 19, 24, 0.55)",
+  "foreground": "rgba(255, 255, 255, 0.95)",
+  "accent": "#5ac8f5",
+  "info": "#7dd3fc",
+  "success": "#5ce0c0",
+  "destructive": "#ef4444",
+  "paper": "rgba(23, 26, 33, 0.62)",
+  "navigator": "rgba(12, 14, 18, 0.58)",
+  "input": "rgba(0, 0, 0, 0.35)",
+  "popover": "rgba(23, 26, 33, 0.82)",
+  "popoverSolid": "#171a21"
+}

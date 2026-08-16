@@ -13,9 +13,6 @@ import type {
   ToolResult,
   SourceConfig,
   ConnectionStatus,
-  SourceProbeBackend,
-  SourceReadinessReason,
-  SourceToolIdentity,
 } from '../types.ts';
 import { errorResponse } from '../response.ts';
 import {
@@ -32,162 +29,11 @@ import {
   redactSourceTestFailure,
   redactSourceTestMetadata,
 } from './source-test-sanitizer.ts';
-
-export interface SourceReadinessRequest {
-  sourceSlug: string;
-  backend: SourceProbeBackend;
-  expectedTools: SourceToolIdentity[];
-}
-
-export type SourceReadinessResult =
-  | { ready: true; observedTools: SourceToolIdentity[] }
-  | { ready: false; reason: 'unsupported-backend' | 'source-test-failed' | 'backend-injection-failed' | 'probe-failed' | 'cleanup-failed' }
-  | { ready: false; reason: 'missing-tools'; missingTools: SourceToolIdentity[]; observedTools: SourceToolIdentity[] }
-  | {
-      ready: false;
-      reason: 'version-mismatch';
-      versionMismatches: Array<{
-        name: string;
-        expectedApiVersion: string;
-        observedApiVersions: string[];
-      }>;
-      observedTools: SourceToolIdentity[];
-    };
-
-export interface SourceReadinessHealth {
-  status: 'ready' | 'unhealthy';
-  reason?: SourceReadinessReason;
-  observedTools?: SourceToolIdentity[];
-}
-
-export type { SourceProbeBackend, SourceToolIdentity } from '../types.ts';
-
-export interface SourceReadinessDependencies {
-  testSource(): Promise<{ ok: true } | { ok: false; error?: string }>;
-  injectIntoSession(request: SourceReadinessRequest): Promise<{ sessionId: string }>;
-  observeSessionTools(input: { sessionId: string; sourceSlug: string }): Promise<SourceToolIdentity[]>;
-  removeFromSession(input: { sessionId: string; sourceSlug: string }): Promise<void>;
-  writeHealth(health: SourceReadinessHealth): Promise<void>;
-  logHealth?(evidence: SourceReadinessHealth): void;
-}
-
-const SAFE_TOOL_IDENTITY_PART = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/;
-const NON_VERSION_METADATA = new Set(['invalid', 'unknown', 'unversioned']);
-
-function isExplicitSourceToolVersion(value: string): boolean {
-  return SAFE_TOOL_IDENTITY_PART.test(value) && !NON_VERSION_METADATA.has(value.toLowerCase());
-}
-
-/** Source tool API versions are compatible only when the declared versions match exactly. */
-export function isSourceToolVersionCompatible(expected: string, observed: string): boolean {
-  return expected === observed;
-}
-
-/**
- * Runs source reachability and backend-visible readiness as separate gates.
- * Only allowlisted tool identities enter health evidence; caught errors are never serialized.
- */
-export async function runSourceReadinessCheck(
-  request: SourceReadinessRequest,
-  dependencies: SourceReadinessDependencies,
-): Promise<SourceReadinessResult> {
-  const persist = async (result: SourceReadinessResult): Promise<SourceReadinessResult> => {
-    const health: SourceReadinessHealth = result.ready
-      ? { status: 'ready', observedTools: result.observedTools }
-      : {
-          status: 'unhealthy',
-          reason: result.reason,
-          ...('observedTools' in result ? { observedTools: result.observedTools } : {}),
-        };
-    try {
-      await dependencies.writeHealth(health);
-    } catch {
-      throw new Error('Source readiness health persistence failed');
-    }
-    dependencies.logHealth?.(health);
-    return result;
-  };
-
-  if (request.backend === 'unsupported') {
-    return persist({ ready: false, reason: 'unsupported-backend' });
-  }
-
-  if (request.expectedTools.some(
-    (tool) => !SAFE_TOOL_IDENTITY_PART.test(tool.name) || !isExplicitSourceToolVersion(tool.apiVersion),
-  )) {
-    return persist({ ready: false, reason: 'source-test-failed' });
-  }
-
-  const sourceTest = await dependencies.testSource();
-  if (!sourceTest.ok) {
-    return persist({ ready: false, reason: 'source-test-failed' });
-  }
-
-  let injection: { sessionId: string };
-  try {
-    injection = await dependencies.injectIntoSession(request);
-  } catch {
-    return persist({ ready: false, reason: 'backend-injection-failed' });
-  }
-
-  let result: SourceReadinessResult;
-  try {
-    const rawObservedTools = await dependencies.observeSessionTools({
-      sessionId: injection.sessionId,
-      sourceSlug: request.sourceSlug,
-    });
-    const expectedNames = new Set(request.expectedTools.map((tool) => tool.name));
-    const observedTools = rawObservedTools.flatMap((tool) => {
-      if (!expectedNames.has(tool.name) || !SAFE_TOOL_IDENTITY_PART.test(tool.name)) return [];
-      return isExplicitSourceToolVersion(tool.apiVersion)
-        ? [{ name: tool.name, apiVersion: tool.apiVersion }]
-        : [];
-    });
-    const observedByName = new Map<string, string[]>();
-    for (const tool of observedTools) {
-      const versions = observedByName.get(tool.name) ?? [];
-      if (!versions.includes(tool.apiVersion)) versions.push(tool.apiVersion);
-      observedByName.set(tool.name, versions);
-    }
-
-    const missingTools = request.expectedTools.filter((tool) => !observedByName.has(tool.name));
-    const versionMismatches = request.expectedTools.flatMap((tool) => {
-      const observedApiVersions = observedByName.get(tool.name);
-      if (
-        observedApiVersions === undefined
-        || observedApiVersions.some((version) => isSourceToolVersionCompatible(tool.apiVersion, version))
-      ) {
-        return [];
-      }
-      return [{
-        name: tool.name,
-        expectedApiVersion: tool.apiVersion,
-        observedApiVersions,
-      }];
-    });
-
-    if (missingTools.length > 0) {
-      result = { ready: false, reason: 'missing-tools', missingTools, observedTools };
-    } else if (versionMismatches.length > 0) {
-      result = { ready: false, reason: 'version-mismatch', versionMismatches, observedTools };
-    } else {
-      result = { ready: true, observedTools };
-    }
-  } catch {
-    result = { ready: false, reason: 'probe-failed' };
-  }
-
-  try {
-    await dependencies.removeFromSession({
-      sessionId: injection.sessionId,
-      sourceSlug: request.sourceSlug,
-    });
-  } catch {
-    return persist({ ready: false, reason: 'cleanup-failed' });
-  }
-
-  return persist(result);
-}
+import {
+  resolveSourceReadiness,
+  createUnsupportedSessionSourceReadiness,
+  type SourceActivationReason,
+} from './source-readiness.ts';
 
 export interface SourceTestArgs {
   sourceSlug: string;
@@ -215,6 +61,17 @@ interface ConnectionTestResult {
 }
 
 const sourceTestLifecycleTails = new Map<string, Promise<void>>();
+
+/**
+ * Distinct operator-facing message per activation stage. Kept separate from the
+ * durable readiness reason so each failing stage reads differently while the
+ * persisted config stays on the stable `backend-injection-failed` reason.
+ */
+const ACTIVATION_STAGE_MESSAGES: Record<SourceActivationReason, string> = {
+  'exposure-failed': 'session exposure could not be established',
+  'commit-failed': 'activation commit failed',
+  'ready-persist-failed': 'ready state could not be persisted after activation',
+};
 
 function canonicalWorkspacePath(workspacePath: string): string {
   const absolutePath = resolve(workspacePath);
@@ -361,157 +218,60 @@ async function handleSourceTestUnlocked(
   // those to connectionStatus=connected, and checkAuthStatus refreshes tokens.
   const autoEnable = args.autoEnable !== false;
   const requiresReadiness = (source.expectedTools?.length ?? 0) > 0;
-  let readinessPassed = !requiresReadiness;
-  let readiness = source.readiness;
-
-  if (requiresReadiness) {
-    lines.push('\n## Session Tool Probe');
-    const readinessResult = await runSourceReadinessCheck(
-      {
-        sourceSlug,
-        backend: ctx.sourceProbeBackend ?? 'unsupported',
-        expectedTools: source.expectedTools!,
-      },
-      {
-        testSource: async () => (
-          !hasErrors && connectionStatus === 'connected'
-            ? { ok: true }
-            : { ok: false }
-        ),
-        injectIntoSession: async () => {
-          if (!ctx.injectSourceForProbe) throw new Error('Source probe injection is unavailable');
-          const result = await ctx.injectSourceForProbe(sourceSlug);
-          return { sessionId: result.probeId };
-        },
-        observeSessionTools: async ({ sessionId }) => {
-          if (!ctx.observeSourceToolsForProbe) throw new Error('Source probe observation is unavailable');
-          return ctx.observeSourceToolsForProbe(sessionId);
-        },
-        removeFromSession: async ({ sessionId }) => {
-          if (!ctx.removeSourceProbe) throw new Error('Source probe cleanup is unavailable');
-          await ctx.removeSourceProbe(sessionId);
-        },
-        writeHealth: async (health) => {
-          readiness = { ...health, checkedAt: Date.now() };
-        },
-      },
-    );
-
-    readinessPassed = readinessResult.ready;
-    if (readinessResult.ready) {
-      lines.push(`✓ Session observed ${readinessResult.observedTools.length} expected versioned tools`);
-    } else {
-      hasErrors = true;
-      connectionStatus = 'unhealthy';
-      connectionError = readinessResult.reason;
-      lines.push(`✗ Session tool probe failed: ${readinessResult.reason}`);
-    }
-  }
-
-  const shouldAutoEnable = autoEnable
-    && !hasErrors
-    && connectionStatus === 'connected'
-    && readinessPassed;
-  const willFlipEnabled = shouldAutoEnable && source.enabled === false;
   const testedAt = Date.now();
 
-  if (requiresReadiness && shouldAutoEnable) {
-    const saveSourceConfig = ctx.saveSourceConfig;
-    const stagedReadiness: SourceReadinessHealth & { checkedAt: number } = {
-      status: 'unhealthy',
-      reason: 'backend-injection-failed',
-      checkedAt: testedAt,
-    };
-    const stagedSource: SourceConfig = {
-      ...source,
-      enabled: false,
-      lastTestedAt: testedAt,
-      connectionStatus: 'unhealthy',
-      connectionError: 'backend-injection-failed',
-      readiness: stagedReadiness,
-    };
-
-    let stagedPersisted = false;
-    try {
-      if (!saveSourceConfig) throw new Error('Source config persistence is unavailable');
-      saveSourceConfig(stagedSource);
-      stagedPersisted = true;
-    } catch {
+  if (requiresReadiness) {
+    // Readiness sources declare intent here; source-readiness owns identity
+    // validation, probe verdict, staged/ready persistence, activation ordering
+    // and stable reason mapping. The connection gates above become its inputs.
+    lines.push('\n## Session Tool Probe');
+    // When no runtime seam is bound we still demote the source through a fallback
+    // adapter that reports an unsupported backend, so a previously enabled/ready
+    // source is persisted disabled/unhealthy rather than left untouched. Without a
+    // way to persist (no saveSourceConfig) we cannot demote and must not claim
+    // success — the source is simply reported unavailable.
+    const session = ctx.sessionSourceReadiness
+      ?? (ctx.saveSourceConfig
+        ? createUnsupportedSessionSourceReadiness(ctx.saveSourceConfig)
+        : undefined);
+    if (!session) {
       hasErrors = true;
-      lines.push('✗ Fail-closed readiness state could not be persisted; activation was skipped');
-    }
-
-    if (stagedPersisted) {
-      const prepare = ctx.prepareSourceReadinessActivation;
-      const commit = ctx.commitSourceReadinessActivation;
-      const finalize = ctx.finalizeSourceReadinessActivation;
-      const rollback = ctx.rollbackSourceReadinessActivation;
-      if (!prepare || !commit || !finalize || !rollback) {
-        hasErrors = true;
-        lines.push('✗ Session readiness activation lifecycle is unavailable; source remains disabled');
+      lines.push('✗ Session readiness is unavailable; source remains disabled');
+    } else {
+      const outcome = await resolveSourceReadiness(
+        {
+          source,
+          sourceTestPassed: !hasErrors && connectionStatus === 'connected',
+          connectionStatus,
+          autoEnable,
+          checkedAt: testedAt,
+        },
+        session,
+      );
+      if (outcome.ready) {
+        lines.push(`✓ Session observed ${outcome.observedTools.length} expected versioned tools`);
+        lines.push('\n_Config updated with test results._');
+        if (autoEnable) {
+          if (source.enabled === false) lines.push('✓ Source auto-enabled in config');
+          lines.push('✓ Source activated — the current turn will auto-restart with tools available');
+        }
       } else {
-        let activationId: string | undefined;
-        try {
-          const prepared = await prepare(sourceSlug);
-          activationId = prepared.activationId;
-        } catch {
-          hasErrors = true;
-          lines.push('✗ Session exposure failed after readiness probe; source remains disabled');
-        }
-
-        if (activationId !== undefined) {
-          const readySource: SourceConfig = {
-            ...source,
-            enabled: true,
-            lastTestedAt: testedAt,
-            connectionStatus,
-            connectionError,
-            readiness,
-          };
-
-          try {
-            commit(activationId);
-          } catch {
-            hasErrors = true;
-            let rollbackConfirmed = false;
-            try {
-              await rollback(activationId);
-              rollbackConfirmed = true;
-            } catch {
-              // The durable config is still the staged disabled/unhealthy state.
-            }
-            lines.push(rollbackConfirmed
-              ? '✗ Session activation commit failed; temporary exposure was rolled back'
-              : '✗ Session activation commit failed and exposure could not be confirmed closed');
-            activationId = undefined;
-          }
-
-          if (activationId !== undefined) {
-            try {
-              saveSourceConfig!(readySource);
-            } catch {
-              hasErrors = true;
-              try {
-                await rollback(activationId);
-                lines.push('✗ Ready health could not be persisted; temporary exposure was rolled back');
-              } catch {
-                lines.push('✗ Ready health could not be persisted and session exposure could not be confirmed closed');
-              }
-              activationId = undefined;
-            }
-          }
-
-          if (activationId !== undefined) {
-            finalize(activationId);
-            activationId = undefined;
-            lines.push('\n_Config updated with test results._');
-            if (willFlipEnabled) lines.push('✓ Source auto-enabled in config');
-            lines.push('✓ Source activated — the current turn will auto-restart with tools available');
-          }
-        }
+        hasErrors = true;
+        connectionStatus = 'unhealthy';
+        connectionError = outcome.reason;
+        // The persisted reason stays stable; the transient activation diagnostic
+        // (when present) selects a distinct per-stage message for the operator.
+        const detail = outcome.activationDiagnostic
+          ? ACTIVATION_STAGE_MESSAGES[outcome.activationDiagnostic]
+          : outcome.reason;
+        lines.push(`✗ Session tool probe failed: ${detail}`);
       }
     }
   } else {
+    // Legacy sources without expectedTools keep the metadata-save + next-turn
+    // activation path unchanged.
+    const shouldAutoEnable = autoEnable && !hasErrors && connectionStatus === 'connected';
+    const willFlipEnabled = shouldAutoEnable && source.enabled === false;
     let configPersisted = ctx.saveSourceConfig === undefined;
     if (ctx.saveSourceConfig) {
       const updatedSource: SourceConfig = {
@@ -519,8 +279,7 @@ async function handleSourceTestUnlocked(
         lastTestedAt: testedAt,
         connectionStatus,
         connectionError,
-        ...(requiresReadiness ? { readiness, enabled: false } : {}),
-        ...(!requiresReadiness && willFlipEnabled ? { enabled: true } : {}),
+        ...(willFlipEnabled ? { enabled: true } : {}),
       };
       try {
         ctx.saveSourceConfig(updatedSource);
@@ -528,17 +287,12 @@ async function handleSourceTestUnlocked(
         lines.push('\n_Config updated with test results._');
         if (willFlipEnabled) lines.push('✓ Source auto-enabled in config');
       } catch {
-        if (requiresReadiness) {
-          hasErrors = true;
-          lines.push('✗ Ready health could not be persisted; source remains disabled');
-        } else {
-          hasWarnings = true;
-          lines.push('⚠ Config could not be updated; session activation was skipped');
-        }
+        hasWarnings = true;
+        lines.push('⚠ Config could not be updated; session activation was skipped');
       }
     }
 
-    if (!requiresReadiness && shouldAutoEnable && configPersisted) {
+    if (shouldAutoEnable && configPersisted) {
       if (ctx.activateSourceInSession) {
         try {
           const result = await ctx.activateSourceInSession(sourceSlug);

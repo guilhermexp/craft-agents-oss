@@ -13,7 +13,7 @@
 import type { LLMQueryRequest, LLMQueryResult } from './llm-tool.ts';
 import type { SpawnSessionFn } from './spawn-session-tool.ts';
 import type { BrowserPaneFns } from './browser-tools.ts';
-import type { AuthRequest } from '@craft-agent/session-tools-core';
+import type { AuthRequest, SessionSourceReadiness } from '@craft-agent/session-tools-core';
 import { debug } from '../utils/debug.ts';
 
 export type MeetingToolCommand = 'start' | 'status' | 'list' | 'transcript' | 'stop';
@@ -99,14 +99,8 @@ export interface SessionScopedToolCallbacks {
     reason?: string;
     availability?: 'immediate' | 'next-turn';
   }>;
-  sourceProbeBackend?: import('@craft-agent/session-tools-core').SourceProbeBackend;
-  injectSourceForProbeFn?: (sourceSlug: string) => Promise<{ probeId: string }>;
-  observeSourceToolsForProbeFn?: (probeId: string) => Promise<import('@craft-agent/session-tools-core').SourceToolIdentity[]>;
-  removeSourceProbeFn?: (probeId: string) => Promise<void>;
-  prepareSourceReadinessActivationFn?: (sourceSlug: string) => Promise<{ activationId: string }>;
-  commitSourceReadinessActivationFn?: (activationId: string) => void;
-  finalizeSourceReadinessActivationFn?: (activationId: string) => void;
-  rollbackSourceReadinessActivationFn?: (activationId: string) => Promise<void>;
+  /** Late-bound source readiness seam wired by SessionManager (probe + activation + persistence). */
+  sessionSourceReadiness?: SessionSourceReadiness;
   /** Get messaging bindings for a session. */
   getMessagingBindingsFn?: (sessionId: string) => Array<{ platform: string; channelId: string; threadId?: number; channelName?: string; enabled: boolean }>;
   /** Unbind messaging channels from a session. Returns count of removed bindings. */

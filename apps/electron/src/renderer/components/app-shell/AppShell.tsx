@@ -87,7 +87,8 @@ import {
   RIGHT_SIDEBAR_TREE_ONLY_MAX_WIDTH,
   RIGHT_SIDEBAR_SPLIT_DEFAULT_WIDTH,
 } from "./right-sidebar-sizing"
-import { contentTabId, contentTabLabel, contentTabsReducer, restoreContentTabs, type ContentTabsState } from "./content-tabs-state"
+import { contentTabId, contentTabLabel } from "./content-tabs-state"
+import { useContentTabs } from "./content-tabs-host"
 import { bindWorkspaceObjectSubscription } from './workspace-object-reconnect'
 import { useChatMatchWiring } from "@/hooks/useChatMatchWiring"
 import { LeftSidebar } from "./LeftSidebar"
@@ -662,8 +663,7 @@ function AppShellContent({
   const [rbWorkingDirectory, rbSdkCwd, rbSessionFolderPath] = useAtomValue(rightSidebarPathsAtom)
   const rightSidebarPanel = navState.rightSidebar
   const isRightSidebarVisible = !isAutoCompact && rightSidebarPanel?.type === 'session-info' && !!rightSidebarSessionId
-  const [rightSidebarContentTabs, dispatchRightSidebarContentTabs] = React.useReducer(contentTabsReducer, { tabs: [], activeId: null } as ContentTabsState)
-  const restoringRightSidebarTabsRef = React.useRef(false)
+  const { state: rightSidebarContentTabs, dispatch: dispatchRightSidebarContentTabs } = useContentTabs(activeWorkspaceId, rightSidebarSessionId)
   const activeRightSidebarTab = rightSidebarContentTabs.tabs.find(tab => tab.id === rightSidebarContentTabs.activeId) ?? null
   const rightSidebarContentTarget = isRightSidebarVisible
     && activeRightSidebarTab?.target.workspaceId === activeWorkspaceId
@@ -704,12 +704,12 @@ function AppShellContent({
   const handleRightSidebarPreviewFile = React.useCallback((filePath: string) => {
     if (!rightSidebarSessionId || !activeWorkspaceId) return
     dispatchRightSidebarContentTabs({ type: 'open', mode: 'permanent', target: { kind: 'file', workspaceId: activeWorkspaceId, sessionId: rightSidebarSessionId, path: filePath } })
-  }, [rightSidebarSessionId, activeWorkspaceId])
+  }, [rightSidebarSessionId, activeWorkspaceId, dispatchRightSidebarContentTabs])
 
   const handleRightSidebarPreviewObject = React.useCallback((objectId: string) => {
     if (!activeWorkspaceId) return
     dispatchRightSidebarContentTabs({ type: 'open', mode: 'permanent', target: { kind: 'object', workspaceId: activeWorkspaceId, objectId } })
-  }, [activeWorkspaceId])
+  }, [activeWorkspaceId, dispatchRightSidebarContentTabs])
 
   // "Open beside the chat" from file cards in the transcript. Opening the
   // sidebar and the tab in one gesture: a tab in a closed panel helps no one.
@@ -718,39 +718,11 @@ function AppShellContent({
     if (!rightSidebarSessionId || !activeWorkspaceId) return
     updateRightSidebar({ type: 'session-info' })
     dispatchRightSidebarContentTabs({ type: 'open', mode: 'permanent', target: { kind: 'file', workspaceId: activeWorkspaceId, sessionId: rightSidebarSessionId, path: filePath } })
-  }, [rightSidebarSessionId, activeWorkspaceId, updateRightSidebar])
+  }, [rightSidebarSessionId, activeWorkspaceId, updateRightSidebar, dispatchRightSidebarContentTabs])
   const platformWithSidePanel = React.useMemo(() => (
     // No side panel in compact mode - leaving the action out hides the button.
     isAutoCompact ? parentPlatformActions : { ...parentPlatformActions, onOpenFileInSidePanel: handleOpenFileInSidePanel }
   ), [parentPlatformActions, handleOpenFileInSidePanel, isAutoCompact])
-
-  React.useEffect(() => {
-    restoringRightSidebarTabsRef.current = true
-    if (!activeWorkspaceId) {
-      dispatchRightSidebarContentTabs({ type: 'restore', state: { tabs: [], activeId: null } })
-      return
-    }
-    const objectState = storage.get<ContentTabsState>(storage.KEYS.workspaceObjectTabs, { tabs: [], activeId: null }, `${activeWorkspaceId}:objects`)
-    const fileState = rightSidebarSessionId
-      ? storage.get<ContentTabsState>(storage.KEYS.workspaceObjectTabs, { tabs: [], activeId: null }, `${activeWorkspaceId}:${rightSidebarSessionId}:files`)
-      : { tabs: [], activeId: null }
-    const merged = { tabs: [...objectState.tabs, ...fileState.tabs], activeId: fileState.activeId ?? objectState.activeId }
-    dispatchRightSidebarContentTabs({ type: 'restore', state: restoreContentTabs(merged, activeWorkspaceId, rightSidebarSessionId) })
-  }, [activeWorkspaceId, rightSidebarSessionId])
-
-  React.useEffect(() => {
-    if (!activeWorkspaceId) return
-    if (restoringRightSidebarTabsRef.current) {
-      restoringRightSidebarTabsRef.current = false
-      return
-    }
-    const objectTabs = rightSidebarContentTabs.tabs.filter(tab => tab.target.kind === 'object')
-    const fileTabs = rightSidebarContentTabs.tabs.filter(tab => tab.target.kind === 'file')
-    storage.set(storage.KEYS.workspaceObjectTabs, { tabs: objectTabs, activeId: objectTabs.some(tab => tab.id === rightSidebarContentTabs.activeId) ? rightSidebarContentTabs.activeId : null }, `${activeWorkspaceId}:objects`)
-    if (rightSidebarSessionId) {
-      storage.set(storage.KEYS.workspaceObjectTabs, { tabs: fileTabs, activeId: fileTabs.some(tab => tab.id === rightSidebarContentTabs.activeId) ? rightSidebarContentTabs.activeId : null }, `${activeWorkspaceId}:${rightSidebarSessionId}:files`)
-    }
-  }, [activeWorkspaceId, rightSidebarSessionId, rightSidebarContentTabs])
 
   React.useEffect(() => {
     if (!activeWorkspaceId) return
@@ -1489,6 +1461,60 @@ function AppShellContent({
     isRightSidebarVisible,
   ])
 
+  const handleFixedResizeKeyDown = React.useCallback((
+    kind: 'sidebar' | 'session-list' | 'right-sidebar',
+    event: React.KeyboardEvent<HTMLDivElement>,
+  ) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home') return
+    event.preventDefault()
+    const step = event.shiftKey ? 32 : 8
+
+    if (kind === 'sidebar') {
+      const next = event.key === 'Home'
+        ? 220
+        : Math.min(320, Math.max(180, sidebarWidth + (event.key === 'ArrowRight' ? step : -step)))
+      setSidebarWidth(next)
+      storage.set(storage.KEYS.sidebarWidth, next)
+      return
+    }
+
+    if (kind === 'session-list') {
+      const next = event.key === 'Home'
+        ? 300
+        : Math.min(480, Math.max(240, sessionListWidth + (event.key === 'ArrowRight' ? step : -step)))
+      setSessionListWidth(next)
+      storage.set(storage.KEYS.sessionListWidth, next)
+      return
+    }
+
+    const isPreview = Boolean(rightSidebarContentTarget)
+    const minimum = isPreview ? RIGHT_SIDEBAR_SPLIT_MIN_WIDTH : RIGHT_SIDEBAR_MIN_WIDTH
+    const preferred = isPreview ? rightSidebarPreviewPreferredWidth : rightSidebarPreferredWidth
+    const requested = event.key === 'Home'
+      ? (isPreview ? RIGHT_SIDEBAR_SPLIT_DEFAULT_WIDTH : RIGHT_SIDEBAR_DEFAULT_WIDTH)
+      : preferred + (event.key === 'ArrowLeft' ? step : -step)
+    const next = getRightSidebarEffectiveWidth({
+      width: requested,
+      windowWidth: shellWidth || window.innerWidth,
+      edgeInset: PANEL_EDGE_INSET,
+      minWidth: minimum,
+      maxWidthCap: isPreview ? undefined : RIGHT_SIDEBAR_TREE_ONLY_MAX_WIDTH,
+    })
+    if (isPreview) setRightSidebarPreviewPreferredWidth(next)
+    else setRightSidebarPreferredWidth(next)
+    storage.set(
+      isPreview ? storage.KEYS.rightSidebarPreviewWidth : storage.KEYS.rightSidebarWidth,
+      next,
+    )
+  }, [
+    rightSidebarContentTarget,
+    rightSidebarPreferredWidth,
+    rightSidebarPreviewPreferredWidth,
+    sessionListWidth,
+    shellWidth,
+    sidebarWidth,
+  ])
+
   // Use session metadata from Jotai atom (lightweight, no messages)
   // This prevents closures from retaining full message arrays
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
@@ -1853,7 +1879,7 @@ function AppShellContent({
     isSearchModeActive: searchActive,
     chatDisplayRef,
     onChatMatchInfoChange,
-  }), [contextValue, handleDeleteSession, handleContextOpenFile, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, channelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, searchActive, searchQuery, onChatMatchInfoChange])
+  }), [contextValue, handleDeleteSession, handleContextOpenFile, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, channelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, isAutoCompact, searchActive, searchQuery, chatDisplayRef, onChatMatchInfoChange])
 
   // Persist expanded folders to localStorage (workspace-scoped)
   React.useEffect(() => {
@@ -2239,7 +2265,7 @@ function AppShellContent({
     )
 
     // Focus the chat input after navigation completes
-    setTimeout(() => focusZone('chat', { intent: 'programmatic' }), 50)
+    window.setTimeout(() => focusZone('chat', { intent: 'programmatic' }), 50)
   }, [activeWorkspace, focusZone])
 
   // Browser profile picker state — opens before creating a new window when
@@ -2293,7 +2319,7 @@ function AppShellContent({
       dispatchRightSidebarContentTabs({ type: 'open', mode: 'permanent', target })
     })
     return () => unsub()
-  }, [activeWorkspaceId, isMeetingsActive, rightSidebarSessionId, setMeetingsHostedBrowserId, updateRightSidebar])
+  }, [activeWorkspaceId, isMeetingsActive, rightSidebarSessionId, setMeetingsHostedBrowserId, updateRightSidebar, dispatchRightSidebarContentTabs])
 
   // Undock whatever left the tab list, by any route - close, workspace switch,
   // a restore that replaced everything. A browser left integrated with no tab
@@ -2317,7 +2343,7 @@ function AppShellContent({
       if (browserInstances.some(instance => instance.id === target.instanceId)) continue
       dispatchRightSidebarContentTabs({ type: 'close', id: tab.id })
     }
-  }, [browserInstances, rightSidebarContentTabs])
+  }, [browserInstances, rightSidebarContentTabs, dispatchRightSidebarContentTabs])
 
   const openBrowserWindowForProfile = useCallback(async (profileId: string) => {
     try {
@@ -3933,6 +3959,10 @@ function AppShellContent({
             aria-label="Right sidebar resize handle"
             aria-orientation="vertical"
             tabIndex={0}
+            aria-valuemin={rightSidebarContentTarget ? RIGHT_SIDEBAR_SPLIT_MIN_WIDTH : RIGHT_SIDEBAR_MIN_WIDTH}
+            aria-valuemax={rightSidebarContentTarget ? Math.max(RIGHT_SIDEBAR_SPLIT_MIN_WIDTH, shellWidth - (PANEL_EDGE_INSET * 2)) : RIGHT_SIDEBAR_TREE_ONLY_MAX_WIDTH}
+            aria-valuenow={Math.round(rightSidebarWidth)}
+            aria-valuetext={`${Math.round(rightSidebarWidth)} pixels`}
             onMouseDown={(e) => { e.preventDefault(); setIsResizing('right-sidebar') }}
             onMouseMove={(e) => {
               if (rightSidebarHandleRef.current) {
@@ -3941,6 +3971,7 @@ function AppShellContent({
               }
             }}
             onMouseLeave={() => { if (isResizing !== 'right-sidebar') setRightSidebarHandleY(null) }}
+            onKeyDown={(event) => handleFixedResizeKeyDown('right-sidebar', event)}
             className="absolute cursor-col-resize z-panel flex justify-center"
             style={{
               width: PANEL_SASH_HIT_WIDTH,
@@ -3968,6 +3999,10 @@ function AppShellContent({
           aria-label="Sidebar resize handle"
           aria-orientation="vertical"
           tabIndex={0}
+          aria-valuemin={180}
+          aria-valuemax={320}
+          aria-valuenow={Math.round(sidebarWidth)}
+          aria-valuetext={`${Math.round(sidebarWidth)} pixels`}
           onMouseDown={(e) => { e.preventDefault(); setIsResizing('sidebar') }}
           onMouseMove={(e) => {
             if (resizeHandleRef.current) {
@@ -3976,6 +4011,7 @@ function AppShellContent({
             }
           }}
           onMouseLeave={() => { if (!isResizing) setSidebarHandleY(null) }}
+          onKeyDown={(event) => handleFixedResizeKeyDown('sidebar', event)}
           className="absolute cursor-col-resize z-panel flex justify-center"
           style={{
             width: PANEL_SASH_HIT_WIDTH,
@@ -4005,6 +4041,10 @@ function AppShellContent({
           aria-label="Session list resize handle"
           aria-orientation="vertical"
           tabIndex={0}
+          aria-valuemin={240}
+          aria-valuemax={480}
+          aria-valuenow={Math.round(sessionListWidth)}
+          aria-valuetext={`${Math.round(sessionListWidth)} pixels`}
           onMouseDown={(e) => { e.preventDefault(); setIsResizing('session-list') }}
           onMouseMove={(e) => {
             if (sessionListHandleRef.current) {
@@ -4013,6 +4053,7 @@ function AppShellContent({
             }
           }}
           onMouseLeave={() => { if (isResizing !== 'session-list') setSessionListHandleY(null) }}
+          onKeyDown={(event) => handleFixedResizeKeyDown('session-list', event)}
           className="absolute cursor-col-resize z-panel flex justify-center"
           style={{
             width: PANEL_SASH_HIT_WIDTH,

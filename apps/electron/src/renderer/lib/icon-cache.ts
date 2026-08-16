@@ -75,7 +75,8 @@ export const iconCache = new Map<string, string>()
 export const logoUrlCache = new Map<string, string | null>()
 
 /**
- * Probe keys known to resolve to no icon file on disk.
+ * Probe keys known to resolve to no icon file on disk, mapped to the time the
+ * miss was recorded.
  *
  * A miss is the common case: most sessions, folders and skills ship no icon,
  * and `discoverIconFile` probes four extensions for each one. Nothing used to
@@ -85,19 +86,50 @@ export const logoUrlCache = new Map<string, string | null>()
  * WebSocket transport and push unrelated channels — `system:homeDir` included —
  * to ~270 ms each.
  *
- * Invalidated by the same `clear*IconCaches` calls as the positive cache, so a
- * miss and a hit go stale on exactly the same events.
+ * A miss is remembered only for `MISSING_ICON_TTL_MS`, not the window's
+ * lifetime: an icon file the user adds to a skill/status after it was first
+ * probed empty would otherwise never appear without a reload. The TTL is long
+ * enough to absorb a scroll/remount burst yet short enough to self-heal.
+ *
+ * Also invalidated by the `clear*IconCaches` calls, so a miss and a hit go
+ * stale on exactly the same events.
  */
-const missingIconCache = new Set<string>()
+const missingIconCache = new Map<string, number>()
 
 /**
- * Loads currently in flight, keyed by probe key.
+ * How long a recorded miss is trusted before the probe is re-run against disk.
+ */
+export const MISSING_ICON_TTL_MS = 30_000
+
+/**
+ * Monotonic invalidation epoch, bumped by every `clear*IconCaches` call.
+ *
+ * A probe started before a clear resolves after it. Without this it would write
+ * its now-stale result back into `missingIconCache` (or `iconCache`), silently
+ * re-poisoning the very cache the clear armed — with no fresh invalidation on
+ * the way to undo it. Each in-flight probe captures the epoch it began in and
+ * refuses to persist once the epoch has moved.
+ */
+let cacheEpoch = 0
+
+/** True when `probeKey` has an unexpired recorded miss; purges it once stale. */
+function isRecordedMiss(probeKey: string): boolean {
+  const recordedAt = missingIconCache.get(probeKey)
+  if (recordedAt === undefined) return false
+  if (Date.now() - recordedAt < MISSING_ICON_TTL_MS) return true
+  missingIconCache.delete(probeKey)
+  return false
+}
+
+/**
+ * Loads currently in flight, keyed by probe key, tagged with the epoch they
+ * began in so a probe spanning an invalidation can be recognised and discarded.
  *
  * Rows sharing an icon mount in the same commit, so without this each one opens
  * its own round trip for the same file before any of them can populate the
  * cache.
  */
-const inFlightIcons = new Map<string, Promise<LoadedIcon | null>>()
+const inFlightIcons = new Map<string, { epoch: number; promise: Promise<LoadedIcon | null> }>()
 
 // ============================================================================
 // Legacy exports (for backward compatibility during migration)
@@ -148,6 +180,8 @@ export function clearIconCaches(): void {
   colorableCache.clear()
   rawSvgCache.clear()
   missingIconCache.clear()
+  inFlightIcons.clear()
+  cacheEpoch += 1
 }
 
 /**
@@ -155,18 +189,7 @@ export function clearIconCaches(): void {
  * @deprecated Will be removed once rich-text-input.tsx is migrated to useEntityIcon.
  */
 export function clearSourceIconCaches(): void {
-  sourceIconCache.clear()
-  logoUrlCache.clear()
-  // Also clear from colorable/rawSvg caches
-  for (const key of colorableCache) {
-    if (key.startsWith('source:')) colorableCache.delete(key)
-  }
-  for (const key of rawSvgCache.keys()) {
-    if (key.startsWith('source:')) rawSvgCache.delete(key)
-  }
-  for (const key of missingIconCache) {
-    if (key.startsWith('source:')) missingIconCache.delete(key)
-  }
+  clearScopedIconCaches('source:', sourceIconCache)
 }
 
 /**
@@ -174,16 +197,33 @@ export function clearSourceIconCaches(): void {
  * @deprecated Will be removed once rich-text-input.tsx is migrated to useEntityIcon.
  */
 export function clearSkillIconCaches(): void {
-  skillIconCache.clear()
+  clearScopedIconCaches('skill:', skillIconCache)
+}
+
+/**
+ * Drop every cache entry for one entity-type prefix and bump the epoch.
+ *
+ * `inFlightIcons` is emptied too: a probe left running past a scoped clear
+ * would otherwise re-record its stale miss. Clearing the map means the next
+ * mount starts a fresh probe, while the epoch check in `resolveEntityIconFile`
+ * stops the abandoned probe from writing anything.
+ */
+function clearScopedIconCaches(prefix: string, view: { clear: () => void }): void {
+  view.clear()
+  logoUrlCache.clear()
   for (const key of colorableCache) {
-    if (key.startsWith('skill:')) colorableCache.delete(key)
+    if (key.startsWith(prefix)) colorableCache.delete(key)
   }
   for (const key of rawSvgCache.keys()) {
-    if (key.startsWith('skill:')) rawSvgCache.delete(key)
+    if (key.startsWith(prefix)) rawSvgCache.delete(key)
   }
-  for (const key of missingIconCache) {
-    if (key.startsWith('skill:')) missingIconCache.delete(key)
+  for (const key of missingIconCache.keys()) {
+    if (key.startsWith(prefix)) missingIconCache.delete(key)
   }
+  for (const key of inFlightIcons.keys()) {
+    if (key.startsWith(prefix)) inFlightIcons.delete(key)
+  }
+  cacheEpoch += 1
 }
 
 // ============================================================================
@@ -639,8 +679,9 @@ export function useEntityIcon(opts: UseEntityIconOptions): ResolvedEntityIcon {
 
     // A previously recorded miss: the four-extension probe already ran for this
     // exact path and found nothing. Re-running it on every remount is what
-    // flooded the transport.
-    if (missingIconCache.has(probeKey)) {
+    // flooded the transport. The miss expires (see MISSING_ICON_TTL_MS) so a
+    // file added later still surfaces without a window reload.
+    if (isRecordedMiss(probeKey)) {
       setResolved({ kind: 'fallback', colorable: false })
       return
     }
@@ -716,11 +757,12 @@ export async function resolveEntityIconFile(probe: EntityIconProbe): Promise<Loa
     return { dataUrl: cached, colorable, rawSvg: colorable ? rawSvgCache.get(cacheKey) : undefined }
   }
 
-  if (missingIconCache.has(probeKey)) return null
+  if (isRecordedMiss(probeKey)) return null
 
-  let pending = inFlightIcons.get(probeKey)
-  if (!pending) {
-    pending = (async () => {
+  let entry = inFlightIcons.get(probeKey)
+  if (!entry) {
+    const epoch = cacheEpoch
+    const promise = (async () => {
       if (iconPath) {
         // iconPath may be absolute; extract the workspace-relative part.
         const relativeMatch = iconPath.match(ICON_PATH_PATTERN)
@@ -732,18 +774,29 @@ export async function resolveEntityIconFile(probe: EntityIconProbe): Promise<Loa
         return discoverIconFile(workspaceId, iconDir, iconFileName)
       }
       return null
-    })().finally(() => inFlightIcons.delete(probeKey))
-    inFlightIcons.set(probeKey, pending)
+    })().finally(() => {
+      // A scoped clear may have replaced this entry with a newer probe; only
+      // retract our own so we never evict a fresh in-flight load.
+      if (inFlightIcons.get(probeKey)?.promise === promise) inFlightIcons.delete(probeKey)
+    })
+    entry = { epoch, promise }
+    inFlightIcons.set(probeKey, entry)
   }
 
-  const result = await pending
+  const startEpoch = entry.epoch
+  const result = await entry.promise
+
+  // A clear that landed while this probe was in flight bumped the epoch; the
+  // result predates the invalidation, so persisting it would re-poison the
+  // caches the clear just armed. Hand it to this caller but record nothing.
+  if (startEpoch !== cacheEpoch) return result
 
   if (result) {
     iconCache.set(cacheKey, result.dataUrl)
     if (result.colorable) colorableCache.add(cacheKey)
     if (result.rawSvg) rawSvgCache.set(cacheKey, result.rawSvg)
   } else {
-    missingIconCache.add(probeKey)
+    missingIconCache.set(probeKey, Date.now())
   }
 
   return result

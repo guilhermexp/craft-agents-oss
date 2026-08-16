@@ -160,6 +160,10 @@ export {
   handleMermaidValidate,
   // Source Test
   handleSourceTest,
+  // Source Readiness
+  resolveSourceReadiness,
+  isSourceToolVersionCompatible,
+  createUnsupportedSessionSourceReadiness,
   // OAuth Triggers
   handleSourceOAuthTrigger,
   handleGoogleOAuthTrigger,
@@ -188,6 +192,12 @@ export type {
   SkillValidateArgs,
   MermaidValidateArgs,
   SourceTestArgs,
+  SessionSourceReadiness,
+  SourceReadinessRequest,
+  SourceReadinessOutcome,
+  SourceProbeOutcome,
+  SourceActivationOutcome,
+  SourceActivationReason,
   SourceOAuthTriggerArgs,
   GoogleOAuthTriggerArgs,
   SlackOAuthTriggerArgs,

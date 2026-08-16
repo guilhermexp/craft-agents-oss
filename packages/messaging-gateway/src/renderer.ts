@@ -562,10 +562,10 @@ Approve in the desktop app to continue.`,
       return
     }
 
-    // Telegram + Lark both support inline buttons through the same
-    // `sendButtons` contract; either gets the rich plan card. Anything else
-    // is treated like WhatsApp above and gated out earlier.
-    if (binding.platform !== 'telegram' && binding.platform !== 'lark') return
+    // Telegram is the only platform with inline-button support through the
+    // `sendButtons` contract; it gets the rich plan card. Anything else is
+    // treated like WhatsApp above and gated out earlier.
+    if (binding.platform !== 'telegram') return
 
     // Token registry is optional for backwards compatibility; without it we
     // degrade to the generic pointer so the bot still sees *something*.

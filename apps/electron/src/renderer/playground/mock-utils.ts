@@ -34,7 +34,7 @@ type WhatsAppEventListener = (payload: { workspaceId: string; event: WhatsAppUiE
 
 const PLAYGROUND_WORKSPACE_ID = 'playground-workspace'
 
-type AllowListPlatform = 'telegram' | 'whatsapp' | 'lark'
+type AllowListPlatform = 'telegram' | 'whatsapp'
 
 interface AllowListState {
   accessMode: PlatformAccessMode
@@ -80,7 +80,6 @@ const messagingMockState: MessagingMockState = {
   allowList: {
     telegram: defaultAllowList(),
     whatsapp: defaultAllowList(),
-    lark: defaultAllowList(),
   },
   platformStatusListeners: new Set(),
   bindingListeners: new Set(),
@@ -170,7 +169,6 @@ export const playgroundMessagingHandle: PlaygroundMessagingHandle = {
     messagingMockState.bindings = []
     messagingMockState.allowList.telegram = defaultAllowList()
     messagingMockState.allowList.whatsapp = defaultAllowList()
-    messagingMockState.allowList.lark = defaultAllowList()
     emitPlatformStatus('telegram')
     emitPlatformStatus('whatsapp')
     emitBindingChanged()
@@ -193,7 +191,6 @@ export const playgroundAllowListHandle: PlaygroundAllowListHandle = {
   reset() {
     messagingMockState.allowList.telegram = defaultAllowList()
     messagingMockState.allowList.whatsapp = defaultAllowList()
-    messagingMockState.allowList.lark = defaultAllowList()
   },
 }
 
@@ -587,7 +584,6 @@ const mockElectronAPI = {
       return [
         ...messagingMockState.allowList.telegram.pending,
         ...messagingMockState.allowList.whatsapp.pending,
-        ...messagingMockState.allowList.lark.pending,
       ]
     }
     return [...messagingMockState.allowList[platform].pending]

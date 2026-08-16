@@ -19,6 +19,7 @@ import {
   subscribeToPerf,
   type PerfSnapshot,
 } from '../../lib/perf/store'
+import { interactionDisplay } from '../../lib/perf/interactions'
 
 type Tab = 'components' | 'interactions' | 'rpc' | 'jank' | 'procs'
 
@@ -125,18 +126,31 @@ function ComponentsTab({ snapshot }: { snapshot: PerfSnapshot }) {
 
 function InteractionsTab({ snapshot }: { snapshot: PerfSnapshot }) {
   const recent = [...snapshot.interactions].reverse()
+  const display = interactionDisplay(snapshot.commitTrackingAvailable)
   return (
-    <Table
-      head={['Clicked', 'First ms', 'Settled ms', 'Commits']}
-      rows={recent.slice(0, ROWS).map((item) => [
-        item.label,
-        item.firstCommitMs === null ? '—' : fmt(item.firstCommitMs),
-        <span style={{ color: severity(item.settledMs, 200, 500) }}>
-          {fmt(item.settledMs)}{item.timedOut ? '+' : ''}
-        </span>,
-        item.commits,
-      ])}
-    />
+    <>
+      {display.warnUnavailable && (
+        <div style={{ padding: '4px 10px', color: '#ffc857' }}>
+          Settle latency unavailable in this build — needs the React commit hook (dev only).
+        </div>
+      )}
+      <Table
+        head={['Clicked', 'First ms', 'Settled ms', 'Commits']}
+        rows={recent.slice(0, ROWS).map((item) => [
+          item.label,
+          !display.showSettle ? '—' : item.firstCommitMs === null ? '—' : fmt(item.firstCommitMs),
+          !display.showSettle ? (
+            '—'
+          ) : (
+            <span style={{ color: severity(item.settledMs, 200, 500) }}>
+              {fmt(item.settledMs)}
+              {item.timedOut ? '+' : ''}
+            </span>
+          ),
+          !display.showSettle ? '—' : item.commits,
+        ])}
+      />
+    </>
   )
 }
 

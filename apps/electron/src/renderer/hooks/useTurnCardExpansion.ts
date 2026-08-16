@@ -30,6 +30,7 @@ import * as storage from '@/lib/local-storage'
 import {
   isIdExpanded,
   applyExpansionToggle,
+  autoExpandApplies,
   type ExpansionState,
   type GroupExpansionController,
 } from '@craft-agent/ui'
@@ -94,20 +95,32 @@ function loadEntry(sessionId: string | undefined): { turns: ExpansionState; grou
 }
 
 export interface TurnCardExpansion {
-  /** Resolved boolean: is this turn currently expanded? */
-  isTurnExpanded: (turnId: string) => boolean
+  /**
+   * Resolved boolean: is this turn currently expanded? `isTurnInFlight` is the
+   * turn's `!isComplete` state and scopes the auto-expand window.
+   */
+  isTurnExpanded: (turnId: string, isTurnInFlight: boolean) => boolean
   /** Record the user's expand/collapse intent for a turn. */
-  toggleTurn: (turnId: string, expanded: boolean) => void
-  /** Resolved, single-polarity controller for activity-group expansion. */
-  groupExpansion: GroupExpansionController
+  toggleTurn: (turnId: string, expanded: boolean, isTurnInFlight: boolean) => void
+  /**
+   * Resolved, single-polarity controller for the activity groups of a turn with
+   * the given in-flight state. Returns one of two stable instances, so the
+   * controller a settled TurnCard receives keeps its identity across streaming
+   * renders of OTHER turns and `React.memo` can still skip it.
+   */
+  groupExpansionFor: (isTurnInFlight: boolean) => GroupExpansionController
 }
 
 /**
  * Persist TurnCard expansion state for the given session.
  *
- * `autoExpand` flips the default: when true, every turn / activity group is
- * expanded unless the user explicitly collapsed it; when false (legacy
- * behavior), everything is collapsed unless explicitly expanded.
+ * `autoExpand` flips the default for a turn that is still in flight: while the
+ * agent works, that turn and its activity groups are expanded unless the user
+ * explicitly collapsed them. Once the turn completes the default reverts to
+ * collapsed, which auto-collapses it. With `autoExpand` off, everything is
+ * collapsed unless explicitly expanded (legacy behavior) at every point in the
+ * turn's life. See `autoExpandApplies` for why the window is keyed on
+ * completion rather than on streaming.
  */
 export function useTurnCardExpansion(sessionId: string | undefined, autoExpand: boolean): TurnCardExpansion {
   const initial = loadEntry(sessionId)
@@ -159,24 +172,40 @@ export function useTurnCardExpansion(sessionId: string | undefined, autoExpand: 
   }, [sessionId, turnState, groupState])
 
   const isTurnExpanded = useCallback(
-    (turnId: string): boolean => isIdExpanded(turnState, autoExpand, turnId),
+    (turnId: string, isTurnInFlight: boolean): boolean =>
+      isIdExpanded(turnState, autoExpandApplies(autoExpand, isTurnInFlight), turnId),
     [turnState, autoExpand],
   )
 
   const toggleTurn = useCallback(
-    (turnId: string, expanded: boolean) =>
-      setTurnState(prev => applyExpansionToggle(prev, autoExpand, turnId, expanded)),
+    (turnId: string, expanded: boolean, isTurnInFlight: boolean) =>
+      setTurnState(prev =>
+        applyExpansionToggle(prev, autoExpandApplies(autoExpand, isTurnInFlight), turnId, expanded),
+      ),
     [autoExpand],
   )
 
-  const groupExpansion = useMemo<GroupExpansionController>(
-    () => ({
-      isExpanded: (groupId: string) => isIdExpanded(groupState, autoExpand, groupId),
-      setExpanded: (groupId: string, expanded: boolean) =>
-        setGroupState(prev => applyExpansionToggle(prev, autoExpand, groupId, expanded)),
-    }),
-    [groupState, autoExpand],
+  // Two controllers, built once per group-state change and handed out by
+  // in-flight state. A per-turn controller would give every TurnCard a fresh
+  // object on each streaming token and defeat the memo comparator's
+  // `prev.groupExpansion !== next.groupExpansion` check.
+  const groupControllers = useMemo(() => {
+    const build = (isTurnInFlight: boolean): GroupExpansionController => {
+      const auto = autoExpandApplies(autoExpand, isTurnInFlight)
+      return {
+        isExpanded: (groupId: string) => isIdExpanded(groupState, auto, groupId),
+        setExpanded: (groupId: string, expanded: boolean) =>
+          setGroupState(prev => applyExpansionToggle(prev, auto, groupId, expanded)),
+      }
+    }
+    return { inFlight: build(true), settled: build(false) }
+  }, [groupState, autoExpand])
+
+  const groupExpansionFor = useCallback(
+    (isTurnInFlight: boolean): GroupExpansionController =>
+      isTurnInFlight ? groupControllers.inFlight : groupControllers.settled,
+    [groupControllers],
   )
 
-  return { isTurnExpanded, toggleTurn, groupExpansion }
+  return { isTurnExpanded, toggleTurn, groupExpansionFor }
 }

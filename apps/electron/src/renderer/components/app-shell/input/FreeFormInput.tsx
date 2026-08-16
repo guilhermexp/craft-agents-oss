@@ -437,8 +437,7 @@ export function FreeFormInput({
   }, [enabledSourceSlugs])
 
   // Sync from parent when inputValue changes externally (e.g., switching sessions)
-  const prevInputValueRef = React.useRef<string | null>(null)
-  if (prevInputValueRef.current === null) prevInputValueRef.current = coerceInputText(inputValue)
+  const prevInputValueRef = React.useRef<string | null>(coerceInputText(inputValue))
   React.useEffect(() => {
     if (inputValue === undefined) return
     const nextInputValue = coerceInputText(inputValue)
@@ -539,6 +538,7 @@ export function FreeFormInput({
   // Listen for craft:insert-text events (generic mechanism for inserting text into input)
   // Used by components that want to pre-fill the input with text
   React.useEffect(() => {
+    let focusTimeout: NodeJS.Timeout | undefined
     const handleInsertText = (e: CustomEvent<{ text: string; sessionId?: string }>) => {
       const targetSessionId = e.detail?.sessionId
       if (!shouldHandleScopedInputEvent({ sessionId, isFocusedPanel, targetSessionId })) return
@@ -547,7 +547,8 @@ export function FreeFormInput({
       setInput(text)
       syncToParentEvent(text)
       // Focus the input after inserting
-      setTimeout(() => {
+      clearTimeout(focusTimeout)
+      focusTimeout = setTimeout(() => {
         richInputRef.current?.focus()
         // Move cursor to end
         richInputRef.current?.setSelectionRange(text.length, text.length)
@@ -555,7 +556,10 @@ export function FreeFormInput({
     }
 
     window.addEventListener('craft:insert-text', handleInsertText as EventListener)
-    return () => window.removeEventListener('craft:insert-text', handleInsertText as EventListener)
+    return () => {
+      window.removeEventListener('craft:insert-text', handleInsertText as EventListener)
+      clearTimeout(focusTimeout)
+    }
   }, [sessionId, isFocusedPanel, richInputRef])
 
   const clearInputDraft = React.useCallback(() => {
@@ -621,6 +625,8 @@ export function FreeFormInput({
   // This compacts the conversation first, then executes the plan.
   // The pending state is persisted to survive page reloads (CMD+R).
   React.useEffect(() => {
+    let disposed = false
+    let compactionCompleteListener: EventListener | null = null
     const handleApprovePlanWithCompact = async (e: CustomEvent<PlanApprovalEventDetail>) => {
       // Only handle if this event is for our session
       if (e.detail?.sessionId && e.detail.sessionId !== sessionId) {
@@ -645,6 +651,7 @@ export function FreeFormInput({
           draftInputSnapshot,
         })
       }
+      if (disposed) return
 
       // Send /compact to trigger compaction
       onSubmitEvent('/compact', undefined)
@@ -658,7 +665,10 @@ export function FreeFormInput({
         }
 
         // Remove the listener (one-time use)
-        window.removeEventListener('craft:compaction-complete', handleCompactionComplete as unknown as EventListener)
+        if (compactionCompleteListener) {
+          window.removeEventListener('craft:compaction-complete', compactionCompleteListener)
+          compactionCompleteListener = null
+        }
 
         const executionMessage = buildPlanApprovalMessage({
           planPath,
@@ -674,11 +684,21 @@ export function FreeFormInput({
         }
       }
 
-      window.addEventListener('craft:compaction-complete', handleCompactionComplete as unknown as EventListener)
+      if (compactionCompleteListener) {
+        window.removeEventListener('craft:compaction-complete', compactionCompleteListener)
+      }
+      compactionCompleteListener = handleCompactionComplete as unknown as EventListener
+      window.addEventListener('craft:compaction-complete', compactionCompleteListener)
     }
 
     window.addEventListener('craft:approve-plan-with-compact', handleApprovePlanWithCompact as unknown as EventListener)
-    return () => window.removeEventListener('craft:approve-plan-with-compact', handleApprovePlanWithCompact as unknown as EventListener)
+    return () => {
+      disposed = true
+      window.removeEventListener('craft:approve-plan-with-compact', handleApprovePlanWithCompact as unknown as EventListener)
+      if (compactionCompleteListener) {
+        window.removeEventListener('craft:compaction-complete', compactionCompleteListener)
+      }
+    }
   }, [sessionId, permissionMode])
 
   // Reload recovery: Check for pending plan execution on mount.
@@ -785,6 +805,10 @@ export function FreeFormInput({
     return () => clearTimeout(focusTimer)
   }, [sessionId, richInputRef])
 
+  const readFileAsAttachmentEvent = React.useEffectEvent(
+    (file: File, overrideName?: string) => readFileAsAttachment(file, overrideName),
+  )
+
   // Listen for craft:paste-files events (for global paste when input not focused)
   React.useEffect(() => {
     const handlePasteFiles = async (e: CustomEvent<{ files: File[]; sessionId?: string }>) => {
@@ -810,7 +834,7 @@ export function FreeFormInput({
 
       await Promise.all(files.map(async (file, i) => {
         try {
-          const attachment = await readFileAsAttachment(file, fileNames[i])
+          const attachment = await readFileAsAttachmentEvent(file, fileNames[i])
           if (attachment) {
             setAttachments(prev => [...prev, attachment])
           }
@@ -1027,7 +1051,7 @@ export function FreeFormInput({
   }
 
   // Helper to read a File using FileReader API
-  const readFileAsAttachment = async (file: File, overrideName?: string): Promise<FileAttachment | null> => {
+  async function readFileAsAttachment(file: File, overrideName?: string): Promise<FileAttachment | null> {
     // Capture the absolute OS path at attach time. Works for <input type="file"> and
     // OS drag-drop; returns null for clipboard paste and web-drag (no disk origin).
     // When null, the draft layer falls back to persisting content inline (Track C).
@@ -1129,7 +1153,7 @@ export function FreeFormInput({
     setAttachments(prev => [...prev, attachment])
     // Focus input after adding attachment
     richInputRef.current?.focus()
-  }, []) // No deps needed - uses ref
+  }, [richInputRef])
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault()
@@ -1188,7 +1212,7 @@ export function FreeFormInput({
     })
 
     return true
-  }, [input, attachments, followUpItems, disabled, disableSend, onInputChange, onSubmit, skills, sources, optimisticSourceSlugs, onSourcesChange, onWorkingDirectoryChange, homeDir])
+  }, [input, attachments, followUpItems, disabled, disableSend, onInputChange, onSubmit, skills, sources, optimisticSourceSlugs, onSourcesChange, richInputRef])
 
   const submitMessageEvent = React.useEffectEvent(() => submitMessage())
 
@@ -1357,7 +1381,7 @@ export function FreeFormInput({
       setInput(newValue)
       syncToParent(newValue)
     }
-  }, [inlineSlash, inlineMention, inlineLabel, syncToParent, autoCapitalisation])
+  }, [inlineSlash, inlineMention, inlineLabel, syncToParent, autoCapitalisation, richInputRef])
 
   // Handle inline slash command selection (removes the /command text)
   const handleInlineSlashCommandSelect = React.useCallback((commandId: SlashCommandId) => {
@@ -1365,7 +1389,7 @@ export function FreeFormInput({
     setInput(newValue)
     syncToParent(newValue)
     richInputRef.current?.focus()
-  }, [inlineSlash, syncToParent])
+  }, [inlineSlash, syncToParent, richInputRef])
 
   // Handle inline slash folder selection (inserts a directory badge)
   const handleInlineSlashFolderSelect = React.useCallback((path: string) => {
@@ -1373,7 +1397,7 @@ export function FreeFormInput({
     setInput(newValue)
     syncToParent(newValue)
     richInputRef.current?.focus()
-  }, [inlineSlash, syncToParent])
+  }, [inlineSlash, syncToParent, richInputRef])
 
   // Handle inline mention selection (inserts appropriate mention text)
   const handleInlineMentionSelect = React.useCallback((item: MentionItem) => {
@@ -1385,7 +1409,7 @@ export function FreeFormInput({
       richInputRef.current?.focus()
       richInputRef.current?.setSelectionRange(cursorPosition, cursorPosition)
     }, 0)
-  }, [inlineMention, syncToParent])
+  }, [inlineMention, syncToParent, richInputRef])
 
   // Handle inline label selection (removes the #label text from input)
   const handleInlineLabelSelect = React.useCallback((labelId: string) => {
@@ -1393,7 +1417,7 @@ export function FreeFormInput({
     setInput(newValue)
     syncToParent(newValue)
     richInputRef.current?.focus()
-  }, [inlineLabel, syncToParent])
+  }, [inlineLabel, syncToParent, richInputRef])
 
   // Handle inline state selection from # menu (removes #text, changes session state)
   const handleInlineStateSelect = React.useCallback((stateId: string) => {
@@ -1404,7 +1428,7 @@ export function FreeFormInput({
       onSessionStatusChange?.(sessionId, stateId)
     }
     richInputRef.current?.focus()
-  }, [inlineLabel, syncToParent, sessionId, onSessionStatusChange])
+  }, [inlineLabel, syncToParent, sessionId, onSessionStatusChange, richInputRef])
 
   const followUpLayoutKey = React.useMemo(
     () => followUpItems.map(item => [
@@ -1441,7 +1465,7 @@ export function FreeFormInput({
       <div
         ref={containerRef}
         className={cn(
-          'overflow-hidden transition-all',
+          '@container overflow-hidden transition-all',
           // Container styling - only when not wrapped by InputContainer
           !unstyled && 'rounded-[16px] shadow-middle',
           !unstyled && 'bg-background',

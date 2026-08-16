@@ -239,4 +239,23 @@ describe('react commit tracking', () => {
 
     expect(drainCommitWindow().commits).toBe(0)
   })
+
+  it('folds components past the tracking cap into one bucket the total still reconciles with', () => {
+    // 406 distinct named components (root + 405 children) exceeds the 400 cap,
+    // so the tail is bucketed rather than dropped: per-component self time must
+    // still sum to totalSelfMs or the report's table would not add up.
+    const children: Spec[] = []
+    for (let i = 0; i < 405; i++) children.push({ name: `C${i}`, mounted: true, duration: 1 })
+    commit(build({ name: 'Root', mounted: true, children }))
+
+    const window = drainCommitWindow()
+    const other = window.components.find((c) => c.name === '(other)')
+    expect(other).toBeDefined()
+    // Cap is 400 distinct; root + 399 children fill it, leaving 6 in the bucket.
+    expect(other?.renders).toBe(6)
+    expect(other?.selfMs).toBe(6)
+    const summed = window.components.reduce((sum, c) => sum + c.selfMs, 0)
+    expect(summed).toBe(window.totalSelfMs)
+    expect(window.totalSelfMs).toBe(405)
+  })
 })

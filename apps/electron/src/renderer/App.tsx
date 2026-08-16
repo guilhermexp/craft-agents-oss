@@ -637,6 +637,38 @@ export default function App() {
     }
   }, [windowWorkspaceId, refreshLlmConnections])
 
+  // Write a debounced snapshot of the current ref entry to disk.
+  const schedulePersistDraft = useCallback((sessionId: string) => {
+    const existingTimeout = draftSaveTimeoutRef.current.get(sessionId)
+    if (existingTimeout) {
+      clearTimeout(existingTimeout)
+    }
+    const timeout = setTimeout(() => {
+      const draft = sessionDraftsRef.current.get(sessionId) ?? { text: '' }
+      window.electronAPI.setDraft(sessionId, draft)
+      draftSaveTimeoutRef.current.delete(sessionId)
+    }, DRAFT_SAVE_DEBOUNCE_MS)
+    draftSaveTimeoutRef.current.set(sessionId, timeout)
+  }, [])
+
+  const handleInputChange = useCallback((sessionId: string, value: string) => {
+    const text = coerceInputText(value)
+    const existing = sessionDraftsRef.current.get(sessionId)
+    const existingAttachments = Array.isArray(existing?.attachments) ? existing.attachments : []
+    const nextDraft: SessionDraft = {
+      text,
+      ...(existingAttachments.length > 0
+        ? { attachments: existingAttachments }
+        : {}),
+    }
+    const isEmpty = !nextDraft.text && (!nextDraft.attachments || nextDraft.attachments.length === 0)
+    if (isEmpty) {
+      sessionDraftsRef.current.delete(sessionId)
+    } else {
+      sessionDraftsRef.current.set(sessionId, nextDraft)
+    }
+    schedulePersistDraft(sessionId)
+  }, [schedulePersistDraft])
   // Listen for session events - uses centralized event processor for consistent state transitions
   //
   // SOURCE OF TRUTH LOGIC:
@@ -1030,6 +1062,7 @@ export default function App() {
     applyPermissionModeState,
     reconcilePermissionModeState,
     commitPendingQuestions,
+    handleInputChange,
   ])
 
   // Transport reconnect recovery — refresh session metadata plus active/processing
@@ -1373,7 +1406,7 @@ export default function App() {
         ]
       }))
     }
-  }, [sessionOptions, updateSessionById, skills, sources, windowWorkspaceId, windowWorkspaceSlug])
+  }, [updateSessionById, skills, sources, windowWorkspaceSlug])
 
   /**
    * Unified handler for all session option changes.
@@ -1459,38 +1492,6 @@ export default function App() {
     return results.filter((a): a is FileAttachment => a !== null)
   }, [])
 
-  // Write a debounced snapshot of the current ref entry to disk.
-  const schedulePersistDraft = useCallback((sessionId: string) => {
-    const existingTimeout = draftSaveTimeoutRef.current.get(sessionId)
-    if (existingTimeout) {
-      clearTimeout(existingTimeout)
-    }
-    const timeout = setTimeout(() => {
-      const draft = sessionDraftsRef.current.get(sessionId) ?? { text: '' }
-      window.electronAPI.setDraft(sessionId, draft)
-      draftSaveTimeoutRef.current.delete(sessionId)
-    }, DRAFT_SAVE_DEBOUNCE_MS)
-    draftSaveTimeoutRef.current.set(sessionId, timeout)
-  }, [])
-
-  const handleInputChange = useCallback((sessionId: string, value: string) => {
-    const text = coerceInputText(value)
-    const existing = sessionDraftsRef.current.get(sessionId)
-    const existingAttachments = Array.isArray(existing?.attachments) ? existing.attachments : []
-    const nextDraft: SessionDraft = {
-      text,
-      ...(existingAttachments.length > 0
-        ? { attachments: existingAttachments }
-        : {}),
-    }
-    const isEmpty = !nextDraft.text && (!nextDraft.attachments || nextDraft.attachments.length === 0)
-    if (isEmpty) {
-      sessionDraftsRef.current.delete(sessionId)
-    } else {
-      sessionDraftsRef.current.set(sessionId, nextDraft)
-    }
-    schedulePersistDraft(sessionId)
-  }, [schedulePersistDraft])
 
   const handleAttachmentsChange = useCallback((sessionId: string, attachments: FileAttachment[]) => {
     const existing = sessionDraftsRef.current.get(sessionId)
@@ -1653,8 +1654,8 @@ export default function App() {
     readFile: (path: string) => window.electronAPI.readFile(path),
     readFileDataUrl: (path: string) => window.electronAPI.readFileDataUrl(path),
     readFileBinary: (path: string) => window.electronAPI.readFileBinary(path),
-    renderOfficeDocument: (path: string) => window.electronAPI.renderOfficeDocument(path),
     openOfficeLive: (path: string) => window.electronAPI.openOfficeLive(path),
+    closeOfficeLive: (path: string) => window.electronAPI.closeOfficeLive(path),
   }), [t])
 
   const linkInterceptor = useLinkInterceptor(linkInterceptorOptions)

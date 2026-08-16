@@ -564,6 +564,18 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         data-tutorial={link.dataTutorial}
+        aria-expanded={link.expandable ? Boolean(link.expanded) : undefined}
+        onKeyDown={(event) => {
+          radixProps.onKeyDown?.(event)
+          if (!link.expandable) return
+          if (event.key === 'ArrowRight' && !link.expanded) {
+            event.preventDefault()
+            link.onToggle?.()
+          } else if (event.key === 'ArrowLeft' && link.expanded) {
+            event.preventDefault()
+            link.onToggle?.()
+          }
+        }}
         className={cn(
           "group flex w-full items-center gap-2 rounded-[6px] text-[13px] select-none outline-none",
           "focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
@@ -582,29 +594,19 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
         <span className="relative size-3.5 shrink-0 flex items-center justify-center">
           {link.expandable && !isOverlay ? (
             <>
-              {/* Main icon - hidden on hover */}
-              <span className="absolute inset-0 flex items-center justify-center group-hover:opacity-0 transition-opacity duration-150">
+              {/* Main icon gives way to disclosure on pointer hover or keyboard focus. */}
+              <span className="absolute inset-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
                 <SidebarIcon link={link} />
               </span>
-              {/* Toggle chevron - shown on hover. data-no-dnd prevents drag activation on click. */}
-              {/* span instead of button to avoid nested <button> inside the outer sidebar item button */}
-              {/* react-doctor-disable-next-line html-no-nested-interactive -- chevron span is a distinct control (toggle) nested in the nav button (open); different actions, keyboard-supported; hoisting changes layout — documented intentional */}
+              {/* Pointer shortcut; keyboard users use ArrowRight/ArrowLeft on the owning row. */}
               <span
-                role="button"
-                aria-label={link.expanded ? 'Collapse' : 'Expand'}
-                tabIndex={0}
-                className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 cursor-pointer"
+                aria-hidden="true"
+                className="absolute inset-0 flex items-center justify-center cursor-pointer opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
                 data-no-dnd="true"
+                onMouseDown={(event) => event.preventDefault()}
                 onClick={(e) => {
                   e.stopPropagation()
                   link.onToggle?.()
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    link.onToggle?.()
-                  }
                 }}
               >
                 <ChevronRight

@@ -9,7 +9,7 @@
 
 /** CPU/memory for one OS process in the app's process tree. */
 export interface PerfProcessSample {
-  /** Stable identity across samples: `main`, `gpu`, `renderer:<pid>`, `utility:<pid>`. */
+  /** Stable identity across samples: `main`, `gpu`, `tab:<pid>`, `utility:<pid>`. */
   readonly key: string
   /** Human label — process type plus, when known, the window/service name. */
   readonly label: string
@@ -44,11 +44,6 @@ export interface PerfMainSample {
   readonly ts: number
   /** Actual window length in ms — never assume exactly 1000. */
   readonly windowMs: number
-  /**
-   * True when the wall clock jumped (machine slept, clock stepped). The window
-   * is reported but its rates are meaningless and must be discarded.
-   */
-  readonly discontinuity: boolean
   readonly processes: readonly PerfProcessSample[]
   readonly eventLoop: PerfEventLoopSample
   readonly heap: PerfMainHeapSample

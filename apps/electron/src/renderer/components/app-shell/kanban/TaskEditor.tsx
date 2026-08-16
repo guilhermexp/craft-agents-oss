@@ -753,7 +753,7 @@ export function TaskEditor({
       // the visible signal. A top-right toast would also overlap the editor's top-right
       // Cancel/Create/Create & Run buttons and swallow their clicks.
     },
-    [t, fallbackModel, discardDraft],
+    [t, discardDraft],
   )
 
   // Subscribe once for async generate results; ignore events for other generations/sessions.

@@ -109,11 +109,25 @@ const ChatPage = React.memo(function ChatPage({ sessionId, rightSidebarButton, l
 
   const updateSession = useSetAtom(updateSessionAtom)
 
-  // Fallback: ensure messages are loaded when session is viewed
+  // Lazy transcript loading keeps its failure state local to the visible panel.
   const ensureMessagesLoaded = useSetAtom(ensureSessionMessagesLoadedAtom)
+  const [messagesLoadError, setMessagesLoadError] = React.useState<string | null>(null)
+  const [messagesRetrying, setMessagesRetrying] = React.useState(false)
+  const loadMessages = React.useCallback(async () => {
+    setMessagesLoadError(null)
+    setMessagesRetrying(true)
+    try {
+      await ensureMessagesLoaded(sessionId)
+    } catch {
+      setMessagesLoadError(t('errors.pleaseReload'))
+    } finally {
+      setMessagesRetrying(false)
+    }
+  }, [ensureMessagesLoaded, sessionId, t])
+
   React.useEffect(() => {
-    ensureMessagesLoaded(sessionId)
-  }, [sessionId, ensureMessagesLoaded])
+    void loadMessages()
+  }, [loadMessages])
 
   // Perf: Mark when session data is available
   const sessionLoadedMarkedRef = React.useRef<string | null>(null)
@@ -773,6 +787,9 @@ const ChatPage = React.memo(function ChatPage({ sessionId, rightSidebarButton, l
                 workingDirectory={sessionMeta.workingDirectory}
                 onWorkingDirectoryChange={handleWorkingDirectoryChange}
                 messagesLoading={true}
+                messagesLoadError={messagesLoadError}
+                messagesRetrying={messagesRetrying}
+                onRetryMessagesLoad={() => { void loadMessages() }}
                 searchQuery={sessionListSearchQuery}
                 isSearchModeActive={isSearchModeActive}
                 onMatchInfoChange={onChatMatchInfoChange}
@@ -851,6 +868,9 @@ const ChatPage = React.memo(function ChatPage({ sessionId, rightSidebarButton, l
             onWorkingDirectoryChange={handleWorkingDirectoryChange}
             sessionFolderPath={session?.sessionFolderPath}
             messagesLoading={!messagesLoaded}
+            messagesLoadError={messagesLoadError}
+            messagesRetrying={messagesRetrying}
+            onRetryMessagesLoad={() => { void loadMessages() }}
             searchQuery={sessionListSearchQuery}
             isSearchModeActive={isSearchModeActive}
             onMatchInfoChange={onChatMatchInfoChange}

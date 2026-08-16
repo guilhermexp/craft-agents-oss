@@ -11,6 +11,21 @@ interface StreamingPinState {
   now: number
 }
 
+interface ScrollTarget {
+  scrollIntoView(options?: ScrollIntoViewOptions): void
+}
+
+interface MutableValue<T> {
+  current: T
+}
+
+interface ScrollTargetOncePerKeyInput {
+  scrollKey: string
+  lastScrolledKeyRef: MutableValue<string | null>
+  targetRef: MutableValue<ScrollTarget | null>
+  onScroll?: () => void
+  skip?: boolean
+}
 type OverflowYReader = (element: Element) => string
 
 const WHEEL_SCROLLABLE_OVERFLOW_VALUES = new Set(['auto', 'scroll', 'overlay'])
@@ -27,6 +42,24 @@ export function isNearScrollBottom(metrics: ScrollMetrics, threshold = 20): bool
 export function shouldPinStreamingContentToBottom(state: StreamingPinState): boolean {
   if (state.isFocusedPanel && !state.isStickToBottom) return false
   return state.now >= state.skipUntil
+}
+
+export function scrollTargetOncePerKey({
+  scrollKey,
+  lastScrolledKeyRef,
+  targetRef,
+  onScroll,
+  skip = false,
+}: ScrollTargetOncePerKeyInput): boolean {
+  if (skip || lastScrolledKeyRef.current === scrollKey) return false
+
+  const target = targetRef.current
+  if (!target) return false
+
+  lastScrolledKeyRef.current = scrollKey
+  target.scrollIntoView({ behavior: 'instant' })
+  onScroll?.()
+  return true
 }
 
 function eventTargetElement(target: EventTarget | null): Element | null {

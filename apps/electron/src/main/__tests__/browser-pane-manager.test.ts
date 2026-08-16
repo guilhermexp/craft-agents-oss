@@ -1924,6 +1924,23 @@ describe('BrowserPaneManager', () => {
       expect(instance.favicon).toBe(null)
     })
 
+    it('keeps the abort armed after the response so a stalled body still tears the request down', () => {
+      const { pageWc } = startPane('fav-stall')
+      pageWc._emit('page-favicon-updated', ['https://example.com/favicon.png'])
+      const request = netRequests[0]!
+
+      // Headers arrive; the fetcher promise resolves, but the body is still open
+      // and not yet consumed (no flush), so it has not fired end/close.
+      request._respond()
+      expect(request.aborted).toBe(false)
+
+      // A navigation aborts the controller after the response. The request must
+      // still be torn down — otherwise a body that stalled after 200 pins the
+      // partition socket forever.
+      pageWc._emit('did-navigate', 'https://other.example.com/')
+      expect(request.aborted).toBe(true)
+    })
+
     it('aborts when the instance is destroyed and emits no state for it afterwards', async () => {
       const { instance, infos, pageWc } = startPane('fav-destroy')
       pageWc._emit('page-favicon-updated', ['https://example.com/favicon.png'])

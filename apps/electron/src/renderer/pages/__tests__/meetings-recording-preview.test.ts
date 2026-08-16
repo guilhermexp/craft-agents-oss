@@ -68,6 +68,25 @@ describe('getRecordingMediaUrl', () => {
     expect(after).not.toBe(before)
   })
 
+  it('reloads the player when only remuxedAt changes', () => {
+    // O remux com `-c copy` pode devolver um arquivo do mesmo tamanho: aqui
+    // `bytesWritten` e `partial` são idênticos e só `remuxedAt` é novo. É o MUST
+    // do AGENTS.md — sem versionar por `remuxedAt`, a URL ficaria igual e o
+    // <video> continuaria preso à mídia sem Duration/Cues. Este teste falha se
+    // `remuxedAt` for ignorado na versão.
+    const sealed = makeRecord({
+      status: 'stopped',
+      postProcessingPhase: 'transcribing',
+      recording: { path: RECORDING_PATH, bytesWritten: 4130, durationMs: 60_000 },
+    })
+    const remuxedSameSize = makeRecord({
+      status: 'stopped',
+      postProcessingPhase: 'analyzing',
+      recording: { path: RECORDING_PATH, bytesWritten: 4130, durationMs: 60_000, remuxedAt: 1_700_000_000_000 },
+    })
+    expect(getRecordingMediaUrl(remuxedSameSize)).not.toBe(getRecordingMediaUrl(sealed))
+  })
+
   it('keeps the same media stable across polls that change nothing', () => {
     // O poll de 1,5s reentrega o mesmo record: remontar o `<video>` a cada
     // resposta cortaria a reprodução em andamento.

@@ -123,7 +123,10 @@ export function SessionItem({
   const hasPendingQuestion = view.hasPendingQuestion?.(item.id) ?? false
   const previewText = isCompactMode ? getSessionPreviewText(item) : null
   const messagingBindingsBySession = useAtomValue(messagingBindingsBySessionAtom)
-  const sessionBindings = messagingBindingsBySession.get(item.id) ?? []
+  const sessionBindings = useMemo(
+    () => messagingBindingsBySession.get(item.id) ?? [],
+    [messagingBindingsBySession, item.id],
+  )
   const hasMessagingBinding = sessionBindings.length > 0
   const sessionConnection = resolveSessionConnection(item, llmConnections, workspaceDefaultLlmConnection)
   const hermesProfileBadge = getHermesProfileSessionBadge(item)
@@ -273,9 +276,9 @@ export function SessionItem({
         />
       )}
       contextMenuContent={view.isMultiSelectActive && isInMultiSelect ? () => <BatchSessionMenu /> : undefined}
+      leadingAction={<SessionStatusIcon item={item} />}
       icon={
         <>
-          <SessionStatusIcon item={item} />
           {sessionConnection ? <SessionConnectionIcon connection={sessionConnection} /> : null}
           <div className={cn(
             "flex items-center justify-center overflow-hidden gap-1",

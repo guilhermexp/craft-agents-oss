@@ -35,6 +35,8 @@ export interface EntityRowProps {
   /** Left icon area — rendered in-flow as a flex child before the content column.
    *  Consumers can pass multiple icons (e.g. via a fragment) for a horizontal icon group. */
   icon?: React.ReactNode
+  /** Interactive leading control rendered beside, never inside, the row button. */
+  leadingAction?: React.ReactNode
   /** Title content (ReactNode for search highlighting support) */
   title: React.ReactNode
   /** Additional className on the title wrapper (e.g. shimmer animation) */
@@ -93,6 +95,7 @@ export interface EntityRowProps {
 
 export function EntityRow({
   icon,
+  leadingAction,
   title,
   titleClassName,
   titleTrailing,
@@ -144,12 +147,18 @@ export function EntityRow({
         <div className="absolute left-0 inset-y-0 w-[2px] bg-accent" />
       )}
 
+      {leadingAction ? (
+        <div className="absolute left-4 top-3 z-10" onMouseDown={(event) => event.stopPropagation()}>
+          {leadingAction}
+        </div>
+      ) : null}
       {/* Main content button */}
       <button
         type="button"
         {...(buttonProps as React.ButtonHTMLAttributes<HTMLButtonElement>)}
         className={cn(
-          "entity-row-btn flex w-full items-start gap-2 pl-2 pr-4 py-3 text-left text-sm outline-none rounded-[8px]",
+          "entity-row-btn flex w-full items-start gap-2 pr-4 py-3 text-left text-sm outline-none rounded-[8px]",
+          leadingAction ? "pl-10" : "pl-2",
           "transition-[background-color] duration-75",
           (isSelected || isInMultiSelect)
             ? "bg-foreground/3"

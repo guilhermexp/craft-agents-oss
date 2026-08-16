@@ -356,7 +356,7 @@
   },
   "list_messaging_channels": {
     "apiVersion": "v1",
-    "description": "List messaging channels (Telegram, WhatsApp, Lark) bound to a session.\nShows which external chat apps are connected and can send/receive messages.",
+    "description": "List messaging channels (Telegram, WhatsApp) bound to a session.\nShows which external chat apps are connected and can send/receive messages.",
     "executionMode": "registry",
     "exposure": "native-and-mcp",
     "inputSchema": {
@@ -1237,8 +1237,7 @@
           "description": "Platform to unbind. If omitted, unbinds all.",
           "enum": [
             "telegram",
-            "whatsapp",
-            "lark"
+            "whatsapp"
           ],
           "type": "string"
         }

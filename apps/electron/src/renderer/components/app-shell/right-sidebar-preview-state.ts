@@ -66,6 +66,29 @@ export function getInlinePreviewLoadState(filePath: string): {
   return { kind: 'text', loading: true }
 }
 
+export type VideoPreviewRender =
+  | { mode: 'play'; src: string }
+  | { mode: 'fallback' }
+
+/**
+ * Decide how the inline panel renders a video.
+ *
+ * The <video> streams over `media://workspace/…`, whose handler is hard-confined
+ * to `~/.craft-agent/workspaces` (see main/thumbnail-protocol.ts). A workspace's
+ * rootPath/workingDirectory may live anywhere on disk, so files outside that
+ * root make the handler answer 403 and the element fires `error`. Video is the
+ * only preview kind with no up-front loader, so without this decision the panel
+ * would show a silently broken player: no `loading`, no `error`, just a dead
+ * control. When the element has reported failure we render a fallback instead of
+ * the broken player, and the caller offers the external opener.
+ */
+export function resolveVideoPreview(filePath: string, failed: boolean): VideoPreviewRender {
+  if (failed) return { mode: 'fallback' }
+  // encodeURIComponent so the main-process handler recovers the exact absolute
+  // path via a single decodeURIComponent, spaces and '#'/'?' included.
+  return { mode: 'play', src: `media://workspace/${encodeURIComponent(filePath)}` }
+}
+
 export function getActiveRightSidebarPreviewPath({
   selection,
   sessionId,

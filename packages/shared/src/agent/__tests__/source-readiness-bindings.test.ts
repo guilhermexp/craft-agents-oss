@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import type { SessionToolContext } from '@craft-agent/session-tools-core'
+import type { SessionSourceReadiness, SessionToolContext } from '@craft-agent/session-tools-core'
 
 import {
   mergeSessionScopedToolCallbacks,
@@ -13,61 +13,54 @@ const sessionId = 'source-readiness-bindings-session'
 afterEach(() => unregisterSessionScopedToolCallbacks(sessionId))
 
 describe('source readiness session bindings', () => {
-  test('exposes late-bound inject, observe, and cleanup callbacks to the real tool context', async () => {
+  test('exposes the late-bound readiness seam to the real tool context', async () => {
     const events: string[] = []
-    let activationCount = 0
     const context = {} as SessionToolContext
     attachSessionSelfManagementBindings(context, sessionId)
 
-    mergeSessionScopedToolCallbacks(sessionId, {
-      sourceProbeBackend: 'hermes',
-      injectSourceForProbeFn: async (sourceSlug) => {
-        events.push(`inject:${sourceSlug}`)
-        return { probeId: 'probe-1' }
+    // The seam is undefined until the backend merges it (late binding).
+    expect(context.sessionSourceReadiness).toBeUndefined()
+
+    const seam: SessionSourceReadiness = {
+      backend: 'hermes',
+      probeSourceTools: async (sourceSlug) => {
+        events.push(`probe:${sourceSlug}`)
+        return { ok: true, observedTools: [{ name: 'issues_list', apiVersion: 'v1' }] }
       },
-      observeSourceToolsForProbeFn: async (probeId) => {
-        events.push(`observe:${probeId}`)
-        return [{ name: 'issues_list', apiVersion: 'v1' }]
+      activateSource: async (sourceSlug, persistReady) => {
+        events.push(`activate:${sourceSlug}`)
+        persistReady()
+        return { ok: true }
       },
-      removeSourceProbeFn: async (probeId) => {
-        events.push(`cleanup:${probeId}`)
+      persistSourceConfig: (source) => {
+        events.push(`persist:${source.readiness?.status ?? 'unknown'}`)
       },
-      prepareSourceReadinessActivationFn: async (sourceSlug) => {
-        events.push(`prepare:${sourceSlug}`)
-        activationCount += 1
-        return { activationId: `activation-${activationCount}` }
-      },
-      commitSourceReadinessActivationFn: (activationId) => {
-        events.push(`commit:${activationId}`)
-      },
-      finalizeSourceReadinessActivationFn: (activationId) => {
-        events.push(`finalize:${activationId}`)
-      },
-      rollbackSourceReadinessActivationFn: async (activationId) => {
-        events.push(`rollback:${activationId}`)
-      },
+    }
+
+    mergeSessionScopedToolCallbacks(sessionId, { sessionSourceReadiness: seam })
+
+    expect(context.sessionSourceReadiness).toBe(seam)
+    expect(context.sessionSourceReadiness?.backend).toBe('hermes')
+
+    const probe = await context.sessionSourceReadiness?.probeSourceTools('composio-linear')
+    const activation = await context.sessionSourceReadiness?.activateSource('composio-linear', () => {
+      context.sessionSourceReadiness?.persistSourceConfig({
+        id: 'composio-linear',
+        name: 'Linear',
+        slug: 'composio-linear',
+        enabled: true,
+        provider: 'composio',
+        type: 'mcp',
+        readiness: { status: 'ready', checkedAt: 1 },
+      })
     })
 
-    const injection = await context.injectSourceForProbe?.('composio-linear')
-    const observed = await context.observeSourceToolsForProbe?.(injection!.probeId)
-    await context.removeSourceProbe?.(injection!.probeId)
-    const activation = await context.prepareSourceReadinessActivation?.('composio-linear')
-    context.commitSourceReadinessActivation?.(activation!.activationId)
-    context.finalizeSourceReadinessActivation?.(activation!.activationId)
-    const rolledBackActivation = await context.prepareSourceReadinessActivation?.('composio-github')
-    await context.rollbackSourceReadinessActivation?.(rolledBackActivation!.activationId)
-
-    expect(context.sourceProbeBackend).toBe('hermes')
-    expect(observed).toEqual([{ name: 'issues_list', apiVersion: 'v1' }])
+    expect(probe).toEqual({ ok: true, observedTools: [{ name: 'issues_list', apiVersion: 'v1' }] })
+    expect(activation).toEqual({ ok: true })
     expect(events).toEqual([
-      'inject:composio-linear',
-      'observe:probe-1',
-      'cleanup:probe-1',
-      'prepare:composio-linear',
-      'commit:activation-1',
-      'finalize:activation-1',
-      'prepare:composio-github',
-      'rollback:activation-2',
+      'probe:composio-linear',
+      'activate:composio-linear',
+      'persist:ready',
     ])
   })
 })

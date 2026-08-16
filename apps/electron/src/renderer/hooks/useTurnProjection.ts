@@ -4,8 +4,11 @@
  * Groups a session's messages into turns exactly once per render, keeps the
  * resulting Turn[] structurally shared across streaming re-renders (so completed
  * TurnCards skip re-render on every token), and exposes the single Turn identity
- * plus the resolved, single-polarity expansion controllers. Search and render
- * both consume the same cached turns instead of regrouping.
+ * plus the resolved expansion controllers. Search and render both consume the
+ * same cached turns instead of regrouping.
+ *
+ * Expansion is resolved here too, but its auto-expand window is per turn, so the
+ * controllers take the turn's in-flight state (`!isComplete`) at the call site.
  */
 
 import { useMemo, useRef, useLayoutEffect } from 'react'

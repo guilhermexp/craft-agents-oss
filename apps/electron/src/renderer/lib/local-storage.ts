@@ -96,6 +96,42 @@ export function get<T>(key: StorageKey, fallback: T, suffix?: string): T {
 }
 
 /**
+ * The outcome of a raw read, distinguishing a genuine backend failure from an
+ * absent key or corrupt JSON.
+ *
+ * `get` collapses all three non-`present` cases into its fallback, which hides
+ * the one case a caller must treat specially: when `localStorage.getItem`
+ * itself throws (storage disabled, quota, security policy) the stored bytes may
+ * still be intact, so writing the fallback back would destroy recoverable data.
+ * `absent` and `corrupt`, by contrast, are safely overwritable.
+ */
+export type ReadResult<T> =
+  | { status: 'present'; value: T }
+  | { status: 'absent' }
+  | { status: 'corrupt' }
+  | { status: 'failed' }
+
+/**
+ * Read and JSON-parse a value, reporting *why* it is unavailable instead of
+ * folding every failure into a fallback. A throwing backend read surfaces as
+ * `failed` so callers can suppress writes to a bucket they could not read.
+ */
+export function read<T>(key: StorageKey, suffix?: string): ReadResult<T> {
+  let item: string | null
+  try {
+    item = localStorage.getItem(buildKey(key, suffix))
+  } catch {
+    return { status: 'failed' }
+  }
+  if (item === null) return { status: 'absent' }
+  try {
+    return { status: 'present', value: JSON.parse(item) as T }
+  } catch {
+    return { status: 'corrupt' }
+  }
+}
+
+/**
  * Set a value in localStorage with JSON stringification.
  */
 export function set<T>(key: StorageKey, value: T, suffix?: string): void {

@@ -166,9 +166,21 @@ export function PermissionRequest({ request, onResponse, unstyled = false }: Per
 
         {/* Command preview */}
         {commandPreview && (
-          <div className="bg-foreground/5 rounded-md p-3 font-mono text-xs text-foreground/90 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
-            {commandPreview}
-          </div>
+          <>
+            <div className="bg-foreground/5 rounded-md p-3 font-mono text-xs text-foreground/90 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+              {commandPreview}
+            </div>
+            {request.command && request.command.trim() !== commandPreview && (
+              <details className="group rounded-md border border-border/50 bg-background/40">
+                <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+                  {t('chat.permissionShowFullCommand')}
+                </summary>
+                <pre className="max-h-48 overflow-auto border-t border-border/50 p-3 font-mono text-xs text-foreground/90 whitespace-pre-wrap break-words">
+                  {request.command}
+                </pre>
+              </details>
+            )}
+          </>
         )}
       </div>
 

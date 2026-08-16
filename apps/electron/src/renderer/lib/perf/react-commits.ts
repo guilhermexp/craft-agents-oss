@@ -81,8 +81,11 @@ const NAMED_TAGS: Record<number, true> = {
   15: true, // SimpleMemoComponent
 }
 
-/** Beyond this many distinct components in one window, the tail is bucketed. */
+/** Beyond this many distinct components in one window, the tail is folded into
+ *  one `(other)` bucket rather than dropped. */
 const MAX_TRACKED_COMPONENTS = 400
+/** Synthetic name for the folded tail — see `statFor`. */
+const OVERFLOW_BUCKET = '(other)'
 /** Changed prop names kept per component, most frequent first. */
 const MAX_PROP_NAMES = 4
 
@@ -139,12 +142,17 @@ let totalSelfMs = 0
 let trackerSelfMs = 0
 const stats = new Map<string, MutableStat>()
 
-function statFor(name: string): MutableStat | null {
+function statFor(name: string): MutableStat {
   const existing = stats.get(name)
   if (existing) return existing
-  if (stats.size >= MAX_TRACKED_COMPONENTS) return null
+  // Past the cap the tail is folded into one bucket. `totalSelfMs` already
+  // counts these fibers, so their self time MUST land somewhere or the report's
+  // component table would no longer reconcile with its headline render time.
+  const key = stats.size >= MAX_TRACKED_COMPONENTS ? OVERFLOW_BUCKET : name
+  const bucketed = stats.get(key)
+  if (bucketed) return bucketed
   const created: MutableStat = { renders: 0, wasted: 0, selfMs: 0, maxSelfMs: 0, props: new Map() }
-  stats.set(name, created)
+  stats.set(key, created)
   return created
 }
 
@@ -259,15 +267,13 @@ function recordCommit(root: FiberRoot): void {
       totalSelfMs += self
 
       const stat = statFor(displayNameOf(fiber))
-      if (stat) {
-        stat.renders++
-        stat.selfMs += self
-        if (self > stat.maxSelfMs) stat.maxSelfMs = self
-        if (prev) {
-          const { changed, stateChanged } = diffFiber(fiber, prev)
-          if (changed.length === 0 && !stateChanged) stat.wasted++
-          for (const key of changed) stat.props.set(key, (stat.props.get(key) ?? 0) + 1)
-        }
+      stat.renders++
+      stat.selfMs += self
+      if (self > stat.maxSelfMs) stat.maxSelfMs = self
+      if (prev) {
+        const { changed, stateChanged } = diffFiber(fiber, prev)
+        if (changed.length === 0 && !stateChanged) stat.wasted++
+        for (const key of changed) stat.props.set(key, (stat.props.get(key) ?? 0) + 1)
       }
     }
 

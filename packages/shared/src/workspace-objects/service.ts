@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { WorkspaceObjectEventBus } from './events.ts';
+import { basename, dirname } from 'node:path';
 import { writeWorkspaceObjectEventProjection } from './event-projection.ts';
 import { writeWorkspaceObjectManifest } from './manifest.ts';
 import { WorkspaceObjectRepository } from './storage.ts';
@@ -62,6 +62,7 @@ export interface WorkspaceObjectServiceOptions {
   workspaceRootPath: string;
   writeManifest?: (workspaceRootPath: string, payload: WorkspaceObjectPayload) => string;
   writeEventProjection?: (workspaceRootPath: string, event: WorkspaceObjectEvent) => string;
+  onEvent?: (event: WorkspaceObjectEvent) => void;
 }
 
 export function buildRelationLabelsFromSnapshotPages(
@@ -82,7 +83,7 @@ export function buildRelationLabelsFromSnapshotPages(
 }
 
 export class WorkspaceObjectService {
-  readonly events = new WorkspaceObjectEventBus();
+  private readonly onEvent?: (event: WorkspaceObjectEvent) => void;
   private readonly writeManifest: (workspaceRootPath: string, payload: WorkspaceObjectPayload) => string;
   private readonly writeEventProjection: (workspaceRootPath: string, event: WorkspaceObjectEvent) => string;
 
@@ -92,6 +93,7 @@ export class WorkspaceObjectService {
   ) {
     this.writeManifest = options.writeManifest ?? writeWorkspaceObjectManifest;
     this.writeEventProjection = options.writeEventProjection ?? writeWorkspaceObjectEventProjection;
+    this.onEvent = options.onEvent;
   }
 
   static open(options: WorkspaceObjectServiceOptions): WorkspaceObjectService {
@@ -170,7 +172,6 @@ export class WorkspaceObjectService {
   }
 
   close(): void {
-    this.events.clear();
     this.repository.close();
   }
 
@@ -204,7 +205,38 @@ export class WorkspaceObjectService {
       this.repository.setProjectionStatus(event.objectId, 'projection-error', `Durable event projection failed: ${message}`);
       publishedEvent = { ...event, projectionStatus: 'projection-error' };
     }
-    this.events.publish(publishedEvent);
+    this.onEvent?.(publishedEvent);
     return publishedEvent.projectionStatus;
+  }
+}
+
+export function executeWorkspaceObjectAction(
+  options: WorkspaceObjectServiceOptions,
+  action: WorkspaceObjectAction,
+  onEvent?: (event: WorkspaceObjectEvent) => void,
+): WorkspaceObjectServiceResult {
+  const service = WorkspaceObjectService.open({ ...options, onEvent });
+  try {
+    return service.execute(action);
+  } finally {
+    service.close();
+  }
+}
+
+export function repairWorkspaceObjectProjections(
+  options: WorkspaceObjectServiceOptions,
+  changedPath?: string,
+  onEvent?: (event: WorkspaceObjectEvent) => void,
+): void {
+  const service = WorkspaceObjectService.open({ ...options, onEvent });
+  try {
+    const listed = service.execute({ action: 'list-objects' });
+    if (!('objects' in listed)) return;
+    const targets = changedPath
+      ? listed.objects.filter(candidate => candidate.slug === basename(dirname(changedPath)))
+      : listed.objects;
+    for (const object of targets) service.execute({ action: 'repair-projection', objectId: object.id });
+  } finally {
+    service.close();
   }
 }

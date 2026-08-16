@@ -336,6 +336,7 @@ export const RPC_CONTRACT = {
   subscribeWorkspaceObjects: invoke<((workspaceId: string) => Promise<void>)>(WORKSPACE_OBJECT_RPC_CHANNELS.SUBSCRIBE),
   unsubscribeWorkspaceObjects: invoke<((workspaceId: string) => Promise<void>)>(WORKSPACE_OBJECT_RPC_CHANNELS.UNSUBSCRIBE),
   onWorkspaceObjectEvent: event<((callback: (event: WorkspaceObjectEvent) => void) => () => void)>(WORKSPACE_OBJECT_RPC_CHANNELS.EVENT),
+  onWorkspaceObjectsReloadRequest: event<((callback: (workspaceId: string) => void) => () => void)>(WORKSPACE_OBJECT_RPC_CHANNELS.RELOAD),
   createWorkspace: invoke<((folderPath: string, name: string, remoteServer?: { url: string; token: string; remoteWorkspaceId: string }) => Promise<Workspace>)>(RPC_NAMESPACES.workspaces.CREATE),
   checkWorkspaceSlug: invoke<((slug: string) => Promise<{ exists: boolean; path: string }>)>(RPC_NAMESPACES.workspaces.CHECK_SLUG),
   updateWorkspaceRemoteServer: invoke<((workspaceId: string, remoteServer: { url: string; token: string; remoteWorkspaceId: string }) => Promise<{ success: boolean }>)>(RPC_NAMESPACES.workspaces.UPDATE_REMOTE),
@@ -381,10 +382,6 @@ export const RPC_CONTRACT = {
   readUserAttachment: invoke<((path: string) => Promise<FileAttachment | null>)>(RPC_NAMESPACES.file.READ_USER_ATTACHMENT),
   storeAttachment: invoke<((sessionId: string, attachment: FileAttachment) => Promise<StoredAttachmentType>)>(RPC_NAMESPACES.file.STORE_ATTACHMENT),
   generateThumbnail: invoke<((base64: string, mimeType: string) => Promise<string | null>)>(RPC_NAMESPACES.file.GENERATE_THUMBNAIL),
-  /** Render a .docx/.xlsx/.pptx to self-contained HTML via the bundled OfficeCLI binary. */
-  renderOfficeDocument: invoke<((path: string) => Promise<string>)>(RPC_NAMESPACES.file.RENDER_OFFICE),
-  /** Write one spreadsheet cell and return the re-rendered HTML. cellPath is "/Sheet1/B4". */
-  setOfficeCell: invoke<((path: string, cellPath: string, value: string) => Promise<string>)>(RPC_NAMESPACES.file.SET_OFFICE_CELL),
   /** Start/reuse an editable live server for a document; resolves to its loopback URL. */
   openOfficeLive: invoke<((path: string) => Promise<string>)>(RPC_NAMESPACES.file.OPEN_OFFICE_LIVE),
   /** Tear down the live server for a document. */
@@ -663,7 +660,6 @@ export const RPC_CONTRACT = {
   updateMessagingConfig: invoke<((config: Record<string, unknown>) => Promise<void>)>(RPC_NAMESPACES.messaging.UPDATE_CONFIG),
   testTelegramToken: invoke<((token: string) => Promise<{ success: boolean; botName?: string; botUsername?: string; error?: string }>)>(RPC_NAMESPACES.messaging.TEST_TELEGRAM),
   saveTelegramToken: invoke<((token: string) => Promise<void>)>(RPC_NAMESPACES.messaging.SAVE_TELEGRAM),
-  saveLarkCredentials: invoke<((credentialsJson: string) => Promise<void>)>(RPC_NAMESPACES.messaging.SAVE_LARK),
   disconnectMessagingPlatform: invoke<((platform: string) => Promise<void>)>(RPC_NAMESPACES.messaging.DISCONNECT),
   forgetMessagingPlatform: invoke<((platform: string) => Promise<void>)>(RPC_NAMESPACES.messaging.FORGET),
   getMessagingBindings: invoke<(() => Promise<Array<{ id: string; workspaceId: string; sessionId: string; platform: string; channelId: string; threadId?: number; channelName?: string; enabled: boolean; createdAt: number; accessMode?: MessagingBindingAccessMode; allowedSenderIds?: string[] }>>)>(RPC_NAMESPACES.messaging.GET_BINDINGS),

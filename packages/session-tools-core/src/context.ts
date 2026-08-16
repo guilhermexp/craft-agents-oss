@@ -16,9 +16,8 @@ import type {
   MicrosoftService,
   McpSourceConfig,
   ValidationResult,
-  SourceProbeBackend,
-  SourceToolIdentity,
 } from './types.ts';
+import type { SessionSourceReadiness } from './handlers/source-readiness.ts';
 
 // ============================================================
 // Source Credential Types
@@ -430,29 +429,13 @@ export interface SessionToolContext {
     availability?: 'next-turn';
   }>;
 
-  /** Backend family used by the fail-closed U7 source readiness probe. */
-  sourceProbeBackend?: SourceProbeBackend;
-
-  /** Temporarily inject one source into this session without persisting exposure. */
-  injectSourceForProbe?(sourceSlug: string): Promise<{ probeId: string }>;
-
-  /** Observe the canonical source toolset only after temporary session injection. */
-  observeSourceToolsForProbe?(probeId: string): Promise<SourceToolIdentity[]>;
-
-  /** Restore the exact pre-probe session source set. */
-  removeSourceProbe?(probeId: string): Promise<void>;
-
-  /** Prepare final readiness exposure while retaining a rollback snapshot. */
-  prepareSourceReadinessActivation?(sourceSlug: string): Promise<{ activationId: string }>;
-
-  /** Commit activation bookkeeping while retaining rollback state. */
-  commitSourceReadinessActivation?(activationId: string): void;
-
-  /** Release rollback state after both activation and ready config are durable. */
-  finalizeSourceReadinessActivation?(activationId: string): void;
-
-  /** Restore or clear a prepared readiness exposure when commit or persistence fails. */
-  rollbackSourceReadinessActivation?(activationId: string): Promise<void>;
+  /**
+   * Late-bound source readiness seam. Owns the live probe backend, in-session
+   * exposure and config persistence for the fail-closed U7 readiness path.
+   * Wired by the server-core adapter; undefined when the backend cannot expose
+   * sources mid-session.
+   */
+  sessionSourceReadiness?: SessionSourceReadiness;
 
   // ============================================================
   // Messaging Gateway (for list/unbind messaging channels)

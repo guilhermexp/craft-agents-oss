@@ -391,7 +391,7 @@ const ListMessagingChannelsSchema = z.object({
 });
 
 const UnbindMessagingChannelSchema = z.object({
-  platform: z.enum(['telegram', 'whatsapp', 'lark']).optional().describe('Platform to unbind. If omitted, unbinds all.'),
+  platform: z.enum(['telegram', 'whatsapp']).optional().describe('Platform to unbind. If omitted, unbinds all.'),
 });
 
 // MCP-only bridge tools (executed by the in-process Hermes bridge, not the registry)
@@ -713,7 +713,7 @@ Use this from a channel lead/orchestrator session when another configured channe
 
 Provide participantId and message. Omit channelId when the current session was created by channel routing; include it only when the runtime cannot infer the current channel.`,
 
-  list_messaging_channels: `List messaging channels (Telegram, WhatsApp, Lark) bound to a session.
+  list_messaging_channels: `List messaging channels (Telegram, WhatsApp) bound to a session.
 Shows which external chat apps are connected and can send/receive messages.`,
 
   unbind_messaging_channel: `Disconnect a messaging channel from the current session.

@@ -29,10 +29,3 @@ export function mountPerfOverlay(): void {
   root = createRoot(container)
   root.render(<PerfOverlay />)
 }
-
-export function unmountPerfOverlay(): void {
-  if (!root) return
-  root.unmount()
-  root = null
-  document.getElementById(CONTAINER_ID)?.remove()
-}

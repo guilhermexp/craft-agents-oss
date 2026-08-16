@@ -15,7 +15,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { classifyFile, type FilePreviewType } from '@craft-agent/ui'
+import { classifyFile, type FilePreviewType } from '@craft-agent/ui/file-classification'
 import { getLanguageFromPath } from '@/lib/file-utils'
 
 // ── Preview state types ────────────────────────────────────────────────────────
@@ -80,9 +80,9 @@ interface VideoPreview {
 }
 
 /**
- * Rendered-page preview: .html files read from disk, and Office documents
- * (.docx/.xlsx/.pptx) converted to HTML by the bundled OfficeCLI binary. Both
- * end up as an HTML string shown in the same sandboxed iframe.
+ * Rendered-page preview: .html files read from disk and shown as an HTML string
+ * in a sandboxed iframe. Office documents do NOT come through here — they need
+ * the live server below to stay editable.
  */
 interface HtmlDocPreview {
   type: 'htmlDoc'
@@ -132,10 +132,11 @@ interface LinkInterceptorOptions {
   readFileDataUrl: (path: string) => Promise<string>
   /** Read file as binary (Uint8Array) for PDF previews via react-pdf */
   readFileBinary: (path: string) => Promise<Uint8Array>
-  /** Render .docx/.xlsx/.pptx to HTML via the bundled OfficeCLI binary */
-  renderOfficeDocument: (path: string) => Promise<string>
   /** Start/reuse an editable live server for a document; resolves to its URL */
   openOfficeLive: (path: string) => Promise<string>
+  /** Tear down the live server for a document. Best-effort: the caller never
+   *  awaits it on the UI-close path, and it must never reject. */
+  closeOfficeLive: (path: string) => Promise<void>
 }
 
 // ── Hook return type ───────────────────────────────────────────────────────────
@@ -177,6 +178,11 @@ export function useLinkInterceptor(options: LinkInterceptorOptions): LinkInterce
   const previewStateRef = useRef(previewState)
   useEffect(() => { previewStateRef.current = previewState }, [previewState])
 
+  // Monotonic id for the async Office-open path. Bumped on every handleOpenFile
+  // and on closePreview so a slow `openOfficeLive` that resolves late cannot
+  // clobber a newer preview, nor reopen an overlay the user already closed.
+  const officeRequestRef = useRef(0)
+
   /**
    * Main entry point for file link clicks.
    * Classifies the file by extension, then either opens a preview overlay
@@ -188,6 +194,16 @@ export function useLinkInterceptor(options: LinkInterceptorOptions): LinkInterce
    * (e.g., @uiw/react-json-view crashes on null value).
    */
   const handleOpenFile = useCallback(async (path: string) => {
+    const requestGeneration = ++officeRequestRef.current
+
+    // A new open supersedes any live Office server currently on screen. Tear it
+    // down (best-effort) so its unauthenticated loopback HTTP server doesn't
+    // linger. Skip when reopening the same path — openOfficeLive reuses it.
+    const supersededOfficePath = officeLivePathToClose(previewStateRef.current)
+    if (supersededOfficePath && supersededOfficePath !== path) {
+      void optionsRef.current.closeOfficeLive(supersededOfficePath).catch(() => {})
+    }
+
     const classification = classifyFile(path)
 
     if (!classification.canPreview || !classification.type) {
@@ -210,8 +226,12 @@ export function useLinkInterceptor(options: LinkInterceptorOptions): LinkInterce
       setPreviewState({ type: 'officeLive', filePath: path, url: null })
       try {
         const url = await optionsRef.current.openOfficeLive(path)
+        // A newer open/close bumped the generation while we awaited — that
+        // request now owns the overlay, so drop this stale result.
+        if (!shouldApplyOfficeLiveResult(requestGeneration, officeRequestRef.current)) return
         setPreviewState({ type: 'officeLive', filePath: path, url })
       } catch (err) {
+        if (!shouldApplyOfficeLiveResult(requestGeneration, officeRequestRef.current)) return
         const errorMsg = err instanceof Error ? err.message : 'Failed to open document'
         setPreviewState({ type: 'officeLive', filePath: path, url: null, error: errorMsg })
       }
@@ -243,8 +263,17 @@ export function useLinkInterceptor(options: LinkInterceptorOptions): LinkInterce
   }, []) // Stable: uses optionsRef
 
   const closePreview = useCallback(() => {
+    // Bump first so any in-flight openOfficeLive bails instead of reopening the
+    // overlay the user is closing.
+    officeRequestRef.current += 1
+    // Closing the overlay is the only signal to stop the child officecli watch
+    // process. Best-effort: never awaited, never throws, never blocks the close.
+    const officePath = officeLivePathToClose(previewStateRef.current)
+    if (officePath) {
+      void optionsRef.current.closeOfficeLive(officePath).catch(() => {})
+    }
     setPreviewState(null)
-  }, [])
+  }, []) // Stable: uses refs
 
   /** Open the currently previewed file in external app (from overlay header) */
   const openCurrentExternal = useCallback(() => {
@@ -286,6 +315,30 @@ export function useLinkInterceptor(options: LinkInterceptorOptions): LinkInterce
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+
+/**
+ * Path whose live `officecli watch` server must be torn down when the given
+ * preview goes away, or null when the preview owns no live server.
+ *
+ * Closing (or replacing) an Office overlay is the only signal the main process
+ * gets to stop the child `officecli watch` process; its loopback HTTP server is
+ * write-capable and unauthenticated, so a leaked server survives until LRU
+ * eviction or app quit. Keeping this a pure function lets both closePreview and
+ * the replace path share one definition of "which server to stop".
+ */
+export function officeLivePathToClose(state: FilePreviewState | null): string | null {
+  return state?.type === 'officeLive' ? state.filePath : null
+}
+
+/**
+ * Whether an in-flight `openOfficeLive` result still belongs to the newest
+ * request. `openOfficeLive` can be slow, so a second click (or a close) bumps
+ * the generation; a stale resolve/reject must not clobber the newer preview nor
+ * reopen an overlay the user already closed. Mirrors shouldApplyProjectsResult.
+ */
+export function shouldApplyOfficeLiveResult(requestGeneration: number, currentGeneration: number): boolean {
+  return requestGeneration === currentGeneration
+}
 
 /**
  * Build the initial preview state for text-based file types.

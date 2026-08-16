@@ -5,6 +5,7 @@
 import { describe, it, expect, mock } from 'bun:test'
 import { RoutedClient } from '../routed-client'
 import type { WsRpcClient, TransportConnectionState } from '../client'
+import type { WorkspaceObjectEvent } from '@craft-agent/shared/workspace-objects/types'
 
 // ---------------------------------------------------------------------------
 // Minimal WsRpcClient stub
@@ -45,6 +46,7 @@ function stubClient(overrides?: Partial<WsRpcClient>): WsRpcClient {
 
 // Use real channel constants — RoutedClient routes based on isLocalOnly()
 import { isLocalOnly, RPC_NAMESPACES } from '@craft-agent/shared/protocol'
+import { WORKSPACE_OBJECT_RPC_CHANNELS } from '@craft-agent/shared/workspace-objects/types'
 
 const LOCAL_CHANNEL = RPC_NAMESPACES.window.GET_WORKSPACE   // LOCAL_ONLY
 const REMOTE_CHANNEL = RPC_NAMESPACES.sessions.GET           // REMOTE_ELIGIBLE
@@ -251,6 +253,67 @@ describe('RoutedClient', () => {
 
       // After cleanup, switching workspace should not attempt to re-subscribe this listener
       // (no error thrown = success)
+    })
+  })
+
+  describe('workspace-object subscriptions', () => {
+    interface StubInternals { _listeners: Map<string, Set<(...args: unknown[]) => void>> }
+    const emit = (client: WsRpcClient, channel: string, ...args: unknown[]): void => {
+      (client as unknown as StubInternals)._listeners.get(channel)?.forEach(cb => cb(...args))
+    }
+
+    it('translates an inbound EVENT payload workspaceId from remote id to local id', () => {
+      const local = stubClient()
+      const workspace = stubClient()
+      const routed = new RoutedClient(local, workspace)
+      routed.setWorkspaceMapping('local-ws', 'remote-ws')
+
+      const received: WorkspaceObjectEvent[] = []
+      routed.on(WORKSPACE_OBJECT_RPC_CHANNELS.EVENT, (event: WorkspaceObjectEvent) => received.push(event))
+
+      emit(workspace, WORKSPACE_OBJECT_RPC_CHANNELS.EVENT, {
+        workspaceId: 'remote-ws', objectId: 'o1', revision: 1, changeKind: 'defined', projectionStatus: 'ready',
+      })
+
+      expect(received).toEqual([{
+        workspaceId: 'local-ws', objectId: 'o1', revision: 1, changeKind: 'defined', projectionStatus: 'ready',
+      }])
+    })
+
+    it('translates an inbound RELOAD workspace id from remote id to local id', () => {
+      const local = stubClient()
+      const workspace = stubClient()
+      const routed = new RoutedClient(local, workspace)
+      routed.setWorkspaceMapping('local-ws', 'remote-ws')
+
+      const reloaded: string[] = []
+      routed.on(WORKSPACE_OBJECT_RPC_CHANNELS.RELOAD, (id: string) => reloaded.push(id))
+
+      emit(workspace, WORKSPACE_OBJECT_RPC_CHANNELS.RELOAD, 'remote-ws')
+
+      expect(reloaded).toEqual(['local-ws'])
+    })
+
+    it('routes UNSUBSCRIBE to the client and remote id the SUBSCRIBE used, across a switch to local', async () => {
+      const local = stubClient({
+        invoke: mock(async (channel: string) =>
+          channel === SWITCH_CHANNEL ? { workspaceId: 'local-ws', remoteServer: null } : undefined),
+      })
+      const workspace = stubClient({ invoke: mock(async () => undefined) })
+      const routed = new RoutedClient(local, workspace)
+      routed.setWorkspaceMapping('local-ws', 'remote-ws')
+
+      // Subscribe while the remote workspace is active — translated to the remote id.
+      await routed.invoke(WORKSPACE_OBJECT_RPC_CHANNELS.SUBSCRIBE, 'local-ws')
+      expect(workspace.invoke).toHaveBeenCalledWith(WORKSPACE_OBJECT_RPC_CHANNELS.SUBSCRIBE, 'remote-ws')
+
+      // Switch to a local workspace: workspaceClient reverts to local, mapping cleared.
+      await routed.invoke(SWITCH_CHANNEL)
+
+      // Unsubscribe must still reach the original remote client with the remote id.
+      await routed.invoke(WORKSPACE_OBJECT_RPC_CHANNELS.UNSUBSCRIBE, 'local-ws')
+      expect(workspace.invoke).toHaveBeenCalledWith(WORKSPACE_OBJECT_RPC_CHANNELS.UNSUBSCRIBE, 'remote-ws')
+      expect(local.invoke).not.toHaveBeenCalledWith(WORKSPACE_OBJECT_RPC_CHANNELS.UNSUBSCRIBE, expect.any(String))
     })
   })
 })

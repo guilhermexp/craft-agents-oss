@@ -105,20 +105,47 @@ export function PanelResizeSash({
     document.addEventListener('mouseup', handleMouseUp)
   }, [leftIndex, rightIndex, panelStack, resizePanels, handlers, ref])
 
-  const handleDoubleClick = useCallback(() => {
-    // Reset the two adjacent panels to equal share of their combined proportion
+  const resetPanels = useCallback(() => {
     const left = panelStack[leftIndex]
     const right = panelStack[rightIndex]
     if (!left || !right) return
+    const half = (left.proportion + right.proportion) / 2
+    resizePanels({ leftIndex, rightIndex, leftProportion: half, rightProportion: half })
+  }, [leftIndex, rightIndex, panelStack, resizePanels])
+
+  const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Home') {
+      event.preventDefault()
+      resetPanels()
+      return
+    }
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+
+    const left = panelStack[leftIndex]
+    const right = panelStack[rightIndex]
+    if (!left || !right) return
+    event.preventDefault()
+
     const combined = left.proportion + right.proportion
-    const half = combined / 2
+    const step = event.shiftKey ? 0.05 : 0.02
+    const direction = event.key === 'ArrowRight' ? 1 : -1
+    const minimum = combined * 0.15
+    const leftProportion = Math.min(
+      combined - minimum,
+      Math.max(minimum, left.proportion + (step * direction)),
+    )
     resizePanels({
       leftIndex,
       rightIndex,
-      leftProportion: half,
-      rightProportion: half,
+      leftProportion,
+      rightProportion: combined - leftProportion,
     })
-  }, [leftIndex, rightIndex, panelStack, resizePanels])
+  }, [leftIndex, panelStack, resetPanels, resizePanels, rightIndex])
+
+  const left = panelStack[leftIndex]
+  const right = panelStack[rightIndex]
+  const combined = (left?.proportion ?? 0) + (right?.proportion ?? 0)
+  const leftPercent = combined > 0 ? Math.round(((left?.proportion ?? 0) / combined) * 100) : 50
 
   return (
     <div
@@ -126,13 +153,18 @@ export function PanelResizeSash({
       role="separator"
       aria-label="Resize panels"
       aria-orientation="vertical"
+      aria-valuemin={15}
+      aria-valuemax={85}
+      aria-valuenow={leftPercent}
+      aria-valuetext={`${leftPercent}% left panel`}
       tabIndex={0}
       className="relative w-0 h-full cursor-col-resize flex justify-center shrink-0"
       style={{ margin: `0 ${PANEL_SASH_FLEX_MARGIN}px` }}
       onMouseDown={handleMouseDown}
       onMouseMove={handlers.onMouseMove}
       onMouseLeave={handlers.onMouseLeave}
-      onDoubleClick={handleDoubleClick}
+      onDoubleClick={resetPanels}
+      onKeyDown={handleKeyDown}
     >
       {/* Touch area — wider than visible line for easier grabbing */}
       <div

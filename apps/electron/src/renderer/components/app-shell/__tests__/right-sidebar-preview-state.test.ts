@@ -18,6 +18,9 @@ interface PreviewStateModule {
     kind: InlinePreviewLoadKind
     loading: boolean
   }
+  resolveVideoPreview: (filePath: string, failed: boolean) =>
+    | { mode: 'play'; src: string }
+    | { mode: 'fallback' }
 }
 
 const previewStateModulePath = '../right-sidebar-preview-state'
@@ -91,6 +94,32 @@ describe('right sidebar preview state', () => {
     expect(previewState.getInlinePreviewLoadState('/repo/clip.mov')).toEqual({ kind: 'video', loading: false })
     // Codecs Chromium cannot decode still route to the system opener.
     expect(previewState.getInlinePreviewLoadState('/repo/clip.mkv')).toEqual({ kind: 'unsupported', loading: false })
+  })
+
+  it('streams a workspace video over media:// with a losslessly recoverable path', async () => {
+    const previewState = await loadPreviewStateModule()
+    expect(previewState).not.toBeNull()
+    if (!previewState) return
+
+    const result = previewState.resolveVideoPreview('/tmp/my clip #2?.mp4', false)
+    expect(result.mode).toBe('play')
+    if (result.mode !== 'play') return
+    expect(result.src.startsWith('media://workspace/')).toBe(true)
+    // The main-process handler recovers the absolute path with one decode; if
+    // encoding drops a space or '#'/'?' the file resolves wrong or 403s.
+    const recovered = decodeURIComponent(result.src.slice('media://workspace/'.length))
+    expect(recovered).toBe('/tmp/my clip #2?.mp4')
+  })
+
+  it('falls back instead of a silently broken player once the element reports failure', async () => {
+    const previewState = await loadPreviewStateModule()
+    expect(previewState).not.toBeNull()
+    if (!previewState) return
+
+    // A video outside ~/.craft-agent/workspaces makes media:// answer 403 and the
+    // <video> fire `error`; the panel must offer the external opener, not a dead
+    // control with no loading/error state.
+    expect(previewState.resolveVideoPreview('/anywhere/outside/clip.mp4', true)).toEqual({ mode: 'fallback' })
   })
 })
 

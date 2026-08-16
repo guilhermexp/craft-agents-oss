@@ -235,9 +235,9 @@ The Phase A local-first object contract is tracked by
 
 | Subtree | Responsibility |
 | --- | --- |
-| `packages/shared/src/workspace-objects/` | SQLite authority, typed values, projections, manifests, service and events |
+| `packages/shared/src/workspace-objects/` | SQLite authority, typed values, projections, manifests, service and lifecycle runners |
 | `packages/session-tools-core/src/handlers/workspace-objects.ts` | Validated generic frontier handler |
-| `packages/server-core/src/workspace-objects/` | Refcounted filesystem watcher |
+| `packages/server-core/src/workspace-objects/` | Refcounted filesystem watcher and per-client event feed |
 | `packages/server-core/src/handlers/rpc/workspace-objects.ts` | Workspace-scoped Desktop bridge |
 | `apps/electron/src/renderer/components/app-shell/content-*.ts` | Tabs, target identity, bounded resolver and SWR |
 | `apps/electron/src/renderer/components/right-sidebar/workspace-object*.tsx` | Object list and Phase A read preview inside the existing sidebar |
@@ -570,6 +570,21 @@ renderer privilegiado. O favicon é o caso que quase escapou:
 - Qualquer guarda que falhe vira `null` em silêncio: favicon é decoração e não
   pode derrubar a instância, logar por navegação nem virar erro visível.
   `fetchFaviconDataUrl` nunca lança, então não há `catch` no caminho de wiring.
+- O teto de tempo cobre o CORPO, não só os headers. `createFaviconFetcher`
+  mantém o listener de `abort` armado DEPOIS do evento `response` e só o solta
+  quando o `IncomingMessage` termina (`end`/`close`/`error`) ou a promise
+  rejeita: soltá-lo no resolve fazia `controller.abort()` — do timeout ou do
+  teto por chunk — virar no-op, e uma página que respondia `200 image/png` e
+  então estancava o corpo deixava `reader.read()` pendente para sempre,
+  pendurando o `await` sequencial de `resolveFavicon`, prendendo instância e
+  socket da partition e matando o single-in-flight. `readCappedBody` também
+  corre `reader.read()` contra o abort do controller, para não depender de o
+  transporte cooperar.
+- Corpo abandonado é sempre cancelado: os early-returns pós-resposta (`!ok`,
+  content-type recusado, `content-length` acima do teto) e o bail-out do teto
+  por chunk cancelam o stream em vez de deixá-lo meio-lido na partition (um
+  HTML 404 grande servido em `/favicon.ico` é o caso corriqueiro). Cancelamento
+  é best-effort e engole rejeição — nada aqui pode lançar.
 - `emitStateChange` nunca espera pelos bytes. `did-navigate`,
   `render-process-gone` e `finalizeDestroyedInstance` abortam a busca em voo, e
   `faviconToken` descarta resposta de uma página que já saiu de cena.
@@ -647,15 +662,22 @@ must enforce the same agent refusal before returning the legacy default
 partition.
 
 Cookie injection into an Electron partition lives in
-`apps/electron/src/main/browser-pane-manager.ts`. `importCookies` must resolve
-the profile capability before reading or writing, obtain the partition through
-`getProfilePartition`, and use `session.fromPartition(...).cookies.set(...)`.
-Explicit unknown profile ids must fail instead of falling back to the default
-partition, and agent-intent imports must reject a domain that would disable the
-reader filter.
-Map Chrome SameSite integers to Electron strings, preserve dotted domains, and
-count individual write failures as skipped without aborting the remaining
-writes. Its result is counts-only (`imported`/`skipped`); do not expose this
+`apps/electron/src/main/browser-pane-manager.ts`. `importCookies` must refuse a
+target that is not a known, user-only profile before reading or writing, obtain
+the partition through `getProfilePartition`, and use
+`session.fromPartition(...).cookies.set(...)`. An unknown profile id or a
+non-user-only profile is refused with a typed error
+(`UserOnlyBrowserProfileRequiredError`) instead of falling back to the default
+partition.
+Map Chrome SameSite integers to Electron strings and count individual write
+failures as skipped without aborting the remaining writes. `domain` is forwarded
+ONLY for a dotted `host_key` (`.example.com`): Electron normalizes any `domain`
+it receives with a leading dot, so passing a host-only `host_key` alongside the
+`url` silently widened most session cookies to every subdomain and broke
+`__Host-`-prefixed cookies outright. Host-only stays host-only by omitting
+`domain` and letting Electron derive it from the `url` — the reader preserves
+the dot exactly as Chrome stored it, so the dot is the whole signal.
+Its result is counts-only (`imported`/`skipped`); do not expose this
 phase-only method — nor `previewCookieImport` — through `IBrowserPaneManager`
 or the remote bridge.
 
@@ -665,8 +687,9 @@ MUST stay in `LOCAL_ONLY_NAMESPACES`: `isLocalOnly()` is a `Set.has`, so an
 unclassified channel is proxied to the workspace client, and against a remote
 workspace the reader would open the SERVER's Keychain and cookie store.
 `routing.test.ts` asserts that every `browserPane` channel is local-only.
-The handler must accept only a user-only target, force `callerIntent: "user"`,
-and keep the manager's empty-domain bulk read internal. It maps each
+The handler forwards only the `profileId` to the manager, which owns the known +
+user-only gate; the handler adds no domain or intent and does not pre-screen the
+profile. It maps each
 `ChromeCookieReaderError` code (plus the not-user-only refusal) to a distinct
 `browser-cookie-import:<reason>` message and logs the reason code only — never
 the underlying error, which can carry host names.
@@ -712,6 +735,58 @@ changes; it is the only test that exercises what actually runs on click.
   `apps/electron/src/renderer/components/browser/BrowserProfilePicker.tsx` and
   `apps/electron/src/renderer/hooks/useBrowserProfiles.ts`.
 - Startup sweep call site: `apps/electron/src/main/index.ts`.
+
+## Live Office preview (`officecli watch`)
+
+`packages/server-core/src/services/office-live.ts` owns the watch-server
+lifecycle; `office-cli.ts` next to it owns ONLY binary resolution plus the
+three-extension gate (`isOfficeDocumentFile`). There is no HTML snapshot path:
+`file:renderOffice`/`file:setOfficeCell` and `renderOfficeToHtml`/
+`setOfficeCellValue` were removed because the served page is what carries the
+editor and formula engine, so a snapshot render was both dead and a
+file-mutating endpoint reachable over the WebSocket transport with no caller.
+Preserve these invariants:
+
+- One child per path, and every child reachable by teardown. In-flight opens
+  coalesce through a `pending` map keyed by path, set SYNCHRONOUSLY before the
+  first await; the `LiveServer` is registered in `servers` BEFORE readiness is
+  awaited. Registering after `await findFreePort()` is what let two overlapping
+  opens pick the same port and spawn twice, orphaning the loser outside
+  `closeOfficeLiveServer`, `shutdownOfficeLiveServers` and `before-quit` — its
+  identity-guarded `exit` handler correctly refuses to delete a map entry it no
+  longer owns. StrictMode makes this deterministic in dev.
+- `pending` is checked BEFORE the live-entry reuse branch. Both checks are
+  synchronous, so the no-double-spawn property holds either way, but a server
+  registered before it answers is not reusable: the reuse branch would hand a
+  second caller a URL whose port is not yet listening.
+- Readiness is raced against the child's own `error` and `exit`. `error` with no
+  listener is an uncaught exception in the main process, and
+  `resolveOfficeCliPath` proves existence, not executability — an interrupted
+  `downloadOfficeCli` leaves a permanently non-executable binary. A child that
+  dies at startup rejects immediately instead of burning `STARTUP_TIMEOUT_MS`.
+- Readiness also proves POSSESSION, not just connectability: `findFreePort` and
+  the child's bind are not atomic, so `confirmOurServer` requires
+  `GET /events` to answer `text/event-stream` (verified against the real
+  binary; `watch` offers no launch token and no identifying header). Without it
+  the renderer can frame a foreign local listener, which the CSP permits via
+  `frame-src http://127.0.0.1:*`.
+- `file:openOfficeLive`/`file:closeOfficeLive` MUST stay in
+  `LOCAL_ONLY_NAMESPACES`. Routed remote-eligible, a workspace server would hand
+  back a loopback port on ITS machine and the renderer would frame that port on
+  the USER's machine.
+- The preview closing tears the server down. `useLinkInterceptor` calls
+  `closeOfficeLive` on close and on replacement, best-effort (never awaited on
+  the UI path, never throws), and guards the slow `openOfficeLive` with a
+  monotonic request id so a stale resolve cannot overwrite a newer preview or
+  re-open a closed overlay. Without the close call every opened document left a
+  write-capable, unauthenticated loopback server bound until LRU eviction.
+- Process teardown is wired into BOTH exit paths: `before-quit` and the
+  `app:relaunch` handler, because `app.relaunch()` + `app.exit(0)` does not emit
+  `before-quit` (same reason meeting captures route through
+  `relaunchAfterSealingCaptures()`).
+- `OfficeLiveRuntime` (`__setOfficeLiveRuntimeForTests`) is a test-only DI seam
+  for spawn/port/readiness/clock. Production always uses `defaultRuntime`; do
+  not reach for it from app code.
 
 ## Validation
 
@@ -761,6 +836,26 @@ partition, favicon transport), rode:
 
 ```bash
 bun test apps/electron/src/main/browser/__tests__/
+```
+
+For the live Office preview (watch-server lifecycle, binary resolution, the
+renderer's close/generation guard) run:
+
+```bash
+bun test packages/server-core/src/services/office-live.test.ts \
+  packages/server-core/src/services/office-cli.test.ts
+cd apps/electron && bun test src/renderer/hooks/__tests__/link-interceptor-office.test.ts
+```
+
+After adding, removing or renaming ANY `RPC_NAMESPACES` entry, regenerate the
+wire-format snapshot and re-run both channel gates — the snapshot is
+auto-generated and had silently drifted by four channels before:
+
+```bash
+bun run scripts/ipc-inventory.ts
+bun test apps/electron/src/shared/__tests__/ipc-channels.test.ts \
+  packages/shared/src/protocol/__tests__/routing.test.ts \
+  apps/electron/src/main/handlers/__tests__/registration.test.ts
 ```
 
 For Hermes overlay changes, first prove all overlays apply from a clean cache

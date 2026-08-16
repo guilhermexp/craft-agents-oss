@@ -16,6 +16,7 @@ import { LazyMotion, m, AnimatePresence, domAnimation } from "motion/react"
 import { toast } from "sonner"
 
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { coerceInputText, appendRestoredInput } from "@/lib/input-text"
 import { Markdown, CollapsibleMarkdownProvider, StreamingMarkdown, type RenderMode } from "@/components/markdown"
@@ -75,6 +76,7 @@ import {
   attachUpwardWheelIntentListener,
   isNearScrollBottom,
   scrollDistanceFromBottom,
+  scrollTargetOncePerKey,
   shouldPinStreamingContentToBottom,
 } from "./ChatDisplay.auto-scroll"
 
@@ -375,31 +377,36 @@ function ProcessingIndicator({ startTime, statusMessage }: ProcessingIndicatorPr
 
   return (
     <LazyMotion features={domAnimation}>
-    <div className="flex items-center gap-2 px-3 py-1 -mb-1 text-[13px] text-muted-foreground">
-      {/* Spinner in same location as TurnCard chevron */}
-      <div className="size-3 flex items-center justify-center shrink-0">
-        <Spinner className="text-[10px]" />
+      <div
+        role="status"
+        aria-live="polite"
+        aria-label={`${displayMessage} ${formatElapsed(elapsed)}`}
+        className="flex items-center gap-2 px-3 py-1 -mb-1 text-[13px] text-muted-foreground"
+      >
+        {/* Spinner in same location as TurnCard chevron */}
+        <div className="size-3 flex items-center justify-center shrink-0">
+          <Spinner className="text-[10px]" />
+        </div>
+        {/* Label with crossfade animation on content change only */}
+        <span className="relative h-5 flex items-center" aria-hidden="true">
+          <AnimatePresence mode="wait" initial={false}>
+            <m.span
+              key={displayMessage}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4, ease: 'easeInOut' }}
+            >
+              {displayMessage}
+            </m.span>
+          </AnimatePresence>
+          {elapsed >= 1 && (
+            <span className="text-muted-foreground/60 ml-1 tabular-nums">
+              {formatElapsed(elapsed)}
+            </span>
+          )}
+        </span>
       </div>
-      {/* Label with crossfade animation on content change only */}
-      <span className="relative h-5 flex items-center">
-        <AnimatePresence mode="wait" initial={false}>
-          <m.span
-            key={displayMessage}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.4, ease: 'easeInOut' }}
-          >
-            {displayMessage}
-          </m.span>
-        </AnimatePresence>
-        {elapsed >= 1 && (
-          <span className="text-muted-foreground/60 ml-1 tabular-nums">
-            {formatElapsed(elapsed)}
-          </span>
-        )}
-      </span>
-    </div>
     </LazyMotion>
   )
 }
@@ -409,19 +416,27 @@ function ProcessingIndicator({ startTime, statusMessage }: ProcessingIndicatorPr
  * Uses useLayoutEffect to ensure scroll happens before content is visible.
  */
 function ScrollOnMount({
+  scrollKey,
   targetRef,
   onScroll,
   skip = false
 }: {
+  scrollKey: string
   targetRef: React.RefObject<HTMLDivElement | null>
   onScroll?: () => void
   skip?: boolean
 }) {
+  const lastScrolledKeyRef = React.useRef<string | null>(null)
+
   React.useLayoutEffect(() => {
-    if (skip) return
-    targetRef.current?.scrollIntoView({ behavior: 'instant' })
-    onScroll?.()
-  }, [skip])
+    scrollTargetOncePerKey({
+      scrollKey,
+      lastScrolledKeyRef,
+      targetRef,
+      onScroll,
+      skip,
+    })
+  }, [scrollKey, skip, targetRef, onScroll])
   return null
 }
 
@@ -566,14 +581,14 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   })
 
   // Turn projection: cached/reconciled turns + the single Turn identity + the
-  // resolved (single-polarity) expansion controllers. Search and render below
-  // consume `allTurns` instead of regrouping.
+  // resolved expansion controllers, whose auto-expand window is scoped per turn.
+  // Search and render below consume `allTurns` instead of regrouping.
   const {
     turns: allTurns,
     getTurnKey,
     isTurnExpanded,
     toggleTurn,
-    groupExpansion,
+    groupExpansionFor,
   } = useTurnProjection({
     sessionId: session?.id,
     messages: session?.messages,
@@ -613,8 +628,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     const style = document.createElement('style')
     style.id = id
     style.textContent = `
-      ::highlight(search-passive) { background-color: rgb(253 224 71 / 0.3); color: inherit; }
-      ::highlight(search-active) { background-color: rgb(253 224 71); color: rgb(0 0 0 / 0.9); }
+      ::highlight(search-passive) { background-color: color-mix(in oklch, var(--accent) 30%, transparent); color: inherit; }
+      ::highlight(search-active) { background-color: var(--accent); color: var(--accent-foreground); }
     `
     document.head.appendChild(style)
   }, [])
@@ -635,10 +650,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // focus stealing when search is open but query is empty
   // In multi-panel layouts, only the focused panel should auto-focus its textarea
   useEffect(() => {
-    if (session && !isSearchModeActive && isFocused && isFocusedPanel) {
+    if (session?.id && !isSearchModeActive && isFocused && isFocusedPanel) {
       textareaRef.current?.focus()
     }
-  }, [session?.id, isFocused, isSearchModeActive, isFocusedPanel])
+  }, [session?.id, isFocused, isSearchModeActive, isFocusedPanel, textareaRef])
 
   useEffect(() => {
     let isMounted = true
@@ -734,7 +749,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       }
     }
     return matches
-  }, [searchQuery, allTurns, countOccurrences])
+  }, [searchQuery, allTurns, countOccurrences, getTurnKey])
 
   // Auto-expand pagination when search is active to show all matching turns
   // This ensures match count is stable and all matches are highlightable from the start
@@ -981,7 +996,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     matchCount: validMatches.length,
     currentMatchIndex,
     isHighlighting,
-  }), [goToNextMatch, goToPrevMatch, validMatches.length, currentMatchIndex])
+  }), [goToNextMatch, goToPrevMatch, validMatches.length, currentMatchIndex, isHighlighting])
 
   // Notify parent when match info (count, index, highlighting state) changes
   useEffect(() => {
@@ -1522,7 +1537,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
         void scrollToTurn()
       })
     }
-  }, [assistantTurnIndexByMessageId, allTurns, visibleTurnCount])
+  }, [assistantTurnIndexByMessageId, allTurns, visibleTurnCount, getTurnKey])
 
   const handleFollowUpChipClick = useCallback((item: {
     messageId: string
@@ -1553,6 +1568,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   }) => {
     scrollToFollowUpTurn(item)
   }, [scrollToFollowUpTurn])
+
+  const handleInitialScroll = React.useCallback(() => {
+    skipSmoothScrollUntilRef.current = Date.now() + 500
+  }, [])
 
   // Compute if we should skip scroll-to-bottom (when search is active on session switch)
   // At render time, prevSessionIdForScrollRef still has the OLD session ID, so we can detect the switch
@@ -1596,15 +1615,39 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                   >
                     {/* Loading/Content AnimatePresence: sync mode avoids stale loading exits masking ready content */}
                     <AnimatePresence mode="sync" initial={false}>
-                    {messagesLoading ? (
-                      /* Loading State: Show spinner while messages are being lazy loaded */
+                    {messagesLoadError ? (
+                      <m.div
+                        key="load-error"
+                        role="alert"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="mx-auto flex min-h-64 max-w-md flex-col items-center justify-center gap-3 px-6 text-center"
+                      >
+                        <CircleAlert className="size-8 text-destructive" aria-hidden="true" />
+                        <p className="text-sm font-medium text-foreground">{messagesLoadError}</p>
+                        {onRetryMessagesLoad && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={onRetryMessagesLoad}
+                            disabled={messagesRetrying}
+                          >
+                            {messagesRetrying ? t('common.retrying') : t('common.retry')}
+                          </Button>
+                        )}
+                      </m.div>
+                    ) : messagesLoading ? (
                       <m.div
                         key="loading"
+                        role="status"
+                        aria-live="polite"
+                        aria-label={t('common.loading')}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         transition={compactMode ? { duration: 0 } : { duration: 0.1 }}
-                        className="flex items-center justify-center h-64"
+                        className="flex h-64 items-center justify-center"
                       >
                         <Spinner className="text-foreground/30" />
                       </m.div>
@@ -1621,11 +1664,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                   {/* Scroll to bottom before paint - fires via useLayoutEffect */}
                   {/* Skip when search is active on session switch - scroll to first match instead */}
                   <ScrollOnMount
+                    scrollKey={session.id}
                     targetRef={messagesEndRef}
                     skip={skipScrollToBottom}
-                    onScroll={() => {
-                      skipSmoothScrollUntilRef.current = Date.now() + 500
-                    }}
+                    onScroll={handleInitialScroll}
                   />
                   {/* Empty state for compact mode - inviting conversational prompt, centered in full popover */}
                   {compactMode && turns.length === 0 && (
@@ -1744,6 +1786,12 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                     // Check if this is the last response (for Accept Plan button visibility)
                     const isLastResponse = index === turns.length - 1 || !turns.slice(index + 1).some(t => t.type === 'user')
 
+                    // Auto-expand window: open while the agent is still working
+                    // this turn, collapsed again once it settles. Keyed on
+                    // completion, not `isStreaming`, which drops to false in the
+                    // gaps between tool calls.
+                    const isTurnInFlight = !turn.isComplete
+
                     // Assistant turns - render with TurnCard (buffered streaming)
                     return (
                       <div
@@ -1767,9 +1815,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                         intent={turn.intent}
                         isStreaming={turn.isStreaming}
                         isComplete={turn.isComplete}
-                        isExpanded={isTurnExpanded(turnKey)}
-                        onExpandedChange={(expanded) => toggleTurn(turnKey, expanded)}
-                        groupExpansion={groupExpansion}
+                        isExpanded={isTurnExpanded(turnKey, isTurnInFlight)}
+                        onExpandedChange={(expanded) => toggleTurn(turnKey, expanded, isTurnInFlight)}
+                        groupExpansion={groupExpansionFor(isTurnInFlight)}
                         todos={turn.todos}
                         onOpenFile={onOpenFile}
                         onResolveFilePath={onResolveFilePath}

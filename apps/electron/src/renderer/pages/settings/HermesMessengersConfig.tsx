@@ -21,7 +21,6 @@ import emailIcon from '@/assets/messaging-icons/email.svg'
 import homeassistantIcon from '@/assets/messaging-icons/homeassistant.svg'
 import smsIcon from '@/assets/messaging-icons/sms.svg'
 import dingtalkIcon from '@/assets/messaging-icons/dingtalk.svg'
-import feishuIcon from '@/assets/messaging-icons/feishu.svg'
 import mattermostIcon from '@/assets/messaging-icons/mattermost.svg'
 import bluebubblesIcon from '@/assets/messaging-icons/bluebubbles.svg'
 
@@ -128,14 +127,6 @@ const MESSENGERS: MessengerEntry[] = [
     description: 'Connect a DingTalk chatbot via Stream Mode',
     icon: dingtalkIcon,
     requiredEnv: ['DINGTALK_CLIENT_ID', 'DINGTALK_CLIENT_SECRET'],
-  },
-  {
-    id: 'feishu',
-    name: 'Feishu / Lark',
-    description: 'Connect a Feishu or Lark bot',
-    icon: feishuIcon,
-    requiredEnv: ['FEISHU_APP_ID', 'FEISHU_APP_SECRET'],
-    optionalEnv: ['FEISHU_VERIFICATION_TOKEN'],
   },
   {
     id: 'mattermost',

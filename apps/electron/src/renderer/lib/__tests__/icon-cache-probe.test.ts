@@ -6,7 +6,7 @@
  * ~270 ms each. Every entity without an icon file was re-probing four
  * extensions on every remount of an unvirtualized list row.
  */
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 
 const readWorkspaceImage = mock((_workspaceId: string, _path: string) => Promise.resolve<string | null>(null))
 
@@ -27,7 +27,7 @@ afterEach(() => {
 
 // Dynamic import: the module reads `window.electronAPI` and must resolve the
 // mocked global installed above.
-const { resolveEntityIconFile, clearIconCaches, clearSourceIconCaches, iconCache } =
+const { resolveEntityIconFile, clearIconCaches, clearSourceIconCaches, iconCache, MISSING_ICON_TTL_MS } =
   await import('../icon-cache')
 
 /** Four extensions are probed per auto-discovery: .svg, .png, .jpg, .jpeg. */
@@ -133,5 +133,50 @@ describe('resolveEntityIconFile', () => {
       await resolveEntityIconFile({ cacheKey: 'skill:ws1:x', probeKey: 'skill:ws1:x|||', workspaceId: 'ws1' }),
     ).toBeNull()
     expect(readWorkspaceImage).toHaveBeenCalledTimes(0)
+  })
+
+  it('re-probes after a recorded miss expires (TTL)', async () => {
+    const nowSpy = spyOn(Date, 'now')
+    try {
+      nowSpy.mockReturnValue(1_000)
+      expect(await resolveEntityIconFile(probe())).toBeNull()
+      expect(readWorkspaceImage).toHaveBeenCalledTimes(EXTENSIONS_PER_DISCOVERY)
+
+      // Within the TTL the miss is trusted — a scroll/remount burst issues no IPC.
+      readWorkspaceImage.mockClear()
+      nowSpy.mockReturnValue(1_000 + MISSING_ICON_TTL_MS - 1)
+      expect(await resolveEntityIconFile(probe())).toBeNull()
+      expect(readWorkspaceImage).toHaveBeenCalledTimes(0)
+
+      // The user added an icon file after the empty probe. Past the TTL the
+      // probe re-runs and the new file surfaces without a window reload.
+      nowSpy.mockReturnValue(1_000 + MISSING_ICON_TTL_MS + 1)
+      readWorkspaceImage.mockImplementation((_ws: string, path: string) =>
+        Promise.resolve(path.endsWith('.png') ? 'data:image/png;base64,NEW' : null),
+      )
+      expect((await resolveEntityIconFile(probe()))?.dataUrl).toBe('data:image/png;base64,NEW')
+    } finally {
+      nowSpy.mockRestore()
+    }
+  })
+
+  it('an in-flight probe started before a clear cannot repopulate the miss cache', async () => {
+    // Hold the IPC open so the probe is still in flight when the clear lands.
+    let release: (value: string | null) => void = () => {}
+    const gate = new Promise<string | null>((resolve) => { release = resolve })
+    readWorkspaceImage.mockImplementation(() => gate)
+
+    const inflight = resolveEntityIconFile(probe()) // begins in the current epoch
+    clearIconCaches() // bumps the epoch and empties the in-flight map
+    release(null) // the abandoned probe now settles as a miss
+    expect(await inflight).toBeNull()
+
+    // The clear armed the caches for a fresh probe. The stale miss must NOT have
+    // been written back, so the next probe re-issues IPC instead of returning
+    // the poisoned null.
+    readWorkspaceImage.mockReset()
+    readWorkspaceImage.mockImplementation(() => Promise.resolve(null))
+    await resolveEntityIconFile(probe())
+    expect(readWorkspaceImage).toHaveBeenCalledTimes(EXTENSIONS_PER_DISCOVERY)
   })
 })

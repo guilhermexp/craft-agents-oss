@@ -63,6 +63,7 @@ import {
   DEFAULT_BROWSER_PROFILE_PARTITION,
   resolveBrowserProfileId,
   UserOnlyBrowserProfileError,
+  UserOnlyBrowserProfileRequiredError,
 } from './browser-profile-resolver'
 import {
   DEFAULT_BROWSER_PROFILE_ID,
@@ -508,31 +509,11 @@ export class BrowserPaneManager implements IBrowserPaneManager {
     }
   }
 
-  async importCookies(input: {
-    profileId?: string
-    domain: string
-    callerIntent: 'agent' | 'user'
-  }): Promise<{ imported: number; skipped: number }> {
-    if (
-      input.callerIntent === 'agent'
-      && !input.domain.trim().replace(/^\./, '')
-    ) {
-      throw new Error('Agent cookie import requires a domain')
-    }
-    if (
-      input.profileId
-      && input.profileId !== DEFAULT_BROWSER_PROFILE_ID
-      && !this.browserProfilesProvider().some(profile => profile.id === input.profileId)
-    ) {
-      throw new Error(`Unknown profile id: ${input.profileId}`)
-    }
-    const ownerType: BrowserInstance['ownerType'] = input.callerIntent === 'agent'
-      ? 'session'
-      : 'manual'
-    const profileId = this.resolveProfileId(input.profileId, ownerType)
+  async importCookies(profileId: string): Promise<{ imported: number; skipped: number }> {
+    this.requireUserOnlyProfile(profileId)
     const partition = getProfilePartition(profileId)
     const targetSession = session.fromPartition(partition)
-    const readResult = await readChromeCookies({ domain: input.domain })
+    const readResult = await readChromeCookies({})
     const sameSiteMap: Record<BrowserCookieSameSite, Electron.CookiesSetDetails['sameSite']> = {
       [-1]: 'unspecified',
       0: 'no_restriction',
@@ -540,17 +521,27 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       2: 'strict',
     }
     const writeResults = await Promise.allSettled(readResult.cookies.map(async (cookie) => {
-      await targetSession.cookies.set({
+      // Chrome stores host-only cookies with a dot-less `host_key`, which the
+      // reader preserves verbatim. Electron normalises any `domain` we pass by
+      // prepending a dot, turning a host-only cookie into one valid for every
+      // subdomain — a scope widening for most session cookies, and outright
+      // invalid for `__Host-`-prefixed cookies (the spec forbids a Domain
+      // attribute). Only forward `domain` for genuinely dotted cookies; for the
+      // rest let Electron derive the host from `url`.
+      const details: Electron.CookiesSetDetails = {
         url: `http${cookie.secure ? 's' : ''}://${cookie.domain.replace(/^\./, '')}${cookie.path}`,
         name: cookie.name,
         value: cookie.value,
-        domain: cookie.domain,
         path: cookie.path,
         secure: cookie.secure,
         httpOnly: cookie.httpOnly,
         expirationDate: cookie.expirationDate,
         sameSite: sameSiteMap[cookie.sameSite],
-      })
+      }
+      if (cookie.domain.startsWith('.')) {
+        details.domain = cookie.domain
+      }
+      await targetSession.cookies.set(details)
     }))
     const imported = writeResults.filter(result => result.status === 'fulfilled').length
 
@@ -565,21 +556,22 @@ export class BrowserPaneManager implements IBrowserPaneManager {
    * neither decrypts a value nor triggers the macOS Keychain prompt — the user
    * has not agreed to anything yet at this point.
    */
-  async previewCookieImport(input: {
-    profileId?: string
-    callerIntent: 'agent' | 'user'
-  }): Promise<BrowserCookieImportPreview> {
-    if (
-      input.profileId
-      && input.profileId !== DEFAULT_BROWSER_PROFILE_ID
-      && !this.browserProfilesProvider().some(profile => profile.id === input.profileId)
-    ) {
-      throw new Error(`Unknown profile id: ${input.profileId}`)
-    }
-    // Same capability gate as the import it precedes: an agent must never
-    // learn the user's full signed-in host list either.
-    this.resolveProfileId(input.profileId, input.callerIntent === 'agent' ? 'session' : 'manual')
+  async previewCookieImport(profileId: string): Promise<BrowserCookieImportPreview> {
+    this.requireUserOnlyProfile(profileId)
     return previewChromeCookies({})
+  }
+
+  /**
+   * The single cookie-import gate: the target must be a known, user-only
+   * profile. An unknown id or a non-user-only profile is refused before any
+   * reader, partition or write is touched, so the Keychain prompt never fires
+   * for an ineligible target.
+   */
+  private requireUserOnlyProfile(profileId: string): void {
+    const profile = this.browserProfilesProvider().find(candidate => candidate.id === profileId)
+    if (profile?.userOnly !== true) {
+      throw new UserOnlyBrowserProfileRequiredError(profileId)
+    }
   }
 
   private touchProfileLastUsed(profileId: string): void {
@@ -3905,7 +3897,8 @@ export class BrowserPaneManager implements IBrowserPaneManager {
    * partition's cookies or auth to a page-chosen host.
    */
   private createFaviconFetcher(paneSession: ElectronSession): FaviconFetcher {
-    return (url, init) => new Promise<FaviconHttpResponse>((resolve, reject) => {
+    return (url, init) => {
+      const { promise, resolve, reject } = Promise.withResolvers<FaviconHttpResponse>()
       const request = net.request({
         url,
         session: paneSession,
@@ -3917,10 +3910,16 @@ export class BrowserPaneManager implements IBrowserPaneManager {
       let settled = false
       const onAbort = (): void => request.abort()
       init.signal.addEventListener('abort', onAbort, { once: true })
+      // The abort must outlive the `response` event: the timeout and the byte
+      // ceiling only tear a stalled body down if `controller.abort()` still
+      // reaches `request.abort()` after the headers arrived. So the listener
+      // lifecycle is kept separate from `settle` — detached once the body is
+      // done or the promise rejects, never merely on resolve, and never leaked
+      // per request.
+      const detachAbort = (): void => init.signal.removeEventListener('abort', onAbort)
       const settle = (apply: () => void): void => {
         if (settled) return
         settled = true
-        init.signal.removeEventListener('abort', onAbort)
         apply()
       }
 
@@ -3936,17 +3935,30 @@ export class BrowserPaneManager implements IBrowserPaneManager {
         request.followRedirect()
       })
       request.on('response', (response) => {
+        const message = response as unknown as Readable
+        // Body finished (drained, cancelled, or errored): the abort has nothing
+        // left to tear down, so stop holding the listener.
+        message.on('end', detachAbort)
+        message.on('close', detachAbort)
+        message.on('error', detachAbort)
         settle(() => resolve({
           ok: response.statusCode >= 200 && response.statusCode <= 299,
           status: response.statusCode,
           headers: { get: (name) => firstHeaderValue(response.headers, name) },
-          body: Readable.toWeb(response as unknown as Readable) as unknown as ReadableStream<Uint8Array>,
+          body: Readable.toWeb(message) as unknown as ReadableStream<Uint8Array>,
         }))
       })
-      request.on('error', (error) => settle(() => reject(error)))
-      request.on('abort', () => settle(() => reject(new Error('favicon request aborted'))))
+      request.on('error', (error) => {
+        detachAbort()
+        settle(() => reject(error))
+      })
+      request.on('abort', () => {
+        detachAbort()
+        settle(() => reject(new Error('favicon request aborted')))
+      })
       request.end()
-    })
+      return promise
+    }
   }
 
   private cancelFaviconFetch(instance: BrowserInstance): void {

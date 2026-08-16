@@ -84,6 +84,7 @@ function createMockDeps(): HandlerDeps {
       onInteracted: () => {},
       onProfilesChanged: () => {},
       onProfileManagementRequested: () => {},
+      onDisplayModeRequested: () => {},
       setCaptureReleaseHook: () => {},
       setCaptureLock: () => {},
     } as unknown as NonNullable<HandlerDeps['browserPaneManager']>,

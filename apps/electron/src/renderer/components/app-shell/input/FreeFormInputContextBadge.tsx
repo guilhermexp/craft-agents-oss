@@ -96,21 +96,21 @@ export const FreeFormInputContextBadge = React.forwardRef<HTMLButtonElement, Fre
         {showLabel && (
           isExpanded ? (
             // Expanded: simple truncate, placeholder (no selection) gets 60% opacity
-            <span className={cn("truncate max-w-[120px] min-w-0 shrink", !hasSelection && "opacity-50")}>
+            <span data-context-label className={cn("hidden min-w-0 max-w-[120px] shrink truncate @[34rem]:inline", !hasSelection && "opacity-50")}>
               {label}
             </span>
           ) : (
             // Collapsed with selection: fading text with max width
-            <FadingText className="max-w-[140px] min-w-0 shrink" fadeWidth={20}>
+            <FadingText data-context-label className="hidden min-w-0 max-w-[140px] shrink @[34rem]:inline" fadeWidth={20}>
               {label}
             </FadingText>
           )
         )}
 
         {/* Optional chevron - only in expanded state */}
-        {isExpanded && showChevron && (
-          <ChevronDown className="size-3 opacity-50 shrink-0" />
-        )}
+        {isExpanded && showChevron ? (
+          <ChevronDown className="hidden size-3 shrink-0 opacity-50 @[34rem]:block" />
+        ) : null}
       </button>
     )
 

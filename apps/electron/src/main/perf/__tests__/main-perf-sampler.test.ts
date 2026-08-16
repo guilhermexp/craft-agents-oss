@@ -142,7 +142,6 @@ describe('MainPerfSampler', () => {
 
     const sample = pushes[0]!.sample
     expect(sample.windowMs).toBeGreaterThan(0)
-    expect(sample.discontinuity).toBe(false)
     expect(sample.selfMs).toBeGreaterThanOrEqual(0)
     expect(sample.heap.rssMb).toBeGreaterThan(0)
     expect(sample.eventLoop.meanMs).toBeGreaterThanOrEqual(0)

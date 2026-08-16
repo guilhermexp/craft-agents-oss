@@ -91,6 +91,15 @@ describe('missing-response guard at the sendMessage call site', () => {
     } as never)
   }
 
+  function pushErrorMessage(managed: ManagedSession, id: string) {
+    managed.messages.push({
+      id,
+      role: 'error',
+      content: 'rate limit exceeded',
+      timestamp: Date.now(),
+    } as never)
+  }
+
   it('reports a turn that went silent on its own', () => {
     const managed = buildSession('silent', 'claude-api')
     expect(shouldReportMissingAssistantResponse(managed)).toBe(true)
@@ -174,5 +183,34 @@ describe('missing-response guard at the sendMessage call site', () => {
     managed.turnStartFinalMessageId = 'assistant-1'
 
     expect(shouldReportMissingAssistantResponse(managed)).toBe(true)
+  })
+
+  it('stays quiet when the turn already surfaced a real error (rate limit, overload, auth)', () => {
+    const managed = buildSession('errored', 'claude-api')
+    // The turn started empty, then an `error` event pushed the real diagnosis.
+    // That message never advances the final-assistant id, so the generic card
+    // would otherwise shadow a real, possibly non-retryable, error.
+    pushErrorMessage(managed, 'error-1')
+
+    expect(shouldReportMissingAssistantResponse(managed)).toBe(false)
+  })
+
+  it('still reports when the only error predates this turn (guard is not deaf to old errors)', () => {
+    const managed = buildSession('old-error', 'claude-api')
+    // An error from a PRIOR turn is already in history at turn start, so it is
+    // the baseline. This silent turn added nothing — it must still report.
+    pushErrorMessage(managed, 'error-old')
+    managed.turnStartLastMessageId = 'error-old'
+
+    expect(shouldReportMissingAssistantResponse(managed)).toBe(true)
+  })
+
+  it('stays quiet after a successful /compact (info-only turn, no assistant message)', () => {
+    const managed = buildSession('compacted', 'claude-api')
+    // /compact runs as an ordinary turn: only info/status + complete, no
+    // assistant message, no stop/abort — the SessionManager flags it instead.
+    managed.turnCompacted = true
+
+    expect(shouldReportMissingAssistantResponse(managed)).toBe(false)
   })
 })
